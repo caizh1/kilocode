@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
-import { CodeIndexManager } from "@kilocode/kilo-indexing/engine"
+import { CodeIndexAnalysisService, CodeIndexManager } from "@kilocode/kilo-indexing/engine"
 import { normalizeIndexingStatus } from "@kilocode/kilo-indexing/status"
 import type { Config } from "../../src/config/config"
 import { GlobalBus } from "../../src/bus/global"
@@ -86,6 +86,7 @@ function inline(directory: string, root: string, hooks: IndexingWorker.Hooks): I
       return normalizeIndexingStatus(manager)
     },
     search: (query, directoryPrefix) => manager.searchIndex(query, directoryPrefix),
+    queryEvidence: (query, options) => manager.queryEvidence(query, options),
     async dispose() {
       progress.dispose()
       telemetry.dispose()
@@ -258,6 +259,56 @@ describe("indexing startup degradation", () => {
       dispose.mockRestore()
       init.mockRestore()
     }
+  })
+
+  test("routes queryEvidence through the initialized indexing driver", async () => {
+    const calls: Array<{ query: string; options: unknown }> = []
+    const done: KiloIndexing.Status = {
+      state: "Complete",
+      message: "Indexing complete.",
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 100,
+    }
+    IndexingWorker.override(() => ({
+      async init() {
+        return done
+      },
+      async search() {
+        return []
+      },
+      async queryEvidence(query, options = {}) {
+        calls.push({ query, options })
+        return CodeIndexAnalysisService.createStub(query, options)
+      },
+      async dispose() {},
+    }))
+
+    await using tmp = await tmpdir({ git: true, config: cfg })
+    process.env["KILO_CONFIG_DIR"] = tmp.path
+
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        await wait(() => KiloIndexing.current(), "Complete")
+
+        const result = await KiloIndexing.queryEvidence("find callers", {
+          retrievalMode: "graph-only",
+          maxEvidenceItems: 2,
+        })
+
+        expect(calls).toEqual([
+          {
+            query: "find callers",
+            options: {
+              retrievalMode: "graph-only",
+              maxEvidenceItems: 2,
+            },
+          },
+        ])
+        expect(result.trace.retrievalMode).toBe("graph-only")
+      },
+    })
   })
 
   test("reports not ready while initialization is in flight", async () => {

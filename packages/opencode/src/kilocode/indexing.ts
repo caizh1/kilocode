@@ -1,6 +1,12 @@
 import z from "zod"
 import path from "path"
-import { type IndexingTelemetryEvent, type VectorStoreSearchResult } from "@kilocode/kilo-indexing/engine"
+import {
+  CodeIndexAnalysisService,
+  type CodeGraphEvidenceQueryOptions,
+  type IndexingTelemetryEvent,
+  type QueryEvidenceResult,
+  type VectorStoreSearchResult,
+} from "@kilocode/kilo-indexing/engine"
 import { toIndexingConfigInput, type IndexingConfig } from "@kilocode/kilo-indexing/config"
 import { hasIndexingPlugin } from "@kilocode/kilo-indexing/detect"
 import { IndexingStatus, disabledIndexingStatus } from "@kilocode/kilo-indexing/status"
@@ -410,5 +416,16 @@ export namespace KiloIndexing {
     const entry = await hit().ready
     if (!entry.initialized || entry.current().state === "Disabled" || !entry.engine) return []
     return entry.engine.search(query, directoryPrefix)
+  }
+
+  export async function queryEvidence(
+    query: string,
+    options: CodeGraphEvidenceQueryOptions = {},
+  ): Promise<QueryEvidenceResult> {
+    const entry = await hit().ready
+    if (!entry.initialized || entry.current().state === "Disabled" || !entry.engine) {
+      return CodeIndexAnalysisService.createStub(query, options, "indexing-not-ready")
+    }
+    return entry.engine.queryEvidence(query, options)
   }
 }

@@ -148,6 +148,7 @@ function askGuard(mcp: Record<string, "allow" | "ask" | "deny"> = {}) {
     websearch: "allow",
     codesearch: "allow",
     codebase_search: "allow",
+    codebase_analysis: "allow",
     semantic_search: "allow",
     external_directory: {
       [Truncate.GLOB]: "allow",
@@ -202,6 +203,7 @@ function planGuard(worktree: string, mcp: Record<string, "allow" | "ask" | "deny
     websearch: "allow",
     codesearch: "allow",
     codebase_search: "allow",
+    codebase_analysis: "allow",
     semantic_search: "allow",
     external_directory: {
       [Truncate.GLOB]: "allow",
@@ -279,7 +281,7 @@ export function telemetryOptions(_cfg: Config.Info) {
 // - Rename build → code
 // - Patch plan with readOnlyBash, mcpRules, .kilo paths
 // - Patch explore with codebase_search and conditional prompt
-// - Patch appropriate agents with semantic_search
+// - Patch appropriate agents with semantic_search and codebase_analysis
 // - Add debug, orchestrator, ask agents
 export function patchAgents(
   agents: Record<
@@ -319,7 +321,7 @@ export function patchAgents(
         defaults,
         agents.build.permission,
         user,
-        Permission.fromConfig({ semantic_search: "allow" }),
+        Permission.fromConfig({ codebase_analysis: "allow", semantic_search: "allow" }),
       ),
     }
     delete agents.build
@@ -357,6 +359,7 @@ export function patchAgents(
           websearch: "allow",
           codesearch: "allow",
           codebase_search: "allow",
+          codebase_analysis: "allow",
           semantic_search: "allow",
           read: "allow",
           external_directory: {
@@ -389,6 +392,7 @@ export function patchAgents(
         question: "allow",
         suggest: "allow", // kilocode_change
         plan_enter: "allow",
+        codebase_analysis: "allow",
         semantic_search: "allow",
       }),
       user,

@@ -10,7 +10,7 @@ const logger = Log.create({ service: "kilocode-tool-registry" })
 const deps = { agent: {} as Agent.Interface, truncate: {} as Truncate.Interface }
 
 describe("kilocode tool registry indexing import failure", () => {
-  test("omits semantic_search when the indexing module cannot load", async () => {
+  test("omits indexing tools when the indexing module cannot load", async () => {
     const err = new Error("indexing import failed")
     const warn = spyOn(logger, "warn").mockImplementation(() => {})
 
@@ -23,9 +23,10 @@ describe("kilocode tool registry indexing import failure", () => {
         }),
       )
 
+      expect(result.analysis).toBeUndefined()
       expect(result.semantic).toBeUndefined()
       expect(result.recall.id).toBe("recall")
-      expect(warn.mock.calls[0]?.[0]).toBe("semantic search unavailable")
+      expect(warn.mock.calls[0]?.[0]).toBe("indexing tools unavailable")
       expect(warn.mock.calls[0]?.[1]?.err).toBeDefined()
     } finally {
       warn.mockRestore()

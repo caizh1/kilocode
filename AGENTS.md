@@ -201,3 +201,51 @@ When editing shared upstream files, mark Kilo-specific lines with `kilocode_chan
 Markers are NOT needed in paths that contain `kilocode` in the name (e.g. `packages/opencode/src/kilocode/`, `packages/opencode/test/kilocode/`) — these are entirely Kilo Code additions and won't conflict with upstream.
 
 For decision rules on when to keep changes inline vs. extract Kilo logic, marker placement guidance, and verification commands, load `.kilo/skills/kilocode-merge-minimizer/SKILL.md`.
+
+本仓库当前目标是把 `/Users/archer/Work/opencode` 中 ChipMate VS Code 插件的 C/C++ hybrid retrieval 能力迁入 Kilo Code，但迁移必须分阶段、小步、可测试。
+
+## ChipMate Hybrid Retrieval Migration Rules
+
+Hard constraints:
+
+1. Do not implement or modify inline completion unless explicitly requested.
+2. Do not change UI unless explicitly requested.
+3. Do not replace the existing `semantic_search` tool.
+4. Add deep C/C++ code understanding through a separate `codebase_analysis` tool.
+5. Treat `/Users/archer/Work/opencode` as read-only reference material.
+6. Prefer Kilo-owned paths:
+
+   * `packages/kilo-indexing`
+   * `packages/opencode/src/kilocode`
+   * `packages/opencode/test/kilocode`
+7. Avoid changing shared upstream opencode files. If this is unavoidable, explain why and run `bun run script/check-opencode-annotations.ts`.
+8. Every phase must be small, reviewable, and testable.
+9. Every codebase analysis result must include source-backed evidence with file path and line numbers where possible.
+10. Always enforce evidence budget limits.
+11. Avoid returning oversized evidence packs.
+12. `graph-only` mode must not call embedding or vector search.
+13. Do not add rerank provider or rerank settings in v1.
+14. Do not automatically inject evidence into every prompt.
+15. If modifying worker protocols or public exported types, add tests.
+16. Every completed phase must report:
+
+    * changed files
+    * design summary
+    * commands run
+    * test results
+    * known limitations
+    * next recommended phase
+
+Preferred phase order:
+
+1. Public types and stub `queryEvidence`.
+2. Worker protocol and `codebase_analysis` tool.
+3. Graph sidecar lifecycle.
+4. Parser/code graph migration.
+5. Exact symbol and BM25 retrieval.
+6. Graph expansion.
+7. State-machine extraction.
+8. Tool prompt tuning and conservative answer policy.
+9. Optional rerank in a later phase.
+
+Do not do multiple phases in one pass unless explicitly requested.

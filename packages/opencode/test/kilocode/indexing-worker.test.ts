@@ -16,6 +16,17 @@ test("runs indexing engine requests in its worker", async () => {
   try {
     const status = await engine.init({ enabled: false, embedderProvider: "openai" })
     expect(status.state).toBe("Disabled")
+
+    const evidence = await engine.queryEvidence("find callers", { retrievalMode: "graph-only" })
+    const vector = evidence.trace.stages.find((stage) => stage.name === "vector")
+
+    expect(evidence.answerPolicy.mode).toBe("conservative")
+    expect(evidence.answerPolicy.confidence).toBe("none")
+    expect(evidence.formattedPackText).toContain("<local-analysis-pack")
+    expect(vector).toMatchObject({
+      status: "skipped",
+      reason: "graph-only",
+    })
   } finally {
     await engine.dispose()
   }

@@ -28,7 +28,7 @@ afterEach(async () => {
 describe("kilocode tool registry indexing", () => {
   const logger = Log.create({ service: "kilocode-tool-registry" })
 
-  it.live("omits semantic_search without waiting for slow indexing startup", () =>
+  it.live("omits indexing tools without waiting for slow indexing startup", () =>
     provideTmpdirInstance(
       () =>
         Effect.gen(function* () {
@@ -38,6 +38,7 @@ describe("kilocode tool registry indexing", () => {
             const registry = yield* ToolRegistry.Service
             const ids = yield* registry.ids()
 
+            expect(ids).not.toContain("codebase_analysis")
             expect(ids).not.toContain("semantic_search")
             expect(ids).toContain("question")
             expect(ids).toContain("read")
@@ -65,11 +66,12 @@ describe("kilocode tool registry indexing", () => {
             const registry = yield* ToolRegistry.Service
             const ids = yield* registry.ids()
 
+            expect(ids).not.toContain("codebase_analysis")
             expect(ids).not.toContain("semantic_search")
             expect(ids).toContain("question")
             expect(ids).toContain("read")
             expect(ids).toContain("suggest")
-            expect(warn.mock.calls[0]?.[0]).toBe("semantic search unavailable")
+            expect(warn.mock.calls[0]?.[0]).toBe("indexing tools unavailable")
             expect(warn.mock.calls[0]?.[1]?.err).toBeDefined()
           } finally {
             ready.mockRestore()
@@ -92,11 +94,12 @@ describe("kilocode tool registry indexing", () => {
             const registry = yield* ToolRegistry.Service
             const ids = yield* registry.ids()
 
+            expect(ids).not.toContain("codebase_analysis")
             expect(ids).not.toContain("semantic_search")
             expect(ids).toContain("question")
             expect(ids).toContain("read")
             expect(ids).toContain("suggest")
-            expect(warn.mock.calls[0]?.[0]).toBe("semantic search unavailable")
+            expect(warn.mock.calls[0]?.[0]).toBe("indexing tools unavailable")
             expect(warn.mock.calls[0]?.[1]?.err).toBeDefined()
           } finally {
             ready.mockRestore()
@@ -107,7 +110,7 @@ describe("kilocode tool registry indexing", () => {
     ),
   )
 
-  it.live("registers semantic_search when indexing is ready", () =>
+  it.live("registers indexing tools when indexing is ready", () =>
     provideTmpdirInstance(
       () =>
         Effect.gen(function* () {
@@ -117,6 +120,7 @@ describe("kilocode tool registry indexing", () => {
             const registry = yield* ToolRegistry.Service
             const ids = yield* registry.ids()
 
+            expect(ids).toContain("codebase_analysis")
             expect(ids).toContain("semantic_search")
           } finally {
             ready.mockRestore()
@@ -140,7 +144,9 @@ describe("kilocode tool registry indexing", () => {
             const glob = tools.find((tool) => tool.id === "glob")?.description ?? ""
             const grep = tools.find((tool) => tool.id === "grep")?.description ?? ""
 
+            expect(glob).not.toContain("codebase_analysis")
             expect(glob).not.toContain("semantic_search")
+            expect(grep).not.toContain("codebase_analysis")
             expect(grep).not.toContain("semantic_search")
           } finally {
             ready.mockRestore()
@@ -150,7 +156,7 @@ describe("kilocode tool registry indexing", () => {
     ),
   )
 
-  it.live("includes semantic_search hint in glob and grep descriptions when indexing is ready", () =>
+  it.live("includes indexing tool hints in glob and grep descriptions when indexing is ready", () =>
     provideTmpdirInstance(
       () =>
         Effect.gen(function* () {
@@ -165,8 +171,11 @@ describe("kilocode tool registry indexing", () => {
             const glob = tools.find((tool) => tool.id === "glob")?.description ?? ""
             const grep = tools.find((tool) => tool.id === "grep")?.description ?? ""
 
+            expect(ids).toContain("codebase_analysis")
             expect(ids).toContain("semantic_search")
+            expect(glob).toContain("codebase_analysis")
             expect(glob).toContain("semantic_search")
+            expect(grep).toContain("codebase_analysis")
             expect(grep).toContain("semantic_search")
           } finally {
             ready.mockRestore()
@@ -186,6 +195,7 @@ describe("kilocode tool registry indexing", () => {
     })
     const tools = {
       codebase: def("codebase_search"),
+      analysis: def("codebase_analysis"),
       semantic: def("semantic_search"),
       recall: def("recall"),
       manager: def("agent_manager"),
@@ -195,26 +205,32 @@ describe("kilocode tool registry indexing", () => {
     try {
       process.env["KILO_CLIENT"] = "cli"
       expect(KiloToolRegistry.extra(tools, {}).map((tool) => tool.id)).toEqual([
+        "codebase_analysis",
         "semantic_search",
         "recall",
         "background_process",
       ])
       expect(KiloToolRegistry.extra(tools, { experimental: { codebase_search: true } }).map((tool) => tool.id)).toEqual(
-        ["codebase_search", "semantic_search", "recall", "background_process"],
+        ["codebase_search", "codebase_analysis", "semantic_search", "recall", "background_process"],
       )
 
       process.env["KILO_CLIENT"] = "vscode"
       expect(KiloToolRegistry.extra(tools, { experimental: { codebase_search: true } }).map((tool) => tool.id)).toEqual(
-        ["codebase_search", "semantic_search", "recall", "background_process", "agent_manager"],
+        ["codebase_search", "codebase_analysis", "semantic_search", "recall", "background_process", "agent_manager"],
       )
       expect(KiloToolRegistry.extra({ ...tools, semantic: undefined }, {}).map((tool) => tool.id)).toEqual([
+        "codebase_analysis",
         "recall",
         "background_process",
         "agent_manager",
       ])
 
       process.env["KILO_CLIENT"] = "desktop"
-      expect(KiloToolRegistry.extra(tools, {}).map((tool) => tool.id)).toEqual(["semantic_search", "recall"])
+      expect(KiloToolRegistry.extra(tools, {}).map((tool) => tool.id)).toEqual([
+        "codebase_analysis",
+        "semantic_search",
+        "recall",
+      ])
     } finally {
       if (prev === undefined) delete process.env["KILO_CLIENT"]
       if (prev !== undefined) process.env["KILO_CLIENT"] = prev

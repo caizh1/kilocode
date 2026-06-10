@@ -1,4 +1,4 @@
-import { CodeIndexManager } from "@kilocode/kilo-indexing/engine"
+import { CodeIndexAnalysisService, CodeIndexManager } from "@kilocode/kilo-indexing/engine"
 import { normalizeIndexingStatus } from "@kilocode/kilo-indexing/status"
 import type { Request, Result, Event } from "./indexing-worker-protocol"
 
@@ -46,6 +46,15 @@ onmessage = async (event: MessageEvent<Request>) => {
     if (request.method === "search") {
       const value = manager ? await manager.searchIndex(request.input.query, request.input.directoryPrefix) : []
       send({ type: "result", id: request.id, method: "search", ok: true, value })
+      return
+    }
+
+    if (request.method === "queryEvidence") {
+      const { query, ...options } = request.input
+      const value = manager
+        ? await manager.queryEvidence(query, options)
+        : await new CodeIndexAnalysisService().queryEvidence(query, options, { reason: "indexing-not-initialized" })
+      send({ type: "result", id: request.id, method: "queryEvidence", ok: true, value })
       return
     }
 

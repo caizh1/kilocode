@@ -1,11 +1,12 @@
 import type {
   IndexingConfigInput,
   IndexingTelemetryEvent,
+  QueryEvidenceResult,
   VectorStoreSearchResult,
 } from "@kilocode/kilo-indexing/engine"
 import type { IndexingStatus } from "@kilocode/kilo-indexing/status"
 import { withTimeout } from "@/util/timeout"
-import type { Message, Request, Result } from "./indexing-worker-protocol"
+import type { Message, QueryEvidenceInput, Request, Result } from "./indexing-worker-protocol"
 
 declare global {
   const KILO_INDEXING_WORKER_PATH: string
@@ -21,6 +22,7 @@ export namespace IndexingWorker {
   export type Driver = {
     init(input: IndexingConfigInput): Promise<IndexingStatus>
     search(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]>
+    queryEvidence(query: string, options?: Omit<QueryEvidenceInput, "query">): Promise<QueryEvidenceResult>
     dispose(): Promise<void>
   }
 
@@ -113,6 +115,18 @@ export namespace IndexingWorker {
         return call(request, (message) => {
           if (message.ok && message.method === "search") return message.value
           throw new Error("Unexpected indexing worker search response.")
+        })
+      },
+      queryEvidence(query, options = {}) {
+        const request: Request = {
+          type: "request",
+          id: id++,
+          method: "queryEvidence",
+          input: { query, ...options },
+        }
+        return call(request, (message) => {
+          if (message.ok && message.method === "queryEvidence") return message.value
+          throw new Error("Unexpected indexing worker queryEvidence response.")
         })
       },
       async dispose() {

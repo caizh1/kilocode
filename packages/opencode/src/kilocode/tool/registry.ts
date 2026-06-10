@@ -15,11 +15,14 @@ type Deps = { agent: Agent.Interface; truncate: Truncate.Interface }
 type Loaders = {
   indexing?: () => Promise<{ KiloIndexing: { ready: () => boolean } }>
   semantic?: () => Promise<Pick<typeof import("@/kilocode/tool/semantic-search"), "SemanticSearchTool">>
+  analysis?: () => Promise<Pick<typeof import("@/kilocode/tool/codebase-analysis"), "CodebaseAnalysisTool">>
 }
 
 export namespace KiloToolRegistry {
-  const hint =
-    "- When you are doing an open-ended search where you do not know the exact symbol name, use the `semantic_search` tool first to narrow down the search scope, then follow up with `Grep` and/or `Read`"
+  const hint = [
+    "- For C/C++ symbols, callers/callees/call chains, macro/register/MMIO usage, state machines, error paths, cleanup paths, module flow, or impact analysis, use the `codebase_analysis` tool first.",
+    "- When you are doing an open-ended conceptual search where you do not know the exact symbol name, use the `semantic_search` tool first to narrow down the search scope, then follow up with `Grep` and/or `Read`.",
+  ].join("\n")
 
   /** Resolve Kilo-specific tool Infos outside any InstanceState, so their Truncate/Agent deps are
    * satisfied at the outer registry scope instead of leaking into InstanceState's Effect. */
@@ -47,12 +50,14 @@ export namespace KiloToolRegistry {
         manager: Tool.init(tools.manager),
         process: Tool.init(tools.process),
       })
-      const semantic = yield* semanticTool(deps, loaders)
-      return { ...base, semantic }
+      const ready = yield* indexingReady(loaders)
+      const analysis = yield* analysisTool(deps, loaders, ready)
+      const semantic = yield* semanticTool(deps, loaders, ready)
+      return { ...base, analysis, semantic }
     })
   }
 
-  function semanticTool(deps: Deps, loaders: Loaders) {
+  function indexingReady(loaders: Loaders) {
     return Effect.gen(function* () {
       const indexing = loaders.indexing ?? (() => import("@/kilocode/indexing"))
       const ready = yield* Effect.tryPromise(() =>
@@ -60,11 +65,41 @@ export namespace KiloToolRegistry {
       ).pipe(
         Effect.catch((err) =>
           Effect.sync(() => {
-            log.warn("semantic search unavailable", { err })
+            log.warn("indexing tools unavailable", { err })
             return false
           }),
         ),
       )
+      return ready
+    })
+  }
+
+  function analysisTool(deps: Deps, loaders: Loaders, ready: boolean) {
+    return Effect.gen(function* () {
+      if (!ready) return undefined
+
+      const analysis = loaders.analysis ?? (() => import("@/kilocode/tool/codebase-analysis"))
+      const mod = yield* Effect.tryPromise(() => analysis()).pipe(
+        Effect.catch((err) =>
+          Effect.sync(() => {
+            log.warn("codebase analysis tool unavailable", { err })
+            return undefined
+          }),
+        ),
+      )
+      if (!mod) return undefined
+
+      const info = yield* mod.CodebaseAnalysisTool.pipe(
+        Effect.provideService(Agent.Service, deps.agent),
+        Effect.provideService(Truncate.Service, deps.truncate),
+      )
+      if (!info) return undefined
+      return yield* Tool.init(info)
+    })
+  }
+
+  function semanticTool(deps: Deps, loaders: Loaders, ready: boolean) {
+    return Effect.gen(function* () {
       if (!ready) return undefined
 
       const semantic = loaders.semantic ?? (() => import("@/kilocode/tool/semantic-search"))
@@ -89,11 +124,19 @@ export namespace KiloToolRegistry {
 
   /** Kilo-specific tools to append to the builtin list */
   export function extra(
-    tools: { codebase: Tool.Def; semantic?: Tool.Def; recall: Tool.Def; manager: Tool.Def; process: Tool.Def },
+    tools: {
+      codebase: Tool.Def
+      analysis?: Tool.Def
+      semantic?: Tool.Def
+      recall: Tool.Def
+      manager: Tool.Def
+      process: Tool.Def
+    },
     cfg: { experimental?: { codebase_search?: boolean } },
   ): Tool.Def[] {
     return [
       ...(cfg.experimental?.codebase_search === true ? [tools.codebase] : []),
+      ...(tools.analysis ? [tools.analysis] : []),
       ...(tools.semantic ? [tools.semantic] : []),
       tools.recall,
       ...(Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode" ? [tools.process] : []),
@@ -102,8 +145,8 @@ export namespace KiloToolRegistry {
     ]
   }
 
-  export function describe(tools: Tool.Def[], extra: { semantic?: Tool.Def }): Tool.Def[] {
-    if (!extra.semantic) return tools
+  export function describe(tools: Tool.Def[], extra: { analysis?: Tool.Def; semantic?: Tool.Def }): Tool.Def[] {
+    if (!extra.analysis && !extra.semantic) return tools
     return tools.map((tool) => {
       if (tool.id !== "glob" && tool.id !== "grep") return tool
       return { ...tool, description: `${tool.description}\n${hint}` }

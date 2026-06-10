@@ -1,4 +1,5 @@
 import type { VectorStoreSearchResult } from "./vector-store"
+import type { CodeGraphEvidenceQueryOptions, QueryEvidenceResult } from "../analysis"
 import type { Emitter } from "../runtime"
 import type { IndexingTelemetryEvent } from "./telemetry"
 
@@ -24,6 +25,7 @@ export interface ICodeIndexManager {
   stopWatcher(): void
   clearIndexData(): Promise<void>
   searchIndex(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]>
+  queryEvidence(query: string, options?: CodeGraphEvidenceQueryOptions): Promise<QueryEvidenceResult>
   getCurrentStatus(): {
     systemStatus: IndexingState
     message?: string

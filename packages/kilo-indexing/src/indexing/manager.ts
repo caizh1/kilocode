@@ -1,11 +1,13 @@
 import type { VectorStoreSearchResult } from "./interfaces"
 import type { IndexingState } from "./interfaces/manager"
 import type { IndexingTelemetryEvent, IndexingTelemetryMeta, IndexingTelemetryTrigger } from "./interfaces/telemetry"
+import type { CodeGraphEvidenceQueryOptions, QueryEvidenceResult } from "./analysis"
 import { CodeIndexConfigManager, type IndexingConfigInput } from "./config-manager"
 import { INITIAL_MANAGER_RECOVERY_DELAY_MS, MAX_MANAGER_RECOVERY_ATTEMPTS } from "./constants"
 import { CodeIndexStateManager } from "./state-manager"
 import { CodeIndexServiceFactory } from "./service-factory"
 import { CodeIndexSearchService } from "./search-service"
+import { CodeIndexAnalysisService } from "./analysis"
 import { CodeIndexOrchestrator } from "./orchestrator"
 import { CacheManager } from "./cache-manager"
 import { Emitter } from "./runtime"
@@ -28,6 +30,7 @@ export class CodeIndexManager {
   private _serviceFactory: CodeIndexServiceFactory | undefined
   private _orchestrator: CodeIndexOrchestrator | undefined
   private _searchService: CodeIndexSearchService | undefined
+  private readonly _analysisService = new CodeIndexAnalysisService()
   private _cacheManager: CacheManager | undefined
   private _isRecoveringFromError = false
   private _retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -438,6 +441,23 @@ export class CodeIndexManager {
     if (!this.isFeatureEnabled) return []
     this.assertInitialized()
     return this._searchService!.searchIndex(query, directoryPrefix)
+  }
+
+  public async queryEvidence(
+    query: string,
+    options: CodeGraphEvidenceQueryOptions = {},
+  ): Promise<QueryEvidenceResult> {
+    return this._analysisService.queryEvidence(query, options, {
+      reason: this.evidenceReason(),
+    })
+  }
+
+  private evidenceReason(): string {
+    if (!this._configManager) return "indexing-not-initialized"
+    if (!this.isFeatureEnabled) return "indexing-disabled"
+    if (!this.isFeatureConfigured) return "indexing-not-configured"
+    if (!this._orchestrator || !this._searchService || !this._cacheManager) return "indexing-not-initialized"
+    return "phase-0-stub"
   }
 
   private async _recreateServices(): Promise<void> {

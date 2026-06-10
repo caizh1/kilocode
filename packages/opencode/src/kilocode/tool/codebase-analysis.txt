@@ -1,0 +1,21 @@
+Analyze local codebase structure and return grounded evidence for whole-repository code questions.
+
+## When to use
+
+- C/C++ symbol relationships, especially definitions, declarations, references, and ownership
+- Callers, callees, call chains, and cross-module call flow
+- Macro, register, MMIO, bitfield, and hardware-interface usage analysis
+- State machine, transition, lifecycle, and module-flow questions
+- Error path, cleanup path, resource lifetime, and impact analysis
+- Questions where the answer must cite local file paths and line ranges
+
+## When to use semantic_search instead
+
+- Conceptual natural-language search where exact C/C++ relationships are not needed
+- Finding broadly related snippets by meaning before using `Grep` or `Read`
+
+## Constraints
+
+- Use `path` only for subdirectories inside the current workspace.
+- Treat answers as ungrounded unless the returned evidence includes file paths and line ranges.
+- In Phase 0 this tool returns the analysis contract and conservative evidence pack stub.

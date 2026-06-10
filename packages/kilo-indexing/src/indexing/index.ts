@@ -2,6 +2,7 @@ export { CodeIndexManager } from "./manager"
 export { CodeIndexConfigManager, type IndexingConfigInput } from "./config-manager"
 export { CodeIndexStateManager, type IndexingState } from "./state-manager"
 export { CodeIndexSearchService } from "./search-service"
+export { CodeIndexAnalysisService, resolveEvidenceBudget } from "./analysis"
 export { CodeIndexOrchestrator } from "./orchestrator"
 export { CodeIndexServiceFactory } from "./service-factory"
 export { CacheManager } from "./cache-manager"
@@ -18,6 +19,22 @@ export type {
 } from "./interfaces/telemetry"
 
 export type { CodeIndexConfig, PreviousConfigSnapshot } from "./interfaces/config"
+
+export type {
+  CodeGraphEvidenceQueryOptions,
+  CodeGraphEvidenceRetrievalMode,
+  EvidenceBudget,
+  EvidenceRef,
+  QueryEvidenceAnswerPolicy,
+  QueryEvidenceDroppedByBudget,
+  QueryEvidenceResult,
+  QueryEvidenceStageStatus,
+  QueryEvidenceStateMachine,
+  QueryEvidenceSummaries,
+  QueryEvidenceSummary,
+  QueryEvidenceTrace,
+  QueryEvidenceTraceStage,
+} from "./analysis"
 
 export type { IEmbedder, EmbeddingResponse, EmbedderInfo, AvailableEmbedders } from "./interfaces/embedder"
 
