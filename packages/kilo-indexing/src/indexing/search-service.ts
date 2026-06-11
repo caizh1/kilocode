@@ -17,12 +17,20 @@ export class CodeIndexSearchService {
   ) {}
 
   public async searchIndex(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]> {
+    return this.searchIndexForEvidence(query, directoryPrefix)
+  }
+
+  public async searchIndexForEvidence(
+    query: string,
+    directoryPrefix?: string,
+    options: { maxResults?: number } = {},
+  ): Promise<VectorStoreSearchResult[]> {
     if (!this.configManager.isFeatureEnabled || !this.configManager.isFeatureConfigured) {
       throw new Error("Code index feature is disabled or not configured.")
     }
 
     const minScore = this.configManager.currentSearchMinScore
-    const maxResults = this.configManager.currentSearchMaxResults
+    const maxResults = options.maxResults ?? this.configManager.currentSearchMaxResults
 
     const currentState = this.stateManager.getCurrentStatus().systemStatus
     if (currentState !== "Indexed" && currentState !== "Indexing") {

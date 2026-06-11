@@ -3,4 +3,5 @@ export interface ICacheManager {
   updateHash(filePath: string, hash: string): void
   deleteHash(filePath: string): void
   getAllHashes(): Record<string, string>
+  flush?(): Promise<void>
 }

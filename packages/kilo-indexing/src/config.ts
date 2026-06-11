@@ -29,7 +29,7 @@ export const IndexingConfig = z
       .nullable()
       .optional()
       .describe("Override embedding vector dimension (auto-detected from model if omitted)"),
-    vectorStore: z.enum(stores).optional().describe("Vector store backend (default: qdrant)"),
+    vectorStore: z.enum(stores).optional().describe("Vector store backend (default: lancedb)"),
     kilo: z
       .object({
         apiKey: z.string().optional(),
@@ -147,7 +147,7 @@ export const IndexingSchema = Schema.Struct({
   dimension: Schema.optional(Schema.NullOr(PositiveInt)).annotate({
     description: "Override embedding vector dimension (auto-detected from model if omitted)",
   }),
-  vectorStore: Schema.optional(Store).annotate({ description: "Vector store backend (default: qdrant)" }),
+  vectorStore: Schema.optional(Store).annotate({ description: "Vector store backend (default: lancedb)" }),
   kilo: Schema.optional(
     Schema.Struct({
       apiKey: Schema.optional(Schema.String),

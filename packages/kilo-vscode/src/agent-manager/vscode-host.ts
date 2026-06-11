@@ -195,7 +195,7 @@ export class VscodeHost implements Host {
   }
 
   extensionKeybindings(): Array<{ command: string; key?: string; mac?: string }> {
-    const ext = vscode.extensions.getExtension("kilocode.kilo-code")
+    const ext = vscode.extensions.getExtension("chipmate.chipmate")
     return ext?.packageJSON?.contributes?.keybindings ?? []
   }
 

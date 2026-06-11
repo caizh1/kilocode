@@ -18,9 +18,12 @@ import { QdrantVectorStore } from "./vector-store/qdrant-client"
 import { LanceDBVectorStore } from "./vector-store/lancedb-vector-store"
 import { codeParser, DirectoryScanner, FileWatcher } from "./processors"
 import type { ICodeParser, IEmbedder, IFileWatcher, IVectorStore } from "./interfaces"
+import type { ICodeGraphStorage, ICodePostingsStorage } from "./codegraph"
 import type { CodeIndexConfigManager } from "./config-manager"
 import type { CacheManager } from "./cache-manager"
 import type { IndexingTelemetryMeta, IndexingTelemetryReporter } from "./interfaces/telemetry"
+import type { RagCheckpointMeta } from "./rag-checkpoint"
+import { RAG_CHECKPOINT_SCHEMA_VERSION, RAG_CHUNKER_VERSION, RAG_PARSER_VERSION } from "./rag-checkpoint"
 import {
   BATCH_SEGMENT_THRESHOLD,
   OLLAMA_EMBEDDER_REQUEST_TIMEOUT_MS,
@@ -48,14 +51,17 @@ export class CodeIndexServiceFactory {
     private readonly workspacePath: string,
     private readonly cacheManager: CacheManager,
     private readonly cacheDirectory: string,
+    private readonly ignoreFingerprint: string,
     private readonly onTelemetry?: IndexingTelemetryReporter,
+    private readonly graph?: ICodeGraphStorage,
+    private readonly postings?: ICodePostingsStorage,
   ) {}
 
   private getTelemetryMeta(): IndexingTelemetryMeta {
     const cfg = this.configManager.getConfig()
     return {
       provider: cfg.embedderProvider,
-      vectorStore: cfg.vectorStoreProvider ?? "qdrant",
+      vectorStore: cfg.vectorStoreProvider ?? "lancedb",
       modelId: cfg.modelId,
     }
   }
@@ -204,6 +210,26 @@ export class CodeIndexServiceFactory {
     return new QdrantVectorStore(this.workspacePath, config.qdrantUrl, profile.dimension, config.qdrantApiKey, profile)
   }
 
+  public createRagCheckpointMeta(vectorStore: IVectorStore): RagCheckpointMeta {
+    const config = this.configManager.getConfig()
+    const profile = resolveEmbeddingProfile(config.embedderProvider, config.modelId, config.modelDimension)
+    if (!profile) {
+      throw new Error("Cannot determine embedding profile for RAG checkpoint metadata.")
+    }
+    return {
+      root: this.workspacePath,
+      schemaVersion: RAG_CHECKPOINT_SCHEMA_VERSION,
+      parserVersion: RAG_PARSER_VERSION,
+      chunkerVersion: RAG_CHUNKER_VERSION,
+      embedderProvider: profile.provider,
+      embedderModel: profile.modelId,
+      embeddingDimension: profile.dimension,
+      vectorStoreProvider: config.vectorStoreProvider ?? "lancedb",
+      collectionName: vectorStore.getCollectionName?.() ?? `${config.vectorStoreProvider ?? "lancedb"}:${this.workspacePath}`,
+      ignoreFingerprint: this.ignoreFingerprint,
+    }
+  }
+
   public createDirectoryScanner(
     embedder: IEmbedder,
     vectorStore: IVectorStore,
@@ -212,7 +238,8 @@ export class CodeIndexServiceFactory {
   ): DirectoryScanner {
     const config = this.configManager.getConfig()
     const meta = this.getTelemetryMeta()
-    return new DirectoryScanner(
+    const rag = this.createRagCheckpointMeta(vectorStore)
+    const scanner = new DirectoryScanner(
       embedder,
       vectorStore,
       parser,
@@ -222,7 +249,11 @@ export class CodeIndexServiceFactory {
       config.scannerMaxBatchRetries,
       this.onTelemetry,
       meta,
+      this.graph,
+      this.postings,
     )
+    scanner.setRunContext(globalThis.crypto.randomUUID(), rag)
+    return scanner
   }
 
   public createFileWatcher(
@@ -233,7 +264,8 @@ export class CodeIndexServiceFactory {
   ): IFileWatcher {
     const config = this.configManager.getConfig()
     const meta = this.getTelemetryMeta()
-    return new FileWatcher(
+    const rag = this.createRagCheckpointMeta(vectorStore)
+    const watcher = new FileWatcher(
       this.workspacePath,
       cacheManager,
       embedder,
@@ -243,7 +275,11 @@ export class CodeIndexServiceFactory {
       config.scannerMaxBatchRetries,
       this.onTelemetry,
       meta,
+      this.graph,
+      this.postings,
     )
+    watcher.setRunContext(globalThis.crypto.randomUUID(), rag)
+    return watcher
   }
 
   public createServices(
@@ -255,6 +291,7 @@ export class CodeIndexServiceFactory {
     parser: ICodeParser
     scanner: DirectoryScanner
     fileWatcher: IFileWatcher
+    ragMeta: RagCheckpointMeta
   } {
     if (!this.configManager.isFeatureConfigured) {
       throw new Error("Code indexing is not configured. Save your settings to start indexing.")
@@ -271,6 +308,8 @@ export class CodeIndexServiceFactory {
 
     const embedder = this.createEmbedder()
     const vectorStore = this.createVectorStore()
+    const ragMeta = this.createRagCheckpointMeta(vectorStore)
+    this.cacheManager.setCheckpointMeta(ragMeta)
     const parser = codeParser
     const scanner = this.createDirectoryScanner(embedder, vectorStore, parser, ignoreInstance)
     const fileWatcher = this.createFileWatcher(embedder, vectorStore, cacheManager, ignoreInstance)
@@ -280,6 +319,6 @@ export class CodeIndexServiceFactory {
       provider: embedder.embedderInfo.name,
     })
 
-    return { embedder, vectorStore, parser, scanner, fileWatcher }
+    return { embedder, vectorStore, parser, scanner, fileWatcher, ragMeta }
   }
 }

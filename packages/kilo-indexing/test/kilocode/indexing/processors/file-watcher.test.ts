@@ -2,9 +2,7 @@ import { describe, test, expect } from "bun:test"
 import { mkdtemp, mkdir, writeFile } from "fs/promises"
 import { tmpdir } from "os"
 import path from "path"
-import { v5 as uuidv5 } from "uuid"
 import { CacheManager } from "../../../../src/indexing/cache-manager"
-import { QDRANT_CODE_BLOCK_NAMESPACE } from "../../../../src/indexing/constants"
 import type {
   IEmbedder,
   IndexingTelemetryEvent,
@@ -58,6 +56,11 @@ class RetryStore implements IVectorStore {
 
   async deletePointsByFilePath(_filePath: string): Promise<void> {}
   async deletePointsByMultipleFilePaths(_filePaths: string[]): Promise<void> {}
+  async activateFileGeneration(_filePath: string, _generation: string, _runId: string): Promise<void> {}
+  async deleteInactiveFilePoints(_filePath: string, _activeGeneration: string): Promise<void> {}
+  getCollectionName(): string {
+    return "test"
+  }
   async clearCollection(): Promise<void> {}
   async deleteCollection(): Promise<void> {}
   async collectionExists(): Promise<boolean> {
@@ -101,7 +104,13 @@ describe("FileWatcher", () => {
     points.forEach((point) => {
       expect(point.payload.startLine).toBe(1)
       expect(point.payload.endLine).toBe(1)
-      expect(point.id).toBe(uuidv5(point.payload.segmentHash, QDRANT_CODE_BLOCK_NAMESPACE))
+      expect(typeof point.payload.workspaceId).toBe("string")
+      expect(point.payload.normalizedRoot).toBe(root)
+      expect(point.payload.fileHash).toBe(result.newHash)
+      expect(point.payload.chunkHash).toBe(point.payload.segmentHash)
+      expect(point.payload.chunkRange).toBe("1:1")
+      expect(point.payload.active).toBe(false)
+      expect(typeof point.payload.generation).toBe("string")
     })
   })
 

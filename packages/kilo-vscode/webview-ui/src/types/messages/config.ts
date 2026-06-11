@@ -3,6 +3,7 @@ import type { AgentConfig } from "./agents"
 import type { ProviderConfig } from "./providers"
 
 type SdkIndexingStatus = import("@kilocode/sdk/v2/client").IndexingStatus
+type SdkIndexingPipelineStatus = NonNullable<NonNullable<SdkIndexingStatus["pipelines"]>["rag"]>
 
 export interface McpConfig {
   type?: "local" | "remote"
@@ -102,6 +103,7 @@ export type KiloEmbeddingModelCatalog = {
 }
 
 export type IndexingStatus = SdkIndexingStatus
+export type IndexingPipelineStatus = SdkIndexingPipelineStatus
 
 export interface BrowserSettings {
   enabled: boolean

@@ -23,10 +23,6 @@ const AboutKiloCodeTab: Component<AboutKiloCodeTabProps> = (props) => {
   const [exporting, setExporting] = createSignal(false)
   let epoch = 0
 
-  const open = (url: string) => {
-    vscode.postMessage({ type: "openExternal", url })
-  }
-
   const importConfig = (config: Config) => {
     const enabled = config.indexing?.enabled
     if (enabled === undefined) {
@@ -151,12 +147,6 @@ const AboutKiloCodeTab: Component<AboutKiloCodeTabProps> = (props) => {
     }
   }
 
-  const linkStyle = {
-    color: "var(--vscode-textLink-foreground)",
-    "text-decoration": "none",
-    cursor: "pointer",
-  } as const
-
   const sectionStyle = {
     background: "var(--vscode-editor-background)",
     border: "1px solid var(--vscode-panel-border)",
@@ -207,33 +197,7 @@ const AboutKiloCodeTab: Component<AboutKiloCodeTabProps> = (props) => {
             "line-height": "1.5",
           }}
         >
-          {language.t("settings.aboutKiloCode.feedback.prefix")}{" "}
-          <span style={linkStyle} onClick={() => open("https://github.com/Kilo-Org/kilocode")}>
-            GitHub
-          </span>
-          ,{" "}
-          <span style={linkStyle} onClick={() => open("https://reddit.com/r/kilocode")}>
-            Reddit
-          </span>
-          , {language.t("settings.aboutKiloCode.feedback.or")}{" "}
-          <span style={linkStyle} onClick={() => open("https://kilo.ai/discord")}>
-            Discord
-          </span>
-          .
-        </p>
-        <p
-          style={{
-            "font-size": "var(--kilo-font-size-12)",
-            color: "var(--vscode-descriptionForeground)",
-            margin: 0,
-            "line-height": "1.5",
-          }}
-        >
-          {language.t("settings.aboutKiloCode.support.prefix")}{" "}
-          <span style={linkStyle} onClick={() => open("https://kilo.ai/support")}>
-            kilo.ai/support
-          </span>
-          .
+          {language.t("settings.aboutKiloCode.feedback.prefix")}
         </p>
       </div>
 

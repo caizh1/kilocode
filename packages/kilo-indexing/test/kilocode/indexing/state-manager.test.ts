@@ -25,7 +25,21 @@ describe("CodeIndexStateManager", () => {
       totalItems: 5,
       currentItemUnit: "files",
       percent: 40,
-      message: "Indexed 2 / 5 files (40%). Current: foo.ts",
+      message: "Processed 2 / 5 files (40%). Current: foo.ts",
+    })
+  })
+
+  test("reports active code graph progress separately", () => {
+    const state = new CodeIndexStateManager()
+
+    state.reportCodeGraphProgress(2, 4, "main.c")
+
+    expect(state.getCodeGraphProgress()).toEqual({
+      state: "Indexing",
+      message: "Built 2 / 4 code graph files (50%). Current: main.c",
+      processedFiles: 2,
+      totalFiles: 4,
+      percent: 50,
     })
   })
 

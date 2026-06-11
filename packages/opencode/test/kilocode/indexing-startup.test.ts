@@ -87,6 +87,7 @@ function inline(directory: string, root: string, hooks: IndexingWorker.Hooks): I
     },
     search: (query, directoryPrefix) => manager.searchIndex(query, directoryPrefix),
     queryEvidence: (query, options) => manager.queryEvidence(query, options),
+    codeGraphStatus: () => Promise.resolve(manager.getCodeGraphStatus()),
     async dispose() {
       progress.dispose()
       telemetry.dispose()
@@ -155,6 +156,10 @@ describe("indexing startup degradation", () => {
 
       expect(body).toMatchObject({
         state: "Error",
+        pipelines: {
+          codeGraph: { state: "Error" },
+          rag: { state: "Error" },
+        },
       })
       expect(body.message).toContain("Failed to initialize: test indexing initialization failed")
     } finally {
@@ -190,6 +195,10 @@ describe("indexing startup degradation", () => {
       expect(body).toMatchObject({
         state: "In Progress",
         message: "Indexing is initializing.",
+        pipelines: {
+          codeGraph: { state: "In Progress" },
+          rag: { state: "In Progress" },
+        },
       })
     } finally {
       gate.resolve({ requiresRestart: false })
@@ -263,6 +272,7 @@ describe("indexing startup degradation", () => {
 
   test("routes queryEvidence through the initialized indexing driver", async () => {
     const calls: Array<{ query: string; options: unknown }> = []
+    const statuses: string[] = []
     const done: KiloIndexing.Status = {
       state: "Complete",
       message: "Indexing complete.",
@@ -281,6 +291,24 @@ describe("indexing startup degradation", () => {
         calls.push({ query, options })
         return CodeIndexAnalysisService.createStub(query, options)
       },
+      async codeGraphStatus() {
+        statuses.push("called")
+        return {
+          state: "container_ready",
+          enabled: true,
+          evidenceAvailable: false,
+          detail: "test sidecar container",
+          workspacePath: tmp.path,
+          snippetLimit: 240,
+          transitions: [
+            {
+              state: "container_ready",
+              reason: "test",
+              timestamp: 1,
+            },
+          ],
+        }
+      },
       async dispose() {},
     }))
 
@@ -297,6 +325,8 @@ describe("indexing startup degradation", () => {
           maxEvidenceItems: 2,
         })
 
+        const graph = await KiloIndexing.codeGraphStatus()
+
         expect(calls).toEqual([
           {
             query: "find callers",
@@ -306,7 +336,12 @@ describe("indexing startup degradation", () => {
             },
           },
         ])
+        expect(statuses).toEqual(["called"])
         expect(result.trace.retrievalMode).toBe("graph-only")
+        expect(graph).toMatchObject({
+          state: "container_ready",
+          evidenceAvailable: false,
+        })
       },
     })
   })
@@ -324,11 +359,15 @@ describe("indexing startup degradation", () => {
           await called(init)
 
           expect(init).toHaveBeenCalled()
-          expect(KiloIndexing.ready()).toBe(false)
-          expect(await KiloIndexing.available()).toBe(false)
-          expect(await KiloIndexing.search("boot failure")).toEqual([])
-        },
-      })
+        expect(KiloIndexing.ready()).toBe(false)
+        expect(await KiloIndexing.available()).toBe(false)
+        expect(await KiloIndexing.search("boot failure")).toEqual([])
+        expect(await KiloIndexing.codeGraphStatus()).toMatchObject({
+          state: "disabled",
+          evidenceAvailable: false,
+        })
+      },
+    })
     } finally {
       gate.resolve({ requiresRestart: false })
       init.mockRestore()
@@ -348,10 +387,19 @@ describe("indexing startup degradation", () => {
         expect(status).toMatchObject({
           state: "Disabled",
           message: "Indexing disabled.",
+          pipelines: {
+            codeGraph: { state: "Disabled" },
+            rag: { state: "Disabled" },
+          },
         })
         expect(await KiloIndexing.available()).toBe(false)
         expect(KiloIndexing.ready()).toBe(false)
         expect(await KiloIndexing.search("disabled")).toEqual([])
+        expect(await KiloIndexing.codeGraphStatus()).toMatchObject({
+          state: "disabled",
+          evidenceAvailable: false,
+          detail: "indexing-not-active",
+        })
         expect(init).not.toHaveBeenCalled()
       },
     })

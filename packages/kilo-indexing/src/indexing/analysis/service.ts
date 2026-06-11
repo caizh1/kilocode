@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto"
+import type { ICodeGraphStorage, ICodePostingsStorage } from "../codegraph"
+import { queryGraphEvidence } from "./graph"
+import { queryHybridEvidence } from "./hybrid"
+import type { VectorEvidenceAdapter } from "./vector"
 import {
   DEFAULT_EVIDENCE_BUDGET,
   type CodeGraphEvidenceQueryOptions,
@@ -12,6 +15,12 @@ const guidance =
   "Do not make code-level conclusions unless the answer is grounded in file path and line-number evidence returned by codebase_analysis."
 
 export class CodeIndexAnalysisService {
+  constructor(
+    private readonly graph?: ICodeGraphStorage,
+    private readonly postings?: ICodePostingsStorage,
+    private readonly vector?: VectorEvidenceAdapter,
+  ) {}
+
   public static createStub(
     query: string,
     options: CodeGraphEvidenceQueryOptions = {},
@@ -20,14 +29,18 @@ export class CodeIndexAnalysisService {
     const start = Date.now()
     const mode = options.retrievalMode ?? "hybrid"
     const budget = resolveEvidenceBudget(options)
-    const traceId = randomUUID()
+    const traceId = globalThis.crypto.randomUUID()
     const stages = createStages(mode, reason)
     const elapsedMs = Date.now() - start
     const trace = {
       traceId,
       query,
       retrievalMode: mode,
+      requestedMode: mode,
+      effectiveMode: "graph-only" as const,
+      reason,
       stages,
+      diagnostics: [],
       elapsedMs,
     }
     const answerPolicy = {
@@ -68,7 +81,24 @@ export class CodeIndexAnalysisService {
     options: CodeGraphEvidenceQueryOptions = {},
     ctx: { reason?: string } = {},
   ): Promise<QueryEvidenceResult> {
-    return CodeIndexAnalysisService.createStub(query, options, ctx.reason ?? "phase-0-stub")
+    const reason = ctx.reason ?? "phase-0-stub"
+    if (!this.graph || reason !== "phase-0-stub") return CodeIndexAnalysisService.createStub(query, options, reason)
+    if ((options.retrievalMode ?? "hybrid") === "hybrid" && this.postings) {
+      return queryHybridEvidence({
+        query,
+        options,
+        budget: resolveEvidenceBudget(options),
+        graph: this.graph,
+        postings: this.postings,
+        vector: this.vector,
+      })
+    }
+    return queryGraphEvidence({
+      query,
+      options,
+      budget: resolveEvidenceBudget(options),
+      storage: this.graph,
+    })
   }
 }
 

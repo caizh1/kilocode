@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test"
 import {
   applyIndexingStatusMessage,
+  ensureIndexingPipelines,
   formatIndexingLabel,
+  formatIndexingPipelineLabel,
+  indexingPipelineTone,
   indexingTone,
 } from "../../webview-ui/src/context/indexing-utils"
 import { mapSSEEventToWebviewMessage } from "../../src/kilo-provider-utils"
@@ -47,6 +50,52 @@ describe("indexing formatting", () => {
     expect(indexingTone(makeStatus({ state: "In Progress" }))).toBe("warning")
     expect(indexingTone(makeStatus({ state: "Complete" }))).toBe("success")
     expect(indexingTone(makeStatus({ state: "Error" }))).toBe("error")
+  })
+
+  it("normalizes missing pipelines for older status payloads", () => {
+    const pipelines = ensureIndexingPipelines(
+      makeStatus({ state: "In Progress", processedFiles: 3, totalFiles: 10, percent: 30 }),
+    )
+
+    expect(pipelines.codeGraph).toMatchObject({
+      state: "In Progress",
+      percent: 30,
+      errorCount: 0,
+      staleCount: 0,
+      skippedCount: 0,
+    })
+    expect(pipelines.rag.processedFiles).toBe(3)
+  })
+
+  it("formats and tones individual pipeline statuses", () => {
+    const status = {
+      state: "Complete" as const,
+      message: "Code Graph indexed.",
+      processedFiles: 8,
+      totalFiles: 10,
+      percent: 80,
+      errorCount: 1,
+      staleCount: 0,
+      skippedCount: 1,
+    }
+
+    expect(formatIndexingPipelineLabel("CG", status)).toBe("CG 80%")
+    expect(indexingPipelineTone(status)).toBe("warning")
+  })
+
+  it("formats indeterminate pipeline progress without 0/0 counts", () => {
+    const status = {
+      state: "In Progress" as const,
+      message: "Discovering files.",
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 0,
+      errorCount: 0,
+      staleCount: 0,
+      skippedCount: 0,
+    }
+
+    expect(formatIndexingPipelineLabel("RAG", status)).toBe("RAG In Progress")
   })
 })
 

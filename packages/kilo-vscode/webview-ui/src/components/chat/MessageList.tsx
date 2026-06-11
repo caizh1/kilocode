@@ -39,7 +39,7 @@ import {
 } from "../../context/session-queue"
 import type { QuestionRequest, SuggestionRequest } from "../../types/messages"
 
-const KiloLogo = (): JSX.Element => {
+const ChipMateLogo = (): JSX.Element => {
   const iconsBaseUri = (window as { ICONS_BASE_URI?: string }).ICONS_BASE_URI || ""
   const isLight =
     document.body.classList.contains("vscode-light") || document.body.classList.contains("vscode-high-contrast-light")
@@ -47,7 +47,7 @@ const KiloLogo = (): JSX.Element => {
 
   return (
     <div class="kilo-logo">
-      <img src={`${iconsBaseUri}/${iconFile}`} alt="Kilo Code" />
+      <img src={`${iconsBaseUri}/${iconFile}`} alt="ChipMate" />
     </div>
   )
 }
@@ -223,7 +223,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
           </Show>
           <Show when={isEmpty() && !props.readonly}>
             <div class="message-list-empty">
-              <KiloLogo />
+              <ChipMateLogo />
               <p class="kilo-about-text">{language.t("session.messages.welcome")}</p>
               <Show when={recent().length > 0 && props.onSelectSession}>
                 <div class="recent-sessions">

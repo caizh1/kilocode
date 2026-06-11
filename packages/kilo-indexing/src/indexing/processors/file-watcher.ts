@@ -2,11 +2,9 @@ import { watch as chokidarWatch, type FSWatcher as ChokidarFSWatcher } from "cho
 import { stat, readFile } from "fs/promises"
 import { createHash } from "crypto"
 import path from "path"
-import { v5 as uuidv5 } from "uuid"
 import type { Ignore } from "ignore"
 import { Emitter, type Disposable } from "../runtime"
 import {
-  QDRANT_CODE_BLOCK_NAMESPACE,
   MAX_FILE_SIZE_BYTES,
   BATCH_SEGMENT_THRESHOLD,
   MAX_BATCH_RETRIES,
@@ -22,7 +20,9 @@ import {
   type BatchProcessingSummary,
 } from "../interfaces"
 import type { IndexingTelemetryMeta, IndexingTelemetryReporter } from "../interfaces/telemetry"
+import type { CodeGraphFileGraph, ICodeGraphStorage, ICodePostingsStorage } from "../codegraph"
 import { codeParser } from "./parser"
+import { isCodeGraphSupportedPath, parseCodeGraphFile } from "../codegraph/parser"
 import { CacheManager } from "../cache-manager"
 import {
   generateNormalizedAbsolutePath,
@@ -32,6 +32,8 @@ import {
 import { FileIgnore } from "../../file/ignore"
 import { Log } from "../../util/log"
 import { sanitizeErrorMessage } from "../shared/validation-helpers"
+import type { RagCheckpointMeta } from "../rag-checkpoint"
+import { fallbackCheckpointMeta, generationForFile, pointForBlock, vectorContext } from "../rag-checkpoint"
 
 const log = Log.create({ service: "file-watcher" })
 
@@ -53,6 +55,8 @@ export class FileWatcher implements IFileWatcher {
   private collecting = true
   private draining = false
   private ready?: Promise<void>
+  private runId: string = globalThis.crypto.randomUUID()
+  private ragMeta: RagCheckpointMeta | undefined
 
   public readonly onDidStartBatchProcessing = new Emitter<string[]>()
   public readonly onBatchProgressUpdate = new Emitter<{
@@ -72,6 +76,8 @@ export class FileWatcher implements IFileWatcher {
     maxBatchRetries?: number,
     private readonly onTelemetry?: IndexingTelemetryReporter,
     private readonly telemetryMeta?: IndexingTelemetryMeta,
+    private readonly graph?: ICodeGraphStorage,
+    private readonly postings?: ICodePostingsStorage,
   ) {
     if (ignoreInstance) {
       this.ignoreInstance = ignoreInstance
@@ -167,6 +173,11 @@ export class FileWatcher implements IFileWatcher {
     this.batchSegmentThreshold = newThreshold
   }
 
+  setRunContext(runId: string, meta: RagCheckpointMeta): void {
+    this.runId = runId
+    this.ragMeta = meta
+  }
+
   /**
    * Disposes the file watcher and cleans up resources.
    */
@@ -255,10 +266,12 @@ export class FileWatcher implements IFileWatcher {
     let overallBatchError: Error | undefined
     const allPathsToClearFromDB = new Set<string>(pathsToExplicitlyDelete)
 
+    for (const filePath of pathsToExplicitlyDelete) {
+      await this.removeFileGraph(filePath)
+    }
+
     for (const fileDetail of filesToUpsertDetails) {
-      if (fileDetail.originalType === "change") {
-        allPathsToClearFromDB.add(fileDetail.path)
-      }
+      if (fileDetail.originalType === "change") continue
     }
 
     if (allPathsToClearFromDB.size > 0 && this.vectorStore) {
@@ -267,6 +280,7 @@ export class FileWatcher implements IFileWatcher {
 
         for (const path of pathsToExplicitlyDelete) {
           this.cacheManager.deleteHash(path)
+          await this.cacheManager.flush()
           batchResults.push({ path, status: "success" })
           processedCountInBatch++
           this.onBatchProgressUpdate.fire({
@@ -358,7 +372,10 @@ export class FileWatcher implements IFileWatcher {
             } else if (result.status === "processed_for_batching" && result.pointsToUpsert) {
               pointsForBatchUpsert.push(...result.pointsToUpsert)
               if (result.path && result.newHash) {
-                successfullyProcessedForUpsert.push({ path: result.path, newHash: result.newHash })
+                successfullyProcessedForUpsert.push({
+                  path: result.path,
+                  newHash: result.newHash,
+                })
               } else if (result.path && !result.newHash) {
                 successfullyProcessedForUpsert.push({ path: result.path })
               }
@@ -446,7 +463,14 @@ export class FileWatcher implements IFileWatcher {
 
         for (const { path, newHash } of successfullyProcessedForUpsert) {
           if (newHash) {
+            if (!this.vectorStore.activateFileGeneration || !this.vectorStore.deleteInactiveFilePoints) {
+              throw new Error("Vector store does not support active generation checkpoints")
+            }
+            const generation = this.fileGeneration(path, newHash)
+            await this.vectorStore.activateFileGeneration(path, generation, this.runId)
+            await this.vectorStore.deleteInactiveFilePoints(path, generation)
             this.cacheManager.updateHash(path, newHash)
+            await this.cacheManager.flush()
           }
           batchResults.push({ path, status: "success" })
         }
@@ -467,6 +491,14 @@ export class FileWatcher implements IFileWatcher {
     } else if (overallBatchError && pointsForBatchUpsert.length > 0) {
       for (const { path } of successfullyProcessedForUpsert) {
         batchResults.push({ path, status: "error", error: overallBatchError })
+      }
+    } else if (!overallBatchError) {
+      for (const { path, newHash } of successfullyProcessedForUpsert) {
+        if (newHash) {
+          this.cacheManager.updateHash(path, newHash)
+          await this.cacheManager.flush()
+        }
+        batchResults.push({ path, status: "success" })
       }
     }
 
@@ -633,12 +665,15 @@ export class FileWatcher implements IFileWatcher {
 
       // Check if file has changed
       if (this.cacheManager.getHash(filePath) === newHash) {
+        await this.updateFileGraph(filePath, content, newHash)
         return {
           path: filePath,
           status: "skipped" as const,
           reason: "File has not changed",
         }
       }
+
+      await this.updateFileGraph(filePath, content, newHash)
 
       // Parse file
       const blocks = await codeParser.parseFile(filePath, { content, fileHash: newHash })
@@ -661,19 +696,9 @@ export class FileWatcher implements IFileWatcher {
         pointsToUpsert = blocks.map((block, index) => {
           const vector = embeddings[index]!
           const normalizedAbsolutePath = generateNormalizedAbsolutePath(block.file_path, this.workspacePath)
-          const pointId = uuidv5(block.segmentHash, QDRANT_CODE_BLOCK_NAMESPACE)
-
-          return {
-            id: pointId,
-            vector,
-            payload: {
-              filePath: generateRelativeFilePath(normalizedAbsolutePath, this.workspacePath),
-              codeChunk: block.content,
-              startLine: block.start_line,
-              endLine: block.end_line,
-              segmentHash: block.segmentHash,
-            },
-          }
+          const relativeFilePath = generateRelativeFilePath(normalizedAbsolutePath, this.workspacePath)
+          const generation = this.fileGeneration(relativeFilePath, newHash)
+          return pointForBlock({ block, vector, workspace: this.workspacePath, ctx: this.ragContext(), generation })
         })
       }
 
@@ -688,6 +713,104 @@ export class FileWatcher implements IFileWatcher {
         path: filePath,
         status: "local_error" as const,
         error: error as Error,
+      }
+    }
+  }
+
+  private ragContext() {
+    return vectorContext(this.workspacePath, this.runId, this.ragMeta ?? fallbackCheckpointMeta(this.workspacePath))
+  }
+
+  private fileGeneration(filePath: string, fileHash: string): string {
+    const meta = this.ragMeta ?? fallbackCheckpointMeta(this.workspacePath)
+    const normalizedAbsolutePath = generateNormalizedAbsolutePath(filePath, this.workspacePath)
+    const relativeFilePath = generateRelativeFilePath(normalizedAbsolutePath, this.workspacePath)
+    return generationForFile(meta, relativeFilePath, fileHash)
+  }
+
+  private async updateFileGraph(filePath: string, content: string, fileHash: string): Promise<void> {
+    if (!this.graph) return
+    if (!isCodeGraphSupportedPath(filePath)) return
+
+    try {
+      const existing = await this.graph.getFileGraph(filePath)
+      if (existing?.fileHash === fileHash) {
+        await this.graph.upsertFileGraph(filePath, fileHash, existing)
+        await this.updateFilePostings(filePath, fileHash, existing, content)
+        return
+      }
+      const normalizedAbsolutePath = generateNormalizedAbsolutePath(filePath, this.workspacePath)
+      const relativeFilePath = generateRelativeFilePath(normalizedAbsolutePath, this.workspacePath)
+      const graph = parseCodeGraphFile({
+        workspacePath: this.workspacePath,
+        filePath: relativeFilePath,
+        content,
+        fileHash,
+      })
+      await this.graph.upsertFileGraph(filePath, fileHash, graph)
+      await this.updateFilePostings(filePath, fileHash, graph, content)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn("code graph file update failed", {
+        filePath,
+        error: sanitizeErrorMessage(msg),
+      })
+      try {
+        await this.graph.markFileGraphStatus(filePath, "parse_error", {
+          fileHash,
+          error: sanitizeErrorMessage(msg),
+        })
+        await this.postings?.markFilePostingsStatus(filePath, "parse_error", {
+          fileHash,
+          error: sanitizeErrorMessage(msg),
+        })
+      } catch (mark) {
+        log.warn("code graph parse_error marker failed", {
+          filePath,
+          error: sanitizeErrorMessage(mark instanceof Error ? mark.message : String(mark)),
+        })
+      }
+    }
+  }
+
+  private async removeFileGraph(filePath: string): Promise<void> {
+    if (!this.graph) return
+    try {
+      await this.graph.removeFileGraph(filePath)
+      await this.postings?.removeFilePostings(filePath)
+    } catch (err) {
+      log.warn("code graph file removal failed", {
+        filePath,
+        error: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+      })
+    }
+  }
+
+  private async updateFilePostings(
+    filePath: string,
+    fileHash: string,
+    graph: CodeGraphFileGraph,
+    content: string,
+  ): Promise<void> {
+    if (!this.postings) return
+    try {
+      await this.postings.upsertFilePostings(filePath, fileHash, graph, { content })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn("code postings file update failed", {
+        filePath,
+        error: sanitizeErrorMessage(msg),
+      })
+      try {
+        await this.postings.markFilePostingsStatus(filePath, "postings_error", {
+          fileHash,
+          error: sanitizeErrorMessage(msg),
+        })
+      } catch (mark) {
+        log.warn("code postings error marker failed", {
+          filePath,
+          error: sanitizeErrorMessage(mark instanceof Error ? mark.message : String(mark)),
+        })
       }
     }
   }

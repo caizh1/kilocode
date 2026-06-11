@@ -16,7 +16,7 @@ const Parameters = Schema.Struct({
       "Limit analysis to a specific subdirectory relative to the current workspace directory. Leave empty for the whole workspace.",
   }),
   mode: Schema.optional(Schema.Union([Schema.Literal("hybrid"), Schema.Literal("graph-only")])).annotate({
-    description: "Use graph-only to skip vector retrieval, or hybrid to allow future graph plus vector retrieval.",
+    description: "Use graph-only for C/C++ graph records only, or hybrid for graph, lexical BM25, and vector evidence.",
   }),
   maxEvidenceItems: Schema.optional(Schema.Number).annotate({
     description: "Maximum evidence items to include in the analysis pack.",

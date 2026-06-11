@@ -2,6 +2,21 @@ import type { PointStruct } from "./vector-store"
 import type { Disposable, Emitter } from "../runtime"
 import type { IndexingTelemetryMode } from "./telemetry"
 
+export type ScanProgressEvent =
+  | {
+      type: "target"
+      totalFiles: number
+      graphTotalFiles: number
+    }
+  | {
+      type: "file"
+      filePath: string
+    }
+  | {
+      type: "graph"
+      filePath: string
+    }
+
 export interface ICodeParser {
   parseFile(
     filePath: string,
@@ -21,6 +36,7 @@ export interface IDirectoryScanner {
     onFilesIndexed?: (indexedCount: number) => void,
     onFileParsed?: () => void,
     mode?: IndexingTelemetryMode,
+    onProgress?: (event: ScanProgressEvent) => void,
   ): Promise<{
     stats: {
       processed: number
@@ -36,6 +52,7 @@ export interface IFileWatcher extends Disposable {
   initialize(): Promise<void>
   updateBatchSegmentThreshold(newThreshold: number): void
   setCollecting(collecting: boolean): void
+  setRunContext?(runId: string, meta: import("../rag-checkpoint").RagCheckpointMeta): void
 
   readonly onDidStartBatchProcessing: Emitter<string[]>
   readonly onBatchProgressUpdate: Emitter<{

@@ -43,6 +43,7 @@ opencode-dev
 UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
+*.vsix
 
 # Telemetry ID
 telemetry-id

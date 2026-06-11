@@ -74,8 +74,8 @@ You can also edit the `indexing` section in `kilo.jsonc` directly:
 
 ### Vector stores
 
-- **Qdrant** (default) — external server. Recommended for team deployments and larger codebases. See [Setting Up Qdrant](#setting-up-qdrant).
-- **LanceDB** — embedded, file-based. No server to run. Stores data under your Kilo data directory by default.
+- **LanceDB** (default) — embedded, file-based. No server to run. Stores data under your Kilo data directory by default.
+- **Qdrant** — external server. Recommended for team deployments and larger codebases. See [Setting Up Qdrant](#setting-up-qdrant).
 
 {% callout type="tip" %}
 For a fully local, zero-cost setup, combine **Ollama** (embeddings) with **LanceDB** (vector store — no separate server needed).
@@ -120,14 +120,11 @@ You can also edit the `indexing` section directly. This is the full shape of the
     "provider": "voyage",
     "model": "voyage-code-3",
     "dimension": 1024,
-    "vectorStore": "qdrant",
+    "vectorStore": "lancedb",
     "voyage": {
       "apiKey": "pa-..."
     },
-    "qdrant": {
-      "url": "http://localhost:6333",
-      "apiKey": ""
-    },
+    "lancedb": {},
     "searchMinScore": 0.4,
     "searchMaxResults": 50,
     "embeddingBatchSize": 60,
@@ -152,8 +149,8 @@ You can also edit the `indexing` section directly. This is the full shape of the
 
 ### Vector stores
 
-- `qdrant` — `{ url?, apiKey? }` (default). See [Setting Up Qdrant](#setting-up-qdrant).
-- `lancedb` — `{ directory? }` — embedded, file-based. No server to run. Uses a default Kilo data directory when omitted.
+- `lancedb` — `{ directory? }` (default) — embedded, file-based. No server to run. Uses a default Kilo data directory when omitted.
+- `qdrant` — `{ url?, apiKey? }`. See [Setting Up Qdrant](#setting-up-qdrant).
 
 {% callout type="tip" %}
 For a fully local, zero-cost setup, combine **Ollama** (embeddings) with **LanceDB** (vector store — no separate server needed).

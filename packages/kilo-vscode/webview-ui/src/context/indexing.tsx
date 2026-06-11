@@ -2,14 +2,22 @@ import { createContext, useContext, createMemo, createSignal, onCleanup, createE
 import type { ParentComponent, Accessor } from "solid-js"
 import { useVSCode } from "./vscode"
 import type { ExtensionMessage, IndexingStatus } from "../types/messages"
-import { applyIndexingStatusMessage, formatIndexingLabel, indexingTone } from "./indexing-utils"
+import {
+  applyIndexingStatusMessage,
+  ensureIndexingPipelines,
+  formatIndexingLabel,
+  indexingTone,
+  type IndexingPipelines,
+  type IndexingTone,
+} from "./indexing-utils"
 import { useConfig } from "./config"
 
 interface IndexingContextValue {
   status: Accessor<IndexingStatus>
   loading: Accessor<boolean>
   label: Accessor<string>
-  tone: Accessor<"muted" | "warning" | "success" | "error">
+  tone: Accessor<IndexingTone>
+  pipelines: Accessor<IndexingPipelines>
 }
 
 const initial: IndexingStatus = {
@@ -20,7 +28,7 @@ const initial: IndexingStatus = {
   percent: 0,
 }
 
-export { formatIndexingLabel, indexingTone } from "./indexing-utils"
+export { formatIndexingLabel, formatIndexingPipelineLabel, indexingPipelineTone, indexingTone } from "./indexing-utils"
 
 const IndexingContext = createContext<IndexingContextValue>()
 
@@ -67,6 +75,7 @@ export const IndexingProvider: ParentComponent = (props) => {
     loading,
     label: createMemo(() => formatIndexingLabel(status())),
     tone: createMemo(() => indexingTone(status())),
+    pipelines: createMemo(() => ensureIndexingPipelines(status())),
   }
 
   return <IndexingContext.Provider value={value}>{props.children}</IndexingContext.Provider>

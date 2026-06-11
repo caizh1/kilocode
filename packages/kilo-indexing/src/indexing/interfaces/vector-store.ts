@@ -48,6 +48,21 @@ export interface IVectorStore {
   deletePointsByMultipleFilePaths(filePaths: string[]): Promise<void>
 
   /**
+   * Marks a fully written file generation active and older file generations inactive.
+   */
+  activateFileGeneration?(filePath: string, generation: string, runId: string): Promise<void>
+
+  /**
+   * Removes inactive generations for a file after the replacement generation is active.
+   */
+  deleteInactiveFilePoints?(filePath: string, activeGeneration: string): Promise<void>
+
+  /**
+   * Stable vector collection/table identity used in checkpoint compatibility metadata.
+   */
+  getCollectionName?(): string
+
+  /**
    * Clears all points from the collection
    */
   clearCollection(): Promise<void>

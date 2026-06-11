@@ -62,8 +62,8 @@ const PROVIDER_FIELDS: Record<EmbeddingProvider, ProviderFieldDef[]> = {
 }
 
 const VECTOR_STORE_LABELS: Record<string, string> = {
-  qdrant: "Qdrant (default)",
-  lancedb: "LanceDB",
+  lancedb: "LanceDB (default)",
+  qdrant: "Qdrant",
 }
 
 function maskSecret(value: string | undefined): string {
@@ -316,14 +316,14 @@ function VectorStoreSelect(props: SubDialogProps) {
   const options: DialogSelectOption<string>[] = Object.entries(VECTOR_STORE_LABELS).map(([value, title]) => ({
     value,
     title,
-    description: value === (indexing.vectorStore ?? "qdrant") ? "(current)" : undefined,
+    description: value === (indexing.vectorStore ?? "lancedb") ? "(current)" : undefined,
   }))
 
   return (
     <DialogSelect
       title="Vector Store"
       options={options}
-      current={indexing.vectorStore ?? "qdrant"}
+      current={indexing.vectorStore ?? "lancedb"}
       onSelect={async (option) => {
         const store = option.value as "lancedb" | "qdrant"
         if (store === "lancedb") {
@@ -482,7 +482,7 @@ export function DialogIndexing(props: DialogIndexingProps) {
   const providerLabel = indexing.provider ? PROVIDER_LABELS[indexing.provider] : "not set"
   const storeLabel = indexing.vectorStore
     ? (VECTOR_STORE_LABELS[indexing.vectorStore] ?? indexing.vectorStore)
-    : "Qdrant (default)"
+    : "LanceDB (default)"
 
   const tuningCount = TUNING_PARAMS.filter((p) => indexing[p.key] !== undefined).length
   const tuningDesc = tuningCount > 0 ? `${tuningCount} customized` : "defaults"

@@ -18,4 +18,4 @@ Analyze local codebase structure and return grounded evidence for whole-reposito
 
 - Use `path` only for subdirectories inside the current workspace.
 - Treat answers as ungrounded unless the returned evidence includes file paths and line ranges.
-- In Phase 0 this tool returns the analysis contract and conservative evidence pack stub.
+- In Phase 5, hybrid mode can return C/C++ graph evidence, lexical BM25 evidence, and existing Kilo vector evidence; rerank, state-machine extraction, and module summaries are not enabled here.

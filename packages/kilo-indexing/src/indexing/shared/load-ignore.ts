@@ -1,6 +1,8 @@
 import fs from "fs/promises"
+import { createHash } from "crypto"
 import ignore, { type Ignore } from "ignore"
 import path from "path"
+import { FileIgnore } from "../../file/ignore"
 
 const files = [".gitignore", ".kilocodeignore"] as const
 
@@ -34,4 +36,23 @@ export async function loadIgnore(root: string): Promise<Ignore> {
   }
 
   return ig
+}
+
+export async function loadIgnoreWithFingerprint(root: string): Promise<{ ignore: Ignore; fingerprint: string }> {
+  const ig = ignore()
+  const parts = [`builtin:${FileIgnore.PATTERNS.join("\n")}`]
+
+  for (const name of files) {
+    const txt = await read(root, name)
+    parts.push(`${name}:${txt ?? ""}`)
+    if (!txt?.trim()) {
+      continue
+    }
+
+    ig.add(txt)
+    ig.add(name)
+  }
+
+  const fingerprint = createHash("sha256").update(parts.join("\0")).digest("hex")
+  return { ignore: ig, fingerprint }
 }

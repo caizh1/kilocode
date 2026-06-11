@@ -98,6 +98,79 @@ describe("CodeIndexManager", () => {
     expect(mgr.isFeatureConfigured).toBe(false)
     expect(mgr.getCurrentStatus().systemStatus).toBe("Standby")
     expect(mgr.getCurrentStatus().message).toContain("not configured")
+    expect(mgr.getCodeGraphStatus()).toMatchObject({
+      state: "disabled",
+      enabled: false,
+      evidenceAvailable: false,
+      detail: "indexing-not-configured",
+    })
+  })
+
+  test("does not start code graph sidecar when indexing is disabled", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+
+    await mgr.initialize(createInput({ enabled: false, openAiKey: "sk-test" }))
+
+    expect(mgr.isFeatureEnabled).toBe(false)
+    expect(mgr.getCodeGraphStatus()).toMatchObject({
+      state: "disabled",
+      enabled: false,
+      evidenceAvailable: false,
+      detail: "indexing-disabled",
+    })
+  })
+
+  test("starts code graph sidecar container after services initialize", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _orchestrator?: {
+        state: string
+        startIndexing(trigger: IndexingTelemetryTrigger): Promise<void>
+      }
+      _searchService?: {}
+      _recreateServices(): Promise<void>
+    }
+
+    data._cacheManager = {}
+    data._recreateServices = async () => {
+      data._orchestrator = {
+        state: "Standby",
+        async startIndexing() {},
+      }
+      data._searchService = {}
+    }
+
+    await mgr.initialize(createInput({ openAiKey: "sk-test" }))
+
+    const status = mgr.getCodeGraphStatus()
+    expect(status).toMatchObject({
+      state: "container_ready",
+      enabled: true,
+      evidenceAvailable: false,
+      workspacePath: "/tmp/ws",
+      cacheDirectory: "/tmp/cache",
+    })
+    expect(status.detail).toContain("graph evidence")
+    expect(status.storage).toMatchObject({
+      recordCount: 0,
+      validFileCount: 0,
+      parseErrorCount: 0,
+      unsupportedCount: 0,
+      staleCount: 0,
+      evidenceAvailable: false,
+    })
+    expect(status.transitions.at(-1)).toMatchObject({
+      state: "container_ready",
+      reason: "indexing-services-initialized",
+    })
+
+    const result = await mgr.queryEvidence("find real code graph evidence")
+    expect(result.answerPolicy.mode).toBe("conservative")
+    expect(result.evidenceRefs).toEqual([])
+    expect(result.formattedPackText).toContain("No file path and line-number evidence was returned.")
+    expect(result.formattedPackText).not.toContain("container_ready")
+    expect(result.formattedPackText).not.toContain("<evidence-ref")
   })
 
   test("cancels active indexing when configuration is removed", async () => {

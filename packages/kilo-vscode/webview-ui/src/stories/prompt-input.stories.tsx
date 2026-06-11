@@ -16,6 +16,7 @@ import { type ParentComponent } from "solid-js"
 import { StoryProviders, mockSessionValue } from "./StoryProviders"
 import { SessionContext } from "../context/session"
 import { PromptInput } from "../components/chat/PromptInput"
+import type { Config } from "../types/messages"
 
 const agents = [
   { name: "code", description: "Write, edit and review code", mode: "primary" as const },
@@ -25,7 +26,16 @@ const agents = [
 
 const noop = () => {}
 
-const PromptProviders: ParentComponent<{ variants?: boolean; modelOverride?: boolean }> = (props) => {
+const indexingConfig = {
+  plugin: ["@kilocode/kilo-indexing"],
+  indexing: {
+    enabled: true,
+    provider: "kilo",
+    vectorStore: "lancedb",
+  },
+} as Config
+
+const PromptProviders: ParentComponent<{ variants?: boolean; modelOverride?: boolean; indexing?: boolean }> = (props) => {
   const base = mockSessionValue({ status: "idle" })
   const session = {
     ...base,
@@ -38,7 +48,7 @@ const PromptProviders: ParentComponent<{ variants?: boolean; modelOverride?: boo
   }
 
   return (
-    <StoryProviders noPadding>
+    <StoryProviders noPadding config={props.indexing ? indexingConfig : undefined}>
       {/* overflow:hidden prevents margin-collapse so top/bottom borders are captured in screenshots */}
       <div style={{ overflow: "hidden" }}>
         <SessionContext.Provider value={session as any}>{props.children}</SessionContext.Provider>
@@ -119,6 +129,28 @@ export const WithModelOverride200: Story = {
   name: "With model override — 200px",
   render: () => (
     <PromptProviders modelOverride>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+// ---------------------------------------------------------------------------
+// Stories — indexing controls visible (CG/RAG toolbar icons)
+// ---------------------------------------------------------------------------
+
+export const WithIndexing420: Story = {
+  name: "With indexing controls — 420px",
+  render: () => (
+    <PromptProviders indexing>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const WithIndexing200: Story = {
+  name: "With indexing controls — 200px",
+  render: () => (
+    <PromptProviders indexing>
       <PromptInput />
     </PromptProviders>
   ),

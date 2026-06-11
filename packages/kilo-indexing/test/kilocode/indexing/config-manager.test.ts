@@ -25,8 +25,14 @@ describe("CodeIndexConfigManager", () => {
     expect(cfg.getConfig().ollamaOptions?.baseUrl).toBe("http://localhost:11434")
   })
 
-  test("defaults vector store to qdrant when omitted", () => {
+  test("defaults vector store to lancedb when omitted", () => {
     const cfg = new CodeIndexConfigManager(createInput({ vectorStoreProvider: undefined }))
+
+    expect(cfg.getConfig().vectorStoreProvider).toBe("lancedb")
+  })
+
+  test("uses explicit qdrant vector store", () => {
+    const cfg = new CodeIndexConfigManager(createInput({ vectorStoreProvider: "qdrant" }))
 
     expect(cfg.getConfig().vectorStoreProvider).toBe("qdrant")
   })

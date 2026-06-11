@@ -2,14 +2,16 @@ import z from "zod"
 import path from "path"
 import {
   CodeIndexAnalysisService,
+  disabledCodeGraphSidecarStatus,
   type CodeGraphEvidenceQueryOptions,
+  type CodeGraphSidecarStatus,
   type IndexingTelemetryEvent,
   type QueryEvidenceResult,
   type VectorStoreSearchResult,
 } from "@kilocode/kilo-indexing/engine"
 import { toIndexingConfigInput, type IndexingConfig } from "@kilocode/kilo-indexing/config"
 import { hasIndexingPlugin } from "@kilocode/kilo-indexing/detect"
-import { IndexingStatus, disabledIndexingStatus } from "@kilocode/kilo-indexing/status"
+import { IndexingStatus, disabledIndexingStatus, type IndexingPipelineStatus } from "@kilocode/kilo-indexing/status"
 import { Telemetry } from "@kilocode/kilo-telemetry"
 import { fetchKiloEmbeddingModelCatalog } from "@kilocode/kilo-gateway"
 import { Instance } from "@/project/instance"
@@ -33,17 +35,7 @@ const noWorkspace = () =>
   disabledIndexingStatus("Codebase indexing is disabled because no workspace folder is open in VS Code.")
 
 function worktreeDisabled(): z.infer<typeof IndexingStatus> {
-  return {
-    state: "Disabled",
-    message: "Indexing is disabled in worktree sessions. Use the main workspace for indexing.",
-    processedFiles: 0,
-    totalFiles: 0,
-    percent: 0,
-  }
-}
-
-function isWorktreePath(dir: string): boolean {
-  return /(?:\/|\\)\.kilo(?:code)?(?:\/|\\)worktrees(?:\/|\\)/.test(dir)
+  return disabledIndexingStatus("Indexing is disabled in worktree sessions. Use the main workspace for indexing.")
 }
 
 function failed(err: unknown): z.infer<typeof IndexingStatus> {
@@ -56,6 +48,10 @@ function failed(err: unknown): z.infer<typeof IndexingStatus> {
     processedFiles: 0,
     totalFiles: 0,
     percent: 0,
+    pipelines: {
+      codeGraph: inactivePipeline("Error", "Code Graph unavailable.", text),
+      rag: inactivePipeline("Error", "RAG indexing unavailable.", text),
+    },
   }
 }
 
@@ -66,7 +62,33 @@ function pending(): z.infer<typeof IndexingStatus> {
     processedFiles: 0,
     totalFiles: 0,
     percent: 0,
+    pipelines: {
+      codeGraph: inactivePipeline("In Progress", "Code Graph initializing.", "Waiting for indexing worker."),
+      rag: inactivePipeline("In Progress", "RAG indexing initializing.", "Waiting for indexing worker."),
+    },
   }
+}
+
+function inactivePipeline(
+  state: IndexingPipelineStatus["state"],
+  message: string,
+  detail: string,
+): IndexingPipelineStatus {
+  return {
+    state,
+    message,
+    processedFiles: 0,
+    totalFiles: 0,
+    percent: 0,
+    detail,
+    errorCount: state === "Error" ? 1 : 0,
+    staleCount: 0,
+    skippedCount: 0,
+  }
+}
+
+function isWorktreePath(dir: string): boolean {
+  return /(?:\/|\\)\.kilo(?:code)?(?:\/|\\)worktrees(?:\/|\\)/.test(dir)
 }
 
 async function kiloAuth(cfg: Config.Info): Promise<KiloIndexingAuth> {
@@ -427,5 +449,16 @@ export namespace KiloIndexing {
       return CodeIndexAnalysisService.createStub(query, options, "indexing-not-ready")
     }
     return entry.engine.queryEvidence(query, options)
+  }
+
+  export async function codeGraphStatus(): Promise<CodeGraphSidecarStatus> {
+    const entry = await hit().ready
+    if (!entry.initialized || entry.current().state === "Disabled" || !entry.engine) {
+      return disabledCodeGraphSidecarStatus({
+        workspacePath: Instance.directory,
+        reason: "indexing-not-active",
+      })
+    }
+    return entry.engine.codeGraphStatus()
   }
 }

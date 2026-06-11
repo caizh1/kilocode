@@ -1,4 +1,5 @@
 import type {
+  CodeGraphSidecarStatus,
   CodeGraphEvidenceQueryOptions,
   IndexingConfigInput,
   IndexingTelemetryEvent,
@@ -26,12 +27,14 @@ export type Request =
   | { type: "request"; id: number; method: "init"; input: InitInput }
   | { type: "request"; id: number; method: "search"; input: { query: string; directoryPrefix?: string } }
   | { type: "request"; id: number; method: "queryEvidence"; input: QueryEvidenceInput }
+  | { type: "request"; id: number; method: "codeGraphStatus"; input: undefined }
   | { type: "request"; id: number; method: "dispose"; input: undefined }
 
 export type Result =
   | { type: "result"; id: number; method: "init"; ok: true; value: IndexingStatus }
   | { type: "result"; id: number; method: "search"; ok: true; value: VectorStoreSearchResult[] }
   | { type: "result"; id: number; method: "queryEvidence"; ok: true; value: QueryEvidenceResult }
+  | { type: "result"; id: number; method: "codeGraphStatus"; ok: true; value: CodeGraphSidecarStatus }
   | { type: "result"; id: number; method: "dispose"; ok: true; value: undefined }
   | { type: "result"; id: number; method: Request["method"]; ok: false; error: string }
 

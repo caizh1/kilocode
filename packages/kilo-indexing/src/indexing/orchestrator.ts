@@ -1,7 +1,7 @@
 import path from "path"
 import type { CodeIndexConfigManager } from "./config-manager"
 import { CodeIndexStateManager, type IndexingState } from "./state-manager"
-import type { IFileWatcher, BatchProcessingSummary } from "./interfaces"
+import type { IFileWatcher, BatchProcessingSummary, ScanProgressEvent } from "./interfaces"
 import type {
   IndexingTelemetryEvent,
   IndexingTelemetryMeta,
@@ -16,13 +16,17 @@ import type { CacheManager } from "./cache-manager"
 import type { Disposable } from "./runtime"
 import { Log } from "../util/log"
 import { sanitizeErrorMessage } from "./shared/validation-helpers"
+import type { RagCheckpointMeta } from "./rag-checkpoint"
+import { IndexingRunLock } from "./run-lock"
 
 const log = Log.create({ service: "indexing-orchestrator" })
+const LOCKED_MESSAGE = "Another indexing run is already active for this workspace."
 
 export class CodeIndexOrchestrator {
   private _fileWatcherSubscriptions: Disposable[] = []
   private _isProcessing = false
   private _cancelRequested = false
+  private _lock: IndexingRunLock | undefined
 
   constructor(
     private readonly configManager: CodeIndexConfigManager,
@@ -32,6 +36,8 @@ export class CodeIndexOrchestrator {
     private readonly vectorStore: IVectorStore,
     private readonly scanner: DirectoryScanner,
     private readonly fileWatcher: IFileWatcher,
+    private readonly cacheDirectory: string,
+    private readonly ragMeta: RagCheckpointMeta,
     private readonly onTelemetry?: IndexingTelemetryReporter,
   ) {}
 
@@ -39,7 +45,7 @@ export class CodeIndexOrchestrator {
     const cfg = this.configManager.getConfig()
     return {
       provider: cfg.embedderProvider,
-      vectorStore: cfg.vectorStoreProvider ?? "qdrant",
+      vectorStore: cfg.vectorStoreProvider ?? "lancedb",
       modelId: cfg.modelId,
     }
   }
@@ -146,9 +152,12 @@ export class CodeIndexOrchestrator {
       return
     }
 
+    const status = this.stateManager.getCurrentStatus()
+    const lockedElsewhere = status.systemStatus === "Indexing" && status.message === LOCKED_MESSAGE
     if (
       this._isProcessing ||
-      (this.stateManager.state !== "Standby" &&
+      (!lockedElsewhere &&
+        this.stateManager.state !== "Standby" &&
         this.stateManager.state !== "Error" &&
         this.stateManager.state !== "Indexed")
     ) {
@@ -165,10 +174,23 @@ export class CodeIndexOrchestrator {
     let mode: IndexingTelemetryMode | undefined
 
     try {
+      this._lock = await IndexingRunLock.acquire({
+        cacheDirectory: this.cacheDirectory,
+        workspacePath: this.workspacePath,
+      })
+      if (!this._lock) {
+        this.stateManager.setSystemState("Indexing", LOCKED_MESSAGE)
+        log.warn("start rejected: workspace indexing lock is held", { workspacePath: this.workspacePath })
+        return
+      }
+      this.scanner.setRunContext(this._lock.runId, this.ragMeta)
+      this.fileWatcher.setRunContext?.(this._lock.runId, this.ragMeta)
+
       await this._startWatcher()
 
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
+        await this.releaseLock()
         return
       }
 
@@ -179,6 +201,7 @@ export class CodeIndexOrchestrator {
 
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
+        await this.releaseLock()
         return
       }
 
@@ -196,6 +219,7 @@ export class CodeIndexOrchestrator {
 
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
+        await this.releaseLock()
         return
       }
 
@@ -248,16 +272,58 @@ export class CodeIndexOrchestrator {
     log.info("starting workspace scan", { workspacePath: this.workspacePath, mode })
     let cumulativeFilesIndexed = 0
     let cumulativeFilesFound = 0
+    let cumulativeFilesProcessed = 0
+    let totalFiles = 0
+    let graphFilesProcessed = 0
+    let graphTotalFiles = 0
     const batchErrors: Error[] = []
+
+    const reportFileProgress = (filePath?: string) => {
+      this.stateManager.reportFileProgress(
+        cumulativeFilesProcessed,
+        totalFiles,
+        filePath ? path.basename(filePath) : undefined,
+      )
+    }
+
+    const reportGraphProgress = (filePath?: string) => {
+      this.stateManager.reportCodeGraphProgress(
+        graphFilesProcessed,
+        graphTotalFiles,
+        filePath ? path.basename(filePath) : undefined,
+      )
+    }
 
     const handleFileParsed = () => {
       cumulativeFilesFound += 1
-      this.stateManager.reportFileProgress(cumulativeFilesIndexed, cumulativeFilesFound)
     }
 
     const handleFilesIndexed = (indexedCount: number) => {
       cumulativeFilesIndexed += indexedCount
-      this.stateManager.reportFileProgress(cumulativeFilesIndexed, cumulativeFilesFound)
+      cumulativeFilesProcessed += indexedCount
+      if (totalFiles > 0 && cumulativeFilesProcessed > totalFiles) cumulativeFilesProcessed = totalFiles
+      reportFileProgress()
+    }
+
+    const handleScanProgress = (event: ScanProgressEvent) => {
+      if (event.type === "target") {
+        totalFiles = event.totalFiles
+        graphTotalFiles = event.graphTotalFiles
+        reportFileProgress()
+        reportGraphProgress()
+        return
+      }
+
+      if (event.type === "file") {
+        cumulativeFilesProcessed += 1
+        if (totalFiles > 0 && cumulativeFilesProcessed > totalFiles) cumulativeFilesProcessed = totalFiles
+        reportFileProgress(event.filePath)
+        return
+      }
+
+      graphFilesProcessed += 1
+      if (graphTotalFiles > 0 && graphFilesProcessed > graphTotalFiles) graphFilesProcessed = graphTotalFiles
+      reportGraphProgress(event.filePath)
     }
 
     const result = await this.scanner.scanDirectory(
@@ -269,6 +335,7 @@ export class CodeIndexOrchestrator {
       handleFilesIndexed,
       handleFileParsed,
       mode,
+      handleScanProgress,
     )
 
     log.info("workspace scan completed", {
@@ -287,6 +354,7 @@ export class CodeIndexOrchestrator {
       if (this.stateManager.state !== "Error") {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
       }
+      await this.releaseLock()
       log.info("workspace scan cancelled", { workspacePath: this.workspacePath, mode })
       return
     }
@@ -309,6 +377,16 @@ export class CodeIndexOrchestrator {
           )
         }
       }
+    }
+
+    if (totalFiles > 0 && cumulativeFilesProcessed < totalFiles) {
+      cumulativeFilesProcessed = totalFiles
+      reportFileProgress()
+    }
+
+    if (graphTotalFiles > 0 && graphFilesProcessed < graphTotalFiles) {
+      graphFilesProcessed = graphTotalFiles
+      reportGraphProgress()
     }
 
     this.fileWatcher.setCollecting(true)
@@ -345,6 +423,7 @@ export class CodeIndexOrchestrator {
       this.stateManager.setSystemState("Standby", "File watcher stopped.")
     }
     this._isProcessing = false
+    void this.releaseLock()
     log.info("file watcher stopped", { workspacePath: this.workspacePath, state: this.stateManager.state })
   }
 
@@ -355,6 +434,7 @@ export class CodeIndexOrchestrator {
     this.stopWatcher()
     this.stateManager.setSystemState("Standby", "Indexing cancelled.")
     this._isProcessing = false
+    void this.releaseLock()
     log.info("indexing cancelled", { workspacePath: this.workspacePath })
   }
 
@@ -383,6 +463,7 @@ export class CodeIndexOrchestrator {
       }
     } finally {
       this._isProcessing = false
+      await this.releaseLock()
       log.info("finished clearing index data", {
         workspacePath: this.workspacePath,
         state: this.stateManager.state,
@@ -392,5 +473,11 @@ export class CodeIndexOrchestrator {
 
   public get state(): IndexingState {
     return this.stateManager.state
+  }
+
+  private async releaseLock(): Promise<void> {
+    const lock = this._lock
+    this._lock = undefined
+    await lock?.release()
   }
 }

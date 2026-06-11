@@ -1,4 +1,5 @@
 import type {
+  CodeGraphSidecarStatus,
   IndexingConfigInput,
   IndexingTelemetryEvent,
   QueryEvidenceResult,
@@ -23,6 +24,7 @@ export namespace IndexingWorker {
     init(input: IndexingConfigInput): Promise<IndexingStatus>
     search(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]>
     queryEvidence(query: string, options?: Omit<QueryEvidenceInput, "query">): Promise<QueryEvidenceResult>
+    codeGraphStatus(): Promise<CodeGraphSidecarStatus>
     dispose(): Promise<void>
   }
 
@@ -127,6 +129,13 @@ export namespace IndexingWorker {
         return call(request, (message) => {
           if (message.ok && message.method === "queryEvidence") return message.value
           throw new Error("Unexpected indexing worker queryEvidence response.")
+        })
+      },
+      codeGraphStatus() {
+        const request: Request = { type: "request", id: id++, method: "codeGraphStatus", input: undefined }
+        return call(request, (message) => {
+          if (message.ok && message.method === "codeGraphStatus") return message.value
+          throw new Error("Unexpected indexing worker codeGraphStatus response.")
         })
       },
       async dispose() {

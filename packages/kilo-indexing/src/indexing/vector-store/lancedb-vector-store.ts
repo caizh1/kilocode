@@ -14,6 +14,7 @@ const log = Log.create({ service: "lancedb-store" })
 const KEY = {
   size: "vector_size",
   complete: "indexing_complete",
+  runIncomplete: "indexing_run_incomplete",
   provider: "embedding_provider",
   model: "embedding_model_id",
   dimension: "embedding_dimension",
@@ -120,10 +121,20 @@ export class LanceDBVectorStore implements IVectorStore {
       {
         id: "sample",
         vector: new Array(this.vectorSize).fill(0),
+        workspaceId: "sample",
+        normalizedRoot: "sample",
         filePath: "sample",
+        fileHash: "sample",
+        chunkHash: "sample",
+        chunkRange: "0:0",
+        runId: "sample",
+        generation: "sample",
+        checkpointMetaHash: "sample",
+        active: false,
         codeChunk: "sample",
         startLine: 0,
         endLine: 0,
+        segmentHash: "sample",
       },
     ]
   }
@@ -152,6 +163,10 @@ export class LanceDBVectorStore implements IVectorStore {
       },
       {
         key: KEY.complete,
+        value: "false",
+      },
+      {
+        key: KEY.runIncomplete,
         value: "false",
       },
     ]
@@ -343,10 +358,20 @@ export class LanceDBVectorStore implements IVectorStore {
       const lanceData = valids.map((point) => ({
         id: point.id,
         vector: point.vector,
+        workspaceId: point.payload.workspaceId,
+        normalizedRoot: point.payload.normalizedRoot,
         filePath: point.payload.filePath,
+        fileHash: point.payload.fileHash,
+        chunkHash: point.payload.chunkHash,
+        chunkRange: point.payload.chunkRange,
+        runId: point.payload.runId,
+        generation: point.payload.generation,
+        checkpointMetaHash: point.payload.checkpointMetaHash,
+        active: point.payload.active === true,
         codeChunk: point.payload.codeChunk,
         startLine: point.payload.startLine,
         endLine: point.payload.endLine,
+        segmentHash: point.payload.segmentHash,
       }))
 
       // Delete existing points with same IDs first
@@ -397,6 +422,10 @@ export class LanceDBVectorStore implements IVectorStore {
     return hasValidKeys
   }
 
+  getCollectionName(): string {
+    return `${this.dbPath}/${this.vectorTableName}`
+  }
+
   async search(
     queryVector: number[],
     directoryPrefix?: string,
@@ -409,17 +438,16 @@ export class LanceDBVectorStore implements IVectorStore {
       const actualMaxResults = maxResults ?? DEFAULT_MAX_SEARCH_RESULTS
 
       // Build filter condition
-      let filter = ""
+      const filters = ["`active` = true"]
       if (directoryPrefix) {
         const escapedPrefix = this.escapeSqlLikePattern(directoryPrefix)
-        filter = `\`filePath\` LIKE '${escapedPrefix}%'`
+        filters.push(`\`filePath\` LIKE '${escapedPrefix}%'`)
       }
+      const filter = filters.join(" AND ")
 
       // Perform vector search with distance range filtering
       let searchQuery = (await table.search(queryVector)) as VectorQuery
-      if (filter !== "") {
-        searchQuery = searchQuery.where(filter)
-      }
+      searchQuery = searchQuery.where(filter)
       searchQuery = searchQuery
         .distanceType("cosine")
         .distanceRange(0, 1 - actualMinScore)
@@ -434,6 +462,15 @@ export class LanceDBVectorStore implements IVectorStore {
           codeChunk: result.codeChunk,
           startLine: result.startLine,
           endLine: result.endLine,
+          workspaceId: result.workspaceId,
+          normalizedRoot: result.normalizedRoot,
+          fileHash: result.fileHash,
+          chunkHash: result.chunkHash,
+          chunkRange: result.chunkRange,
+          runId: result.runId,
+          generation: result.generation,
+          checkpointMetaHash: result.checkpointMetaHash,
+          active: result.active,
         } as Payload,
       }))
 
@@ -448,6 +485,30 @@ export class LanceDBVectorStore implements IVectorStore {
     return this.deletePointsByMultipleFilePaths([filePath])
   }
 
+  async activateFileGeneration(filePath: string, generation: string, runId: string): Promise<void> {
+    const table = await this.getTable()
+    const normalized = this.normalizeFilePath(filePath)
+    const escaped = this.escapeSqlString(normalized)
+    const gen = this.escapeSqlString(generation)
+    const run = this.escapeSqlString(runId)
+    await table.update({
+      where: `\`filePath\` = '${escaped}' AND \`generation\` = '${gen}' AND \`runId\` = '${run}'`,
+      values: { active: true },
+    })
+    await table.update({
+      where: `\`filePath\` = '${escaped}' AND \`generation\` != '${gen}'`,
+      values: { active: false },
+    })
+  }
+
+  async deleteInactiveFilePoints(filePath: string, activeGeneration: string): Promise<void> {
+    const table = await this.getTable()
+    const normalized = this.normalizeFilePath(filePath)
+    const escaped = this.escapeSqlString(normalized)
+    const gen = this.escapeSqlString(activeGeneration)
+    await table.delete(`\`filePath\` = '${escaped}' AND \`generation\` != '${gen}'`)
+  }
+
   async deletePointsByMultipleFilePaths(filePaths: string[]): Promise<void> {
     if (filePaths.length === 0) {
       return
@@ -455,10 +516,7 @@ export class LanceDBVectorStore implements IVectorStore {
 
     try {
       const table = await this.getTable()
-      const workspaceRoot = this.workspacePath
-      const normalizedPaths = filePaths.map((fp) =>
-        path.normalize(path.isAbsolute(fp) ? path.relative(workspaceRoot, fp) : fp),
-      )
+      const normalizedPaths = filePaths.map((fp) => this.normalizeFilePath(fp))
 
       // Create filter condition for multiple file paths
       const escapedPaths = normalizedPaths.map((fp) => `'${this.escapeSqlString(fp)}'`).join(", ")
@@ -468,6 +526,10 @@ export class LanceDBVectorStore implements IVectorStore {
       log.error("Failed to delete points by file paths", { error })
       throw error
     }
+  }
+
+  private normalizeFilePath(filePath: string): string {
+    return path.normalize(path.isAbsolute(filePath) ? path.relative(this.workspacePath, filePath) : filePath)
   }
 
   async deleteCollection(): Promise<void> {
@@ -612,6 +674,7 @@ export class LanceDBVectorStore implements IVectorStore {
       const metadataTable = await db.openTable(this.metadataTableName)
       await this._persistEmbeddingProfile(metadataTable)
       await this._upsertMetadata(metadataTable, KEY.complete, "true")
+      await this._upsertMetadata(metadataTable, KEY.runIncomplete, "false")
       log.info("Marked indexing as complete")
     } catch (error) {
       log.error("Failed to mark indexing as complete", { error })
@@ -628,7 +691,7 @@ export class LanceDBVectorStore implements IVectorStore {
       const db = await this.getDb()
       const metadataTable = await db.openTable(this.metadataTableName)
       await this._persistEmbeddingProfile(metadataTable)
-      await this._upsertMetadata(metadataTable, KEY.complete, "false")
+      await this._upsertMetadata(metadataTable, KEY.runIncomplete, "true")
       log.info("Marked indexing as incomplete (in progress)")
     } catch (error) {
       log.error("Failed to mark indexing as incomplete", { error })

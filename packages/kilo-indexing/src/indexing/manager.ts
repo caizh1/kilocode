@@ -2,17 +2,20 @@ import type { VectorStoreSearchResult } from "./interfaces"
 import type { IndexingState } from "./interfaces/manager"
 import type { IndexingTelemetryEvent, IndexingTelemetryMeta, IndexingTelemetryTrigger } from "./interfaces/telemetry"
 import type { CodeGraphEvidenceQueryOptions, QueryEvidenceResult } from "./analysis"
+import type { CodeGraphSidecarStatus } from "./codegraph"
 import { CodeIndexConfigManager, type IndexingConfigInput } from "./config-manager"
 import { INITIAL_MANAGER_RECOVERY_DELAY_MS, MAX_MANAGER_RECOVERY_ATTEMPTS } from "./constants"
 import { CodeIndexStateManager } from "./state-manager"
 import { CodeIndexServiceFactory } from "./service-factory"
 import { CodeIndexSearchService } from "./search-service"
 import { CodeIndexAnalysisService } from "./analysis"
+import { CodeGraphSidecarLifecycle, disabledCodeGraphSidecarStatus } from "./codegraph"
+import { CodeGraphJsonStorage, CodePostingsJsonStorage } from "./codegraph/storage"
 import { CodeIndexOrchestrator } from "./orchestrator"
 import { CacheManager } from "./cache-manager"
 import { Emitter } from "./runtime"
 import { Log } from "../util/log"
-import { loadIgnore } from "./shared/load-ignore"
+import { loadIgnoreWithFingerprint } from "./shared/load-ignore"
 import { sanitizeErrorMessage } from "./shared/validation-helpers"
 
 const log = Log.create({ service: "indexing-manager" })
@@ -30,7 +33,10 @@ export class CodeIndexManager {
   private _serviceFactory: CodeIndexServiceFactory | undefined
   private _orchestrator: CodeIndexOrchestrator | undefined
   private _searchService: CodeIndexSearchService | undefined
-  private readonly _analysisService = new CodeIndexAnalysisService()
+  private readonly _analysisService: CodeIndexAnalysisService
+  private readonly _graphStorage: CodeGraphJsonStorage
+  private readonly _postingsStorage: CodePostingsJsonStorage
+  private readonly _codeGraph: CodeGraphSidecarLifecycle
   private _cacheManager: CacheManager | undefined
   private _isRecoveringFromError = false
   private _retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -46,6 +52,15 @@ export class CodeIndexManager {
     private readonly cacheDirectory: string,
   ) {
     this._stateManager = new CodeIndexStateManager()
+    this._graphStorage = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
+    this._postingsStorage = new CodePostingsJsonStorage({ workspacePath, cacheDirectory })
+    this._analysisService = new CodeIndexAnalysisService(this._graphStorage, this._postingsStorage, (query, options) => {
+      if (!this._searchService) throw new Error("vector-search-unavailable")
+      return this._searchService.searchIndexForEvidence(query, options.directoryPrefix, {
+        maxResults: options.maxResults,
+      })
+    })
+    this._codeGraph = new CodeGraphSidecarLifecycle({ workspacePath, cacheDirectory, storage: this._graphStorage })
   }
 
   public get onProgressUpdate() {
@@ -63,7 +78,7 @@ export class CodeIndexManager {
     const cfg = this._configManager.getConfig()
     return {
       provider: cfg.embedderProvider,
-      vectorStore: cfg.vectorStoreProvider ?? "qdrant",
+      vectorStore: cfg.vectorStoreProvider ?? "lancedb",
       modelId: cfg.modelId,
     }
   }
@@ -269,6 +284,7 @@ export class CodeIndexManager {
     if (!this.isFeatureEnabled) {
       log.info("indexing disabled by configuration", { workspacePath: this.workspacePath })
       this._orchestrator?.stopWatcher()
+      this._codeGraph.stop("indexing-disabled")
       return { requiresRestart }
     }
 
@@ -284,6 +300,7 @@ export class CodeIndexManager {
         provider: this._configManager.currentEmbedderProvider,
       })
       this._orchestrator?.cancelIndexing()
+      this._codeGraph.stop("indexing-not-configured")
       this._stateManager.setSystemState(
         "Standby",
         "Code indexing is not configured. Save your settings to start indexing.",
@@ -317,6 +334,7 @@ export class CodeIndexManager {
           return { requiresRestart }
         }
         log.info("indexing services recreated", { workspacePath: this.workspacePath })
+        this._codeGraph.start("indexing-services-initialized")
       } catch (err) {
         log.error("failed to recreate services", { err })
         this.emitError("manager:initialize", err, "background")
@@ -417,6 +435,7 @@ export class CodeIndexManager {
     // scanner.cancel(), which cooperatively aborts any in-flight scan. Using only
     // stopWatcher() left the orchestrator's _runScan() unaware it should exit.
     this._orchestrator?.cancelIndexing()
+    this._codeGraph.dispose("manager-disposed")
     this._stateManager.dispose()
     this._telemetry.dispose()
   }
@@ -426,6 +445,7 @@ export class CodeIndexManager {
     this.assertInitialized()
     await this._orchestrator!.clearIndexData()
     await this._cacheManager!.clearCacheFile()
+    await this._graphStorage.clear()
   }
 
   public clearErrorState(): void {
@@ -435,6 +455,33 @@ export class CodeIndexManager {
   public getCurrentStatus() {
     const status = this._stateManager.getCurrentStatus()
     return { ...status, workspacePath: this.workspacePath }
+  }
+
+  public getCodeGraphStatus(): CodeGraphSidecarStatus {
+    if (this._disposed) return this._codeGraph.status()
+    if (!this._configManager) {
+      return disabledCodeGraphSidecarStatus({
+        workspacePath: this.workspacePath,
+        reason: "indexing-not-initialized",
+      })
+    }
+    if (!this.isFeatureEnabled) {
+      return disabledCodeGraphSidecarStatus({
+        workspacePath: this.workspacePath,
+        reason: "indexing-disabled",
+      })
+    }
+    if (!this.isFeatureConfigured) {
+      return disabledCodeGraphSidecarStatus({
+        workspacePath: this.workspacePath,
+        reason: "indexing-not-configured",
+      })
+    }
+    return this._codeGraph.status()
+  }
+
+  public getCodeGraphProgress() {
+    return this._stateManager.getCodeGraphProgress()
   }
 
   public async searchIndex(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]> {
@@ -465,19 +512,23 @@ export class CodeIndexManager {
     this._orchestrator?.stopWatcher()
     this._orchestrator = undefined
     this._searchService = undefined
+    this._codeGraph.stop("indexing-services-recreating")
 
+    const loaded = await loadIgnoreWithFingerprint(this.workspacePath)
+    const ignoreInstance = loaded.ignore
     this._serviceFactory = new CodeIndexServiceFactory(
       this._configManager!,
       this.workspacePath,
       this._cacheManager!,
       this.cacheDirectory,
+      loaded.fingerprint,
       (event) => this.handleTelemetry(event),
+      this._graphStorage,
+      this._postingsStorage,
     )
 
-    const ignoreInstance = await loadIgnore(this.workspacePath)
-
     const config = this._configManager!.getConfig()
-    const { embedder, vectorStore, scanner, fileWatcher } = this._serviceFactory.createServices(
+    const { embedder, vectorStore, scanner, fileWatcher, ragMeta } = this._serviceFactory.createServices(
       this._cacheManager!,
       ignoreInstance,
     )
@@ -515,6 +566,8 @@ export class CodeIndexManager {
       vectorStore,
       scanner,
       fileWatcher,
+      this.cacheDirectory,
+      ragMeta,
       (event) => this.handleTelemetry(event),
     )
 
@@ -537,6 +590,7 @@ export class CodeIndexManager {
 
     if (!this.isFeatureEnabled) {
       this._orchestrator?.stopWatcher()
+      this._codeGraph.stop("indexing-disabled")
       this._stateManager.setSystemState("Standby", "Code indexing is disabled")
       return
     }

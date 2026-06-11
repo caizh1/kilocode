@@ -1,12 +1,12 @@
 export const dict = {
-  // Kilo Gateway provider translations
-  "provider.connect.kiloGateway.line1": "Kilo Gateway 为您提供一组精选的可靠优化模型，专为编码代理设计。",
+  // ChipMate Gateway provider translations
+  "provider.connect.kiloGateway.line1": "ChipMate Gateway 为您提供一组精选的可靠优化模型，专为编码代理设计。",
   "provider.connect.kiloGateway.line2": "只需一个 API 密钥，您就可以使用 Claude、GPT、Gemini、GLM 等模型。",
   "provider.connect.kiloGateway.visit.prefix": "访问 ",
-  "provider.connect.kiloGateway.visit.link": "kilo.ai",
+  "provider.connect.kiloGateway.visit.link": "ChipMate",
   "provider.connect.kiloGateway.visit.suffix": " 获取您的 API 密钥。",
   "provider.connect.kiloGateway.byok.prefix": "如需更多使用统计信息，请",
-  "provider.connect.kiloGateway.byok.link": "通过 Kilo's Gateway 进行 BYOK",
+  "provider.connect.kiloGateway.byok.link": "通过 ChipMate Gateway 进行 BYOK",
   "provider.connect.kiloGateway.byok.suffix": "。",
 
   // Provider dialog translations
@@ -89,7 +89,7 @@ export const dict = {
   "snapshot.slowRepo.answer.continue.description": "等待快照完成。初始快照构建好之后，后续回合会很快。",
   "snapshot.slowRepo.answer.disable": "为此项目禁用",
   "snapshot.slowRepo.answer.disable.description":
-    "关闭本项目的 Kilo 快照。你将失去对 Kilo 更改的撤销/重做，但 git 仍会追踪所有内容。",
+    "关闭本项目的 ChipMate 快照。你将失去对 ChipMate 更改的撤销/重做，但 git 仍会追踪所有内容。",
 
   // Edit-tool header and shell-tool section labels
   "ui.messagePart.openInDiffViewer": "在差异查看器中打开",

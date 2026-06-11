@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtemp } from "fs/promises"
+import { tmpdir } from "os"
+import { join } from "path"
 import { CodeIndexConfigManager } from "../../../src/indexing/config-manager"
 import { CodeIndexOrchestrator } from "../../../src/indexing/orchestrator"
 import { CodeIndexStateManager } from "../../../src/indexing/state-manager"
+import { fallbackCheckpointMeta } from "../../../src/indexing/rag-checkpoint"
 import type { CacheManager } from "../../../src/indexing/cache-manager"
 import type { DirectoryScanner } from "../../../src/indexing/processors/scanner"
 import type {
@@ -11,6 +15,7 @@ import type {
   IndexingTelemetryEvent,
   IVectorStore,
   PointStruct,
+  ScanProgressEvent,
   VectorStoreSearchResult,
 } from "../../../src/indexing/interfaces"
 import { Emitter } from "../../../src/indexing/runtime"
@@ -64,6 +69,7 @@ class Scanner {
     private readonly discovered: number,
     private readonly indexed: number,
     private readonly blocks: number,
+    private readonly graph = 0,
   ) {}
 
   async scanDirectory(
@@ -71,11 +77,20 @@ class Scanner {
     _onError?: (error: Error) => void,
     onFilesIndexed?: (indexedCount: number) => void,
     onFileParsed?: () => void,
+    _mode?: "full" | "incremental",
+    onProgress?: (event: ScanProgressEvent) => void,
   ): Promise<{ stats: { processed: number; skipped: number }; totalBlockCount: number }> {
+    onProgress?.({ type: "target", totalFiles: this.discovered, graphTotalFiles: this.graph })
     for (let i = 0; i < this.discovered; i += 1) {
       onFileParsed?.()
     }
     onFilesIndexed?.(this.indexed)
+    for (let i = this.indexed; i < this.discovered; i += 1) {
+      onProgress?.({ type: "file", filePath: `/tmp/ws/file-${i}.ts` })
+    }
+    for (let i = 0; i < this.graph; i += 1) {
+      onProgress?.({ type: "graph", filePath: `/tmp/ws/file-${i}.c` })
+    }
     return {
       stats: {
         processed: this.indexed,
@@ -87,6 +102,7 @@ class Scanner {
 
   cancel(): void {}
   updateBatchSegmentThreshold(_newThreshold: number): void {}
+  setRunContext(_runId: string): void {}
 }
 
 class Watcher {
@@ -101,6 +117,7 @@ class Watcher {
   async initialize(): Promise<void> {}
   updateBatchSegmentThreshold(_newThreshold: number): void {}
   setCollecting(_collecting: boolean): void {}
+  setRunContext(_runId: string): void {}
 
   async processFile(filePath: string): Promise<FileProcessingResult> {
     return {
@@ -126,6 +143,17 @@ class FailScanner {
 
   cancel(): void {}
   updateBatchSegmentThreshold(_newThreshold: number): void {}
+  setRunContext(_runId: string): void {}
+}
+
+async function env() {
+  const root = await mkdtemp(join(tmpdir(), "orchestrator-ws-"))
+  const cacheDirectory = await mkdtemp(join(tmpdir(), "orchestrator-cache-"))
+  return {
+    root,
+    cacheDirectory,
+    meta: fallbackCheckpointMeta(root),
+  }
 }
 
 function createConfig(): CodeIndexConfigManager {
@@ -141,16 +169,19 @@ function createConfig(): CodeIndexConfigManager {
 describe("CodeIndexOrchestrator telemetry", () => {
   test("emits full completion telemetry", async () => {
     const events: IndexingTelemetryEvent[] = []
+    const ctx = await env()
     const orchestrator = new CodeIndexOrchestrator(
       createConfig(),
       new CodeIndexStateManager(),
-      "/tmp/ws",
+      ctx.root,
       {
         async clearCacheFile() {},
       } as unknown as CacheManager,
       new Store(false) as unknown as IVectorStore,
       new Scanner(3, 3, 6) as unknown as DirectoryScanner,
       new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
       (event) => events.push(event),
     )
 
@@ -169,16 +200,19 @@ describe("CodeIndexOrchestrator telemetry", () => {
 
   test("emits incremental completion telemetry", async () => {
     const events: IndexingTelemetryEvent[] = []
+    const ctx = await env()
     const orchestrator = new CodeIndexOrchestrator(
       createConfig(),
       new CodeIndexStateManager(),
-      "/tmp/ws",
+      ctx.root,
       {
         async clearCacheFile() {},
       } as unknown as CacheManager,
       new Store(true) as unknown as IVectorStore,
       new Scanner(2, 1, 2) as unknown as DirectoryScanner,
       new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
       (event) => events.push(event),
     )
 
@@ -195,7 +229,57 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(completed?.totalBlocks).toBe(2)
   })
 
+  test("reports progress against a stable scan target", async () => {
+    const ctx = await env()
+    const state = new CodeIndexStateManager()
+    const snapshots: Array<{
+      processedItems: number
+      totalItems: number
+      graph?: { processedFiles: number; totalFiles: number }
+    }> = []
+    const sub = state.onProgressUpdate.on(() => {
+      const current = state.getCurrentStatus()
+      const graph = state.getCodeGraphProgress()
+      const next: {
+        processedItems: number
+        totalItems: number
+        graph?: { processedFiles: number; totalFiles: number }
+      } = {
+        processedItems: current.processedItems,
+        totalItems: current.totalItems,
+      }
+      if (graph) {
+        next.graph = {
+          processedFiles: graph.processedFiles,
+          totalFiles: graph.totalFiles,
+        }
+      }
+      snapshots.push(next)
+    })
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      state,
+      ctx.root,
+      {
+        async clearCacheFile() {},
+      } as unknown as CacheManager,
+      new Store(false) as unknown as IVectorStore,
+      new Scanner(5, 2, 6, 3) as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    await orchestrator.startIndexing("manual")
+    sub.dispose()
+
+    expect(snapshots.some((item) => item.totalItems === 5 && item.processedItems === 0)).toBe(true)
+    expect(snapshots.some((item) => item.totalItems === 5 && item.processedItems === 5)).toBe(true)
+    expect(snapshots.some((item) => item.graph?.totalFiles === 3 && item.graph.processedFiles === 3)).toBe(true)
+  })
+
   test("cancelIndexing prevents scan from running", async () => {
+    const ctx = await env()
     let scanned = false
     const scanner = new Scanner(3, 3, 6) as unknown as DirectoryScanner
     const original = scanner.scanDirectory.bind(scanner)
@@ -207,11 +291,13 @@ describe("CodeIndexOrchestrator telemetry", () => {
     const orchestrator = new CodeIndexOrchestrator(
       createConfig(),
       new CodeIndexStateManager(),
-      "/tmp/ws",
+      ctx.root,
       { async clearCacheFile() {} } as unknown as CacheManager,
       new Store(false) as unknown as IVectorStore,
       scanner,
       new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
     )
 
     // Start indexing then immediately cancel
@@ -225,8 +311,72 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(orchestrator.state).not.toBe("Indexing")
   })
 
+  test("rejects a concurrent workspace indexing run without blocking later retries", async () => {
+    const ctx = await env()
+    let firstResolve: (() => void) | undefined
+    let firstStarted: (() => void) | undefined
+    const firstReady = new Promise<void>((resolve) => {
+      firstStarted = resolve
+    })
+    const firstDone = new Promise<void>((resolve) => {
+      firstResolve = resolve
+    })
+    const firstScanner = new Scanner(1, 1, 1) as unknown as DirectoryScanner
+    firstScanner.scanDirectory = async (...args: Parameters<DirectoryScanner["scanDirectory"]>) => {
+      firstStarted?.()
+      await firstDone
+      return Scanner.prototype.scanDirectory.call(new Scanner(1, 1, 1), ...args)
+    }
+    const first = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      new Store(false) as unknown as IVectorStore,
+      firstScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+    const firstRun = first.startIndexing("manual")
+    await firstReady
+
+    let secondScanned = false
+    const secondScanner = new Scanner(1, 1, 1) as unknown as DirectoryScanner
+    secondScanner.scanDirectory = async (...args: Parameters<DirectoryScanner["scanDirectory"]>) => {
+      secondScanned = true
+      return Scanner.prototype.scanDirectory.call(new Scanner(1, 1, 1), ...args)
+    }
+    const second = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      new Store(false) as unknown as IVectorStore,
+      secondScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    await second.startIndexing("manual")
+    expect(secondScanned).toBe(false)
+    expect(second.state).toBe("Indexing")
+
+    firstResolve?.()
+    await firstRun
+    expect(first.state).toBe("Indexed")
+    first.stopWatcher()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    await second.startIndexing("manual")
+    expect(secondScanned).toBe(true)
+    expect(second.state).toBe("Indexed")
+  })
+
   test("preserves cache and collection data on retryable start failures", async () => {
     const events: IndexingTelemetryEvent[] = []
+    const ctx = await env()
     const cache = {
       clears: 0,
       async clearCacheFile() {
@@ -237,11 +387,13 @@ describe("CodeIndexOrchestrator telemetry", () => {
     const orchestrator = new CodeIndexOrchestrator(
       createConfig(),
       new CodeIndexStateManager(),
-      "/tmp/ws",
+      ctx.root,
       cache as unknown as CacheManager,
       store as unknown as IVectorStore,
       new FailScanner() as unknown as DirectoryScanner,
       new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
       (event) => events.push(event),
     )
 

@@ -173,6 +173,43 @@ describe("KiloConnectionService backend crash", () => {
 })
 
 describe("KiloConnectionService SSE startup", () => {
+  it("forwards each SSE event to subscribers once", async () => {
+    const original = globalThis.fetch
+    const chunk = new TextEncoder().encode(
+      'data: {"directory":"/repo","payload":{"id":"evt_connected","type":"server.connected","properties":{}}}\n\n',
+    )
+    globalThis.fetch = (async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(chunk)
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        },
+      )) as typeof fetch
+
+    const service = new KiloConnectionService({} as any)
+    ;(service as any).serverManager.getServer = async () => ({ port: 52512, password: "secret", process: {} })
+    const events: string[] = []
+    const dirs: Array<string | undefined> = []
+    service.onEvent((event, directory) => {
+      events.push(event.type)
+      dirs.push(directory)
+    })
+
+    try {
+      await service.connect("/tmp/workspace")
+      expect(events).toEqual(["server.connected"])
+      expect(dirs).toEqual(["/repo"])
+    } finally {
+      service.dispose()
+      globalThis.fetch = original
+    }
+  })
+
   it("waits through an initial SSE fetch failure until the stream opens", async () => {
     const original = globalThis.fetch
     const chunk = new TextEncoder().encode(

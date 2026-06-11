@@ -12,6 +12,7 @@ import type {
   IndexingTelemetryEvent,
   IVectorStore,
   PointStruct,
+  ScanProgressEvent,
   VectorStoreSearchResult,
 } from "../../../../src/indexing/interfaces"
 import { loadIgnore } from "../../../../src/indexing/shared/load-ignore"
@@ -103,9 +104,35 @@ class ManyParser implements ICodeParser {
   }
 }
 
+class CountParser implements ICodeParser {
+  constructor(private readonly count: number) {}
+
+  public async parseFile(
+    filePath: string,
+    options?: {
+      minBlockLines?: number
+      maxBlockLines?: number
+      content?: string
+      fileHash?: string
+    },
+  ): Promise<CodeBlock[]> {
+    return Array.from({ length: this.count }, (_, index) => ({
+      file_path: filePath,
+      identifier: null,
+      type: "definition.function",
+      start_line: index + 1,
+      end_line: index + 1,
+      content: `export const value${index} = ${index}`,
+      fileHash: options?.fileHash ?? "",
+      segmentHash: `${filePath}:${options?.fileHash ?? ""}:${index}`,
+    }))
+  }
+}
+
 class Store implements IVectorStore {
   public multi: string[][] = []
   public points = 0
+  public records: PointStruct[] = []
 
   public async initialize(): Promise<boolean> {
     return false
@@ -113,6 +140,7 @@ class Store implements IVectorStore {
 
   public async upsertPoints(points: PointStruct[]): Promise<void> {
     this.points += points.length
+    this.records.push(...points)
   }
 
   public async search(
@@ -121,13 +149,41 @@ class Store implements IVectorStore {
     _minScore?: number,
     _maxResults?: number,
   ): Promise<VectorStoreSearchResult[]> {
-    return []
+    return this.records
+      .filter((point) => point.payload.active === true)
+      .map((point) => ({
+        id: point.id,
+        score: 1,
+        payload: point.payload,
+      }))
   }
 
   public async deletePointsByFilePath(_filePath: string): Promise<void> {}
 
   public async deletePointsByMultipleFilePaths(filePaths: string[]): Promise<void> {
     this.multi.push(filePaths)
+  }
+
+  public async activateFileGeneration(filePath: string, generation: string, runId: string): Promise<void> {
+    const rel = filePath.split("/").pop()
+    for (const point of this.records) {
+      if (point.payload.filePath !== filePath && point.payload.filePath !== rel) continue
+      point.payload.active = point.payload.generation === generation && point.payload.runId === runId
+    }
+  }
+
+  public async deleteInactiveFilePoints(filePath: string, activeGeneration: string): Promise<void> {
+    const rel = filePath.split("/").pop()
+    this.records = this.records.filter(
+      (point) =>
+        (point.payload.filePath !== filePath && point.payload.filePath !== rel) ||
+        point.payload.generation === activeGeneration ||
+        point.payload.active === true,
+    )
+  }
+
+  public getCollectionName(): string {
+    return "test"
   }
 
   public async clearCollection(): Promise<void> {}
@@ -171,6 +227,18 @@ class RetryStore extends Store {
   }
 }
 
+class CleanupCrashStore extends Store {
+  public failCleanup = false
+
+  public override async deleteInactiveFilePoints(filePath: string, activeGeneration: string): Promise<void> {
+    if (this.failCleanup) {
+      this.failCleanup = false
+      throw new Error("crash between new chunk upsert and stale cleanup")
+    }
+    await super.deleteInactiveFilePoints(filePath, activeGeneration)
+  }
+}
+
 describe("DirectoryScanner", () => {
   test("keeps file metadata when threshold flush is triggered by that file", async () => {
     const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
@@ -193,7 +261,7 @@ describe("DirectoryScanner", () => {
 
     expect(result.stats.processed).toBe(1)
     expect(store.points).toBe(1)
-    expect(store.multi).toEqual([[file]])
+    expect(store.multi).toEqual([])
     expect(cache.getHash(file)).toBe(hash)
   })
 
@@ -216,6 +284,40 @@ describe("DirectoryScanner", () => {
     await scan.scanDirectory(root)
 
     expect(cache.getHash(file)).toBe("old-hash")
+  })
+
+  test("cleans stale active chunks when a file shrinks after a cleanup crash", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const file = join(root, "main.ts")
+    const oldContent = "export const oldValue = 1\n"
+    const newContent = "export const newValue = 2\n"
+    await Bun.write(file, oldContent)
+
+    const oldHash = createHash("sha256").update(oldContent).digest("hex")
+    const newHash = createHash("sha256").update(newContent).digest("hex")
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const store = new CleanupCrashStore()
+
+    const first = new DirectoryScanner(new Emb(), store, new CountParser(10), cache, ignore(), 3, 1)
+    await first.scanDirectory(root)
+    expect(cache.getHash(file)).toBe(oldHash)
+    expect((await store.search([0.1])).length).toBe(10)
+
+    await Bun.write(file, newContent)
+    store.failCleanup = true
+    const crashed = new DirectoryScanner(new Emb(), store, new CountParser(6), cache, ignore(), 3, 1)
+    await expect(crashed.scanDirectory(root)).rejects.toThrow("crash between new chunk upsert and stale cleanup")
+    expect(cache.getHash(file)).toBe(oldHash)
+
+    const resumed = new DirectoryScanner(new Emb(), store, new CountParser(6), cache, ignore(), 3, 1)
+    await resumed.scanDirectory(root)
+
+    const results = await store.search([0.1])
+    expect(cache.getHash(file)).toBe(newHash)
+    expect(results.length).toBe(6)
+    expect(new Set(results.map((result) => result.payload?.fileHash))).toEqual(new Set([newHash]))
   })
 
   test("emits candidate counts for scan telemetry", async () => {
@@ -252,6 +354,28 @@ describe("DirectoryScanner", () => {
     expect(count?.mode).toBe("full")
     expect(count?.source).toBe("scan")
     expect(count?.candidate).toBe(1)
+  })
+
+  test("emits stable scan progress targets", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const file = join(root, "main.c")
+    await Bun.write(file, "int main(void) { return 0; }\n")
+
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+
+    const events: ScanProgressEvent[] = []
+    const scan = new DirectoryScanner(new Emb(), new Store(), new Parser(), cache, ignore(), 1, 1)
+
+    await scan.scanDirectory(root, undefined, undefined, undefined, "full", (event) => events.push(event))
+
+    expect(events.at(0)).toEqual({
+      type: "target",
+      totalFiles: 1,
+      graphTotalFiles: 1,
+    })
+    expect(events.some((event) => event.type === "graph" && event.filePath === file)).toBe(true)
   })
 
   test("skips files matched by .kilocodeignore during full scans", async () => {

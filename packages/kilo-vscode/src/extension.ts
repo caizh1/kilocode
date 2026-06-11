@@ -41,7 +41,7 @@ const panelTitleHandler = (panel: vscode.WebviewPanel) => (title: string) => {
 // requiring the user to open a Kilo sidebar or panel first. The CLI backend is NOT spawned here;
 // it starts lazily when a webview connects or when ensureBackendForAutocomplete() triggers it.
 export function activate(context: vscode.ExtensionContext) {
-  console.log("Kilo Code extension is now active")
+  console.log("ChipMate extension is now active")
   shuttingDown = false
 
   const telemetry = TelemetryProxy.getInstance()
@@ -476,7 +476,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   )
 
-  // Register URI handler for session imports (vscode://kilocode.kilo-code/kilocode/s/{sessionId})
+  // Register URI handler for session imports (vscode://chipmate.chipmate/kilocode/s/{sessionId})
   context.subscriptions.push(
     vscode.window.registerUriHandler({
       async handleUri(uri: vscode.Uri) {

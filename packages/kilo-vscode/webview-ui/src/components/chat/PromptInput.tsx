@@ -14,7 +14,7 @@ import { showToast } from "@kilocode/kilo-ui/toast"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useServer } from "../../context/server"
-import { useIndexing } from "../../context/indexing"
+import { formatIndexingPipelineLabel, indexingPipelineTone, useIndexing } from "../../context/indexing"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
 import { useWorktreeMode } from "../../context/worktree-mode"
@@ -36,7 +36,7 @@ import { useSpeechToText } from "../speech-to-text/useSpeechToText"
 import { useImageAttachments, type ImageAttachment } from "../../hooks/useImageAttachments"
 import { convertToMentionPath } from "../../utils/path-mentions"
 import { usePromptHistory } from "../../hooks/usePromptHistory"
-import { WandSparkles } from "@kilocode/kilo-ui/lucide"
+import { ChartNetwork, ScanSearch, WandSparkles } from "@kilocode/kilo-ui/lucide"
 import {
   fileName,
   dirName,
@@ -46,7 +46,7 @@ import {
   isPromptBusy,
   isPathMention,
 } from "./prompt-input-utils"
-import type { ReviewComment, TextPart } from "../../types/messages"
+import type { IndexingPipelineStatus, ReviewComment, TextPart } from "../../types/messages"
 import { formatReviewCommentsMarkdown } from "../../utils/review-comment-markdown"
 import { pendingDraftKey, scopeDraftKey, sessionDraftKey } from "../../utils/prompt-drafts"
 
@@ -54,6 +54,110 @@ import { pendingDraftKey, scopeDraftKey, sessionDraftKey } from "../../utils/pro
 const drafts = new Map<string, string>()
 const reviewDrafts = new Map<string, ReviewComment[]>()
 const imageDrafts = new Map<string, ImageAttachment[]>()
+
+const RING_SIZE = 24
+const RING_RADIUS = 9
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
+
+const IndexingProgressButton: Component<{
+  label: string
+  title: string
+  icon: Component<{ class?: string; size?: number; strokeWidth?: number }>
+  status: () => IndexingPipelineStatus
+  onClick: () => void
+}> = (props) => {
+  const Glyph = props.icon
+  const tone = () => indexingPipelineTone(props.status())
+  const offset = () => RING_CIRCUMFERENCE * (1 - Math.min(100, Math.max(0, props.status().percent)) / 100)
+  const desc = () => formatIndexingPipelineLabel(props.label, props.status())
+
+  return (
+    <Tooltip value={<IndexingProgressTooltip title={props.title} status={props.status} />} placement="top">
+      <Button
+        variant="ghost"
+        size="small"
+        onClick={props.onClick}
+        aria-label={desc()}
+        class={`prompt-indexing-button prompt-indexing-progress prompt-indexing-progress--${tone()}`}
+      >
+        <span class="prompt-indexing-icon-shell" aria-hidden="true">
+          <svg
+            class="prompt-indexing-ring"
+            width={RING_SIZE}
+            height={RING_SIZE}
+            viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
+          >
+            <circle
+              data-slot="progress-circle-background"
+              cx="12"
+              cy="12"
+              r={RING_RADIUS}
+              fill="none"
+              stroke-width="1.4"
+            />
+            <circle
+              data-slot="progress-circle-progress"
+              cx="12"
+              cy="12"
+              r={RING_RADIUS}
+              fill="none"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-dasharray={String(RING_CIRCUMFERENCE)}
+              stroke-dashoffset={String(offset())}
+              transform="rotate(-90 12 12)"
+            />
+          </svg>
+          <Glyph class="prompt-indexing-icon" size={14} strokeWidth={2.1} />
+        </span>
+      </Button>
+    </Tooltip>
+  )
+}
+
+const IndexingProgressTooltip: Component<{
+  title: string
+  status: () => IndexingPipelineStatus
+}> = (props) => {
+  const status = props.status
+  return (
+    <div class="prompt-indexing-tooltip">
+      <div class="prompt-indexing-tooltip__title">{props.title}</div>
+      <div class="prompt-indexing-tooltip__row">
+        <span>Status</span>
+        <strong>{status().state}</strong>
+      </div>
+      <div class="prompt-indexing-tooltip__row">
+        <span>Progress</span>
+        <strong>
+          {status().percent}% ({status().processedFiles}/{status().totalFiles})
+        </strong>
+      </div>
+      <div class="prompt-indexing-tooltip__row">
+        <span>Issues</span>
+        <strong>
+          {status().errorCount} errors, {status().staleCount} stale, {status().skippedCount} skipped
+        </strong>
+      </div>
+      <Show when={status().lastFullScanAt}>
+        <div class="prompt-indexing-tooltip__row">
+          <span>Last full scan</span>
+          <strong>{formatScanTime(status().lastFullScanAt)}</strong>
+        </div>
+      </Show>
+      <Show when={status().detail || status().message}>
+        <div class="prompt-indexing-tooltip__detail">{status().detail || status().message}</div>
+      </Show>
+    </div>
+  )
+}
+
+function formatScanTime(value?: string): string {
+  if (!value) return "Never"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
 
 function mergeReviewComments(current: ReviewComment[], incoming: ReviewComment[]): ReviewComment[] {
   if (incoming.length === 0) return current
@@ -1104,30 +1208,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         </div>
         <div class="prompt-input-hint-actions">
           <Show when={features().indexing}>
-            <Tooltip value={indexing.status().message || indexing.label()} placement="top">
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={handleOpenIndexingSettings}
-                aria-label={language.t("prompt.action.indexing")}
-                class={`prompt-indexing-button prompt-indexing-button--${indexing.tone()}`}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <ellipse cx="8" cy="3.5" rx="4.5" ry="2" stroke="currentColor" stroke-width="1.2" />
-                  <path
-                    d="M3.5 3.5V12.5C3.5 13.6046 5.51472 14.5 8 14.5C10.4853 14.5 12.5 13.6046 12.5 12.5V3.5"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                  />
-                  <path
-                    d="M3.5 8C3.5 9.10457 5.51472 10 8 10C10.4853 10 12.5 9.10457 12.5 8"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                  />
-                  <circle cx="13" cy="3" r="2.5" fill="currentColor" />
-                </svg>
-              </Button>
-            </Tooltip>
+            <IndexingProgressButton
+              label="CG"
+              title="Code Graph"
+              icon={ChartNetwork}
+              status={() => indexing.pipelines().codeGraph}
+              onClick={handleOpenIndexingSettings}
+            />
+            <IndexingProgressButton
+              label="RAG"
+              title="RAG"
+              icon={ScanSearch}
+              status={() => indexing.pipelines().rag}
+              onClick={handleOpenIndexingSettings}
+            />
           </Show>
           <Tooltip
             value={

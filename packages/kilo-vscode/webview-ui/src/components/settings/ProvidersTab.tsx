@@ -140,7 +140,7 @@ const ProvidersTab: Component = () => {
 
   function connectProvider(item: Provider) {
     if (item.id === KILO_PROVIDER_ID) {
-      // Route Kilo Gateway sign-in through the Profile view so the user sees
+      // Route hosted gateway sign-in through the Profile view so the user sees
       // the full device-auth UI (URL, QR, code, timer, cancel). Triggering
       // `startLogin()` from here alone would run the flow silently with no
       // way to recover if the browser is dismissed.
@@ -163,7 +163,7 @@ const ProvidersTab: Component = () => {
   return (
     <div>
       <Show when={!disabledIds().has(KILO_PROVIDER_ID)}>
-        {/* Kilo Gateway — always at the top, not editable */}
+        {/* Hosted gateway — always at the top, not editable */}
         <Card>
           <div
             style={{
@@ -182,7 +182,7 @@ const ProvidersTab: Component = () => {
                 color: "var(--vscode-foreground)",
               }}
             >
-              Kilo Gateway
+              ChipMate Gateway
             </span>
             <Show
               when={kiloLoggedIn()}

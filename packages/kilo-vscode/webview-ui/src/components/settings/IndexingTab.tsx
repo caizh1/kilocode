@@ -6,12 +6,17 @@ import { Switch } from "@kilocode/kilo-ui/switch"
 import { TextField } from "@kilocode/kilo-ui/text-field"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { useConfig } from "../../context/config"
-import { formatIndexingLabel, useIndexing } from "../../context/indexing"
+import {
+  formatIndexingLabel,
+  formatIndexingPipelineLabel,
+  indexingPipelineTone,
+  useIndexing,
+} from "../../context/indexing"
 import { useKiloEmbeddingModels } from "../../context/kilo-embedding-models"
 import { useLanguage } from "../../context/language"
 import { useProvider } from "../../context/provider"
 import { useServer } from "../../context/server"
-import type { IndexingConfig, IndexingProvider as ProviderId } from "../../types/messages"
+import type { IndexingConfig, IndexingPipelineStatus, IndexingProvider as ProviderId } from "../../types/messages"
 import { KILO_PROVIDER_ID } from "../../../../src/shared/provider-model"
 import SettingsRow from "./SettingsRow"
 
@@ -32,8 +37,8 @@ const allProviders: { value: ProviderId; label: string }[] = [
 ]
 
 const stores: Option[] = [
-  { value: "qdrant", label: "Qdrant (default)" },
-  { value: "lancedb", label: "LanceDB" },
+  { value: "lancedb", label: "LanceDB (default)" },
+  { value: "qdrant", label: "Qdrant" },
 ]
 
 const tuning: Array<{ key: TuningKey; label: string; placeholder: string }> = [
@@ -42,6 +47,17 @@ const tuning: Array<{ key: TuningKey; label: string; placeholder: string }> = [
   { key: "embeddingBatchSize", label: "Embedding Batch Size", placeholder: "60" },
   { key: "scannerMaxBatchRetries", label: "Scanner Max Batch Retries", placeholder: "3" },
 ]
+
+const PipelineBadge: Component<{ label: string; status: IndexingPipelineStatus }> = (props) => (
+  <div style={{ display: "flex", "align-items": "center", gap: "8px", "justify-content": "flex-end" }}>
+    <span class={`indexing-status-badge indexing-status-badge--${indexingPipelineTone(props.status)}`}>
+      {formatIndexingPipelineLabel(props.label, props.status)}
+    </span>
+    <span style={{ color: "var(--vscode-descriptionForeground)", "font-size": "var(--kilo-font-size-12)" }}>
+      {props.status.errorCount} err / {props.status.staleCount} stale / {props.status.skippedCount} skipped
+    </span>
+  </div>
+)
 
 function providerFields(provider: ProviderId | undefined): Array<{ key: string; label: string; placeholder: string }> {
   if (provider === "kilo") return []
@@ -91,7 +107,7 @@ const IndexingTab: Component = () => {
     updateConfig({ indexing: { ...cfg(), ...partial } })
   }
 
-  const vectorStore = () => cfg().vectorStore ?? "qdrant"
+  const vectorStore = () => cfg().vectorStore ?? "lancedb"
   const kiloDefault = () =>
     getKiloEmbeddingModel(embeds.catalog().defaultModel, embeds.catalog())?.id ?? embeds.catalog().defaultModel
   const kiloModels = createMemo(() =>
@@ -217,6 +233,15 @@ const IndexingTab: Component = () => {
           <span class={`indexing-status-badge indexing-status-badge--${indexing.tone()}`}>
             {formatIndexingLabel(indexing.status())}
           </span>
+        </SettingsRow>
+        <SettingsRow
+          title="Code Graph"
+          description={indexing.pipelines().codeGraph.detail || indexing.pipelines().codeGraph.message}
+        >
+          <PipelineBadge label="CG" status={indexing.pipelines().codeGraph} />
+        </SettingsRow>
+        <SettingsRow title="RAG" description={indexing.pipelines().rag.detail || indexing.pipelines().rag.message}>
+          <PipelineBadge label="RAG" status={indexing.pipelines().rag} />
         </SettingsRow>
         <SettingsRow
           title={language.t("settings.indexing.globalEnable.title")}

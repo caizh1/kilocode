@@ -1,10 +1,13 @@
 export { CodeIndexAnalysisService, resolveEvidenceBudget } from "./service"
 export {
   DEFAULT_EVIDENCE_BUDGET,
+  type CodeGraphEvidenceEffectiveMode,
   type CodeGraphEvidenceQueryOptions,
   type CodeGraphEvidenceRetrievalMode,
   type EvidenceBudget,
+  type EvidenceConfidence,
   type EvidenceRef,
+  type EvidenceSource,
   type QueryEvidenceAnswerPolicy,
   type QueryEvidenceDroppedByBudget,
   type QueryEvidenceResult,
@@ -13,5 +16,6 @@ export {
   type QueryEvidenceSummaries,
   type QueryEvidenceSummary,
   type QueryEvidenceTrace,
+  type QueryEvidenceTraceDiagnostic,
   type QueryEvidenceTraceStage,
 } from "./types"

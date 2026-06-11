@@ -30,7 +30,7 @@ describe("CodeIndexServiceFactory", () => {
   })
 
   test("uses default LanceDB directory when config is unset", () => {
-    const factory = createFactory({ vectorStoreProvider: "lancedb", lancedbVectorStoreDirectory: undefined })
+    const factory = createFactory({ vectorStoreProvider: undefined, lancedbVectorStoreDirectory: undefined })
 
     const store = factory.createVectorStore() as unknown as { dbPath: string }
 

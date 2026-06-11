@@ -50,7 +50,7 @@ export interface IndexingConfigInput {
 export class CodeIndexConfigManager {
   private enabled = false
   private embedderProvider: EmbedderProvider = "openai"
-  private vectorStoreProvider: "lancedb" | "qdrant" = "qdrant"
+  private vectorStoreProvider: "lancedb" | "qdrant" = "lancedb"
   private lancedbVectorStoreDirectory?: string
   private modelId?: string
   private modelDimension?: number
@@ -88,7 +88,7 @@ export class CodeIndexConfigManager {
   private applyInput(input: IndexingConfigInput): void {
     this.enabled = input.enabled
     this.embedderProvider = input.embedderProvider
-    this.vectorStoreProvider = input.vectorStoreProvider ?? "qdrant"
+    this.vectorStoreProvider = input.vectorStoreProvider ?? "lancedb"
     this.lancedbVectorStoreDirectory = input.lancedbVectorStoreDirectory
     this.qdrantUrl = input.qdrantUrl ?? "http://localhost:6333"
     this.qdrantApiKey = input.qdrantApiKey
@@ -196,7 +196,7 @@ export class CodeIndexConfigManager {
     if (prevProvider !== this.embedderProvider) return true
 
     // Vector store provider change
-    if ((prev.vectorStoreProvider ?? "qdrant") !== this.vectorStoreProvider) return true
+    if ((prev.vectorStoreProvider ?? "lancedb") !== this.vectorStoreProvider) return true
 
     // LanceDB path change
     if (
@@ -258,7 +258,7 @@ export class CodeIndexConfigManager {
     return {
       isConfigured: this.isConfigured(),
       embedderProvider: this.embedderProvider,
-      vectorStoreProvider: this.vectorStoreProvider ?? "qdrant",
+      vectorStoreProvider: this.vectorStoreProvider ?? "lancedb",
       lancedbVectorStoreDirectoryPlaceholder: this.lancedbVectorStoreDirectory,
       modelId: this.modelId,
       modelDimension: this.modelDimension,

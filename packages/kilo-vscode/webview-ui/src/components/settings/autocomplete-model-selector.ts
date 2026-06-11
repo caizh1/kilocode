@@ -17,5 +17,5 @@ export const AUTOCOMPLETE_SELECTOR_MODELS: EnrichedModel[] = AUTOCOMPLETE_MODELS
   id: m.modelID,
   name: m.label,
   providerID: m.providerID,
-  providerName: m.provider,
+  providerName: m.provider === "Kilo Gateway" ? "ChipMate Gateway" : m.provider,
 }))

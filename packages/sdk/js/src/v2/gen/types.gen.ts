@@ -181,6 +181,34 @@ export type IndexingStatus = {
   processedFiles: number
   totalFiles: number
   percent: number
+  pipelines?: {
+    codeGraph: {
+      state: IndexingStatusState
+      message: string
+      processedFiles: number
+      totalFiles: number
+      percent: number
+      detail?: string
+      lastFullScanAt?: string
+      errorCount: number
+      staleCount: number
+      skippedCount: number
+      validFileCount?: number
+    }
+    rag: {
+      state: IndexingStatusState
+      message: string
+      processedFiles: number
+      totalFiles: number
+      percent: number
+      detail?: string
+      lastFullScanAt?: string
+      errorCount: number
+      staleCount: number
+      skippedCount: number
+      validFileCount?: number
+    }
+  }
 }
 
 export type QuestionOption = {

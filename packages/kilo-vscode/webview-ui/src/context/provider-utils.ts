@@ -14,7 +14,7 @@ export function flattenModels(providers: Record<string, Provider>): EnrichedMode
         ...provider.models[modelID]!,
         id: modelID,
         providerID,
-        providerName: provider.name,
+        providerName: provider.name === "Kilo Gateway" ? "ChipMate Gateway" : provider.name,
       })
     }
   }

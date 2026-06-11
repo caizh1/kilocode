@@ -340,6 +340,18 @@ describe("LocalVectorStore", () => {
     })
   })
 
+  describe("indexing metadata", () => {
+    test("does not clear completed marker when marking current run incomplete", async () => {
+      mockDb.openTable.mockResolvedValue(mockTable)
+
+      await store.markIndexingIncomplete()
+
+      const added = mockTable.add.mock.calls.flatMap((call) => call[0] as Array<{ key: string; value: string }>)
+      expect(added.some((item) => item.key === "indexing_complete")).toBe(false)
+      expect(added).toContainEqual({ key: "indexing_run_incomplete", value: "true" })
+    })
+  })
+
   describe("search", () => {
     test("should return filtered results using distanceRange", async () => {
       const distanceRangeSpy = mock().mockReturnThis()
@@ -639,7 +651,7 @@ describe("LocalVectorStore", () => {
       await store.search([1, 2, 3], maliciousPrefix)
 
       // Verify proper escaping in the where clause
-      expect(whereSpy).toHaveBeenCalledWith("`filePath` LIKE 'src'' OR ''1''=''1%'")
+      expect(whereSpy).toHaveBeenCalledWith("`active` = true AND `filePath` LIKE 'src'' OR ''1''=''1%'")
     })
 
     test("should prevent injection with wildcards in directory prefix", async () => {
@@ -655,7 +667,7 @@ describe("LocalVectorStore", () => {
 
       await store.search([1, 2, 3], maliciousPrefix)
 
-      expect(whereSpy).toHaveBeenCalledWith("`filePath` LIKE '50\\%\\_test%'")
+      expect(whereSpy).toHaveBeenCalledWith("`active` = true AND `filePath` LIKE '50\\%\\_test%'")
     })
 
     test("should handle Windows paths with backslashes in search", async () => {
@@ -672,7 +684,7 @@ describe("LocalVectorStore", () => {
       await store.search([1, 2, 3], windowsPrefix)
 
       // Backslashes should be escaped in LIKE patterns
-      expect(whereSpy).toHaveBeenCalledWith("`filePath` LIKE 'C:\\\\Users\\\\test%'")
+      expect(whereSpy).toHaveBeenCalledWith("`active` = true AND `filePath` LIKE 'C:\\\\Users\\\\test%'")
     })
 
     test("should prevent injection via file paths in deletePointsByFilePath", async () => {

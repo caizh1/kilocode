@@ -8,14 +8,12 @@ import {
   generateRelativeIgnorePath,
 } from "../shared/get-relative-path"
 import { scannerExtensions } from "../shared/supported-extensions"
-import type { CodeBlock, ICodeParser, IEmbedder, IVectorStore, IDirectoryScanner } from "../interfaces"
+import type { CodeBlock, ICodeParser, IEmbedder, IVectorStore, IDirectoryScanner, ScanProgressEvent } from "../interfaces"
 import { createHash } from "crypto"
-import { v5 as uuidv5 } from "uuid"
 import pLimit from "p-limit"
 import { Mutex } from "async-mutex"
 import { CacheManager } from "../cache-manager"
 import {
-  QDRANT_CODE_BLOCK_NAMESPACE,
   MAX_FILE_SIZE_BYTES,
   BATCH_SEGMENT_THRESHOLD,
   MAX_BATCH_RETRIES,
@@ -28,6 +26,10 @@ import { FileIgnore } from "../../file/ignore"
 import { Log } from "../../util/log"
 import { sanitizeErrorMessage } from "../shared/validation-helpers"
 import type { IndexingTelemetryMeta, IndexingTelemetryMode, IndexingTelemetryReporter } from "../interfaces/telemetry"
+import type { CodeGraphFileGraph, ICodeGraphStorage, ICodePostingsStorage } from "../codegraph"
+import { isCodeGraphSupportedPath, parseCodeGraphFile } from "../codegraph/parser"
+import type { RagCheckpointMeta } from "../rag-checkpoint"
+import { fallbackCheckpointMeta, generationForFile, pointForBlock, vectorContext } from "../rag-checkpoint"
 
 const log = Log.create({ service: "indexing-scanner" })
 
@@ -35,6 +37,8 @@ export class DirectoryScanner implements IDirectoryScanner {
   private _cancelled = false
   private batchSegmentThreshold: number
   private maxBatchRetries: number
+  private runId: string = globalThis.crypto.randomUUID()
+  private ragMeta: RagCheckpointMeta | undefined
 
   constructor(
     private readonly embedder: IEmbedder,
@@ -46,6 +50,8 @@ export class DirectoryScanner implements IDirectoryScanner {
     maxBatchRetries?: number,
     private readonly onTelemetry?: IndexingTelemetryReporter,
     private readonly telemetryMeta?: IndexingTelemetryMeta,
+    private readonly graph?: ICodeGraphStorage,
+    private readonly postings?: ICodePostingsStorage,
   ) {
     this.batchSegmentThreshold = batchSegmentThreshold ?? BATCH_SEGMENT_THRESHOLD
     this.maxBatchRetries = maxBatchRetries ?? MAX_BATCH_RETRIES
@@ -112,6 +118,11 @@ export class DirectoryScanner implements IDirectoryScanner {
     return this._cancelled
   }
 
+  public setRunContext(runId: string, meta: RagCheckpointMeta): void {
+    this.runId = runId
+    this.ragMeta = meta
+  }
+
   /**
    * Updates the batch segment threshold
    * @param newThreshold New batch segment threshold value
@@ -134,6 +145,7 @@ export class DirectoryScanner implements IDirectoryScanner {
     onFilesIndexed?: (indexedCount: number) => void,
     onFileParsed?: () => void,
     mode: IndexingTelemetryMode = "full",
+    onProgress?: (event: ScanProgressEvent) => void,
   ): Promise<{ stats: { processed: number; skipped: number }; totalBlockCount: number }> {
     // reset cooperative cancel flag on new full scan
     this._cancelled = false
@@ -142,6 +154,7 @@ export class DirectoryScanner implements IDirectoryScanner {
     // Use the directory path directly as the workspace root
     const scanWorkspace = directoryPath
     log.info("starting directory scan", { workspacePath: scanWorkspace })
+    await this.beginGraphScan()
 
     // Get all files recursively, filtering out ignored directories via glob
     const allPaths = await glob("**/*", {
@@ -174,6 +187,11 @@ export class DirectoryScanner implements IDirectoryScanner {
       supportedFiles: supportedPaths.length,
     })
     this.emitFileCount(mode, allPaths.length, supportedPaths.length)
+    onProgress?.({
+      type: "target",
+      totalFiles: supportedPaths.length,
+      graphTotalFiles: supportedPaths.filter((filePath) => isCodeGraphSupportedPath(filePath)).length,
+    })
 
     // Initialize tracking variables
     const processedFiles = new Set<string>()
@@ -189,19 +207,90 @@ export class DirectoryScanner implements IDirectoryScanner {
     let currentBatchBlocks: CodeBlock[] = []
     let currentBatchTexts: string[] = []
     let currentBatchFileInfos: { filePath: string; fileHash: string; isNew: boolean }[] = []
-    const batched = new Map<string, string>()
     let failed = false
     const activeBatchPromises = new Set<Promise<void>>()
     let pendingBatchCount = 0
+    let batchFailure: Error | undefined
+    const buffered = new Set<string>()
+    const jobs = new Map<
+      string,
+      {
+        filePath: string
+        fileHash: string
+        generation: string
+        pending: number
+        parsed: boolean
+        failed: boolean
+        completed: boolean
+      }
+    >()
 
     // Initialize block counter
     let totalBlockCount = 0
+
+    const ctx = () => {
+      return vectorContext(scanWorkspace, this.runId, this.ragMeta ?? fallbackCheckpointMeta(scanWorkspace))
+    }
+
+    const fileGeneration = (filePath: string, fileHash: string): string => {
+      const meta = this.ragMeta ?? fallbackCheckpointMeta(scanWorkspace)
+      const normalizedAbsolutePath = generateNormalizedAbsolutePath(filePath, scanWorkspace)
+      const relativeFilePath = generateRelativeFilePath(normalizedAbsolutePath, scanWorkspace)
+      return generationForFile(meta, relativeFilePath, fileHash)
+    }
+
+    const ensureJob = (filePath: string, fileHash: string) => {
+      const existing = jobs.get(filePath)
+      if (existing) return existing
+      const job = {
+        filePath,
+        fileHash,
+        generation: fileGeneration(filePath, fileHash),
+        pending: 0,
+        parsed: false,
+        failed: false,
+        completed: false,
+      }
+      jobs.set(filePath, job)
+      return job
+    }
+
+    const readyJobs = () =>
+      [...jobs.values()].filter((job) => job.parsed && job.pending === 0 && !job.failed && !job.completed && !buffered.has(job.filePath))
+
+    const completeReadyJobs = async () => {
+      for (const job of readyJobs()) {
+        if (!this.vectorStore.activateFileGeneration || !this.vectorStore.deleteInactiveFilePoints) {
+          throw new Error("Vector store does not support active generation checkpoints")
+        }
+        await this.vectorStore.activateFileGeneration(job.filePath, job.generation, this.runId)
+        await this.vectorStore.deleteInactiveFilePoints(job.filePath, job.generation)
+        this.cacheManager.updateHash(job.filePath, job.fileHash)
+        await this.cacheManager.flush()
+        job.completed = true
+        onFilesIndexed?.(1)
+        onProgress?.({ type: "file", filePath: job.filePath })
+      }
+    }
+
+    const batchFiles = (blocks: CodeBlock[]) => {
+      const files = new Map<string, string>()
+      for (const block of blocks) files.set(block.file_path, block.fileHash)
+      return files
+    }
 
     const queueBatch = async (
       batchBlocks: CodeBlock[],
       batchTexts: string[],
       batchFileInfos: { filePath: string; fileHash: string; isNew: boolean }[],
     ): Promise<void> => {
+      const files = batchFiles(batchBlocks)
+      for (const [filePath, fileHash] of files) {
+        const job = ensureJob(filePath, fileHash)
+        job.pending += 1
+        buffered.delete(filePath)
+      }
+
       while (!this._cancelled) {
         const release = await mutex.acquire()
         let wait: Promise<void> | null = null
@@ -210,20 +299,38 @@ export class DirectoryScanner implements IDirectoryScanner {
           if (pendingBatchCount < MAX_PENDING_BATCHES) {
             pendingBatchCount++
 
-            const batchPromise = batchLimiter(() =>
-              this.processBatch(
-                batchBlocks,
-                batchTexts,
-                batchFileInfos,
-                scanWorkspace,
-                mode,
-                onError,
-                onFilesIndexed,
-                () => {
-                  failed = true
-                },
-              ),
-            )
+            const batchPromise = batchLimiter(async () => {
+              try {
+                const ok = await this.processBatch(
+                  batchBlocks,
+                  batchTexts,
+                  batchFileInfos,
+                  scanWorkspace,
+                  mode,
+                  onError,
+                  () => {
+                    failed = true
+                  },
+                  ctx(),
+                )
+                for (const [filePath] of files) {
+                  const job = jobs.get(filePath)
+                  if (!job) continue
+                  job.pending = Math.max(0, job.pending - 1)
+                  if (!ok) job.failed = true
+                }
+                await completeReadyJobs()
+              } catch (err) {
+                failed = true
+                batchFailure = err instanceof Error ? err : new Error(String(err))
+                for (const [filePath] of files) {
+                  const job = jobs.get(filePath)
+                  if (!job) continue
+                  job.pending = Math.max(0, job.pending - 1)
+                  job.failed = true
+                }
+              }
+            })
             activeBatchPromises.add(batchPromise)
 
             // Clean up completed promises to prevent memory accumulation
@@ -250,6 +357,15 @@ export class DirectoryScanner implements IDirectoryScanner {
         // Early exit if cancellation requested
         if (this._cancelled) {
           return
+        }
+
+        const graphSupported = isCodeGraphSupportedPath(filePath)
+        let deferred = false
+        let graphed = false
+        const reportGraph = () => {
+          if (!graphSupported || graphed) return
+          graphed = true
+          onProgress?.({ type: "graph", filePath })
         }
 
         try {
@@ -280,9 +396,14 @@ export class DirectoryScanner implements IDirectoryScanner {
           const isNewFile = !cachedFileHash
           if (cachedFileHash === currentFileHash) {
             // File is unchanged
+            await this.updateFileGraph(scanWorkspace, filePath, content, currentFileHash)
+            reportGraph()
             skippedCount++
             return
           }
+
+          await this.updateFileGraph(scanWorkspace, filePath, content, currentFileHash)
+          reportGraph()
 
           // File is new or changed - parse it using the injected parser function
           const blocks = await this.codeParser.parseFile(filePath, { content, fileHash: currentFileHash })
@@ -320,6 +441,8 @@ export class DirectoryScanner implements IDirectoryScanner {
                     currentBatchBlocks.push(block)
                     currentBatchTexts.push(trimmedContent)
                     addedBlocksFromFile = true
+                    deferred = true
+                    buffered.add(filePath)
 
                     // Check if batch threshold is met
                     if (currentBatchBlocks.length < this.batchSegmentThreshold) {
@@ -360,7 +483,8 @@ export class DirectoryScanner implements IDirectoryScanner {
               const release = await mutex.acquire()
               try {
                 totalBlockCount += fileBlockCount
-                batched.set(filePath, currentFileHash)
+                const job = ensureJob(filePath, currentFileHash)
+                job.parsed = true
                 if (!queued) {
                   currentBatchFileInfos.push(info)
                   queued = true
@@ -372,6 +496,7 @@ export class DirectoryScanner implements IDirectoryScanner {
           } else {
             // Only update hash if not being processed in a batch
             this.cacheManager.updateHash(filePath, currentFileHash)
+            await this.cacheManager.flush()
           }
         } catch (error) {
           log.error(`Error processing file ${filePath} in workspace ${scanWorkspace}`, {
@@ -385,6 +510,13 @@ export class DirectoryScanner implements IDirectoryScanner {
                 ? new Error(`${error.message} (Workspace: ${scanWorkspace}, File: ${filePath})`)
                 : new Error(`Unknown error processing file ${filePath} (Workspace: ${scanWorkspace})`),
             )
+          }
+        } finally {
+          if (!this._cancelled) {
+            reportGraph()
+            if (!deferred) {
+              onProgress?.({ type: "file", filePath })
+            }
           }
         }
       }),
@@ -449,16 +581,15 @@ export class DirectoryScanner implements IDirectoryScanner {
       await Promise.all(activeBatchPromises)
     }
 
-    if (!failed) {
-      for (const [filePath, fileHash] of batched.entries()) {
-        this.cacheManager.updateHash(filePath, fileHash)
-      }
-    }
+    if (batchFailure) throw batchFailure
 
-    if (failed && batched.size > 0) {
-      log.warn("skipping cache hash updates due failed batch", {
+    await completeReadyJobs()
+
+    const incomplete = [...jobs.values()].filter((job) => !job.completed)
+    if (failed && incomplete.length > 0) {
+      log.warn("skipping cache hash updates for incomplete vector files", {
         workspacePath: scanWorkspace,
-        affectedFiles: batched.size,
+        affectedFiles: incomplete.length,
       })
     }
 
@@ -467,10 +598,12 @@ export class DirectoryScanner implements IDirectoryScanner {
     for (const cachedFilePath of Object.keys(oldHashes)) {
       if (!processedFiles.has(cachedFilePath)) {
         // File was deleted or is no longer supported/indexed
+        await this.removeFileGraph(cachedFilePath)
         if (this.vectorStore) {
           try {
-            await this.vectorStore.deletePointsByFilePath(cachedFilePath)
-            this.cacheManager.deleteHash(cachedFilePath)
+              await this.vectorStore.deletePointsByFilePath(cachedFilePath)
+              this.cacheManager.deleteHash(cachedFilePath)
+              await this.cacheManager.flush()
           } catch (error: any) {
             const errorStatus = error?.status || error?.response?.status || error?.statusCode
             const errorMessage = error instanceof Error ? error.message : String(error)
@@ -495,6 +628,8 @@ export class DirectoryScanner implements IDirectoryScanner {
       }
     }
 
+    await this.finishGraphScan()
+
     log.info("directory scan complete", {
       workspacePath: scanWorkspace,
       processedCount,
@@ -511,23 +646,142 @@ export class DirectoryScanner implements IDirectoryScanner {
     }
   }
 
+  private async beginGraphScan(): Promise<void> {
+    if (!this.graph) return
+    try {
+      await this.graph.beginFullScan()
+      await this.postings?.beginFullScan()
+    } catch (err) {
+      log.warn("code graph full scan marker failed", {
+        error: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+      })
+    }
+  }
+
+  private async finishGraphScan(): Promise<void> {
+    if (!this.graph) return
+    try {
+      await this.graph.markFullScanComplete()
+      await this.postings?.markFullScanComplete()
+    } catch (err) {
+      log.warn("code graph full scan completion marker failed", {
+        error: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+      })
+    }
+  }
+
+  private async updateFileGraph(
+    workspace: string,
+    filePath: string,
+    content: string,
+    fileHash: string,
+  ): Promise<void> {
+    if (!this.graph) return
+    if (!isCodeGraphSupportedPath(filePath)) return
+
+    try {
+      const existing = await this.graph.getFileGraph(filePath)
+      if (existing?.fileHash === fileHash) {
+        await this.graph.upsertFileGraph(filePath, fileHash, existing)
+        await this.updateFilePostings(filePath, fileHash, existing, content)
+        return
+      }
+      const normalizedAbsolutePath = generateNormalizedAbsolutePath(filePath, workspace)
+      const relativeFilePath = generateRelativeFilePath(normalizedAbsolutePath, workspace)
+      const graph = parseCodeGraphFile({
+        workspacePath: workspace,
+        filePath: relativeFilePath,
+        content,
+        fileHash,
+      })
+      await this.graph.upsertFileGraph(filePath, fileHash, graph)
+      await this.updateFilePostings(filePath, fileHash, graph, content)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn("code graph file update failed", {
+        filePath,
+        error: sanitizeErrorMessage(msg),
+      })
+      try {
+        await this.graph.markFileGraphStatus(filePath, "parse_error", {
+          fileHash,
+          error: sanitizeErrorMessage(msg),
+        })
+        await this.postings?.markFilePostingsStatus(filePath, "parse_error", {
+          fileHash,
+          error: sanitizeErrorMessage(msg),
+        })
+      } catch (mark) {
+        log.warn("code graph parse_error marker failed", {
+          filePath,
+          error: sanitizeErrorMessage(mark instanceof Error ? mark.message : String(mark)),
+        })
+      }
+    }
+  }
+
+  private async removeFileGraph(filePath: string): Promise<void> {
+    if (!this.graph) return
+    try {
+      await this.graph.removeFileGraph(filePath)
+      await this.postings?.removeFilePostings(filePath)
+    } catch (err) {
+      log.warn("code graph file removal failed", {
+        filePath,
+        error: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+      })
+    }
+  }
+
+  private async updateFilePostings(
+    filePath: string,
+    fileHash: string,
+    graph: CodeGraphFileGraph,
+    content: string,
+  ): Promise<void> {
+    if (!this.postings) return
+    try {
+      await this.postings.upsertFilePostings(filePath, fileHash, graph, { content })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn("code postings file update failed", {
+        filePath,
+        error: sanitizeErrorMessage(msg),
+      })
+      try {
+        await this.postings.markFilePostingsStatus(filePath, "postings_error", {
+          fileHash,
+          error: sanitizeErrorMessage(msg),
+        })
+      } catch (mark) {
+        log.warn("code postings error marker failed", {
+          filePath,
+          error: sanitizeErrorMessage(mark instanceof Error ? mark.message : String(mark)),
+        })
+      }
+    }
+  }
+
   private async processBatch(
     batchBlocks: CodeBlock[],
     batchTexts: string[],
-    batchFileInfos: { filePath: string; fileHash: string; isNew: boolean }[],
+    _batchFileInfos: { filePath: string; fileHash: string; isNew: boolean }[],
     scanWorkspace: string,
     mode: IndexingTelemetryMode,
     onError?: (error: Error) => void,
-    onFilesIndexed?: (indexedCount: number) => void,
     onBatchFailed?: () => void,
-  ): Promise<void> {
+    ctx?: ReturnType<typeof vectorContext>,
+  ): Promise<boolean> {
     // Respect cooperative cancellation
-    if (this._cancelled || batchBlocks.length === 0) return
+    if (this._cancelled || batchBlocks.length === 0) return false
 
     if (batchBlocks.length === 0) {
       log.debug("Skipping empty batch processing")
-      return
+      return false
     }
+
+    if (!ctx) throw new Error("RAG vector context is not configured")
+    const meta = this.ragMeta ?? fallbackCheckpointMeta(scanWorkspace)
 
     log.debug(`Starting to process batch of ${batchBlocks.length} blocks in workspace ${scanWorkspace}`)
 
@@ -538,52 +792,13 @@ export class DirectoryScanner implements IDirectoryScanner {
     while (attempts < this.maxBatchRetries && !success) {
       attempts++
 
-      if (this._cancelled) return
+      if (this._cancelled) return false
 
       log.debug(`Processing batch attempt ${attempts}/${this.maxBatchRetries} for ${batchBlocks.length} blocks`)
 
       try {
-        // --- Deletion Step ---
-        log.debug("Starting deletion step for modified files")
-        const uniqueFilePaths = [
-          ...new Set(
-            batchFileInfos
-              .filter((info) => !info.isNew) // Only modified files (not new)
-              .map((info) => info.filePath),
-          ),
-        ]
-        log.debug(`Identified ${uniqueFilePaths.length} modified files to delete points for`)
-
-        if (uniqueFilePaths.length > 0) {
-          try {
-            await this.vectorStore.deletePointsByMultipleFilePaths(uniqueFilePaths)
-            log.debug(`Successfully deleted points for ${uniqueFilePaths.length} files`)
-          } catch (deleteError: any) {
-            const errorStatus = deleteError?.status || deleteError?.response?.status || deleteError?.statusCode
-            const errorMessage = deleteError instanceof Error ? deleteError.message : String(deleteError)
-
-            log.error(
-              `Failed to delete points for ${uniqueFilePaths.length} files before upsert in workspace ${scanWorkspace}`,
-              {
-                error: sanitizeErrorMessage(errorMessage),
-                stack: deleteError instanceof Error ? sanitizeErrorMessage(deleteError.stack || "") : undefined,
-                location: "processBatch:deletePointsByMultipleFilePaths",
-                fileCount: uniqueFilePaths.length,
-                errorStatus,
-              },
-            )
-
-            // Re-throw with workspace context
-            throw new Error(
-              `Failed to delete points for ${uniqueFilePaths.length} files. Workspace: ${scanWorkspace}. ${errorMessage}`,
-              { cause: deleteError },
-            )
-          }
-        }
-        // --- End Deletion Step ---
-
         // Create embeddings for batch
-        if (this._cancelled) return
+        if (this._cancelled) return false
 
         log.debug(`Creating embeddings for ${batchTexts.length} texts`)
 
@@ -599,33 +814,19 @@ export class DirectoryScanner implements IDirectoryScanner {
           }
 
           const normalizedAbsolutePath = generateNormalizedAbsolutePath(block.file_path, scanWorkspace)
-
-          // Use segmentHash for unique ID generation to handle multiple segments from same line
-          const pointId = uuidv5(block.segmentHash, QDRANT_CODE_BLOCK_NAMESPACE)
-
-          return {
-            id: pointId,
-            vector,
-            payload: {
-              filePath: generateRelativeFilePath(normalizedAbsolutePath, scanWorkspace),
-              codeChunk: block.content,
-              startLine: block.start_line,
-              endLine: block.end_line,
-              segmentHash: block.segmentHash,
-            },
-          }
+          const relativeFilePath = generateRelativeFilePath(normalizedAbsolutePath, scanWorkspace)
+          const generation = generationForFile(meta, relativeFilePath, block.fileHash)
+          return pointForBlock({ block, vector, workspace: scanWorkspace, ctx, generation })
         })
         log.debug(`Prepared ${points.length} points for Qdrant`)
 
         // Upsert points to Qdrant
-        if (this._cancelled) return
+        if (this._cancelled) return false
 
         log.debug("Starting Qdrant upsert")
 
         await this.vectorStore.upsertPoints(points)
         log.debug("Completed Qdrant upsert")
-        onFilesIndexed?.(batchFileInfos.length)
-
         success = true
         log.debug(`Successfully processed batch of ${batchBlocks.length} blocks after ${attempts} attempt(s)`)
       } catch (error) {
@@ -658,5 +859,6 @@ export class DirectoryScanner implements IDirectoryScanner {
         onError(new Error(`Failed to process batch after ${this.maxBatchRetries} retries: ${errorMessage}`))
       }
     }
+    return success
   }
 }

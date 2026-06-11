@@ -145,6 +145,12 @@ Padding makes every content change rewrite the entire table, which blows up diff
 
 [Conventional Commits](https://www.conventionalcommits.org/) with scopes matching packages: `vscode`, `cli`, `agent-manager`, `sdk`, `ui`, `i18n`, `kilo-docs`, `gateway`, `telemetry`, `desktop`. Omit scope when spanning multiple packages.
 
+## Commit and Push Hygiene
+
+- Before committing or pushing, inspect the staged and unstaged file list and exclude files unrelated to the code change.
+- Do not push local build/package artifacts, logs, screenshots, caches, temporary files, or transfer-only files. This includes packaged extension artifacts such as `*.vsix`, unless the user explicitly asks to commit that artifact and the repo already tracks it for release.
+- If a packaging command creates artifacts while validating a change, leave those artifacts untracked or remove them before staging.
+
 ## Changesets
 
 User-facing changes (features, fixes, breaking changes) require a changeset file for release notes. Run `bunx changeset add` or manually create `.changeset/<slug>.md`. Use `patch` for bug fixes, `minor` for new features, `major` for breaking changes. See `.changeset/README.md` for details.

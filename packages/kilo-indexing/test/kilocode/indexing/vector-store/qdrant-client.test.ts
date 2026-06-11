@@ -11,6 +11,7 @@ const mockUpsert = mock()
 const mockQuery = mock()
 const mockDelete = mock()
 const mockRetrieve = mock()
+const mockSetPayload = mock()
 
 const mockQdrantClientInstance = {
   getCollection: mockGetCollection,
@@ -21,6 +22,7 @@ const mockQdrantClientInstance = {
   query: mockQuery,
   delete: mockDelete,
   retrieve: mockRetrieve,
+  setPayload: mockSetPayload,
 }
 
 const MockQdrantClientConstructor = mock(() => mockQdrantClientInstance)
@@ -31,7 +33,7 @@ mock.module("@qdrant/js-client-rest", () => ({
 
 const mockDigest = mock()
 const mockUpdate = mock(() => ({ update: mockUpdate, digest: mockDigest }))
-const mockCreateHash = mock(() => ({ update: mockUpdate, digest: mockDigest }))
+const mockCreateHash = mock((algorithm?: string) => fakeHash(algorithm))
 
 mock.module("crypto", () => ({
   createHash: mockCreateHash,
@@ -39,6 +41,16 @@ mock.module("crypto", () => ({
 
 // Now import the module under test
 import { QdrantVectorStore } from "../../../../src/indexing/vector-store/qdrant-client"
+
+const active = { key: "active", match: { value: true } }
+const metadata = { key: "type", match: { value: "metadata" } }
+
+function activeFilter(must: Array<{ key: string; match: { value: string | boolean } }> = []) {
+  return {
+    must: [active, ...must],
+    must_not: [metadata],
+  }
+}
 
 describe("QdrantVectorStore", () => {
   let vectorStore: QdrantVectorStore
@@ -61,6 +73,7 @@ describe("QdrantVectorStore", () => {
     mockQuery.mockReset()
     mockDelete.mockReset()
     mockRetrieve.mockReset()
+    mockSetPayload.mockReset()
     mockCreateHash.mockReset()
     mockUpdate.mockReset()
     mockDigest.mockReset()
@@ -83,9 +96,11 @@ describe("QdrantVectorStore", () => {
     mockQuery.mockReset()
     mockDelete.mockReset()
     mockRetrieve.mockReset()
+    mockSetPayload.mockReset()
     mockCreateHash.mockReset()
     mockUpdate.mockReset()
     mockDigest.mockReset()
+    mockCreateHash.mockImplementation((algorithm?: string) => fakeHash(algorithm))
   })
 
   test("should correctly initialize QdrantClient and collectionName in constructor", () => {
@@ -562,7 +577,7 @@ describe("QdrantVectorStore", () => {
           field_schema: "keyword",
         })
       }
-      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(6)
+      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(11)
     })
 
     test("should not create a new collection if one exists with matching vectorSize and return false", async () => {
@@ -595,7 +610,7 @@ describe("QdrantVectorStore", () => {
           field_schema: "keyword",
         })
       }
-      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(6)
+      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(11)
     })
 
     test("should recreate collection when stored embedding identity mismatches", async () => {
@@ -748,7 +763,7 @@ describe("QdrantVectorStore", () => {
           field_schema: "keyword",
         })
       }
-      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(6)
+      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(11)
     })
 
     test("should log warning for non-404 errors but still create collection", async () => {
@@ -763,7 +778,7 @@ describe("QdrantVectorStore", () => {
       expect(mockGetCollection).toHaveBeenCalledTimes(1)
       expect(mockCreateCollection).toHaveBeenCalledTimes(1)
       expect(mockDeleteCollection).not.toHaveBeenCalled()
-      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(6)
+      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(11)
     })
 
     test("should re-throw error from createCollection when no collection initially exists", async () => {
@@ -797,8 +812,8 @@ describe("QdrantVectorStore", () => {
       expect(result).toBe(true)
       expect(mockCreateCollection).toHaveBeenCalledTimes(1)
 
-      // All payload index creations should be attempted (6: type + 5 pathSegments)
-      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(6)
+      // All payload index creations should be attempted (11: type + active generation fields + 5 pathSegments)
+      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(11)
     })
 
     test("should throw vectorDimensionMismatch error when deleteCollection fails during recreation", async () => {
@@ -899,7 +914,7 @@ describe("QdrantVectorStore", () => {
       expect(mockGetCollection).toHaveBeenCalledTimes(2)
       expect(mockDeleteCollection).toHaveBeenCalledTimes(1)
       expect(mockCreateCollection).toHaveBeenCalledTimes(1)
-      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(6)
+      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(11)
     })
 
     test("should throw error if collection still exists after deletion attempt", async () => {
@@ -986,7 +1001,7 @@ describe("QdrantVectorStore", () => {
           on_disk: true,
         },
       })
-      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(6)
+      expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(11)
     })
 
     test("should provide detailed error context for different failure scenarios", async () => {
@@ -1017,6 +1032,24 @@ describe("QdrantVectorStore", () => {
       expect(caughtError.message).toContain("Qdrant server unavailable")
       expect(caughtError.cause).toBe(deleteError)
     })
+  })
+
+  test("preserves completed marker when marking current run incomplete", async () => {
+    mockRetrieve.mockResolvedValue([
+      {
+        payload: {
+          indexing_complete: true,
+        },
+      },
+    ] as any)
+    mockUpsert.mockResolvedValue({} as any)
+
+    await vectorStore.markIndexingIncomplete()
+
+    const call = mockUpsert.mock.calls[0]?.[1] as any
+    expect(call.points[0].payload.indexing_complete).toBe(true)
+    expect(call.points[0].payload.indexing_run_incomplete).toBe(true)
+    expect(call.wait).toBe(true)
   })
 
   test("should return true when collection exists", async () => {
@@ -1315,11 +1348,10 @@ describe("QdrantVectorStore", () => {
           include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
         },
       })
-      expect(callArgs.filter).toEqual({
-        must_not: [{ key: "type", match: { value: "metadata" } }],
-      })
+      expect(callArgs.filter).toEqual(activeFilter())
 
       expect(results).toEqual(mockQdrantResults.points)
+      expect(results.map((item) => item.score)).toEqual([0.85, 0.75])
     })
 
     test("should apply filePathPrefix filter correctly", async () => {
@@ -1353,13 +1385,12 @@ describe("QdrantVectorStore", () => {
         params: { hnsw_ef: 128, exact: false },
         with_payload: { include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"] },
       })
-      expect(callArgs2.filter).toEqual({
-        must: [
+      expect(callArgs2.filter).toEqual(
+        activeFilter([
           { key: "pathSegments.0", match: { value: "src" } },
           { key: "pathSegments.1", match: { value: "components" } },
-        ],
-        must_not: [{ key: "type", match: { value: "metadata" } }],
-      })
+        ]),
+      )
 
       expect(results).toEqual(mockQdrantResults.points)
     })
@@ -1386,9 +1417,7 @@ describe("QdrantVectorStore", () => {
           include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
         },
       })
-      expect(callArgs3.filter).toEqual({
-        must_not: [{ key: "type", match: { value: "metadata" } }],
-      })
+      expect(callArgs3.filter).toEqual(activeFilter())
     })
 
     test("should use custom maxResults when provided", async () => {
@@ -1413,9 +1442,7 @@ describe("QdrantVectorStore", () => {
           include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
         },
       })
-      expect(callArgs4.filter).toEqual({
-        must_not: [{ key: "type", match: { value: "metadata" } }],
-      })
+      expect(callArgs4.filter).toEqual(activeFilter())
     })
 
     test("should filter out results with invalid payloads", async () => {
@@ -1541,15 +1568,14 @@ describe("QdrantVectorStore", () => {
           include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
         },
       })
-      expect(callArgs5.filter).toEqual({
-        must: [
+      expect(callArgs5.filter).toEqual(
+        activeFilter([
           { key: "pathSegments.0", match: { value: "src" } },
           { key: "pathSegments.1", match: { value: "components" } },
           { key: "pathSegments.2", match: { value: "ui" } },
           { key: "pathSegments.3", match: { value: "forms" } },
-        ],
-        must_not: [{ key: "type", match: { value: "metadata" } }],
-      })
+        ]),
+      )
     })
 
     test("should handle error scenarios when qdrantClient.query fails", async () => {
@@ -1612,9 +1638,7 @@ describe("QdrantVectorStore", () => {
             include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
-        expect(callArgs7.filter).toEqual({
-          must_not: [{ key: "type", match: { value: "metadata" } }],
-        })
+        expect(callArgs7.filter).toEqual(activeFilter())
 
         expect(results).toEqual(mockQdrantResults.points)
       })
@@ -1641,9 +1665,7 @@ describe("QdrantVectorStore", () => {
             include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
-        expect(callArgs6.filter).toEqual({
-          must_not: [{ key: "type", match: { value: "metadata" } }],
-        })
+        expect(callArgs6.filter).toEqual(activeFilter())
       })
 
       test("should not apply filter when directoryPrefix is empty string", async () => {
@@ -1668,9 +1690,7 @@ describe("QdrantVectorStore", () => {
             include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
-        expect(callArgs8.filter).toEqual({
-          must_not: [{ key: "type", match: { value: "metadata" } }],
-        })
+        expect(callArgs8.filter).toEqual(activeFilter())
       })
 
       test("should not apply filter when directoryPrefix is '.\\' (Windows style)", async () => {
@@ -1695,9 +1715,7 @@ describe("QdrantVectorStore", () => {
             include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
-        expect(callArgs9.filter).toEqual({
-          must_not: [{ key: "type", match: { value: "metadata" } }],
-        })
+        expect(callArgs9.filter).toEqual(activeFilter())
       })
 
       test("should not apply filter when directoryPrefix has trailing slashes", async () => {
@@ -1722,9 +1740,7 @@ describe("QdrantVectorStore", () => {
             include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
-        expect(callArgs10.filter).toEqual({
-          must_not: [{ key: "type", match: { value: "metadata" } }],
-        })
+        expect(callArgs10.filter).toEqual(activeFilter())
       })
 
       test("should still apply filter for relative paths like './src'", async () => {
@@ -1749,15 +1765,14 @@ describe("QdrantVectorStore", () => {
             include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
-        expect(callArgs11.filter).toEqual({
-          must: [
+        expect(callArgs11.filter).toEqual(
+          activeFilter([
             {
               key: "pathSegments.0",
               match: { value: "src" },
             },
-          ],
-          must_not: [{ key: "type", match: { value: "metadata" } }],
-        })
+          ]),
+        )
       })
 
       test("should still apply filter for regular directory paths", async () => {
@@ -1782,16 +1797,41 @@ describe("QdrantVectorStore", () => {
             include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
-        expect(callArgs12.filter).toEqual({
-          must: [
+        expect(callArgs12.filter).toEqual(
+          activeFilter([
             {
               key: "pathSegments.0",
               match: { value: "src" },
             },
-          ],
-          must_not: [{ key: "type", match: { value: "metadata" } }],
-        })
+          ]),
+        )
       })
     })
   })
 })
+
+function fakeHash(algorithm = "sha256") {
+  let text = ""
+  const api = {
+    update(value: unknown) {
+      text += String(value)
+      return api
+    },
+    digest(encoding?: string) {
+      const size = algorithm === "sha1" ? 40 : 64
+      const hex = digest(text).padEnd(size, "0").slice(0, size)
+      if (encoding) return hex
+      return Buffer.from(hex, "hex")
+    },
+  }
+  return api
+}
+
+function digest(value: string): string {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0")
+}

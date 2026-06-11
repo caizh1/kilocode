@@ -1,4 +1,4 @@
-import { CodeIndexAnalysisService, CodeIndexManager } from "@kilocode/kilo-indexing/engine"
+import { CodeIndexAnalysisService, CodeIndexManager, disabledCodeGraphSidecarStatus } from "@kilocode/kilo-indexing/engine"
 import { normalizeIndexingStatus } from "@kilocode/kilo-indexing/status"
 import type { Request, Result, Event } from "./indexing-worker-protocol"
 
@@ -55,6 +55,14 @@ onmessage = async (event: MessageEvent<Request>) => {
         ? await manager.queryEvidence(query, options)
         : await new CodeIndexAnalysisService().queryEvidence(query, options, { reason: "indexing-not-initialized" })
       send({ type: "result", id: request.id, method: "queryEvidence", ok: true, value })
+      return
+    }
+
+    if (request.method === "codeGraphStatus") {
+      const value = manager
+        ? manager.getCodeGraphStatus()
+        : disabledCodeGraphSidecarStatus({ reason: "indexing-not-initialized" })
+      send({ type: "result", id: request.id, method: "codeGraphStatus", ok: true, value })
       return
     }
 

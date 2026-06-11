@@ -2,12 +2,21 @@ import { Emitter } from "./runtime"
 
 export type IndexingState = "Standby" | "Indexing" | "Indexed" | "Error"
 
+export type IndexingPipelineProgress = {
+  state: IndexingState
+  message: string
+  processedFiles: number
+  totalFiles: number
+  percent: number
+}
+
 export class CodeIndexStateManager {
   private _systemStatus: IndexingState = "Standby"
   private _statusMessage = ""
   private _processedFiles = 0
   private _totalFiles = 0
   private _percent = 0
+  private _codeGraphProgress?: IndexingPipelineProgress
   private _gitBranch?: string
   private _manifest?: {
     totalFiles: number
@@ -35,6 +44,10 @@ export class CodeIndexStateManager {
     }
   }
 
+  public getCodeGraphProgress(): IndexingPipelineProgress | undefined {
+    return this._codeGraphProgress
+  }
+
   public setSystemState(
     newState: IndexingState,
     message?: string,
@@ -46,13 +59,15 @@ export class CodeIndexStateManager {
     gitBranch?: string,
   ): void {
     const stateChanged = newState !== this._systemStatus || (message !== undefined && message !== this._statusMessage)
+    const graphChanged = newState !== "Indexing" && this._codeGraphProgress !== undefined
 
-    if (!stateChanged) return
+    if (!stateChanged && !graphChanged) return
 
     this._systemStatus = newState
     if (message !== undefined) this._statusMessage = message
     if (manifest !== undefined) this._manifest = manifest
     if (gitBranch !== undefined) this._gitBranch = gitBranch
+    if (graphChanged) this._codeGraphProgress = undefined
 
     if (newState !== "Indexing") {
       this._percent = newState === "Indexed" ? 100 : 0
@@ -81,7 +96,7 @@ export class CodeIndexStateManager {
 
     const message =
       totalFiles > 0
-        ? `Indexed ${processedFiles} / ${totalFiles} files (${percent}%).${currentFileBasename ? ` Current: ${currentFileBasename}` : ""}`
+        ? `Processed ${processedFiles} / ${totalFiles} files (${percent}%).${currentFileBasename ? ` Current: ${currentFileBasename}` : ""}`
         : "Indexing files..."
     const oldStatus = this._systemStatus
     const oldMessage = this._statusMessage
@@ -96,6 +111,34 @@ export class CodeIndexStateManager {
 
   public reportFileQueueProgress(processedFiles: number, totalFiles: number, currentFileBasename?: string): void {
     this.reportFileProgress(processedFiles, totalFiles, currentFileBasename)
+  }
+
+  public reportCodeGraphProgress(processedFiles: number, totalFiles: number, currentFileBasename?: string): void {
+    const percent = totalFiles > 0 ? Math.min(100, Math.round((processedFiles / totalFiles) * 100)) : 0
+    const message =
+      totalFiles > 0
+        ? `Built ${processedFiles} / ${totalFiles} code graph files (${percent}%).${currentFileBasename ? ` Current: ${currentFileBasename}` : ""}`
+        : "Code Graph waiting for C/C++ files."
+    const next: IndexingPipelineProgress = {
+      state: totalFiles > 0 ? "Indexing" : "Standby",
+      message,
+      processedFiles,
+      totalFiles,
+      percent,
+    }
+    const prev = this._codeGraphProgress
+    const changed =
+      !prev ||
+      prev.state !== next.state ||
+      prev.message !== next.message ||
+      prev.processedFiles !== next.processedFiles ||
+      prev.totalFiles !== next.totalFiles ||
+      prev.percent !== next.percent
+
+    if (!changed) return
+
+    this._codeGraphProgress = next
+    this._progressEmitter.fire(this.getCurrentStatus())
   }
 
   public dispose(): void {

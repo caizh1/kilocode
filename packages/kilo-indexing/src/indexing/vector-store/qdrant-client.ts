@@ -11,6 +11,7 @@ const log = Log.create({ service: "qdrant-store" })
 
 const KEY = {
   complete: "indexing_complete",
+  runIncomplete: "indexing_run_incomplete",
   provider: "embedding_provider",
   model: "embedding_model_id",
   dimension: "embedding_dimension",
@@ -387,6 +388,22 @@ export class QdrantVectorStore implements IVectorStore {
     }
 
     // Create indexes for pathSegments fields
+    for (const field of ["filePath", "workspaceId", "generation", "active", "checkpointMetaHash"]) {
+      try {
+        await this.client.createPayloadIndex(this.collectionName, {
+          field_name: field,
+          field_schema: field === "active" ? "bool" : "keyword",
+        })
+      } catch (indexError: any) {
+        const errorMessage = (indexError?.message || "").toLowerCase()
+        if (!errorMessage.includes("already exists")) {
+          log.warn(`Could not create payload index for ${field} on ${this.collectionName}`, {
+            details: indexError?.message || indexError,
+          })
+        }
+      }
+    }
+
     for (let i = 0; i <= 4; i++) {
       try {
         await this.client.createPayloadIndex(this.collectionName, {
@@ -402,6 +419,10 @@ export class QdrantVectorStore implements IVectorStore {
         }
       }
     }
+  }
+
+  getCollectionName(): string {
+    return this.collectionName
   }
 
   /**
@@ -475,18 +496,19 @@ export class QdrantVectorStore implements IVectorStore {
     try {
       let filter:
         | {
-            must: Array<{ key: string; match: { value: string } }>
-            must_not?: Array<{ key: string; match: { value: string } }>
+            must: Array<{ key: string; match: { value: string | boolean } }>
+            must_not?: Array<{ key: string; match: { value: string | boolean } }>
           }
-        | undefined = undefined
+        | undefined = {
+        must: [{ key: "active", match: { value: true } }],
+      }
 
       if (directoryPrefix) {
         // Check if the path represents current directory
         const normalizedPrefix = path.posix.normalize(directoryPrefix.replace(/\\/g, "/"))
         // Note: path.posix.normalize("") returns ".", and normalize("./") returns "./"
         if (normalizedPrefix === "." || normalizedPrefix === "./") {
-          // Don't create a filter - search entire workspace
-          filter = undefined
+          // Keep the active-generation filter while searching the entire workspace.
         } else {
           // Remove leading "./" from paths like "./src" to normalize them
           const cleanedPrefix = path.posix.normalize(
@@ -494,14 +516,17 @@ export class QdrantVectorStore implements IVectorStore {
           )
           const segments = cleanedPrefix.split("/").filter(Boolean)
           if (segments.length > 0) {
-            filter = {
-              must: segments.map((segment, index) => ({
+          filter = {
+            must: [
+              ...(filter?.must ?? []),
+              ...segments.map((segment, index) => ({
                 key: `pathSegments.${index}`,
                 match: { value: segment },
               })),
-            }
+            ],
           }
         }
+      }
       }
 
       // Always exclude metadata points at query-time to avoid wasting top-k
@@ -545,6 +570,40 @@ export class QdrantVectorStore implements IVectorStore {
     return this.deletePointsByMultipleFilePaths([filePath])
   }
 
+  async activateFileGeneration(filePath: string, generation: string, runId: string): Promise<void> {
+    const relativePath = this.relativeFilePath(filePath)
+    await this.client.setPayload(this.collectionName, {
+      payload: { active: true },
+      filter: {
+        must: [
+          { key: "filePath", match: { value: relativePath } },
+          { key: "generation", match: { value: generation } },
+          { key: "runId", match: { value: runId } },
+        ],
+      },
+      wait: true,
+    })
+    await this.client.setPayload(this.collectionName, {
+      payload: { active: false },
+      filter: {
+        must: [{ key: "filePath", match: { value: relativePath } }],
+        must_not: [{ key: "generation", match: { value: generation } }],
+      },
+      wait: true,
+    })
+  }
+
+  async deleteInactiveFilePoints(filePath: string, activeGeneration: string): Promise<void> {
+    const relativePath = this.relativeFilePath(filePath)
+    await this.client.delete(this.collectionName, {
+      filter: {
+        must: [{ key: "filePath", match: { value: relativePath } }],
+        must_not: [{ key: "generation", match: { value: activeGeneration } }],
+      },
+      wait: true,
+    })
+  }
+
   async deletePointsByMultipleFilePaths(filePaths: string[]): Promise<void> {
     if (filePaths.length === 0) {
       return
@@ -558,28 +617,9 @@ export class QdrantVectorStore implements IVectorStore {
         return
       }
 
-      const workspaceRoot = this.workspacePath
-
       // Build filters using pathSegments to match the indexed fields
       const filters = filePaths.map((filePath) => {
-        // IMPORTANT: Use the relative path to match what's stored in upsertPoints
-        // upsertPoints stores the relative filePath, not the absolute path
-        const relativePath = path.isAbsolute(filePath) ? path.relative(workspaceRoot, filePath) : filePath
-
-        // Normalize the relative path
-        const normalizedRelativePath = path.normalize(relativePath)
-
-        // Split the path into segments like we do in upsertPoints
-        const segments = normalizedRelativePath.split(path.sep).filter(Boolean)
-
-        // Create a filter that matches all segments of the path
-        // This ensures we only delete points that match the exact file path
-        const mustConditions = segments.map((segment, index) => ({
-          key: `pathSegments.${index}`,
-          match: { value: segment },
-        }))
-
-        return { must: mustConditions }
+        return { must: [{ key: "filePath", match: { value: this.relativeFilePath(filePath) } }] }
       })
 
       // Use 'should' to match any of the file paths (OR condition)
@@ -606,6 +646,11 @@ export class QdrantVectorStore implements IVectorStore {
       })
       throw error
     }
+  }
+
+  private relativeFilePath(filePath: string): string {
+    const relativePath = path.isAbsolute(filePath) ? path.relative(this.workspacePath, filePath) : filePath
+    return path.normalize(relativePath)
   }
 
   /**
@@ -711,6 +756,7 @@ export class QdrantVectorStore implements IVectorStore {
             payload: {
               type: "metadata",
               [KEY.complete]: true,
+              [KEY.runIncomplete]: false,
               [KEY.provider]: this.profile.provider,
               [KEY.model]: this.profile.modelId,
               [KEY.dimension]: this.profile.dimension,
@@ -733,6 +779,7 @@ export class QdrantVectorStore implements IVectorStore {
    */
   async markIndexingIncomplete(): Promise<void> {
     try {
+      const current = await this.getMetadataPayload()
       await this.client.upsert(this.collectionName, {
         points: [
           {
@@ -740,7 +787,8 @@ export class QdrantVectorStore implements IVectorStore {
             vector: new Array(this.vectorSize).fill(0),
             payload: {
               type: "metadata",
-              [KEY.complete]: false,
+              ...(current?.[KEY.complete] === true ? { [KEY.complete]: true } : {}),
+              [KEY.runIncomplete]: true,
               [KEY.provider]: this.profile.provider,
               [KEY.model]: this.profile.modelId,
               [KEY.dimension]: this.profile.dimension,
