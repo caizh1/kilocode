@@ -55,6 +55,15 @@ In each VS Code extension host, one `KiloConnectionService` is created for the s
 
 Extension-specific settings should live in the Kilo extension settings, not default VS Code settings, unless they are intentionally VS Code-wide.
 
+## VS Code 工具栏/图标规则
+
+- VS Code 风格界面里的工具栏动作，不要设计自定义彩色图标。
+- 除非周围原生 UI 已经使用圆形徽标，否则不要使用圆形徽标。
+- 优先使用 VS Code Codicons 或项目已有的 `IconButton` 组件。
+- 图标必须是单色、继承 `currentColor`，并遵循主题 token。
+- 图标的尺寸、描边视觉重量、内边距、hover、active、disabled 和间距必须匹配现有工具栏动作。
+- 如果在现有原生图标旁新增图标，必须先检查相邻图标的实现，并复用它们的样式。
+
 ## Package Instructions
 
 - When a task primarily touches `packages/kilo-jetbrains/`, read `packages/kilo-jetbrains/AGENTS.md` before planning or editing. It covers split-mode architecture, IntelliJ source lookup, threading fundamentals, UI guidelines, and session component architecture.
