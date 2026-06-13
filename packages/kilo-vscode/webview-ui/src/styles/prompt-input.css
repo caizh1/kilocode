@@ -517,14 +517,6 @@
     [data-slot="icon-svg"] {
       color: var(--icon-base);
     }
-
-    [data-slot="progress-circle-background"] {
-      stroke: var(--icon-base);
-    }
-
-    [data-slot="progress-circle-progress"] {
-      stroke: var(--border-focus, var(--vscode-focusBorder, #007fd4));
-    }
   }
   [data-component="icon-button"] {
     [data-slot="icon-svg"] {
@@ -534,86 +526,32 @@
 }
 
 .prompt-indexing-button {
+  color: var(--icon-base);
+}
+
+.prompt-indexing-codicon-stack {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--icon-base);
+}
+
+.prompt-indexing-codicon {
+  grid-area: 1 / 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-
-  [data-slot="icon-svg"] {
-    color: currentColor;
-  }
+  width: 16px;
+  height: 16px;
+  font-size: 16px;
+  line-height: 1;
+  color: currentColor;
 }
 
-.prompt-indexing-progress {
-  width: 30px;
-  height: 30px;
-  min-width: 30px;
-  padding: 3px !important;
-  border-radius: 999px !important;
-  line-height: 0;
-
-  svg {
-    display: block;
-    flex: 0 0 auto;
-  }
-
-  .prompt-indexing-icon-shell {
-    display: grid;
-    place-items: center;
-    width: 24px;
-    height: 24px;
-    flex: 0 0 auto;
-  }
-
-  .prompt-indexing-ring,
-  .prompt-indexing-icon {
-    grid-area: 1 / 1;
-  }
-
-  .prompt-indexing-icon {
-    color: currentColor;
-    opacity: 0.92;
-  }
-
-  [data-slot="progress-circle-background"] {
-    stroke: color-mix(in srgb, currentColor 16%, transparent);
-  }
-
-  [data-slot="progress-circle-progress"] {
-    stroke: color-mix(in srgb, currentColor 74%, transparent);
-    transition: stroke-dashoffset 160ms ease, stroke 160ms ease;
-  }
-}
-
-.prompt-indexing-button--muted {
-  color: var(--vscode-descriptionForeground);
-}
-
-.prompt-indexing-button--warning {
-  color: var(--vscode-charts-yellow, #cca700);
-}
-
-.prompt-indexing-button--success {
+.prompt-indexing-codicon--fill {
   color: var(--vscode-testing-iconPassed, #73c991);
-}
-
-.prompt-indexing-button--error {
-  color: var(--vscode-errorForeground, #f48771);
-}
-
-.prompt-indexing-progress--muted {
-  color: var(--vscode-descriptionForeground);
-}
-
-.prompt-indexing-progress--warning {
-  color: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 68%, var(--icon-base, #cccccc) 32%);
-}
-
-.prompt-indexing-progress--success {
-  color: var(--vscode-testing-iconPassed, #73c991);
-}
-
-.prompt-indexing-progress--error {
-  color: var(--vscode-errorForeground, #f48771);
+  transition: clip-path 160ms ease;
 }
 
 .prompt-indexing-tooltip {

@@ -14,7 +14,7 @@ import { showToast } from "@kilocode/kilo-ui/toast"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useServer } from "../../context/server"
-import { formatIndexingPipelineLabel, indexingPipelineTone, useIndexing } from "../../context/indexing"
+import { formatIndexingPipelineLabel, useIndexing } from "../../context/indexing"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
 import { useWorktreeMode } from "../../context/worktree-mode"
@@ -36,7 +36,7 @@ import { useSpeechToText } from "../speech-to-text/useSpeechToText"
 import { useImageAttachments, type ImageAttachment } from "../../hooks/useImageAttachments"
 import { convertToMentionPath } from "../../utils/path-mentions"
 import { usePromptHistory } from "../../hooks/usePromptHistory"
-import { ChartNetwork, ScanSearch, WandSparkles } from "@kilocode/kilo-ui/lucide"
+import { WandSparkles } from "@kilocode/kilo-ui/lucide"
 import {
   fileName,
   dirName,
@@ -55,21 +55,26 @@ const drafts = new Map<string, string>()
 const reviewDrafts = new Map<string, ReviewComment[]>()
 const imageDrafts = new Map<string, ImageAttachment[]>()
 
-const RING_SIZE = 24
-const RING_RADIUS = 9
-const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
-
 const IndexingProgressButton: Component<{
   label: string
   title: string
-  icon: Component<{ class?: string; size?: number; strokeWidth?: number }>
+  icon: "graph" | "database"
+  fillAxis: "horizontal" | "vertical"
   status: () => IndexingPipelineStatus
   onClick: () => void
 }> = (props) => {
-  const Glyph = props.icon
-  const tone = () => indexingPipelineTone(props.status())
-  const offset = () => RING_CIRCUMFERENCE * (1 - Math.min(100, Math.max(0, props.status().percent)) / 100)
   const desc = () => formatIndexingPipelineLabel(props.label, props.status())
+  const fill = () => {
+    const status = props.status()
+    if (status.state === "Disabled" || status.state === "Error") return 0
+    if (status.state === "Complete") return 100
+    return Math.min(100, Math.max(0, status.percent))
+  }
+  const clip = () => {
+    const inset = 100 - fill()
+    if (props.fillAxis === "horizontal") return `inset(0 ${inset}% 0 0)`
+    return `inset(${inset}% 0 0 0)`
+  }
 
   return (
     <Tooltip value={<IndexingProgressTooltip title={props.title} status={props.status} />} placement="top">
@@ -78,37 +83,14 @@ const IndexingProgressButton: Component<{
         size="small"
         onClick={props.onClick}
         aria-label={desc()}
-        class={`prompt-indexing-button prompt-indexing-progress prompt-indexing-progress--${tone()}`}
+        class="prompt-indexing-button"
       >
-        <span class="prompt-indexing-icon-shell" aria-hidden="true">
-          <svg
-            class="prompt-indexing-ring"
-            width={RING_SIZE}
-            height={RING_SIZE}
-            viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
-          >
-            <circle
-              data-slot="progress-circle-background"
-              cx="12"
-              cy="12"
-              r={RING_RADIUS}
-              fill="none"
-              stroke-width="1.4"
-            />
-            <circle
-              data-slot="progress-circle-progress"
-              cx="12"
-              cy="12"
-              r={RING_RADIUS}
-              fill="none"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              stroke-dasharray={String(RING_CIRCUMFERENCE)}
-              stroke-dashoffset={String(offset())}
-              transform="rotate(-90 12 12)"
-            />
-          </svg>
-          <Glyph class="prompt-indexing-icon" size={14} strokeWidth={2.1} />
+        <span class="prompt-indexing-codicon-stack" aria-hidden="true">
+          <span class={`codicon codicon-${props.icon} prompt-indexing-codicon prompt-indexing-codicon--base`} />
+          <span
+            class={`codicon codicon-${props.icon} prompt-indexing-codicon prompt-indexing-codicon--fill`}
+            style={`clip-path: ${clip()};`}
+          />
         </span>
       </Button>
     </Tooltip>
@@ -1211,14 +1193,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             <IndexingProgressButton
               label="CG"
               title="Code Graph"
-              icon={ChartNetwork}
+              icon="graph"
+              fillAxis="horizontal"
               status={() => indexing.pipelines().codeGraph}
               onClick={handleOpenIndexingSettings}
             />
             <IndexingProgressButton
               label="RAG"
-              title="RAG"
-              icon={ScanSearch}
+              title="RAG Index"
+              icon="database"
+              fillAxis="vertical"
               status={() => indexing.pipelines().rag}
               onClick={handleOpenIndexingSettings}
             />
