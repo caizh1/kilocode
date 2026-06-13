@@ -6,6 +6,15 @@ export type EvidenceSource = "graph" | "bm25" | "vector"
 
 export type EvidenceConfidence = "high" | "medium" | "low" | "none"
 
+export type ErrorPathBranchKind = "goto-label" | "return-error" | "cleanup-call" | "error-label" | "unknown"
+
+export type StateMachineEvidenceKind =
+  | "state-machine"
+  | "transition"
+  | "module-flow"
+  | "impact"
+  | "call-path"
+
 export type EvidenceBudget = {
   maxEvidenceItems: number
   maxPackChars: number
@@ -38,8 +47,11 @@ export type EvidenceRef = {
   confidence: Exclude<EvidenceConfidence, "none">
   score?: number
   symbolName?: string
+  functionName?: string
   includePath?: string
   labelName?: string
+  cleanupCalls?: string[]
+  returnStyle?: string
   displayName?: string
   callerName?: string
   calleeName?: string
@@ -93,9 +105,39 @@ export type QueryEvidenceTrace = {
   effectiveMode: CodeGraphEvidenceEffectiveMode
   effectiveSources?: EvidenceSource[]
   reason?: string
+  errorPathIntent?: QueryEvidenceErrorPathIntentTrace
+  stateIntent?: QueryEvidenceStateIntentTrace
   stages: QueryEvidenceTraceStage[]
   diagnostics: QueryEvidenceTraceDiagnostic[]
   elapsedMs: number
+}
+
+export type QueryEvidenceErrorPathIntentTrace = {
+  enabled: boolean
+  reason: string
+  matchedKeywords: string[]
+  graphCandidateCount: number
+  bm25CandidateCount: number
+  vectorCandidateCount: number
+  generatedCount: number
+  droppedByBudget: number
+  limitations: string[]
+}
+
+export type QueryEvidenceStateIntentTrace = {
+  enabled: boolean
+  reason: string
+  matchedKeywords: string[]
+  graphCandidateCount: number
+  bm25CandidateCount: number
+  vectorCandidateCount: number
+  errorPathCandidateCount: number
+  generatedTransitionCount: number
+  generatedFlowCount: number
+  droppedByBudget: number
+  droppedTransitionCount: number
+  droppedFlowCount: number
+  limitations: string[]
 }
 
 export type QueryEvidenceAnswerPolicy = {
@@ -132,6 +174,59 @@ export type QueryEvidenceStateMachine = {
   confidence: "high" | "medium" | "low" | "none"
 }
 
+export type ErrorPathEvidence = {
+  id: string
+  functionName?: string
+  labelName?: string
+  branchKind: ErrorPathBranchKind
+  condition?: string
+  cleanupCalls: string[]
+  returnStyle?: string
+  filePath: string
+  startLine: number
+  endLine: number
+  confidence: Exclude<EvidenceConfidence, "none">
+  limitations: string[]
+  backingEvidenceRefs: string[]
+}
+
+export type StateTransitionEvidence = {
+  id: string
+  kind: "transition"
+  stateName?: string
+  fromState?: string
+  toState?: string
+  eventName?: string
+  guard?: string
+  action?: string
+  functionName?: string
+  filePath: string
+  startLine: number
+  endLine: number
+  confidence: Exclude<EvidenceConfidence, "none">
+  backingEvidenceRefs: string[]
+  limitations: string[]
+}
+
+export type ModuleFlowEvidence = {
+  id: string
+  kind: "module-flow" | "impact" | "call-path"
+  title: string
+  modulePath?: string
+  involvedSymbols: string[]
+  flowSteps: Array<{
+    order: number
+    label: string
+    filePath: string
+    startLine: number
+    endLine: number
+    evidenceRefId?: string
+  }>
+  confidence: Exclude<EvidenceConfidence, "none">
+  backingEvidenceRefs: string[]
+  limitations: string[]
+}
+
 export type QueryEvidenceDroppedByBudget = {
   evidenceRefs: number
   summaries: number
@@ -145,6 +240,9 @@ export type QueryEvidenceResult = {
   trace: QueryEvidenceTrace
   answerPolicy: QueryEvidenceAnswerPolicy
   evidenceRefs: EvidenceRef[]
+  errorPaths: ErrorPathEvidence[]
+  stateTransitions: StateTransitionEvidence[]
+  moduleFlows: ModuleFlowEvidence[]
   summaries: QueryEvidenceSummaries
   stateMachines: QueryEvidenceStateMachine[]
   formattedPackText: string

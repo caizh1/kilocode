@@ -10,8 +10,18 @@ import type {
   ICodeGraphStorage,
 } from "../codegraph"
 import type { CodeGraphFunction } from "../codegraph/types"
+import { buildErrorPaths, errorPathLines, policyForErrorPaths, type ErrorPathBuildResult } from "./error-path"
+import {
+  buildStateEvidence,
+  finalizeStateEvidence,
+  moduleFlowLines,
+  policyForStateEvidence,
+  stateTransitionLines,
+  type StateBuildResult,
+} from "./state-machine"
 import type {
   CodeGraphEvidenceQueryOptions,
+  ErrorPathEvidence,
   EvidenceBudget,
   EvidenceRef,
   QueryEvidenceAnswerPolicy,
@@ -118,9 +128,47 @@ export async function queryGraphEvidence(input: Planner): Promise<QueryEvidenceR
 
   const planned = plan(input.query, graphs, diagnostics)
   const refs = dedupe(planned).sort((left, right) => right.rank - left.rank || left.filePath.localeCompare(right.filePath))
-  const kept = refs.slice(0, input.budget.maxEvidenceItems).map((item) => limitSnippet(item, input.budget.maxSnippetCharsPerItem))
-  const dropped = refs.length - kept.length
-  const policy = policyFor(kept)
+  const errors = buildErrorPaths({ query: input.query, refs, budget: input.budget })
+  const states = buildStateEvidence({ query: input.query, refs: [...refs, ...errors.refs], errorPaths: errors.paths, budget: input.budget })
+  const ranked = states.trace.enabled
+    ? dedupe([
+        ...states.refs.map((item) => ({
+          ...item,
+          rank: rankState(item),
+        })),
+        ...(errors.trace.enabled
+          ? errors.refs.map((item) => ({
+              ...item,
+              rank: rankError(item),
+            }))
+          : []),
+        ...refs,
+      ]).sort((left, right) => right.rank - left.rank || left.filePath.localeCompare(right.filePath))
+    : errors.trace.enabled
+    ? dedupe([
+        ...errors.refs.map((item) => ({
+          ...item,
+          rank: rankError(item),
+        })),
+        ...refs,
+      ]).sort((left, right) => right.rank - left.rank || left.filePath.localeCompare(right.filePath))
+    : refs
+  const active = states.trace.enabled && states.refs.length === 0 ? [] : errors.trace.enabled && errors.refs.length === 0 ? [] : ranked
+  const kept = active.slice(0, input.budget.maxEvidenceItems).map((item) => limitSnippet(item, input.budget.maxSnippetCharsPerItem))
+  const keptIds = new Set(kept.map((item) => item.id))
+  const paths = errors.paths.filter((item) => item.backingEvidenceRefs.some((id) => keptIds.has(id)))
+  const state = finalizeStateEvidence(states, kept)
+  const dropped = active.length - kept.length
+  const errorTrace = {
+    ...errors.trace,
+    generatedCount: paths.length,
+    droppedByBudget: errors.trace.droppedByBudget + errors.paths.length - paths.length,
+  }
+  const policy = state.trace.enabled
+    ? policyForStateEvidence({ transitions: state.transitions, flows: state.flows })
+    : errors.trace.enabled
+      ? policyForErrorPaths(paths)
+      : policyFor(kept)
   const full = format({
     query: input.query,
     traceId,
@@ -129,6 +177,9 @@ export async function queryGraphEvidence(input: Planner): Promise<QueryEvidenceR
     reason: fallback,
     policy,
     refs: kept,
+    errors,
+    paths,
+    states: state,
     budget: input.budget,
     diagnostics,
   })
@@ -148,6 +199,8 @@ export async function queryGraphEvidence(input: Planner): Promise<QueryEvidenceR
     requestedMode: requested,
     effectiveMode: effective,
     reason: fallback,
+    errorPathIntent: errorTrace,
+    stateIntent: state.trace,
     stages: traceStages,
     diagnostics,
     elapsedMs: Date.now() - start,
@@ -165,6 +218,11 @@ export async function queryGraphEvidence(input: Planner): Promise<QueryEvidenceR
       start,
       graphCount: scoped.length,
       fallback,
+      errors: {
+        ...errors,
+        trace: errorTrace,
+      },
+      states: state,
     })
   }
 
@@ -181,6 +239,9 @@ export async function queryGraphEvidence(input: Planner): Promise<QueryEvidenceR
     trace,
     answerPolicy: policy,
     evidenceRefs: kept,
+    errorPaths: paths,
+    stateTransitions: state.transitions,
+    moduleFlows: state.flows,
     summaries: emptySummaries(),
     stateMachines: [],
     formattedPackText: pack,
@@ -438,7 +499,7 @@ function labelRefs(
   if (!wants) return []
   const refs: Candidate[] = []
   for (const item of graph.labels) {
-    if (!has(words, item.name) && !q.includes(item.kind.replace("_", " "))) continue
+    if (!has(words, item.name) && !has(words, item.functionName) && !q.includes(item.kind.replace("_", " "))) continue
     const next = ranged(graph, item, diagnostics, item.kind, () =>
       ref({
         graph,
@@ -447,7 +508,10 @@ function labelRefs(
         rank: 84,
         reason: "label query matched graph label",
         confidence: "high",
+        functionName: item.functionName,
         labelName: item.name,
+        cleanupCalls: item.cleanupCalls,
+        returnStyle: item.returnStyle,
         displayName: `${item.functionName}:${item.name}`,
         shortSnippet: item.shortSnippet,
       }),
@@ -465,8 +529,11 @@ function ref(input: {
   reason: string
   confidence: "high" | "medium" | "low"
   symbolName?: string
+  functionName?: string
   includePath?: string
   labelName?: string
+  cleanupCalls?: string[]
+  returnStyle?: string
   displayName?: string
   callerName?: string
   calleeName?: string
@@ -490,8 +557,11 @@ function ref(input: {
     rank: input.rank,
   }
   if (input.symbolName) base.symbolName = input.symbolName
+  if (input.functionName) base.functionName = input.functionName
   if (input.includePath) base.includePath = input.includePath
   if (input.labelName) base.labelName = input.labelName
+  if (input.cleanupCalls) base.cleanupCalls = input.cleanupCalls
+  if (input.returnStyle) base.returnStyle = input.returnStyle
   if (input.displayName) base.displayName = input.displayName
   if (input.callerName) base.callerName = input.callerName
   if (input.calleeName) base.calleeName = input.calleeName
@@ -585,6 +655,18 @@ function policyFor(refs: EvidenceRef[]): QueryEvidenceAnswerPolicy {
   }
 }
 
+function rankError(item: EvidenceRef): number {
+  if (item.source === "graph") return 112
+  if (item.source === "bm25") return 86
+  return 58
+}
+
+function rankState(item: EvidenceRef): number {
+  if (item.source === "graph") return 111
+  if (item.source === "bm25") return 87
+  return 57
+}
+
 function none(input: {
   query: string
   budget: EvidenceBudget
@@ -596,8 +678,29 @@ function none(input: {
   start: number
   graphCount: number
   fallback: string
+  errors?: ErrorPathBuildResult
+  states?: StateBuildResult
 }): QueryEvidenceResult {
-  const policy = policyFor([])
+  const errors =
+    input.errors ??
+    buildErrorPaths({
+      query: input.query,
+      refs: [],
+      budget: input.budget,
+    })
+  const states =
+    input.states ??
+    buildStateEvidence({
+      query: input.query,
+      refs: [],
+      errorPaths: [],
+      budget: input.budget,
+    })
+  const policy = states.trace.enabled
+    ? policyForStateEvidence({ transitions: states.transitions, flows: states.flows })
+    : errors.trace.enabled
+      ? policyForErrorPaths([])
+      : policyFor([])
   const traceStages = createStages({
     graph: input.graphCount,
     evidence: 0,
@@ -618,6 +721,8 @@ function none(input: {
     requestedMode: input.requested,
     effectiveMode: input.effective,
     reason: input.reason,
+    errorPathIntent: errors.trace,
+    stateIntent: states.trace,
     stages: traceStages,
     diagnostics: input.diagnostics,
     elapsedMs: Date.now() - input.start,
@@ -630,6 +735,9 @@ function none(input: {
     reason: input.reason,
     policy,
     refs: [],
+    errors,
+    paths: [],
+    states,
     budget: input.budget,
     diagnostics: input.diagnostics,
   })
@@ -646,6 +754,9 @@ function none(input: {
     trace,
     answerPolicy: policy,
     evidenceRefs: [],
+    errorPaths: [],
+    stateTransitions: [],
+    moduleFlows: [],
     summaries: emptySummaries(),
     stateMachines: [],
     formattedPackText: pack,
@@ -725,6 +836,9 @@ function format(input: {
   reason: string
   policy: QueryEvidenceAnswerPolicy
   refs: EvidenceRef[]
+  errors: ErrorPathBuildResult
+  paths: ErrorPathEvidence[]
+  states: StateBuildResult
   budget: EvidenceBudget
   diagnostics: QueryEvidenceTraceDiagnostic[]
 }) {
@@ -736,6 +850,23 @@ function format(input: {
     `<resolved-budget maxEvidenceItems="${input.budget.maxEvidenceItems}" maxPackChars="${input.budget.maxPackChars}" maxSnippetCharsPerItem="${input.budget.maxSnippetCharsPerItem}" />`,
     '<graph-evidence title="Graph evidence">',
   ]
+  const error = input.errors.trace.enabled
+    ? [
+        '<error-path-evidence title="Error / cleanup path evidence">',
+        ...errorPathLines(input.paths),
+        "</error-path-evidence>",
+      ]
+    : []
+  const state = input.states.trace.enabled
+    ? [
+        '<state-transition-evidence title="State / transition evidence">',
+        ...stateTransitionLines(input.states.transitions),
+        "</state-transition-evidence>",
+        '<module-flow-evidence title="Module flow / impact evidence">',
+        ...moduleFlowLines(input.states.flows),
+        "</module-flow-evidence>",
+      ]
+    : []
   const evidence =
     input.refs.length === 0
       ? [
@@ -755,10 +886,12 @@ function format(input: {
         })
   return [
     ...head,
+    ...error,
+    ...state,
     ...evidence,
     "</graph-evidence>",
-    "<limitations>Phase 3 only reads valid C/C++ graph records. BM25, vector retrieval, semantic_search merge, state-machine extraction, module summaries, and rerank are not implemented in this phase.</limitations>",
-    "<suggested-next-step>If evidence is insufficient, narrow the query to a symbol name, file path, include target, macro, global, or caller/callee relation.</suggested-next-step>",
+    `<limitations>${xml(limitations(input.errors, input.states))}</limitations>`,
+    `<suggested-next-step>${xml(suggestion(input.errors, input.states))}</suggested-next-step>`,
     ...(input.diagnostics.length
       ? [
           "<diagnostics>",
@@ -768,6 +901,34 @@ function format(input: {
       : []),
     "</local-analysis-pack>",
   ].join("\n")
+}
+
+function limitations(errors: ErrorPathBuildResult, states: StateBuildResult): string {
+  const base =
+    "Graph-only mode reads valid C/C++ graph records only. BM25, vector retrieval, semantic_search merge, module summaries, and rerank are not used."
+  const suffix: string[] = []
+  if (errors.trace.enabled && errors.paths.length === 0) {
+    suffix.push("No source-backed error/cleanup path evidence was returned; do not infer cleanup order, return code, or failure behavior.")
+  }
+  if (errors.trace.enabled && errors.paths.length > 0) {
+    suffix.push(...errors.paths.flatMap((item) => item.limitations))
+  }
+  if (states.trace.enabled && states.transitions.length === 0 && states.flows.length === 0) {
+    suffix.push("No source-backed candidate state/flow/impact evidence was returned; do not infer states, transitions, order, or impact scope.")
+  }
+  if (states.trace.enabled) suffix.push(...states.trace.limitations)
+  if (suffix.length === 0) return base
+  return `${base} ${[...new Set(suffix)].join(" ")}`
+}
+
+function suggestion(errors: ErrorPathBuildResult, states: StateBuildResult): string {
+  if (states.trace.enabled) {
+    return "If candidate state/flow evidence is insufficient, narrow the module path, state enum, handler name, or specific function."
+  }
+  if (errors.trace.enabled) {
+    return "If error/cleanup evidence is insufficient, narrow the function name, path, exact error label, or return code."
+  }
+  return "If evidence is insufficient, narrow the query to a symbol name, file path, include target, macro, global, or caller/callee relation."
 }
 
 function trim(text: string, max: number): string {

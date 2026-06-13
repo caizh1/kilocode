@@ -109,6 +109,25 @@ async function fixture(vector?: VectorEvidenceAdapter) {
   }
 }
 
+function expectBacked(result: Awaited<ReturnType<CodeIndexAnalysisService["queryEvidence"]>>) {
+  const ids = new Set(result.evidenceRefs.map((item) => item.id))
+  for (const item of result.stateTransitions) {
+    expect(item.startLine).toBeGreaterThan(0)
+    expect(item.endLine).toBeGreaterThanOrEqual(item.startLine)
+    expect(item.backingEvidenceRefs.length).toBeGreaterThan(0)
+    for (const id of item.backingEvidenceRefs) expect(ids.has(id)).toBe(true)
+  }
+  for (const item of result.moduleFlows) {
+    expect(item.backingEvidenceRefs.length).toBeGreaterThan(0)
+    for (const id of item.backingEvidenceRefs) expect(ids.has(id)).toBe(true)
+    for (const step of item.flowSteps) {
+      expect(step.startLine).toBeGreaterThan(0)
+      expect(step.endLine).toBeGreaterThanOrEqual(step.startLine)
+      if (step.evidenceRefId) expect(ids.has(step.evidenceRefId)).toBe(true)
+    }
+  }
+}
+
 describe("graph-only queryEvidence", () => {
   test("returns exact file and function graph evidence", async () => {
     const ctx = await fixture()
@@ -201,6 +220,316 @@ describe("graph-only queryEvidence", () => {
       filePath: "src/driver.c",
       labelName: "err_cleanup",
     })
+  })
+
+  test("enables error path evidence only for matching intent", async () => {
+    const ctx = await fixture()
+    const normal = await ctx.service.queryEvidence("start_device", { retrievalMode: "graph-only" })
+    const error = await ctx.service.queryEvidence("error path start_device", { retrievalMode: "graph-only" })
+    const zh = await ctx.service.queryEvidence("错误路径 start_device", { retrievalMode: "graph-only" })
+
+    expect(normal.trace.errorPathIntent).toMatchObject({
+      enabled: false,
+      reason: "intent-not-matched",
+    })
+    expect(normal.errorPaths).toEqual([])
+    expect(normal.formattedPackText).not.toContain("Error / cleanup path evidence")
+
+    expect(error.trace.errorPathIntent).toMatchObject({
+      enabled: true,
+      matchedKeywords: expect.arrayContaining(["error path"]),
+      generatedCount: 1,
+    })
+    expect(error.answerPolicy).toMatchObject({ mode: "grounded", confidence: "high" })
+    expect(error.evidenceRefs[0]).toMatchObject({
+      source: "graph",
+      kind: "cleanup-path",
+      filePath: "src/driver.c",
+      labelName: "err_cleanup",
+      functionName: "start_device",
+      cleanupCalls: ["cleanup_device"],
+    })
+    expect(error.errorPaths[0]).toMatchObject({
+      functionName: "start_device",
+      labelName: "err_cleanup",
+      branchKind: "cleanup-call",
+      cleanupCalls: ["cleanup_device"],
+      returnStyle: "return rc;",
+      filePath: "src/driver.c",
+    })
+    expect(error.errorPaths[0]?.backingEvidenceRefs).toContain(error.evidenceRefs[0]?.id)
+    expect(error.formattedPackText).toContain("Error / cleanup path evidence")
+    expect(error.formattedPackText).toContain("src/driver.c:")
+    expect(error.formattedPackText).toContain("cleanup_device")
+
+    expect(zh.trace.errorPathIntent).toMatchObject({
+      enabled: true,
+      matchedKeywords: expect.arrayContaining(["错误路径"]),
+      generatedCount: 1,
+    })
+  })
+
+  test("uses BM25 and vector as bounded supplemental error path evidence", async () => {
+    const vector = mock(async () => [
+      {
+        id: "vec-only",
+        score: 0.71,
+        payload: {
+          filePath: "src/semantic.c",
+          codeChunk: "release resource semantic only",
+          startLine: 11,
+          endLine: 12,
+        },
+      },
+    ])
+    const ctx = await fixture(vector)
+    const bm25 = await ctx.service.queryEvidence("error handling timeout", { retrievalMode: "hybrid" })
+    const semantic = await ctx.service.queryEvidence("释放资源 semantic", { retrievalMode: "hybrid" })
+
+    expect(bm25.trace.errorPathIntent).toMatchObject({
+      enabled: true,
+      matchedKeywords: expect.arrayContaining(["error handling"]),
+    })
+    expect(bm25.errorPaths.some((item) => item.filePath === "src/driver.c")).toBe(true)
+    expect(bm25.evidenceRefs.some((item) => item.source === "bm25" && item.kind === "error-path")).toBe(true)
+
+    expect(semantic.answerPolicy).toMatchObject({ mode: "grounded", confidence: "low" })
+    expect(semantic.errorPaths[0]).toMatchObject({
+      branchKind: "cleanup-call",
+      confidence: "low",
+      filePath: "src/semantic.c",
+      limitations: expect.arrayContaining(["Only semantic/vector evidence supports this path; verify with source reads."]),
+    })
+    expect(semantic.evidenceRefs[0]).toMatchObject({
+      source: "vector",
+      kind: "cleanup-path",
+      confidence: "low",
+    })
+    expect(semantic.formattedPackText).toContain("Only semantic/vector evidence supports this path")
+  })
+
+  test("keeps error path evidence conservative without line-backed support", async () => {
+    const ctx = await fixture(async () => [
+      {
+        id: "bad-vector",
+        score: 0.8,
+        payload: {
+          filePath: "src/bad.c",
+          codeChunk: "release resource without a line range",
+        },
+      },
+    ])
+
+    const result = await ctx.service.queryEvidence("释放资源 without range", { retrievalMode: "hybrid" })
+
+    expect(result.trace.errorPathIntent).toMatchObject({
+      enabled: true,
+      generatedCount: 0,
+    })
+    expect(result.answerPolicy).toMatchObject({ mode: "conservative", confidence: "none" })
+    expect(result.evidenceRefs).toEqual([])
+    expect(result.errorPaths).toEqual([])
+    expect(result.formattedPackText).toContain("No source-backed error/cleanup path evidence matched this query.")
+    expect(result.formattedPackText).toContain("do not infer cleanup order")
+  })
+
+  test("applies budget to error path evidence and keeps graph-only off vector", async () => {
+    const vector = mock(async () => [
+      {
+        id: "rollback-1",
+        score: 0.73,
+        payload: {
+          filePath: "src/rollback1.c",
+          codeChunk: "release resource first semantic hint",
+          startLine: 1,
+          endLine: 2,
+        },
+      },
+      {
+        id: "rollback-2",
+        score: 0.72,
+        payload: {
+          filePath: "src/rollback2.c",
+          codeChunk: "release resource second semantic hint",
+          startLine: 3,
+          endLine: 4,
+        },
+      },
+      {
+        id: "rollback-3",
+        score: 0.71,
+        payload: {
+          filePath: "src/rollback3.c",
+          codeChunk: "release resource third semantic hint",
+          startLine: 5,
+          endLine: 6,
+        },
+      },
+    ])
+    const ctx = await fixture(vector)
+    const graph = await ctx.service.queryEvidence("cleanup path start_device", { retrievalMode: "graph-only" })
+    const hybrid = await ctx.service.queryEvidence("释放资源 semantic", {
+      retrievalMode: "hybrid",
+      maxEvidenceItems: 1,
+    })
+
+    expect(vector).toHaveBeenCalledTimes(1)
+    expect(graph.trace.stages.find((stage) => stage.name === "vector")).toMatchObject({
+      status: "skipped",
+      reason: "graph-only",
+    })
+    expect(graph.errorPaths).toHaveLength(1)
+    expect(hybrid.errorPaths).toHaveLength(1)
+    expect(hybrid.trace.errorPathIntent).toMatchObject({
+      droppedByBudget: 2,
+    })
+    expect(hybrid.droppedByBudget.evidenceRefs).toBeGreaterThan(0)
+  })
+
+  test("enables source-backed candidate state evidence only for state intent", async () => {
+    const ctx = await fixture()
+    const normal = await ctx.service.queryEvidence("start_device", { retrievalMode: "graph-only" })
+    const state = await ctx.service.queryEvidence("state machine state", { retrievalMode: "graph-only" })
+    const zh = await ctx.service.queryEvidence("状态跳转 state", { retrievalMode: "graph-only" })
+
+    expect(normal.trace.stateIntent).toMatchObject({
+      enabled: false,
+      reason: "intent-not-matched",
+    })
+    expect(normal.stateTransitions).toEqual([])
+    expect(normal.moduleFlows).toEqual([])
+    expect(normal.formattedPackText).not.toContain("State / transition evidence")
+    expect(normal.formattedPackText).not.toContain("Module flow / impact evidence")
+
+    expect(state.trace.stateIntent).toMatchObject({
+      enabled: true,
+      matchedKeywords: expect.arrayContaining(["state machine"]),
+      generatedTransitionCount: 1,
+    })
+    expect(state.answerPolicy).toMatchObject({ mode: "grounded" })
+    expect(state.stateTransitions[0]).toMatchObject({
+      kind: "transition",
+      filePath: "src/driver.c",
+      confidence: "high",
+    })
+    expect(state.formattedPackText).toContain("State / transition evidence")
+    expect(state.formattedPackText).not.toContain("完整状态机")
+    expect(state.formattedPackText).not.toContain("complete state machine")
+    expectBacked(state)
+
+    expect(zh.trace.stateIntent).toMatchObject({
+      enabled: true,
+      matchedKeywords: expect.arrayContaining(["状态跳转"]),
+    })
+    expect(zh.stateTransitions.length).toBeGreaterThan(0)
+    expectBacked(zh)
+  })
+
+  test("derives module flow and impact candidates without free summaries", async () => {
+    const ctx = await fixture()
+    const flow = await ctx.service.queryEvidence("module flow start_device", { retrievalMode: "graph-only" })
+    const impact = await ctx.service.queryEvidence("impact analysis start_device", { retrievalMode: "graph-only" })
+
+    expect(flow.trace.stateIntent).toMatchObject({
+      enabled: true,
+      matchedKeywords: expect.arrayContaining(["module flow"]),
+      generatedFlowCount: 1,
+    })
+    expect(flow.moduleFlows[0]).toMatchObject({
+      kind: "module-flow",
+      title: "query: module flow start_device",
+      modulePath: "src",
+    })
+    expect(flow.moduleFlows[0]?.flowSteps.length).toBeGreaterThan(0)
+    expect(flow.moduleFlows[0]?.limitations.join(" ")).toMatch(/Order basis|顺序未被完整证明/)
+    expect(flow.formattedPackText).toContain("Module flow / impact evidence")
+    expect(flow.formattedPackText).not.toContain("完整模块流程")
+    expect(flow.formattedPackText).not.toContain("complete module flow")
+    expectBacked(flow)
+
+    expect(impact.moduleFlows[0]).toMatchObject({
+      kind: "impact",
+      title: "query: impact analysis start_device",
+    })
+    expectBacked(impact)
+  })
+
+  test("does not enable state or flow sections for ordinary error path queries", async () => {
+    const ctx = await fixture()
+    const result = await ctx.service.queryEvidence("error path start_device", { retrievalMode: "graph-only" })
+
+    expect(result.trace.errorPathIntent).toMatchObject({ enabled: true })
+    expect(result.trace.stateIntent).toMatchObject({
+      enabled: false,
+      reason: "intent-not-matched",
+    })
+    expect(result.stateTransitions).toEqual([])
+    expect(result.moduleFlows).toEqual([])
+    expect(result.formattedPackText).toContain("Error / cleanup path evidence")
+    expect(result.formattedPackText).not.toContain("State / transition evidence")
+    expect(result.formattedPackText).not.toContain("Module flow / impact evidence")
+  })
+
+  test("keeps state backing refs valid after budget truncation", async () => {
+    const ctx = await fixture()
+    const result = await ctx.service.queryEvidence("module flow start_device init_uart cleanup_device", {
+      retrievalMode: "graph-only",
+      maxEvidenceItems: 1,
+    })
+
+    expect(result.trace.stateIntent).toMatchObject({
+      enabled: true,
+    })
+    expectBacked(result)
+  })
+
+  test("uses vector-only only as low confidence state evidence and not module flow", async () => {
+    const vector = mock(async () => [
+      {
+        id: "vec-state",
+        score: 0.72,
+        payload: {
+          filePath: "src/vector_state.c",
+          codeChunk: "state transition semantic handler hint",
+          startLine: 4,
+          endLine: 6,
+        },
+      },
+    ])
+    const ctx = await fixture(vector)
+    const graph = await ctx.service.queryEvidence("transition semantic handler", { retrievalMode: "graph-only" })
+    const hybrid = await ctx.service.queryEvidence("transition semantic handler", { retrievalMode: "hybrid" })
+
+    expect(vector).toHaveBeenCalledTimes(1)
+    expect(graph.trace.stages.find((stage) => stage.name === "vector")).toMatchObject({
+      status: "skipped",
+      reason: "graph-only",
+    })
+    expect(hybrid.stateTransitions[0]).toMatchObject({
+      confidence: "low",
+      filePath: "src/vector_state.c",
+    })
+    expect(hybrid.stateTransitions[0]?.limitations.join(" ")).toContain("semantic/vector evidence")
+    expect(hybrid.moduleFlows).toEqual([])
+    expect(hybrid.answerPolicy).toMatchObject({ mode: "grounded", confidence: "low" })
+    expectBacked(hybrid)
+  })
+
+  test("returns conservative state intent output when no line-backed evidence exists", async () => {
+    const ctx = await fixture(async () => [])
+    const result = await ctx.service.queryEvidence("状态机 missing_symbol", { retrievalMode: "hybrid" })
+
+    expect(result.trace.stateIntent).toMatchObject({
+      enabled: true,
+      generatedTransitionCount: 0,
+      generatedFlowCount: 0,
+    })
+    expect(result.answerPolicy).toMatchObject({ mode: "conservative", confidence: "none" })
+    expect(result.evidenceRefs).toEqual([])
+    expect(result.stateTransitions).toEqual([])
+    expect(result.moduleFlows).toEqual([])
+    expect(result.formattedPackText).toContain("No source-backed candidate state/transition evidence matched this query.")
+    expect(result.formattedPackText).toContain("do not infer states")
   })
 
   test("filters by directoryPrefix before reading graphs", async () => {

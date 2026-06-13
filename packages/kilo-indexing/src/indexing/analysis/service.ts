@@ -2,6 +2,8 @@ import type { ICodeGraphStorage, ICodePostingsStorage } from "../codegraph"
 import { queryGraphEvidence } from "./graph"
 import { queryHybridEvidence } from "./hybrid"
 import type { VectorEvidenceAdapter } from "./vector"
+import { buildErrorPaths } from "./error-path"
+import { buildStateEvidence } from "./state-machine"
 import {
   DEFAULT_EVIDENCE_BUDGET,
   type CodeGraphEvidenceQueryOptions,
@@ -31,6 +33,8 @@ export class CodeIndexAnalysisService {
     const budget = resolveEvidenceBudget(options)
     const traceId = globalThis.crypto.randomUUID()
     const stages = createStages(mode, reason)
+    const errors = buildErrorPaths({ query, refs: [], budget })
+    const states = buildStateEvidence({ query, refs: [], errorPaths: [], budget })
     const elapsedMs = Date.now() - start
     const trace = {
       traceId,
@@ -39,6 +43,8 @@ export class CodeIndexAnalysisService {
       requestedMode: mode,
       effectiveMode: "graph-only" as const,
       reason,
+      errorPathIntent: errors.trace,
+      stateIntent: states.trace,
       stages,
       diagnostics: [],
       elapsedMs,
@@ -57,6 +63,9 @@ export class CodeIndexAnalysisService {
       trace,
       answerPolicy,
       evidenceRefs: [],
+      errorPaths: [],
+      stateTransitions: [],
+      moduleFlows: [],
       summaries: {
         functions: [],
         files: [],

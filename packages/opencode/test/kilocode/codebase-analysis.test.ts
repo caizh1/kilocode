@@ -254,6 +254,276 @@ describe("tool.codebase_analysis", () => {
     })
   })
 
+  test("surfaces structured error path evidence from queryEvidence", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const stub = CodeIndexAnalysisService.createStub("error path start_device", { retrievalMode: "hybrid" })
+        const result = {
+          ...stub,
+          trace: {
+            ...stub.trace,
+            requestedMode: "hybrid" as const,
+            effectiveMode: "hybrid" as const,
+            errorPathIntent: {
+              enabled: true,
+              reason: "intent-matched-line-backed-evidence",
+              matchedKeywords: ["error path"],
+              graphCandidateCount: 1,
+              bm25CandidateCount: 0,
+              vectorCandidateCount: 0,
+              generatedCount: 1,
+              droppedByBudget: 0,
+              limitations: [],
+            },
+          },
+          answerPolicy: {
+            ...stub.answerPolicy,
+            mode: "grounded" as const,
+            confidence: "high" as const,
+            allowed: true,
+            reason: "Source-backed error/cleanup path evidence with file paths and line numbers was returned.",
+          },
+          evidenceRefs: [
+            {
+              id: "error_cleanup",
+              source: "graph" as const,
+              path: "src/driver.c",
+              filePath: "src/driver.c",
+              startLine: 29,
+              endLine: 31,
+              kind: "cleanup-path",
+              reason: "cleanup path evidence derived from graph candidate",
+              confidence: "high" as const,
+              functionName: "start_device",
+              labelName: "err_cleanup",
+              cleanupCalls: ["cleanup_device"],
+              returnStyle: "return rc;",
+              displayName: "start_device:err_cleanup",
+            },
+          ],
+          errorPaths: [
+            {
+              id: "path_cleanup",
+              functionName: "start_device",
+              labelName: "err_cleanup",
+              branchKind: "cleanup-call" as const,
+              cleanupCalls: ["cleanup_device"],
+              returnStyle: "return rc;",
+              filePath: "src/driver.c",
+              startLine: 29,
+              endLine: 31,
+              confidence: "high" as const,
+              limitations: [],
+              backingEvidenceRefs: ["error_cleanup"],
+            },
+          ],
+          formattedPackText:
+            '<local-analysis-pack><error-path-evidence title="Error / cleanup path evidence">src/driver.c:29-31 cleanup_device</error-path-evidence><limitations>source-backed</limitations></local-analysis-pack>',
+        }
+        const query = spyOn(KiloIndexing, "queryEvidence").mockResolvedValue(result)
+
+        try {
+          const tool = await initTool()
+          const output = await rt.runPromise(tool.execute({ query: "error path start_device" }, baseCtx))
+
+          expect(query).toHaveBeenCalledWith("error path start_device", {
+            retrievalMode: "hybrid",
+          })
+          expect(output.output).toContain("Error / cleanup path evidence")
+          expect(output.metadata.result.errorPaths).toEqual(result.errorPaths)
+          expect(output.metadata.result.errorPaths[0]).toMatchObject({
+            functionName: "start_device",
+            cleanupCalls: ["cleanup_device"],
+          })
+          expect(output.metadata.evidenceRefs[0]).toMatchObject({
+            kind: "cleanup-path",
+            source: "graph",
+          })
+        } finally {
+          query.mockRestore()
+        }
+      },
+    })
+  })
+
+  test("surfaces structured candidate state and flow evidence from queryEvidence", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const stub = CodeIndexAnalysisService.createStub("module flow start_device", { retrievalMode: "hybrid" })
+        const result = {
+          ...stub,
+          trace: {
+            ...stub.trace,
+            requestedMode: "hybrid" as const,
+            effectiveMode: "hybrid" as const,
+            stateIntent: {
+              enabled: true,
+              reason: "intent-matched-line-backed-candidate-evidence",
+              matchedKeywords: ["module flow"],
+              graphCandidateCount: 2,
+              bm25CandidateCount: 0,
+              vectorCandidateCount: 0,
+              errorPathCandidateCount: 0,
+              generatedTransitionCount: 1,
+              generatedFlowCount: 1,
+              droppedByBudget: 0,
+              droppedTransitionCount: 0,
+              droppedFlowCount: 0,
+              limitations: ["Order basis: same-file line order."],
+            },
+          },
+          answerPolicy: {
+            ...stub.answerPolicy,
+            mode: "grounded" as const,
+            confidence: "high" as const,
+            allowed: true,
+            reason: "Source-backed candidate state/flow/impact evidence with file paths and line numbers was returned.",
+          },
+          evidenceRefs: [
+            {
+              id: "state_ref",
+              source: "graph" as const,
+              path: "src/driver.c",
+              filePath: "src/driver.c",
+              startLine: 9,
+              endLine: 12,
+              kind: "state-transition",
+              reason: "candidate state/transition evidence derived from graph candidate",
+              confidence: "high" as const,
+              symbolName: "state",
+              displayName: "enum state",
+            },
+            {
+              id: "flow_ref",
+              source: "graph" as const,
+              path: "src/driver.c",
+              filePath: "src/driver.c",
+              startLine: 20,
+              endLine: 31,
+              kind: "module-flow",
+              reason: "candidate module-flow evidence derived from source-backed candidates",
+              confidence: "high" as const,
+              symbolName: "start_device",
+              displayName: "query: module flow start_device",
+            },
+          ],
+          stateTransitions: [
+            {
+              id: "transition_state",
+              kind: "transition" as const,
+              stateName: "state",
+              functionName: "state",
+              filePath: "src/driver.c",
+              startLine: 9,
+              endLine: 12,
+              confidence: "high" as const,
+              backingEvidenceRefs: ["state_ref"],
+              limitations: ["Only listed source-backed candidate transition evidence is included."],
+            },
+          ],
+          moduleFlows: [
+            {
+              id: "module_flow",
+              kind: "module-flow" as const,
+              title: "query: module flow start_device",
+              modulePath: "src",
+              involvedSymbols: ["start_device"],
+              flowSteps: [
+                {
+                  order: 1,
+                  label: "start_device",
+                  filePath: "src/driver.c",
+                  startLine: 20,
+                  endLine: 31,
+                  evidenceRefId: "flow_ref",
+                },
+              ],
+              confidence: "high" as const,
+              backingEvidenceRefs: ["flow_ref"],
+              limitations: ["Order basis: same-file line order."],
+            },
+          ],
+          formattedPackText:
+            '<local-analysis-pack><state-transition-evidence title="State / transition evidence">src/driver.c:9-12 state</state-transition-evidence><module-flow-evidence title="Module flow / impact evidence">src/driver.c:20-31 start_device</module-flow-evidence><limitations>Only listed source-backed candidate evidence is included.</limitations></local-analysis-pack>',
+        }
+        const query = spyOn(KiloIndexing, "queryEvidence").mockResolvedValue(result)
+
+        try {
+          const tool = await initTool()
+          const output = await rt.runPromise(tool.execute({ query: "module flow start_device" }, baseCtx))
+
+          expect(query).toHaveBeenCalledWith("module flow start_device", {
+            retrievalMode: "hybrid",
+          })
+          expect(output.output).toContain("State / transition evidence")
+          expect(output.output).toContain("Module flow / impact evidence")
+          expect(output.metadata.result.stateTransitions).toEqual(result.stateTransitions)
+          expect(output.metadata.result.moduleFlows).toEqual(result.moduleFlows)
+          expect(output.metadata.trace.stateIntent).toMatchObject({
+            enabled: true,
+            matchedKeywords: ["module flow"],
+          })
+          expect(output.output).not.toContain("完整状态机")
+          expect(output.output).not.toContain("完整模块流程")
+        } finally {
+          query.mockRestore()
+        }
+      },
+    })
+  })
+
+  test("does not surface error path output for ordinary analysis queries", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const stub = CodeIndexAnalysisService.createStub("start_device", { retrievalMode: "hybrid" })
+        const result = {
+          ...stub,
+          trace: {
+            ...stub.trace,
+            errorPathIntent: {
+              enabled: false,
+              reason: "intent-not-matched",
+              matchedKeywords: [],
+              graphCandidateCount: 1,
+              bm25CandidateCount: 0,
+              vectorCandidateCount: 0,
+              generatedCount: 0,
+              droppedByBudget: 0,
+              limitations: [],
+            },
+          },
+          formattedPackText:
+            '<local-analysis-pack><graph-evidence title="Graph evidence">src/driver.c:20-34 start_device</graph-evidence></local-analysis-pack>',
+        }
+        const query = spyOn(KiloIndexing, "queryEvidence").mockResolvedValue(result)
+
+        try {
+          const tool = await initTool()
+          const output = await rt.runPromise(tool.execute({ query: "start_device" }, baseCtx))
+
+          expect(output.metadata.result.errorPaths).toEqual([])
+          expect(output.metadata.result.stateTransitions).toEqual([])
+          expect(output.metadata.result.moduleFlows).toEqual([])
+          expect(output.metadata.trace.errorPathIntent).toMatchObject({
+            enabled: false,
+            reason: "intent-not-matched",
+          })
+          expect(output.output).not.toContain("Error / cleanup path evidence")
+          expect(output.output).not.toContain("State / transition evidence")
+          expect(output.output).not.toContain("Module flow / impact evidence")
+        } finally {
+          query.mockRestore()
+        }
+      },
+    })
+  })
+
   test("surfaces vector fallback without failing the tool", async () => {
     await using tmp = await tmpdir({ git: true })
     await WithInstance.provide({

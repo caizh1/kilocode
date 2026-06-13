@@ -1,8 +1,18 @@
 import type { ICodeGraphStorage, ICodePostingsStorage, CodePostingsSearchResult } from "../codegraph"
+import { buildErrorPaths, errorPathLines, policyForErrorPaths, type ErrorPathBuildResult } from "./error-path"
 import { queryGraphEvidence } from "./graph"
+import {
+  buildStateEvidence,
+  finalizeStateEvidence,
+  moduleFlowLines,
+  policyForStateEvidence,
+  stateTransitionLines,
+  type StateBuildResult,
+} from "./state-machine"
 import { queryVectorEvidence, type VectorEvidenceAdapter, type VectorEvidenceResult } from "./vector"
 import type {
   CodeGraphEvidenceQueryOptions,
+  ErrorPathEvidence,
   EvidenceBudget,
   EvidenceRef,
   QueryEvidenceAnswerPolicy,
@@ -91,15 +101,47 @@ export async function queryHybridEvidence(input: Planner): Promise<QueryEvidence
     ...item,
     rank: rankVector(item),
   }))
-  const fused = dedupe([...graphRefs, ...bm25.refs, ...vectorRefs].sort(sort))
+  const base = [...graphRefs, ...bm25.refs, ...vectorRefs]
+  const errors = buildErrorPaths({ query: input.query, refs: base, budget: input.budget })
+  const states = buildStateEvidence({ query: input.query, refs: [...base, ...errors.refs], errorPaths: errors.paths, budget: input.budget })
+  const errorRefs = errors.refs.map((item) => ({
+    ...item,
+    rank: rankError(item),
+  }))
+  const stateRefs = states.refs.map((item) => ({
+    ...item,
+    rank: rankState(item),
+  }))
+  const pool =
+    states.trace.enabled && states.refs.length === 0
+      ? []
+      : errors.trace.enabled && errors.refs.length === 0
+        ? []
+        : [...(states.trace.enabled ? stateRefs : []), ...(errors.trace.enabled ? errorRefs : []), ...base]
+  const fused = dedupe(pool.sort(sort))
   const kept = fused.refs.slice(0, input.budget.maxEvidenceItems).map((item) => limitSnippet(item, input.budget.maxSnippetCharsPerItem))
+  const keptIds = new Set(kept.map((item) => item.id))
+  const paths = errors.paths.filter((item) => item.backingEvidenceRefs.some((id) => keptIds.has(id)))
+  const state = finalizeStateEvidence(states, kept)
   const dropped = fused.refs.length - kept.length
-  const policy = policyFor(kept)
+  const errorTrace = {
+    ...errors.trace,
+    generatedCount: paths.length,
+    droppedByBudget: errors.trace.droppedByBudget + errors.paths.length - paths.length,
+  }
+  const policy = state.trace.enabled
+    ? policyForStateEvidence({ transitions: state.transitions, flows: state.flows })
+    : errors.trace.enabled
+      ? policyForErrorPaths(paths)
+      : policyFor(kept)
   const full = format({
     query: input.query,
     traceId,
     policy,
     refs: kept,
+    errors,
+    paths,
+    states: state,
     budget: input.budget,
     diagnostics,
     vector,
@@ -119,6 +161,8 @@ export async function queryHybridEvidence(input: Planner): Promise<QueryEvidence
     effectiveMode: "hybrid",
     effectiveSources: ["graph", "bm25", "vector"],
     reason: "hybrid-effective-sources: graph,bm25,vector",
+    errorPathIntent: errorTrace,
+    stateIntent: state.trace,
     stages: stages({
       graph,
       bm25Reason: bm25.reason,
@@ -127,7 +171,7 @@ export async function queryHybridEvidence(input: Planner): Promise<QueryEvidence
       postingsCount: status.validFileCount,
       vector,
       maxVectorCandidates,
-      deduped: graphRefs.length + bm25.refs.length + vectorRefs.length - fused.refs.length,
+      deduped: graphRefs.length + bm25.refs.length + vectorRefs.length + errorRefs.length + stateRefs.length - fused.refs.length,
       dedupedVector: fused.dropped.vector,
       kept: kept.length,
       dropped,
@@ -143,6 +187,9 @@ export async function queryHybridEvidence(input: Planner): Promise<QueryEvidence
     trace,
     answerPolicy: policy,
     evidenceRefs: kept,
+    errorPaths: paths,
+    stateTransitions: state.transitions,
+    moduleFlows: state.flows,
     summaries: emptySummaries(),
     stateMachines: [],
     formattedPackText: pack,
@@ -186,6 +233,18 @@ function rankBm25(item: CodePostingsSearchResult): number {
 function rankVector(item: EvidenceRef): number {
   if (item.confidence === "medium") return 75
   return 55
+}
+
+function rankError(item: EvidenceRef): number {
+  if (item.source === "graph") return 112
+  if (item.source === "bm25") return 88
+  return 58
+}
+
+function rankState(item: EvidenceRef): number {
+  if (item.source === "graph") return 111
+  if (item.source === "bm25") return 87
+  return 57
 }
 
 function sort(left: Candidate, right: Candidate): number {
@@ -349,21 +408,48 @@ function format(input: {
   traceId: string
   policy: QueryEvidenceAnswerPolicy
   refs: EvidenceRef[]
+  errors: ErrorPathBuildResult
+  paths: ErrorPathEvidence[]
+  states: StateBuildResult
   budget: EvidenceBudget
   diagnostics: QueryEvidenceTraceDiagnostic[]
   vector: VectorEvidenceResult
 }) {
+  const errorIds = new Set(input.paths.flatMap((item) => item.backingEvidenceRefs))
+  const stateIds = new Set([
+    ...input.states.transitions.flatMap((item) => item.backingEvidenceRefs),
+    ...input.states.flows.flatMap((item) => item.backingEvidenceRefs),
+  ])
   const exact = input.refs.filter((item) => item.source === "graph" && (item.reason.includes("exact") || item.reason.includes("file path")))
-  const graph = input.refs.filter((item) => item.source === "graph" && !exact.includes(item))
-  const bm25 = input.refs.filter((item) => item.source === "bm25")
-  const vector = input.refs.filter((item) => item.source === "vector")
+  const graph = input.refs.filter((item) => item.source === "graph" && !exact.includes(item) && !errorIds.has(item.id) && !stateIds.has(item.id))
+  const bm25 = input.refs.filter((item) => item.source === "bm25" && !stateIds.has(item.id))
+  const vector = input.refs.filter((item) => item.source === "vector" && !stateIds.has(item.id))
   const vectorOnly = input.refs.length > 0 && input.refs.every((item) => item.source === "vector")
+  const error = input.errors.trace.enabled
+    ? [
+        '<error-path-evidence title="Error / cleanup path evidence">',
+        ...errorPathLines(input.paths),
+        "</error-path-evidence>",
+      ]
+    : []
+  const state = input.states.trace.enabled
+    ? [
+        '<state-transition-evidence title="State / transition evidence">',
+        ...stateTransitionLines(input.states.transitions),
+        "</state-transition-evidence>",
+        '<module-flow-evidence title="Module flow / impact evidence">',
+        ...moduleFlowLines(input.states.flows),
+        "</module-flow-evidence>",
+      ]
+    : []
   return [
     `<local-analysis-pack traceId="${xml(input.traceId)}" confidence="${input.policy.confidence}" allowed="${input.policy.allowed ? "true" : "false"}">`,
     `<query>${xml(input.query)}</query>`,
     '<retrieval requestedMode="hybrid" effectiveMode="hybrid" effectiveSources="graph,bm25,vector" />',
     `<answer-policy mode="${input.policy.mode}" confidence="${input.policy.confidence}">${xml(input.policy.reason)} ${xml(input.policy.guidance)}</answer-policy>`,
     `<resolved-budget maxEvidenceItems="${input.budget.maxEvidenceItems}" maxPackChars="${input.budget.maxPackChars}" maxSnippetCharsPerItem="${input.budget.maxSnippetCharsPerItem}" />`,
+    ...error,
+    ...state,
     '<exact-hits title="Exact hits">',
     ...lines(exact, "No exact path or symbol evidence matched this query."),
     "</exact-hits>",
@@ -376,8 +462,8 @@ function format(input: {
     '<vector-evidence title="Semantic / vector evidence">',
     ...lines(vector, `Semantic/vector evidence ${input.vector.status === "ok" ? "did not survive fusion." : `${input.vector.status}; reason=${input.vector.reason}`}`),
     "</vector-evidence>",
-    `<limitations>${xml(limitations(input.vector, vectorOnly))}</limitations>`,
-    "<suggested-next-step>If evidence is insufficient, narrow the query with an exact symbol, file path, macro name, or error label.</suggested-next-step>",
+    `<limitations>${xml(limitations(input.vector, vectorOnly, input.errors, input.states))}</limitations>`,
+    `<suggested-next-step>${xml(suggestion(input.errors, input.states))}</suggested-next-step>`,
     input.refs.length === 0 ? "<missing-evidence>No file path and line-number evidence was returned.</missing-evidence>" : "",
     input.diagnostics.length > 0 ? `<diagnostics count="${input.diagnostics.length}" />` : "",
     "</local-analysis-pack>",
@@ -386,14 +472,34 @@ function format(input: {
     .join("\n")
 }
 
-function limitations(vector: VectorEvidenceResult, vectorOnly: boolean): string {
+function limitations(vector: VectorEvidenceResult, vectorOnly: boolean, errors: ErrorPathBuildResult, states: StateBuildResult): string {
+  const suffix: string[] = []
+  if (errors.trace.enabled && errors.paths.length === 0) {
+    suffix.push("No source-backed error/cleanup path evidence was returned; do not infer cleanup order, return code, or failure behavior.")
+  }
+  if (errors.trace.enabled && errors.paths.length > 0) suffix.push(...errors.paths.flatMap((item) => item.limitations))
+  if (states.trace.enabled && states.transitions.length === 0 && states.flows.length === 0) {
+    suffix.push("No source-backed candidate state/flow/impact evidence was returned; do not infer states, transitions, order, or impact scope.")
+  }
+  if (states.trace.enabled) suffix.push(...states.trace.limitations)
+  const text = suffix.length > 0 ? ` ${[...new Set(suffix)].join(" ")}` : ""
   if (vectorOnly) {
-    return "Only semantic/vector evidence was returned; exact graph/BM25 support is missing, so treat conclusions as weak and verify with file reads."
+    return `Only semantic/vector evidence was returned; exact graph/BM25 support is missing, so treat conclusions as weak and verify with file reads.${text}`
   }
   if (vector.status !== "ok") {
-    return `Phase 5 fell back to graph + BM25 because semantic/vector evidence was ${vector.status}: ${vector.reason}. Rerank, state-machine extraction, and module summaries are not enabled.`
+    return `Phase 5 fell back to graph + BM25 because semantic/vector evidence was ${vector.status}: ${vector.reason}. Rerank and module summaries are not enabled.${text}`
   }
-  return "Phase 5 uses valid C/C++ graph records, BM25 postings, and existing Kilo vector search. Rerank, state-machine extraction, and module summaries are not enabled."
+  return `Phase 5 uses valid C/C++ graph records, BM25 postings, and existing Kilo vector search. Rerank and module summaries are not enabled.${text}`
+}
+
+function suggestion(errors: ErrorPathBuildResult, states: StateBuildResult): string {
+  if (states.trace.enabled) {
+    return "If candidate state/flow evidence is insufficient, narrow the module path, state enum, handler name, or specific function."
+  }
+  if (errors.trace.enabled) {
+    return "If error/cleanup evidence is insufficient, narrow the function name, path, exact error label, or return code."
+  }
+  return "If evidence is insufficient, narrow the query with an exact symbol, file path, macro name, or error label."
 }
 
 function lines(refs: EvidenceRef[], empty: string): string[] {
