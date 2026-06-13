@@ -889,6 +889,65 @@
           "default": false,
           "description": "Enable chat textarea autocomplete"
         },
+        "kilo.autocomplete.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Kilo inline autocomplete."
+        },
+        "kilo.autocomplete.provider": {
+          "type": "string",
+          "enum": [
+            "qwen-direct",
+            "none"
+          ],
+          "default": "none",
+          "description": "Autocomplete provider."
+        },
+        "kilo.autocomplete.qwen.endpoint": {
+          "type": "string",
+          "default": "http://company-qwen-coder.example.com/v1/completions",
+          "description": "Company internal Qwen Coder FIM completion endpoint."
+        },
+        "kilo.autocomplete.qwen.model": {
+          "type": "string",
+          "default": "qwen-coder-30b0",
+          "description": "Qwen Coder autocomplete model name."
+        },
+        "kilo.autocomplete.qwen.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Optional API key. Prefer SecretStorage for production."
+        },
+        "kilo.autocomplete.qwen.debounceMs": {
+          "type": "number",
+          "default": 350,
+          "description": "Autocomplete debounce in milliseconds."
+        },
+        "kilo.autocomplete.qwen.maxTokens": {
+          "type": "number",
+          "default": 128,
+          "description": "Maximum tokens for inline completion."
+        },
+        "kilo.autocomplete.qwen.temperature": {
+          "type": "number",
+          "default": 0.1,
+          "description": "Sampling temperature for autocomplete."
+        },
+        "kilo.autocomplete.qwen.prefixChars": {
+          "type": "number",
+          "default": 12000,
+          "description": "Maximum prefix characters sent to the autocomplete model."
+        },
+        "kilo.autocomplete.qwen.suffixChars": {
+          "type": "number",
+          "default": 6000,
+          "description": "Maximum suffix characters sent to the autocomplete model."
+        },
+        "kilo.autocomplete.qwen.multifileContext.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Continue-style lightweight multi-file context for FIM autocomplete."
+        },
         "kilo-code.new.speechToText.model": {
           "type": "string",
           "description": "Model to use for experimental speech-to-text voice input. Requires ChipMate Gateway."

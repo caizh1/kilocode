@@ -12,8 +12,7 @@ import { SubAgentViewerProvider } from "./SubAgentViewerProvider"
 import { EXTENSION_DISPLAY_NAME } from "./constants"
 import { KiloConnectionService } from "./services/cli-backend"
 import { registerAutocompleteProvider } from "./services/autocomplete"
-import { ensureBackendForAutocomplete } from "./services/autocomplete/ensure-backend"
-import { AutocompleteServiceManager } from "./services/autocomplete/AutocompleteServiceManager"
+import { registerQwenAutocompleteProvider } from "./services/qwen-autocomplete"
 import { BrowserAutomationService } from "./services/browser-automation"
 import { TelemetryEventName, TelemetryProxy } from "./services/telemetry"
 import { registerCommitMessageService } from "./services/commit-message"
@@ -39,7 +38,7 @@ const panelTitleHandler = (panel: vscode.WebviewPanel) => (title: string) => {
 // Activated via "onStartupFinished" (package.json) so that commands, code actions, keybindings,
 // autocomplete, commit-message generation, and URI deep links all work immediately — without
 // requiring the user to open a Kilo sidebar or panel first. The CLI backend is NOT spawned here;
-// it starts lazily when a webview connects or when ensureBackendForAutocomplete() triggers it.
+// it starts lazily when a webview connects.
 export function activate(context: vscode.ExtensionContext) {
   console.log("ChipMate extension is now active")
   shuttingDown = false
@@ -66,7 +65,7 @@ export function activate(context: vscode.ExtensionContext) {
   connectionService.setRemoteService(remoteService)
 
   // Re-register browser automation MCP server on CLI backend reconnect, configure telemetry,
-  // set remote service client, and reload autocomplete so it picks up the now-available backend connection.
+  // and set remote service client.
   const unsubscribeStateChange = connectionService.onStateChange((state) => {
     if (state === "connected") {
       browserAutomationService.reregisterIfEnabled()
@@ -86,7 +85,6 @@ export function activate(context: vscode.ExtensionContext) {
       } catch {
         remoteService.setClient(null)
       }
-      AutocompleteServiceManager.getInstance()?.load()
     } else {
       remoteService.clearState()
       remoteService.setClient(null)
@@ -100,9 +98,6 @@ export function activate(context: vscode.ExtensionContext) {
       telemetry.setEnabled(enabled)
     }),
   )
-
-  // Prewarm the CLI backend early so autocomplete is ready before first editor use.
-  ensureBackendForAutocomplete(connectionService)
 
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     void markWorkspace(folder.uri.fsPath, (msg) => console.warn(`[Kilo New] ${msg}`))
@@ -491,8 +486,9 @@ export function activate(context: vscode.ExtensionContext) {
     }),
   )
 
-  // Register autocomplete provider
-  void registerAutocompleteProvider(context, connectionService)
+  // Register autocomplete command shims and the isolated qwen-direct provider.
+  registerAutocompleteProvider(context)
+  registerQwenAutocompleteProvider(context)
 
   // Register commit message generation
   registerCommitMessageService(context, connectionService)
