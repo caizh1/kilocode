@@ -32,6 +32,7 @@ type Gate = {
 type RenderInput = {
   cfg: QwenAutocompleteConfig
   helper: QwenAutocompleteHelperVars
+  injectIntoPrompt?: boolean
   snippets: QwenAutocompleteCodeSnippet[]
 }
 
@@ -56,9 +57,8 @@ export function buildQwenPromptPlan(input: RenderInput): QwenPromptPlan {
 
 export function resolveQwenSnippetInjectionGate(input: RenderInput): Gate {
   if (!input.cfg.enabled || input.cfg.provider !== "qwen-direct") return blocked("disabled", "disabled", null)
-  if (!input.cfg.recentlyEditedEnabled || !input.cfg.recentlyEditedInjectIntoPrompt) {
-    return blocked("disabled", "disabled", null)
-  }
+  const inject = input.injectIntoPrompt ?? (input.cfg.recentlyEditedEnabled && input.cfg.recentlyEditedInjectIntoPrompt)
+  if (!inject) return blocked("disabled", "disabled", null)
   if (input.snippets.length === 0) return blocked("no-selected-snippets", "single-file-qwen-fim", null)
   if (!isQwenCoder(input.cfg.model)) return blocked("unsupported-model", "blocked", available(input.cfg))
   const tokens = available(input.cfg)

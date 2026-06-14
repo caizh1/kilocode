@@ -48,6 +48,23 @@ export type QwenDiagnosticInput = {
   suffixChars?: number
   helper?: QwenAutocompleteHelperVars
   guardBlocked?: boolean
+  guardDecision?: string
+  guardEnabled?: boolean
+  guardErrorFailClosed?: boolean
+  guardIgnored?: boolean
+  guardLanguageAllowed?: boolean
+  guardReason?: string
+  guardSchemeAllowed?: boolean
+  guardSensitive?: boolean
+  guardSource?: string
+  guardWorkspaceAllowed?: boolean
+  prefilterDecision?: string
+  prefilterExtension?: string
+  prefilterLanguage?: string
+  prefilterProviderEnabled?: boolean
+  prefilterReason?: string
+  contextReadGuardDecision?: string | null
+  contextReadGuardSkippedCount?: number
   debounceMs?: number
   cancelled?: boolean
   stale?: boolean
@@ -63,17 +80,73 @@ export type QwenDiagnosticInput = {
   cacheEntryCount?: number
   cacheLookupPrefixChars?: number
   cacheReturnedChars?: number | null
+  nonStreamingFilterEnabled?: boolean
+  nonStreamingFilterApplied?: boolean
+  nonStreamingFilterReasons?: string
+  nonStreamingFilterInputChars?: number
+  nonStreamingFilterOutputChars?: number
+  nonStreamingFilterRejected?: boolean
+  nonStreamingFilterTrimmed?: boolean
+  nonStreamingFilterStopTokenHit?: boolean
+  nonStreamingFilterSimilarLineHit?: boolean
+  nonStreamingFilterRepeatingLineHit?: boolean
+  nonStreamingFilterMarkdownFenceHit?: boolean
+  nonStreamingFilterPathLineHit?: boolean
+  nonStreamingFilterAdapterMode?: string
   snippetScaffoldEnabled?: boolean
+  snippetSelectionAdapterPriority?: string
+  snippetSelectionBudgetRemaining?: number
+  snippetSelectionDroppedByBudgetCount?: number
+  snippetSelectionDroppedDuplicateFileCount?: number
+  snippetSelectionDroppedInvalidCount?: number
+  snippetSelectionEnabled?: boolean
+  snippetSelectionInjectedCount?: number
+  snippetSelectionInjectedSources?: string
+  snippetSelectionTotalPayloadCount?: number
+  snippetSelectionTotalSelectedCount?: number
+  snippetSelectionTotalSelectedTokens?: number
   snippetTotalCount?: number
   selectedSnippetCount?: number
   snippetTokenBudget?: number
   selectedSnippetTokens?: number
+  recentlyOpenedFormattedCount?: number
+  recentlyOpenedTrimmedCount?: number
+  baseSnippetSelectedCount?: number
+  baseSnippetInjectedCount?: number
   recentlyEditedEnabled?: boolean
   recentlyEditedInjectIntoPrompt?: boolean
   recentlyEditedTrackedRangeCount?: number
   recentlyEditedPayloadCount?: number
   recentlyEditedSelectedCount?: number
   recentlyEditedSelectedTokens?: number
+  recentlyOpenedEnabled?: boolean
+  recentlyOpenedInjectIntoPrompt?: boolean
+  recentlyOpenedTrackedFileCount?: number
+  recentlyOpenedPayloadCount?: number
+  recentlyOpenedSelectedCount?: number
+  recentlyOpenedSelectedTokens?: number
+  recentlyOpenedReadTimeoutMs?: number
+  recentlyOpenedSkippedCount?: number
+  recentlyOpenedInjectedIntoPrompt?: boolean
+  importDefinitionsEnabled?: boolean
+  importDefinitionsInjectIntoPrompt?: boolean
+  importDefinitionsCacheSize?: number
+  importDefinitionsPayloadCount?: number
+  importDefinitionsSelectedCount?: number
+  importDefinitionsSelectedTokens?: number
+  importDefinitionsTimeoutMs?: number
+  importDefinitionsSkippedCount?: number
+  importDefinitionsInjectedIntoPrompt?: boolean
+  rootPathEnabled?: boolean
+  rootPathInjectIntoPrompt?: boolean
+  rootPathCacheSize?: number
+  rootPathPayloadCount?: number
+  rootPathSelectedCount?: number
+  rootPathSelectedTokens?: number
+  rootPathTimeoutMs?: number
+  rootPathSkippedCount?: number
+  rootPathInjectedIntoPrompt?: boolean
+  rootPathBlockedReason?: string
   snippetsInjectedIntoPrompt?: boolean
   contextLength?: number
   availablePromptTokens?: number | null
@@ -84,6 +157,13 @@ export type QwenDiagnosticInput = {
   renderedPromptChars?: number | null
   estimatedRenderedPromptTokens?: number | null
   multilineAllowed?: boolean
+  multilineBlockedReason?: string
+  multilineClassifierMode?: string
+  multilineClassifierSource?: string
+  multilineLanguage?: string
+  multilineSelectedCompletionInfo?: boolean
+  multilineSingleLineComment?: string
+  multilineUseMultilineApplied?: boolean
   multilineShown?: boolean
   range?: unknown
   insertText?: string
@@ -197,6 +277,7 @@ function entryFor(input: QwenDiagnosticInput): Record<string, unknown> {
     selectedTextLength: selected.length,
     selectedRangePreview: selected.range,
     guardBlocked: none(input.guardBlocked),
+    ...safetyInfo(input),
     debounceMs: input.debounceMs ?? input.cfg.debounceMs,
     cancelled: input.cancelled ?? false,
     stale: input.stale ?? false,
@@ -212,17 +293,73 @@ function entryFor(input: QwenDiagnosticInput): Record<string, unknown> {
     cacheEntryCount: none(input.cacheEntryCount),
     cacheLookupPrefixChars: none(input.cacheLookupPrefixChars),
     cacheReturnedChars: none(input.cacheReturnedChars),
+    nonStreamingFilterEnabled: none(input.nonStreamingFilterEnabled),
+    nonStreamingFilterApplied: none(input.nonStreamingFilterApplied),
+    nonStreamingFilterReasons: input.nonStreamingFilterReasons ?? null,
+    nonStreamingFilterInputChars: none(input.nonStreamingFilterInputChars),
+    nonStreamingFilterOutputChars: none(input.nonStreamingFilterOutputChars),
+    nonStreamingFilterRejected: none(input.nonStreamingFilterRejected),
+    nonStreamingFilterTrimmed: none(input.nonStreamingFilterTrimmed),
+    nonStreamingFilterStopTokenHit: none(input.nonStreamingFilterStopTokenHit),
+    nonStreamingFilterSimilarLineHit: none(input.nonStreamingFilterSimilarLineHit),
+    nonStreamingFilterRepeatingLineHit: none(input.nonStreamingFilterRepeatingLineHit),
+    nonStreamingFilterMarkdownFenceHit: none(input.nonStreamingFilterMarkdownFenceHit),
+    nonStreamingFilterPathLineHit: none(input.nonStreamingFilterPathLineHit),
+    nonStreamingFilterAdapterMode: input.nonStreamingFilterAdapterMode ?? null,
     snippetScaffoldEnabled: none(input.snippetScaffoldEnabled),
+    snippetSelectionEnabled: none(input.snippetSelectionEnabled),
+    snippetSelectionTotalPayloadCount: none(input.snippetSelectionTotalPayloadCount),
+    snippetSelectionTotalSelectedCount: none(input.snippetSelectionTotalSelectedCount),
+    snippetSelectionTotalSelectedTokens: none(input.snippetSelectionTotalSelectedTokens),
+    snippetSelectionDroppedByBudgetCount: none(input.snippetSelectionDroppedByBudgetCount),
+    snippetSelectionDroppedDuplicateFileCount: none(input.snippetSelectionDroppedDuplicateFileCount),
+    snippetSelectionDroppedInvalidCount: none(input.snippetSelectionDroppedInvalidCount),
+    snippetSelectionInjectedCount: none(input.snippetSelectionInjectedCount),
+    snippetSelectionInjectedSources: input.snippetSelectionInjectedSources ?? null,
+    snippetSelectionAdapterPriority: input.snippetSelectionAdapterPriority ?? null,
+    snippetSelectionBudgetRemaining: none(input.snippetSelectionBudgetRemaining),
     snippetTotalCount: none(input.snippetTotalCount),
     selectedSnippetCount: none(input.selectedSnippetCount),
     snippetTokenBudget: none(input.snippetTokenBudget),
     selectedSnippetTokens: none(input.selectedSnippetTokens),
+    recentlyOpenedFormattedCount: none(input.recentlyOpenedFormattedCount),
+    recentlyOpenedTrimmedCount: none(input.recentlyOpenedTrimmedCount),
+    baseSnippetSelectedCount: none(input.baseSnippetSelectedCount),
+    baseSnippetInjectedCount: none(input.baseSnippetInjectedCount),
     recentlyEditedEnabled: none(input.recentlyEditedEnabled),
     recentlyEditedInjectIntoPrompt: none(input.recentlyEditedInjectIntoPrompt),
     recentlyEditedTrackedRangeCount: none(input.recentlyEditedTrackedRangeCount),
     recentlyEditedPayloadCount: none(input.recentlyEditedPayloadCount),
     recentlyEditedSelectedCount: none(input.recentlyEditedSelectedCount),
     recentlyEditedSelectedTokens: none(input.recentlyEditedSelectedTokens),
+    recentlyOpenedEnabled: none(input.recentlyOpenedEnabled),
+    recentlyOpenedInjectIntoPrompt: none(input.recentlyOpenedInjectIntoPrompt),
+    recentlyOpenedTrackedFileCount: none(input.recentlyOpenedTrackedFileCount),
+    recentlyOpenedPayloadCount: none(input.recentlyOpenedPayloadCount),
+    recentlyOpenedSelectedCount: none(input.recentlyOpenedSelectedCount),
+    recentlyOpenedSelectedTokens: none(input.recentlyOpenedSelectedTokens),
+    recentlyOpenedReadTimeoutMs: none(input.recentlyOpenedReadTimeoutMs),
+    recentlyOpenedSkippedCount: none(input.recentlyOpenedSkippedCount),
+    recentlyOpenedInjectedIntoPrompt: none(input.recentlyOpenedInjectedIntoPrompt),
+    importDefinitionsEnabled: none(input.importDefinitionsEnabled),
+    importDefinitionsInjectIntoPrompt: none(input.importDefinitionsInjectIntoPrompt),
+    importDefinitionsCacheSize: none(input.importDefinitionsCacheSize),
+    importDefinitionsPayloadCount: none(input.importDefinitionsPayloadCount),
+    importDefinitionsSelectedCount: none(input.importDefinitionsSelectedCount),
+    importDefinitionsSelectedTokens: none(input.importDefinitionsSelectedTokens),
+    importDefinitionsTimeoutMs: none(input.importDefinitionsTimeoutMs),
+    importDefinitionsSkippedCount: none(input.importDefinitionsSkippedCount),
+    importDefinitionsInjectedIntoPrompt: none(input.importDefinitionsInjectedIntoPrompt),
+    rootPathEnabled: none(input.rootPathEnabled),
+    rootPathInjectIntoPrompt: none(input.rootPathInjectIntoPrompt),
+    rootPathCacheSize: none(input.rootPathCacheSize),
+    rootPathPayloadCount: none(input.rootPathPayloadCount),
+    rootPathSelectedCount: none(input.rootPathSelectedCount),
+    rootPathSelectedTokens: none(input.rootPathSelectedTokens),
+    rootPathTimeoutMs: none(input.rootPathTimeoutMs),
+    rootPathSkippedCount: none(input.rootPathSkippedCount),
+    rootPathInjectedIntoPrompt: none(input.rootPathInjectedIntoPrompt),
+    rootPathBlockedReason: input.rootPathBlockedReason ?? null,
     snippetsInjectedIntoPrompt: none(input.snippetsInjectedIntoPrompt),
     contextLength: none(input.contextLength),
     availablePromptTokens: none(input.availablePromptTokens),
@@ -232,8 +369,7 @@ function entryFor(input: QwenDiagnosticInput): Record<string, unknown> {
     renderedSuffixChars: none(input.renderedSuffixChars),
     renderedPromptChars: none(input.renderedPromptChars),
     estimatedRenderedPromptTokens: none(input.estimatedRenderedPromptTokens),
-    multilineAllowed: none(input.multilineAllowed),
-    multilineShown: none(input.multilineShown),
+    ...multilineInfo(input),
     rangePreview: rangePreview(input.range),
     insertFirstLinePreview: completionPreview(level, input.cfg, text),
     filterReason: input.filterReason ?? "none",
@@ -242,6 +378,42 @@ function entryFor(input: QwenDiagnosticInput): Record<string, unknown> {
     errorMessage: input.error ? redact(summary(input.error)) : null,
     promptPreview: promptPreview(),
   })
+}
+
+function multilineInfo(input: QwenDiagnosticInput): Record<string, unknown> {
+  return {
+    multilineAllowed: none(input.multilineAllowed),
+    multilineBlockedReason: input.multilineBlockedReason ?? null,
+    multilineClassifierMode: input.multilineClassifierMode ?? null,
+    multilineClassifierSource: input.multilineClassifierSource ?? null,
+    multilineLanguage: input.multilineLanguage ?? null,
+    multilineSelectedCompletionInfo: none(input.multilineSelectedCompletionInfo),
+    multilineSingleLineComment: input.multilineSingleLineComment ?? null,
+    multilineUseMultilineApplied: none(input.multilineUseMultilineApplied),
+    multilineShown: none(input.multilineShown),
+  }
+}
+
+function safetyInfo(input: QwenDiagnosticInput): Record<string, unknown> {
+  return {
+    guardEnabled: none(input.guardEnabled),
+    guardDecision: input.guardDecision ?? null,
+    guardReason: input.guardReason ?? null,
+    guardSource: input.guardSource ?? null,
+    guardSchemeAllowed: none(input.guardSchemeAllowed),
+    guardWorkspaceAllowed: none(input.guardWorkspaceAllowed),
+    guardLanguageAllowed: none(input.guardLanguageAllowed),
+    guardIgnored: none(input.guardIgnored),
+    guardSensitive: none(input.guardSensitive),
+    guardErrorFailClosed: none(input.guardErrorFailClosed),
+    prefilterDecision: input.prefilterDecision ?? null,
+    prefilterReason: input.prefilterReason ?? null,
+    prefilterLanguage: input.prefilterLanguage ?? null,
+    prefilterExtension: input.prefilterExtension ?? null,
+    prefilterProviderEnabled: none(input.prefilterProviderEnabled),
+    contextReadGuardDecision: input.contextReadGuardDecision ?? null,
+    contextReadGuardSkippedCount: none(input.contextReadGuardSkippedCount),
+  }
 }
 
 function fileInfo(document: vscode.TextDocument): Record<string, unknown> {
@@ -306,6 +478,18 @@ function settingsSnapshot(cfg: QwenAutocompleteConfig): Record<string, unknown> 
     recentlyEditedInjectIntoPrompt: cfg.recentlyEditedInjectIntoPrompt,
     recentlyEditedMaxRanges: cfg.recentlyEditedMaxRanges,
     recentlyEditedMaxRangeLines: cfg.recentlyEditedMaxRangeLines,
+    recentlyOpenedEnabled: cfg.recentlyOpenedEnabled,
+    recentlyOpenedInjectIntoPrompt: cfg.recentlyOpenedInjectIntoPrompt,
+    recentlyOpenedMaxFiles: cfg.recentlyOpenedMaxFiles,
+    recentlyOpenedFileReadTimeoutMs: cfg.recentlyOpenedFileReadTimeoutMs,
+    importDefinitionsEnabled: cfg.importDefinitionsEnabled,
+    importDefinitionsInjectIntoPrompt: cfg.importDefinitionsInjectIntoPrompt,
+    importDefinitionsTimeoutMs: cfg.importDefinitionsTimeoutMs,
+    importDefinitionsCacheSize: cfg.importDefinitionsCacheSize,
+    rootPathEnabled: cfg.rootPathEnabled,
+    rootPathInjectIntoPrompt: cfg.rootPathInjectIntoPrompt,
+    rootPathTimeoutMs: cfg.rootPathTimeoutMs,
+    rootPathCacheSize: cfg.rootPathCacheSize,
     trace: cfg.trace,
     logLevel: cfg.logLevel,
     logPromptPreview: cfg.logPromptPreview,

@@ -60,10 +60,19 @@ export type QwenSnippetOptions = {
   includeRecentlyVisitedRanges?: boolean | number
   maxPromptTokens: number
   modelName: string
+  useImports?: boolean | number
   useRecentlyOpened?: boolean | number
+  useRootPath?: boolean | number
 }
 
 export type QwenSnippetSelection = {
+  baseSnippetSelectedCount: number
+  budgetRemaining: number
+  droppedByBudgetCount: number
+  droppedDuplicateFileCount: number
+  droppedInvalidCount: number
+  recentlyOpenedFormattedCount: number
+  recentlyOpenedTrimmedCount: number
   selectedCount: number
   selectedSnippetTokens: number
   snippetTokenBudget: number
@@ -135,11 +144,16 @@ export function selectQwenSnippets(
     recentlyVisitedRanges: payload.recentlyVisitedRangesSnippets,
     recentlyEditedRanges: payload.recentlyEditedRangeSnippets,
     diff: payload.diffSnippets,
-    base: shuffle(
-      filterCaretWindow(
-        [...payload.rootPathSnippets, ...payload.importDefinitionSnippets, ...payload.staticSnippet],
-        helper.prunedCaretWindow,
-      ),
+    // qwen adapter: upstream shuffles base snippets, but qwen-direct keeps
+    // import/root selection deterministic so injection-time same-file dedupe is
+    // reproducible and testable.
+    base: filterCaretWindow(
+      [
+        ...(opts.useImports ? payload.importDefinitionSnippets : []),
+        ...(opts.useRootPath ? payload.rootPathSnippets : []),
+        ...payload.staticSnippet,
+      ],
+      helper.prunedCaretWindow,
     ),
   }
   const order = [
@@ -159,16 +173,36 @@ export function selectQwenSnippets(
   const selected: QwenAutocompleteSnippet[] = []
   const files = new Set<string>()
   let remaining = tokenBudget
+  let droppedByBudgetCount = 0
+  let droppedDuplicateFileCount = 0
+  let droppedInvalidCount = 0
+  let recentlyOpenedFormattedCount = 0
+  let recentlyOpenedTrimmedCount = 0
   for (const item of order) {
-    const current =
+    const formatted =
       item.key === "recentlyOpenedFiles" && opts.useRecentlyOpened
         ? formatOpenedFilesContext(payload.recentlyOpenedFileSnippets, remaining, helper, selected, opts.modelName)
-        : snippets[item.key]
-    const process = current.filter((snippet) => snippet.type !== QwenAutocompleteSnippetType.Code || !files.has(snippet.filepath))
-    for (const snippet of process) {
-      if (!isValidQwenSnippet(snippet)) continue
+        : null
+    if (formatted) {
+      recentlyOpenedFormattedCount = formatted.snippets.length
+      recentlyOpenedTrimmedCount = formatted.trimmedCount
+      droppedDuplicateFileCount += formatted.droppedDuplicateFileCount
+    }
+    const current = formatted?.snippets ?? snippets[item.key]
+    for (const snippet of current) {
+      if (snippet.type === QwenAutocompleteSnippetType.Code && files.has(snippet.filepath)) {
+        droppedDuplicateFileCount++
+        continue
+      }
+      if (!isValidQwenSnippet(snippet)) {
+        droppedInvalidCount++
+        continue
+      }
       const size = countTokens(snippet.content, opts.modelName) + BUFFER
-      if (remaining < size) continue
+      if (remaining < size) {
+        droppedByBudgetCount++
+        continue
+      }
       selected.push(snippet)
       if (hasFilepath(snippet)) files.add(snippet.filepath)
       remaining -= size
@@ -176,6 +210,17 @@ export function selectQwenSnippets(
     if (remaining <= 0) break
   }
   return {
+    baseSnippetSelectedCount: selected.filter((snippet) =>
+      payload.rootPathSnippets.includes(snippet as QwenAutocompleteCodeSnippet) ||
+      payload.importDefinitionSnippets.includes(snippet as QwenAutocompleteCodeSnippet) ||
+      payload.staticSnippet.includes(snippet as QwenAutocompleteStaticSnippet)
+    ).length,
+    budgetRemaining: remaining,
+    droppedByBudgetCount,
+    droppedDuplicateFileCount,
+    droppedInvalidCount,
+    recentlyOpenedFormattedCount,
+    recentlyOpenedTrimmedCount,
     selectedCount: selected.length,
     selectedSnippetTokens: selected.reduce((sum, snippet) => sum + countTokens(snippet.content, opts.modelName), 0),
     snippetTokenBudget: tokenBudget,
@@ -218,22 +263,37 @@ function filterCaretWindow<T extends QwenAutocompleteCodeSnippet | QwenAutocompl
   return snippets.filter((snippet) => snippet.content.trim() !== "" && !caret.includes(snippet.content.trim()))
 }
 
+type OpenedFormat = {
+  droppedDuplicateFileCount: number
+  snippets: QwenAutocompleteCodeSnippet[]
+  trimmedCount: number
+}
+
 function formatOpenedFilesContext(
   snippets: QwenAutocompleteCodeSnippet[],
   budget: number,
   helper: QwenAutocompleteHelperVars,
   selected: QwenAutocompleteSnippet[],
   model: string,
-): QwenAutocompleteCodeSnippet[] {
-  let files = snippets
+): OpenedFormat {
+  let droppedDuplicateFileCount = 0
+  let files = snippets.slice(0, FILES)
   for (const snippet of selected) {
     if (snippet.type !== QwenAutocompleteSnippetType.Code) continue
+    const before = files.length
     files = files.filter((item) => item.filepath !== snippet.filepath)
+    droppedDuplicateFileCount += before - files.length
   }
-  if (files.length === 0) return []
+  if (files.length === 0) return { droppedDuplicateFileCount, snippets: [], trimmedCount: 0 }
   const used = Math.min(USED, files.length)
   const fit = fitCount(files, budget, model)
-  if (fit >= used) return files.slice(0, fit)
+  if (fit >= used) {
+    return {
+      droppedDuplicateFileCount,
+      snippets: files.slice(0, used),
+      trimmedCount: 0,
+    }
+  }
   const ranked = rank(files)
   let count = ranked.length
   while (budget - BUFFER < count * MIN_TOKENS) {
@@ -251,7 +311,11 @@ function formatOpenedFilesContext(
     ranked.shift()
     count = ranked.length
   }
-  return out
+  return {
+    droppedDuplicateFileCount,
+    snippets: out,
+    trimmedCount: out.filter((snippet) => files.some((file) => file.filepath === snippet.filepath && file.content !== snippet.content)).length,
+  }
 }
 
 function fitCount(snippets: QwenAutocompleteCodeSnippet[], budget: number, model: string): number {
@@ -306,13 +370,4 @@ function hasFilepath(
   snippet: QwenAutocompleteSnippet,
 ): snippet is QwenAutocompleteCodeSnippet | QwenAutocompleteStaticSnippet {
   return snippet.type === QwenAutocompleteSnippetType.Code || snippet.type === QwenAutocompleteSnippetType.Static
-}
-
-function shuffle<T>(input: T[]): T[] {
-  const items = [...input]
-  for (let index = items.length - 1; index > 0; index--) {
-    const pick = Math.floor(Math.random() * (index + 1))
-    ;[items[index], items[pick]] = [items[pick]!, items[index]!]
-  }
-  return items
 }

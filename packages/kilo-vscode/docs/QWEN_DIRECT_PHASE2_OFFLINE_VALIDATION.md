@@ -13,10 +13,12 @@ Included:
 - Pure snippet selection scaffolding.
 - Recently edited range collection and selection, default off.
 - Opt-in qwen-coder multifile FIM prompt injection for recently edited snippets only.
+- Phase 3A opt-in recently opened file context collection/selection/injection, default off.
+- Phase 3B/3C opt-in import definitions and root path context collection/selection/injection, default off.
 
 Excluded:
 
-- Opened files, import definitions, root path snippets, clipboard, static context, recently visited ranges.
+- Clipboard, static context, recently visited ranges.
 - CompletionStreamer, GeneratorReuseManager, streaming, and generic Continue templates.
 - Chat, QA, Agent, RAG, CodeGraph, `semantic_search`, `codebase_analysis`, and old autocomplete runtime.
 - `/kilo/fim`, `/kilo/edit`, and `/v1/chat/completions`.
@@ -109,6 +111,7 @@ Expected safe fields include:
 - `fullPrefixChars`, `prunedPrefixChars`, `estimatedPromptTokens`
 - `snippetTotalCount`, `selectedSnippetCount`
 - `recentlyEditedPayloadCount`, `recentlyEditedSelectedCount`
+- `recentlyOpenedPayloadCount`, `recentlyOpenedSelectedCount`
 - `snippetsInjectedIntoPrompt`
 - `promptRendererMode`
 - `snippetInjectionBlockedReason`
@@ -125,6 +128,8 @@ Expected safe fields include:
   "kilo.autocomplete.provider": "qwen-direct",
   "kilo.autocomplete.qwen.context.recentlyEdited.enabled": false,
   "kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": false,
+  "kilo.autocomplete.qwen.context.recentlyOpened.enabled": false,
+  "kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": false,
   "kilo.autocomplete.qwen.contextLength": 0
 }
 ```
@@ -132,6 +137,7 @@ Expected safe fields include:
 Expected:
 
 - No recently edited collection.
+- No recently opened collection.
 - No snippet injection.
 - `snippetsInjectedIntoPrompt=false`.
 - `promptPreview=null`.
@@ -145,6 +151,8 @@ Expected:
   "kilo.autocomplete.provider": "qwen-direct",
   "kilo.autocomplete.qwen.context.recentlyEdited.enabled": true,
   "kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": false,
+  "kilo.autocomplete.qwen.context.recentlyOpened.enabled": false,
+  "kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": false,
   "kilo.autocomplete.qwen.contextLength": 0
 }
 ```
@@ -165,6 +173,8 @@ Expected:
   "kilo.autocomplete.provider": "qwen-direct",
   "kilo.autocomplete.qwen.context.recentlyEdited.enabled": true,
   "kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": true,
+  "kilo.autocomplete.qwen.context.recentlyOpened.enabled": false,
+  "kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": false,
   "kilo.autocomplete.qwen.contextLength": 0
 }
 ```
@@ -185,6 +195,8 @@ Use only after confirming the real qwen-coder context length.
   "kilo.autocomplete.provider": "qwen-direct",
   "kilo.autocomplete.qwen.context.recentlyEdited.enabled": true,
   "kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": true,
+  "kilo.autocomplete.qwen.context.recentlyOpened.enabled": false,
+  "kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": false,
   "kilo.autocomplete.qwen.contextLength": 32768
 }
 ```
@@ -196,6 +208,51 @@ Expected:
 - `renderedPromptChars` is greater than single-file mode.
 - Diagnostics contain no prompt, snippet content, source text, full file path, endpoint host, API key, or Authorization header.
 - VS Code ghost text still works.
+
+### Mode E: Recently Opened Collection Only
+
+```json
+{
+  "kilo.autocomplete.enabled": true,
+  "kilo.autocomplete.provider": "qwen-direct",
+  "kilo.autocomplete.qwen.context.recentlyOpened.enabled": true,
+  "kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": false,
+  "kilo.autocomplete.qwen.context.recentlyOpened.maxFiles": 20,
+  "kilo.autocomplete.qwen.context.recentlyOpened.fileReadTimeoutMs": 80,
+  "kilo.autocomplete.qwen.contextLength": 0
+}
+```
+
+Expected:
+
+- Tracker may collect recently opened files after activation.
+- Active editor changes update recency; closing a file removes it.
+- Request body remains unchanged from single-file qwen FIM mode.
+- `recentlyOpenedPayloadCount` and `recentlyOpenedSelectedCount` may be greater than zero.
+- `recentlyOpenedInjectedIntoPrompt=false`.
+- `promptPreview=null`.
+
+### Mode F: Recently Opened Injection Active
+
+Use only after confirming the real qwen-coder context length.
+
+```json
+{
+  "kilo.autocomplete.enabled": true,
+  "kilo.autocomplete.provider": "qwen-direct",
+  "kilo.autocomplete.qwen.context.recentlyOpened.enabled": true,
+  "kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": true,
+  "kilo.autocomplete.qwen.contextLength": 32768
+}
+```
+
+Expected:
+
+- `recentlyOpenedInjectedIntoPrompt=true` when selected opened snippets exist.
+- `snippetsInjectedIntoPrompt=true`.
+- `promptRendererMode=qwen-multifile-fim`.
+- Current, ignored, sensitive, empty, failed, and timed-out file reads are skipped.
+- Diagnostics contain no opened file content, prompt, snippet content, source text, full path, endpoint host, API key, or Authorization header.
 
 ## Manual Scenarios
 
@@ -229,6 +286,8 @@ For every scenario, capture:
 | 13. Cache hit after repeated prefix | Trigger autocomplete, dismiss, then trigger again at same prefix. | A or D | Repeat the same cursor/prefix. | Second request may be served faster from cache. | `cacheStatus=hit`, `cacheHit=true`, no qwen request-start for hit path. | Cache changes text semantics or crosses files unexpectedly. |
 | 14. Large file / long prefix sanity | Open a large C/C++ file. | A | Trigger autocomplete near the end. | Suggestion appears or safely returns empty. | `maxPromptTokens=1024`, token estimates present, no full source logged. | Freeze, huge logs, or full prompt/source in diagnostics. |
 | 15. Ghost text still renders | Use normal edit flow in C/C++ file. | A/B/C/D | Accept with Tab when ghost text appears. | Accepted text inserts at expected range. | `return-items` has `itemCount=1` when ghost text is shown. | Item count says one but no ghost text, or accepted range is wrong. |
+| 16. Recently opened collection only | Open two C/C++ helper files, switch active editor between them, close one, then trigger autocomplete in a caller file. | E | Trigger autocomplete in caller file. | Ghost text remains normal single-file behavior. | `recentlyOpenedPayloadCount` or `recentlyOpenedSelectedCount` may be greater than zero; closed file should not keep increasing counts; `recentlyOpenedInjectedIntoPrompt=false`. | Listener active in Mode A, closed file still appears in counts, or request body changes in collection-only mode. |
+| 17. Recently opened injection active | Open a helper file, then a caller file, and use confirmed context length. | F | Trigger autocomplete in caller file. | Ghost text still renders; opened file context may help only when selected and safe. | `recentlyOpenedInjectedIntoPrompt=true` when selected snippets exist, `promptRendererMode=qwen-multifile-fim`, no opened file content logged. | Prompt/source/snippet text appears in diagnostics, current file is injected as opened context, or ignored/sensitive files are read. |
 
 ## Source Sanity Expectations
 
@@ -236,8 +295,11 @@ Default behavior should be unchanged:
 
 - `recentlyEdited.enabled=false`.
 - `recentlyEdited.injectIntoPrompt=false`.
+- `recentlyOpened.enabled=false`.
+- `recentlyOpened.injectIntoPrompt=false`.
 - `contextLength=0`.
 - No recently edited collection by default.
+- No recently opened collection by default.
 - No snippet injection by default.
 - `snippetsInjectedIntoPrompt=false`.
 - `promptPreview=null`.
@@ -249,12 +311,13 @@ Injection requires all gates:
 
 - `kilo.autocomplete.enabled=true`.
 - `kilo.autocomplete.provider=qwen-direct`.
-- `kilo.autocomplete.qwen.context.recentlyEdited.enabled=true`.
-- `kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt=true`.
+- At least one source-specific collection and injection pair is enabled:
+  `recentlyEdited.enabled=true` with `recentlyEdited.injectIntoPrompt=true`,
+  or `recentlyOpened.enabled=true` with `recentlyOpened.injectIntoPrompt=true`.
 - Model name includes `qwen` and `coder`.
 - `kilo.autocomplete.qwen.contextLength > 0`.
 - `availablePromptTokens >= maxPromptTokens`.
-- Selected recently edited snippets exist.
+- Selected injectable snippets exist.
 
 ## Rollback Settings
 
@@ -264,6 +327,8 @@ To return to default single-file qwen FIM behavior:
 {
   "kilo.autocomplete.qwen.context.recentlyEdited.enabled": false,
   "kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": false,
+  "kilo.autocomplete.qwen.context.recentlyOpened.enabled": false,
+  "kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": false,
   "kilo.autocomplete.qwen.contextLength": 0,
   "kilo.autocomplete.qwen.trace": false,
   "kilo.autocomplete.qwen.logLevel": "off"

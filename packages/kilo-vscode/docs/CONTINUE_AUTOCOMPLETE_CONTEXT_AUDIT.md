@@ -66,9 +66,9 @@ Classification:
 | Pure snippet payload types | `SnippetPayload`, `AutocompleteSnippetType`, snippet interfaces | Empty structured slots for root path, imports, IDE snippets, edited ranges, visited ranges, diff, clipboard, opened files, static context. | Would be created before prompt rendering. | None when payload is empty. | None when payload is empty. | None if no collectors are invoked. | None. | Yes, but only with empty payloads in Phase 2E-1. | A | 2E-1 |
 | Pure snippet filtering and token-budget selection | `getSnippets`, `isValidSnippet`, `formatOpenedFilesContext` | Filters and orders already-collected snippets. | After snippet payload collection, before prompt rendering. | Empty content removal, Continue output-channel removal, clipboard age check, duplicate file prevention, caret-window duplicate removal for base snippets. | Upstream eaa23c5a uses `maxPromptTokens - countTokens(helper.prunedCaretWindow, modelName)` with `TOKEN_BUFFER=10`; local subset caps by `maxSnippetPercentage`. | Pure except token counting. `formatOpenedFilesContext` is pure over already-collected opened-file snippets. | None if run over empty payloads. | Yes for 2E-1, but empty payload only. | A | 2E-1 |
 | Recently edited ranges | `getSnippetsFromRecentlyEditedRanges`, `AutocompleteInput.recentlyEditedRanges`; VS Code reference `RecentlyEditedTracker`; qwen-coder multifile FIM template | Recent edited line ranges from the IDE input. | `getAllSnippetsWithoutRace` maps input ranges into code snippets; qwen 2E-4 injects only selected recently edited snippets after helper/snippet selection. | `useRecentlyEdited === false` disables collection; filtering later uses `experimental_includeRecentlyEditedRanges`; qwen additionally requires `recentlyEdited.injectIntoPrompt=true` and safe `contextLength`. | Final inclusion token-budgeted by `getSnippets`; qwen prompt injection also checks `contextLength - maxTokens - safetyBuffer >= maxPromptTokens`. | Needs VS Code edit tracker adapter. qwen 2E-2 uses editor event text after guard passes and does not call IDE `readFile`. qwen 2E-4 uses a qwen-owned renderer and does not read more files. | Low if sourced only from editor events and ignore-filtered. | Implemented as opt-in qwen adapter for tracker, payload, selection, diagnostics, and qwen-coder multifile FIM injection. Default remains off. | B | 2E-2 tracker/payload done; 2E-4 prompt injection done |
-| Recently opened files | `openedFilesLruCache`, `getSnippetsFromRecentlyOpenedFiles`, `formatOpenedFilesContext` | Contents of recently opened files, excluding current file. | Collected in `getAllSnippetsWithoutRace`; formatted during filtering. | `useRecentlyOpened === false` disables collection; source reads skip empty files; later validation filters empty snippets. Qwen port must add ignore/security filtering before reads or before inclusion. | `formatOpenedFilesContext` considers up to 10 files, defaults to 5 used, ranks by recency and size, and trims by remaining tokens. | Needs opened-file LRU, bounded file reads, workspace/file access checks. | Medium if opened files contain sensitive ignored files. | Later only with bounded 80 ms per-file read timeout and ignore/security filtering. | B | 2E-5 |
-| Import definitions | `ContextRetrievalService.getSnippetsFromImportDefinitions`, `ImportDefinitionsService` | Definitions for symbols around cursor that come from imports. | Collected in `getAllSnippetsWithoutRace` after `HelperVars`. | `useImports === false` disables; `onlyMyCode` behavior is in IDE snippet path, not this method; import cache checks workspace membership before reading source. Qwen should add existing ignore/security filtering. | Final inclusion token-budgeted by `getSnippets`. | Requires tree-sitter import query, workspace dirs, LSP `gotoDefinition`, and `readRangeInFile`. | Medium; can touch source outside current file but still autocomplete-specific. | Later after adapter and tests. | B | 2E-6 |
-| Root path snippets | `ContextRetrievalService.getRootPathSnippets`, `RootPathContextService.getContextForPath` | Definitions related to AST root path around cursor. | Collected in `getAllSnippetsWithoutRace` after `HelperVars`; returns empty if `helper.treePath` is missing. | Root service ignores language-specific path patterns and should be combined with qwen ignore/security filtering. | Final inclusion token-budgeted by `getSnippets`. | Requires `HelperVars.treePath`, tree-sitter root-path queries, LSP `gotoDefinition`, and range reads. | Medium; autocomplete-specific but cross-file. | Later after AST treePath parity and LSP adapter are proven. | B | 2E-6 |
+| Recently opened files | `openedFilesLruCache`, `getSnippetsFromRecentlyOpenedFiles`, `formatOpenedFilesContext` | Contents of recently opened files, excluding current file. | Collected in `getAllSnippetsWithoutRace`; formatted during filtering. qwen 3A collects through a qwen-owned tracker and feeds the existing selection scaffold. | `useRecentlyOpened === false` disables collection; source reads skip empty files; later validation filters empty snippets. qwen adds default-off collection, prefilter/ignore/security guard before reads, sensitive-file skips, and opt-in injection. | `formatOpenedFilesContext` considers up to 10 files, defaults to 5 used, ranks by recency and size, and trims by remaining tokens. | Needs opened-file LRU, bounded file reads, workspace/file access checks. qwen 3A uses VS Code open/active/close listeners and `workspace.fs.readFile` with timeout. | Medium if opened files contain sensitive ignored files. | Implemented as Phase 3A qwen adapter. Default remains off; no opened-file content is logged or persisted. | B | 3A |
+| Import definitions | `ContextRetrievalService.getSnippetsFromImportDefinitions`, `ImportDefinitionsService` | Definitions for symbols around cursor that come from imports. | Collected in `getAllSnippetsWithoutRace` after `HelperVars`; qwen 3B collects through a qwen-owned source after helper construction. | `useImports === false` disables; qwen adds default-off collection/injection, bounded prefix parsing, ignore/security guard before target reads, and timeout/cache clamps. | Final inclusion token-budgeted by `getSnippets`; injection also uses qwen contextLength safety gates. | Requires tree-sitter import query or bounded fallback parser, VS Code definition adapter, and range reads. | Medium; can touch source outside current file but still autocomplete-specific. | Implemented as Phase 3B qwen adapter. Default remains off; no import content is logged or persisted. | B | 3B |
+| Root path snippets | `ContextRetrievalService.getRootPathSnippets`, `RootPathContextService.getContextForPath` | Definitions related to AST root path around cursor. | Collected in `getAllSnippetsWithoutRace` after `HelperVars`; qwen 3C computes AST path only when rootPath is enabled. | Program node primes/uses import definitions and does not emit arbitrary snippets; non-program whitelisted nodes use root-path query plus guarded definition/range reads. | Final inclusion token-budgeted by `getSnippets`; injection also uses qwen contextLength safety gates. | Requires AST path, tree-sitter root-path queries, VS Code definition adapter, and range reads. | Medium; autocomplete-specific but cross-file. | Implemented as Phase 3C qwen adapter when AST/query support is available; otherwise fail closed. | B | 3C |
 | Recently visited ranges | `AutocompleteInput.recentlyVisitedRanges`; VS Code reference `RecentlyVisitedRangesService` | Recent visible editor ranges from other files. | Passed through `getAllSnippetsWithoutRace` from helper input. | Filtering uses `experimental_includeRecentlyVisitedRanges`; reference service excludes current file and Continue output channel. | Final inclusion token-budgeted by `getSnippets`. | Needs selection-change tracker and file reads. | High because upstream TODO notes recently visited ranges can include terminal/output windows if visible. | Defer until leakage handling is explicit. | C | Later context/security phase |
 | Clipboard context | `getClipboardSnippets`, `isValidClipboardSnippet`, `experimental_includeClipboard` | Current clipboard text and copy timestamp. | `getAllSnippetsWithoutRace` collects clipboard snippets unconditionally, but final inclusion is controlled by filtering/options. | Filtering includes clipboard only when `experimental_includeClipboard` is truthy and rejects snippets older than 5 minutes. | Final inclusion token-budgeted by `getSnippets`. | Requires IDE clipboard access. | High privacy risk. | Defer for qwen-direct despite source-confirmed collection path. | C | Later explicit opt-in phase |
 | Static context | `ContextRetrievalService.getStaticContextSnippets`, `StaticContextService` | Static TypeScript contextual snippets. | Collected only when `experimental_enableStaticContextualization` is true. | Gated by experimental option. Needs separate security review. | Final inclusion token-budgeted by `getSnippets`. | Requires static analysis helpers, workspace scanning, type definition/signature help, and range reads. | High; broad source scanning and complex adapter surface. | Defer. | C | Later high-risk phase |
@@ -134,10 +134,28 @@ collector excludes the current file, reads candidate files in parallel, and uses
 an 80 ms per-file timeout. `formatOpenedFilesContext` later ranks and trims the
 already-collected snippets against the remaining prompt token budget.
 
-If qwen-direct ports this source later, it must preserve bounded reads and add
-ignore/security filtering. It must not perform unbounded reads of opened files,
-must not read ignored or sensitive files, and must not persist opened-file
-content to disk.
+Phase 3A implements this source as a qwen-owned adapter:
+
+- Default settings register no listeners, seed no documents, store no paths,
+  create no payloads, and inject no snippets.
+- Tracking is active only when `kilo.autocomplete.enabled=true`,
+  `kilo.autocomplete.provider=qwen-direct`, and
+  `kilo.autocomplete.qwen.context.recentlyOpened.enabled=true`.
+- The tracker listens to opened documents, active-editor changes, and closed
+  documents; active-editor events update recency, and close events remove paths.
+- File reads are memory-only, parallel, bounded by
+  `recentlyOpened.fileReadTimeoutMs` default `80`, and skip empty, failed, or
+  timed-out reads.
+- qwen prefilter plus ignore/security guard run before file content is read;
+  guard errors fail closed.
+- Ignored, sensitive, non-file, unsupported, and current files are skipped.
+- Injection is separately gated by
+  `recentlyOpened.injectIntoPrompt=true`, valid `contextLength`, and prompt
+  budget safety.
+- If recently edited and recently opened injection both provide the same
+  filepath, qwen intentionally dedupes at injection time by preferring recently
+  edited content. This differs from Continue's selection priority, where
+  recently opened is processed before recently edited.
 
 ## Current Local Subset Differences
 
@@ -258,7 +276,7 @@ Tests required:
 
 Risk: Medium.
 
-### Phase 2E-5: Recently Opened Files
+### Phase 3A: Recently Opened Files
 
 Continue source behavior:
 
@@ -270,23 +288,31 @@ Continue source behavior:
 
 Kilo/qwen-direct adapter:
 
-- Add qwen-owned opened-file LRU and bounded read adapter.
-- Preserve read timeout.
-- Add ignore/security filtering before reads or before final inclusion.
+- Added qwen-owned opened-file LRU and bounded read adapter.
+- Preserves read timeout with setting default `80` ms.
+- Adds qwen prefilter plus ignore/security filtering before reads.
+- Updates recency on active editor changes and removes closed files.
+- Keeps collection and injection as separate opt-in settings.
 
 Semantic difference:
 
 - Security adapter is required because qwen-direct must not read ignored or
   sensitive files.
+- Same-file injection dedupe prefers recently edited content over opened-file
+  content as a qwen/Kilo adapter deviation from Continue's opened-before-edited
+  selection order.
 
 Tests required:
 
 - Current file exclusion, max entries, read timeout, ignored file exclusion,
   empty file skip, token trimming, no persistence, no logs with source content.
+- Active editor recency update, closed-file removal, collection-only unchanged
+  prompt/request body, blocked unknown context length, active injection, cache
+  interaction, diagnostics redaction, and forbidden path isolation.
 
 Risk: Medium.
 
-### Phase 2E-6: Import Definitions and Root Path Context
+### Phase 3B/3C: Import Definitions and Root Path Context
 
 Continue source behavior:
 
@@ -297,18 +323,37 @@ Continue source behavior:
 
 Kilo/qwen-direct adapter:
 
-- Add only after qwen AST `treePath` and IDE/LSP adapters are source-mapped and
-  tested.
+- Phase 3B adds a qwen-owned import definitions source with memory-only cache,
+  bounded import parsing, VS Code definition lookup, guarded range reads, and
+  count-only diagnostics.
+- Import parsing prefers local tree-sitter/query infrastructure. If unavailable,
+  a minimal bounded include/import parser is used only as qwen/Kilo adapter
+  behavior; it still uses definition lookup and range reads and does not scan
+  whole files.
+- Phase 3C adds a qwen-owned root path source. AST path and root-path queries
+  run only when the source is enabled.
+- Program AST nodes only prime/use import definitions and do not generate
+  arbitrary snippets. Non-program whitelisted nodes use root-path-context query
+  plus definition lookup and guarded range reads.
 - Keep adapters qwen-owned and isolated from old autocomplete runtime.
 
 Semantic difference:
 
-- Unavoidable until qwen-direct has full Continue IDE adapter parity.
+- VS Code `vscode.executeDefinitionProvider` is a qwen/Kilo adapter for
+  Continue `IDE.gotoDefinition`.
+- HelperVars still keeps `treePath` undefined by default; root path computes AST
+  path inside the enabled source adapter instead of changing the default helper
+  lifecycle.
+- Injection-time source priority is qwen/Kilo adapter behavior:
+  recentlyEdited, recentlyOpened, importDefinitions, rootPath.
 
 Tests required:
 
-- Parser missing path, non-file URI skip, workspace-only reads, LSP failures,
-  ignored path filtering, root path no-tree behavior, token-budget inclusion.
+- Disabled zero work, bounded parse scope, cache clamp, non-file/sensitive skip,
+  guard fail-closed, definition normalization, failed/empty/timeout reads, root
+  path program-node behavior, whitelisted node handling, collection-only
+  unchanged prompt/request body, active injection, cache interaction, diagnostics
+  redaction, and forbidden path isolation.
 
 Risk: Medium to High.
 
@@ -333,3 +378,99 @@ bun run lint
 ```
 
 Do not run a real endpoint benchmark for Phase 2E-0.
+
+## Phase 3D Hardening Note
+
+Phase 3D does not add a new context source. It hardens selection, formatting,
+budgeting, diagnostics, and cache behavior for the sources that already exist:
+
+- recently edited ranges
+- recently opened files
+- import definitions
+- root path snippets
+
+Continue source behavior reviewed for this pass:
+
+- `core/autocomplete/templating/filtering.ts`
+- `core/autocomplete/templating/formatOpenedFilesContext.ts`
+- `core/autocomplete/templating/validation.ts`
+- `core/autocomplete/snippets/getAllSnippets.ts`
+- `core/autocomplete/CompletionProvider.ts`
+
+The qwen selector keeps Continue's collection priority documented, but qwen
+prompt injection uses a deterministic adapter priority:
+
+```text
+recentlyEdited -> recentlyOpened -> importDefinitions -> rootPath
+```
+
+This differs from Continue's selected-snippet processing order and exists so
+the rendered qwen multifile FIM prompt prefers the freshest edited range for a
+same-file conflict. Collection and selection diagnostics still preserve raw
+per-source counts before injection-time dedupe.
+
+Caret-window duplicate filtering remains source-mapped only for base-like
+snippets: import definitions and root path snippets. It is not applied to
+recently edited or recently opened snippets.
+
+Recently opened formatting follows Continue intent:
+
+- consider at most 10 recent files
+- target up to 5 retained files
+- rank by recency and size when trimming is needed
+- reduce retained count if budget cannot satisfy `minTokensInSnippet=125`
+- prune retained snippet content from the bottom
+
+If an active qwen multifile FIM prompt still exceeds the explicit qwen context
+budget after adapter pruning, qwen blocks injection and falls back unchanged.
+This is a qwen/Kilo safety adapter deviation from Continue
+`renderPromptWithTokenLimit`, which prunes prefix/suffix and rebuilds.
+
+Forbidden sources remain out of scope and must stay empty/non-collected:
+clipboard, static context, recently visited ranges, diff snippets, and IDE
+snippets.
+
+## Phase 5A Non-Streaming Filter Note
+
+Phase 5A does not add or enable any context source. It hardens the existing
+qwen-direct non-streaming filter/postprocess path after `choices[0].text` is
+received and before render/cache. The allowed context sources remain only:
+
+- recently edited ranges
+- recently opened files
+- import definitions
+- root path snippets
+
+Production qwen-direct autocomplete remains `/v1/completions` with
+`stream:false`. Continue `CompletionStreamer`, `GeneratorReuseManager`,
+streaming `fullStop`, clipboard, static context, recently visited ranges, diff
+snippets, and IDE snippets remain unimplemented.
+
+## Phase 5B/5C Multiline And Security Note
+
+Phase 5B/5C does not add or enable any context source. It hardens display
+classification and safety gates for already implemented qwen-direct sources.
+
+Continue source behavior used:
+
+- `core/autocomplete/classification/shouldCompleteMultiline.ts`
+- `core/autocomplete/constants/AutocompleteLanguageInfo.ts`
+- `core/autocomplete/prefiltering/index.ts`
+- `core/util/paths.ts` / `getConfigJsonPath`
+- `core/indexing/ignore.ts` / `isSecurityConcern`,
+  `DEFAULT_SECURITY_IGNORE_*`, and `defaultFileAndFolderSecurityIgnores`
+
+qwen-direct keeps these decisions separate:
+
+- prefilter decision, including exact Continue config path, unsupported
+  language/extension, and empty-document reasons;
+- current-file request guard, including security-concern, workspace, ignore,
+  scheme, and fail-closed error reasons;
+- context-read guard, used before recently opened/import definition/root path
+  target content is read.
+
+qwen-direct remains a narrower C/C++ provider-scope adapter. Unsupported
+language/extension blocking is not full Continue language parity. Workspace
+containment and `.kilocodeignore`/`.gitignore` checks are stricter qwen/Kilo
+adapter behavior and are kept separate from Continue `isSecurityConcern`
+mapping.

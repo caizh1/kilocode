@@ -37,6 +37,18 @@ const cfg: QwenAutocompleteConfig = {
   recentlyEditedInjectIntoPrompt: false,
   recentlyEditedMaxRanges: 3,
   recentlyEditedMaxRangeLines: 20,
+  recentlyOpenedEnabled: false,
+  recentlyOpenedInjectIntoPrompt: false,
+  recentlyOpenedMaxFiles: 20,
+  recentlyOpenedFileReadTimeoutMs: 80,
+  importDefinitionsEnabled: false,
+  importDefinitionsInjectIntoPrompt: false,
+  importDefinitionsTimeoutMs: 100,
+  importDefinitionsCacheSize: 10,
+  rootPathEnabled: false,
+  rootPathInjectIntoPrompt: false,
+  rootPathTimeoutMs: 100,
+  rootPathCacheSize: 100,
   trace: false,
   logLevel: "off",
   logPromptPreview: false,
@@ -94,10 +106,47 @@ describe("qwen autocomplete diagnostics", () => {
       cacheLookupPrefixChars: expect.any(Number),
       cacheReturnedChars: null,
     })
+    const postprocess = logs.find((line) => line.phase === "postprocess")
+    expect(postprocess).toMatchObject({
+      nonStreamingFilterEnabled: true,
+      nonStreamingFilterApplied: false,
+      nonStreamingFilterReasons: "",
+      nonStreamingFilterInputChars: "return ok;".length,
+      nonStreamingFilterOutputChars: "return ok;".length,
+      nonStreamingFilterRejected: false,
+      nonStreamingFilterTrimmed: false,
+      nonStreamingFilterStopTokenHit: false,
+      nonStreamingFilterSimilarLineHit: false,
+      nonStreamingFilterRepeatingLineHit: false,
+      nonStreamingFilterMarkdownFenceHit: false,
+      nonStreamingFilterPathLineHit: false,
+      nonStreamingFilterAdapterMode: "non-streaming-full-text",
+    })
     expect(JSON.stringify(logs)).not.toContain("secret-qwen.internal")
     expect(JSON.stringify(logs)).not.toContain(cfg.apiKey)
     expect(JSON.stringify(logs)).not.toContain("Authorization")
     expect(JSON.stringify(logs)).not.toContain("/repo/backend/hal/main.c")
+    expect(JSON.stringify(logs)).not.toContain("<|fim_prefix|>")
+    expect(logs.every((line) => line.promptPreview === null)).toBe(true)
+  })
+
+  it("records non-streaming filter reasons without logging filtered source text", async () => {
+    await runProvider(
+      { ...cfg, trace: true, logLevel: "debug" },
+      { completion: "// Path: /repo/secret/path/main.c\nreturn ok;" },
+    )
+
+    const logs = parsed()
+    const postprocess = logs.find((line) => line.phase === "postprocess")
+    expect(postprocess).toMatchObject({
+      nonStreamingFilterEnabled: true,
+      nonStreamingFilterApplied: true,
+      nonStreamingFilterReasons: "path-line",
+      nonStreamingFilterPathLineHit: true,
+      nonStreamingFilterRejected: false,
+      nonStreamingFilterAdapterMode: "non-streaming-full-text",
+    })
+    expect(JSON.stringify(logs)).not.toContain("/repo/secret/path/main.c")
     expect(JSON.stringify(logs)).not.toContain("<|fim_prefix|>")
     expect(logs.every((line) => line.promptPreview === null)).toBe(true)
   })
@@ -308,6 +357,18 @@ function stubConfig(values: QwenAutocompleteConfig): void {
           "qwen.context.recentlyEdited.injectIntoPrompt": values.recentlyEditedInjectIntoPrompt,
           "qwen.context.recentlyEdited.maxRanges": values.recentlyEditedMaxRanges,
           "qwen.context.recentlyEdited.maxRangeLines": values.recentlyEditedMaxRangeLines,
+          "qwen.context.recentlyOpened.enabled": values.recentlyOpenedEnabled,
+          "qwen.context.recentlyOpened.injectIntoPrompt": values.recentlyOpenedInjectIntoPrompt,
+          "qwen.context.recentlyOpened.maxFiles": values.recentlyOpenedMaxFiles,
+          "qwen.context.recentlyOpened.fileReadTimeoutMs": values.recentlyOpenedFileReadTimeoutMs,
+          "qwen.context.importDefinitions.enabled": values.importDefinitionsEnabled,
+          "qwen.context.importDefinitions.injectIntoPrompt": values.importDefinitionsInjectIntoPrompt,
+          "qwen.context.importDefinitions.timeoutMs": values.importDefinitionsTimeoutMs,
+          "qwen.context.importDefinitions.cacheSize": values.importDefinitionsCacheSize,
+          "qwen.context.rootPath.enabled": values.rootPathEnabled,
+          "qwen.context.rootPath.injectIntoPrompt": values.rootPathInjectIntoPrompt,
+          "qwen.context.rootPath.timeoutMs": values.rootPathTimeoutMs,
+          "qwen.context.rootPath.cacheSize": values.rootPathCacheSize,
           "qwen.trace": values.trace,
           "qwen.logLevel": values.logLevel,
           "qwen.logPromptPreview": values.logPromptPreview,

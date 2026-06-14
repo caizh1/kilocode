@@ -75,6 +75,7 @@ const mockVscode = {
   window: {
     activeTextEditor: undefined,
     visibleTextEditors: [],
+    onDidChangeActiveTextEditor: () => ({ dispose: noop }),
     tabGroups: { all: [] },
     showTextDocument: async () => {},
     showWarningMessage: async () => undefined,

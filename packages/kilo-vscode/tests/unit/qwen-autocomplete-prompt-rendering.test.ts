@@ -44,6 +44,18 @@ const cfg: QwenAutocompleteConfig = {
   recentlyEditedInjectIntoPrompt: false,
   recentlyEditedMaxRanges: 3,
   recentlyEditedMaxRangeLines: 20,
+  recentlyOpenedEnabled: false,
+  recentlyOpenedInjectIntoPrompt: false,
+  recentlyOpenedMaxFiles: 20,
+  recentlyOpenedFileReadTimeoutMs: 80,
+  importDefinitionsEnabled: false,
+  importDefinitionsInjectIntoPrompt: false,
+  importDefinitionsTimeoutMs: 100,
+  importDefinitionsCacheSize: 10,
+  rootPathEnabled: false,
+  rootPathInjectIntoPrompt: false,
+  rootPathTimeoutMs: 100,
+  rootPathCacheSize: 100,
   trace: false,
   logLevel: "off",
   logPromptPreview: false,
@@ -176,6 +188,59 @@ describe("qwen prompt rendering", () => {
     expect(prompt.renderedSuffix).toBe("\n}\n")
     expect(prompt.snippetsInjectedIntoPrompt).toBe(true)
     expect(prompt.promptRendererMode).toBe("qwen-multifile-fim")
+  })
+
+  it("renders combined recently edited and recently opened snippets through the same qwen multifile FIM path", () => {
+    const document = doc("int main(void) {\n  ret\n}\n")
+    const helper = state(document)
+    const opened = {
+      filepath: "/repo/src/opened.c",
+      content: "int opened_helper(void) {\n  return 3;\n}",
+      type: QwenAutocompleteSnippetType.Code,
+    }
+    const prompt = buildQwenPromptPlan({
+      cfg: { ...active(), recentlyOpenedEnabled: true, recentlyOpenedInjectIntoPrompt: true },
+      helper,
+      injectIntoPrompt: true,
+      snippets: [...recent(), opened],
+    })
+
+    expect(prompt.snippetsInjectedIntoPrompt).toBe(true)
+    expect(prompt.prompt).toContain("<|file_sep|>recent.c")
+    expect(prompt.prompt).toContain("<|file_sep|>opened.c")
+    expect(prompt.prompt).toContain("opened_helper")
+  })
+
+  it("renders import and root snippets through the same qwen multifile FIM path", () => {
+    const document = doc("int main(void) {\n  ret\n}\n")
+    const helper = state(document)
+    const shared = {
+      filepath: "/repo/include/shared.h",
+      content: "int import_helper(void);",
+      type: QwenAutocompleteSnippetType.Code,
+    }
+    const root = {
+      filepath: "/repo/include/shared.h",
+      content: "int root_duplicate(void);",
+      type: QwenAutocompleteSnippetType.Code,
+    }
+    const prompt = buildQwenPromptPlan({
+      cfg: {
+        ...active(),
+        importDefinitionsEnabled: true,
+        importDefinitionsInjectIntoPrompt: true,
+        rootPathEnabled: true,
+        rootPathInjectIntoPrompt: true,
+      },
+      helper,
+      injectIntoPrompt: true,
+      snippets: [shared, root],
+    })
+
+    expect(prompt.snippetsInjectedIntoPrompt).toBe(true)
+    expect(prompt.prompt).toContain("import_helper")
+    expect(prompt.prompt).toContain("root_duplicate")
+    expect(prompt.prompt.split("<|file_sep|>include/shared.h").length - 1).toBe(2)
   })
 
   it("falls back unchanged if active prompt still exceeds budget after qwen adapter pruning", () => {

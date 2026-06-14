@@ -2,7 +2,7 @@
   "name": "chipmate",
   "displayName": "ChipMate: AI Coding Agent, Copilot, and Autocomplete",
   "description": "Open Source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
-  "version": "0.0.14",
+  "version": "0.0.16",
   "icon": "assets/icons/logo-outline-black.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -1012,6 +1012,66 @@
           "type": "number",
           "default": 20,
           "description": "Maximum lines retained per recently edited range for qwen-direct autocomplete."
+        },
+        "kilo.autocomplete.qwen.context.recentlyOpened.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable opt-in qwen-direct autocomplete recently opened file context collection."
+        },
+        "kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Inject selected recently opened file snippets into the qwen-coder multifile FIM autocomplete prompt when context length is safe."
+        },
+        "kilo.autocomplete.qwen.context.recentlyOpened.maxFiles": {
+          "type": "number",
+          "default": 20,
+          "description": "Maximum recently opened file paths retained in memory for qwen-direct autocomplete."
+        },
+        "kilo.autocomplete.qwen.context.recentlyOpened.fileReadTimeoutMs": {
+          "type": "number",
+          "default": 80,
+          "description": "Per-file read timeout in milliseconds for qwen-direct recently opened autocomplete context."
+        },
+        "kilo.autocomplete.qwen.context.importDefinitions.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable opt-in qwen-direct autocomplete import definition context collection."
+        },
+        "kilo.autocomplete.qwen.context.importDefinitions.injectIntoPrompt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Inject selected import definition snippets into the qwen-coder multifile FIM autocomplete prompt when context length is safe."
+        },
+        "kilo.autocomplete.qwen.context.importDefinitions.timeoutMs": {
+          "type": "number",
+          "default": 100,
+          "description": "Timeout in milliseconds for qwen-direct import definition lookup and range reads."
+        },
+        "kilo.autocomplete.qwen.context.importDefinitions.cacheSize": {
+          "type": "number",
+          "default": 10,
+          "description": "Maximum import definition file-info entries retained in memory for qwen-direct autocomplete."
+        },
+        "kilo.autocomplete.qwen.context.rootPath.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable opt-in qwen-direct autocomplete root path context collection."
+        },
+        "kilo.autocomplete.qwen.context.rootPath.injectIntoPrompt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Inject selected root path snippets into the qwen-coder multifile FIM autocomplete prompt when context length is safe."
+        },
+        "kilo.autocomplete.qwen.context.rootPath.timeoutMs": {
+          "type": "number",
+          "default": 100,
+          "description": "Timeout in milliseconds for qwen-direct root path definition lookup and range reads."
+        },
+        "kilo.autocomplete.qwen.context.rootPath.cacheSize": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum root path snippet entries retained in memory for qwen-direct autocomplete."
         },
         "kilo.autocomplete.qwen.trace": {
           "type": "boolean",

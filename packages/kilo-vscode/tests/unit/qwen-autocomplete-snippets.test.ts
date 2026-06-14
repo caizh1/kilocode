@@ -40,6 +40,18 @@ const cfg: QwenAutocompleteConfig = {
   recentlyEditedInjectIntoPrompt: false,
   recentlyEditedMaxRanges: 3,
   recentlyEditedMaxRangeLines: 20,
+  recentlyOpenedEnabled: false,
+  recentlyOpenedInjectIntoPrompt: false,
+  recentlyOpenedMaxFiles: 20,
+  recentlyOpenedFileReadTimeoutMs: 80,
+  importDefinitionsEnabled: false,
+  importDefinitionsInjectIntoPrompt: false,
+  importDefinitionsTimeoutMs: 100,
+  importDefinitionsCacheSize: 10,
+  rootPathEnabled: false,
+  rootPathInjectIntoPrompt: false,
+  rootPathTimeoutMs: 100,
+  rootPathCacheSize: 100,
   trace: false,
   logLevel: "off",
   logPromptPreview: false,
@@ -116,6 +128,69 @@ describe("qwen autocomplete snippet scaffold", () => {
     expect(selection.totalCount).toBe(3)
     expect(selection.selectedCount).toBe(0)
     expect(selection.snippets).toEqual([])
+  })
+
+  it("selects recently opened snippets before recently edited snippets like Continue", () => {
+    const helper = createQwenAutocompleteHelper(doc("int main(void) {\n  \n}\n"), new vscode.Position(1, 2))
+    const payload = emptyQwenSnippetPayload()
+    payload.recentlyOpenedFileSnippets = [
+      {
+        filepath: "/repo/src/shared.c",
+        content: "int opened_value(void) { return 1; }",
+        type: QwenAutocompleteSnippetType.Code,
+      },
+    ]
+    payload.recentlyEditedRangeSnippets = [
+      {
+        filepath: "/repo/src/shared.c",
+        content: "int edited_value(void) { return 2; }",
+        type: QwenAutocompleteSnippetType.Code,
+      },
+    ]
+
+    const selection = selectQwenSnippets(helper, payload, {
+      includeRecentlyEditedRanges: true,
+      maxPromptTokens: cfg.maxPromptTokens,
+      modelName: cfg.model,
+      useRecentlyOpened: true,
+    })
+
+    expect(selection.snippets).toEqual([payload.recentlyOpenedFileSnippets[0]])
+    expect(selection.selectedCount).toBe(1)
+  })
+
+  it("selects import and root snippets only when their source switches are enabled", () => {
+    const helper = createQwenAutocompleteHelper(doc("int main(void) {\n  helper();\n}\n"), new vscode.Position(1, 2))
+    const payload = emptyQwenSnippetPayload()
+    payload.importDefinitionSnippets = [
+      {
+        filepath: "/repo/include/import.h",
+        content: "int import_helper(void);",
+        type: QwenAutocompleteSnippetType.Code,
+      },
+    ]
+    payload.rootPathSnippets = [
+      {
+        filepath: "/repo/include/root.h",
+        content: "int root_helper(void);",
+        type: QwenAutocompleteSnippetType.Code,
+      },
+    ]
+
+    const off = selectQwenSnippets(helper, payload, {
+      maxPromptTokens: cfg.maxPromptTokens,
+      modelName: cfg.model,
+    })
+    const on = selectQwenSnippets(helper, payload, {
+      maxPromptTokens: cfg.maxPromptTokens,
+      modelName: cfg.model,
+      useImports: true,
+      useRootPath: true,
+    })
+
+    expect(off.snippets).toEqual([])
+    expect(on.snippets).toHaveLength(2)
+    expect(on.snippets).toEqual(expect.arrayContaining([payload.importDefinitionSnippets[0], payload.rootPathSnippets[0]]))
   })
 
   it("keeps FIM prompt and request body byte-for-byte unchanged with empty snippets", async () => {

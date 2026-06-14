@@ -65,6 +65,18 @@ const cfg: QwenAutocompleteConfig = {
   recentlyEditedInjectIntoPrompt: false,
   recentlyEditedMaxRanges: 3,
   recentlyEditedMaxRangeLines: 20,
+  recentlyOpenedEnabled: false,
+  recentlyOpenedInjectIntoPrompt: false,
+  recentlyOpenedMaxFiles: 20,
+  recentlyOpenedFileReadTimeoutMs: 80,
+  importDefinitionsEnabled: false,
+  importDefinitionsInjectIntoPrompt: false,
+  importDefinitionsTimeoutMs: 100,
+  importDefinitionsCacheSize: 10,
+  rootPathEnabled: false,
+  rootPathInjectIntoPrompt: false,
+  rootPathTimeoutMs: 100,
+  rootPathCacheSize: 100,
   trace: false,
   logLevel: "off",
   logPromptPreview: false,
@@ -289,6 +301,18 @@ describe("qwen autocomplete config and prompt", () => {
       recentlyEditedInjectIntoPrompt: false,
       recentlyEditedMaxRanges: 3,
       recentlyEditedMaxRangeLines: 20,
+      recentlyOpenedEnabled: false,
+      recentlyOpenedInjectIntoPrompt: false,
+      recentlyOpenedMaxFiles: 20,
+      recentlyOpenedFileReadTimeoutMs: 80,
+      importDefinitionsEnabled: false,
+      importDefinitionsInjectIntoPrompt: false,
+      importDefinitionsTimeoutMs: 100,
+      importDefinitionsCacheSize: 10,
+      rootPathEnabled: false,
+      rootPathInjectIntoPrompt: false,
+      rootPathTimeoutMs: 100,
+      rootPathCacheSize: 100,
       trace: false,
       logLevel: "off",
       logPromptPreview: false,
@@ -317,6 +341,18 @@ describe("qwen autocomplete config and prompt", () => {
       "qwen.context.recentlyEdited.injectIntoPrompt": true,
       "qwen.context.recentlyEdited.maxRanges": 6,
       "qwen.context.recentlyEdited.maxRangeLines": 40,
+      "qwen.context.recentlyOpened.enabled": true,
+      "qwen.context.recentlyOpened.injectIntoPrompt": true,
+      "qwen.context.recentlyOpened.maxFiles": 12,
+      "qwen.context.recentlyOpened.fileReadTimeoutMs": 40,
+      "qwen.context.importDefinitions.enabled": true,
+      "qwen.context.importDefinitions.injectIntoPrompt": true,
+      "qwen.context.importDefinitions.timeoutMs": 90,
+      "qwen.context.importDefinitions.cacheSize": 7,
+      "qwen.context.rootPath.enabled": true,
+      "qwen.context.rootPath.injectIntoPrompt": true,
+      "qwen.context.rootPath.timeoutMs": 91,
+      "qwen.context.rootPath.cacheSize": 77,
     })
     const { readQwenAutocompleteConfig } = await import("../../src/services/qwen-autocomplete/config")
 
@@ -333,6 +369,18 @@ describe("qwen autocomplete config and prompt", () => {
       recentlyEditedInjectIntoPrompt: true,
       recentlyEditedMaxRanges: 6,
       recentlyEditedMaxRangeLines: 40,
+      recentlyOpenedEnabled: true,
+      recentlyOpenedInjectIntoPrompt: true,
+      recentlyOpenedMaxFiles: 12,
+      recentlyOpenedFileReadTimeoutMs: 40,
+      importDefinitionsEnabled: true,
+      importDefinitionsInjectIntoPrompt: true,
+      importDefinitionsTimeoutMs: 90,
+      importDefinitionsCacheSize: 7,
+      rootPathEnabled: true,
+      rootPathInjectIntoPrompt: true,
+      rootPathTimeoutMs: 91,
+      rootPathCacheSize: 77,
     })
   })
 
@@ -533,13 +581,14 @@ describe("qwen document gating and postprocess", () => {
     expect(isQwenSupportedDocument(doc("", { path: "/repo/src/main.c", languageId: "plaintext" }))).toBe(false)
   })
 
-  it("prefilters empty untitled files without widening C/C++ file support", () => {
+  it("prefilters empty documents without widening C/C++ file support", () => {
     expect(shouldPrefilterQwenDocument(doc("", { path: "/repo/src/main.c", languageId: "c", scheme: "untitled" }))).toBe(
       true,
     )
     expect(shouldPrefilterQwenDocument(doc("", { path: "/repo/include/device.h", languageId: "plaintext" }))).toBe(
-      false,
+      true,
     )
+    expect(shouldPrefilterQwenDocument(doc("int device;", { path: "/repo/include/device.h", languageId: "plaintext" }))).toBe(false)
     expect(shouldPrefilterQwenDocument(doc("", { path: "/repo/src/readme.md", languageId: "markdown" }))).toBe(true)
   })
 
@@ -677,7 +726,7 @@ describe("qwen multiline classification and non-streaming filters", () => {
 
     expect(filtered("// Path: src/main.c\nint a;\n//\nint b;")).toBe("int a;\nint b;")
     expect(filtered(`${marker}int a;\nint b;`)).toBe("int a;\nint b;")
-    expect(filtered("<|updated_code|>int a;")).toBe("<|updated_code|>int a;")
+    expect(filtered("<|updated_code|>int a;")).toBe("")
   })
 
   it("stops at double newlines and preserves valid completions", () => {
@@ -891,6 +940,49 @@ describe("KiloQwenInlineCompletionProvider", () => {
     expect((items[0]!.range as Range).start).toEqual({ line: 1, character: 2 })
     expect((items[0]!.range as Range).end).toEqual({ line: 1, character: 2 })
     expect((items[0] as unknown as { completeBracketPairs?: boolean }).completeBracketPairs).toBe(true)
+  })
+
+  it("filters raw output before applying postprocess", async () => {
+    const provider = new KiloQwenInlineCompletionProvider({
+      read: () => cfg,
+      client: { complete: async () => "\n return ok;" } as unknown as QwenFimClient,
+      log: () => {},
+    })
+    const items = await provider.provideInlineCompletionItems(
+      doc("int main() {\n  \n}"),
+      new vscode.Position(1, 2),
+      {} as vscode.InlineCompletionContext,
+      token().value as vscode.CancellationToken,
+    )
+
+    expect(items).toHaveLength(1)
+    expect(items[0]!.insertText).toBe("return ok;")
+  })
+
+  it("does not render or cache rejected filter results", async () => {
+    let puts = 0
+    const provider = new KiloQwenInlineCompletionProvider({
+      read: () => cfg,
+      cache: {
+        get: () => undefined,
+        put: () => {
+          puts++
+        },
+        setMaxEntries: () => {},
+        size: () => 0,
+      },
+      client: { complete: async () => "<|fim_prefix|>bad" } as unknown as QwenFimClient,
+      log: () => {},
+    })
+    const items = await provider.provideInlineCompletionItems(
+      doc("int main() {\n  \n}"),
+      new vscode.Position(1, 2),
+      {} as vscode.InlineCompletionContext,
+      token().value as vscode.CancellationToken,
+    )
+
+    expect(items).toEqual([])
+    expect(puts).toBe(0)
   })
 
   it("uses Continue token-budget pruned prefix and suffix for the Qwen prompt", async () => {

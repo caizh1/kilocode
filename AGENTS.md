@@ -29,6 +29,7 @@ Kilo CLI is an open source AI coding agent that generates code from natural lang
 
 - When the user asks to package the VS Code extension (`打包`) without explicitly narrowing the target, produce two VSIX artifacts by default: macOS and `win32-x64-baseline`.
 - The Windows artifact must use the baseline x64 CLI/VSIX target for wider CPU compatibility; do not substitute the generic `win32-x64` target unless the user explicitly requests it.
+- Every packaging run must build fresh target CLI artifacts first and package from those newly built `packages/opencode/dist/@kilocode/cli-*` outputs. Do not reuse CLI binaries, `bin/` directories, or files extracted from older VSIX artifacts; if a target CLI cannot be freshly built, report the blocker instead of producing a recycled package.
 
 ## Quality Checks
 

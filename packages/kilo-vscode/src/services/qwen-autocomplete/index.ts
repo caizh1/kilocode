@@ -2,7 +2,10 @@ import * as vscode from "vscode"
 import { readQwenAutocompleteConfig, qwenAutocompleteEnabled } from "./config"
 import { exportQwenAutocompleteDiagnostics, showQwenAutocompleteLogs } from "./diagnostics"
 import { KiloQwenInlineCompletionProvider, QWEN_DOCUMENT_SELECTOR } from "./KiloQwenInlineCompletionProvider"
+import { QwenImportDefinitionsTracker } from "./importDefinitions"
 import { QwenRecentlyEditedTracker } from "./recentlyEdited"
+import { QwenRecentlyOpenedTracker } from "./recentlyOpened"
+import { QwenRootPathTracker } from "./rootPathContext"
 
 export function registerQwenAutocompleteProvider(context: vscode.ExtensionContext): vscode.Disposable {
   const reg = new QwenAutocompleteRegistration()
@@ -18,7 +21,10 @@ class QwenAutocompleteRegistration implements vscode.Disposable {
   private provider: KiloQwenInlineCompletionProvider | null = null
   private registration: vscode.Disposable | null = null
   private readonly watcher: vscode.Disposable
-  private collecting = false
+  private edited = false
+  private opened = false
+  private imports = false
+  private root = false
 
   constructor() {
     this.watcher = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -35,14 +41,32 @@ class QwenAutocompleteRegistration implements vscode.Disposable {
   private sync(): void {
     const cfg = readQwenAutocompleteConfig()
     const enabled = qwenAutocompleteEnabled(cfg)
-    const collecting = enabled && cfg.recentlyEditedEnabled
-    if (enabled && this.provider && this.collecting === collecting) return
+    const edited = enabled && cfg.recentlyEditedEnabled
+    const opened = enabled && cfg.recentlyOpenedEnabled
+    const imports = enabled && cfg.importDefinitionsEnabled
+    const root = enabled && cfg.rootPathEnabled
+    if (
+      enabled &&
+      this.provider &&
+      this.edited === edited &&
+      this.opened === opened &&
+      this.imports === imports &&
+      this.root === root
+    ) {
+      return
+    }
     this.disposeProvider()
     if (enabled) {
-      const edited = collecting ? new QwenRecentlyEditedTracker() : undefined
-      this.provider = new KiloQwenInlineCompletionProvider({ edited })
+      const recent = edited ? new QwenRecentlyEditedTracker() : undefined
+      const files = opened ? new QwenRecentlyOpenedTracker() : undefined
+      const defs = imports ? new QwenImportDefinitionsTracker() : undefined
+      const path = root ? new QwenRootPathTracker() : undefined
+      this.provider = new KiloQwenInlineCompletionProvider({ edited: recent, imports: defs, opened: files, root: path })
       this.registration = vscode.languages.registerInlineCompletionItemProvider(QWEN_DOCUMENT_SELECTOR, this.provider)
-      this.collecting = collecting
+      this.edited = edited
+      this.opened = opened
+      this.imports = imports
+      this.root = root
       return
     }
   }
@@ -52,6 +76,9 @@ class QwenAutocompleteRegistration implements vscode.Disposable {
     this.registration = null
     this.provider?.dispose()
     this.provider = null
-    this.collecting = false
+    this.edited = false
+    this.opened = false
+    this.imports = false
+    this.root = false
   }
 }

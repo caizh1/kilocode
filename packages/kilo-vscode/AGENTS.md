@@ -88,6 +88,7 @@ The script checks for a prebuilt binary in `packages/opencode/dist/`, builds the
 
 - For local VSIX packaging requests (`打包`) that do not explicitly narrow the target, produce two artifacts by default: macOS and `win32-x64-baseline`.
 - The Windows VSIX must bundle the baseline x64 CLI binary/target for broader CPU compatibility; do not replace it with the generic `win32-x64` build unless the user explicitly asks for that target.
+- Every packaging run must build fresh target CLI artifacts first and package from those newly built `packages/opencode/dist/@kilocode/cli-*` outputs. Do not reuse CLI binaries, `bin/` directories, or files extracted from older VSIX artifacts; if a target CLI cannot be freshly built, report the blocker instead of producing a recycled package.
 
 ## Architecture
 

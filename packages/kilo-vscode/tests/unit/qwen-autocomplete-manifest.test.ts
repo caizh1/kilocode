@@ -30,6 +30,18 @@ describe("qwen autocomplete manifest settings", () => {
     expect(props["kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt"].default).toBe(false)
     expect(props["kilo.autocomplete.qwen.context.recentlyEdited.maxRanges"].default).toBe(3)
     expect(props["kilo.autocomplete.qwen.context.recentlyEdited.maxRangeLines"].default).toBe(20)
+    expect(props["kilo.autocomplete.qwen.context.recentlyOpened.enabled"].default).toBe(false)
+    expect(props["kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt"].default).toBe(false)
+    expect(props["kilo.autocomplete.qwen.context.recentlyOpened.maxFiles"].default).toBe(20)
+    expect(props["kilo.autocomplete.qwen.context.recentlyOpened.fileReadTimeoutMs"].default).toBe(80)
+    expect(props["kilo.autocomplete.qwen.context.importDefinitions.enabled"].default).toBe(false)
+    expect(props["kilo.autocomplete.qwen.context.importDefinitions.injectIntoPrompt"].default).toBe(false)
+    expect(props["kilo.autocomplete.qwen.context.importDefinitions.timeoutMs"].default).toBe(100)
+    expect(props["kilo.autocomplete.qwen.context.importDefinitions.cacheSize"].default).toBe(10)
+    expect(props["kilo.autocomplete.qwen.context.rootPath.enabled"].default).toBe(false)
+    expect(props["kilo.autocomplete.qwen.context.rootPath.injectIntoPrompt"].default).toBe(false)
+    expect(props["kilo.autocomplete.qwen.context.rootPath.timeoutMs"].default).toBe(100)
+    expect(props["kilo.autocomplete.qwen.context.rootPath.cacheSize"].default).toBe(100)
     expect(props["kilo.autocomplete.qwen.trace"].default).toBe(false)
     expect(props["kilo.autocomplete.qwen.logLevel"]).toMatchObject({
       enum: ["off", "info", "debug"],
