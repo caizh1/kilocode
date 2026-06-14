@@ -76,7 +76,7 @@ const originalChange = vscode.workspace.onDidChangeConfiguration
 const originalInline = vscode.languages.registerInlineCompletionItemProvider
 const originalFolders = vscode.workspace.workspaceFolders
 const dirs: string[] = []
-const continueQwenCoderStops = [
+const qwenTemplateLocalStops = [
   "<|endoftext|>",
   "<|fim_prefix|>",
   "<|fim_middle|>",
@@ -86,10 +86,13 @@ const continueQwenCoderStops = [
   "<|file_sep|>",
   "<|im_start|>",
   "<|im_end|>",
+]
+const continueCommonStops = [
   "/src/",
   "#- coding: utf-8",
   "```",
 ]
+const continueQwenCoderEffectiveStops = [...qwenTemplateLocalStops, ...continueCommonStops]
 
 afterEach(async () => {
   ;(
@@ -392,11 +395,17 @@ describe("qwen autocomplete config and prompt", () => {
     expect(helper.prunedSuffix).not.toContain("suf_0039_marker")
   })
 
-  it("uses Continue-equivalent qwen-coder stop tokens in exact order", () => {
+  it("uses flattened qwen template-local and Continue common stop tokens in exact order", () => {
     const stops = getContinueAutocompleteStopTokens("qwen-coder-30b0")
 
-    expect(stops).toEqual(continueQwenCoderStops)
-    expect(QWEN_FIM_STOP).toEqual(continueQwenCoderStops)
+    expect(stops).toEqual(continueQwenCoderEffectiveStops)
+    expect(QWEN_FIM_STOP).toEqual(continueQwenCoderEffectiveStops)
+    for (const stop of qwenTemplateLocalStops) {
+      expect(stops).toContain(stop)
+    }
+    for (const stop of continueCommonStops) {
+      expect(stops).toContain(stop)
+    }
     expect(new Set(stops).size).toBe(stops.length)
     expect(stops).not.toContain("t.")
     expect(stops).not.toContain("\nt")

@@ -219,7 +219,7 @@ describe("qwen prompt rendering", () => {
     globalThis.fetch = async (_url, _init) =>
       new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
     const provider = new KiloQwenInlineCompletionProvider({
-      read: () => ({ ...active(), trace: true, logLevel: "debug" }),
+      read: () => ({ ...active(), trace: true, logLevel: "debug", logPromptPreview: true }),
       edited: fakeEdited("int helper(void) {\n  return 1;\n}"),
       log: () => {},
     })
@@ -247,6 +247,8 @@ describe("qwen prompt rendering", () => {
     expect(text).not.toContain("int helper")
     expect(text).not.toContain("<|repo_name|>")
     expect(text).not.toContain("/repo/src/recent.c")
+    expect(text).not.toContain("unit.test")
+    expect(logs.every((line) => line.promptPreview === null)).toBe(true)
     provider.dispose()
   })
 

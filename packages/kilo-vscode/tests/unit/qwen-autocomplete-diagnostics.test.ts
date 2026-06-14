@@ -99,6 +99,7 @@ describe("qwen autocomplete diagnostics", () => {
     expect(JSON.stringify(logs)).not.toContain("Authorization")
     expect(JSON.stringify(logs)).not.toContain("/repo/backend/hal/main.c")
     expect(JSON.stringify(logs)).not.toContain("<|fim_prefix|>")
+    expect(logs.every((line) => line.promptPreview === null)).toBe(true)
   })
 
   it("info level omits prompt and completion previews", async () => {
@@ -113,6 +114,27 @@ describe("qwen autocomplete diagnostics", () => {
     const text = JSON.stringify(parsed())
     expect(text).not.toContain("return ok;")
     expect(text).not.toContain("<|fim_prefix|>")
+  })
+
+  it("keeps qwen promptPreview disabled even when logPromptPreview is enabled", async () => {
+    await runProvider(
+      {
+        ...cfg,
+        trace: true,
+        logLevel: "debug",
+        logPromptPreview: true,
+      },
+      { text: "int secret_prompt_symbol(void) {\n  \n}\n" },
+    )
+
+    const logs = parsed()
+    const text = JSON.stringify(logs)
+    expect(logs.every((line) => line.promptPreview === null)).toBe(true)
+    expect(text).not.toContain("secret_prompt_symbol")
+    expect(text).not.toContain("<|fim_prefix|>")
+    expect(text).not.toContain(cfg.apiKey)
+    expect(text).not.toContain("secret-qwen.internal")
+    expect(text).not.toContain("Authorization")
   })
 
   it("records selectedCompletionInfo diagnostics", async () => {

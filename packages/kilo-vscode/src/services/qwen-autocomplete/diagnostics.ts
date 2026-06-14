@@ -240,7 +240,7 @@ function entryFor(input: QwenDiagnosticInput): Record<string, unknown> {
     emptyReason: input.emptyReason ?? "none",
     errorKind: errorKind(input.error),
     errorMessage: input.error ? redact(summary(input.error)) : null,
-    promptPreview: promptPreview(level, input.cfg, input.prompt),
+    promptPreview: promptPreview(),
   })
 }
 
@@ -383,9 +383,10 @@ function completionPreview(level: QwenAutocompleteLogLevel, cfg: QwenAutocomplet
   return redact(firstLine(text))
 }
 
-function promptPreview(level: QwenAutocompleteLogLevel, cfg: QwenAutocompleteConfig, prompt?: string): string | null {
-  if (level !== "debug" || !cfg.logPromptPreview || !prompt) return null
-  return redact(prompt.slice(0, PREVIEW_LIMIT))
+function promptPreview(): null {
+  // qwen prompts may include selected snippets/source after multifile FIM injection;
+  // keep prompt diagnostics to redacted counts/chars/tokens/hash only.
+  return null
 }
 
 function firstLine(text: string): string {
