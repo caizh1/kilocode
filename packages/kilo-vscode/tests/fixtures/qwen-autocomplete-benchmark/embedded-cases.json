@@ -1,0 +1,236 @@
+[
+  {
+    "id": "A01-return-expression",
+    "title": "Return ADC raw value",
+    "languageId": "c",
+    "fileName": "backend/hal/adc.c",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "struct adc_sample {\n  uint16_t raw_value;\n};\n\nuint16_t adc_read_raw(struct adc_sample *sample) {\n  return /*__CURSOR__*/;\n}\n",
+    "mockCompletion": "sample->raw_value",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["sample->raw_value"],
+      "mustNotContain": ["HAL_FAKE_ADC"]
+    }
+  },
+  {
+    "id": "A02-if-condition",
+    "title": "Complete wear-level if condition",
+    "languageId": "cpp",
+    "fileName": "backend/ftl/wear_level.cpp",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "bool should_rotate(const BlockState *block, uint32_t limit) {\n  if (/*__CURSOR__*/) {\n    return true;\n  }\n  return false;\n}\n",
+    "mockCompletion": "block->erase_count > limit",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["block->erase_count"]
+    }
+  },
+  {
+    "id": "B01-pointer-member",
+    "title": "Complete SPI pointer member",
+    "languageId": "c",
+    "fileName": "backend/hal/spi.c",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "int spi_wait_ready(struct spi_dev *dev) {\n  return dev->/*__CURSOR__*/;\n}\n",
+    "mockCompletion": "status",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["status"]
+    }
+  },
+  {
+    "id": "D02-bit-set",
+    "title": "Set dirty bit in bitmap",
+    "languageId": "c",
+    "fileName": "backend/ftl/bitmap.c",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "void ftl_mark_dirty(uint32_t *flags, uint8_t bit) {\n  /*__CURSOR__*/\n}\n",
+    "mockCompletion": "*flags |= (1u << bit);",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["1u << bit"]
+    }
+  },
+  {
+    "id": "D05-status-poll-timeout",
+    "title": "Poll NAND status with timeout",
+    "languageId": "c",
+    "fileName": "backend/hal/nand.c",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "int nand_wait_ready(struct nand_dev *dev, uint32_t timeout_ms) {\n  uint32_t start = tick_ms();\n  /*__CURSOR__*/\n  return -ETIMEDOUT;\n}\n",
+    "mockCompletion": "while ((nand_read_status(dev) & NAND_STATUS_READY) == 0u) {\n    if ((tick_ms() - start) > timeout_ms) {\n      return -ETIMEDOUT;\n    }\n  }",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": true,
+      "mustContainAny": ["NAND_STATUS_READY"]
+    }
+  },
+  {
+    "id": "D10-missing-volatile",
+    "title": "Use volatile MMIO status read",
+    "languageId": "c",
+    "fileName": "backend/hal/mmio.c",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "#define REG32(addr) (*(volatile uint32_t *)(addr))\n\nuint32_t hal_status(uintptr_t base) {\n  /*__CURSOR__*/\n  return status;\n}\n",
+    "mockCompletion": "volatile uint32_t status = REG32(base + STATUS_OFFSET);",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["volatile uint32_t status"]
+    }
+  },
+  {
+    "id": "G02-uart-write-timeout",
+    "title": "UART write loop with timeout",
+    "languageId": "c",
+    "fileName": "backend/hal/uart.c",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "int uart_write_timeout(struct uart_dev *dev, const uint8_t *buf, size_t len, uint32_t timeout_ms) {\n  size_t sent = 0;\n  /*__CURSOR__*/\n  return (int)sent;\n}\n",
+    "mockCompletion": "while (sent < len) {\n    if (!uart_tx_ready(dev)) {\n      if (timeout_expired(timeout_ms)) return -ETIMEDOUT;\n      continue;\n    }\n    uart_write_byte(dev, buf[sent++]);\n  }",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": true,
+      "mustContainAny": ["uart_write_byte"]
+    }
+  },
+  {
+    "id": "H02-crc-check",
+    "title": "Check FTL page CRC",
+    "languageId": "c",
+    "fileName": "backend/ftl/crc.c",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "int ftl_verify_page(const uint8_t *buf, size_t len, uint32_t expected) {\n  /*__CURSOR__*/\n  return 0;\n}\n",
+    "mockCompletion": "if (crc32(buf, len) != expected) {\n    return FTL_ERR_CRC;\n  }",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": true,
+      "mustContainAny": ["FTL_ERR_CRC"]
+    }
+  },
+  {
+    "id": "comment-to-code-generation",
+    "title": "Trim multiline completion after comment prefix",
+    "languageId": "c",
+    "fileName": "backend/hal/watchdog.c",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "int watchdog_service(struct watchdog_dev *dev) {\n  // /*__CURSOR__*/\n  return 0;\n}\n",
+    "mockCompletion": "kick_watchdog(dev);\nreturn 0;",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["kick_watchdog"]
+    }
+  },
+  {
+    "id": "partial-function-name-completion",
+    "title": "Complete selected partial function name",
+    "languageId": "c",
+    "fileName": "backend/ftl/status.c",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "int ftl_check(struct ftl_status *status) {\n  return ftl_er/*__CURSOR__*/;\n}\n",
+    "selectedCompletionInfo": {
+      "text": "ftl_error_from_status",
+      "range": {
+        "start": { "line": 1, "character": 9 },
+        "end": { "line": 1, "character": 15 }
+      }
+    },
+    "mockCompletion": "(status)",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["ftl_error_from_status"]
+    }
+  },
+  {
+    "id": "partial-variable-member-completion",
+    "title": "Complete partial config member",
+    "languageId": "cpp",
+    "fileName": "backend/hal/timer.cpp",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "uint32_t timeout_for(const TimerConfig *cfg) {\n  return cfg->time/*__CURSOR__*/;\n}\n",
+    "mockCompletion": "out_ms",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["out_ms"],
+      "mustNotEchoPrefix": true
+    }
+  },
+  {
+    "id": "suffix-closing-brace-paren-context",
+    "title": "Respect suffix closing paren and brace",
+    "languageId": "cpp",
+    "fileName": "backend/ftl/reclaim.cpp",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "bool reclaim_needed(const FtlState& state) {\n  if (state.free_blocks < state.low_watermark/*__CURSOR__*/) {\n    return true;\n  }\n  return false;\n}\n",
+    "mockCompletion": " && !state.gc_running",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["gc_running"],
+      "mustNotOverlapSuffix": true
+    }
+  },
+  {
+    "id": "do-not-complete-unsafe-context",
+    "title": "Block ignored sensitive env-like source path",
+    "languageId": "cpp",
+    "fileName": "backend/hal/.env.cpp",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "const char *token_for_test(void) {\n  return /*__CURSOR__*/;\n}\n",
+    "mockCompletion": "\"secret\"",
+    "expectation": {
+      "shouldRequest": false,
+      "shouldShowGhostText": false,
+      "guardShouldBlock": true
+    }
+  },
+  {
+    "id": "header-file-h",
+    "title": "Header declaration in .h file",
+    "languageId": "c",
+    "fileName": "include/hal/watchdog.h",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "struct watchdog_config {\n  uint32_t window_ms;\n  /*__CURSOR__*/\n};\n",
+    "mockCompletion": "uint32_t timeout_ms;",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["timeout_ms"]
+    }
+  },
+  {
+    "id": "hpp-plaintext-language-id",
+    "title": "Plaintext language id allowed for .hpp header",
+    "languageId": "plaintext",
+    "fileName": "include/ftl/page.hpp",
+    "cursorMarker": "/*__CURSOR__*/",
+    "document": "class PageState {\n public:\n  /*__CURSOR__*/\n};\n",
+    "mockCompletion": "bool ready() const;",
+    "expectation": {
+      "shouldRequest": true,
+      "shouldShowGhostText": true,
+      "allowMultiline": false,
+      "mustContainAny": ["ready() const"]
+    }
+  }
+]

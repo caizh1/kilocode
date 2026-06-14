@@ -1,5 +1,6 @@
 import * as vscode from "vscode"
-import type { QwenAutocompleteConfig, QwenAutocompleteProvider } from "./types"
+import { QWEN_AUTOCOMPLETE_CACHE_DEFAULT_MAX_ENTRIES, clampMaxEntries } from "./autocompleteLruCache"
+import type { QwenAutocompleteConfig, QwenAutocompleteLogLevel, QwenAutocompleteProvider } from "./types"
 
 export const QWEN_CONFIG_SECTION = "kilo.autocomplete"
 
@@ -24,6 +25,11 @@ function provider(value: unknown): QwenAutocompleteProvider {
   return "none"
 }
 
+function logLevel(value: unknown): QwenAutocompleteLogLevel {
+  if (value === "info" || value === "debug") return value
+  return "off"
+}
+
 export function readQwenAutocompleteConfig(): QwenAutocompleteConfig {
   const cfg = vscode.workspace.getConfiguration(QWEN_CONFIG_SECTION)
   return {
@@ -35,10 +41,25 @@ export function readQwenAutocompleteConfig(): QwenAutocompleteConfig {
     apiKey: str(cfg.get("qwen.apiKey"), ""),
     debounceMs: num(cfg.get("qwen.debounceMs"), 350, 0, 5_000),
     maxTokens: num(cfg.get("qwen.maxTokens"), 128, 1, 2_048),
+    maxPromptTokens: num(cfg.get("qwen.maxPromptTokens"), 1024, 1, 200_000),
+    modelTimeout: num(cfg.get("qwen.modelTimeout"), 150, 1, 600_000),
+    maxSuffixPercentage: num(cfg.get("qwen.maxSuffixPercentage"), 0.2, 0, 1),
+    prefixPercentage: num(cfg.get("qwen.prefixPercentage"), 0.3, 0, 1),
     temperature: num(cfg.get("qwen.temperature"), 0.1, 0, 2),
+    cacheEnabled: bool(cfg.get("qwen.cache.enabled"), true),
+    cacheMaxEntries: clampMaxEntries(cfg.get("qwen.cache.maxEntries") ?? QWEN_AUTOCOMPLETE_CACHE_DEFAULT_MAX_ENTRIES),
     prefixChars: num(cfg.get("qwen.prefixChars"), 12_000, 0, 200_000),
     suffixChars: num(cfg.get("qwen.suffixChars"), 6_000, 0, 200_000),
     multifileContextEnabled: bool(cfg.get("qwen.multifileContext.enabled"), false),
+    contextLength: num(cfg.get("qwen.contextLength"), 0, 0, 1_000_000),
+    recentlyEditedEnabled: bool(cfg.get("qwen.context.recentlyEdited.enabled"), false),
+    recentlyEditedInjectIntoPrompt: bool(cfg.get("qwen.context.recentlyEdited.injectIntoPrompt"), false),
+    recentlyEditedMaxRanges: num(cfg.get("qwen.context.recentlyEdited.maxRanges"), 3, 1, 20),
+    recentlyEditedMaxRangeLines: num(cfg.get("qwen.context.recentlyEdited.maxRangeLines"), 20, 1, 200),
+    trace: bool(cfg.get("qwen.trace"), false),
+    logLevel: logLevel(cfg.get("qwen.logLevel")),
+    logPromptPreview: bool(cfg.get("qwen.logPromptPreview"), false),
+    logCompletionPreview: bool(cfg.get("qwen.logCompletionPreview"), true),
   }
 }
 

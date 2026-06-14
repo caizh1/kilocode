@@ -4,6 +4,8 @@
 
 - <http://company-qwen-coder.example.com/v1/completions>
   <!-- packages/kilo-vscode/src/services/qwen-autocomplete/config.ts -->
+- <http://mock-qwen.invalid/v1/completions>
+  <!-- packages/kilo-vscode/src/services/qwen-autocomplete/benchmark.ts -->
 - <https://accounts.x.ai>
   <!-- packages/opencode/src/plugin/xai.ts -->
 - <https://api.apertis.ai/v1>

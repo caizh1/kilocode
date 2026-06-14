@@ -31,6 +31,11 @@ export class QwenFimClient {
         stop: getContinueAutocompleteStopTokens(input.model),
       }),
     })
+    try {
+      input.onResponse?.({ status: res.status })
+    } catch (err) {
+      void err
+    }
     const text = await res.text()
     if (!res.ok) throw new QwenFimRequestError(res.status, responseSummary(res))
     if (!text.trim()) throw new QwenFimRequestError(res.status, "Qwen /v1/completions response body is empty.")

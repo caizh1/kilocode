@@ -25,6 +25,11 @@ Kilo CLI is an open source AI coding agent that generates code from natural lang
 - **workflow allowlist**: `bun run script/check-workflows.ts` from repo root. CI runs this as part of the annotations workflow — any `.yml` / `.yaml` file added to or removed from `.github/workflows/` must be reflected in the hardcoded list in `script/check-workflows.ts`. Prevents upstream-merged workflows from silently starting to run in our CI.
 - **Backend/SDK programmatic testing**: see [TESTING.md](./TESTING.md) for spawning the local main-branch backend (`bun dev serve`) and driving it via `curl` — use this instead of `kilo serve` (prod binary) when testing backend fixes.
 
+## VS Code Extension Packaging
+
+- When the user asks to package the VS Code extension (`打包`) without explicitly narrowing the target, produce two VSIX artifacts by default: macOS and `win32-x64-baseline`.
+- The Windows artifact must use the baseline x64 CLI/VSIX target for wider CPU compatibility; do not substitute the generic `win32-x64` target unless the user explicitly requests it.
+
 ## Quality Checks
 
 Before saying an implementation is ready, run the smallest relevant checks that can catch lint, typecheck, and test failures for the touched package. Do not rely on manual extension launch to discover build problems. Fix failures you introduced before the final response, or state exactly which check is still failing or could not be run.

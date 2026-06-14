@@ -2122,7 +2122,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           const base = `${w.path}\n  ${w.message}`
           return w.detail ? `${base}\n  ${w.detail}` : base
         })
-        const channel = vscode.window.createOutputChannel("Kilo Config Warnings")
+        const channel = vscode.window.createOutputChannel("ChipMate Config Warnings")
         channel.clear()
         channel.appendLine(lines.join("\n\n"))
         channel.show()

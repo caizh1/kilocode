@@ -84,6 +84,11 @@ bun script/local-bin.ts --force
 
 The script checks for a prebuilt binary in `packages/opencode/dist/`, builds the CLI if needed, and copies it to `bin/kilo`.
 
+## Packaging Targets
+
+- For local VSIX packaging requests (`打包`) that do not explicitly narrow the target, produce two artifacts by default: macOS and `win32-x64-baseline`.
+- The Windows VSIX must bundle the baseline x64 CLI binary/target for broader CPU compatibility; do not replace it with the generic `win32-x64` build unless the user explicitly asks for that target.
+
 ## Architecture
 
 ### Extension ↔ CLI Backend

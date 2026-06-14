@@ -82,7 +82,7 @@ export class AgentManagerProvider implements Disposable {
     private readonly host: Host,
     private readonly connectionService: KiloConnectionService,
   ) {
-    this.outputChannel = host.createOutput("Kilo Agent Manager")
+    this.outputChannel = host.createOutput("ChipMate Agent Manager")
     this.terminalManager = new SessionTerminalManager(
       (msg) => this.outputChannel.appendLine(`[SessionTerminal] ${msg}`),
       createTerminalHost(),

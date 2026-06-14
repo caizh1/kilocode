@@ -50,6 +50,7 @@ const mockVscode = {
     onDidOpenTextDocument: () => ({ dispose: noop }),
     onDidChangeTextDocument: () => ({ dispose: noop }),
     onDidCloseTextDocument: () => ({ dispose: noop }),
+    onDidChangeConfiguration: () => ({ dispose: noop }),
     getConfiguration: () => ({
       get: <T>(_key: string, value?: T) => value,
       update: async () => {},
@@ -77,6 +78,7 @@ const mockVscode = {
     tabGroups: { all: [] },
     showTextDocument: async () => {},
     showWarningMessage: async () => undefined,
+    showSaveDialog: async () => undefined,
     createTerminal: () => ({ show: noop, sendText: noop, dispose: noop }),
     createOutputChannel: () => ({
       name: "",
@@ -105,6 +107,7 @@ const mockVscode = {
   languages: {
     getDiagnostics: () => [],
     registerCodeActionsProvider: () => ({ dispose: noop }),
+    registerInlineCompletionItemProvider: () => ({ dispose: noop }),
   },
   CodeAction: class {
     command?: { command: string; title: string }

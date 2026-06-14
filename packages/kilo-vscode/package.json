@@ -2,7 +2,7 @@
   "name": "chipmate",
   "displayName": "ChipMate: AI Coding Agent, Copilot, and Autocomplete",
   "description": "Open Source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
-  "version": "0.0.3",
+  "version": "0.0.12",
   "icon": "assets/icons/logo-outline-black.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -200,6 +200,16 @@
       {
         "command": "kilo-code.new.autocomplete.nextEdit.dismiss",
         "title": "Next Edit: Dismiss Pending Suggestion",
+        "category": "ChipMate"
+      },
+      {
+        "command": "kilo-code.new.qwenAutocomplete.showLogs",
+        "title": "ChipMate: Show qwen-direct Autocomplete Logs",
+        "category": "ChipMate"
+      },
+      {
+        "command": "kilo-code.new.qwenAutocomplete.exportDiagnostics",
+        "title": "ChipMate: Export qwen-direct Autocomplete Diagnostics",
         "category": "ChipMate"
       },
       {
@@ -928,25 +938,105 @@
           "default": 128,
           "description": "Maximum tokens for inline completion."
         },
+        "kilo.autocomplete.qwen.maxPromptTokens": {
+          "type": "number",
+          "default": 1024,
+          "description": "Continue-style prompt token budget for qwen-direct autocomplete context."
+        },
+        "kilo.autocomplete.qwen.prefixPercentage": {
+          "type": "number",
+          "default": 0.3,
+          "description": "Continue-style fraction of prompt budget reserved for prefix context."
+        },
+        "kilo.autocomplete.qwen.maxSuffixPercentage": {
+          "type": "number",
+          "default": 0.2,
+          "description": "Continue-style maximum fraction of prompt budget reserved for suffix context."
+        },
+        "kilo.autocomplete.qwen.modelTimeout": {
+          "type": "number",
+          "default": 150,
+          "description": "Continue autocomplete model timeout setting retained for qwen-direct helper parity diagnostics."
+        },
         "kilo.autocomplete.qwen.temperature": {
           "type": "number",
           "default": 0.1,
           "description": "Sampling temperature for autocomplete."
         },
+        "kilo.autocomplete.qwen.cache.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Continue-style in-memory qwen-direct autocomplete cache reuse."
+        },
+        "kilo.autocomplete.qwen.cache.maxEntries": {
+          "type": "number",
+          "default": 1000,
+          "description": "Maximum qwen-direct autocomplete cache entries."
+        },
         "kilo.autocomplete.qwen.prefixChars": {
           "type": "number",
           "default": 12000,
-          "description": "Maximum prefix characters sent to the autocomplete model."
+          "description": "Legacy compatibility limit retained for qwen-direct autocomplete settings; Continue-style token budget controls default prompt pruning."
         },
         "kilo.autocomplete.qwen.suffixChars": {
           "type": "number",
           "default": 6000,
-          "description": "Maximum suffix characters sent to the autocomplete model."
+          "description": "Legacy compatibility limit retained for qwen-direct autocomplete settings; Continue-style token budget controls default prompt pruning."
         },
         "kilo.autocomplete.qwen.multifileContext.enabled": {
           "type": "boolean",
           "default": false,
           "description": "Enable Continue-style lightweight multi-file context for FIM autocomplete."
+        },
+        "kilo.autocomplete.qwen.contextLength": {
+          "type": "number",
+          "default": 0,
+          "description": "Explicit qwen-direct autocomplete model context length. Zero means unknown and disables snippet prompt injection."
+        },
+        "kilo.autocomplete.qwen.context.recentlyEdited.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable opt-in qwen-direct autocomplete recently edited range context collection."
+        },
+        "kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Inject selected recently edited snippets into the qwen-coder multifile FIM autocomplete prompt when context length is safe."
+        },
+        "kilo.autocomplete.qwen.context.recentlyEdited.maxRanges": {
+          "type": "number",
+          "default": 3,
+          "description": "Maximum recently edited ranges retained in memory for qwen-direct autocomplete."
+        },
+        "kilo.autocomplete.qwen.context.recentlyEdited.maxRangeLines": {
+          "type": "number",
+          "default": 20,
+          "description": "Maximum lines retained per recently edited range for qwen-direct autocomplete."
+        },
+        "kilo.autocomplete.qwen.trace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable qwen-direct autocomplete diagnostic tracing."
+        },
+        "kilo.autocomplete.qwen.logLevel": {
+          "type": "string",
+          "enum": [
+            "off",
+            "info",
+            "debug"
+          ],
+          "default": "off",
+          "description": "Diagnostic log level for qwen-direct autocomplete."
+        },
+        "kilo.autocomplete.qwen.logPromptPreview": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include short redacted prompt previews in qwen-direct debug diagnostics."
+        },
+        "kilo.autocomplete.qwen.logCompletionPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include short redacted completion previews in qwen-direct debug diagnostics."
         },
         "kilo-code.new.speechToText.model": {
           "type": "string",
@@ -1059,6 +1149,7 @@
     "check-types:webview": "bun script/typecheck.ts --project webview-ui/tsconfig.json",
     "typecheck": "bun run check-types:extension && bun run check-types:webview",
     "check-types:extension": "bun script/typecheck.ts",
+    "benchmark:qwen-autocomplete": "bun --preload ./script/qwen-benchmark-vscode-preload.ts script/benchmark-qwen-autocomplete.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "knip": "knip",

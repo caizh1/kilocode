@@ -31,6 +31,7 @@ import {
   lineIsRepeated,
   PREFIXES_TO_SKIP,
 } from "../../src/services/qwen-autocomplete/streamFilters"
+import { tokenizerSourceForModel } from "../../src/services/qwen-autocomplete/tokenPruning"
 import type { QwenAutocompleteConfig, QwenFimCompleteInput } from "../../src/services/qwen-autocomplete/types"
 
 type Pos = { line: number; character: number }
@@ -49,10 +50,25 @@ const cfg: QwenAutocompleteConfig = {
   apiKey: "",
   debounceMs: 0,
   maxTokens: 128,
+  maxPromptTokens: 1024,
+  modelTimeout: 150,
+  maxSuffixPercentage: 0.2,
+  prefixPercentage: 0.3,
   temperature: 0.1,
+  cacheEnabled: true,
+  cacheMaxEntries: 1000,
   prefixChars: 12_000,
   suffixChars: 6_000,
   multifileContextEnabled: false,
+  contextLength: 0,
+  recentlyEditedEnabled: false,
+  recentlyEditedInjectIntoPrompt: false,
+  recentlyEditedMaxRanges: 3,
+  recentlyEditedMaxRangeLines: 20,
+  trace: false,
+  logLevel: "off",
+  logPromptPreview: false,
+  logCompletionPreview: true,
 }
 
 const originalConfig = vscode.workspace.getConfiguration
@@ -255,10 +271,25 @@ describe("qwen autocomplete config and prompt", () => {
       model: "qwen-coder-30b0",
       debounceMs: 350,
       maxTokens: 128,
+      maxPromptTokens: 1024,
+      modelTimeout: 150,
+      maxSuffixPercentage: 0.2,
+      prefixPercentage: 0.3,
       temperature: 0.1,
+      cacheEnabled: true,
+      cacheMaxEntries: 1000,
       prefixChars: 12_000,
       suffixChars: 6_000,
       multifileContextEnabled: false,
+      contextLength: 0,
+      recentlyEditedEnabled: false,
+      recentlyEditedInjectIntoPrompt: false,
+      recentlyEditedMaxRanges: 3,
+      recentlyEditedMaxRangeLines: 20,
+      trace: false,
+      logLevel: "off",
+      logPromptPreview: false,
+      logCompletionPreview: true,
     })
   })
 
@@ -267,6 +298,46 @@ describe("qwen autocomplete config and prompt", () => {
     const { readQwenAutocompleteConfig } = await import("../../src/services/qwen-autocomplete/config")
 
     expect(readQwenAutocompleteConfig().debounceMs).toBe(42)
+  })
+
+  it("maps Continue-style prompt budget settings separately from output maxTokens", async () => {
+    stubConfig({
+      "qwen.maxTokens": 9,
+      "qwen.maxPromptTokens": 512,
+      "qwen.prefixPercentage": 0.4,
+      "qwen.maxSuffixPercentage": 0.1,
+      "qwen.modelTimeout": 250,
+      "qwen.cache.enabled": false,
+      "qwen.cache.maxEntries": 12,
+      "qwen.contextLength": 8192,
+      "qwen.context.recentlyEdited.enabled": true,
+      "qwen.context.recentlyEdited.injectIntoPrompt": true,
+      "qwen.context.recentlyEdited.maxRanges": 6,
+      "qwen.context.recentlyEdited.maxRangeLines": 40,
+    })
+    const { readQwenAutocompleteConfig } = await import("../../src/services/qwen-autocomplete/config")
+
+    expect(readQwenAutocompleteConfig()).toMatchObject({
+      maxTokens: 9,
+      maxPromptTokens: 512,
+      prefixPercentage: 0.4,
+      maxSuffixPercentage: 0.1,
+      modelTimeout: 250,
+      cacheEnabled: false,
+      cacheMaxEntries: 12,
+      contextLength: 8192,
+      recentlyEditedEnabled: true,
+      recentlyEditedInjectIntoPrompt: true,
+      recentlyEditedMaxRanges: 6,
+      recentlyEditedMaxRangeLines: 40,
+    })
+  })
+
+  it("clamps invalid qwen cache maxEntries settings safely", async () => {
+    stubConfig({ "qwen.cache.maxEntries": -1 })
+    const { readQwenAutocompleteConfig } = await import("../../src/services/qwen-autocomplete/config")
+
+    expect(readQwenAutocompleteConfig().cacheMaxEntries).toBe(1)
   })
 
   it("constructs initial prefix and suffix from the current file", () => {
@@ -288,7 +359,7 @@ describe("qwen autocomplete config and prompt", () => {
     expect(parts).toEqual({ prefix: "abcdef", suffix: "_rest" })
   })
 
-  it("builds HelperVars-lite full and approximately pruned prefix/suffix", () => {
+  it("builds Continue-style HelperVars and token-budget pruned prefix/suffix", () => {
     const prefix = Array.from({ length: 40 }, (_, index) => `int pre_${index.toString().padStart(4, "0")}_marker = ${index};`).join(
       "\n",
     )
@@ -309,6 +380,10 @@ describe("qwen autocomplete config and prompt", () => {
     })
     expect(helper.fileContents).toBe(document.getText())
     expect(helper.fileLines).toHaveLength(81)
+    expect(helper.helperParityMode).toBe("continue-helpervars-token-budget")
+    expect(helper.tokenizerSource).toBe("llama")
+    expect(tokenizerSourceForModel("qwen-coder-30b0")).toBe("llama")
+    expect(helper.prunedCaretWindow).toBe(helper.prunedPrefix + helper.prunedSuffix)
     expect(helper.fullPrefix).toContain("pre_0000_marker")
     expect(helper.fullSuffix).toContain("suf_0039_marker")
     expect(helper.prunedPrefix).not.toContain("pre_0000_marker")
@@ -809,8 +884,8 @@ describe("KiloQwenInlineCompletionProvider", () => {
     expect((items[0] as unknown as { completeBracketPairs?: boolean }).completeBracketPairs).toBe(true)
   })
 
-  it("uses HelperVars-lite pruned prefix and suffix for the Qwen prompt", async () => {
-    const seen: { prompt?: string } = {}
+  it("uses Continue token-budget pruned prefix and suffix for the Qwen prompt", async () => {
+    const seen: { maxTokens?: number; prompt?: string } = {}
     const prefix = Array.from(
       { length: 600 },
       (_, index) => `int pre_${index.toString().padStart(4, "0")}_marker = ${index};`,
@@ -820,9 +895,10 @@ describe("KiloQwenInlineCompletionProvider", () => {
       (_, index) => `int suf_${index.toString().padStart(4, "0")}_marker = ${index};`,
     ).join("\n")
     const provider = new KiloQwenInlineCompletionProvider({
-      read: () => cfg,
+      read: () => ({ ...cfg, maxPromptTokens: 128, maxTokens: 7 }),
       client: {
         complete: async (input: QwenFimCompleteInput) => {
+          seen.maxTokens = input.maxTokens
           seen.prompt = input.prompt
           return "return ok;"
         },
@@ -838,6 +914,7 @@ describe("KiloQwenInlineCompletionProvider", () => {
     )
 
     expect(items).toHaveLength(1)
+    expect(seen.maxTokens).toBe(7)
     expect(seen.prompt).toContain("<|fim_prefix|>")
     expect(seen.prompt).toContain("<|fim_suffix|>")
     expect(seen.prompt).toContain("<|fim_middle|>")
