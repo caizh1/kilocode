@@ -2,7 +2,7 @@
   "name": "chipmate",
   "displayName": "ChipMate: AI Coding Agent, Copilot, and Autocomplete",
   "description": "Open Source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "icon": "assets/icons/logo-outline-black.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -409,6 +409,10 @@
         "command": "kilo-code.new.takeHeapSnapshot",
         "title": "Take Heap Snapshot",
         "category": "ChipMate"
+      },
+      {
+        "command": "kilo-code.new.checkForUpdates",
+        "title": "Kilo: Check for Updates"
       }
     ],
     "submenus": [
@@ -839,6 +843,49 @@
             "Українська",
             "Italiano"
           ]
+        },
+        "kilo.updateCheck.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable ChipMate update checks from an internal VSIX file service."
+        },
+        "kilo.updateCheck.baseUrl": {
+          "type": "string",
+          "default": "http://10.10.5.22/vscode-plugins/chipmate/",
+          "description": "Base URL for the internal ChipMate VSIX file service."
+        },
+        "kilo.updateCheck.manifestFile": {
+          "type": "string",
+          "default": "latest.json",
+          "description": "Relative manifest path for ChipMate update checks."
+        },
+        "kilo.updateCheck.checkOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check for ChipMate updates after extension startup."
+        },
+        "kilo.updateCheck.intervalHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "description": "Minimum hours between automatic ChipMate update checks and repeated automatic warning notifications."
+        },
+        "kilo.updateCheck.timeoutMs": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 1,
+          "description": "Timeout in milliseconds for ChipMate update manifest and VSIX download requests."
+        },
+        "kilo.updateCheck.codeCliPath": {
+          "type": "string",
+          "default": "code",
+          "description": "Path to the VS Code command-line executable used to install downloaded ChipMate VSIX updates."
+        },
+        "kilo.updateCheck.maxDownloadBytes": {
+          "type": "number",
+          "default": 209715200,
+          "minimum": 1,
+          "description": "Maximum downloaded VSIX size in bytes for ChipMate update checks."
         },
         "kilo-code.new.model.providerID": {
           "type": "string",

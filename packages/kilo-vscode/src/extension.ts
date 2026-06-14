@@ -21,6 +21,7 @@ import { registerToggleAutoApprove } from "./commands/toggle-auto-approve"
 import { registerHeapSnapshot } from "./commands/heap-snapshot"
 import { RemoteStatusService } from "./services/RemoteStatusService"
 import { markWorkspace } from "./util/spotlight"
+import { registerUpdateCheck } from "./services/update-check"
 
 let agentManager: AgentManagerProvider | undefined
 let shuttingDown = false
@@ -507,6 +508,9 @@ export function activate(context: vscode.ExtensionContext) {
       KiloCodeActionProvider.metadata,
     ),
   )
+
+  const updateCheckService = registerUpdateCheck(context)
+  void updateCheckService.checkOnStartup()
 
   // Dispose services when extension deactivates (kills the server)
   context.subscriptions.push({

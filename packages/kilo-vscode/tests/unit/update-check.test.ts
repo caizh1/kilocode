@@ -1,0 +1,309 @@
+import { afterEach, describe, expect, it, mock } from "bun:test"
+import * as vscode from "vscode"
+import * as fs from "node:fs/promises"
+import * as os from "node:os"
+import * as path from "node:path"
+import { createHash } from "node:crypto"
+import {
+  LAST_AUTO_KEY,
+  UpdateCheckService,
+  compareVersions,
+  resolveRelativeUrl,
+} from "../../src/services/update-check"
+
+const INSTALL = "Install Update"
+const RELOAD = "Reload Window"
+const roots: string[] = []
+const services: UpdateCheckService[] = []
+
+type Config = Record<string, unknown>
+
+const api = vscode as unknown as {
+  workspace: {
+    getConfiguration: (section?: string) => { get: <T>(key: string, fallback: T) => T }
+  }
+  window: {
+    showWarningMessage: (message: string) => Promise<unknown>
+    showInformationMessage: (message: string, ...items: unknown[]) => Promise<unknown>
+  }
+  commands: {
+    executeCommand: (command: string) => Promise<unknown>
+  }
+}
+
+const original = {
+  config: api.workspace.getConfiguration,
+  warning: api.window.showWarningMessage,
+  info: api.window.showInformationMessage,
+  command: api.commands.executeCommand,
+}
+
+afterEach(async () => {
+  for (const service of services.splice(0)) service.dispose()
+  for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
+  api.workspace.getConfiguration = original.config
+  api.window.showWarningMessage = original.warning
+  api.window.showInformationMessage = original.info
+  api.commands.executeCommand = original.command
+})
+
+describe("UpdateCheckService", () => {
+  it("does not throw from startup checks when the service is unreachable", async () => {
+    const env = await setup()
+    env.fetch.mockImplementation(async () => {
+      throw new Error("network down")
+    })
+
+    await expect(env.service.checkOnStartup()).resolves.toBeUndefined()
+    expect(env.warnings).toEqual(["Failed to read latest.json: network down"])
+    expect(env.logs.warn[0]).toContain("[Kilo New] Update check failed (manifest):")
+  })
+
+  it("throttles repeated automatic failure warnings inside intervalHours", async () => {
+    const env = await setup()
+    env.fetch.mockImplementation(async () => {
+      throw new Error("network down")
+    })
+
+    await env.service.checkAuto()
+    await env.state.update(LAST_AUTO_KEY, 0)
+    await env.service.checkAuto()
+
+    expect(env.fetch).toHaveBeenCalledTimes(2)
+    expect(env.warnings).toEqual(["Failed to read latest.json: network down"])
+  })
+
+  it("shows manual failure warnings every time and bypasses interval throttling", async () => {
+    const env = await setup()
+    env.fetch.mockImplementation(async () => {
+      throw new Error("network down")
+    })
+
+    await env.service.checkManual()
+    await env.service.checkManual()
+
+    expect(env.fetch).toHaveBeenCalledTimes(2)
+    expect(env.warnings).toEqual([
+      "Failed to read latest.json: network down",
+      "Failed to read latest.json: network down",
+    ])
+  })
+
+  it("reports current version as up to date without downloading", async () => {
+    const env = await setup()
+    env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.16" })))
+
+    await env.service.checkManual()
+
+    expect(env.info[0]?.message).toBe("ChipMate is already up to date.")
+    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it("downloads, verifies, installs, and offers reload for a newer version", async () => {
+    const body = Buffer.from("vsix package")
+    const env = await setup({ info: [INSTALL, RELOAD] })
+    env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.17", sha256: sha(body), vsix: "releases/chipmate.vsix" })))
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+    env.exec.mockResolvedValueOnce({ stdout: "", stderr: "" })
+
+    await env.service.checkManual()
+
+    expect(env.fetch.mock.calls.map((call) => String(call[0]))).toEqual([
+      "http://10.10.5.22/vscode-plugins/chipmate/latest.json",
+      "http://10.10.5.22/vscode-plugins/chipmate/releases/chipmate.vsix",
+    ])
+    expect(env.exec.mock.calls[0]).toEqual([
+      "code",
+      ["--install-extension", env.final("0.0.17"), "--force"],
+      { timeout: 120000 },
+    ])
+    expect(await exists(env.final("0.0.17"))).toBe(true)
+    expect(await exists(`${env.final("0.0.17")}.tmp`)).toBe(false)
+    expect(env.commands).toEqual(["workbench.action.reloadWindow"])
+  })
+
+  it("ignores publisher and name mismatches without prompting", async () => {
+    const env = await setup()
+    env.fetch.mockResolvedValueOnce(json(manifest({ publisher: "other", version: "9.0.0" })))
+
+    await env.service.checkManual()
+
+    expect(env.info).toEqual([])
+    expect(env.warnings).toEqual([])
+    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.logs.log[0]).toContain("does not match chipmate.chipmate")
+  })
+
+  it("deletes the temporary VSIX and skips install when sha256 does not match", async () => {
+    const env = await setup({ info: [INSTALL] })
+    env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.18", sha256: "0".repeat(64) })))
+    env.fetch.mockResolvedValueOnce(new Response("not the expected package", { status: 200 }))
+
+    await env.service.checkManual()
+
+    expect(env.warnings).toEqual(["VSIX sha256 verification failed."])
+    expect(await exists(env.final("0.0.18"))).toBe(false)
+    expect(await exists(`${env.final("0.0.18")}.tmp`)).toBe(false)
+    expect(env.exec).not.toHaveBeenCalled()
+  })
+
+  it("resolves relative VSIX paths and rejects absolute or escaping paths", () => {
+    const base = "http://10.10.5.22/vscode-plugins/chipmate"
+
+    expect(resolveRelativeUrl(base, "chipmate.vsix", "vsix-url").toString()).toBe(
+      "http://10.10.5.22/vscode-plugins/chipmate/chipmate.vsix",
+    )
+    expect(resolveRelativeUrl(base, "releases/chipmate.vsix", "vsix-url").toString()).toBe(
+      "http://10.10.5.22/vscode-plugins/chipmate/releases/chipmate.vsix",
+    )
+    expect(() => resolveRelativeUrl(base, "https://example.com/chipmate.vsix", "vsix-url")).toThrow(
+      "must be relative",
+    )
+    expect(() => resolveRelativeUrl(base, "../chipmate.vsix", "vsix-url")).toThrow("must not escape")
+  })
+
+  it("stops oversized downloads and removes the temporary file", async () => {
+    const env = await setup({ config: { maxDownloadBytes: 3 }, info: [INSTALL] })
+    env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.19" })))
+    env.fetch.mockResolvedValueOnce(new Response("1234", { status: 200 }))
+
+    await env.service.checkManual()
+
+    expect(env.warnings).toEqual(["VSIX download is larger than 3 bytes."])
+    expect(await exists(env.final("0.0.19"))).toBe(false)
+    expect(await exists(`${env.final("0.0.19")}.tmp`)).toBe(false)
+    expect(env.exec).not.toHaveBeenCalled()
+  })
+
+  it("uses codeCliPath and includes a copyable command when installation fails", async () => {
+    const body = Buffer.from("vsix package")
+    const cli = "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+    const env = await setup({ config: { codeCliPath: cli }, info: [INSTALL] })
+    env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.20", sha256: sha(body) })))
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+    env.exec.mockRejectedValueOnce(new Error("code not found"))
+
+    await env.service.checkManual()
+
+    expect(env.exec.mock.calls[0]?.[0]).toBe(cli)
+    expect(env.warnings[0]).toContain("--install-extension")
+    expect(env.warnings[0]).toContain(env.final("0.0.20"))
+    expect(env.warnings[0]).toContain("code not found")
+    expect(await exists(env.final("0.0.20"))).toBe(true)
+  })
+})
+
+describe("update-check version comparison", () => {
+  it("compares dotted versions numerically", () => {
+    expect(compareVersions("0.0.10", "0.0.9")).toBe(1)
+    expect(compareVersions("0.0.9", "0.0.10")).toBe(-1)
+    expect(compareVersions("1.0.0", "1.0.0")).toBe(0)
+  })
+})
+
+async function setup(opts: { config?: Config; info?: unknown[] } = {}) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-update-check-"))
+  roots.push(root)
+  const state = memento()
+  const warnings: string[] = []
+  const info: Array<{ message: string; items: unknown[] }> = []
+  const commands: string[] = []
+  const logs = {
+    log: [] as string[],
+    warn: [] as string[],
+    error: [] as string[],
+  }
+  const fetcher = mock(async () => new Response("", { status: 404 }))
+  const exec = mock(async () => ({ stdout: "", stderr: "" }))
+  const context = {
+    globalState: state,
+    globalStorageUri: vscode.Uri.file(root),
+    extension: { packageJSON: { publisher: "chipmate", name: "chipmate", version: "0.0.16" } },
+    subscriptions: [] as vscode.Disposable[],
+  } as unknown as vscode.ExtensionContext
+
+  api.workspace.getConfiguration = () => ({
+    get: <T>(key: string, fallback: T) => (key in (opts.config ?? {}) ? (opts.config?.[key] as T) : fallback),
+  })
+  api.window.showWarningMessage = async (message) => {
+    warnings.push(message)
+    return undefined
+  }
+  api.window.showInformationMessage = async (message, ...items) => {
+    info.push({ message, items })
+    return opts.info?.shift()
+  }
+  api.commands.executeCommand = async (command) => {
+    commands.push(command)
+    return undefined
+  }
+
+  const service = new UpdateCheckService(context, {
+    fetch: fetcher as unknown as typeof fetch,
+    exec,
+    now: () => 1_000,
+    log: {
+      log: (...parts: unknown[]) => logs.log.push(parts.join(" ")),
+      warn: (...parts: unknown[]) => logs.warn.push(parts.join(" ")),
+      error: (...parts: unknown[]) => logs.error.push(parts.join(" ")),
+    },
+  })
+  services.push(service)
+
+  return {
+    root,
+    state,
+    service,
+    fetch: fetcher,
+    exec,
+    warnings,
+    info,
+    commands,
+    logs,
+    final: (version: string) => path.join(root, "update-check", `chipmate.chipmate-${version}.vsix`),
+  }
+}
+
+function manifest(patch: Partial<Record<keyof ReturnType<typeof baseManifest>, unknown>>) {
+  return { ...baseManifest(), ...patch }
+}
+
+function baseManifest() {
+  return {
+    publisher: "chipmate",
+    name: "chipmate",
+    version: "0.0.16",
+    vsix: "chipmate.vsix",
+    mandatory: false,
+  }
+}
+
+function json(value: unknown): Response {
+  return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } })
+}
+
+function sha(value: Buffer): string {
+  return createHash("sha256").update(value).digest("hex")
+}
+
+async function exists(file: string): Promise<boolean> {
+  try {
+    await fs.stat(file)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function memento() {
+  const values = new Map<string, unknown>()
+  return {
+    get<T>(key: string, fallback?: T): T {
+      return (values.has(key) ? values.get(key) : fallback) as T
+    },
+    async update(key: string, value: unknown): Promise<void> {
+      values.set(key, value)
+    },
+  }
+}
