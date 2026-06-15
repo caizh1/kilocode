@@ -1,14 +1,16 @@
 import type { Ignore } from "ignore"
 import { stat, readFile } from "fs/promises"
 import path from "path"
-import { glob } from "glob"
-import {
-  generateNormalizedAbsolutePath,
-  generateRelativeFilePath,
-  generateRelativeIgnorePath,
-} from "../shared/get-relative-path"
-import { scannerExtensions } from "../shared/supported-extensions"
-import type { CodeBlock, ICodeParser, IEmbedder, IVectorStore, IDirectoryScanner, ScanProgressEvent } from "../interfaces"
+import { generateNormalizedAbsolutePath, generateRelativeFilePath } from "../shared/get-relative-path"
+import type {
+  CodeBlock,
+  ICodeParser,
+  IEmbedder,
+  IVectorStore,
+  IDirectoryScanner,
+  ScanProgressEvent,
+  IndexingScanTarget,
+} from "../interfaces"
 import { createHash } from "crypto"
 import pLimit from "p-limit"
 import { Mutex } from "async-mutex"
@@ -27,11 +29,44 @@ import { Log } from "../../util/log"
 import { sanitizeErrorMessage } from "../shared/validation-helpers"
 import type { IndexingTelemetryMeta, IndexingTelemetryMode, IndexingTelemetryReporter } from "../interfaces/telemetry"
 import type { CodeGraphFileGraph, ICodeGraphStorage, ICodePostingsStorage } from "../codegraph"
-import { isCodeGraphSupportedPath, parseCodeGraphFile } from "../codegraph/parser"
+import { emptyCleanupStats } from "../cleanup"
+import type { IndexingCleanupStats, IndexingCleanupSummary, IndexingCompatibilityDecision } from "../interfaces/cleanup"
+import { isCodeGraphSupportedPath } from "../codegraph/parser"
+import { CodeGraphParserWorkerPool } from "../codegraph/parser/worker-pool"
 import type { RagCheckpointMeta } from "../rag-checkpoint"
 import { fallbackCheckpointMeta, generationForFile, pointForBlock, vectorContext } from "../rag-checkpoint"
+import { discoverScanFiles, type DiscoveryResult } from "./discovery"
 
 const log = Log.create({ service: "indexing-scanner" })
+const CODE_GRAPH_WORKER_CONCURRENCY = 8
+const CODE_GRAPH_WORKER_MAX = 16
+
+type CodeGraphScanMetrics = {
+  files: number
+  reused: number
+  parsed: number
+  workerParsed: number
+  fallbackParsed: number
+  readHashMs: number
+  lookupMs: number
+  parseMs: number
+  graphWriteMs: number
+  postingsMs: number
+}
+
+type CodeGraphUpdateMetrics = {
+  reused: boolean
+  worker: boolean
+  lookupMs: number
+  parseMs: number
+  graphWriteMs: number
+  postingsMs: number
+}
+
+type LocalStorageLifecycle = {
+  cleanupAbandonedArtifacts?: () => Promise<IndexingCleanupStats>
+  ensureCompatible?: () => Promise<IndexingCompatibilityDecision>
+}
 
 export class DirectoryScanner implements IDirectoryScanner {
   private _cancelled = false
@@ -39,10 +74,12 @@ export class DirectoryScanner implements IDirectoryScanner {
   private maxBatchRetries: number
   private runId: string = globalThis.crypto.randomUUID()
   private ragMeta: RagCheckpointMeta | undefined
+  private readonly writeCache: boolean
+  private readonly graphPool = new CodeGraphParserWorkerPool()
 
   constructor(
-    private readonly embedder: IEmbedder,
-    private readonly vectorStore: IVectorStore,
+    private readonly embedder: IEmbedder | undefined,
+    private readonly vectorStore: IVectorStore | undefined,
     private readonly codeParser: ICodeParser,
     private readonly cacheManager: CacheManager,
     private readonly ignoreInstance: Ignore,
@@ -52,9 +89,11 @@ export class DirectoryScanner implements IDirectoryScanner {
     private readonly telemetryMeta?: IndexingTelemetryMeta,
     private readonly graph?: ICodeGraphStorage,
     private readonly postings?: ICodePostingsStorage,
+    opts: { writeCache?: boolean } = {},
   ) {
     this.batchSegmentThreshold = batchSegmentThreshold ?? BATCH_SEGMENT_THRESHOLD
     this.maxBatchRetries = maxBatchRetries ?? MAX_BATCH_RETRIES
+    this.writeCache = opts.writeCache ?? true
   }
 
   private emitFileCount(mode: IndexingTelemetryMode, discovered: number, candidate: number): void {
@@ -88,7 +127,13 @@ export class DirectoryScanner implements IDirectoryScanner {
     })
   }
 
-  private emitError(mode: IndexingTelemetryMode, location: string, err: unknown, retryCount?: number): void {
+  private emitError(
+    mode: IndexingTelemetryMode,
+    location: string,
+    err: unknown,
+    retryCount?: number,
+    file?: string,
+  ): void {
     if (!this.onTelemetry || !this.telemetryMeta) {
       return
     }
@@ -100,6 +145,7 @@ export class DirectoryScanner implements IDirectoryScanner {
       mode,
       location,
       error: sanitizeErrorMessage(msg),
+      file,
       retryCount,
       maxRetries: this.maxBatchRetries,
     })
@@ -123,12 +169,46 @@ export class DirectoryScanner implements IDirectoryScanner {
     this.ragMeta = meta
   }
 
+  public async cleanupAbandonedArtifacts(
+    input: { local?: boolean; vector?: boolean } = {},
+  ): Promise<IndexingCleanupSummary> {
+    const local = input.local !== false
+    const graph = this.graph as (ICodeGraphStorage & LocalStorageLifecycle) | undefined
+    const postings = this.postings as (ICodePostingsStorage & LocalStorageLifecycle) | undefined
+    const codeGraph =
+      local && graph?.cleanupAbandonedArtifacts ? await graph.cleanupAbandonedArtifacts() : emptyCleanupStats()
+    const sidecar =
+      local && postings?.cleanupAbandonedArtifacts ? await postings.cleanupAbandonedArtifacts() : emptyCleanupStats()
+    const vector = input.vector ? await this.vectorStore?.cleanupInactivePoints?.() : undefined
+    return { codeGraph, postings: sidecar, vector }
+  }
+
+  public async ensureCompatible(): Promise<{
+    codeGraph?: IndexingCompatibilityDecision
+    postings?: IndexingCompatibilityDecision
+  }> {
+    const graph = this.graph as (ICodeGraphStorage & LocalStorageLifecycle) | undefined
+    const sidecar = this.postings as (ICodePostingsStorage & LocalStorageLifecycle) | undefined
+    const codeGraph = graph?.ensureCompatible ? await graph.ensureCompatible() : undefined
+    const postings = sidecar?.ensureCompatible ? await sidecar.ensureCompatible() : undefined
+    return { codeGraph, postings }
+  }
+
   /**
    * Updates the batch segment threshold
    * @param newThreshold New batch segment threshold value
    */
   public updateBatchSegmentThreshold(newThreshold: number): void {
     this.batchSegmentThreshold = newThreshold
+  }
+
+  public async discoverCandidateFiles(directory: string, target: IndexingScanTarget): Promise<DiscoveryResult> {
+    return discoverScanFiles({
+      directoryPath: directory,
+      workspacePath: directory,
+      target,
+      ignoreInstance: this.ignoreInstance,
+    })
   }
 
   /**
@@ -146,51 +226,71 @@ export class DirectoryScanner implements IDirectoryScanner {
     onFileParsed?: () => void,
     mode: IndexingTelemetryMode = "full",
     onProgress?: (event: ScanProgressEvent) => void,
-  ): Promise<{ stats: { processed: number; skipped: number }; totalBlockCount: number }> {
+    target: IndexingScanTarget = "all",
+  ): Promise<{
+    stats: { processed: number; skipped: number }
+    totalBlockCount: number
+    candidateFiles: string[]
+    scanStartedAt: number
+    target: IndexingScanTarget
+  }> {
     // reset cooperative cancel flag on new full scan
     this._cancelled = false
+    const graphEnabled = target !== "rag"
+    const ragEnabled = target !== "codeGraph" && !!this.embedder && !!this.vectorStore
+    const started = Date.now()
+    const graphMetrics: CodeGraphScanMetrics = {
+      files: 0,
+      reused: 0,
+      parsed: 0,
+      workerParsed: 0,
+      fallbackParsed: 0,
+      readHashMs: 0,
+      lookupMs: 0,
+      parseMs: 0,
+      graphWriteMs: 0,
+      postingsMs: 0,
+    }
 
     const directoryPath = directory
     // Use the directory path directly as the workspace root
     const scanWorkspace = directoryPath
-    log.info("starting directory scan", { workspacePath: scanWorkspace })
-    await this.beginGraphScan()
+    log.info("starting directory scan", { workspacePath: scanWorkspace, target })
+    if (graphEnabled) {
+      const health = await this.graphPool.health(codeGraphWorkerConcurrency())
+      log.warn("code graph parser worker health", {
+        visible: true,
+        workspacePath: scanWorkspace,
+        healthy: health.healthy,
+        workers: health.workers,
+        path: health.path,
+        mode: health.mode,
+        error: health.error ? sanitizeErrorMessage(health.error) : undefined,
+      })
+      await this.beginGraphScan()
+    }
 
-    // Get all files recursively, filtering out ignored directories via glob
-    const allPaths = await glob("**/*", {
-      cwd: directoryPath,
-      absolute: true,
-      nodir: true,
-      dot: false,
-      ignore: FileIgnore.PATTERNS,
-      maxDepth: Infinity,
-    })
-
-    // Filter by supported extensions, ignore patterns, and excluded directories
-    const supportedPaths = allPaths.filter((filePath) => {
-      const ext = path.extname(filePath).toLowerCase()
-      const relativeFilePath = generateRelativeIgnorePath(filePath, scanWorkspace)
-      if (!relativeFilePath) {
-        return false
-      }
-
-      // Check if file is in an ignored directory using FileIgnore
-      if (FileIgnore.match(relativeFilePath)) {
-        return false
-      }
-
-      return scannerExtensions.includes(ext) && !this.ignoreInstance.ignores(relativeFilePath)
-    })
+    const discovery = await this.discoverCandidateFiles(directoryPath, target)
+    const supportedPaths = discovery.paths
     log.info("discovered candidate files for indexing", {
+      visible: true,
       workspacePath: scanWorkspace,
-      discoveredFiles: allPaths.length,
+      target,
+      discoveryEngine: discovery.engine,
+      discoveryMs: discovery.discoveryMs,
+      discoveredFiles: discovery.rawFiles,
       supportedFiles: supportedPaths.length,
+      patterns: discovery.patterns,
+      fallbackReason: discovery.fallbackReason,
+      ignoredRoots: FileIgnore.FOLDERS,
     })
-    this.emitFileCount(mode, allPaths.length, supportedPaths.length)
+    this.emitFileCount(mode, discovery.rawFiles, supportedPaths.length)
     onProgress?.({
       type: "target",
       totalFiles: supportedPaths.length,
-      graphTotalFiles: supportedPaths.filter((filePath) => isCodeGraphSupportedPath(filePath)).length,
+      graphTotalFiles: graphEnabled
+        ? supportedPaths.filter((filePath) => isCodeGraphSupportedPath(filePath)).length
+        : 0,
     })
 
     // Initialize tracking variables
@@ -232,6 +332,22 @@ export class DirectoryScanner implements IDirectoryScanner {
       return vectorContext(scanWorkspace, this.runId, this.ragMeta ?? fallbackCheckpointMeta(scanWorkspace))
     }
 
+    const trackGraph = (item: CodeGraphUpdateMetrics | undefined) => {
+      if (!item) return
+      graphMetrics.files += 1
+      graphMetrics.lookupMs += item.lookupMs
+      graphMetrics.parseMs += item.parseMs
+      graphMetrics.graphWriteMs += item.graphWriteMs
+      graphMetrics.postingsMs += item.postingsMs
+      if (item.reused) {
+        graphMetrics.reused += 1
+        return
+      }
+      graphMetrics.parsed += 1
+      if (item.worker) graphMetrics.workerParsed += 1
+      else graphMetrics.fallbackParsed += 1
+    }
+
     const fileGeneration = (filePath: string, fileHash: string): string => {
       const meta = this.ragMeta ?? fallbackCheckpointMeta(scanWorkspace)
       const normalizedAbsolutePath = generateNormalizedAbsolutePath(filePath, scanWorkspace)
@@ -256,17 +372,22 @@ export class DirectoryScanner implements IDirectoryScanner {
     }
 
     const readyJobs = () =>
-      [...jobs.values()].filter((job) => job.parsed && job.pending === 0 && !job.failed && !job.completed && !buffered.has(job.filePath))
+      [...jobs.values()].filter(
+        (job) => job.parsed && job.pending === 0 && !job.failed && !job.completed && !buffered.has(job.filePath),
+      )
 
     const completeReadyJobs = async () => {
       for (const job of readyJobs()) {
-        if (!this.vectorStore.activateFileGeneration || !this.vectorStore.deleteInactiveFilePoints) {
+        const store = this.vectorStore
+        if (!store?.activateFileGeneration || !store.deleteInactiveFilePoints) {
           throw new Error("Vector store does not support active generation checkpoints")
         }
-        await this.vectorStore.activateFileGeneration(job.filePath, job.generation, this.runId)
-        await this.vectorStore.deleteInactiveFilePoints(job.filePath, job.generation)
-        this.cacheManager.updateHash(job.filePath, job.fileHash)
-        await this.cacheManager.flush()
+        await store.activateFileGeneration(job.filePath, job.generation, this.runId)
+        await store.deleteInactiveFilePoints(job.filePath, job.generation)
+        if (this.writeCache) {
+          this.cacheManager.updateHash(job.filePath, job.fileHash)
+          await this.cacheManager.flush()
+        }
         job.completed = true
         onFilesIndexed?.(1)
         onProgress?.({ type: "file", filePath: job.filePath })
@@ -359,7 +480,7 @@ export class DirectoryScanner implements IDirectoryScanner {
           return
         }
 
-        const graphSupported = isCodeGraphSupportedPath(filePath)
+        const graphSupported = graphEnabled && isCodeGraphSupportedPath(filePath)
         let deferred = false
         let graphed = false
         const reportGraph = () => {
@@ -369,6 +490,7 @@ export class DirectoryScanner implements IDirectoryScanner {
         }
 
         try {
+          const readStarted = graphSupported ? Date.now() : 0
           // Check file size
           const stats = await stat(filePath)
           if (this._cancelled) {
@@ -389,6 +511,7 @@ export class DirectoryScanner implements IDirectoryScanner {
 
           // Calculate current hash
           const currentFileHash = createHash("sha256").update(content).digest("hex")
+          if (graphSupported) graphMetrics.readHashMs += Date.now() - readStarted
           processedFiles.add(filePath)
 
           // Check against cache
@@ -396,14 +519,28 @@ export class DirectoryScanner implements IDirectoryScanner {
           const isNewFile = !cachedFileHash
           if (cachedFileHash === currentFileHash) {
             // File is unchanged
-            await this.updateFileGraph(scanWorkspace, filePath, content, currentFileHash)
+            if (graphEnabled) {
+              trackGraph(await this.updateFileGraph(scanWorkspace, filePath, content, currentFileHash, mode))
+            }
             reportGraph()
             skippedCount++
             return
           }
 
-          await this.updateFileGraph(scanWorkspace, filePath, content, currentFileHash)
+          if (graphEnabled) {
+            trackGraph(await this.updateFileGraph(scanWorkspace, filePath, content, currentFileHash, mode))
+          }
           reportGraph()
+
+          if (!ragEnabled) {
+            processedCount++
+            onFileParsed?.()
+            if (target === "all" && this.writeCache) {
+              this.cacheManager.updateHash(filePath, currentFileHash)
+              await this.cacheManager.flush()
+            }
+            return
+          }
 
           // File is new or changed - parse it using the injected parser function
           const blocks = await this.codeParser.parseFile(filePath, { content, fileHash: currentFileHash })
@@ -417,7 +554,7 @@ export class DirectoryScanner implements IDirectoryScanner {
           processedCount++
 
           // Process embeddings if configured
-          if (this.embedder && this.vectorStore && blocks.length > 0) {
+          if (ragEnabled && blocks.length > 0) {
             // Add to batch accumulators
             let addedBlocksFromFile = false
             let queued = false
@@ -495,8 +632,10 @@ export class DirectoryScanner implements IDirectoryScanner {
             }
           } else {
             // Only update hash if not being processed in a batch
-            this.cacheManager.updateHash(filePath, currentFileHash)
-            await this.cacheManager.flush()
+            if (this.writeCache) {
+              this.cacheManager.updateHash(filePath, currentFileHash)
+              await this.cacheManager.flush()
+            }
           }
         } catch (error) {
           log.error(`Error processing file ${filePath} in workspace ${scanWorkspace}`, {
@@ -530,6 +669,7 @@ export class DirectoryScanner implements IDirectoryScanner {
       skippedCount,
       pendingBatches: pendingBatchCount,
       cancelled: this._cancelled,
+      target,
     })
 
     // Process any remaining items in batch
@@ -576,6 +716,9 @@ export class DirectoryScanner implements IDirectoryScanner {
           skipped: skippedCount,
         },
         totalBlockCount,
+        candidateFiles: supportedPaths,
+        scanStartedAt: started,
+        target,
       }
     } else {
       await Promise.all(activeBatchPromises)
@@ -598,12 +741,14 @@ export class DirectoryScanner implements IDirectoryScanner {
     for (const cachedFilePath of Object.keys(oldHashes)) {
       if (!processedFiles.has(cachedFilePath)) {
         // File was deleted or is no longer supported/indexed
-        await this.removeFileGraph(cachedFilePath)
-        if (this.vectorStore) {
+        if (graphEnabled) await this.removeFileGraph(cachedFilePath)
+        if (ragEnabled && this.vectorStore) {
           try {
-              await this.vectorStore.deletePointsByFilePath(cachedFilePath)
+            await this.vectorStore.deletePointsByFilePath(cachedFilePath)
+            if (this.writeCache) {
               this.cacheManager.deleteHash(cachedFilePath)
               await this.cacheManager.flush()
+            }
           } catch (error: any) {
             const errorStatus = error?.status || error?.response?.status || error?.statusCode
             const errorMessage = error instanceof Error ? error.message : String(error)
@@ -628,13 +773,17 @@ export class DirectoryScanner implements IDirectoryScanner {
       }
     }
 
-    await this.finishGraphScan()
+    if (graphEnabled) {
+      await this.finishGraphScan()
+      this.logGraphMetrics(scanWorkspace, target, Date.now() - started, graphMetrics)
+    }
 
     log.info("directory scan complete", {
       workspacePath: scanWorkspace,
       processedCount,
       skippedCount,
       totalBlockCount,
+      target,
     })
 
     return {
@@ -643,6 +792,9 @@ export class DirectoryScanner implements IDirectoryScanner {
         skipped: skippedCount,
       },
       totalBlockCount,
+      candidateFiles: supportedPaths,
+      scanStartedAt: started,
+      target,
     }
   }
 
@@ -675,33 +827,66 @@ export class DirectoryScanner implements IDirectoryScanner {
     filePath: string,
     content: string,
     fileHash: string,
-  ): Promise<void> {
-    if (!this.graph) return
-    if (!isCodeGraphSupportedPath(filePath)) return
+    mode: IndexingTelemetryMode,
+  ): Promise<CodeGraphUpdateMetrics | undefined> {
+    if (!this.graph) return undefined
+    if (!isCodeGraphSupportedPath(filePath)) return undefined
 
     try {
+      const lookupStarted = Date.now()
       const existing = await this.graph.getFileGraph(filePath)
+      const lookupMs = Date.now() - lookupStarted
       if (existing?.fileHash === fileHash) {
+        const graphStarted = Date.now()
         await this.graph.upsertFileGraph(filePath, fileHash, existing)
-        await this.updateFilePostings(filePath, fileHash, existing, content)
-        return
+        const graphWriteMs = Date.now() - graphStarted
+        const postingsStarted = Date.now()
+        await this.updateFilePostings(filePath, fileHash, existing, content, mode)
+        return {
+          reused: true,
+          worker: false,
+          lookupMs,
+          parseMs: 0,
+          graphWriteMs,
+          postingsMs: Date.now() - postingsStarted,
+        }
       }
       const normalizedAbsolutePath = generateNormalizedAbsolutePath(filePath, workspace)
       const relativeFilePath = generateRelativeFilePath(normalizedAbsolutePath, workspace)
-      const graph = parseCodeGraphFile({
+      const input = {
         workspacePath: workspace,
         filePath: relativeFilePath,
         content,
         fileHash,
-      })
+      }
+      const parseStarted = Date.now()
+      const parsed = await this.graphPool.parse(input, codeGraphWorkerConcurrency())
+      const parseMs = Date.now() - parseStarted
+      const reason = this.graphPool.takeFallbackReason()
+      if (reason) {
+        log.warn("code graph parser worker fallback active", { error: sanitizeErrorMessage(reason) })
+      }
+      const graphStarted = Date.now()
+      const graph = parsed.graph
       await this.graph.upsertFileGraph(filePath, fileHash, graph)
-      await this.updateFilePostings(filePath, fileHash, graph, content)
+      const graphWriteMs = Date.now() - graphStarted
+      const postingsStarted = Date.now()
+      await this.updateFilePostings(filePath, fileHash, graph, content, mode)
+      return {
+        reused: false,
+        worker: parsed.worker,
+        lookupMs,
+        parseMs,
+        graphWriteMs,
+        postingsMs: Date.now() - postingsStarted,
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log.warn("code graph file update failed", {
         filePath,
         error: sanitizeErrorMessage(msg),
       })
+      this.emitError(mode, "scanner:updateFileGraph", err, undefined, filePath)
       try {
         await this.graph.markFileGraphStatus(filePath, "parse_error", {
           fileHash,
@@ -716,8 +901,36 @@ export class DirectoryScanner implements IDirectoryScanner {
           filePath,
           error: sanitizeErrorMessage(mark instanceof Error ? mark.message : String(mark)),
         })
+        this.emitError(mode, "scanner:markFileGraphStatus", mark, undefined, filePath)
       }
+      return undefined
     }
+  }
+
+  private logGraphMetrics(
+    workspacePath: string,
+    target: IndexingScanTarget,
+    totalMs: number,
+    metrics: CodeGraphScanMetrics,
+  ): void {
+    if (metrics.files === 0) return
+    const filesPerSecond = Math.round((metrics.files / Math.max(1, totalMs)) * 1000 * 10) / 10
+    log.warn("code graph scan performance summary", {
+      workspacePath,
+      target,
+      totalMs,
+      files: metrics.files,
+      reused: metrics.reused,
+      parsed: metrics.parsed,
+      workerParsed: metrics.workerParsed,
+      fallbackParsed: metrics.fallbackParsed,
+      filesPerSecond,
+      readHashMs: metrics.readHashMs,
+      lookupMs: metrics.lookupMs,
+      parseMs: metrics.parseMs,
+      graphWriteMs: metrics.graphWriteMs,
+      postingsMs: metrics.postingsMs,
+    })
   }
 
   private async removeFileGraph(filePath: string): Promise<void> {
@@ -738,6 +951,7 @@ export class DirectoryScanner implements IDirectoryScanner {
     fileHash: string,
     graph: CodeGraphFileGraph,
     content: string,
+    mode: IndexingTelemetryMode,
   ): Promise<void> {
     if (!this.postings) return
     try {
@@ -748,6 +962,7 @@ export class DirectoryScanner implements IDirectoryScanner {
         filePath,
         error: sanitizeErrorMessage(msg),
       })
+      this.emitError(mode, "scanner:updateFilePostings", err, undefined, filePath)
       try {
         await this.postings.markFilePostingsStatus(filePath, "postings_error", {
           fileHash,
@@ -758,6 +973,7 @@ export class DirectoryScanner implements IDirectoryScanner {
           filePath,
           error: sanitizeErrorMessage(mark instanceof Error ? mark.message : String(mark)),
         })
+        this.emitError(mode, "scanner:markFilePostingsStatus", mark, undefined, filePath)
       }
     }
   }
@@ -774,6 +990,7 @@ export class DirectoryScanner implements IDirectoryScanner {
   ): Promise<boolean> {
     // Respect cooperative cancellation
     if (this._cancelled || batchBlocks.length === 0) return false
+    if (!this.embedder || !this.vectorStore) return false
 
     if (batchBlocks.length === 0) {
       log.debug("Skipping empty batch processing")
@@ -861,4 +1078,11 @@ export class DirectoryScanner implements IDirectoryScanner {
     }
     return success
   }
+}
+
+function codeGraphWorkerConcurrency(): number {
+  const raw = globalThis.process?.env?.KILO_CODEGRAPH_WORKER_CONCURRENCY
+  const value = raw ? Number(raw) : CODE_GRAPH_WORKER_CONCURRENCY
+  if (!Number.isFinite(value)) return CODE_GRAPH_WORKER_CONCURRENCY
+  return Math.max(1, Math.min(CODE_GRAPH_WORKER_MAX, Math.floor(value)))
 }

@@ -1,14 +1,17 @@
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import {
+  CODE_POSTINGS_SCHEMA_VERSION,
   CODE_POSTINGS_FIELD_WEIGHTS,
+  CODE_POSTINGS_STORAGE_VERSION_DIR,
   CODE_POSTINGS_TOKENIZER_VERSION,
   type CodePostingsManifest,
-  type CodePostingsTermShard,
 } from "../../../../src/indexing/codegraph"
+import type { CodePostingsTermPartData } from "../../../../src/indexing/codegraph/types"
 import { parseCodeGraphFile } from "../../../../src/indexing/codegraph/parser"
+import { buildPostingsDocument } from "../../../../src/indexing/codegraph/postings/builder"
 import { CodePostingsJsonStorage } from "../../../../src/indexing/codegraph/storage"
 import { tokenizeField, tokenizePath } from "../../../../src/indexing/codegraph/postings/tokenizer"
 
@@ -52,6 +55,28 @@ async function fixture(content = source) {
 }
 
 describe("code postings tokenizer and storage", () => {
+  test("builds postings for prototype-named source tokens", async () => {
+    const workspacePath = await root()
+    const filePath = "drivers/ufs/prototype_tokens.c"
+    const content = `
+// constructor __proto__ toString prototype
+static void __attribute__((__constructor__)) prototype_tokens(void) {}
+`
+    const parsed = graph(workspacePath, filePath, content)
+    const doc = buildPostingsDocument({
+      workspacePath,
+      graph: parsed,
+      content,
+      updatedAt: "2026-06-10T00:00:00.000Z",
+    })
+
+    expect(Object.prototype.hasOwnProperty.call(doc.terms, "constructor")).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(doc.terms, "__proto__")).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(doc.terms, "tostring")).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(doc.terms, "prototype")).toBe(true)
+    expect(doc.terms["constructor"]?.filePath).toBe(filePath)
+  })
+
   test("tokenizes snake case, camel case, macros, registers, paths, and weighted comments", () => {
     expect(tokenizeField("start_device", "symbol").map((item) => item.term)).toEqual(
       expect.arrayContaining(["start_device", "start", "device"]),
@@ -67,6 +92,36 @@ describe("code postings tokenizer and storage", () => {
     )
     expect(CODE_POSTINGS_FIELD_WEIGHTS.comment).toBeLessThan(CODE_POSTINGS_FIELD_WEIGHTS.symbol)
     expect(CODE_POSTINGS_FIELD_WEIGHTS.comment).toBeLessThan(CODE_POSTINGS_FIELD_WEIGHTS.code)
+  })
+
+  test("writes and searches prototype-named tokens without postings errors", async () => {
+    const content = `
+// constructor __proto__ toString prototype
+static void __attribute__((__constructor__)) prototype_tokens(void) {}
+`
+    const ctx = await fixture(content)
+
+    expect((await ctx.storage.search("constructor"))[0]?.filePath).toBe(ctx.filePath)
+    expect((await ctx.storage.search("__proto__"))[0]?.filePath).toBe(ctx.filePath)
+    expect((await ctx.storage.search("prototype"))[0]?.filePath).toBe(ctx.filePath)
+    expect(ctx.storage.status()).toMatchObject({ validFileCount: 1, postingsErrorCount: 0 })
+  })
+
+  test("handles prototype-like file paths in postings manifests", async () => {
+    const workspacePath = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const filePath = "__proto__/constructor.c"
+    const parsed = graph(workspacePath, filePath, source)
+    const storage = new CodePostingsJsonStorage({ workspacePath, cacheDirectory })
+
+    await storage.beginFullScan()
+    await storage.upsertFilePostings(path.join(workspacePath, filePath), parsed.fileHash, parsed, { content: source })
+    await storage.markFullScanComplete()
+
+    expect(await storage.listFiles()).toEqual([filePath])
+    expect((await storage.search("UART0_CTRL_REG"))[0]?.filePath).toBe(filePath)
+    await storage.removeFilePostings(path.join(workspacePath, filePath))
+    expect(storage.status()).toMatchObject({ validFileCount: 0, staleCount: 1 })
   })
 
   test("writes docs plus term shards, searches macro, path, and comment terms without full source", async () => {
@@ -89,7 +144,7 @@ describe("code postings tokenizer and storage", () => {
     })
     const doc = await ctx.storage.getFilePostings(ctx.filePath)
     expect(JSON.stringify(doc)).not.toContain(source)
-    expect((await walk(path.join(ctx.cacheDirectory, "codepostings/v1"))).some((item) => item.includes("/terms/"))).toBe(true)
+    expect((await walk(postingsDir(ctx.cacheDirectory))).some((item) => item.includes("/terms/"))).toBe(true)
   })
 
   test("updates modified files and removes deleted postings", async () => {
@@ -106,6 +161,41 @@ describe("code postings tokenizer and storage", () => {
     await ctx.storage.removeFilePostings(path.join(ctx.workspacePath, ctx.filePath))
     expect(await ctx.storage.search("fatal underrun")).toHaveLength(0)
     expect(ctx.storage.status()).toMatchObject({ validFileCount: 0, staleCount: 1 })
+  })
+
+  test("reuses current full scan postings and prunes unseen files", async () => {
+    const workspacePath = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const main = "drivers/ufs/main_device.c"
+    const old = "drivers/ufs/old_device.c"
+    const storage = new CodePostingsJsonStorage({
+      workspacePath,
+      cacheDirectory,
+      clock: () => new Date("2026-06-10T00:00:00.000Z"),
+    })
+    const parsed = graph(workspacePath, main, source)
+    const oldSource = source.replace("timeout waiting for device_ready error path EIO", "legacyonly deleted token")
+    const stale = graph(workspacePath, old, oldSource)
+
+    await storage.beginFullScan()
+    await storage.upsertFilePostings(path.join(workspacePath, main), parsed.fileHash, parsed, { content: source })
+    await storage.upsertFilePostings(path.join(workspacePath, old), stale.fileHash, stale, { content: oldSource })
+    await storage.markFullScanComplete()
+
+    const manifestPath = path.join(postingsDir(cacheDirectory), "manifest.json")
+    const before = JSON.parse(await readFile(manifestPath, "utf-8")) as CodePostingsManifest
+    const prior = before.records[main]!
+
+    await storage.beginFullScan()
+    await storage.upsertFilePostings(path.join(workspacePath, main), parsed.fileHash, parsed, { content: source })
+    await storage.markFullScanComplete()
+
+    const after = JSON.parse(await readFile(manifestPath, "utf-8")) as CodePostingsManifest
+    expect(Object.keys(after.records).sort()).toEqual([main])
+    expect(after.records[main]?.updatedAt).toBe(prior.updatedAt)
+    expect(after.records[main]?.fileHash).toBe(prior.fileHash)
+    expect((await storage.search("UART0_CTRL_REG"))[0]?.filePath).toBe(main)
+    expect(await storage.search("legacyonly")).toEqual([])
   })
 
   test("skips mismatched, parse_error, unsupported, stale, and postings_error records", async () => {
@@ -129,7 +219,7 @@ describe("code postings tokenizer and storage", () => {
       postingsErrorCount: 1,
     })
 
-    const manifestPath = path.join(ctx.cacheDirectory, "codepostings/v1/manifest.json")
+    const manifestPath = path.join(postingsDir(ctx.cacheDirectory), "manifest.json")
     const manifest = JSON.parse(await readFile(manifestPath, "utf-8")) as CodePostingsManifest
     await writeFile(
       manifestPath,
@@ -144,18 +234,172 @@ describe("code postings tokenizer and storage", () => {
     expect(await mismatched.search("UART0_CTRL_REG")).toHaveLength(0)
   })
 
+  test("reuses compatible postings manifests", async () => {
+    const ctx = await fixture()
+
+    const decision = await ctx.storage.ensureCompatible()
+
+    expect(decision).toEqual({ action: "reuse", reason: "compatible" })
+    expect((await ctx.storage.search("UART0_CTRL_REG"))[0]?.filePath).toBe(ctx.filePath)
+  })
+
+  test("rebuilds postings storage when key compatibility metadata is missing", async () => {
+    const ctx = await fixture()
+    const manifestPath = path.join(postingsDir(ctx.cacheDirectory), "manifest.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf-8")) as Partial<CodePostingsManifest>
+    delete manifest.documentCount
+    await writeFile(manifestPath, JSON.stringify(manifest), "utf-8")
+
+    const decision = await new CodePostingsJsonStorage({
+      workspacePath: ctx.workspacePath,
+      cacheDirectory: ctx.cacheDirectory,
+    }).ensureCompatible()
+
+    expect(decision).toEqual({ action: "rebuild", reason: "missing compatibility metadata" })
+    expect(
+      new CodePostingsJsonStorage({ workspacePath: ctx.workspacePath, cacheDirectory: ctx.cacheDirectory }).status(),
+    ).toMatchObject({
+      postingsSchemaVersion: CODE_POSTINGS_SCHEMA_VERSION,
+      recordCount: 0,
+      needsRebuild: false,
+    })
+  })
+
+  test("ignores staged rebuild manifests from another workspace", async () => {
+    const workspacePath = await root()
+    const other = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const stage = path.join(postingsDir(cacheDirectory), "manifest.rebuild.json")
+
+    await mkdir(path.dirname(stage), { recursive: true })
+    await writeFile(
+      stage,
+      JSON.stringify({
+        workspacePath: other,
+        postingsSchemaVersion: 1,
+        tokenizerVersion: CODE_POSTINGS_TOKENIZER_VERSION,
+        graphSchemaVersion: 1,
+        parserVersion: 1,
+        dataGeneration: "foreign",
+        documentCount: 1,
+        updatedAt: "2026-06-10T00:00:00.000Z",
+        diagnostics: [],
+        records: {
+          "foreign.c": {
+            filePath: "foreign.c",
+            docFile: "docs/foreign/foreign.json",
+            status: "ok",
+            fileHash: "foreign",
+            documentLength: 1,
+            updatedAt: "2026-06-10T00:00:00.000Z",
+          },
+        },
+        docParts: [],
+        termParts: [],
+      }),
+      "utf-8",
+    )
+
+    const storage = new CodePostingsJsonStorage({ workspacePath, cacheDirectory })
+    await storage.beginFullScan()
+    await storage.markFullScanComplete()
+
+    expect(storage.status()).toMatchObject({
+      workspacePath,
+      recordCount: 0,
+      validFileCount: 0,
+    })
+    expect(await storage.search("foreign")).toEqual([])
+  })
+
+  test("cleans only same-workspace abandoned postings artifacts", async () => {
+    const ctx = await fixture()
+    const dir = postingsDir(ctx.cacheDirectory)
+    const manifestPath = path.join(dir, "manifest.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf-8")) as CodePostingsManifest
+    const active = path.join(dir, manifest.docParts![0]!.path)
+    const stage = path.join(dir, "manifest.rebuild.json")
+    const staleDoc = path.join(dir, "docs/orphan/dead.json")
+    const staleTerm = path.join(dir, "terms/orphan/aa/dead.json")
+    const extra = path.join(dir, "docs", manifest.dataGeneration!, "extra.json")
+    const settings = path.join(ctx.cacheDirectory, "settings/keep.json")
+
+    await mkdir(path.dirname(staleDoc), { recursive: true })
+    await mkdir(path.dirname(staleTerm), { recursive: true })
+    await mkdir(path.dirname(extra), { recursive: true })
+    await mkdir(path.dirname(settings), { recursive: true })
+    await writeFile(stage, JSON.stringify({ ...manifest, records: {} }), "utf-8")
+    await writeFile(staleDoc, "{}", "utf-8")
+    await writeFile(staleTerm, "{}", "utf-8")
+    await writeFile(extra, "{}", "utf-8")
+    await writeFile(settings, "{}", "utf-8")
+
+    const stats = await ctx.storage.cleanupAbandonedArtifacts()
+
+    expect(await exists(active)).toBe(true)
+    expect(await exists(settings)).toBe(true)
+    expect(await exists(stage)).toBe(false)
+    expect(await exists(staleDoc)).toBe(false)
+    expect(await exists(staleTerm)).toBe(false)
+    expect(await exists(extra)).toBe(false)
+    expect((await ctx.storage.search("UART0_CTRL_REG"))[0]?.filePath).toBe(ctx.filePath)
+    expect(stats.filesDeleted + stats.directoriesDeleted).toBeGreaterThan(0)
+  })
+
+  test("skips postings cleanup when active manifest belongs to another workspace", async () => {
+    const workspacePath = await root()
+    const other = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const dir = postingsDir(cacheDirectory)
+    const stale = path.join(dir, "docs/orphan/dead.json")
+
+    await mkdir(path.dirname(stale), { recursive: true })
+    await writeFile(stale, "{}", "utf-8")
+    await writeFile(
+      path.join(dir, "manifest.json"),
+      JSON.stringify({
+        workspacePath: other,
+        postingsSchemaVersion: 1,
+        tokenizerVersion: CODE_POSTINGS_TOKENIZER_VERSION,
+        graphSchemaVersion: 1,
+        parserVersion: 1,
+        dataGeneration: "foreign",
+        documentCount: 0,
+        updatedAt: "2026-06-10T00:00:00.000Z",
+        diagnostics: [],
+        records: {},
+        docParts: [],
+        termParts: [],
+      }),
+      "utf-8",
+    )
+
+    const storage = new CodePostingsJsonStorage({ workspacePath, cacheDirectory })
+    const stats = await storage.cleanupAbandonedArtifacts()
+
+    expect(await exists(stale)).toBe(true)
+    expect(stats.skipped).toContain("codepostings: active manifest workspace mismatch")
+  })
+
   test("omits bm25 hits without line ranges and reports diagnostics", async () => {
     const ctx = await fixture()
-    const term = (await walk(path.join(ctx.cacheDirectory, "codepostings/v1/terms"))).find((item) => item.endsWith(".json"))
+    const term = (await walk(path.join(postingsDir(ctx.cacheDirectory), "terms"))).find((item) =>
+      item.endsWith(".json"),
+    )
     expect(term).toBeDefined()
-    const shard = JSON.parse(await readFile(term!, "utf-8")) as CodePostingsTermShard
-    for (const doc of Object.values(shard.documents)) {
+    const part = JSON.parse(await readFile(term!, "utf-8")) as CodePostingsTermPartData
+    const [match, docs] = Object.entries(part.terms)[0]!
+    for (const doc of docs) {
       doc.ranges = [{ ...doc.ranges[0]!, startLine: undefined as unknown as number }]
     }
-    await writeFile(term!, JSON.stringify(shard), "utf-8")
+    await writeFile(term!, JSON.stringify(part), "utf-8")
 
-    const diagnostics: NonNullable<Parameters<typeof ctx.storage.search>[1]>["diagnostics"] = []
-    const result = await ctx.storage.search(shard.term, { diagnostics })
+    const storage = new CodePostingsJsonStorage({
+      workspacePath: ctx.workspacePath,
+      cacheDirectory: ctx.cacheDirectory,
+    })
+    const diagnostics: NonNullable<Parameters<typeof storage.search>[1]>["diagnostics"] = []
+    const result = await storage.search(match, { diagnostics })
 
     expect(result).toEqual([])
     expect(diagnostics).toEqual(
@@ -168,6 +412,10 @@ describe("code postings tokenizer and storage", () => {
     )
   })
 })
+
+function postingsDir(cacheDirectory: string): string {
+  return path.join(cacheDirectory, "codepostings", CODE_POSTINGS_STORAGE_VERSION_DIR)
+}
 
 async function walk(dir: string): Promise<string[]> {
   const out: string[] = []
@@ -190,4 +438,14 @@ function fnv(value: string, seed: number): string {
     out = Math.imul(out, 0x01000193)
   }
   return (out >>> 0).toString(16).padStart(8, "0")
+}
+
+async function exists(file: string): Promise<boolean> {
+  try {
+    await access(file)
+    return true
+  } catch (err) {
+    void err
+    return false
+  }
 }

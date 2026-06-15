@@ -21,6 +21,7 @@ import { Question } from "@/question"
 // kilocode_change start
 import { KiloSessionProcessor, type ReviewTelemetry } from "@/kilocode/session/processor"
 import { KiloSessionOverflow } from "@/kilocode/session/overflow"
+import { KiloSessionThinking } from "@/kilocode/session/thinking"
 import { Suggestion } from "@/kilocode/suggestion"
 import { NotFoundError } from "@/storage/storage"
 // kilocode_change end
@@ -901,10 +902,12 @@ export const layer: Layer.Layer<
             ctx.reasoningMap = {}
             ctx.step = { reasoning: false, text: false, tool: false } // kilocode_change
             // kilocode_change start
-            const stream = llm.stream({
-              ...streamInput,
-              preflight: !ctx.assistantMessage.summary,
-            })
+            const stream = KiloSessionThinking.stream(
+              llm.stream({
+                ...streamInput,
+                preflight: !ctx.assistantMessage.summary,
+              }),
+            )
             // kilocode_change end
 
             yield* stream.pipe(

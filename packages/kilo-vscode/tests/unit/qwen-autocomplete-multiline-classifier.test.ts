@@ -57,13 +57,17 @@ describe("qwen multiline classifier parity", () => {
   it("follows Continue always and never option branches", () => {
     const state = helper("int main(void) {\n  ")
 
-    expect(classifyQwenMultiline({ helper: state, position: new vscode.Position(1, 2), multilineCompletions: "always" })).toMatchObject({
+    expect(
+      classifyQwenMultiline({ helper: state, position: new vscode.Position(1, 2), multilineCompletions: "always" }),
+    ).toMatchObject({
       allowed: true,
       blockedReason: "none",
       mode: "always",
       source: "option",
     })
-    expect(classifyQwenMultiline({ helper: state, position: new vscode.Position(1, 2), multilineCompletions: "never" })).toMatchObject({
+    expect(
+      classifyQwenMultiline({ helper: state, position: new vscode.Position(1, 2), multilineCompletions: "never" }),
+    ).toMatchObject({
       allowed: false,
       blockedReason: "option-never",
       mode: "never",

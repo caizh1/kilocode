@@ -25,6 +25,7 @@ export type QueryEvidenceInput = {
 
 export type Request =
   | { type: "request"; id: number; method: "init"; input: InitInput }
+  | { type: "request"; id: number; method: "updateConfig"; input: IndexingConfigInput }
   | { type: "request"; id: number; method: "search"; input: { query: string; directoryPrefix?: string } }
   | { type: "request"; id: number; method: "queryEvidence"; input: QueryEvidenceInput }
   | { type: "request"; id: number; method: "codeGraphStatus"; input: undefined }
@@ -32,6 +33,7 @@ export type Request =
 
 export type Result =
   | { type: "result"; id: number; method: "init"; ok: true; value: IndexingStatus }
+  | { type: "result"; id: number; method: "updateConfig"; ok: true; value: IndexingStatus }
   | { type: "result"; id: number; method: "search"; ok: true; value: VectorStoreSearchResult[] }
   | { type: "result"; id: number; method: "queryEvidence"; ok: true; value: QueryEvidenceResult }
   | { type: "result"; id: number; method: "codeGraphStatus"; ok: true; value: CodeGraphSidecarStatus }

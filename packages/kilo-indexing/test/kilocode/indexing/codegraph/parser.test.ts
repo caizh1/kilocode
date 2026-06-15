@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtemp } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { CODE_GRAPH_SHORT_SNIPPET_MAX_CHARS } from "../../../../src/indexing/codegraph"
 import { isCodeGraphSupportedPath, parseCodeGraphFile } from "../../../../src/indexing/codegraph/parser"
+import {
+  CodeGraphParserWorkerPool,
+  resolveCodeGraphParserWorkerPath,
+} from "../../../../src/indexing/codegraph/parser/worker-pool"
 
 const source = `
 #include <stdint.h>
@@ -113,5 +120,94 @@ describe("C/C++ code graph parser", () => {
         fileHash: "hash-1",
       }),
     ).toThrow("Unsupported code graph file extension")
+  })
+
+  test("parses through the worker pool with synchronous fallback available", async () => {
+    const pool = new CodeGraphParserWorkerPool()
+    try {
+      const result = await pool.parse(
+        {
+          workspacePath: "/tmp/ws",
+          filePath: "src/driver.c",
+          content: source,
+          fileHash: "hash-1",
+          updatedAt: "2026-06-10T00:00:00.000Z",
+        },
+        2,
+      )
+
+      expect(result.graph.functions.map((item) => item.name)).toEqual(["work"])
+      expect(typeof result.worker).toBe("boolean")
+    } finally {
+      pool.dispose()
+    }
+  })
+
+  test("resolves packaged relative parser worker paths from the binary directory", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "codegraph-worker-"))
+    const info = resolveCodeGraphParserWorkerPath({ workerPath: "codegraph-parser-worker.mjs", baseDir: dir })
+
+    expect(info.mode).toBe("packaged")
+    expect(info.path).toBe(join(dir, "codegraph-parser-worker.mjs"))
+    expect(info.exists).toBe(false)
+  })
+
+  test("reports healthy packaged parser workers", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "codegraph-worker-"))
+    await Bun.write(
+      join(dir, "codegraph-parser-worker.mjs"),
+      [
+        'import { parentPort } from "node:worker_threads"',
+        'parentPort.on("message", (msg) => {',
+        '  if (msg.type === "health") parentPort.postMessage({ id: msg.id, ok: true, data: { healthy: true } })',
+        "})",
+        "",
+      ].join("\n"),
+    )
+    const pool = new CodeGraphParserWorkerPool({
+      workerPath: "codegraph-parser-worker.mjs",
+      baseDir: dir,
+      timeoutMs: 1_000,
+    })
+    try {
+      const health = await pool.health(1)
+      expect(health).toMatchObject({
+        healthy: true,
+        workers: 1,
+        mode: "packaged",
+        path: join(dir, "codegraph-parser-worker.mjs"),
+      })
+    } finally {
+      pool.dispose()
+    }
+  })
+
+  test("falls back once when the packaged parser worker is missing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "codegraph-worker-"))
+    const pool = new CodeGraphParserWorkerPool({
+      workerPath: "missing-worker.mjs",
+      baseDir: dir,
+      timeoutMs: 200,
+    })
+    try {
+      const result = await pool.parse(
+        {
+          workspacePath: "/tmp/ws",
+          filePath: "src/driver.c",
+          content: source,
+          fileHash: "hash-1",
+          updatedAt: "2026-06-10T00:00:00.000Z",
+        },
+        1,
+      )
+      const first = pool.takeFallbackReason()
+
+      expect(result.worker).toBe(false)
+      expect(result.graph.functions.map((item) => item.name)).toEqual(["work"])
+      expect(first).toContain("missing-worker.mjs")
+      expect(pool.takeFallbackReason()).toBeUndefined()
+    } finally {
+      pool.dispose()
+    }
   })
 })

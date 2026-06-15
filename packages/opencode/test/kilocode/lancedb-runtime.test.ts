@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 const entry = "file:///tmp/kilo-cache/node_modules/@lancedb/lancedb/dist/index.js"
-const add = mock(async () => ({ directory: "/tmp/kilo-cache", entrypoint: entry }))
+const add = mock(
+  async (): Promise<{ directory: string; entrypoint: string | undefined }> => ({
+    directory: "/tmp/kilo-cache",
+    entrypoint: entry,
+  }),
+)
 const real = await import("@opencode-ai/core/npm")
 
 mock.module("@opencode-ai/core/npm", () => ({
@@ -46,6 +51,16 @@ describe("LanceDBRuntime", () => {
 
     expect(add).toHaveBeenCalledWith("@lancedb/lancedb@0.26.2")
     expect(process.env[env]).toBe(entry)
+  })
+
+  test("fails fast when the installed package has no import entrypoint", async () => {
+    const { LanceDBRuntime } = await import("../../src/kilocode/lancedb")
+    add.mockImplementationOnce(async () => ({ directory: "/tmp/kilo-cache", entrypoint: undefined }))
+
+    await expect(LanceDBRuntime.ensure("lancedb")).rejects.toThrow(
+      "Failed to resolve @lancedb/lancedb@0.26.2 import entrypoint",
+    )
+    expect(process.env[env]).toBeUndefined()
   })
 
   test("exposes every LanceDB package that must stay external to bun compile", async () => {

@@ -14,6 +14,7 @@ import SettingsRow from "./SettingsRow"
 import { DEFAULT_SPEECH_TO_TEXT_MODEL } from "../../../../src/speech-to-text/models"
 import { hasSpeechToTextAccess, selectedSpeechToTextModel } from "../speech-to-text/availability"
 import { SPEECH_TO_TEXT_MODEL_OPTIONS } from "../speech-to-text/model-selector"
+import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 
 interface ShareOption {
   value: string
@@ -33,6 +34,7 @@ const ExperimentalTab: Component = () => {
   const server = useServer()
   const vscode = useVSCode()
   const [active, setActive] = createSignal(false)
+  const internal = isInternalOfflineBuild()
 
   const handler = (msg: ExtensionMessage) => {
     if (msg.type === "remoteStatus") {
@@ -177,35 +179,37 @@ const ExperimentalTab: Component = () => {
           </Switch>
         </SettingsRow>
 
-        <SettingsRow
-          title={language.t("settings.experimental.speechToTextModel.title")}
-          description={
-            kiloReady()
-              ? language.t("settings.experimental.speechToTextModel.description")
-              : language.t("settings.experimental.speechToText.disabledDescription")
-          }
-        >
-          <Tooltip
-            value={language.t("settings.experimental.speechToText.disabledDescription")}
-            placement="top"
-            inactive={kiloReady()}
+        <Show when={!internal}>
+          <SettingsRow
+            title={language.t("settings.experimental.speechToTextModel.title")}
+            description={
+              kiloReady()
+                ? language.t("settings.experimental.speechToTextModel.description")
+                : language.t("settings.experimental.speechToText.disabledDescription")
+            }
           >
-            <Select
-              options={SPEECH_TO_TEXT_MODEL_OPTIONS}
-              current={SPEECH_TO_TEXT_MODEL_OPTIONS.find((item) => item.value === speechModel())}
-              value={(item) => item.value}
-              label={(item) => `${item.label} (${item.provider})`}
-              onSelect={(item) =>
-                updateExperimental("speech_to_text_model", item?.value ?? DEFAULT_SPEECH_TO_TEXT_MODEL.id)
-              }
-              variant="secondary"
-              size="small"
-              triggerVariant="settings"
-              disabled={!kiloReady()}
-              placeholder={DEFAULT_SPEECH_TO_TEXT_MODEL.label}
-            />
-          </Tooltip>
-        </SettingsRow>
+            <Tooltip
+              value={language.t("settings.experimental.speechToText.disabledDescription")}
+              placement="top"
+              inactive={kiloReady()}
+            >
+              <Select
+                options={SPEECH_TO_TEXT_MODEL_OPTIONS}
+                current={SPEECH_TO_TEXT_MODEL_OPTIONS.find((item) => item.value === speechModel())}
+                value={(item) => item.value}
+                label={(item) => `${item.label} (${item.provider})`}
+                onSelect={(item) =>
+                  updateExperimental("speech_to_text_model", item?.value ?? DEFAULT_SPEECH_TO_TEXT_MODEL.id)
+                }
+                variant="secondary"
+                size="small"
+                triggerVariant="settings"
+                disabled={!kiloReady()}
+                placeholder={DEFAULT_SPEECH_TO_TEXT_MODEL.label}
+              />
+            </Tooltip>
+          </SettingsRow>
+        </Show>
 
         <SettingsRow
           title={language.t("settings.experimental.continueOnDeny.title")}

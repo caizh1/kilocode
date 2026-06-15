@@ -127,9 +127,16 @@ export async function queryGraphEvidence(input: Planner): Promise<QueryEvidenceR
   }
 
   const planned = plan(input.query, graphs, diagnostics)
-  const refs = dedupe(planned).sort((left, right) => right.rank - left.rank || left.filePath.localeCompare(right.filePath))
+  const refs = dedupe(planned).sort(
+    (left, right) => right.rank - left.rank || left.filePath.localeCompare(right.filePath),
+  )
   const errors = buildErrorPaths({ query: input.query, refs, budget: input.budget })
-  const states = buildStateEvidence({ query: input.query, refs: [...refs, ...errors.refs], errorPaths: errors.paths, budget: input.budget })
+  const states = buildStateEvidence({
+    query: input.query,
+    refs: [...refs, ...errors.refs],
+    errorPaths: errors.paths,
+    budget: input.budget,
+  })
   const ranked = states.trace.enabled
     ? dedupe([
         ...states.refs.map((item) => ({
@@ -145,16 +152,23 @@ export async function queryGraphEvidence(input: Planner): Promise<QueryEvidenceR
         ...refs,
       ]).sort((left, right) => right.rank - left.rank || left.filePath.localeCompare(right.filePath))
     : errors.trace.enabled
-    ? dedupe([
-        ...errors.refs.map((item) => ({
-          ...item,
-          rank: rankError(item),
-        })),
-        ...refs,
-      ]).sort((left, right) => right.rank - left.rank || left.filePath.localeCompare(right.filePath))
-    : refs
-  const active = states.trace.enabled && states.refs.length === 0 ? [] : errors.trace.enabled && errors.refs.length === 0 ? [] : ranked
-  const kept = active.slice(0, input.budget.maxEvidenceItems).map((item) => limitSnippet(item, input.budget.maxSnippetCharsPerItem))
+      ? dedupe([
+          ...errors.refs.map((item) => ({
+            ...item,
+            rank: rankError(item),
+          })),
+          ...refs,
+        ]).sort((left, right) => right.rank - left.rank || left.filePath.localeCompare(right.filePath))
+      : refs
+  const active =
+    states.trace.enabled && states.refs.length === 0
+      ? []
+      : errors.trace.enabled && errors.refs.length === 0
+        ? []
+        : ranked
+  const kept = active
+    .slice(0, input.budget.maxEvidenceItems)
+    .map((item) => limitSnippet(item, input.budget.maxSnippetCharsPerItem))
   const keptIds = new Set(kept.map((item) => item.id))
   const paths = errors.paths.filter((item) => item.backingEvidenceRefs.some((id) => keptIds.has(id)))
   const state = finalizeStateEvidence(states, kept)
@@ -266,15 +280,17 @@ function plan(query: string, graphs: CodeGraphFileGraph[], diagnostics: QueryEvi
   for (const graph of graphs) {
     if (q.includes(graph.filePath.toLowerCase()) || q.includes(path.basename(graph.filePath).toLowerCase())) {
       const range = firstRange(graph)
-      refs.push(ref({
-        graph,
-        kind: "file",
-        range,
-        rank: 100,
-        reason: "file path matched graph record",
-        confidence: "high",
-        displayName: graph.filePath,
-      }))
+      refs.push(
+        ref({
+          graph,
+          kind: "file",
+          range,
+          rank: 100,
+          reason: "file path matched graph record",
+          confidence: "high",
+          displayName: graph.filePath,
+        }),
+      )
     }
 
     for (const item of graph.functions) {
@@ -410,7 +426,8 @@ function callRefs(
   const q = query.toLowerCase()
   const refs: Candidate[] = []
   const wantsCallers = /\b(callers?|who calls|caller)\b/i.test(query) || q.includes("谁调用") || q.includes("调用方")
-  const wantsCallees = !wantsCallers && (/\b(callees?|calls|called functions|what does)\b/i.test(query) || q.includes("调用了谁"))
+  const wantsCallees =
+    !wantsCallers && (/\b(callees?|calls|called functions|what does)\b/i.test(query) || q.includes("调用了谁"))
   const wantsSites = /\bcall sites?\b/i.test(query) || q.includes("调用点")
   if (!wantsCallers && !wantsCallees && !wantsSites) return refs
 
@@ -421,7 +438,9 @@ function callRefs(
       const target = wantsCallees ? caller : callee
       if (!has(words, target) && !wantsSites) continue
       if (wantsSites && !has(words, caller) && !has(words, callee)) continue
-      const def = wantsCallees ? funcs.find((item) => item.fn.name === callee) : funcs.find((item) => item.fn.name === caller)
+      const def = wantsCallees
+        ? funcs.find((item) => item.fn.name === callee)
+        : funcs.find((item) => item.fn.name === caller)
       const next = ranged(graph, call, diagnostics, "call", () =>
         ref({
           graph,
@@ -594,7 +613,12 @@ function ranged<T extends Partial<CodeGraphLineRange>>(
 }
 
 function rangeOk(item: Partial<CodeGraphLineRange>): item is CodeGraphLineRange {
-  return Number.isFinite(item.startLine) && Number.isFinite(item.endLine) && item.startLine! > 0 && item.endLine! >= item.startLine!
+  return (
+    Number.isFinite(item.startLine) &&
+    Number.isFinite(item.endLine) &&
+    item.startLine! > 0 &&
+    item.endLine! >= item.startLine!
+  )
 }
 
 function firstRange(graph: CodeGraphFileGraph): CodeGraphLineRange {
@@ -895,7 +919,9 @@ function format(input: {
     ...(input.diagnostics.length
       ? [
           "<diagnostics>",
-          ...input.diagnostics.map((item) => `- ${xml(item.name)}: ${xml(item.reason)}${item.filePath ? ` file=${xml(item.filePath)}` : ""}`),
+          ...input.diagnostics.map(
+            (item) => `- ${xml(item.name)}: ${xml(item.reason)}${item.filePath ? ` file=${xml(item.filePath)}` : ""}`,
+          ),
           "</diagnostics>",
         ]
       : []),
@@ -908,13 +934,17 @@ function limitations(errors: ErrorPathBuildResult, states: StateBuildResult): st
     "Graph-only mode reads valid C/C++ graph records only. BM25, vector retrieval, semantic_search merge, module summaries, and rerank are not used."
   const suffix: string[] = []
   if (errors.trace.enabled && errors.paths.length === 0) {
-    suffix.push("No source-backed error/cleanup path evidence was returned; do not infer cleanup order, return code, or failure behavior.")
+    suffix.push(
+      "No source-backed error/cleanup path evidence was returned; do not infer cleanup order, return code, or failure behavior.",
+    )
   }
   if (errors.trace.enabled && errors.paths.length > 0) {
     suffix.push(...errors.paths.flatMap((item) => item.limitations))
   }
   if (states.trace.enabled && states.transitions.length === 0 && states.flows.length === 0) {
-    suffix.push("No source-backed candidate state/flow/impact evidence was returned; do not infer states, transitions, order, or impact scope.")
+    suffix.push(
+      "No source-backed candidate state/flow/impact evidence was returned; do not infer states, transitions, order, or impact scope.",
+    )
   }
   if (states.trace.enabled) suffix.push(...states.trace.limitations)
   if (suffix.length === 0) return base
@@ -933,7 +963,7 @@ function suggestion(errors: ErrorPathBuildResult, states: StateBuildResult): str
 
 function trim(text: string, max: number): string {
   if (text.length <= max) return text
-  const marker = "\n<truncated reason=\"maxPackChars\" />"
+  const marker = '\n<truncated reason="maxPackChars" />'
   if (max <= marker.length) return marker.slice(0, max)
   return `${text.slice(0, max - marker.length)}${marker}`
 }
@@ -1023,11 +1053,7 @@ function fnv(value: string, seed: number): string {
 }
 
 function xml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;")
 }
 
 function emptySummaries() {

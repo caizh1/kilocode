@@ -14,7 +14,7 @@ import { showToast } from "@kilocode/kilo-ui/toast"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useServer } from "../../context/server"
-import { formatIndexingPipelineLabel, useIndexing } from "../../context/indexing"
+import { indexingPipelineDescription, useIndexing } from "../../context/indexing"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
 import { useWorktreeMode } from "../../context/worktree-mode"
@@ -56,14 +56,12 @@ const reviewDrafts = new Map<string, ReviewComment[]>()
 const imageDrafts = new Map<string, ImageAttachment[]>()
 
 const IndexingProgressButton: Component<{
-  label: string
   title: string
   icon: "graph" | "database"
   fillAxis: "horizontal" | "vertical"
   status: () => IndexingPipelineStatus
   onClick: () => void
 }> = (props) => {
-  const desc = () => formatIndexingPipelineLabel(props.label, props.status())
   const fill = () => {
     const status = props.status()
     if (status.state === "Disabled" || status.state === "Error") return 0
@@ -82,7 +80,7 @@ const IndexingProgressButton: Component<{
         variant="ghost"
         size="small"
         onClick={props.onClick}
-        aria-label={desc()}
+        aria-label={props.title}
         class="prompt-indexing-button"
       >
         <span class="prompt-indexing-codicon-stack" aria-hidden="true">
@@ -127,8 +125,8 @@ const IndexingProgressTooltip: Component<{
           <strong>{formatScanTime(status().lastFullScanAt)}</strong>
         </div>
       </Show>
-      <Show when={status().detail || status().message}>
-        <div class="prompt-indexing-tooltip__detail">{status().detail || status().message}</div>
+      <Show when={indexingPipelineDescription(status())}>
+        <div class="prompt-indexing-tooltip__detail">{indexingPipelineDescription(status())}</div>
       </Show>
     </div>
   )
@@ -1180,6 +1178,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 size="small"
                 onClick={() => session.clearModelOverride(sid())}
                 aria-label={language.t("prompt.action.resetModel")}
+                class="prompt-selector-reset"
               >
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" />
@@ -1191,16 +1190,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         <div class="prompt-input-hint-actions">
           <Show when={features().indexing}>
             <IndexingProgressButton
-              label="CG"
-              title="Code Graph"
+              title="CodeGraph index"
               icon="graph"
               fillAxis="horizontal"
               status={() => indexing.pipelines().codeGraph}
               onClick={handleOpenIndexingSettings}
             />
             <IndexingProgressButton
-              label="RAG"
-              title="RAG Index"
+              title="RAG index"
               icon="database"
               fillAxis="vertical"
               status={() => indexing.pipelines().rag}

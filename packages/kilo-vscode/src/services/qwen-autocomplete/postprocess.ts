@@ -56,7 +56,10 @@ function processCodestral(completion: string, input: QwenPostprocessInput): stri
 }
 
 function processQwen3(completion: string): string {
-  return completion.replace(/<think>.*?<\/think>/s, "").replace(/<\/think>/, "").replace(/^\n+|\n+$/g, "")
+  return completion
+    .replace(/<think>.*?<\/think>/s, "")
+    .replace(/<\/think>/, "")
+    .replace(/^\n+|\n+$/g, "")
 }
 
 function processGranite(completion: string, prefix: string): string {

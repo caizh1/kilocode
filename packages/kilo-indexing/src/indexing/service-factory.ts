@@ -23,7 +23,12 @@ import type { CodeIndexConfigManager } from "./config-manager"
 import type { CacheManager } from "./cache-manager"
 import type { IndexingTelemetryMeta, IndexingTelemetryReporter } from "./interfaces/telemetry"
 import type { RagCheckpointMeta } from "./rag-checkpoint"
-import { RAG_CHECKPOINT_SCHEMA_VERSION, RAG_CHUNKER_VERSION, RAG_PARSER_VERSION } from "./rag-checkpoint"
+import {
+  fallbackCheckpointMeta,
+  RAG_CHECKPOINT_SCHEMA_VERSION,
+  RAG_CHUNKER_VERSION,
+  RAG_PARSER_VERSION,
+} from "./rag-checkpoint"
 import {
   BATCH_SEGMENT_THRESHOLD,
   OLLAMA_EMBEDDER_REQUEST_TIMEOUT_MS,
@@ -225,20 +230,22 @@ export class CodeIndexServiceFactory {
       embedderModel: profile.modelId,
       embeddingDimension: profile.dimension,
       vectorStoreProvider: config.vectorStoreProvider ?? "lancedb",
-      collectionName: vectorStore.getCollectionName?.() ?? `${config.vectorStoreProvider ?? "lancedb"}:${this.workspacePath}`,
+      collectionName:
+        vectorStore.getCollectionName?.() ?? `${config.vectorStoreProvider ?? "lancedb"}:${this.workspacePath}`,
       ignoreFingerprint: this.ignoreFingerprint,
     }
   }
 
   public createDirectoryScanner(
-    embedder: IEmbedder,
-    vectorStore: IVectorStore,
+    embedder: IEmbedder | undefined,
+    vectorStore: IVectorStore | undefined,
     parser: ICodeParser,
     ignoreInstance: Ignore,
+    opts: { writeCache?: boolean } = {},
   ): DirectoryScanner {
     const config = this.configManager.getConfig()
     const meta = this.getTelemetryMeta()
-    const rag = this.createRagCheckpointMeta(vectorStore)
+    const rag = vectorStore ? this.createRagCheckpointMeta(vectorStore) : fallbackCheckpointMeta(this.workspacePath)
     const scanner = new DirectoryScanner(
       embedder,
       vectorStore,
@@ -251,20 +258,22 @@ export class CodeIndexServiceFactory {
       meta,
       this.graph,
       this.postings,
+      opts,
     )
     scanner.setRunContext(globalThis.crypto.randomUUID(), rag)
     return scanner
   }
 
   public createFileWatcher(
-    embedder: IEmbedder,
-    vectorStore: IVectorStore,
+    embedder: IEmbedder | undefined,
+    vectorStore: IVectorStore | undefined,
     cacheManager: CacheManager,
     ignoreInstance: Ignore,
+    opts: { writeCache?: boolean } = {},
   ): IFileWatcher {
     const config = this.configManager.getConfig()
     const meta = this.getTelemetryMeta()
-    const rag = this.createRagCheckpointMeta(vectorStore)
+    const rag = vectorStore ? this.createRagCheckpointMeta(vectorStore) : fallbackCheckpointMeta(this.workspacePath)
     const watcher = new FileWatcher(
       this.workspacePath,
       cacheManager,
@@ -277,9 +286,27 @@ export class CodeIndexServiceFactory {
       meta,
       this.graph,
       this.postings,
+      { ...opts, lockCacheDirectory: this.cacheDirectory },
     )
     watcher.setRunContext(globalThis.crypto.randomUUID(), rag)
     return watcher
+  }
+
+  public createGraphServices(
+    cacheManager: CacheManager,
+    ignoreInstance: Ignore,
+  ): {
+    parser: ICodeParser
+    scanner: DirectoryScanner
+    fileWatcher: IFileWatcher
+    ragMeta: RagCheckpointMeta
+  } {
+    const parser = codeParser
+    const opts = { writeCache: false }
+    const scanner = this.createDirectoryScanner(undefined, undefined, parser, ignoreInstance, opts)
+    const fileWatcher = this.createFileWatcher(undefined, undefined, cacheManager, ignoreInstance, opts)
+    const ragMeta = fallbackCheckpointMeta(this.workspacePath)
+    return { parser, scanner, fileWatcher, ragMeta }
   }
 
   public createServices(

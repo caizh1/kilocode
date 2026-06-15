@@ -1,11 +1,6 @@
 import * as vscode from "vscode"
 import { AutocompleteDebouncer } from "./AutocompleteDebouncer"
-import {
-  emitQwenDiagnostic,
-  errorReason,
-  type QwenCacheStatus,
-  type QwenEmptyReason,
-} from "./diagnostics"
+import { emitQwenDiagnostic, errorReason, type QwenCacheStatus, type QwenEmptyReason } from "./diagnostics"
 import { QwenAutocompleteLruCache, type QwenAutocompleteCache } from "./autocompleteLruCache"
 import { getContinueAutocompleteStopTokens } from "./fimTemplates"
 import { QwenFimClient } from "./QwenFimClient"
@@ -376,7 +371,18 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
         emptyReason: item ? "none" : "render-rejected",
       })
       if (!item) {
-        return this.empty(cfg, id, document, position, gate.selected, started, "render-rejected", helper, snippets, prompt)
+        return this.empty(
+          cfg,
+          id,
+          document,
+          position,
+          gate.selected,
+          started,
+          "render-rejected",
+          helper,
+          snippets,
+          prompt,
+        )
       }
       this.putCache(cfg, helper, prompt, processed)
       this.emit(cfg, {
@@ -654,7 +660,11 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
     }
   }
 
-  private snippetFields(cfg: QwenAutocompleteConfig, state: SnippetState, prompt?: QwenPromptPlan): Record<string, unknown> {
+  private snippetFields(
+    cfg: QwenAutocompleteConfig,
+    state: SnippetState,
+    prompt?: QwenPromptPlan,
+  ): Record<string, unknown> {
     return {
       snippetScaffoldEnabled: true,
       snippetTotalCount: state.selection.totalCount,
@@ -669,8 +679,12 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
       snippetSelectionDroppedDuplicateFileCount:
         state.selection.droppedDuplicateFileCount + this.injectable(cfg, state).droppedDuplicateFileCount,
       snippetSelectionDroppedInvalidCount: state.selection.droppedInvalidCount,
-      snippetSelectionInjectedCount: prompt?.snippetsInjectedIntoPrompt ? this.injectable(cfg, state).snippets.length : 0,
-      snippetSelectionInjectedSources: prompt?.snippetsInjectedIntoPrompt ? this.injectable(cfg, state).sources.join(",") : "",
+      snippetSelectionInjectedCount: prompt?.snippetsInjectedIntoPrompt
+        ? this.injectable(cfg, state).snippets.length
+        : 0,
+      snippetSelectionInjectedSources: prompt?.snippetsInjectedIntoPrompt
+        ? this.injectable(cfg, state).sources.join(",")
+        : "",
       snippetSelectionAdapterPriority: this.injectable(cfg, state).priority,
       snippetSelectionBudgetRemaining: state.selection.budgetRemaining,
       contextReadGuardDecision: "applied",
@@ -679,7 +693,9 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
       recentlyOpenedTrimmedCount: state.selection.recentlyOpenedTrimmedCount,
       baseSnippetSelectedCount: state.selection.baseSnippetSelectedCount,
       baseSnippetInjectedCount: prompt?.snippetsInjectedIntoPrompt
-        ? this.injectable(cfg, state).snippets.filter((snippet) => this.selectedImports(state).includes(snippet) || this.selectedRoot(state).includes(snippet)).length
+        ? this.injectable(cfg, state).snippets.filter(
+            (snippet) => this.selectedImports(state).includes(snippet) || this.selectedRoot(state).includes(snippet),
+          ).length
         : 0,
       ...this.editedFields(cfg, state),
       ...this.openedFields(cfg, state, prompt),
@@ -736,7 +752,10 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
       importDefinitionsCacheSize: cfg.importDefinitionsCacheSize,
       importDefinitionsPayloadCount: state.payload.importDefinitionSnippets.length,
       importDefinitionsSelectedCount: imports.length,
-      importDefinitionsSelectedTokens: imports.reduce((sum, snippet) => sum + countTokens(snippet.content, cfg.model), 0),
+      importDefinitionsSelectedTokens: imports.reduce(
+        (sum, snippet) => sum + countTokens(snippet.content, cfg.model),
+        0,
+      ),
       importDefinitionsTimeoutMs: cfg.importDefinitionsTimeoutMs,
       importDefinitionsSkippedCount: state.importSkipped,
       importDefinitionsInjectedIntoPrompt: prompt?.snippetsInjectedIntoPrompt
@@ -784,25 +803,25 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
 
   private selectedEdited(state: SnippetState): QwenAutocompleteCodeSnippet[] {
     return state.selection.snippets.filter((snippet) =>
-      state.edited.includes(snippet as QwenAutocompleteCodeSnippet)
+      state.edited.includes(snippet as QwenAutocompleteCodeSnippet),
     ) as QwenAutocompleteCodeSnippet[]
   }
 
   private selectedOpened(state: SnippetState): QwenAutocompleteCodeSnippet[] {
     return state.selection.snippets.filter((snippet) =>
-      state.opened.includes(snippet as QwenAutocompleteCodeSnippet)
+      state.opened.includes(snippet as QwenAutocompleteCodeSnippet),
     ) as QwenAutocompleteCodeSnippet[]
   }
 
   private selectedImports(state: SnippetState): QwenAutocompleteCodeSnippet[] {
     return state.selection.snippets.filter((snippet) =>
-      state.imports.includes(snippet as QwenAutocompleteCodeSnippet)
+      state.imports.includes(snippet as QwenAutocompleteCodeSnippet),
     ) as QwenAutocompleteCodeSnippet[]
   }
 
   private selectedRoot(state: SnippetState): QwenAutocompleteCodeSnippet[] {
     return state.selection.snippets.filter((snippet) =>
-      state.root.includes(snippet as QwenAutocompleteCodeSnippet)
+      state.root.includes(snippet as QwenAutocompleteCodeSnippet),
     ) as QwenAutocompleteCodeSnippet[]
   }
 
@@ -960,9 +979,21 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
     if (!qwenAutocompleteEnabled(cfg)) {
       return {
         selected,
-        items: this.empty(cfg, requestId, document, position, selected, started, "disabled", undefined, undefined, undefined, {
-          prefilterProviderEnabled: false,
-        }),
+        items: this.empty(
+          cfg,
+          requestId,
+          document,
+          position,
+          selected,
+          started,
+          "disabled",
+          undefined,
+          undefined,
+          undefined,
+          {
+            prefilterProviderEnabled: false,
+          },
+        ),
       }
     }
     const prefilter = decideQwenPrefilter(document)
@@ -970,7 +1001,19 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
     if (prefilter.prefiltered) {
       return {
         selected,
-        items: this.empty(cfg, requestId, document, position, selected, started, "prefiltered", undefined, undefined, undefined, prefilterFields),
+        items: this.empty(
+          cfg,
+          requestId,
+          document,
+          position,
+          selected,
+          started,
+          "prefiltered",
+          undefined,
+          undefined,
+          undefined,
+          prefilterFields,
+        ),
       }
     }
     if (token.isCancellationRequested) {
@@ -991,10 +1034,22 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
     if (guard.blocked) {
       return {
         selected,
-        items: this.empty(cfg, requestId, document, position, selected, started, "guard-blocked", undefined, undefined, undefined, {
-          ...prefilterFields,
-          ...this.guardFields(guard),
-        }),
+        items: this.empty(
+          cfg,
+          requestId,
+          document,
+          position,
+          selected,
+          started,
+          "guard-blocked",
+          undefined,
+          undefined,
+          undefined,
+          {
+            ...prefilterFields,
+            ...this.guardFields(guard),
+          },
+        ),
       }
     }
     if (selected && !validSelectedCompletionInfo(document, selected)) {
@@ -1121,10 +1176,7 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
   }
 }
 
-function validSelectedCompletionInfo(
-  document: vscode.TextDocument,
-  selected: vscode.SelectedCompletionInfo,
-): boolean {
+function validSelectedCompletionInfo(document: vscode.TextDocument, selected: vscode.SelectedCompletionInfo): boolean {
   const text = document.getText(selected.range)
   const typed = selected.range.end.character - selected.range.start.character
   if (typed < 4) return false

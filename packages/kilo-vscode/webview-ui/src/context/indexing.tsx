@@ -28,7 +28,17 @@ const initial: IndexingStatus = {
   percent: 0,
 }
 
-export { formatIndexingLabel, formatIndexingPipelineLabel, indexingPipelineTone, indexingTone } from "./indexing-utils"
+export {
+  formatIndexingDiagnostic,
+  formatIndexingDiagnostics,
+  formatIndexingLabel,
+  formatIndexingPipelineLabel,
+  hasIndexingDiagnostics,
+  indexingDiagnosticMessage,
+  indexingPipelineDescription,
+  indexingPipelineTone,
+  indexingTone,
+} from "./indexing-utils"
 
 const IndexingContext = createContext<IndexingContextValue>()
 

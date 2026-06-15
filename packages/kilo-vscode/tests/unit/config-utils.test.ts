@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test"
-import { deepMerge, stripNulls, ConfigState } from "../../webview-ui/src/utils/config-utils"
+import { deepEqual, deepMerge, stripNulls, ConfigState } from "../../webview-ui/src/utils/config-utils"
 import type { Config } from "../../webview-ui/src/types/messages"
 
 // ---------------------------------------------------------------------------
@@ -56,6 +56,18 @@ describe("stripNulls", () => {
   it("strips nulls recursively in nested objects", () => {
     const cfg = { agent: { code: { temperature: 0.5, prompt: null } } } as unknown as Config
     expect(stripNulls(cfg)).toEqual({ agent: { code: { temperature: 0.5 } } })
+  })
+})
+
+describe("deepEqual", () => {
+  it("matches nested plain objects and arrays", () => {
+    expect(deepEqual({ indexing: { model: "qwen", tags: ["a"] } }, { indexing: { model: "qwen", tags: ["a"] } })).toBe(
+      true,
+    )
+  })
+
+  it("detects nested differences", () => {
+    expect(deepEqual({ indexing: { dimension: 2048 } }, { indexing: { dimension: 4096 } })).toBe(false)
   })
 })
 
@@ -163,11 +175,11 @@ describe("ConfigState", () => {
       const s = new ConfigState()
       s.handleConfigLoaded({ snapshot: true })
       s.updateConfig({ snapshot: false })
-      s.saveConfig()
+      s.saveConfig("save")
       expect(s.saving).toBe(true)
 
       // Server confirms the write
-      s.handleConfigUpdated({ snapshot: false })
+      s.handleConfigUpdated({ snapshot: false }, "save")
 
       expect(s.config.snapshot).toBe(false)
       expect(s.dirty).toBe(false)
@@ -179,10 +191,10 @@ describe("ConfigState", () => {
       const s = new ConfigState()
       s.handleConfigLoaded({ default_agent: "code" })
       s.updateConfig({ default_agent: null })
-      s.saveConfig()
+      s.saveConfig("save")
 
       // Server confirms the write by returning config without default_agent.
-      s.handleConfigUpdated({})
+      s.handleConfigUpdated({}, "save")
 
       expect(s.config.default_agent).toBeUndefined()
       expect(s.dirty).toBe(false)
@@ -201,6 +213,40 @@ describe("ConfigState", () => {
 
       expect(s.saving).toBe(true)
       expect(s.draft.default_agent).toBeNull()
+    })
+
+    it("does not mark dirty when a normalized patch leaves config unchanged", () => {
+      const s = new ConfigState()
+      s.handleConfigLoaded({ indexing: { provider: "openai-compatible" } })
+
+      s.updateConfig({ indexing: { provider: "openai-compatible", model: null } })
+
+      expect(s.config).toEqual({ indexing: { provider: "openai-compatible" } })
+      expect(s.dirty).toBe(false)
+      expect(s.draft).toEqual({})
+    })
+
+    it("does not clear draft for configUpdated without the active save request", () => {
+      const s = new ConfigState()
+      s.handleConfigLoaded({ snapshot: true, username: "alice" })
+      s.updateConfig({ snapshot: false })
+      s.saveConfig("save")
+
+      // SSE-derived configUpdated can arrive while the explicit save is still
+      // writing project/global config. It must not become the save ack.
+      s.handleConfigUpdated({ snapshot: true, username: "bob" })
+
+      expect(s.saving).toBe(true)
+      expect(s.dirty).toBe(true)
+      expect(s.config.snapshot).toBe(false)
+      expect(s.request).toBe("save")
+
+      s.handleConfigUpdated({ snapshot: false, username: "bob" }, "save")
+
+      expect(s.saving).toBe(false)
+      expect(s.dirty).toBe(false)
+      expect(s.config.snapshot).toBe(false)
+      expect(s.config.username).toBe("bob")
     })
   })
 
@@ -227,9 +273,12 @@ describe("ConfigState", () => {
       s.handleConfigLoaded({ agent: { code: { prompt: "Review", temperature: 0.7 } }, default_agent: "code" })
       s.updateConfig({ agent: { code: { prompt: null, temperature: null } } })
       s.updateConfig({ default_agent: null })
-      s.saveConfig()
+      s.saveConfig("save")
 
-      s.handleConfigSaveFailed({ agent: { code: { prompt: "Review", temperature: 0.7 } }, default_agent: "code" })
+      s.handleConfigSaveFailed(
+        { agent: { code: { prompt: "Review", temperature: 0.7 } }, default_agent: "code" },
+        "save",
+      )
 
       expect(s.saving).toBe(false)
       expect(s.dirty).toBe(true)
@@ -240,6 +289,19 @@ describe("ConfigState", () => {
       expect(s.config.agent?.code?.temperature).toBeUndefined()
       expect(s.config.default_agent).toBeUndefined()
     })
+
+    it("ignores save failures from a different request", () => {
+      const s = new ConfigState()
+      s.handleConfigLoaded({ snapshot: true })
+      s.updateConfig({ snapshot: false })
+      s.saveConfig("save")
+
+      s.handleConfigSaveFailed({ snapshot: true }, "other")
+
+      expect(s.saving).toBe(true)
+      expect(s.dirty).toBe(true)
+      expect(s.config.snapshot).toBe(false)
+    })
   })
 
   it("ignores repeated save attempts while a save is already in-flight", () => {
@@ -247,9 +309,9 @@ describe("ConfigState", () => {
     s.handleConfigLoaded({ snapshot: true })
     s.updateConfig({ snapshot: false })
 
-    s.saveConfig()
-    s.saveConfig()
-    s.handleConfigUpdated({ snapshot: false })
+    s.saveConfig("save")
+    s.saveConfig("other")
+    s.handleConfigUpdated({ snapshot: false }, "save")
 
     expect(s.saving).toBe(false)
     expect(s.dirty).toBe(false)
@@ -260,7 +322,7 @@ describe("ConfigState", () => {
     const s = new ConfigState()
     s.handleConfigLoaded({ snapshot: true })
     s.updateConfig({ snapshot: false })
-    s.saveConfig()
+    s.saveConfig("save")
 
     // A stale configLoaded arrives during the write round-trip
     s.handleConfigLoaded({ snapshot: true })
@@ -318,10 +380,10 @@ describe("ConfigState", () => {
       const s = new ConfigState()
       s.handleConfigLoaded({ agent: { explore: { model: "anthropic/claude-sonnet-4-20250514" } } })
       s.updateConfig({ agent: { explore: { model: null } } })
-      s.saveConfig()
+      s.saveConfig("save")
 
       // Backend removed the override and pushes the stripped config back.
-      s.handleConfigUpdated({ agent: { explore: {} } })
+      s.handleConfigUpdated({ agent: { explore: {} } }, "save")
 
       expect(s.config.agent?.explore?.model).toBeUndefined()
       expect(s.dirty).toBe(false)

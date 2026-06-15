@@ -7,7 +7,14 @@ const guards = new Map<string, Promise<FileIgnoreController>>()
 
 export type QwenSafetyGuard = (document: vscode.TextDocument) => boolean | Promise<boolean>
 export type QwenGuardSource = "current-file" | "context-read"
-export type QwenGuardReason = "none" | "non-file-scheme" | "security-concern" | "outside-workspace" | "ignored" | "error" | "custom"
+export type QwenGuardReason =
+  | "none"
+  | "non-file-scheme"
+  | "security-concern"
+  | "outside-workspace"
+  | "ignored"
+  | "error"
+  | "custom"
 
 export type QwenGuardDecision = {
   blocked: boolean

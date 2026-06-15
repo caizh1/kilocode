@@ -50,6 +50,8 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
     return value.charAt(0).toUpperCase() + value.slice(1)
   }
 
+  const desc = () => `Reasoning effort: ${display(props.value)}`
+
   function focusItem(idx: number) {
     const items = listRef?.querySelectorAll<HTMLElement>("[role=option]")
     if (!items) return
@@ -140,11 +142,24 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
         open={open()}
         onOpenChange={onOpen}
         triggerAs={Button}
-        triggerProps={{ variant: "ghost", size: "small" }}
+        triggerProps={{
+          variant: "ghost",
+          size: "small",
+          class: "prompt-selector-trigger prompt-selector-trigger--thinking",
+          get title() {
+            return desc()
+          },
+          get ["aria-label"]() {
+            return desc()
+          },
+        }}
         trigger={
           <>
+            <span class="prompt-selector-icon" aria-hidden="true">
+              <span class="codicon codicon-thinking" />
+            </span>
             <span class="thinking-selector-trigger-label">{display(props.value)}</span>
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style={{ "flex-shrink": "0" }}>
+            <svg class="prompt-selector-chevron" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8 4l4 5H4l4-5z" />
             </svg>
           </>

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { CodeIndexAnalysisService, DEFAULT_EVIDENCE_BUDGET, resolveEvidenceBudget } from "../../../../src/indexing/analysis"
+import {
+  CodeIndexAnalysisService,
+  DEFAULT_EVIDENCE_BUDGET,
+  resolveEvidenceBudget,
+} from "../../../../src/indexing/analysis"
 import { CodeIndexManager } from "../../../../src/indexing/manager"
 
 describe("CodeIndexAnalysisService", () => {

@@ -4,6 +4,7 @@ export type IndexingTelemetryTrigger = "background" | "manual"
 export type IndexingTelemetryMode = "full" | "incremental"
 export type IndexingTelemetrySource = "scan" | "watcher"
 export type IndexingVectorStore = "lancedb" | "qdrant"
+export type IndexingTelemetryPipeline = "codeGraph" | "rag"
 
 export type IndexingTelemetryMeta = {
   provider: EmbedderProvider
@@ -51,6 +52,8 @@ export type IndexingTelemetryEvent =
       error: string
       mode?: IndexingTelemetryMode
       trigger?: IndexingTelemetryTrigger
+      pipeline?: IndexingTelemetryPipeline
+      file?: string
       retryCount?: number
       maxRetries?: number
     })

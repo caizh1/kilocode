@@ -12,6 +12,7 @@ import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { showToast } from "@kilocode/kilo-ui/toast"
 import { useVSCode } from "../../context/vscode"
 import { useLanguage } from "../../context/language"
+import { ChipMateLogo } from "../shared/ChipMateLogo"
 import SessionMigrationProgress, { type SessionMigrationProgressState } from "./SessionMigrationProgress"
 import SessionMigrationSummary from "./SessionMigrationSummary"
 import ForceReimportDialog from "./ForceReimportDialog"
@@ -36,22 +37,6 @@ import type {
   LegacyMigrationCompleteMessage,
 } from "../../types/messages"
 import "./migration.css"
-
-// ---------------------------------------------------------------------------
-// ChipMateLogo — replicates the pattern from MessageList.tsx
-// ---------------------------------------------------------------------------
-
-const ChipMateLogo = (): JSX.Element => {
-  const iconsBaseUri = (window as { ICONS_BASE_URI?: string }).ICONS_BASE_URI || ""
-  const isLight =
-    document.body.classList.contains("vscode-light") || document.body.classList.contains("vscode-high-contrast-light")
-  const icon = isLight ? "kilo-light.svg" : "kilo-dark.svg"
-  return (
-    <div class="migration-wizard__logo">
-      <img src={`${iconsBaseUri}/${icon}`} alt="ChipMate" />
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // Inline SVG icons for feature cards
@@ -592,7 +577,7 @@ const MigrationWizard: Component<MigrationWizardProps> = (props) => {
         {/* ---- Screen 1: What's New ---- */}
         <div class={screen() === "whats-new" ? "migration-wizard__screen--active" : "migration-wizard__screen--hidden"}>
           <div class="migration-wizard__header">
-            <ChipMateLogo />
+            <ChipMateLogo class="migration-wizard__logo" />
             <h1>{language.t("migration.whatsNew.title")}</h1>
             <p>{language.t("migration.whatsNew.subtitle")}</p>
           </div>
@@ -655,7 +640,7 @@ const MigrationWizard: Component<MigrationWizardProps> = (props) => {
         {/* ---- Screen 2: Migrate Settings ---- */}
         <div class={screen() === "migrate" ? "migration-wizard__screen--active" : "migration-wizard__screen--hidden"}>
           <div class="migration-wizard__header">
-            <ChipMateLogo />
+            <ChipMateLogo class="migration-wizard__logo" />
             <h1>{language.t("migration.migrate.title")}</h1>
             <p>{language.t("migration.migrate.subtitle")}</p>
           </div>

@@ -3,10 +3,7 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import * as vscode from "vscode"
 import type { QwenAutocompleteCache } from "../../src/services/qwen-autocomplete/autocompleteLruCache"
-import {
-  qwenDiagnosticsForTests,
-  resetQwenDiagnosticsForTests,
-} from "../../src/services/qwen-autocomplete/diagnostics"
+import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
 import type { QwenImportDefinitionsSource } from "../../src/services/qwen-autocomplete/importDefinitions"
@@ -74,7 +71,10 @@ afterEach(() => {
 
 describe("qwen autocomplete snippet selection hardening", () => {
   it("filters caret-window duplicates only for base-like import and root snippets", () => {
-    const helper = createQwenAutocompleteHelper(doc("int main(void) {\n  int shared_symbol;\n  \n}\n"), new vscode.Position(2, 2))
+    const helper = createQwenAutocompleteHelper(
+      doc("int main(void) {\n  int shared_symbol;\n  \n}\n"),
+      new vscode.Position(2, 2),
+    )
     const payload = emptyQwenSnippetPayload()
     payload.recentlyEditedRangeSnippets = [snippet("/repo/src/edit.c", "int shared_symbol;")]
     payload.recentlyOpenedFileSnippets = [snippet("/repo/src/open.c", "int shared_symbol;")]
@@ -114,7 +114,10 @@ describe("qwen autocomplete snippet selection hardening", () => {
 
     const tight = emptyQwenSnippetPayload()
     tight.recentlyOpenedFileSnippets = Array.from({ length: 10 }, (_, index) =>
-      snippet(`/repo/src/large${index}.c`, Array.from({ length: 80 }, (_, line) => `int value_${index}_${line};`).join("\n")),
+      snippet(
+        `/repo/src/large${index}.c`,
+        Array.from({ length: 80 }, (_, line) => `int value_${index}_${line};`).join("\n"),
+      ),
     )
     const trimmed = selectQwenSnippets(helper, tight, {
       maxPromptTokens: 320,

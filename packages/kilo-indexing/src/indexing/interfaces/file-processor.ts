@@ -2,6 +2,13 @@ import type { PointStruct } from "./vector-store"
 import type { Disposable, Emitter } from "../runtime"
 import type { IndexingTelemetryMode } from "./telemetry"
 
+export type IndexingScanTarget = "all" | "codeGraph" | "rag"
+
+export type WatcherSyntheticEvent = {
+  path: string
+  type: "create" | "change" | "delete"
+}
+
 export type ScanProgressEvent =
   | {
       type: "target"
@@ -37,12 +44,16 @@ export interface IDirectoryScanner {
     onFileParsed?: () => void,
     mode?: IndexingTelemetryMode,
     onProgress?: (event: ScanProgressEvent) => void,
+    target?: IndexingScanTarget,
   ): Promise<{
     stats: {
       processed: number
       skipped: number
     }
     totalBlockCount: number
+    candidateFiles?: string[]
+    scanStartedAt?: number
+    target?: IndexingScanTarget
   }>
 
   updateBatchSegmentThreshold(newThreshold: number): void
@@ -52,6 +63,8 @@ export interface IFileWatcher extends Disposable {
   initialize(): Promise<void>
   updateBatchSegmentThreshold(newThreshold: number): void
   setCollecting(collecting: boolean): void
+  enqueueSyntheticEvents?(events: WatcherSyntheticEvent[]): void
+  getPendingEventCount?(): number
   setRunContext?(runId: string, meta: import("../rag-checkpoint").RagCheckpointMeta): void
 
   readonly onDidStartBatchProcessing: Emitter<string[]>

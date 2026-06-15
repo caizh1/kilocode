@@ -89,9 +89,7 @@ export function buildErrorPaths(input: {
       generatedCount: paths.length,
       droppedByBudget: dropped,
       limitations:
-        paths.length > 0
-          ? limitations
-          : ["No source-backed error/cleanup path evidence was returned for this query."],
+        paths.length > 0 ? limitations : ["No source-backed error/cleanup path evidence was returned for this query."],
     },
     refs,
     paths,
@@ -178,7 +176,12 @@ function path(item: EvidenceRef): { ref: EvidenceRef; path: ErrorPathEvidence } 
   }
 }
 
-function errorRef(item: EvidenceRef, branch: ErrorPathBranchKind, conf: Exclude<EvidenceConfidence, "none">, calls: string[]): EvidenceRef {
+function errorRef(
+  item: EvidenceRef,
+  branch: ErrorPathBranchKind,
+  conf: Exclude<EvidenceConfidence, "none">,
+  calls: string[],
+): EvidenceRef {
   const cleanup = branch === "cleanup-call" || calls.length > 0
   const id = `error_${hash([item.id, branch, item.filePath, item.startLine, item.endLine].join(":")).slice(0, 16)}`
   return {
@@ -187,7 +190,12 @@ function errorRef(item: EvidenceRef, branch: ErrorPathBranchKind, conf: Exclude<
     kind: cleanup ? "cleanup-path" : "error-path",
     confidence: conf,
     reason: `${cleanup ? "cleanup" : "error"} path evidence derived from ${item.source} candidate`,
-    displayName: item.displayName ?? item.functionName ?? item.labelName ?? item.symbolName ?? `${item.filePath}:${item.startLine}`,
+    displayName:
+      item.displayName ??
+      item.functionName ??
+      item.labelName ??
+      item.symbolName ??
+      `${item.filePath}:${item.startLine}`,
     ...(calls.length > 0 ? { cleanupCalls: calls } : {}),
   }
 }
@@ -195,13 +203,15 @@ function errorRef(item: EvidenceRef, branch: ErrorPathBranchKind, conf: Exclude<
 function branch(item: EvidenceRef): ErrorPathBranchKind | undefined {
   const text = blob(item)
   if (item.kind === "error_label") return item.cleanupCalls?.length ? "cleanup-call" : "error-label"
-  if (item.labelName && /err|fail|cleanup|out/i.test(item.labelName)) return item.cleanupCalls?.length ? "cleanup-call" : "error-label"
+  if (item.labelName && /err|fail|cleanup|out/i.test(item.labelName))
+    return item.cleanupCalls?.length ? "cleanup-call" : "error-label"
   if ((item.cleanupCalls?.length ?? 0) > 0) return "cleanup-call"
   if (item.returnStyle && /return\s+[-\w]+|return\s+.*err|return\s+.*rc/i.test(item.returnStyle)) return "return-error"
   if (/\bgoto\s+(err|fail|cleanup|out)/i.test(text)) return "goto-label"
   if (/\b(cleanup|release|free|close|destroy|unmap|put|disable)_?\w*\b/i.test(text)) return "cleanup-call"
   if (/\b(rollback|unwind)\b/i.test(text)) return "unknown"
-  if (/\b(error|failure|fail|errno|eio|enomem|einval|return\s+[-\w]+)\b/i.test(text)) return item.source === "vector" || item.source === "bm25" ? "unknown" : "return-error"
+  if (/\b(error|failure|fail|errno|eio|enomem|einval|return\s+[-\w]+)\b/i.test(text))
+    return item.source === "vector" || item.source === "bm25" ? "unknown" : "return-error"
   return undefined
 }
 
@@ -253,7 +263,12 @@ function keywords(query: string): string[] {
 }
 
 function range(item: EvidenceRef): boolean {
-  return Number.isFinite(item.startLine) && Number.isFinite(item.endLine) && item.startLine > 0 && item.endLine >= item.startLine
+  return (
+    Number.isFinite(item.startLine) &&
+    Number.isFinite(item.endLine) &&
+    item.startLine > 0 &&
+    item.endLine >= item.startLine
+  )
 }
 
 function blob(item: EvidenceRef): string {
@@ -285,9 +300,5 @@ function hash(value: string): string {
 }
 
 function xml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;")
 }

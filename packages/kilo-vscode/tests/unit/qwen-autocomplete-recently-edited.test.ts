@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import * as vscode from "vscode"
-import { buildQwenFimPrompt, getContinueAutocompleteStopTokens } from "../../src/services/qwen-autocomplete/fimTemplates"
+import {
+  buildQwenFimPrompt,
+  getContinueAutocompleteStopTokens,
+} from "../../src/services/qwen-autocomplete/fimTemplates"
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
-import {
-  qwenDiagnosticsForTests,
-  resetQwenDiagnosticsForTests,
-} from "../../src/services/qwen-autocomplete/diagnostics"
+import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
 import {
   QwenRecentlyEditedTracker,
   type QwenRecentlyEditedSource,
@@ -145,7 +145,10 @@ describe("qwen recently edited tracker", () => {
       throw new Error("line text should not be read")
     }
 
-    text.fire({ document: doc("secret", { path: "/repo/src/main.py", languageId: "python", lineAt: fail }), contentChanges: [change()] })
+    text.fire({
+      document: doc("secret", { path: "/repo/src/main.py", languageId: "python", lineAt: fail }),
+      contentChanges: [change()],
+    })
     text.fire({ document: doc("secret", { scheme: "untitled", lineAt: fail }), contentChanges: [change()] })
     text.fire({ document: doc("secret", { path: "/repo/.env", lineAt: fail }), contentChanges: [change()] })
     text.fire({ document: doc("int a;", { lineAt: fail }), contentChanges: [change()] })
@@ -357,7 +360,9 @@ function listeners() {
 function configEvents(read: () => QwenAutocompleteConfig) {
   let callback: ((event: { affectsConfiguration: (section: string) => boolean }) => void) | undefined
   let disposed = 0
-  ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (section?: string) => {
+  ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (
+    section?: string,
+  ) => {
     if (section !== "kilo.autocomplete") return originalConfig(section)
     return {
       get: (key: string, fallback?: unknown) => setting(read(), key) ?? fallback,

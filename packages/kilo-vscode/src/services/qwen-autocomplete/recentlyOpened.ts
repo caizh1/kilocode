@@ -91,13 +91,17 @@ export class QwenRecentlyOpenedTracker implements QwenRecentlyOpenedSource {
     )
     const activeEditor = (
       vscode.window as unknown as {
-        onDidChangeActiveTextEditor?: (listener: (editor: vscode.TextEditor | undefined) => unknown) => vscode.Disposable
+        onDidChangeActiveTextEditor?: (
+          listener: (editor: vscode.TextEditor | undefined) => unknown,
+        ) => vscode.Disposable
       }
     ).onDidChangeActiveTextEditor
     if (activeEditor) {
-      this.disposables.push(activeEditor((editor) => {
-        if (editor?.document) this.schedule(editor.document)
-      }))
+      this.disposables.push(
+        activeEditor((editor) => {
+          if (editor?.document) this.schedule(editor.document)
+        }),
+      )
     }
   }
 
@@ -127,11 +131,14 @@ export class QwenRecentlyOpenedTracker implements QwenRecentlyOpenedSource {
     if (sensitive(document.uri.fsPath) || hidden(document.uri.fsPath)) return
     if (await this.blocked(document)) return
     if (this.closed) return
-    this.touch({
-      filepath: document.uri.fsPath || String(document.uri),
-      languageId: document.languageId,
-      uri: document.uri,
-    }, cfg)
+    this.touch(
+      {
+        filepath: document.uri.fsPath || String(document.uri),
+        languageId: document.languageId,
+        uri: document.uri,
+      },
+      cfg,
+    )
   }
 
   private async readSnippet(entry: Entry, current: string, cfg: QwenAutocompleteConfig): Promise<Outcome> {

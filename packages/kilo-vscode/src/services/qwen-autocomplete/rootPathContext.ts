@@ -3,10 +3,7 @@ import path from "node:path"
 import type Parser from "web-tree-sitter"
 import * as vscode from "vscode"
 import { getAst, getTreePathAtCursor } from "../autocomplete/continuedev/core/autocomplete/util/ast"
-import {
-  getFullLanguageName,
-  getQueryForFile,
-} from "../autocomplete/continuedev/core/util/treeSitter"
+import { getFullLanguageName, getQueryForFile } from "../autocomplete/continuedev/core/util/treeSitter"
 import { qwenAutocompleteEnabled } from "./config"
 import { isQwenSecurityConcern, shouldGuardQwenContextDocument, type QwenSafetyGuard } from "./guard"
 import type { QwenAutocompleteHelperVars } from "./helperVars"

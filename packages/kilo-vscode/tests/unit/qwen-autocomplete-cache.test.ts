@@ -102,10 +102,7 @@ describe("QwenAutocompleteLruCache", () => {
   })
 
   it("ports truncateSqliteLikePattern without importing SQLite or indexing runtime", () => {
-    const source = readFileSync(
-      `${__dirname}/../../src/services/qwen-autocomplete/autocompleteLruCache.ts`,
-      "utf8",
-    )
+    const source = readFileSync(`${__dirname}/../../src/services/qwen-autocomplete/autocompleteLruCache.ts`, "utf8")
     const text = `${"a".repeat(10)}${"文".repeat(20_000)}`
     const truncated = truncateSqliteLikePattern(text)
 
@@ -296,7 +293,6 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
 
     await complete(staleProvider, versioned, new vscode.Position(1, 2))
     expect(stale.size()).toBe(0)
-
   })
 
   it("does not return a cached completion when cached render throws", async () => {

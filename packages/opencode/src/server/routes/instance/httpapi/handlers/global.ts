@@ -33,6 +33,14 @@ function parseBody(body: string) {
   }
 }
 
+// kilocode_change start - indexing settings hot-reload without disposing all instances
+function isIndexingOnlyConfig(input: unknown): boolean {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return false
+  const keys = Object.keys(input as Record<string, unknown>)
+  return keys.length === 1 && keys[0] === "indexing"
+}
+// kilocode_change end
+
 function eventResponse() {
   log.info("global event connected")
   const events = Stream.callback<GlobalBusEvent>((queue) => {
@@ -85,9 +93,12 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
-      const result = yield* config.updateGlobal(ctx.payload)
+      // kilocode_change start - indexing settings are consumed by the indexing hot-reload path
+      const hot = isIndexingOnlyConfig(ctx.payload)
+      const result = yield* config.updateGlobal(ctx.payload, hot ? { dispose: false } : undefined)
+      // kilocode_change end
       // kilocode_change start
-      if (result.changed) {
+      if (result.changed && !hot) {
         yield* bridge.run(
           disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }).pipe(Effect.catchCause(() => Effect.void)),
         )

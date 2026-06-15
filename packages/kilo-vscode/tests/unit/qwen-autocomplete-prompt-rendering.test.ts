@@ -3,12 +3,15 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import * as vscode from "vscode"
 import type { QwenAutocompleteCache } from "../../src/services/qwen-autocomplete/autocompleteLruCache"
+import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
 import {
-  qwenDiagnosticsForTests,
-  resetQwenDiagnosticsForTests,
-} from "../../src/services/qwen-autocomplete/diagnostics"
-import { buildQwenFimPrompt, getContinueAutocompleteStopTokens } from "../../src/services/qwen-autocomplete/fimTemplates"
-import { createQwenAutocompleteHelper, type QwenAutocompleteHelperVars } from "../../src/services/qwen-autocomplete/helperVars"
+  buildQwenFimPrompt,
+  getContinueAutocompleteStopTokens,
+} from "../../src/services/qwen-autocomplete/fimTemplates"
+import {
+  createQwenAutocompleteHelper,
+  type QwenAutocompleteHelperVars,
+} from "../../src/services/qwen-autocomplete/helperVars"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
 import {
   buildQwenPromptPlan,
@@ -103,7 +106,11 @@ describe("qwen prompt rendering", () => {
       stream: false,
       stop: getContinueAutocompleteStopTokens(cfg.model),
     })
-    const provider = new KiloQwenInlineCompletionProvider({ read: () => cfg, edited: fakeEdited("int hidden;"), log: () => {} })
+    const provider = new KiloQwenInlineCompletionProvider({
+      read: () => cfg,
+      edited: fakeEdited("int hidden;"),
+      log: () => {},
+    })
 
     await provider.provideInlineCompletionItems(
       document,

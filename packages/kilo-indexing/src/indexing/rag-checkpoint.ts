@@ -86,14 +86,7 @@ export function pointForBlock(input: {
   const chunkHash = input.block.segmentHash
   const chunkRange = `${input.block.start_line}:${input.block.end_line}`
   const id = uuidv5(
-    [
-      input.ctx.workspaceId,
-      filePath,
-      input.block.fileHash,
-      chunkHash,
-      chunkRange,
-      input.generation,
-    ].join("\0"),
+    [input.ctx.workspaceId, filePath, input.block.fileHash, chunkHash, chunkRange, input.generation].join("\0"),
     QDRANT_CODE_BLOCK_NAMESPACE,
   )
 

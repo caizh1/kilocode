@@ -67,11 +67,13 @@ export class CodeGraphSidecarLifecycle {
   }
 }
 
-export function disabledCodeGraphSidecarStatus(input: {
-  workspacePath?: string
-  reason?: string
-  clock?: () => number
-} = {}): CodeGraphSidecarStatus {
+export function disabledCodeGraphSidecarStatus(
+  input: {
+    workspacePath?: string
+    reason?: string
+    clock?: () => number
+  } = {},
+): CodeGraphSidecarStatus {
   const reason = input.reason ?? "code graph sidecar disabled"
   return {
     state: "disabled",

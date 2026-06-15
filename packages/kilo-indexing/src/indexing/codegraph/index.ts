@@ -1,4 +1,5 @@
 export { CodeGraphSidecarLifecycle, disabledCodeGraphSidecarStatus } from "./lifecycle"
+export { shouldIndexCodeGraphPath } from "./path-policy"
 export {
   CODE_GRAPH_PARSER_VERSION,
   CODE_GRAPH_SCHEMA_VERSION,

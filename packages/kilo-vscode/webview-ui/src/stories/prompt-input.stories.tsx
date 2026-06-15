@@ -35,12 +35,26 @@ const indexingConfig = {
   },
 } as Config
 
-const PromptProviders: ParentComponent<{ variants?: boolean; modelOverride?: boolean; indexing?: boolean }> = (props) => {
+const longSelection = {
+  providerID: "openai-compatible-lab-provider",
+  modelID: "deepseek/deepseek-v4-flash-preview-ultra-long-model-name",
+}
+
+const PromptProviders: ParentComponent<{
+  variants?: boolean
+  modelOverride?: boolean
+  indexing?: boolean
+  longModel?: boolean
+}> = (props) => {
   const base = mockSessionValue({ status: "idle" })
+  const selected = () =>
+    props.longModel ? longSelection : { providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" }
   const session = {
     ...base,
     agents: () => agents,
     selectedAgent: () => "code",
+    selected,
+    getSessionModel: selected,
     variantList: () => (props.variants ? ["low", "medium", "high"] : []),
     currentVariant: () => (props.variants ? ("medium" as string | undefined) : undefined),
     hasModelOverride: () => props.modelOverride ?? false,
@@ -151,6 +165,28 @@ export const WithIndexing200: Story = {
   name: "With indexing controls — 200px",
   render: () => (
     <PromptProviders indexing>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+// ---------------------------------------------------------------------------
+// Stories — long selector text plus dense toolbar controls
+// ---------------------------------------------------------------------------
+
+export const DenseLongModel420: Story = {
+  name: "Dense long model — 420px",
+  render: () => (
+    <PromptProviders variants modelOverride indexing longModel>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const DenseLongModel200: Story = {
+  name: "Dense long model — 200px",
+  render: () => (
+    <PromptProviders variants modelOverride indexing longModel>
       <PromptInput />
     </PromptProviders>
   ),

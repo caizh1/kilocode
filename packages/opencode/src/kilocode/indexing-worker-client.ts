@@ -22,6 +22,7 @@ export namespace IndexingWorker {
 
   export type Driver = {
     init(input: IndexingConfigInput): Promise<IndexingStatus>
+    updateConfig(input: IndexingConfigInput): Promise<IndexingStatus>
     search(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]>
     queryEvidence(query: string, options?: Omit<QueryEvidenceInput, "query">): Promise<QueryEvidenceResult>
     codeGraphStatus(): Promise<CodeGraphSidecarStatus>
@@ -110,6 +111,13 @@ export namespace IndexingWorker {
         return call(request, (message) => {
           if (message.ok && message.method === "init") return message.value
           throw new Error("Unexpected indexing worker init response.")
+        })
+      },
+      updateConfig(config) {
+        const request: Request = { type: "request", id: id++, method: "updateConfig", input: config }
+        return call(request, (message) => {
+          if (message.ok && message.method === "updateConfig") return message.value
+          throw new Error("Unexpected indexing worker updateConfig response.")
         })
       },
       search(query, directoryPrefix) {

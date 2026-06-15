@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp } from "fs/promises"
+import { createHash } from "crypto"
+import { mkdir, mkdtemp, writeFile } from "fs/promises"
 import { tmpdir } from "os"
 import { join } from "path"
 import { IndexingRunLock } from "../../../src/indexing/run-lock"
@@ -10,15 +11,96 @@ describe("IndexingRunLock", () => {
     const cacheDir = await mkdtemp(join(tmpdir(), "lock-cache-"))
 
     const first = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
-    expect(first).toBeDefined()
+    expect(first.status).toBe("acquired")
 
     const second = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
-    expect(second).toBeUndefined()
+    expect(second.status).toBe("held")
 
-    await first?.release()
+    if (first.status === "acquired") await first.lock.release()
 
     const third = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
-    expect(third).toBeDefined()
-    await third?.release()
+    expect(third.status).toBe("acquired")
+    if (third.status === "acquired") await third.lock.release()
+  })
+
+  test("creates the cache directory before acquiring the lock", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lock-root-"))
+    const parent = await mkdtemp(join(tmpdir(), "lock-cache-parent-"))
+    const cacheDir = join(parent, "missing", "indexing")
+
+    const lock = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+
+    expect(lock.status).toBe("acquired")
+    if (lock.status === "acquired") await lock.lock.release()
+  })
+
+  test("removes malformed stale lock directories", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lock-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "lock-cache-"))
+    await mkdir(lockDir(cacheDir, root))
+
+    const lock = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+
+    expect(lock.status).toBe("acquired")
+    if (lock.status === "acquired") {
+      expect(lock.staleRemoved).toBe(true)
+      expect(lock.staleReason).toBe("malformed lock")
+      await lock.lock.release()
+    }
+  })
+
+  test("removes locks owned by exited pids", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lock-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "lock-cache-"))
+    const dir = lockDir(cacheDir, root)
+    await mkdir(dir)
+    await writeFile(
+      join(dir, "lock.json"),
+      JSON.stringify({
+        runId: "old",
+        workspacePath: root,
+        pid: 99999999,
+        startedAt: Date.now(),
+        heartbeatAt: Date.now(),
+      }),
+    )
+
+    const lock = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+
+    expect(lock.status).toBe("acquired")
+    if (lock.status === "acquired") {
+      expect(lock.staleRemoved).toBe(true)
+      expect(lock.staleReason).toBe("owner pid exited")
+      await lock.lock.release()
+    }
+  })
+
+  test("does not remove active locks for a mismatched workspace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lock-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "lock-cache-"))
+    const dir = lockDir(cacheDir, root)
+    await mkdir(dir)
+    await writeFile(
+      join(dir, "lock.json"),
+      JSON.stringify({
+        runId: "other",
+        workspacePath: `${root}-other`,
+        pid: process.pid,
+        startedAt: Date.now(),
+        heartbeatAt: Date.now(),
+      }),
+    )
+
+    const lock = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+
+    expect(lock.status).toBe("held")
+    if (lock.status === "held") {
+      expect(lock.reason).toBe("workspace mismatch")
+    }
   })
 })
+
+function lockDir(cacheDirectory: string, workspacePath: string): string {
+  const hash = createHash("sha256").update(workspacePath).digest("hex")
+  return join(cacheDirectory, `indexing-lock-${hash}`)
+}

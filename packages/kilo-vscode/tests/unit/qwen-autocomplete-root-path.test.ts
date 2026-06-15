@@ -4,7 +4,10 @@ import path from "node:path"
 import * as vscode from "vscode"
 import type { QwenAutocompleteCache } from "../../src/services/qwen-autocomplete/autocompleteLruCache"
 import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
-import { buildQwenFimPrompt, getContinueAutocompleteStopTokens } from "../../src/services/qwen-autocomplete/fimTemplates"
+import {
+  buildQwenFimPrompt,
+  getContinueAutocompleteStopTokens,
+} from "../../src/services/qwen-autocomplete/fimTemplates"
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
 import type { QwenImportDefinitionsSource } from "../../src/services/qwen-autocomplete/importDefinitions"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
@@ -16,7 +19,10 @@ import {
   supportedRootPathNodeTypes,
   type QwenRootPathSource,
 } from "../../src/services/qwen-autocomplete/rootPathContext"
-import { QwenAutocompleteSnippetType, type QwenAutocompleteCodeSnippet } from "../../src/services/qwen-autocomplete/snippets"
+import {
+  QwenAutocompleteSnippetType,
+  type QwenAutocompleteCodeSnippet,
+} from "../../src/services/qwen-autocomplete/snippets"
 import type { QwenAutocompleteConfig } from "../../src/services/qwen-autocomplete/types"
 
 type Pos = { line: number; character: number }
@@ -93,7 +99,9 @@ describe("qwen root path tracker", () => {
       path: async () => undefined,
     })
 
-    expect(await tracker.snippets({ ...cfg, rootPathEnabled: true }, helper("int main(void) {\n  foo();\n}\n"))).toEqual({
+    expect(
+      await tracker.snippets({ ...cfg, rootPathEnabled: true }, helper("int main(void) {\n  foo();\n}\n")),
+    ).toEqual({
       blockedReason: "missing-tree-path",
       skippedCount: 0,
       snippets: [],
@@ -113,7 +121,10 @@ describe("qwen root path tracker", () => {
       readRange: async () => "typedef int foo_t;",
     })
 
-    const result = await tracker.snippets({ ...cfg, rootPathEnabled: true }, helper("int main(void) {\n  foo_t value;\n}\n"))
+    const result = await tracker.snippets(
+      { ...cfg, rootPathEnabled: true },
+      helper("int main(void) {\n  foo_t value;\n}\n"),
+    )
 
     expect(queried).toEqual(["function_definition"])
     expect(result.snippets).toEqual([
@@ -286,12 +297,7 @@ describe("qwen root path provider integration", () => {
 
   it("keeps qwen runtime isolated from forbidden context systems", () => {
     const root = path.join(__dirname, "../../src/services/qwen-autocomplete")
-    const source = [
-      "KiloQwenInlineCompletionProvider.ts",
-      "rootPathContext.ts",
-      "importDefinitions.ts",
-      "snippets.ts",
-    ]
+    const source = ["KiloQwenInlineCompletionProvider.ts", "rootPathContext.ts", "importDefinitions.ts", "snippets.ts"]
       .map((file) => readFileSync(path.join(root, file), "utf8"))
       .join("\n")
 

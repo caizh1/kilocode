@@ -7,6 +7,36 @@ export const IndexingStatusState = Schema.Literals(INDEXING_STATUS_STATES).annot
   identifier: "IndexingStatusState",
 })
 
+export const IndexingDiagnosticInfo = Schema.Struct({
+  time: Schema.String,
+  source: Schema.String,
+  location: Schema.String,
+  message: Schema.String,
+  file: Schema.optional(Schema.String),
+}).annotate({ identifier: "IndexingDiagnostic" })
+
+export const IndexingNoticeInfo = Schema.Struct({
+  id: Schema.String,
+  level: Schema.Literals(["info", "warning"]),
+  message: Schema.String,
+  action: Schema.optional(Schema.Literal("openIndexingOutput")),
+}).annotate({ identifier: "IndexingNotice" })
+
+const IndexingPipelineStatusInfo = Schema.Struct({
+  state: IndexingStatusState,
+  message: Schema.String,
+  processedFiles: NonNegativeInt,
+  totalFiles: NonNegativeInt,
+  percent: NonNegativeInt.check(Schema.isLessThanOrEqualTo(100)),
+  detail: Schema.optional(Schema.String),
+  lastFullScanAt: Schema.optional(Schema.String),
+  errorCount: NonNegativeInt,
+  staleCount: NonNegativeInt,
+  skippedCount: NonNegativeInt,
+  validFileCount: Schema.optional(NonNegativeInt),
+  recentErrors: Schema.optional(Schema.Array(IndexingDiagnosticInfo)),
+})
+
 export const IndexingStatusInfo = Schema.Struct({
   state: IndexingStatusState,
   message: Schema.String,
@@ -15,34 +45,11 @@ export const IndexingStatusInfo = Schema.Struct({
   percent: NonNegativeInt.check(Schema.isLessThanOrEqualTo(100)),
   pipelines: Schema.optional(
     Schema.Struct({
-      codeGraph: Schema.Struct({
-        state: IndexingStatusState,
-        message: Schema.String,
-        processedFiles: NonNegativeInt,
-        totalFiles: NonNegativeInt,
-        percent: NonNegativeInt.check(Schema.isLessThanOrEqualTo(100)),
-        detail: Schema.optional(Schema.String),
-        lastFullScanAt: Schema.optional(Schema.String),
-        errorCount: NonNegativeInt,
-        staleCount: NonNegativeInt,
-        skippedCount: NonNegativeInt,
-        validFileCount: Schema.optional(NonNegativeInt),
-      }),
-      rag: Schema.Struct({
-        state: IndexingStatusState,
-        message: Schema.String,
-        processedFiles: NonNegativeInt,
-        totalFiles: NonNegativeInt,
-        percent: NonNegativeInt.check(Schema.isLessThanOrEqualTo(100)),
-        detail: Schema.optional(Schema.String),
-        lastFullScanAt: Schema.optional(Schema.String),
-        errorCount: NonNegativeInt,
-        staleCount: NonNegativeInt,
-        skippedCount: NonNegativeInt,
-        validFileCount: Schema.optional(NonNegativeInt),
-      }),
+      codeGraph: IndexingPipelineStatusInfo,
+      rag: IndexingPipelineStatusInfo,
     }),
   ),
+  notices: Schema.optional(Schema.Array(IndexingNoticeInfo)),
 }).annotate({ identifier: "IndexingStatus" })
 
 export const Event = BusEvent.define(

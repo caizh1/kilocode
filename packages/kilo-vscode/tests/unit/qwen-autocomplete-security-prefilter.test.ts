@@ -275,7 +275,10 @@ async function temp(): Promise<string> {
 function doc(text: string, input: { languageId?: string; path?: string; scheme?: string } = {}): vscode.TextDocument {
   const lines = text.split("\n")
   const file = input.path ?? "/repo/src/main.c"
-  const uri = input.scheme === "untitled" ? ({ scheme: "untitled", fsPath: file, path: file } as vscode.Uri) : vscode.Uri.file(file)
+  const uri =
+    input.scheme === "untitled"
+      ? ({ scheme: "untitled", fsPath: file, path: file } as vscode.Uri)
+      : vscode.Uri.file(file)
   return {
     uri,
     languageId: input.languageId ?? "c",

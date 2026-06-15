@@ -12,11 +12,17 @@ import { createContext, useContext, createSignal, createMemo, onCleanup } from "
 import type { ParentComponent, Accessor } from "solid-js"
 import { useVSCode } from "./vscode"
 import type { Config, ExtensionMessage, FeatureFlags } from "../types/messages"
-import { deepMerge, stripNulls, resolveConfig } from "../utils/config-utils"
+import { deepEqual, deepMerge, stripNulls, resolveConfig } from "../utils/config-utils"
 import { splitConfigByScope } from "../utils/config-scope"
 
 function has(value: Record<string, unknown>) {
   return Object.keys(value).length > 0
+}
+
+function createRequestId() {
+  const crypto = globalThis.crypto
+  if (crypto?.randomUUID) return crypto.randomUUID()
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
 export interface SaveError {
@@ -64,6 +70,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   // True while a saveConfig() write is in-flight — used to clear draft on success
   // and to guard against stale configLoaded messages overwriting optimistic state.
   const [saving, setSaving] = createSignal(false)
+  const [request, setRequest] = createSignal<string>()
   // Error from the most recent saveConfig() attempt, or null if no error.
   // Cleared when the user edits the draft again or starts a new save.
   const [saveError, setSaveError] = createSignal<SaveError | null>(null)
@@ -104,10 +111,13 @@ export const ConfigProvider: ParentComponent = (props) => {
       return
     }
     if (message.type === "configUpdated") {
+      if (!saving() && message.requestId !== undefined) return
       if (saving()) {
+        if (message.requestId !== request()) return
         // This configUpdated is the confirmation of our saveConfig() write.
         // Clear the draft now that the server has confirmed the write.
         setSaving(false)
+        setRequest(undefined)
         setDraft({})
         setGlobalDraft({})
         setSaveError(null)
@@ -131,9 +141,12 @@ export const ConfigProvider: ParentComponent = (props) => {
       return
     }
     if (message.type === "configUpdateFailed") {
+      if (!saving() && message.requestId !== undefined) return
+      if (saving() && message.requestId !== request()) return
       // The write was rejected (e.g. schema validation) — surface the error
       // and keep the draft + isDirty so the user can correct and retry.
       setSaving(false)
+      setRequest(undefined)
       setSaveError({ message: message.message, details: message.details })
       return
     }
@@ -177,7 +190,10 @@ export const ConfigProvider: ParentComponent = (props) => {
 
   function updateConfig(partial: Partial<Config>) {
     // Optimistically update local state with deep merge + null stripping
-    setConfig((prev) => stripNulls(deepMerge(prev, partial)))
+    const current = config()
+    const next = stripNulls(deepMerge(current, partial))
+    if (deepEqual(next, current)) return
+    setConfig(next)
     // Accumulate in draft — will be sent on saveConfig()
     setDraft((prev) => deepMerge(prev as Config, partial))
     // Clear any stale error from a previous failed save — the user is editing
@@ -186,7 +202,10 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function updateGlobalConfig(partial: Partial<Config>) {
-    setGlobalConfig((prev) => stripNulls(deepMerge(prev, partial)))
+    const current = globalConfig()
+    const next = stripNulls(deepMerge(current, partial))
+    if (deepEqual(next, current)) return
+    setGlobalConfig(next)
     setGlobalDraft((prev) => deepMerge(prev as Config, partial))
     setSaveError(null)
   }
@@ -198,6 +217,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function saveConfig() {
+    if (saving()) return
     const changes = draft()
     const globals = globalDraft()
     const pending = settingsDraft()
@@ -218,6 +238,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     }
     if (!configDirty && !globalDirty) {
       setSaving(false)
+      setRequest(undefined)
       return
     }
     // Split so per-project settings (e.g. commit_message.prompt) land in the
@@ -225,7 +246,9 @@ export const ConfigProvider: ParentComponent = (props) => {
     // extension confirms only after both scopes are saved.
     const split = splitConfigByScope(changes)
     const next = deepMerge(split.global as Config, globals)
-    vscode.postMessage({ type: "updateConfig", config: next, projectConfig: split.project })
+    const id = createRequestId()
+    setRequest(id)
+    vscode.postMessage({ type: "updateConfig", requestId: id, config: next, projectConfig: split.project })
   }
 
   function discardConfig() {
@@ -233,6 +256,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     setGlobalConfig(savedGlobal())
     setDraft({})
     setGlobalDraft({})
+    setRequest(undefined)
     setSettings(savedSettings())
     setSettingsDraft({})
     setSaveError(null)

@@ -1,8 +1,12 @@
 import * as fs from "fs"
 import * as path from "path"
+import { pathToFileURL } from "url"
 
 const dir = "tree-sitter"
 const runtime = "tree-sitter.wasm"
+const lancedb = "lancedb"
+const lancedbEntry = ["node_modules", "@lancedb", "lancedb", "dist", "index.js"]
+const codegraph = "codegraph-parser-worker.mjs"
 
 function paths(file: string) {
   if (/^[a-z]:[\\/]/i.test(file) || file.includes("\\")) return path.win32
@@ -22,8 +26,39 @@ export function resolveTreeSitterEnv(root: string): Record<string, string> {
   return { KILO_TREE_SITTER_WASM_DIR: treeSitterDirForExtension(root) }
 }
 
+export function lancedbDirForExtension(root: string): string {
+  return paths(root).join(root, "bin", lancedb)
+}
+
+export function lancedbEntryForExtension(root: string): string {
+  return paths(root).join(lancedbDirForExtension(root), ...lancedbEntry)
+}
+
+export function resolveLanceDBEnv(root: string): Record<string, string> {
+  const file = lancedbEntryForExtension(root)
+  if (!fs.existsSync(file)) return {}
+  return { KILO_LANCEDB_PATH: pathToFileURL(file).href }
+}
+
 export function hasTreeSitterResources(file: string): boolean {
   return fs.existsSync(path.join(treeSitterDirForBinary(file), runtime))
+}
+
+export function codeGraphParserWorkerForBinary(file: string): string {
+  return paths(file).join(paths(file).dirname(file), codegraph)
+}
+
+export function hasCodeGraphParserWorker(file: string): boolean {
+  return fs.existsSync(codeGraphParserWorkerForBinary(file))
+}
+
+export async function copyCodeGraphParserWorker(source: string, target: string): Promise<void> {
+  const from = codeGraphParserWorkerForBinary(source)
+  if (!fs.existsSync(from)) {
+    throw new Error(`CLI CodeGraph parser worker not found at ${from}`)
+  }
+
+  await fs.promises.copyFile(from, codeGraphParserWorkerForBinary(target))
 }
 
 export async function copyTreeSitterResources(source: string, target: string): Promise<void> {

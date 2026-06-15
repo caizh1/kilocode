@@ -234,7 +234,7 @@ async function make() {
 }
 
 describe("code graph scanner and watcher integration", () => {
-  test("DirectoryScanner upserts changed C graphs and marks deleted graphs stale", async () => {
+  test("DirectoryScanner upserts changed C graphs and prunes deleted graphs", async () => {
     const ctx = await make()
     const file = path.join(ctx.root, "src/main.c")
     await writeFile(file, "// scanner comment token\nint helper(void) { return 1; }\n")
@@ -267,9 +267,9 @@ describe("code graph scanner and watcher integration", () => {
     await rm(file)
     await scan.scanDirectory(ctx.root)
     expect(graph.status()).toMatchObject({
-      recordCount: 1,
+      recordCount: 0,
       validFileCount: 0,
-      staleCount: 1,
+      staleCount: 0,
     })
     expect(await graph.getFileGraph(file)).toBeUndefined()
     expect(await postings.search("scanner comment")).toEqual([])
@@ -281,7 +281,19 @@ describe("code graph scanner and watcher integration", () => {
     await writeFile(file, "int first(void) { return 1; }\n")
     const graph = new CodeGraphJsonStorage({ workspacePath: ctx.root, cacheDirectory: ctx.cache })
     const postings = new CodePostingsJsonStorage({ workspacePath: ctx.root, cacheDirectory: ctx.cache })
-    const watcher = new FileWatcher(ctx.root, ctx.mgr, new Emb(), new Store(), ignore(), 10, 1, undefined, undefined, graph, postings)
+    const watcher = new FileWatcher(
+      ctx.root,
+      ctx.mgr,
+      new Emb(),
+      new Store(),
+      ignore(),
+      10,
+      1,
+      undefined,
+      undefined,
+      graph,
+      postings,
+    )
 
     await watcher.processFile(file)
     expect((await graph.getFileGraph(file))?.functions[0]?.name).toBe("first")
@@ -292,9 +304,11 @@ describe("code graph scanner and watcher integration", () => {
     expect((await graph.getFileGraph(file))?.functions[0]?.name).toBe("second")
     expect(await postings.search("watcher updated")).toHaveLength(1)
 
-    await (watcher as unknown as {
-      processBatch(events: Map<string, { path: string; type: "create" | "change" | "delete" }>): Promise<void>
-    }).processBatch(new Map([[file, { path: file, type: "delete" }]]))
+    await (
+      watcher as unknown as {
+        processBatch(events: Map<string, { path: string; type: "create" | "change" | "delete" }>): Promise<void>
+      }
+    ).processBatch(new Map([[file, { path: file, type: "delete" }]]))
     expect(graph.status()).toMatchObject({ validFileCount: 0, staleCount: 1 })
     expect(postings.status()).toMatchObject({ validFileCount: 0, staleCount: 1 })
   })
@@ -330,7 +344,18 @@ describe("code graph scanner and watcher integration", () => {
     const file = path.join(ctx.root, "main.c")
     await writeFile(file, "int main(void) { return 0; }\n")
     const store = new Store()
-    const scan = new DirectoryScanner(new Emb(), store, new Parser(), ctx.mgr, ignore(), 10, 1, undefined, undefined, new ThrowGraph())
+    const scan = new DirectoryScanner(
+      new Emb(),
+      store,
+      new Parser(),
+      ctx.mgr,
+      ignore(),
+      10,
+      1,
+      undefined,
+      undefined,
+      new ThrowGraph(),
+    )
 
     const result = await scan.scanDirectory(ctx.root)
 

@@ -26,6 +26,7 @@ type Data = {
     state: string
     stopWatcher(): void
     startIndexing(trigger: IndexingTelemetryTrigger): Promise<void>
+    startRagIndexing?(trigger: IndexingTelemetryTrigger, reason?: string): Promise<void>
   }
   _searchService?: {}
   _cacheManager: {}
@@ -92,32 +93,38 @@ describe("CodeIndexManager", () => {
   test("does not throw when indexing is enabled but not configured", async () => {
     const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
 
-    await mgr.initialize(createInput({ openAiKey: undefined }))
+    try {
+      await mgr.initialize(createInput({ openAiKey: undefined }))
 
-    expect(mgr.isFeatureEnabled).toBe(true)
-    expect(mgr.isFeatureConfigured).toBe(false)
-    expect(mgr.getCurrentStatus().systemStatus).toBe("Standby")
-    expect(mgr.getCurrentStatus().message).toContain("not configured")
-    expect(mgr.getCodeGraphStatus()).toMatchObject({
-      state: "disabled",
-      enabled: false,
-      evidenceAvailable: false,
-      detail: "indexing-not-configured",
-    })
+      expect(mgr.isFeatureEnabled).toBe(true)
+      expect(mgr.isFeatureConfigured).toBe(false)
+      expect(mgr.getCurrentStatus().systemStatus).not.toBe("Error")
+      expect(mgr.getCodeGraphStatus()).toMatchObject({
+        state: "container_ready",
+        enabled: true,
+        evidenceAvailable: false,
+      })
+    } finally {
+      mgr.dispose()
+    }
   })
 
-  test("does not start code graph sidecar when indexing is disabled", async () => {
+  test("starts code graph sidecar when RAG indexing is disabled", async () => {
     const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
 
-    await mgr.initialize(createInput({ enabled: false, openAiKey: "sk-test" }))
+    try {
+      await mgr.initialize(createInput({ enabled: false, openAiKey: "sk-test" }))
 
-    expect(mgr.isFeatureEnabled).toBe(false)
-    expect(mgr.getCodeGraphStatus()).toMatchObject({
-      state: "disabled",
-      enabled: false,
-      evidenceAvailable: false,
-      detail: "indexing-disabled",
-    })
+      expect(mgr.isFeatureEnabled).toBe(false)
+      expect(mgr.getCurrentStatus().systemStatus).not.toBe("Error")
+      expect(mgr.getCodeGraphStatus()).toMatchObject({
+        state: "container_ready",
+        enabled: true,
+        evidenceAvailable: false,
+      })
+    } finally {
+      mgr.dispose()
+    }
   })
 
   test("starts code graph sidecar container after services initialize", async () => {
@@ -195,8 +202,8 @@ describe("CodeIndexManager", () => {
 
     await mgr.initialize(createInput({ openAiKey: undefined }))
 
-    expect(cancel).toBe(1)
-    expect(stop).toBe(0)
+    expect(cancel).toBe(0)
+    expect(stop).toBe(1)
   })
 
   test("emits manual indexing start telemetry", async () => {
@@ -294,6 +301,80 @@ describe("CodeIndexManager", () => {
     expect(started?.source).toBe("scan")
   })
 
+  test("restarts RAG only when embedding settings change", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _orchestrator?: {
+        state: string
+        startIndexing(trigger: IndexingTelemetryTrigger): Promise<void>
+        startRagIndexing(trigger: IndexingTelemetryTrigger, reason?: string): Promise<void>
+      }
+      _searchService?: {}
+      _recreateServices(): Promise<void>
+    }
+    let full = 0
+    let rag = 0
+    let reason: string | undefined
+
+    data._cacheManager = {}
+    data._recreateServices = async () => {
+      data._orchestrator = {
+        state: "Standby",
+        async startIndexing() {
+          full += 1
+        },
+        async startRagIndexing(_trigger, value) {
+          rag += 1
+          reason = value
+        },
+      }
+      data._searchService = {}
+    }
+
+    await mgr.initialize(createInput({ openAiKey: "sk-test", modelId: "text-embedding-3-small" }))
+    full = 0
+    rag = 0
+
+    await mgr.handleSettingsChange(createInput({ openAiKey: "sk-test", modelId: "text-embedding-ada-002" }))
+
+    expect(full).toBe(0)
+    expect(rag).toBe(1)
+    expect(reason).toBe("settings-change")
+  })
+
+  test("does not restart indexing when only search tuning changes", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _orchestrator?: {
+        state: string
+        startIndexing(trigger: IndexingTelemetryTrigger): Promise<void>
+        startRagIndexing(trigger: IndexingTelemetryTrigger, reason?: string): Promise<void>
+      }
+      _searchService?: {}
+      _recreateServices(): Promise<void>
+    }
+    let restarts = 0
+
+    data._cacheManager = {}
+    data._recreateServices = async () => {
+      restarts += 1
+      data._orchestrator = {
+        state: "Standby",
+        async startIndexing() {},
+        async startRagIndexing() {},
+      }
+      data._searchService = {}
+    }
+
+    await mgr.initialize(createInput({ openAiKey: "sk-test", searchMinScore: 0.4 }))
+    restarts = 0
+    await mgr.handleSettingsChange(createInput({ openAiKey: "sk-test", searchMinScore: 0.5 }))
+
+    expect(restarts).toBe(0)
+  })
+
   test("schedules auto-recovery for orchestrator start failures", async () => {
     const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
     const data = createData(mgr)
@@ -332,6 +413,46 @@ describe("CodeIndexManager", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(calls).toBe(0)
+  })
+
+  test("retains recent RAG telemetry errors for indexing status diagnostics", () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = createData(mgr)
+
+    data.handleTelemetry({
+      ...createStartError("scanner:batch"),
+      error: String.raw`failed to parse C:\Users\test\repo\src\main.c`,
+      file: String.raw`C:\Users\test\repo\src\main.c`,
+    })
+
+    const errors = mgr.getRecentErrors()
+    expect(errors.rag?.[0]).toMatchObject({
+      source: "scan",
+      location: "scanner:batch",
+      file: String.raw`C:\Users\test\repo\src\main.c`,
+    })
+    expect(errors.rag?.[0]?.message).toContain("[REDACTED_PATH]")
+    expect(errors.codeGraph).toBeUndefined()
+  })
+
+  test("routes recent Code Graph telemetry errors to the Code Graph pipeline", () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = createData(mgr)
+
+    data.handleTelemetry({
+      ...createStartError("scanner:updateFileGraph"),
+      error: "tree-sitter failed",
+      file: "src/main.c",
+    })
+
+    const errors = mgr.getRecentErrors()
+    expect(errors.codeGraph?.[0]).toMatchObject({
+      source: "scan",
+      location: "scanner:updateFileGraph",
+      file: "src/main.c",
+      message: "tree-sitter failed",
+    })
+    expect(errors.rag).toBeUndefined()
   })
 
   test("runs only one recovery loop for duplicate error telemetry", async () => {

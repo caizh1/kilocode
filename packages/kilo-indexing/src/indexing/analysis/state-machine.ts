@@ -87,7 +87,10 @@ export function buildStateEvidence(input: {
   return {
     ...out,
     trace: trace({
-      reason: out.transitions.length || out.flows.length ? "intent-matched-line-backed-candidate-evidence" : "intent-matched-no-line-backed-candidate-evidence",
+      reason:
+        out.transitions.length || out.flows.length
+          ? "intent-matched-line-backed-candidate-evidence"
+          : "intent-matched-no-line-backed-candidate-evidence",
       matched,
       counts,
       generatedTransitionCount: out.transitions.length,
@@ -135,7 +138,8 @@ export function finalizeStateEvidence(input: StateBuildResult, refs: EvidenceRef
       generatedFlowCount: flows.length,
       droppedTransitionCount,
       droppedFlowCount,
-      droppedByBudget: input.trace.droppedByBudget + input.transitions.length - transitions.length + input.flows.length - flows.length,
+      droppedByBudget:
+        input.trace.droppedByBudget + input.transitions.length - transitions.length + input.flows.length - flows.length,
       limitations:
         transitions.length || flows.length
           ? limits(transitions, flows)
@@ -144,7 +148,10 @@ export function finalizeStateEvidence(input: StateBuildResult, refs: EvidenceRef
   }
 }
 
-export function policyForStateEvidence(input: { transitions: StateTransitionEvidence[]; flows: ModuleFlowEvidence[] }): QueryEvidenceAnswerPolicy {
+export function policyForStateEvidence(input: {
+  transitions: StateTransitionEvidence[]
+  flows: ModuleFlowEvidence[]
+}): QueryEvidenceAnswerPolicy {
   const items = [...input.transitions, ...input.flows]
   if (items.length === 0) {
     return {
@@ -200,7 +207,12 @@ function transition(item: EvidenceRef): { ref: EvidenceRef; transition: StateTra
     kind: "state-transition",
     confidence: conf,
     reason: `candidate state/transition evidence derived from ${item.source} candidate`,
-    displayName: item.displayName ?? item.symbolName ?? item.functionName ?? item.labelName ?? `${item.filePath}:${item.startLine}`,
+    displayName:
+      item.displayName ??
+      item.symbolName ??
+      item.functionName ??
+      item.labelName ??
+      `${item.filePath}:${item.startLine}`,
   }
   return {
     ref,
@@ -220,7 +232,11 @@ function transition(item: EvidenceRef): { ref: EvidenceRef; transition: StateTra
   }
 }
 
-function flow(query: string, refs: EvidenceRef[], errorPaths: ErrorPathEvidence[]): Array<{ ref: EvidenceRef; flow: ModuleFlowEvidence }> {
+function flow(
+  query: string,
+  refs: EvidenceRef[],
+  errorPaths: ErrorPathEvidence[],
+): Array<{ ref: EvidenceRef; flow: ModuleFlowEvidence }> {
   const kind = flowKind(query)
   if (!kind) return []
 
@@ -257,7 +273,9 @@ function flow(query: string, refs: EvidenceRef[], errorPaths: ErrorPathEvidence[
     basis,
     "Only listed source-backed candidate flow/impact evidence is included.",
     ...(basis.includes("顺序未被完整证明") ? [] : ["Only listed evidence-backed steps are included."]),
-    ...(errorPaths.length > 0 ? ["Related error/cleanup evidence may indicate failure-path steps, not full lifecycle coverage."] : []),
+    ...(errorPaths.length > 0
+      ? ["Related error/cleanup evidence may indicate failure-path steps, not full lifecycle coverage."]
+      : []),
   ]
   return [
     {
@@ -309,7 +327,8 @@ function transitionLike(item: EvidenceRef): boolean {
 
 function flowLike(item: EvidenceRef): boolean {
   if (item.kind === "caller" || item.kind === "callee" || item.kind === "call_site") return true
-  if (item.kind === "function" || item.kind === "declaration" || item.kind === "file" || item.kind === "include") return true
+  if (item.kind === "function" || item.kind === "declaration" || item.kind === "file" || item.kind === "include")
+    return true
   if (item.kind === "cleanup-path" || item.kind === "error-path") return true
   return /init|deinit|dispatch|handler|flow|impact/i.test(blob(item))
 }
@@ -324,7 +343,9 @@ function confFor(item: EvidenceRef): Exclude<EvidenceConfidence, "none"> {
 
 function transitionLimits(item: EvidenceRef): string[] {
   if (item.source === "vector") {
-    return ["Only line-backed semantic/vector evidence supports this candidate transition; graph/BM25 support is missing."]
+    return [
+      "Only line-backed semantic/vector evidence supports this candidate transition; graph/BM25 support is missing.",
+    ]
   }
   if (item.source === "bm25") {
     return ["Lexical evidence can identify candidate state/transition text but does not prove control flow by itself."]
@@ -409,17 +430,26 @@ function trace(input: {
 }
 
 function limits(transitions: StateTransitionEvidence[], flows: ModuleFlowEvidence[]): string[] {
-  return [...new Set([...transitions.flatMap((item) => item.limitations), ...flows.flatMap((item) => item.limitations)])]
+  return [
+    ...new Set([...transitions.flatMap((item) => item.limitations), ...flows.flatMap((item) => item.limitations)]),
+  ]
 }
 
-function confidence(items: Array<{ confidence: Exclude<EvidenceConfidence, "none"> }>): Exclude<EvidenceConfidence, "none"> {
+function confidence(
+  items: Array<{ confidence: Exclude<EvidenceConfidence, "none"> }>,
+): Exclude<EvidenceConfidence, "none"> {
   if (items.some((item) => item.confidence === "high")) return "high"
   if (items.some((item) => item.confidence === "medium")) return "medium"
   return "low"
 }
 
 function range(item: EvidenceRef): boolean {
-  return Number.isFinite(item.startLine) && Number.isFinite(item.endLine) && item.startLine > 0 && item.endLine >= item.startLine
+  return (
+    Number.isFinite(item.startLine) &&
+    Number.isFinite(item.endLine) &&
+    item.startLine > 0 &&
+    item.endLine >= item.startLine
+  )
 }
 
 function order(left: EvidenceRef, right: EvidenceRef): number {
@@ -446,7 +476,15 @@ function symbols(refs: EvidenceRef[]): string[] {
   return [
     ...new Set(
       refs
-        .map((item) => item.symbolName ?? item.functionName ?? item.callerName ?? item.calleeName ?? item.labelName ?? item.displayName)
+        .map(
+          (item) =>
+            item.symbolName ??
+            item.functionName ??
+            item.callerName ??
+            item.calleeName ??
+            item.labelName ??
+            item.displayName,
+        )
         .filter((item): item is string => Boolean(item)),
     ),
   ].slice(0, MAX_FLOW_STEPS_PER_FLOW)
@@ -503,9 +541,5 @@ function hash(value: string): string {
 }
 
 function xml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;")
 }

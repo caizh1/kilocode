@@ -4,6 +4,8 @@
 
 .prompt-input-container {
   position: relative;
+  container-name: prompt-input;
+  container-type: inline-size;
   margin: 12px;
   border-radius: 0.25rem;
   background-color: var(--input-base, var(--vscode-input-background, #3c3c3c));
@@ -396,7 +398,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
   font-size: var(--kilo-font-size-11);
   color: var(--vscode-descriptionForeground);
   padding: 6px;
@@ -404,14 +407,19 @@
 
 .prompt-input-hint-selectors {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  flex: 1 1 180px;
+  flex: 1 1 170px;
   min-width: 0;
 
   [data-component="button"] {
-    height: auto !important;
-    min-height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-width: 0;
+    height: 24px !important;
+    min-height: 24px;
     padding: 4px 6px !important;
     font-size: var(--kilo-font-size-12);
     line-height: normal;
@@ -440,6 +448,75 @@
       box-shadow: 0 0 0 1px var(--border-focus);
     }
   }
+}
+
+.prompt-input-hint-selectors .prompt-selector-trigger {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.prompt-input-hint-selectors .prompt-selector-trigger--mode {
+  flex-basis: 82px;
+  min-width: 58px;
+  max-width: 116px;
+}
+
+.prompt-input-hint-selectors .prompt-selector-trigger--model {
+  flex: 1 1 132px;
+  min-width: 84px;
+  max-width: min(100%, 220px);
+}
+
+.prompt-input-hint-selectors .prompt-selector-trigger--thinking {
+  flex-basis: 86px;
+  min-width: 58px;
+  max-width: 112px;
+}
+
+.prompt-selector-icon,
+.prompt-selector-icon [data-component="icon"] {
+  display: none;
+}
+
+.prompt-input-hint-selectors .prompt-selector-icon,
+.prompt-input-hint-selectors .prompt-selector-icon [data-component="icon"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.prompt-input-hint-selectors .prompt-selector-icon [data-slot="icon-svg"] {
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+}
+
+.prompt-input-hint-selectors .prompt-selector-trigger .model-selector-trigger-label,
+.prompt-input-hint-selectors .prompt-selector-trigger .mode-switcher-trigger-label,
+.prompt-input-hint-selectors .prompt-selector-trigger .thinking-selector-trigger-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-input-hint-selectors .prompt-selector-trigger .model-selector-trigger-free-data,
+.prompt-input-hint-selectors .prompt-selector-chevron {
+  flex: 0 0 auto;
+}
+
+.prompt-selector-reset {
+  width: 24px;
+  min-width: 24px;
+  height: 24px !important;
+  min-height: 24px !important;
+  flex: 0 0 24px;
+  justify-content: center !important;
+  padding: 0 !important;
 }
 
 /* Remote Settings */
@@ -504,15 +581,27 @@
 
 .prompt-input-hint-actions {
   display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 4px;
   margin-left: auto;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  min-width: 0;
   align-self: flex-end;
 
   [data-component="button"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    min-width: 24px;
+    height: 24px !important;
+    min-height: 24px;
+    flex: 0 0 24px;
     background: transparent;
     border: none;
-    padding: 4px;
+    padding: 0 !important;
 
     [data-slot="icon-svg"] {
       color: var(--icon-base);
@@ -522,6 +611,90 @@
     [data-slot="icon-svg"] {
       color: var(--icon-base) !important;
     }
+  }
+
+  svg {
+    flex: 0 0 auto;
+  }
+}
+
+@container prompt-input (max-width: 420px) {
+  .prompt-input-hint {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .prompt-input-hint-selectors {
+    width: 100%;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+  }
+
+  .prompt-input-hint-selectors .prompt-selector-trigger--mode {
+    flex: 0 1 86px;
+    min-width: 82px;
+    max-width: 92px;
+  }
+
+  .prompt-input-hint-selectors .prompt-selector-trigger--model {
+    flex: 1 1 92px;
+    min-width: 64px;
+    max-width: none;
+  }
+
+  .prompt-input-hint-selectors .prompt-selector-trigger--thinking {
+    flex: 0 1 100px;
+    min-width: 96px;
+    max-width: 104px;
+  }
+
+  .prompt-input-hint-actions {
+    width: 100%;
+    margin-left: 0;
+    align-self: stretch;
+  }
+}
+
+@container prompt-input (max-width: 300px) {
+  .prompt-input-hint {
+    flex-direction: row;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .prompt-input-hint-selectors {
+    width: auto;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .prompt-input-hint-selectors .prompt-selector-trigger,
+  .prompt-input-hint-selectors .prompt-selector-trigger--mode,
+  .prompt-input-hint-selectors .prompt-selector-trigger--model,
+  .prompt-input-hint-selectors .prompt-selector-trigger--thinking {
+    width: 28px;
+    min-width: 28px;
+    max-width: 28px;
+    flex: 0 0 28px;
+    justify-content: center !important;
+    padding: 0 !important;
+  }
+
+  .prompt-input-hint-selectors .prompt-selector-trigger .model-selector-trigger-label,
+  .prompt-input-hint-selectors .prompt-selector-trigger .mode-switcher-trigger-label,
+  .prompt-input-hint-selectors .prompt-selector-trigger .thinking-selector-trigger-label,
+  .prompt-input-hint-selectors .prompt-selector-trigger .model-selector-trigger-free-data,
+  .prompt-input-hint-selectors .prompt-selector-chevron {
+    display: none;
+  }
+
+  .prompt-input-hint-actions {
+    width: auto;
+    flex: 1 1 96px;
+    margin-left: 0;
+    align-self: center;
+    justify-content: flex-end;
   }
 }
 

@@ -173,7 +173,8 @@ export const dict = {
   "provider.connect.oauth.code.invalid": "授權碼無效",
   "provider.connect.oauth.auto.visit.prefix": "造訪 ",
   "provider.connect.oauth.auto.visit.link": "此連結",
-  "provider.connect.oauth.auto.visit.suffix": " 並輸入以下程式碼，以連線你的帳戶並在 ChipMate 中使用 {{provider}} 模型。",
+  "provider.connect.oauth.auto.visit.suffix":
+    " 並輸入以下程式碼，以連線你的帳戶並在 ChipMate 中使用 {{provider}} 模型。",
   "provider.connect.oauth.auto.confirmationCode": "確認碼",
   "provider.connect.toast.connected.title": "{{provider}} 已連線",
   "provider.connect.toast.connected.description": "現在可以使用 {{provider}} 模型了。",
@@ -1207,7 +1208,8 @@ export const dict = {
   "settings.experimental.codebaseSearch.title": "程式碼庫搜尋",
   "settings.experimental.codebaseSearch.description": "啟用 AI 驅動的自然語言程式碼庫搜尋",
   "settings.experimental.speechToText.title": "語音轉文字",
-  "settings.experimental.speechToText.description": "透過 ChipMate Gateway 使用您的 ChipMate 帳戶在提示詞欄位中啟用語音輸入。",
+  "settings.experimental.speechToText.description":
+    "透過 ChipMate Gateway 使用您的 ChipMate 帳戶在提示詞欄位中啟用語音輸入。",
   "settings.experimental.speechToText.disabledDescription":
     "啟用並登入 ChipMate 供應商以使用 Speech to Text。Speech to Text 目前僅支援透過 ChipMate Gateway 使用。",
   "settings.experimental.speechToTextModel.title": "語音轉文字模型",
@@ -1217,7 +1219,8 @@ export const dict = {
   "settings.experimental.mcpTimeout.title": "MCP 逾時（毫秒）",
   "settings.experimental.mcpTimeout.description": "MCP 伺服器請求的逾時時間（毫秒）",
   "settings.experimental.remote.title": "Remote 控制",
-  "settings.experimental.remote.description": "透過 ChipMate Cloud 啟用工作階段的 Remote 控制。這也會影響此電腦上的 CLI。",
+  "settings.experimental.remote.description":
+    "透過 ChipMate Cloud 啟用工作階段的 Remote 控制。這也會影響此電腦上的 CLI。",
   "settings.experimental.remote.current": "目前狀態：",
   "settings.experimental.remote.startup": "啟動時自動啟用：",
   "settings.experimental.remote.active": "已啟用",
@@ -1456,8 +1459,7 @@ export const dict = {
   // legacy-migration start
   "settings.legacyMigration.link": "從舊版遷移",
   "settings.aboutKiloCode.legacyMigration.title": "舊版遷移",
-  "settings.aboutKiloCode.legacyMigration.description":
-    "從舊版 ChipMate 安裝遷移設定，包括供應商 API 金鑰和預設模型。",
+  "settings.aboutKiloCode.legacyMigration.description": "從舊版 ChipMate 安裝遷移設定，包括供應商 API 金鑰和預設模型。",
 
   // Screen 1 — What's New
   "migration.whatsNew.title": "ChipMate 新功能",

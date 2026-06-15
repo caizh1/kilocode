@@ -29,7 +29,10 @@ export namespace LanceDBRuntime {
 
     box.ready = (async () => {
       const result = await Npm.add(`${pkg}@${version}`)
-      if (result.entrypoint) process.env[env] = result.entrypoint
+      if (!result.entrypoint) {
+        throw new Error(`Failed to resolve ${pkg}@${version} import entrypoint after installation.`)
+      }
+      process.env[env] = result.entrypoint
     })().catch((err) => {
       box.ready = undefined
       throw err

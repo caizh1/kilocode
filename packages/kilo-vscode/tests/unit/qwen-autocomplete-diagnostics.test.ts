@@ -330,7 +330,9 @@ function parsed(): Array<Record<string, unknown>> {
 }
 
 function stubConfig(values: QwenAutocompleteConfig): void {
-  ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (section?: string) => {
+  ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (
+    section?: string,
+  ) => {
     if (section !== "kilo.autocomplete") return originalConfig(section)
     return {
       get: (key: string, fallback?: unknown) => {

@@ -1052,6 +1052,23 @@ describe("QdrantVectorStore", () => {
     expect(call.wait).toBe(true)
   })
 
+  test("cleans only inactive points in the current collection", async () => {
+    mockGetCollection.mockResolvedValue({ points_count: 3 } as any)
+    mockDelete.mockResolvedValue({} as any)
+
+    const stats = await vectorStore.cleanupInactivePoints()
+
+    expect(stats.skipped).toEqual([])
+    expect(mockDelete).toHaveBeenCalledWith(expectedCollectionName, {
+      filter: {
+        must: [{ key: "active", match: { value: false } }],
+        must_not: [{ key: "type", match: { value: "metadata" } }],
+      },
+      wait: true,
+    })
+    expect(mockDeleteCollection).not.toHaveBeenCalled()
+  })
+
   test("should return true when collection exists", async () => {
     mockGetCollection.mockResolvedValue({
       config: {

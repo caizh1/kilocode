@@ -1,5 +1,5 @@
 import { createHash } from "crypto"
-import { mkdtemp } from "fs/promises"
+import { mkdir, mkdtemp } from "fs/promises"
 import ignore from "ignore"
 import { tmpdir } from "os"
 import { join } from "path"
@@ -17,6 +17,7 @@ import type {
 } from "../../../../src/indexing/interfaces"
 import { loadIgnore } from "../../../../src/indexing/shared/load-ignore"
 import { DirectoryScanner } from "../../../../src/indexing/processors/scanner"
+import { CodeGraphJsonStorage, CodePostingsJsonStorage } from "../../../../src/indexing/codegraph/storage"
 
 class Emb implements IEmbedder {
   public async createEmbeddings(texts: string[]): Promise<{ embeddings: number[][] }> {
@@ -397,6 +398,169 @@ describe("DirectoryScanner", () => {
     expect(result.stats.processed).toBe(1)
     expect(cache.getHash(blocked)).toBeUndefined()
     expect(cache.getHash(open)).toBeDefined()
+  })
+
+  test("skips plugin state directories during full scans", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const open = join(root, "main.c")
+    const nested = join(root, ".kilo", "worktrees", "feature", "copy.c")
+
+    await mkdir(join(root, ".kilo", "worktrees", "feature"), { recursive: true })
+    await Bun.write(open, "int main(void) { return 0; }\n")
+    await Bun.write(nested, "int copied(void) { return 0; }\n")
+
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+
+    const scan = new DirectoryScanner(new Emb(), new Store(), new Parser(), cache, ignore(), 1, 1)
+    const result = await scan.scanDirectory(root)
+
+    expect(result.stats.processed).toBe(1)
+    expect(cache.getHash(open)).toBeDefined()
+    expect(cache.getHash(nested)).toBeUndefined()
+  })
+
+  test("updates code graph without marking RAG cache current during graph-only scans", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const file = join(root, "main.c")
+    await Bun.write(file, "int main(void) { return 0; }\n")
+
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const graph = new CodeGraphJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const postings = new CodePostingsJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const scan = new DirectoryScanner(
+      undefined,
+      undefined,
+      new Parser(),
+      cache,
+      ignore(),
+      1,
+      1,
+      undefined,
+      undefined,
+      graph,
+      postings,
+      { writeCache: false },
+    )
+
+    const result = await scan.scanDirectory(root)
+
+    expect(result.stats.processed).toBe(1)
+    expect(cache.getHash(file)).toBeUndefined()
+    expect((await graph.getFileGraph(file))?.functions[0]?.name).toBe("main")
+    expect((await postings.search("main"))[0]?.filePath).toBe("main.c")
+  })
+
+  test("graph-only target skips embedding and keeps RAG cache stale", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const file = join(root, "main.c")
+    await Bun.write(file, "int main(void) { return 0; }\n")
+
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const graph = new CodeGraphJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const postings = new CodePostingsJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const store = new Store()
+    const scan = new DirectoryScanner(
+      new Emb(),
+      store,
+      new Parser(),
+      cache,
+      ignore(),
+      1,
+      1,
+      undefined,
+      undefined,
+      graph,
+      postings,
+      { writeCache: false },
+    )
+
+    const result = await scan.scanDirectory(root, undefined, undefined, undefined, "full", undefined, "codeGraph")
+
+    expect(result.stats.processed).toBe(1)
+    expect(store.points).toBe(0)
+    expect(cache.getHash(file)).toBeUndefined()
+    expect((await graph.getFileGraph(file))?.functions[0]?.name).toBe("main")
+    expect((await postings.search("main"))[0]?.filePath).toBe("main.c")
+  })
+
+  test("graph-only target only scans files supported by Code Graph", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const cfile = join(root, "main.c")
+    const tsfile = join(root, "app.ts")
+    await Bun.write(cfile, "int main(void) { return 0; }\n")
+    await Bun.write(tsfile, "export const app = 1\n")
+
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const graph = new CodeGraphJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const postings = new CodePostingsJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const store = new Store()
+    const scan = new DirectoryScanner(
+      new Emb(),
+      store,
+      new Parser(),
+      cache,
+      ignore(),
+      1,
+      1,
+      undefined,
+      undefined,
+      graph,
+      postings,
+      { writeCache: false },
+    )
+
+    const graphResult = await scan.scanDirectory(root, undefined, undefined, undefined, "full", undefined, "codeGraph")
+
+    expect(graphResult.stats.processed).toBe(1)
+    expect(await graph.getFileGraph(cfile)).toBeDefined()
+    expect(await graph.getFileGraph(tsfile)).toBeUndefined()
+    expect(cache.getHash(tsfile)).toBeUndefined()
+
+    const ragResult = await scan.scanDirectory(root, undefined, undefined, undefined, "full", undefined, "rag")
+    expect(ragResult.stats.processed).toBe(2)
+    expect(store.points).toBe(2)
+  })
+
+  test("RAG-only target does not update code graph or postings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const file = join(root, "main.c")
+    await Bun.write(file, "int main(void) { return 0; }\n")
+
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const graph = new CodeGraphJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const postings = new CodePostingsJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const store = new Store()
+    const scan = new DirectoryScanner(
+      new Emb(),
+      store,
+      new Parser(),
+      cache,
+      ignore(),
+      1,
+      1,
+      undefined,
+      undefined,
+      graph,
+      postings,
+    )
+
+    const result = await scan.scanDirectory(root, undefined, undefined, undefined, "full", undefined, "rag")
+
+    expect(result.stats.processed).toBe(1)
+    expect(store.points).toBe(1)
+    expect(cache.getHash(file)).toBeDefined()
+    expect(await graph.getFileGraph(file)).toBeUndefined()
+    expect(await postings.search("main")).toEqual([])
   })
 
   test("emits retry telemetry for transient batch failures", async () => {

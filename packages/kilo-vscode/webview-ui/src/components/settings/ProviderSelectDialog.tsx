@@ -19,6 +19,7 @@ import {
 } from "./provider-catalog"
 import CustomProviderDialog from "./CustomProviderDialog"
 import { KILO_PROVIDER_ID } from "../../../../src/shared/provider-model"
+import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 
 type ProviderItem = {
   id: string
@@ -31,6 +32,7 @@ const ProviderSelectDialog = () => {
   const provider = useProvider()
   const server = useServer()
   const language = useLanguage()
+  const internal = isInternalOfflineBuild()
 
   const items = createMemo<ProviderItem[]>(() => {
     language.locale()
@@ -39,7 +41,8 @@ const ProviderSelectDialog = () => {
     const connected = new Set(provider.connected())
     const all = Object.values(provider.providers())
     const withKilo = all.some((item) => item.id === KILO_PROVIDER_ID) ? all : [kiloFallbackProvider(), ...all]
-    const available = withKilo.filter((item) => !disabled.has(item.id) && !connected.has(item.id))
+    const source = internal ? [] : withKilo
+    const available = source.filter((item) => !disabled.has(item.id) && !connected.has(item.id))
 
     return [
       {
@@ -79,7 +82,7 @@ const ProviderSelectDialog = () => {
         items={items()}
         filterKeys={["id", "name"]}
         groupBy={(item) =>
-          item.id !== CUSTOM_PROVIDER_ID && isPopularProvider(item.id)
+          !internal && item.id !== CUSTOM_PROVIDER_ID && isPopularProvider(item.id)
             ? language.t("dialog.provider.group.recommended")
             : language.t("dialog.provider.group.other")
         }

@@ -2,6 +2,7 @@ import z from "zod"
 import path from "path"
 import {
   CodeIndexAnalysisService,
+  CodeIndexConfigManager,
   disabledCodeGraphSidecarStatus,
   type CodeGraphEvidenceQueryOptions,
   type CodeGraphSidecarStatus,
@@ -11,11 +12,17 @@ import {
 } from "@kilocode/kilo-indexing/engine"
 import { toIndexingConfigInput, type IndexingConfig } from "@kilocode/kilo-indexing/config"
 import { hasIndexingPlugin } from "@kilocode/kilo-indexing/detect"
-import { IndexingStatus, disabledIndexingStatus, type IndexingPipelineStatus } from "@kilocode/kilo-indexing/status"
+import {
+  IndexingStatus,
+  disabledIndexingStatus,
+  type IndexingDiagnostic,
+  type IndexingPipelineStatus,
+} from "@kilocode/kilo-indexing/status"
 import { Telemetry } from "@kilocode/kilo-telemetry"
 import { fetchKiloEmbeddingModelCatalog } from "@kilocode/kilo-gateway"
 import { Instance } from "@/project/instance"
 import { Bus } from "@/bus"
+import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Config } from "@/config/config"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Auth } from "@/auth"
@@ -27,9 +34,11 @@ import { Event as IndexingEvent } from "./indexing-event"
 import { IndexingWorker } from "./indexing-worker-client"
 import { LanceDBRuntime } from "./lancedb" // kilocode_change
 import { indexingWithKiloDefault, resolveKiloIndexingAuth, type KiloIndexingAuth } from "./indexing-auth" // kilocode_change
+import { applyInternalIndexingDefaults } from "./internal-offline" // kilocode_change
 
 const log = Log.create({ service: "kilocode-indexing" })
 const auth = makeRuntime(Auth.Service, Auth.defaultLayer)
+const UNKNOWN_INITIALIZATION_ERROR = "Unknown indexing initialization error"
 const missing = () => disabledIndexingStatus("Indexing plugin is not enabled for this workspace.")
 const noWorkspace = () =>
   disabledIndexingStatus("Codebase indexing is disabled because no workspace folder is open in VS Code.")
@@ -38,9 +47,25 @@ function worktreeDisabled(): z.infer<typeof IndexingStatus> {
   return disabledIndexingStatus("Indexing is disabled in worktree sessions. Use the main workspace for indexing.")
 }
 
-function failed(err: unknown): z.infer<typeof IndexingStatus> {
-  const msg = err instanceof Error ? err.message : String(err)
-  const text = msg.startsWith("Failed to initialize:") ? msg : `Failed to initialize: ${msg}`
+async function inputFromConfig(cfg: Config.Info): Promise<ReturnType<typeof toIndexingConfigInput>> {
+  const auth = await kiloAuth(cfg)
+  const globalConfig = await AppRuntime.runPromise(Config.Service.use((svc) => svc.getGlobal()))
+  const global = globalConfig.indexing
+  const merged = indexingWithKiloDefault(applyInternalIndexingDefaults({ ...global, ...cfg.indexing }), auth)
+  const raw = toIndexingConfigInput({
+    ...merged,
+    enabled: merged?.enabled === true || global?.enabled === true,
+  })
+  return model(enrichKilo(raw, auth), auth)
+}
+
+export function failed(
+  err: unknown,
+  source = "indexing",
+  location = "indexing:initialize",
+): z.infer<typeof IndexingStatus> {
+  const item = diagnostic(source, location, err)
+  const text = item.message.startsWith("Failed to initialize:") ? item.message : `Failed to initialize: ${item.message}`
 
   return {
     state: "Error",
@@ -49,8 +74,8 @@ function failed(err: unknown): z.infer<typeof IndexingStatus> {
     totalFiles: 0,
     percent: 0,
     pipelines: {
-      codeGraph: inactivePipeline("Error", "Code Graph unavailable.", text),
-      rag: inactivePipeline("Error", "RAG indexing unavailable.", text),
+      codeGraph: inactivePipeline("Error", "Code Graph unavailable.", text, [item]),
+      rag: inactivePipeline("Error", "RAG indexing unavailable.", text, [item]),
     },
   }
 }
@@ -73,6 +98,7 @@ function inactivePipeline(
   state: IndexingPipelineStatus["state"],
   message: string,
   detail: string,
+  recentErrors?: IndexingDiagnostic[],
 ): IndexingPipelineStatus {
   return {
     state,
@@ -84,7 +110,85 @@ function inactivePipeline(
     errorCount: state === "Error" ? 1 : 0,
     staleCount: 0,
     skippedCount: 0,
+    recentErrors,
   }
+}
+
+export function diagnostic(source: string, location: string, err: unknown): IndexingDiagnostic {
+  const msg = diagnosticMessage(err)
+  const message = sanitizeDiagnosticMessage(msg) || UNKNOWN_INITIALIZATION_ERROR
+  return {
+    time: new Date().toISOString(),
+    source,
+    location,
+    message,
+    ...(extractDiagnosticFile(msg) ? { file: extractDiagnosticFile(msg) } : {}),
+  }
+}
+
+function diagnosticMessage(err: unknown, seen = new Set<object>()): string {
+  if (typeof err === "string") return err
+  if (typeof err === "number" || typeof err === "boolean" || typeof err === "bigint") return String(err)
+  if (!err) return UNKNOWN_INITIALIZATION_ERROR
+
+  if (err instanceof Error) {
+    if (seen.has(err)) return UNKNOWN_INITIALIZATION_ERROR
+    seen.add(err)
+    const message = err.message.trim()
+    if (message) return message
+    if (err.cause) {
+      const cause = diagnosticMessage(err.cause, seen).trim()
+      if (cause) return cause
+    }
+    const stack = err.stack
+      ?.split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line && line !== "Error" && line !== err.name)
+    if (stack) return stack
+    return err.name && err.name !== "Error" ? err.name : UNKNOWN_INITIALIZATION_ERROR
+  }
+
+  if (typeof err !== "object") return String(err)
+  if (seen.has(err)) return UNKNOWN_INITIALIZATION_ERROR
+  seen.add(err)
+
+  const obj = err as Record<string, unknown>
+  const keyed = ["message", "error", "reason", "detail", "data"]
+    .map((key) => diagnosticMessage(obj[key], seen).trim())
+    .find((value) => value && value !== UNKNOWN_INITIALIZATION_ERROR)
+  if (keyed) return keyed
+
+  const json = safeJson(err)
+  return json && json !== "{}" ? json : UNKNOWN_INITIALIZATION_ERROR
+}
+
+function safeJson(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value)
+  } catch (err) {
+    log.warn("failed to stringify indexing diagnostic error", { err })
+    return undefined
+  }
+}
+
+function sanitizeDiagnosticMessage(message: string): string {
+  const redacted = message
+    .replace(/(?:https?|ftp|file):\/\/[^\s)"']+/gi, "[REDACTED_URL]")
+    .replace(/[\w.-]+@[\w.-]+\.\w+/g, "[REDACTED_EMAIL]")
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "[REDACTED_IP]")
+    .replace(/\b(?:api[_-]?key|token|password|authorization)\b\s*[=:]\s*["']?[^"',\s)]+/gi, "$1=[REDACTED]")
+    .replace(/"[^"]*(?:\/|\\)[^"]*"/g, '"[REDACTED_PATH]"')
+    .replace(/(?:\/[\w.-]+)+(?:\/[\w.\-\s]*)*|(?:[A-Za-z]:\\[\w.\-\\\s]+)/g, "[REDACTED_PATH]")
+    .replace(/\s+/g, " ")
+    .trim()
+
+  if (redacted.length <= 500) return redacted
+  return `${redacted.slice(0, 497)}...`
+}
+
+function extractDiagnosticFile(message: string): string | undefined {
+  const match = message.match(/(?:^|[,(]\s*File:\s*)([^,)]+)/i)
+  return match?.[1]?.trim()
 }
 
 function isWorktreePath(dir: string): boolean {
@@ -226,6 +330,7 @@ export namespace KiloIndexing {
     current(): Status
     publish(): Promise<void>
     dispose(): Promise<void>
+    refreshConfig?(): Promise<void>
   }
 
   type Cache = {
@@ -276,14 +381,12 @@ export namespace KiloIndexing {
 
     log.info("initializing project indexing", { workspacePath: dir })
     const root = path.join(Global.Path.state, "indexing")
-    const auth = await kiloAuth(cfg)
-    const globalConfig = await AppRuntime.runPromise(Config.Service.use((svc) => svc.getGlobal()))
-    const global = globalConfig.indexing
-    const merged = indexingWithKiloDefault({ ...global, ...cfg.indexing }, auth)
-    const cfgInput = await model(enrichKilo(input(merged, global), auth), auth)
+    const cfgInput = await inputFromConfig(cfg)
     const box = { status: pending() }
     const current = () => box.status
     let disposed = false
+    let refreshTask: Promise<void> | undefined
+    let base: Entry
 
     const publish = async () => {
       await Bus.publish(Event, { status: current() })
@@ -304,37 +407,73 @@ export namespace KiloIndexing {
       if (disposed) return
       trackTelemetry(event)
     })
-    const base: Entry = {
+    const failure = Instance.bind((err: unknown) => {
+      if (disposed) return
+      base.initialized = false
+      box.status = failed(err, "worker", "worker:failure")
+      log.error("project indexing worker failed", { err, workspacePath: dir })
+      void report()
+    })
+    const refresh = Instance.bind(async () => {
+      if (disposed) return
+      if (refreshTask) {
+        await refreshTask
+        return
+      }
+      refreshTask = (async () => {
+        try {
+          const nextConfig = await AppRuntime.runPromise(Config.Service.use((svc) => svc.get()))
+          if (!hasIndexingPlugin(nextConfig.plugin)) return
+          const nextInput = await inputFromConfig(nextConfig)
+          if (!base.engine) {
+            const engine = IndexingWorker.create(dir, root, { status, telemetry, failure })
+            base.engine = engine
+            box.status = await engine.init(nextInput)
+          } else {
+            box.status = await base.engine.updateConfig(nextInput)
+          }
+          base.initialized = true
+          await report()
+        } catch (err) {
+          failure(err)
+        } finally {
+          refreshTask = undefined
+        }
+      })()
+      await refreshTask
+    })
+    const onConfig = (event: GlobalEvent) => {
+      if (disposed) return
+      if (event.payload?.type !== "global.config.updated") return
+      if (event.directory && event.directory !== "global" && event.directory !== dir) return
+      void refresh()
+    }
+    base = {
       current,
       publish,
+      refreshConfig: refresh,
       async dispose() {
         if (disposed) return
         disposed = true
+        GlobalBus.off("event", onConfig)
         base.initialized = false
         await base.engine?.dispose().catch((err) => {
           log.warn("failed to dispose project indexing worker", { err, workspacePath: dir })
         })
       },
     }
-    const failure = Instance.bind((err: unknown) => {
-      if (disposed) return
-      base.initialized = false
-      box.status = failed(err)
-      log.error("project indexing worker failed", { err, workspacePath: dir })
-      void report()
-    })
+    GlobalBus.on("event", onConfig)
     track(hit, base)
     await report()
 
     if (hit.disposed) return base
 
-    if (!cfgInput.enabled) {
-      box.status = disabledIndexingStatus()
-      await report()
-      return base
-    }
-
-    const err = await LanceDBRuntime.ensure(cfgInput.vectorStoreProvider)
+    const rag = new CodeIndexConfigManager(cfgInput)
+    const err = await (
+      rag.isFeatureEnabled && rag.isFeatureConfigured
+        ? LanceDBRuntime.ensure(rag.getConfig().vectorStoreProvider)
+        : Promise.resolve()
+    )
       .then(async () => {
         if (hit.disposed) return
         const engine = IndexingWorker.create(dir, root, { status, telemetry, failure })
@@ -422,21 +561,35 @@ export namespace KiloIndexing {
     return (await hit().ready).current()
   }
 
+  function rag(status: Status): boolean {
+    return status.pipelines?.rag.state !== "Disabled" && status.state !== "Disabled"
+  }
+
+  function graph(status: Status): boolean {
+    return status.pipelines?.codeGraph.state !== "Disabled"
+  }
+
   export function ready(): boolean {
     const entry = cache.get(Instance.directory)?.entry
     if (!entry?.initialized) return false
-    return entry.current().state !== "Disabled"
+    return rag(entry.current())
+  }
+
+  export function analysisReady(): boolean {
+    const entry = cache.get(Instance.directory)?.entry
+    if (!entry?.initialized || !entry.engine) return false
+    return graph(entry.current())
   }
 
   export async function available(): Promise<boolean> {
     const entry = await hit().ready
     if (!entry.initialized) return false
-    return entry.current().state !== "Disabled"
+    return rag(entry.current())
   }
 
   export async function search(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]> {
     const entry = await hit().ready
-    if (!entry.initialized || entry.current().state === "Disabled" || !entry.engine) return []
+    if (!entry.initialized || !rag(entry.current()) || !entry.engine) return []
     return entry.engine.search(query, directoryPrefix)
   }
 
@@ -445,7 +598,7 @@ export namespace KiloIndexing {
     options: CodeGraphEvidenceQueryOptions = {},
   ): Promise<QueryEvidenceResult> {
     const entry = await hit().ready
-    if (!entry.initialized || entry.current().state === "Disabled" || !entry.engine) {
+    if (!entry.initialized || !graph(entry.current()) || !entry.engine) {
       return CodeIndexAnalysisService.createStub(query, options, "indexing-not-ready")
     }
     return entry.engine.queryEvidence(query, options)
@@ -453,7 +606,7 @@ export namespace KiloIndexing {
 
   export async function codeGraphStatus(): Promise<CodeGraphSidecarStatus> {
     const entry = await hit().ready
-    if (!entry.initialized || entry.current().state === "Disabled" || !entry.engine) {
+    if (!entry.initialized || !entry.engine) {
       return disabledCodeGraphSidecarStatus({
         workspacePath: Instance.directory,
         reason: "indexing-not-active",

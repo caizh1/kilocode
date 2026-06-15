@@ -1264,7 +1264,8 @@ export const dict = {
   "settings.experimental.speechToText.disabledDescription":
     "Enable and sign in to the ChipMate Gateway provider to use Speech to Text. Speech to Text is currently only supported through ChipMate Gateway.",
   "settings.experimental.speechToTextModel.title": "Speech to Text Model",
-  "settings.experimental.speechToTextModel.description": "Choose the ChipMate Gateway transcription model for voice input.",
+  "settings.experimental.speechToTextModel.description":
+    "Choose the ChipMate Gateway transcription model for voice input.",
   "settings.experimental.continueOnDeny.title": "Continue on Deny",
   "settings.experimental.continueOnDeny.description": "Continue the agent loop when a permission is denied",
   "settings.experimental.mcpTimeout.title": "MCP Timeout (ms)",

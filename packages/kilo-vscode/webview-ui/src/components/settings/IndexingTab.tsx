@@ -1,4 +1,5 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js"
+import { Component, For, Show, createMemo, createSignal, onCleanup } from "solid-js"
+import { Button } from "@kilocode/kilo-ui/button"
 import { Card } from "@kilocode/kilo-ui/card"
 import { formatKiloEmbeddingModelLabel, getKiloEmbeddingModel } from "@kilocode/kilo-indexing/embedding-models"
 import { Select } from "@kilocode/kilo-ui/select"
@@ -8,7 +9,12 @@ import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { useConfig } from "../../context/config"
 import {
   formatIndexingLabel,
+  formatIndexingDiagnostic,
+  formatIndexingDiagnostics,
   formatIndexingPipelineLabel,
+  hasIndexingDiagnostics,
+  indexingDiagnosticMessage,
+  indexingPipelineDescription,
   indexingPipelineTone,
   useIndexing,
 } from "../../context/indexing"
@@ -18,6 +24,8 @@ import { useProvider } from "../../context/provider"
 import { useServer } from "../../context/server"
 import type { IndexingConfig, IndexingPipelineStatus, IndexingProvider as ProviderId } from "../../types/messages"
 import { KILO_PROVIDER_ID } from "../../../../src/shared/provider-model"
+import { INTERNAL_OFFLINE_INDEXING_DEFAULTS, isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
+import { applyInternalIndexingDefaults } from "../../utils/indexing-defaults"
 import SettingsRow from "./SettingsRow"
 
 type Option = { value: string; label: string }
@@ -59,6 +67,59 @@ const PipelineBadge: Component<{ label: string; status: IndexingPipelineStatus }
   </div>
 )
 
+const PipelineDiagnostics: Component<{
+  label: string
+  status: IndexingPipelineStatus
+  copied: boolean
+  onCopy: (label: string, status: IndexingPipelineStatus) => void
+}> = (props) => (
+  <Show when={hasIndexingDiagnostics(props.status)}>
+    <div
+      style={{
+        display: "flex",
+        "flex-direction": "column",
+        gap: "8px",
+        padding: "10px 12px",
+        "border-top": "1px solid var(--vscode-settings-rowBorder)",
+        color: "var(--vscode-descriptionForeground)",
+        "font-size": "var(--kilo-font-size-12)",
+        "min-width": 0,
+      }}
+    >
+      <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "8px" }}>
+        <strong style={{ color: "var(--vscode-foreground)" }}>{props.label} diagnostics</strong>
+        <Button
+          variant="ghost"
+          size="small"
+          icon={props.copied ? "check" : "copy"}
+          onClick={() => props.onCopy(props.label, props.status)}
+        >
+          {props.copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <Show
+        when={(props.status.recentErrors?.length ?? 0) > 0}
+        fallback={
+          <div style={{ color: "var(--vscode-foreground)", "overflow-wrap": "anywhere" }}>
+            {indexingPipelineDescription(props.status)}
+          </div>
+        }
+      >
+        <For each={props.status.recentErrors ?? []}>
+          {(error) => (
+            <div style={{ display: "flex", "flex-direction": "column", gap: "2px", "min-width": 0 }}>
+              <span style={{ color: "var(--vscode-foreground)", "overflow-wrap": "anywhere" }}>
+                {indexingDiagnosticMessage(error, props.status)}
+              </span>
+              <span style={{ "overflow-wrap": "anywhere" }}>{formatIndexingDiagnostic(error, props.status)}</span>
+            </div>
+          )}
+        </For>
+      </Show>
+    </div>
+  </Show>
+)
+
 function providerFields(provider: ProviderId | undefined): Array<{ key: string; label: string; placeholder: string }> {
   if (provider === "kilo") return []
   if (provider === "openai") return [{ key: "apiKey", label: "API Key", placeholder: "sk-..." }]
@@ -98,13 +159,34 @@ const IndexingTab: Component = () => {
   const [providerDrafts, setProviderDrafts] = createSignal<Record<string, string>>({})
   const [storeDrafts, setStoreDrafts] = createSignal<Record<string, string>>({})
   const [tuningDrafts, setTuningDrafts] = createSignal<Record<string, string>>({})
+  const [copied, setCopied] = createSignal<string>()
+  let timer: ReturnType<typeof setTimeout> | undefined
 
-  const cfg = createMemo<IndexingConfig>(() => config().indexing ?? {})
-  const globalCfg = createMemo<IndexingConfig>(() => globalConfig().indexing ?? {})
+  onCleanup(() => {
+    if (timer) clearTimeout(timer)
+  })
+
+  const rawCfg = createMemo<IndexingConfig>(() => config().indexing ?? {})
+  const rawGlobalCfg = createMemo<IndexingConfig>(() => globalConfig().indexing ?? {})
+  const cfg = createMemo<IndexingConfig>(() => applyInternalIndexingDefaults(rawCfg()))
+  const globalCfg = createMemo<IndexingConfig>(() => applyInternalIndexingDefaults(rawGlobalCfg()))
   const globalOn = createMemo(() => globalCfg().enabled === true)
 
   const updateIndexing = (partial: IndexingConfig) => {
-    updateConfig({ indexing: { ...cfg(), ...partial } })
+    updateConfig({ indexing: { ...rawCfg(), ...partial } })
+  }
+
+  const copyDiagnostics = (label: string, status: IndexingPipelineStatus) => {
+    navigator.clipboard
+      .writeText(formatIndexingDiagnostics(label, status))
+      .then(() => {
+        setCopied(label)
+        if (timer) clearTimeout(timer)
+        timer = setTimeout(() => setCopied(undefined), 1200)
+      })
+      .catch((err) => {
+        console.warn("failed to copy indexing diagnostics", err)
+      })
   }
 
   const vectorStore = () => cfg().vectorStore ?? "lancedb"
@@ -141,6 +223,10 @@ const IndexingTab: Component = () => {
   }
 
   const saveEnabled = (enabled: boolean) => {
+    if (enabled && isInternalOfflineBuild() && !rawCfg().provider) {
+      updateIndexing({ enabled })
+      return
+    }
     if (enabled && !cfg().provider && kiloAvailable()) {
       updateIndexing({
         enabled,
@@ -154,6 +240,12 @@ const IndexingTab: Component = () => {
   }
 
   const saveGlobalEnabled = (enabled: boolean) => {
+    if (enabled && isInternalOfflineBuild() && !rawGlobalCfg().provider && !rawCfg().provider) {
+      updateGlobalConfig({
+        indexing: { enabled },
+      })
+      return
+    }
     if (enabled && !globalCfg().provider && !cfg().provider && kiloAvailable()) {
       updateGlobalConfig({
         indexing: {
@@ -207,7 +299,16 @@ const IndexingTab: Component = () => {
   ) => {
     const trimmed = value.trim()
     if (!trimmed) {
-      updateIndexing({ [key]: key === "dimension" ? null : undefined })
+      updateIndexing({
+        [key]:
+          key === "dimension" &&
+          isInternalOfflineBuild() &&
+          selectedProvider() === INTERNAL_OFFLINE_INDEXING_DEFAULTS.provider
+            ? INTERNAL_OFFLINE_INDEXING_DEFAULTS.dimension
+            : key === "dimension"
+              ? null
+              : undefined,
+      })
       return
     }
 
@@ -234,15 +335,24 @@ const IndexingTab: Component = () => {
             {formatIndexingLabel(indexing.status())}
           </span>
         </SettingsRow>
-        <SettingsRow
-          title="Code Graph"
-          description={indexing.pipelines().codeGraph.detail || indexing.pipelines().codeGraph.message}
-        >
+        <SettingsRow title="Code Graph" description={indexingPipelineDescription(indexing.pipelines().codeGraph)}>
           <PipelineBadge label="CG" status={indexing.pipelines().codeGraph} />
         </SettingsRow>
-        <SettingsRow title="RAG" description={indexing.pipelines().rag.detail || indexing.pipelines().rag.message}>
+        <SettingsRow title="RAG" description={indexingPipelineDescription(indexing.pipelines().rag)}>
           <PipelineBadge label="RAG" status={indexing.pipelines().rag} />
         </SettingsRow>
+        <PipelineDiagnostics
+          label="Code Graph"
+          status={indexing.pipelines().codeGraph}
+          copied={copied() === "Code Graph"}
+          onCopy={copyDiagnostics}
+        />
+        <PipelineDiagnostics
+          label="RAG"
+          status={indexing.pipelines().rag}
+          copied={copied() === "RAG"}
+          onCopy={copyDiagnostics}
+        />
         <SettingsRow
           title={language.t("settings.indexing.globalEnable.title")}
           description={language.t("settings.indexing.globalEnable.description")}
@@ -310,7 +420,11 @@ const IndexingTab: Component = () => {
             title={language.t("settings.indexing.model.title")}
             description={language.t("settings.indexing.model.description")}
           >
-            <TextField value={cfg().model ?? ""} placeholder="Enter model ID" onChange={saveModel} />
+            <TextField
+              value={cfg().model ?? ""}
+              placeholder={isInternalOfflineBuild() ? INTERNAL_OFFLINE_INDEXING_DEFAULTS.model : "Enter model ID"}
+              onChange={saveModel}
+            />
           </SettingsRow>
         </Show>
         <SettingsRow
@@ -324,7 +438,11 @@ const IndexingTab: Component = () => {
                 ? ""
                 : String(cfg().dimension)
             }
-            placeholder={language.t("settings.indexing.dimension.placeholder")}
+            placeholder={
+              isInternalOfflineBuild() && selectedProvider() === INTERNAL_OFFLINE_INDEXING_DEFAULTS.provider
+                ? String(INTERNAL_OFFLINE_INDEXING_DEFAULTS.dimension)
+                : language.t("settings.indexing.dimension.placeholder")
+            }
             onChange={(value) => saveNumber("dimension", value, { integer: true, min: 1 })}
           />
         </SettingsRow>

@@ -8,12 +8,7 @@ export type EvidenceConfidence = "high" | "medium" | "low" | "none"
 
 export type ErrorPathBranchKind = "goto-label" | "return-error" | "cleanup-call" | "error-label" | "unknown"
 
-export type StateMachineEvidenceKind =
-  | "state-machine"
-  | "transition"
-  | "module-flow"
-  | "impact"
-  | "call-path"
+export type StateMachineEvidenceKind = "state-machine" | "transition" | "module-flow" | "impact" | "call-path"
 
 export type EvidenceBudget = {
   maxEvidenceItems: number
@@ -71,14 +66,7 @@ export type EvidenceRef = {
   snippetHash?: string
 }
 
-export type QueryEvidenceStageStatus =
-  | "completed"
-  | "skipped"
-  | "failed"
-  | "ok"
-  | "unavailable"
-  | "empty"
-  | "malformed"
+export type QueryEvidenceStageStatus = "completed" | "skipped" | "failed" | "ok" | "unavailable" | "empty" | "malformed"
 
 export type QueryEvidenceTraceStage = {
   name: "graph" | "bm25" | "vector" | "rerank" | "pack"

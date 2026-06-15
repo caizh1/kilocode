@@ -1,4 +1,5 @@
 import { KILO_PROVIDER_ID } from "../../../../src/shared/provider-model"
+import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 import { getSpeechToTextModel } from "../../../../src/speech-to-text/models"
 
 type Cfg = {
@@ -9,6 +10,7 @@ type Cfg = {
 }
 
 export function hasSpeechToTextAccess(cfg: Cfg, providers: readonly string[], profile: unknown | null): boolean {
+  if (isInternalOfflineBuild()) return false
   return providers.includes(KILO_PROVIDER_ID) && !cfg.disabled_providers?.includes(KILO_PROVIDER_ID) && !!profile
 }
 

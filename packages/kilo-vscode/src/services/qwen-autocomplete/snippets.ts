@@ -8,8 +8,7 @@ export const QwenAutocompleteSnippetType = {
   Static: "static",
 } as const
 
-export type QwenAutocompleteSnippetType =
-  (typeof QwenAutocompleteSnippetType)[keyof typeof QwenAutocompleteSnippetType]
+export type QwenAutocompleteSnippetType = (typeof QwenAutocompleteSnippetType)[keyof typeof QwenAutocompleteSnippetType]
 
 type Base = {
   content: string
@@ -210,10 +209,11 @@ export function selectQwenSnippets(
     if (remaining <= 0) break
   }
   return {
-    baseSnippetSelectedCount: selected.filter((snippet) =>
-      payload.rootPathSnippets.includes(snippet as QwenAutocompleteCodeSnippet) ||
-      payload.importDefinitionSnippets.includes(snippet as QwenAutocompleteCodeSnippet) ||
-      payload.staticSnippet.includes(snippet as QwenAutocompleteStaticSnippet)
+    baseSnippetSelectedCount: selected.filter(
+      (snippet) =>
+        payload.rootPathSnippets.includes(snippet as QwenAutocompleteCodeSnippet) ||
+        payload.importDefinitionSnippets.includes(snippet as QwenAutocompleteCodeSnippet) ||
+        payload.staticSnippet.includes(snippet as QwenAutocompleteStaticSnippet),
     ).length,
     budgetRemaining: remaining,
     droppedByBudgetCount,
@@ -314,7 +314,9 @@ function formatOpenedFilesContext(
   return {
     droppedDuplicateFileCount,
     snippets: out,
-    trimmedCount: out.filter((snippet) => files.some((file) => file.filepath === snippet.filepath && file.content !== snippet.content)).length,
+    trimmedCount: out.filter((snippet) =>
+      files.some((file) => file.filepath === snippet.filepath && file.content !== snippet.content),
+    ).length,
   }
 }
 

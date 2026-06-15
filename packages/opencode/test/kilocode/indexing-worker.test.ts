@@ -21,14 +21,19 @@ test("runs indexing engine requests in its worker", async () => {
     })
 
     const status = await engine.init({ enabled: false, embedderProvider: "openai" })
-    expect(status.state).toBe("Disabled")
+    expect(status.state).not.toBe("Error")
+    expect(status.pipelines?.codeGraph.state).not.toBe("Disabled")
+    expect(status.pipelines?.rag.state).toBe("Disabled")
+    const updated = await engine.updateConfig({ enabled: false, embedderProvider: "openai", searchMinScore: 0.5 })
+    expect(updated.state).not.toBe("Error")
 
     const graph = await engine.codeGraphStatus()
     const evidence = await engine.queryEvidence("find callers", { retrievalMode: "graph-only" })
     const vector = evidence.trace.stages.find((stage) => stage.name === "vector")
 
     expect(graph).toMatchObject({
-      state: "disabled",
+      state: "container_ready",
+      enabled: true,
       evidenceAvailable: false,
     })
     expect(evidence.answerPolicy.mode).toBe("conservative")

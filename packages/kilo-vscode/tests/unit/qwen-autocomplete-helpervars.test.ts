@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import * as vscode from "vscode"
 import { constructInitialPrefixSuffix } from "../../src/services/qwen-autocomplete/constructPrefixSuffix"
-import {
-  createQwenAutocompleteHelper,
-  QWEN_HELPER_DEFAULTS,
-} from "../../src/services/qwen-autocomplete/helperVars"
+import { createQwenAutocompleteHelper, QWEN_HELPER_DEFAULTS } from "../../src/services/qwen-autocomplete/helperVars"
 import {
   autodetectTemplateType,
   countTokens,
@@ -126,9 +123,10 @@ function doc(text: string) {
 }
 
 function lines(tag: string, count: number): string {
-  return Array.from({ length: count }, (_, index) => `int ${tag}_${index.toString().padStart(3, "0")} = ${index};`).join(
-    "\n",
-  )
+  return Array.from(
+    { length: count },
+    (_, index) => `int ${tag}_${index.toString().padStart(3, "0")} = ${index};`,
+  ).join("\n")
 }
 
 function offset(lines: string[], pos: Pos): number {

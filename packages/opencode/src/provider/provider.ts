@@ -41,6 +41,7 @@ import {
   buildTimeoutSignal,
   REQUEST_TIMEOUT_MS,
 } from "@/kilocode/provider/provider"
+import { isInternalOffline } from "@/kilocode/internal-offline"
 // kilocode_change end
 
 const log = Log.create({ service: "provider" })
@@ -1171,7 +1172,10 @@ const layer: Layer.Layer<
         const plugins = yield* plugin.list()
 
         // now read config providers - includes any modifications from plugin config() hook
-        const configProviders = Object.entries(cfg.provider ?? {})
+        const offline = isInternalOffline() // kilocode_change
+        const configProviders = Object.entries(cfg.provider ?? {}).filter(
+          ([id, item]) => !offline || (item?.npm === "@ai-sdk/openai-compatible" && id !== "kilo" && id !== "apertis"),
+        ) // kilocode_change
         const disabled = new Set(cfg.disabled_providers ?? [])
         const enabled = cfg.enabled_providers ? new Set(cfg.enabled_providers) : null
 
@@ -1364,7 +1368,8 @@ const layer: Layer.Layer<
         // kilocode_change start - resolve env once for patchCustomLoaderResult (azure env fallback)
         const kiloEnv = yield* env.all()
         // kilocode_change end
-        for (const [id, fn] of Object.entries({ ...custom(dep), ...kiloCustomLoaders(dep) })) {
+        const loaders = offline ? custom(dep) : { ...custom(dep), ...kiloCustomLoaders(dep) } // kilocode_change
+        for (const [id, fn] of Object.entries(loaders)) {
           // kilocode_change
           const providerID = ProviderID.make(id)
           if (disabled.has(providerID)) continue

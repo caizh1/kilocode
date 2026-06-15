@@ -115,10 +115,7 @@ export async function queryVectorEvidence(input: {
 function convert(
   item: VectorStoreSearchResult,
   directoryPrefix?: string,
-):
-  | { kind: "ok"; value: EvidenceRef }
-  | { kind: "filtered" }
-  | { kind: "malformed"; reason: string } {
+): { kind: "ok"; value: EvidenceRef } | { kind: "filtered" } | { kind: "malformed"; reason: string } {
   const payload = item.payload
   if (typeof item.score !== "number" || !Number.isFinite(item.score)) {
     return { kind: "malformed", reason: "missing-score" }

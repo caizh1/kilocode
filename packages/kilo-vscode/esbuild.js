@@ -1,9 +1,50 @@
 const esbuild = require("esbuild")
 const path = require("path")
+const fs = require("fs")
 const { solidPlugin } = require("esbuild-plugin-solid")
 
 const production = process.argv.includes("--production")
 const watch = process.argv.includes("--watch")
+const internalOffline =
+  process.argv.includes("--internal-offline") ||
+  process.env.CHIPMATE_INTERNAL_OFFLINE === "1" ||
+  process.env.KILO_INTERNAL_OFFLINE === "1"
+
+const define = {
+  __CHIPMATE_INTERNAL_OFFLINE__: JSON.stringify(internalOffline),
+}
+
+/**
+ * Internal Windows builds only ship English fallback + Simplified Chinese.
+ * Keep the public import graph intact, but replace other locale modules with
+ * tiny empty dicts so they fall back to English at runtime and don't add bytes.
+ *
+ * @type {import('esbuild').Plugin}
+ */
+const internalLocalePrunePlugin = {
+  name: "internal-locale-prune",
+  setup(build) {
+    if (!internalOffline) return
+
+    const keep = new Set(["en", "zh"])
+    const filter = /(?:^@kilocode\/(?:kilo-ui\/i18n|kilo-i18n)\/|^\.{1,2}\/.*i18n\/)([a-z]+|zht)$/
+
+    build.onResolve({ filter }, (args) => {
+      const full = args.path.startsWith(".") ? path.join(args.resolveDir, args.path) : args.path
+      const normalized = full.replaceAll(path.sep, "/")
+      if (!normalized.includes("/i18n/") && !normalized.includes("kilo-i18n/")) return
+      const match = normalized.match(/\/([a-z]+|zht)$/)
+      const locale = match?.[1]
+      if (!locale || keep.has(locale)) return
+      return { path: args.path, namespace: "internal-empty-i18n" }
+    })
+
+    build.onLoad({ filter: /.*/, namespace: "internal-empty-i18n" }, () => ({
+      contents: "export const dict = {}",
+      loader: "js",
+    }))
+  },
+}
 
 /**
  * Force all solid-js imports (from kilo-ui and the webview) to resolve to
@@ -151,6 +192,7 @@ function createBrowserWebviewContext(entryPoint, outfile) {
     platform: "browser",
     outfile,
     logLevel: "silent",
+    define,
     loader: {
       ".woff": "file",
       ".woff2": "file",
@@ -161,10 +203,24 @@ function createBrowserWebviewContext(entryPoint, outfile) {
       pierreWorkerAliasPlugin,
       svgSpritePlugin,
       cssPackageResolvePlugin,
+      internalLocalePrunePlugin,
       solidPlugin(),
       esbuildProblemMatcherPlugin,
     ],
   })
+}
+
+function removeMaps(dir) {
+  if (!fs.existsSync(dir)) return
+  for (const item of fs.readdirSync(dir)) {
+    const file = path.join(dir, item)
+    const stat = fs.statSync(file)
+    if (stat.isDirectory()) {
+      removeMaps(file)
+      continue
+    }
+    if (file.endsWith(".map")) fs.rmSync(file, { force: true })
+  }
 }
 
 // Bundle Pierre's Shiki worker into a single self-contained asset that the
@@ -180,6 +236,7 @@ function createShikiWorkerContext() {
     platform: "browser",
     outfile: "dist/shiki-worker.js",
     logLevel: "silent",
+    define,
     plugins: [shikiWorkerEntryPlugin, esbuildProblemMatcherPlugin],
   })
 }
@@ -197,6 +254,7 @@ async function main() {
     outfile: "dist/extension.js",
     external: ["vscode"],
     logLevel: "silent",
+    define,
     plugins: [esbuildProblemMatcherPlugin],
   })
 
@@ -246,6 +304,7 @@ async function main() {
       diffVirtualCtx.rebuild(),
       shikiWorkerCtx.rebuild(),
     ])
+    if (internalOffline) removeMaps(path.join(__dirname, "dist"))
     await Promise.all([
       extensionCtx.dispose(),
       webviewCtx.dispose(),

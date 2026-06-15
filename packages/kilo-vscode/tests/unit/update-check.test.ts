@@ -4,12 +4,7 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import { createHash } from "node:crypto"
-import {
-  LAST_AUTO_KEY,
-  UpdateCheckService,
-  compareVersions,
-  resolveRelativeUrl,
-} from "../../src/services/update-check"
+import { LAST_AUTO_KEY, UpdateCheckService, compareVersions, resolveRelativeUrl } from "../../src/services/update-check"
 
 const INSTALL = "Install Update"
 const RELOAD = "Reload Window"
@@ -103,7 +98,9 @@ describe("UpdateCheckService", () => {
   it("downloads, verifies, installs, and offers reload for a newer version", async () => {
     const body = Buffer.from("vsix package")
     const env = await setup({ info: [INSTALL, RELOAD] })
-    env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.17", sha256: sha(body), vsix: "releases/chipmate.vsix" })))
+    env.fetch.mockResolvedValueOnce(
+      json(manifest({ version: "0.0.17", sha256: sha(body), vsix: "releases/chipmate.vsix" })),
+    )
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
     env.exec.mockResolvedValueOnce({ stdout: "", stderr: "" })
 
@@ -157,9 +154,7 @@ describe("UpdateCheckService", () => {
     expect(resolveRelativeUrl(base, "releases/chipmate.vsix", "vsix-url").toString()).toBe(
       "http://10.10.5.22/vscode-plugins/chipmate/releases/chipmate.vsix",
     )
-    expect(() => resolveRelativeUrl(base, "https://example.com/chipmate.vsix", "vsix-url")).toThrow(
-      "must be relative",
-    )
+    expect(() => resolveRelativeUrl(base, "https://example.com/chipmate.vsix", "vsix-url")).toThrow("must be relative")
     expect(() => resolveRelativeUrl(base, "../chipmate.vsix", "vsix-url")).toThrow("must not escape")
   })
 

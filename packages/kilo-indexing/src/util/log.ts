@@ -14,7 +14,7 @@ type Entry = {
   }
 }
 
-const enabled = process.env.KILO_INDEXING_LOG === "1" || process.env.KILO_INDEXING_LOG === "true"
+const verbose = process.env.KILO_INDEXING_LOG === "1" || process.env.KILO_INDEXING_LOG === "true"
 
 export namespace Log {
   export type Logger = Entry
@@ -23,14 +23,17 @@ export namespace Log {
     const tags = { ...input }
 
     function write(level: string, message?: unknown, extra?: Record<string, unknown>) {
-      if (!enabled) return
+      const visible = extra?.visible === true
+      if (!verbose && level !== "WARN" && level !== "ERROR" && !visible) return
+      const rest = extra ? { ...extra } : undefined
+      if (rest) delete rest.visible
 
       const line = JSON.stringify({
         level,
         time: new Date().toISOString(),
         message,
         ...tags,
-        ...extra,
+        ...rest,
       })
       console.error(line)
     }

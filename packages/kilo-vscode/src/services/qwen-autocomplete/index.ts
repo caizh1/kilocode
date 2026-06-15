@@ -12,7 +12,10 @@ export function registerQwenAutocompleteProvider(context: vscode.ExtensionContex
   context.subscriptions.push(reg)
   context.subscriptions.push(
     vscode.commands.registerCommand("kilo-code.new.qwenAutocomplete.showLogs", showQwenAutocompleteLogs),
-    vscode.commands.registerCommand("kilo-code.new.qwenAutocomplete.exportDiagnostics", exportQwenAutocompleteDiagnostics),
+    vscode.commands.registerCommand(
+      "kilo-code.new.qwenAutocomplete.exportDiagnostics",
+      exportQwenAutocompleteDiagnostics,
+    ),
   )
   return reg
 }

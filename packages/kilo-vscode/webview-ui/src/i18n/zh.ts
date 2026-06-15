@@ -1239,7 +1239,8 @@ export const dict = {
   "settings.experimental.codebaseSearch.title": "代码库搜索",
   "settings.experimental.codebaseSearch.description": "启用 AI 驱动的自然语言代码库搜索",
   "settings.experimental.speechToText.title": "语音转文本",
-  "settings.experimental.speechToText.description": "通过 ChipMate Gateway 使用您的 ChipMate 帐户在提示词字段中启用语音输入。",
+  "settings.experimental.speechToText.description":
+    "通过 ChipMate Gateway 使用您的 ChipMate 帐户在提示词字段中启用语音输入。",
   "settings.experimental.speechToText.disabledDescription":
     "启用并登录 ChipMate 提供商以使用 Speech to Text。Speech to Text 目前仅支持通过 ChipMate Gateway 使用。",
   "settings.experimental.speechToTextModel.title": "语音转文本模型",
@@ -1249,7 +1250,8 @@ export const dict = {
   "settings.experimental.mcpTimeout.title": "MCP 超时（毫秒）",
   "settings.experimental.mcpTimeout.description": "MCP 服务器请求的超时时间（毫秒）",
   "settings.experimental.remote.title": "Remote 控制",
-  "settings.experimental.remote.description": "通过 ChipMate Cloud 启用会话的 Remote 控制。这也会影响此计算机上的 CLI。",
+  "settings.experimental.remote.description":
+    "通过 ChipMate Cloud 启用会话的 Remote 控制。这也会影响此计算机上的 CLI。",
   "settings.experimental.remote.current": "当前状态：",
   "settings.experimental.remote.startup": "启动时自动启用：",
   "settings.experimental.remote.active": "已启用",
@@ -1450,8 +1452,7 @@ export const dict = {
   // legacy-migration start
   "settings.legacyMigration.link": "从旧版迁移",
   "settings.aboutKiloCode.legacyMigration.title": "旧版迁移",
-  "settings.aboutKiloCode.legacyMigration.description":
-    "从旧版 ChipMate 安装迁移设置，包括提供商 API 密钥和默认模型。",
+  "settings.aboutKiloCode.legacyMigration.description": "从旧版 ChipMate 安装迁移设置，包括提供商 API 密钥和默认模型。",
 
   // Screen 1 — What's New
   "migration.whatsNew.title": "ChipMate 新功能",

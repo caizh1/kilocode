@@ -175,6 +175,21 @@ export type EventTuiSessionSelect = {
 
 export type IndexingStatusState = "Disabled" | "In Progress" | "Complete" | "Error" | "Standby"
 
+export type IndexingDiagnostic = {
+  time: string
+  source: string
+  location: string
+  message: string
+  file?: string
+}
+
+export type IndexingNotice = {
+  id: string
+  level: "info" | "warning"
+  message: string
+  action?: "openIndexingOutput"
+}
+
 export type IndexingStatus = {
   state: IndexingStatusState
   message: string
@@ -194,6 +209,7 @@ export type IndexingStatus = {
       staleCount: number
       skippedCount: number
       validFileCount?: number
+      recentErrors?: Array<IndexingDiagnostic>
     }
     rag: {
       state: IndexingStatusState
@@ -207,8 +223,10 @@ export type IndexingStatus = {
       staleCount: number
       skippedCount: number
       validFileCount?: number
+      recentErrors?: Array<IndexingDiagnostic>
     }
   }
+  notices?: Array<IndexingNotice>
 }
 
 export type QuestionOption = {

@@ -12,6 +12,7 @@ import type {
   CodePostingsRange,
   CodePostingsTermDocument,
 } from "../types"
+import { dict, own } from "../dict"
 import { extractCommentTokens, tokenizeField, tokenizePath, type LexicalToken } from "./tokenizer"
 
 type Entry = CodePostingsRange & {
@@ -25,21 +26,12 @@ export function buildPostingsDocument(input: {
   updatedAt: string
 }): CodePostingsDocument {
   const entries = collect(input.graph, input.content)
-  const terms: Record<string, CodePostingsTermDocument> = {}
+  const terms = dict<CodePostingsTermDocument>()
 
   for (const entry of entries) {
     if (!range(entry)) continue
     for (const token of entry.tokens) {
-      const current =
-        terms[token.term] ??
-        ({
-          filePath: input.graph.filePath,
-          fileHash: input.graph.fileHash,
-          termFrequency: 0,
-          weightedFrequency: 0,
-          fields: {},
-          ranges: [],
-        } satisfies CodePostingsTermDocument)
+      const current = own(terms, token.term) ?? term(input.graph)
       current.termFrequency += 1
       current.weightedFrequency += token.weight
       current.fields[token.field] = (current.fields[token.field] ?? 0) + token.weight
@@ -72,6 +64,17 @@ export function buildPostingsDocument(input: {
   }
 }
 
+function term(graph: CodeGraphFileGraph): CodePostingsTermDocument {
+  return {
+    filePath: graph.filePath,
+    fileHash: graph.fileHash,
+    termFrequency: 0,
+    weightedFrequency: 0,
+    fields: dict<number>(),
+    ranges: [],
+  }
+}
+
 function collect(graph: CodeGraphFileGraph, content?: string): Entry[] {
   const entries: Entry[] = []
   entries.push({
@@ -93,11 +96,13 @@ function collect(graph: CodeGraphFileGraph, content?: string): Entry[] {
   for (const item of graph.functions) {
     entries.push(entry("symbol", "function", item.name, item, [item.name, item.signature, item.shortSnippet]))
     for (const call of item.calls) {
-      entries.push(entry("code", "call", `${call.callerName} -> ${call.calleeName}`, call, [
-        call.callerName,
-        call.calleeName,
-        call.shortSnippet,
-      ]))
+      entries.push(
+        entry("code", "call", `${call.callerName} -> ${call.calleeName}`, call, [
+          call.callerName,
+          call.calleeName,
+          call.shortSnippet,
+        ]),
+      )
     }
   }
   for (const item of graph.declarations) {
@@ -110,28 +115,34 @@ function collect(graph: CodeGraphFileGraph, content?: string): Entry[] {
     entries.push(entry("symbol", "global", item.name, item, [item.name, item.shortSnippet]))
   }
   for (const item of graph.labels) {
-    entries.push(entry("code", item.kind, item.name, item, [
-      item.name,
-      item.functionName,
-      item.cleanupCalls.join(" "),
-      item.shortSnippet,
-    ]))
+    entries.push(
+      entry("code", item.kind, item.name, item, [
+        item.name,
+        item.functionName,
+        item.cleanupCalls.join(" "),
+        item.shortSnippet,
+      ]),
+    )
   }
   for (const item of graph.initializers) {
-    entries.push(entry("code", "initializer", item.typeName ?? "initializer", item, [
-      item.typeName,
-      item.fields.join(" "),
-      item.shortSnippet,
-    ]))
+    entries.push(
+      entry("code", "initializer", item.typeName ?? "initializer", item, [
+        item.typeName,
+        item.fields.join(" "),
+        item.shortSnippet,
+      ]),
+    )
   }
   for (const item of graph.registerMacroFamilies) {
-    entries.push(entry("macro", "register_macro_family", item.family, item, [
-      item.family,
-      item.path,
-      item.mmioIdentifiers.join(" "),
-      item.macros.map((macro) => macro.name).join(" "),
-      item.shortSnippet,
-    ]))
+    entries.push(
+      entry("macro", "register_macro_family", item.family, item, [
+        item.family,
+        item.path,
+        item.mmioIdentifiers.join(" "),
+        item.macros.map((macro) => macro.name).join(" "),
+        item.shortSnippet,
+      ]),
+    )
   }
 
   if (content) {
@@ -172,5 +183,10 @@ function entry(
 }
 
 function range(item: Partial<CodeGraphLineRange>): item is CodeGraphLineRange {
-  return Number.isFinite(item.startLine) && Number.isFinite(item.endLine) && item.startLine! > 0 && item.endLine! >= item.startLine!
+  return (
+    Number.isFinite(item.startLine) &&
+    Number.isFinite(item.endLine) &&
+    item.startLine! > 0 &&
+    item.endLine! >= item.startLine!
+  )
 }

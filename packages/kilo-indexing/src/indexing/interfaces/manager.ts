@@ -4,6 +4,16 @@ import type { CodeGraphSidecarStatus } from "../codegraph"
 import type { Emitter } from "../runtime"
 import type { IndexingTelemetryEvent } from "./telemetry"
 
+export type IndexingNoticeLevel = "info" | "warning"
+export type IndexingNoticeAction = "openIndexingOutput"
+
+export type IndexingNotice = {
+  id: string
+  level: IndexingNoticeLevel
+  message: string
+  action?: IndexingNoticeAction
+}
+
 export interface ICodeIndexManager {
   onProgressUpdate: Emitter<{
     systemStatus: IndexingState
@@ -11,6 +21,7 @@ export interface ICodeIndexManager {
     processedItems: number
     totalItems: number
     currentItemUnit: string
+    notices?: IndexingNotice[]
     gitBranch?: string
     manifest?: { totalFiles: number; totalChunks: number; lastUpdated: string }
   }>
@@ -34,6 +45,7 @@ export interface ICodeIndexManager {
     processedItems: number
     totalItems: number
     currentItemUnit: string
+    notices?: IndexingNotice[]
   }
   dispose(): void
 }

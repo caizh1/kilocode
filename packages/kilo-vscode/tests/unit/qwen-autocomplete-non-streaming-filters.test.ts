@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import * as vscode from "vscode"
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
-import {
-  filterQwenCompletion,
-  filterQwenCompletionDetailed,
-} from "../../src/services/qwen-autocomplete/streamFilters"
+import { filterQwenCompletion, filterQwenCompletionDetailed } from "../../src/services/qwen-autocomplete/streamFilters"
 
 type Pos = { line: number; character: number }
 type Range = { start: Pos; end: Pos }
@@ -126,7 +123,7 @@ describe("qwen non-streaming autocomplete filters", () => {
   it("strips only Continue source-mapped English explanation phrases", () => {
     expect(filtered("Here is the code:\nreturn ok;").text).toBe("return ok;")
     expect(filtered("here_is_value();").text).toBe("here_is_value();")
-    expect(filtered('// here is a normal comment\nreturn ok;').text).toBe('// here is a normal comment\nreturn ok;')
+    expect(filtered("// here is a normal comment\nreturn ok;").text).toBe("// here is a normal comment\nreturn ok;")
     expect(filtered('printf("here is a string");').text).toBe('printf("here is a string");')
   })
 

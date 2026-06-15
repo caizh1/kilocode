@@ -305,7 +305,6 @@ const AppContent: Component = () => {
             <Match when={currentView() === "newTask"}>
               <ChatView
                 onSelectSession={handleSelectSession}
-                onShowHistory={() => setCurrentView("history")}
                 onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
                 continueInWorktree
                 promptBoxId="sidebar:new-task"

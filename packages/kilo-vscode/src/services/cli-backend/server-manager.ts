@@ -4,9 +4,12 @@ import * as crypto from "crypto"
 import * as fs from "fs"
 import * as path from "path"
 import * as vscode from "vscode"
-import { resolveTreeSitterEnv } from "./cli-resources"
+import { resolveLanceDBEnv, resolveTreeSitterEnv } from "./cli-resources"
 import { t } from "./i18n"
 import { parseServerPort } from "./server-utils"
+import { internalOfflineEnv } from "../../shared/internal-offline"
+import { appendIndexingStderr, indexingOutput } from "../indexing-output"
+export { isIndexingDiagnosticLine } from "../indexing-output"
 
 export interface ServerInstance {
   port: number
@@ -28,6 +31,18 @@ export function resolveIndexingEnv(folders: readonly WorkspaceFolderLike[] | und
   return { KILO_DISABLE_CODEBASE_INDEXING: "vscode-no-workspace" }
 }
 
+export function buildBundledToolEnv(root: string, base: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const key = pathKey(base)
+  const bin = path.join(root, "bin")
+  const value = base[key]
+  return { [key]: value ? `${bin}${path.delimiter}${value}` : bin }
+}
+
+function pathKey(base: NodeJS.ProcessEnv): string {
+  if (process.platform !== "win32") return "PATH"
+  return Object.keys(base).find((key) => key.toLowerCase() === "path") ?? "Path"
+}
+
 export class ServerManager {
   private instance: ServerInstance | null = null
   private startupPromise: Promise<ServerInstance> | null = null
@@ -35,7 +50,9 @@ export class ServerManager {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly onExit?: ServerExitListener,
-  ) {}
+  ) {
+    indexingOutput(context)
+  }
 
   /**
    * Get or start the server instance
@@ -126,6 +143,7 @@ export class ServerManager {
           KILO_CLIENT: "vscode",
           KILO_ENABLE_QUESTION_TOOL: "true",
           KILOCODE_FEATURE: "vscode-extension",
+          ...internalOfflineEnv(),
           ...indexingEnv,
           KILO_TELEMETRY_LEVEL: vscode.env.isTelemetryEnabled ? "all" : "off",
           KILO_APP_NAME: "chipmate",
@@ -136,6 +154,8 @@ export class ServerManager {
           KILO_VSCODE_VERSION: vscode.version,
           KILOCODE_EDITOR_NAME: `${vscode.env.appName} ${vscode.version}`,
           ...(!claudeCompat && { KILO_DISABLE_CLAUDE_CODE: "true" }),
+          ...buildBundledToolEnv(this.context.extensionPath),
+          ...resolveLanceDBEnv(this.context.extensionPath),
           ...resolveTreeSitterEnv(this.context.extensionPath),
         },
         stdio: ["ignore", "pipe", "pipe"],
@@ -161,6 +181,7 @@ export class ServerManager {
       serverProcess.stderr?.on("data", (data: Buffer) => {
         const errorOutput = data.toString()
         console.error("[Kilo New] ServerManager: ⚠️ CLI Server stderr:", errorOutput)
+        this.appendIndexingOutput(errorOutput)
         stderrLines.push(errorOutput)
       })
 
@@ -208,6 +229,10 @@ export class ServerManager {
     const cliPath = path.join(this.context.extensionPath, "bin", binName)
     console.log("[Kilo New] ServerManager: 📦 Using CLI path:", cliPath)
     return cliPath
+  }
+
+  private appendIndexingOutput(output: string): void {
+    appendIndexingStderr(this.context, output)
   }
 
   /**

@@ -228,9 +228,14 @@ export function fallbackImports(content: string): Import[] {
 
 export function symbols(helper: QwenAutocompleteHelperVars): string[] {
   const text = helper.fullPrefix.split("\n").slice(-5).join("\n") + helper.fullSuffix.split("\n").slice(0, 3).join("\n")
-  return [...new Set(text.split(TOKEN).map((item) => item.trim()).filter(Boolean))].filter(
-    (symbol) => !helper.lang.topLevelKeywords.includes(symbol),
-  )
+  return [
+    ...new Set(
+      text
+        .split(TOKEN)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ].filter((symbol) => !helper.lang.topLevelKeywords.includes(symbol))
 }
 
 async function treeImports(filepath: string, content: string): Promise<Import[] | undefined> {
@@ -262,7 +267,11 @@ async function treeImports(filepath: string, content: string): Promise<Import[] 
 async function definitionsFor(filepath: string, position: Pos, timeout: number): Promise<Def[]> {
   const uri = vscode.Uri.file(filepath)
   const defs = await withTimeout(
-    vscode.commands.executeCommand<unknown[]>("vscode.executeDefinitionProvider", uri, new vscode.Position(position.line, position.character)),
+    vscode.commands.executeCommand<unknown[]>(
+      "vscode.executeDefinitionProvider",
+      uri,
+      new vscode.Position(position.line, position.character),
+    ),
     timeout,
   )
   if (!defs) return []
@@ -298,7 +307,10 @@ async function readFile(uri: vscode.Uri, timeout: number): Promise<string | null
 
 async function withTimeout<T>(promise: PromiseLike<T>, timeout: number): Promise<T | null> {
   try {
-    return await Promise.race([Promise.resolve(promise), new Promise<null>((resolve) => setTimeout(() => resolve(null), timeout))])
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeout)),
+    ])
   } catch (err) {
     void err
     return null

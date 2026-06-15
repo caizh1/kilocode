@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp } from "fs/promises"
+import { mkdtemp, unlink, writeFile } from "fs/promises"
 import { tmpdir } from "os"
 import { join } from "path"
 import { CodeIndexConfigManager } from "../../../src/indexing/config-manager"
 import { CodeIndexOrchestrator } from "../../../src/indexing/orchestrator"
+import { IndexingRunLock } from "../../../src/indexing/run-lock"
 import { CodeIndexStateManager } from "../../../src/indexing/state-manager"
 import { fallbackCheckpointMeta } from "../../../src/indexing/rag-checkpoint"
 import type { CacheManager } from "../../../src/indexing/cache-manager"
@@ -12,11 +13,13 @@ import type {
   BatchProcessingSummary,
   FileProcessingResult,
   IFileWatcher,
+  IndexingScanTarget,
   IndexingTelemetryEvent,
   IVectorStore,
   PointStruct,
   ScanProgressEvent,
   VectorStoreSearchResult,
+  WatcherSyntheticEvent,
 } from "../../../src/indexing/interfaces"
 import { Emitter } from "../../../src/indexing/runtime"
 
@@ -64,6 +67,11 @@ class Store {
 
 class Scanner {
   public readonly isCancelled = false
+  public readonly targets: IndexingScanTarget[] = []
+  public readonly cleanupInputs: Array<{ local?: boolean; vector?: boolean }> = []
+  public candidateFiles: string[] | undefined
+  public freshFiles: string[] | undefined
+  public failCleanup = false
 
   constructor(
     private readonly discovered: number,
@@ -79,8 +87,18 @@ class Scanner {
     onFileParsed?: () => void,
     _mode?: "full" | "incremental",
     onProgress?: (event: ScanProgressEvent) => void,
-  ): Promise<{ stats: { processed: number; skipped: number }; totalBlockCount: number }> {
+    target: IndexingScanTarget = "all",
+  ): Promise<{
+    stats: { processed: number; skipped: number }
+    totalBlockCount: number
+    candidateFiles: string[]
+    scanStartedAt: number
+    target: IndexingScanTarget
+  }> {
+    const started = Date.now()
+    this.targets.push(target)
     onProgress?.({ type: "target", totalFiles: this.discovered, graphTotalFiles: this.graph })
+    const files = this.candidateFiles ?? Array.from({ length: this.discovered }, (_, i) => `/tmp/ws/file-${i}.ts`)
     for (let i = 0; i < this.discovered; i += 1) {
       onFileParsed?.()
     }
@@ -97,12 +115,33 @@ class Scanner {
         skipped: 0,
       },
       totalBlockCount: this.blocks,
+      candidateFiles: files,
+      scanStartedAt: started,
+      target,
     }
   }
 
   cancel(): void {}
   updateBatchSegmentThreshold(_newThreshold: number): void {}
   setRunContext(_runId: string): void {}
+  async discoverCandidateFiles(): Promise<{ paths: string[]; engine: string }> {
+    return {
+      paths:
+        this.freshFiles ??
+        this.candidateFiles ??
+        Array.from({ length: this.discovered }, (_, i) => `/tmp/ws/file-${i}.ts`),
+      engine: "test",
+    }
+  }
+  async cleanupAbandonedArtifacts(input: { local?: boolean; vector?: boolean } = {}) {
+    this.cleanupInputs.push(input)
+    if (this.failCleanup) throw new Error("cleanup failed")
+    return {
+      codeGraph: { filesDeleted: 0, directoriesDeleted: 0, bytesDeleted: 0, skipped: [] },
+      postings: { filesDeleted: 0, directoriesDeleted: 0, bytesDeleted: 0, skipped: [] },
+      vector: input.vector ? { skipped: [] } : undefined,
+    }
+  }
 }
 
 class Watcher {
@@ -113,10 +152,28 @@ class Watcher {
     currentFile?: string
   }>()
   public readonly onDidFinishBatchProcessing = new Emitter<BatchProcessingSummary>()
+  public initialized = 0
+  public readonly collecting: boolean[] = []
+  public readonly synthetic: WatcherSyntheticEvent[] = []
+  public pending = 0
+  public ready?: Promise<void>
+  public fail?: Error
 
-  async initialize(): Promise<void> {}
+  async initialize(): Promise<void> {
+    this.initialized += 1
+    if (this.fail) throw this.fail
+    await this.ready
+  }
   updateBatchSegmentThreshold(_newThreshold: number): void {}
-  setCollecting(_collecting: boolean): void {}
+  setCollecting(collecting: boolean): void {
+    this.collecting.push(collecting)
+  }
+  enqueueSyntheticEvents(events: WatcherSyntheticEvent[]): void {
+    this.synthetic.push(...events)
+  }
+  getPendingEventCount(): number {
+    return this.pending
+  }
   setRunContext(_runId: string): void {}
 
   async processFile(filePath: string): Promise<FileProcessingResult> {
@@ -196,6 +253,56 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(completed?.filesDiscovered).toBe(3)
     expect(completed?.filesIndexed).toBe(3)
     expect(completed?.totalBlocks).toBe(6)
+  })
+
+  test("releases the workspace lock after a successful scan", async () => {
+    const ctx = await env()
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      {
+        async clearCacheFile() {},
+      } as unknown as CacheManager,
+      new Store(false) as unknown as IVectorStore,
+      new Scanner(1, 1, 1) as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    await orchestrator.startIndexing("manual")
+    const lock = await IndexingRunLock.acquire({ cacheDirectory: ctx.cacheDirectory, workspacePath: ctx.root })
+
+    expect(lock.status).toBe("acquired")
+    if (lock.status === "acquired") await lock.lock.release()
+  })
+
+  test("continues indexing when abandoned artifact cleanup fails", async () => {
+    const events: IndexingTelemetryEvent[] = []
+    const ctx = await env()
+    const scanner = new Scanner(1, 1, 2)
+    scanner.failCleanup = true
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      {
+        async clearCacheFile() {},
+      } as unknown as CacheManager,
+      new Store(false) as unknown as IVectorStore,
+      scanner as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+      (event) => events.push(event),
+    )
+
+    await orchestrator.startIndexing("manual")
+
+    expect(orchestrator.state).toBe("Indexed")
+    expect(scanner.cleanupInputs.length).toBeGreaterThan(0)
+    expect(events.some((event) => event.type === "completed")).toBe(true)
   })
 
   test("emits incremental completion telemetry", async () => {
@@ -278,6 +385,201 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(snapshots.some((item) => item.graph?.totalFiles === 3 && item.graph.processedFiles === 3)).toBe(true)
   })
 
+  test("runs Code Graph scan before vector initialization and RAG scan", async () => {
+    const ctx = await env()
+    const order: string[] = []
+    const scanner = new Scanner(2, 2, 4, 1)
+    const original = scanner.scanDirectory.bind(scanner)
+    scanner.scanDirectory = async (...args: Parameters<typeof original>) => {
+      const target = args[6] ?? "all"
+      order.push(`scan:${target}`)
+      return original(...args)
+    }
+    const cleanup = scanner.cleanupAbandonedArtifacts.bind(scanner)
+    scanner.cleanupAbandonedArtifacts = async (input = {}) => {
+      order.push(input.vector ? "cleanup:vector" : "cleanup:local")
+      return cleanup(input)
+    }
+    const store = new Store(false)
+    const init = store.initialize.bind(store)
+    store.initialize = async () => {
+      order.push("store:init")
+      return init()
+    }
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      store as unknown as IVectorStore,
+      scanner as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    await orchestrator.startIndexing("manual")
+
+    expect(order).toEqual(["scan:codeGraph", "cleanup:local", "store:init", "cleanup:vector", "scan:rag"])
+    expect(scanner.targets).toEqual(["codeGraph", "rag"])
+  })
+
+  test("starts watcher only after Code Graph and RAG scans complete", async () => {
+    const ctx = await env()
+    const state = new CodeIndexStateManager()
+    const scanner = new Scanner(1, 1, 1, 1)
+    const watcher = new Watcher()
+    const order: string[] = []
+    const scan = scanner.scanDirectory.bind(scanner)
+    scanner.scanDirectory = async (...args: Parameters<typeof scan>) => {
+      order.push(`scan:${args[6] ?? "all"}`)
+      return scan(...args)
+    }
+    const init = watcher.initialize.bind(watcher)
+    watcher.initialize = async () => {
+      order.push("watcher:init")
+      return init()
+    }
+    let ready!: () => void
+    watcher.ready = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      state,
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      new Store(false) as unknown as IVectorStore,
+      scanner as unknown as DirectoryScanner,
+      watcher as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    await orchestrator.startIndexing("manual")
+
+    expect(scanner.targets).toEqual(["codeGraph", "rag"])
+    expect(order).toEqual(["scan:codeGraph", "scan:rag", "watcher:init"])
+    expect(watcher.initialized).toBe(1)
+    expect(watcher.collecting).toEqual([false])
+    expect(orchestrator.state).toBe("Indexed")
+    expect(state.getCurrentStatus().message).toBe("Index up-to-date. File watcher starting.")
+
+    ready()
+    await watcher.ready
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(watcher.collecting).toEqual([false, true])
+    expect(state.getCurrentStatus().message).toBe("File watcher started. Index up-to-date.")
+  })
+
+  test("does not fail indexing when watcher initialization fails", async () => {
+    const events: IndexingTelemetryEvent[] = []
+    const ctx = await env()
+    const watcher = new Watcher()
+    watcher.fail = new Error("watcher unavailable")
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      new Store(false) as unknown as IVectorStore,
+      new Scanner(1, 1, 1, 1) as unknown as DirectoryScanner,
+      watcher as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+      (event) => events.push(event),
+    )
+
+    await orchestrator.startIndexing("manual")
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const error = events.find(
+      (event): event is Extract<IndexingTelemetryEvent, { type: "error" }> =>
+        event.type === "error" && event.location === "orchestrator:startWatcher",
+    )
+    expect(orchestrator.state).toBe("Indexed")
+    expect(error?.source).toBe("watcher")
+    expect(error?.error).toContain("watcher unavailable")
+  })
+
+  test("queues synthetic watcher events for files changed during scan", async () => {
+    const ctx = await env()
+    const old = join(ctx.root, "old.ts")
+    const changed = join(ctx.root, "changed.ts")
+    const deleted = join(ctx.root, "deleted.ts")
+    const created = join(ctx.root, "created.ts")
+
+    await writeFile(old, "export const old = 1\n")
+    await writeFile(changed, "export const changed = 1\n")
+    await writeFile(deleted, "export const deleted = 1\n")
+
+    const scanner = new Scanner(3, 3, 3)
+    scanner.candidateFiles = [old, changed, deleted]
+    scanner.freshFiles = [old, changed, created]
+    const scan = scanner.scanDirectory.bind(scanner)
+    scanner.scanDirectory = async (...args: Parameters<typeof scan>) => {
+      const result = await scan(...args)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      await writeFile(changed, "export const changed = 2\n")
+      await unlink(deleted)
+      await writeFile(created, "export const created = 1\n")
+      return result
+    }
+
+    const watcher = new Watcher()
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      undefined,
+      scanner as unknown as DirectoryScanner,
+      watcher as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    await orchestrator.startIndexing("manual")
+
+    const events = watcher.synthetic.map((event) => `${event.path}:${event.type}`)
+    expect(events).toContain(`${changed}:change`)
+    expect(events).toContain(`${deleted}:delete`)
+    expect(events).toContain(`${created}:create`)
+  })
+
+  test("does not start RAG when Code Graph scan fails", async () => {
+    const events: IndexingTelemetryEvent[] = []
+    const ctx = await env()
+    const store = new Store(false)
+    let initialized = false
+    store.initialize = async () => {
+      initialized = true
+      return false
+    }
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      store as unknown as IVectorStore,
+      new FailScanner() as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+      (event) => events.push(event),
+    )
+
+    await orchestrator.startIndexing("manual")
+
+    const error = events.find(
+      (event): event is Extract<IndexingTelemetryEvent, { type: "error" }> => event.type === "error",
+    )
+    expect(initialized).toBe(false)
+    expect(error?.pipeline).toBe("codeGraph")
+    expect(orchestrator.state).toBe("Error")
+  })
+
   test("cancelIndexing prevents scan from running", async () => {
     const ctx = await env()
     let scanned = false
@@ -311,7 +613,9 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(orchestrator.state).not.toBe("Indexing")
   })
 
-  test("rejects a concurrent workspace indexing run without blocking later retries", async () => {
+  test("waits for a concurrent workspace indexing run and continues after release", async () => {
+    const oldRetry = process.env.KILO_INDEXING_LOCK_RETRY_MS
+    process.env.KILO_INDEXING_LOCK_RETRY_MS = "10"
     const ctx = await env()
     let firstResolve: (() => void) | undefined
     let firstStarted: (() => void) | undefined
@@ -359,19 +663,22 @@ describe("CodeIndexOrchestrator telemetry", () => {
       ctx.meta,
     )
 
-    await second.startIndexing("manual")
+    const secondRun = second.startIndexing("manual")
+    await new Promise((resolve) => setTimeout(resolve, 30))
     expect(secondScanned).toBe(false)
     expect(second.state).toBe("Indexing")
 
     firstResolve?.()
     await firstRun
     expect(first.state).toBe("Indexed")
-    first.stopWatcher()
-    await new Promise((resolve) => setTimeout(resolve, 10))
-
-    await second.startIndexing("manual")
-    expect(secondScanned).toBe(true)
-    expect(second.state).toBe("Indexed")
+    try {
+      await secondRun
+      expect(secondScanned).toBe(true)
+      expect(second.state).toBe("Indexed")
+    } finally {
+      if (oldRetry === undefined) delete process.env.KILO_INDEXING_LOCK_RETRY_MS
+      else process.env.KILO_INDEXING_LOCK_RETRY_MS = oldRetry
+    }
   })
 
   test("preserves cache and collection data on retryable start failures", async () => {
@@ -404,7 +711,8 @@ describe("CodeIndexOrchestrator telemetry", () => {
         event.type === "error" && event.location === "orchestrator:startIndexing",
     )
     expect(error).toBeDefined()
-    expect(error?.mode).toBe("incremental")
+    expect(error?.mode).toBe("full")
+    expect(error?.pipeline).toBe("codeGraph")
     expect(cache.clears).toBe(0)
     expect(store.clearCount).toBe(0)
     expect(store.deleteCount).toBe(0)

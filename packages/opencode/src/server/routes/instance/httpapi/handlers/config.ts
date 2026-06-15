@@ -11,6 +11,14 @@ import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi" // kiloco
 import { InstanceHttpApi } from "../api"
 import { markInstanceForDisposal } from "../lifecycle"
 
+// kilocode_change start - indexing settings hot-reload without disposing the active instance
+function isIndexingOnlyConfig(input: unknown): boolean {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return false
+  const keys = Object.keys(input as Record<string, unknown>)
+  return keys.length === 1 && keys[0] === "indexing"
+}
+// kilocode_change end
+
 export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (handlers) =>
   Effect.gen(function* () {
     const providerSvc = yield* Provider.Service
@@ -22,7 +30,11 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
 
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {
       yield* configSvc.update(ctx.payload)
-      yield* markInstanceForDisposal(yield* InstanceState.context)
+      // kilocode_change start - indexing settings are consumed by the indexing hot-reload path
+      if (!isIndexingOnlyConfig(ctx.payload)) {
+        yield* markInstanceForDisposal(yield* InstanceState.context)
+      }
+      // kilocode_change end
       return ctx.payload
     })
 

@@ -133,6 +133,151 @@ export type CodeGraphFileRecord = {
   error?: string
 }
 
+export type CodeGraphStoredFileArrayField =
+  | "includes"
+  | "macros"
+  | "functions"
+  | "declarations"
+  | "calls"
+  | "types"
+  | "globals"
+  | "initializers"
+  | "labels"
+  | "registerMacroFamilies"
+
+export type CodeGraphStoredFileBase = Omit<
+  CodeGraphFileGraph,
+  | "includes"
+  | "macros"
+  | "functions"
+  | "declarations"
+  | "calls"
+  | "types"
+  | "globals"
+  | "initializers"
+  | "labels"
+  | "registerMacroFamilies"
+>
+
+export type CodeGraphStoredFilePart =
+  | {
+      kind: "whole"
+      path: string
+      file: CodeGraphFileGraph
+    }
+  | {
+      kind: "base"
+      path: string
+      file: CodeGraphStoredFileBase
+    }
+  | {
+      kind: "array"
+      path: string
+      field: CodeGraphStoredFileArrayField
+      offset: number
+      items: unknown[]
+    }
+
+export type CodeGraphShardPartInfo = {
+  key: string
+  path: string
+  entries: number
+  estimatedBytes: number
+}
+
+export type CodeGraphShardInfo = {
+  key: string
+  files: number
+  functions: number
+  macros: number
+  bytes: number
+  parts: CodeGraphShardPartInfo[]
+}
+
+export type CodeGraphShardData = {
+  graphSchemaVersion: typeof CODE_GRAPH_SCHEMA_VERSION
+  parserVersion: typeof CODE_GRAPH_PARSER_VERSION
+  key: string
+  part: string
+  fileParts: CodeGraphStoredFilePart[]
+}
+
+export type CodeGraphDirectoryStats = {
+  files: number
+  functions: number
+  macros: number
+  types: number
+  globals: number
+  bytes: number
+}
+
+export type CodeGraphSymbolKind = "function" | "macro" | "type" | "global" | "field" | "file"
+
+export type CodeGraphSymbol = {
+  id: string
+  kind: CodeGraphSymbolKind
+  name: string
+  path: string
+  startLine: number
+  endLine: number
+  signature?: string
+  snippet: string
+}
+
+export type CodeGraphPostingKind =
+  | "path"
+  | "identifier"
+  | "comment"
+  | "macro"
+  | "type"
+  | "global"
+  | "function"
+  | "include"
+
+export type CodeGraphPosting = {
+  term: string
+  path: string
+  line: number
+  kind: CodeGraphPostingKind
+  weight: number
+  symbolId?: string
+}
+
+export type CodeGraphModuleStats = CodeGraphDirectoryStats & {
+  externalCallers: number
+  hotSymbols: string[]
+}
+
+export type CodeGraphDerivedIndex = {
+  functionIdsByName: Record<string, string[]>
+  callerIdsByCallee: Record<string, string[]>
+  includeTargetsByFile: Record<string, string[]>
+  filePathsByInclude: Record<string, string[]>
+  directoryStats: Record<string, CodeGraphDirectoryStats>
+  symbolsByName: Record<string, CodeGraphSymbol[]>
+  symbolsByPath: Record<string, CodeGraphSymbol[]>
+  postingsByTerm: Record<string, CodeGraphPosting[]>
+  moduleStats: Record<string, CodeGraphModuleStats>
+}
+
+export type CodeGraphDerivedSidecarField = keyof CodeGraphDerivedIndex
+
+export type CodeGraphDerivedSidecarShard = CodeGraphShardPartInfo
+
+export type CodeGraphDerivedSidecarManifest = {
+  graphSchemaVersion: typeof CODE_GRAPH_SCHEMA_VERSION
+  parserVersion: typeof CODE_GRAPH_PARSER_VERSION
+  fields: Record<CodeGraphDerivedSidecarField, CodeGraphDerivedSidecarShard[]>
+}
+
+export type CodeGraphDerivedSidecarPartData = {
+  graphSchemaVersion: typeof CODE_GRAPH_SCHEMA_VERSION
+  parserVersion: typeof CODE_GRAPH_PARSER_VERSION
+  field: CodeGraphDerivedSidecarField
+  key: string
+  records: Record<string, unknown>
+}
+
 export type CodeGraphManifest = {
   workspacePath: string
   graphSchemaVersion: typeof CODE_GRAPH_SCHEMA_VERSION
@@ -140,6 +285,8 @@ export type CodeGraphManifest = {
   dataGeneration?: string
   lastFullScanAt?: string
   records: Record<string, CodeGraphFileRecord>
+  shards?: CodeGraphShardInfo[]
+  derived?: CodeGraphDerivedSidecarManifest
 }
 
 export type CodeGraphStorageStatus = {
@@ -238,6 +385,26 @@ export type CodePostingsManifest = {
   lastFullScanAt?: string
   diagnostics: string[]
   records: Record<string, CodePostingsFileRecord>
+  docParts?: CodeGraphShardPartInfo[]
+  termParts?: CodeGraphShardPartInfo[]
+}
+
+export type CodePostingsDocumentPartData = {
+  postingsSchemaVersion: typeof CODE_POSTINGS_SCHEMA_VERSION
+  tokenizerVersion: typeof CODE_POSTINGS_TOKENIZER_VERSION
+  graphSchemaVersion: typeof CODE_GRAPH_SCHEMA_VERSION
+  parserVersion: typeof CODE_GRAPH_PARSER_VERSION
+  key: string
+  documents: Record<string, CodePostingsDocument>
+}
+
+export type CodePostingsTermPartData = {
+  postingsSchemaVersion: typeof CODE_POSTINGS_SCHEMA_VERSION
+  tokenizerVersion: typeof CODE_POSTINGS_TOKENIZER_VERSION
+  graphSchemaVersion: typeof CODE_GRAPH_SCHEMA_VERSION
+  parserVersion: typeof CODE_GRAPH_PARSER_VERSION
+  key: string
+  terms: Record<string, CodePostingsTermDocument[]>
 }
 
 export type CodePostingsStorageStatus = {

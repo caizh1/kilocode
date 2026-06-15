@@ -25,6 +25,20 @@ describe("splitConfigByScope", () => {
     expect(split.project).toEqual({})
   })
 
+  it("splits project indexing enablement from global provider defaults", () => {
+    const split = splitConfigByScope({
+      indexing: {
+        enabled: true,
+        provider: "kilo",
+        model: "kilo/bge-m3",
+        dimension: null,
+      },
+    })
+
+    expect(split.global).toEqual({ indexing: { provider: "kilo", model: "kilo/bge-m3", dimension: null } })
+    expect(split.project).toEqual({ indexing: { enabled: true } })
+  })
+
   it("can write indexing enablement to global config through a global draft", () => {
     const split = splitConfigByScope({ username: "marius" })
     const draft = { indexing: { enabled: true } }

@@ -152,7 +152,8 @@ describe("tool.codebase_analysis", () => {
             effectiveSources: ["graph" as const, "bm25" as const, "vector" as const],
             reason: "hybrid-effective-sources: graph,bm25,vector",
             stages: stub.trace.stages.map((stage) => {
-              if (stage.name === "bm25") return { ...stage, status: "completed" as const, reason: "valid-postings-records-read", count: 1 }
+              if (stage.name === "bm25")
+                return { ...stage, status: "completed" as const, reason: "valid-postings-records-read", count: 1 }
               if (stage.name === "vector")
                 return {
                   ...stage,
@@ -538,7 +539,8 @@ describe("tool.codebase_analysis", () => {
             effectiveSources: ["graph" as const, "bm25" as const, "vector" as const],
             reason: "hybrid-effective-sources: graph,bm25,vector",
             stages: stub.trace.stages.map((stage) => {
-              if (stage.name === "vector") return { ...stage, status: "unavailable" as const, reason: "vector-search-unavailable" }
+              if (stage.name === "vector")
+                return { ...stage, status: "unavailable" as const, reason: "vector-search-unavailable" }
               return stage
             }),
           },

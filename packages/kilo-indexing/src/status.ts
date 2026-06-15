@@ -1,18 +1,21 @@
 import z from "zod"
 import type { CodeGraphSidecarStatus } from "./indexing/codegraph"
-import type { IndexingState } from "./indexing/interfaces/manager"
+import type { IndexingNotice as StateIndexingNotice, IndexingState } from "./indexing/interfaces/manager"
 
 type StatusSource = {
   readonly isFeatureEnabled: boolean
   readonly isFeatureConfigured: boolean
   getCodeGraphStatus?(): CodeGraphSidecarStatus
   getCodeGraphProgress?(): ActivePipelineProgress | undefined
+  getRecentErrors?(): IndexingPipelineRecentErrors
   getCurrentStatus(): {
     systemStatus: IndexingState
     message?: string
     processedItems: number
     totalItems: number
     currentItemUnit: string
+    activePipeline?: "codeGraph" | "rag"
+    notices?: StateIndexingNotice[]
   }
 }
 
@@ -30,6 +33,34 @@ export const IndexingStatusState = z.enum(INDEXING_STATUS_STATES).meta({ ref: "I
 
 export type IndexingStatusState = z.infer<typeof IndexingStatusState>
 
+export const IndexingDiagnostic = z
+  .object({
+    time: z.string(),
+    source: z.string(),
+    location: z.string(),
+    message: z.string(),
+    file: z.string().optional(),
+  })
+  .meta({ ref: "IndexingDiagnostic" })
+
+export type IndexingDiagnostic = z.infer<typeof IndexingDiagnostic>
+
+export type IndexingPipelineRecentErrors = {
+  codeGraph?: IndexingDiagnostic[]
+  rag?: IndexingDiagnostic[]
+}
+
+export const IndexingNotice = z
+  .object({
+    id: z.string(),
+    level: z.enum(["info", "warning"]),
+    message: z.string(),
+    action: z.enum(["openIndexingOutput"]).optional(),
+  })
+  .meta({ ref: "IndexingNotice" })
+
+export type IndexingNotice = z.infer<typeof IndexingNotice>
+
 export const IndexingPipelineStatus = z
   .object({
     state: IndexingStatusState,
@@ -43,6 +74,7 @@ export const IndexingPipelineStatus = z
     staleCount: z.number().int().nonnegative(),
     skippedCount: z.number().int().nonnegative(),
     validFileCount: z.number().int().nonnegative().optional(),
+    recentErrors: z.array(IndexingDiagnostic).max(5).optional(),
   })
   .meta({ ref: "IndexingPipelineStatus" })
 
@@ -65,6 +97,7 @@ export const IndexingStatus = z
     totalFiles: z.number().int().nonnegative(),
     percent: z.number().int().min(0).max(100),
     pipelines: IndexingStatusPipelines.optional(),
+    notices: z.array(IndexingNotice).max(5).optional(),
   })
   .meta({ ref: "IndexingStatus" })
 
@@ -87,17 +120,45 @@ export function normalizeIndexingStatus(manager: StatusSource): IndexingStatus {
   const processedFiles = files ? cfg.processedItems : 0
   const totalFiles = files ? cfg.totalItems : 0
   const percent = totalFiles > 0 ? Math.min(100, Math.max(0, Math.round((processedFiles / totalFiles) * 100))) : 0
+  const graphStatus = manager.getCodeGraphStatus?.()
+  const graphProgress =
+    cfg.systemStatus === "Indexing" && cfg.activePipeline !== "rag" ? manager.getCodeGraphProgress?.() : undefined
+  const errors = manager.getRecentErrors?.()
+  const graphErrors = errors?.codeGraph
+  const ragErrors = errors?.rag
+  const notices = cfg.notices?.slice(0, 5)
+  const notice = notices && notices.length > 0 ? { notices } : {}
 
-  if (!manager.isFeatureEnabled || !manager.isFeatureConfigured) return disabledIndexingStatus(cfg.message || "Indexing disabled.")
+  if (!manager.isFeatureEnabled || !manager.isFeatureConfigured) {
+    const message =
+      cfg.message || (!manager.isFeatureEnabled ? "RAG indexing disabled." : "RAG indexing not configured.")
+    return {
+      state: cfg.systemStatus === "Indexing" ? "In Progress" : cfg.systemStatus === "Error" ? "Error" : "Disabled",
+      message,
+      processedFiles,
+      totalFiles,
+      percent,
+      ...notice,
+      pipelines: {
+        codeGraph: codeGraphPipeline(graphStatus, graphProgress, graphErrors),
+        rag: disabledPipeline(message, ragErrors),
+      },
+    }
+  }
 
   const finish = (status: Omit<IndexingStatus, "pipelines">): IndexingStatus => ({
     ...status,
+    ...notice,
     pipelines: {
-      codeGraph: codeGraphPipeline(
-        manager.getCodeGraphStatus?.(),
-        cfg.systemStatus === "Indexing" ? manager.getCodeGraphProgress?.() : undefined,
-      ),
-      rag: ragPipeline(status),
+      codeGraph: codeGraphPipeline(graphStatus, graphProgress, graphErrors),
+      rag:
+        cfg.activePipeline === "codeGraph"
+          ? standbyPipeline(
+              "RAG indexing waiting for Code Graph.",
+              "Waiting for Code Graph indexing to finish.",
+              ragErrors,
+            )
+          : ragPipeline(status, ragErrors),
     },
   })
 
@@ -140,22 +201,41 @@ export function normalizeIndexingStatus(manager: StatusSource): IndexingStatus {
   })
 }
 
-function disabledPipelines(message: string): IndexingStatusPipelines {
-  const status = pipeline({
+function disabledPipelines(message: string, errors?: IndexingPipelineRecentErrors): IndexingStatusPipelines {
+  return {
+    codeGraph: { ...disabledPipeline(message, errors?.codeGraph), message: "Code Graph disabled." },
+    rag: disabledPipeline(message, errors?.rag),
+  }
+}
+
+function disabledPipeline(message: string, recentErrors?: IndexingDiagnostic[]): IndexingPipelineStatus {
+  return pipeline({
     state: "Disabled",
-    message,
+    message: "RAG indexing disabled.",
     processedFiles: 0,
     totalFiles: 0,
     percent: 0,
     detail: message,
+    recentErrors,
   })
-  return {
-    codeGraph: { ...status, message: "Code Graph disabled." },
-    rag: { ...status, message: "RAG indexing disabled." },
-  }
 }
 
-function ragPipeline(status: Omit<IndexingStatus, "pipelines">): IndexingPipelineStatus {
+function standbyPipeline(message: string, detail: string, recentErrors?: IndexingDiagnostic[]): IndexingPipelineStatus {
+  return pipeline({
+    state: "Standby",
+    message,
+    processedFiles: 0,
+    totalFiles: 0,
+    percent: 0,
+    detail,
+    recentErrors,
+  })
+}
+
+function ragPipeline(
+  status: Omit<IndexingStatus, "pipelines">,
+  recentErrors?: IndexingDiagnostic[],
+): IndexingPipelineStatus {
   return pipeline({
     state: status.state,
     message: status.message,
@@ -163,10 +243,15 @@ function ragPipeline(status: Omit<IndexingStatus, "pipelines">): IndexingPipelin
     totalFiles: status.totalFiles,
     percent: status.percent,
     detail: status.message,
+    recentErrors,
   })
 }
 
-function codeGraphPipeline(status?: CodeGraphSidecarStatus, active?: ActivePipelineProgress): IndexingPipelineStatus {
+function codeGraphPipeline(
+  status?: CodeGraphSidecarStatus,
+  active?: ActivePipelineProgress,
+  recentErrors?: IndexingDiagnostic[],
+): IndexingPipelineStatus {
   if (!status || !status.enabled || status.state === "disabled") {
     return pipeline({
       state: "Disabled",
@@ -175,6 +260,7 @@ function codeGraphPipeline(status?: CodeGraphSidecarStatus, active?: ActivePipel
       totalFiles: 0,
       percent: 0,
       detail: status?.detail ?? "indexing-not-active",
+      recentErrors,
     })
   }
 
@@ -192,6 +278,7 @@ function codeGraphPipeline(status?: CodeGraphSidecarStatus, active?: ActivePipel
       staleCount: storage?.staleCount ?? 0,
       skippedCount: storage?.unsupportedCount ?? 0,
       validFileCount: storage?.validFileCount,
+      recentErrors,
     })
   }
 
@@ -208,6 +295,7 @@ function codeGraphPipeline(status?: CodeGraphSidecarStatus, active?: ActivePipel
       staleCount: storage?.staleCount ?? 0,
       skippedCount: storage?.unsupportedCount ?? 0,
       validFileCount: storage?.validFileCount,
+      recentErrors,
     })
   }
 
@@ -219,6 +307,7 @@ function codeGraphPipeline(status?: CodeGraphSidecarStatus, active?: ActivePipel
       totalFiles: 0,
       percent: 0,
       detail: status.detail,
+      recentErrors,
     })
   }
 
@@ -247,6 +336,7 @@ function codeGraphPipeline(status?: CodeGraphSidecarStatus, active?: ActivePipel
       staleCount: stale,
       skippedCount: skipped,
       validFileCount: valid,
+      recentErrors,
     })
   }
 
@@ -263,6 +353,7 @@ function codeGraphPipeline(status?: CodeGraphSidecarStatus, active?: ActivePipel
       staleCount: stale,
       skippedCount: skipped,
       validFileCount: valid,
+      recentErrors,
     })
   }
 
@@ -278,10 +369,14 @@ function codeGraphPipeline(status?: CodeGraphSidecarStatus, active?: ActivePipel
     staleCount: stale,
     skippedCount: skipped,
     validFileCount: valid,
+    recentErrors,
   })
 }
 
-function pipeline(input: Partial<IndexingPipelineStatus> & Pick<IndexingPipelineStatus, "state" | "message">): IndexingPipelineStatus {
+function pipeline(
+  input: Partial<IndexingPipelineStatus> & Pick<IndexingPipelineStatus, "state" | "message">,
+): IndexingPipelineStatus {
+  const recentErrors = input.recentErrors?.slice(0, 5)
   return {
     processedFiles: 0,
     totalFiles: 0,
@@ -290,6 +385,7 @@ function pipeline(input: Partial<IndexingPipelineStatus> & Pick<IndexingPipeline
     staleCount: 0,
     skippedCount: 0,
     ...input,
+    ...(recentErrors && recentErrors.length > 0 ? { recentErrors } : { recentErrors: undefined }),
   }
 }
 

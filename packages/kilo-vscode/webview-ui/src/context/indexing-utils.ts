@@ -2,6 +2,7 @@ import type { ExtensionMessage, IndexingPipelineStatus, IndexingStatus } from ".
 
 export type IndexingTone = "muted" | "warning" | "success" | "error"
 export type IndexingPipelines = NonNullable<IndexingStatus["pipelines"]>
+const UNKNOWN = "Unknown indexing error"
 
 export function formatIndexingLabel(status: IndexingStatus): string {
   if (status.state === "In Progress") {
@@ -55,6 +56,55 @@ export function formatIndexingPipelineLabel(label: string, status: IndexingPipel
   return `${label} ${status.state}`
 }
 
+export function indexingPipelineDescription(status: IndexingPipelineStatus): string {
+  return fallback(
+    status.detail,
+    status.recentErrors?.[0] ? indexingDiagnosticMessage(status.recentErrors[0], status) : undefined,
+    status.message,
+    UNKNOWN,
+  )
+}
+
+export function indexingDiagnosticMessage(
+  error: NonNullable<IndexingPipelineStatus["recentErrors"]>[number],
+  status?: IndexingPipelineStatus,
+): string {
+  return fallback(error.message, status?.detail, status?.message, UNKNOWN)
+}
+
+export function formatIndexingDiagnostic(
+  error: NonNullable<IndexingPipelineStatus["recentErrors"]>[number],
+  status?: IndexingPipelineStatus,
+): string {
+  const file = error.file ? ` file=${error.file}` : ""
+  return `${error.time} ${error.source}:${error.location}${file} - ${indexingDiagnosticMessage(error, status)}`
+}
+
+export function formatIndexingDiagnostics(label: string, status: IndexingPipelineStatus): string {
+  const lines = [
+    `${label}: ${status.state}`,
+    `message: ${status.message}`,
+    `detail: ${indexingPipelineDescription(status)}`,
+    `progress: ${status.percent}% (${status.processedFiles}/${status.totalFiles})`,
+    `issues: ${status.errorCount} errors, ${status.staleCount} stale, ${status.skippedCount} skipped`,
+  ]
+  const errors = status.recentErrors ?? []
+  if (errors.length > 0) {
+    lines.push("recentErrors:")
+    lines.push(...errors.map((error) => `- ${formatIndexingDiagnostic(error, status)}`))
+  } else if (hasIndexingDiagnostics(status)) {
+    lines.push("recentErrors:")
+    lines.push(`- ${indexingPipelineDescription(status)}`)
+  }
+  return lines.join("\n")
+}
+
+export function hasIndexingDiagnostics(status: IndexingPipelineStatus): boolean {
+  return (
+    status.state === "Error" || status.errorCount > 0 || status.staleCount > 0 || (status.recentErrors?.length ?? 0) > 0
+  )
+}
+
 export function applyIndexingStatusMessage(
   message: ExtensionMessage,
   setStatus: (status: IndexingStatus) => void,
@@ -78,4 +128,8 @@ function fallbackPipeline(status: IndexingStatus, message: string): IndexingPipe
     staleCount: 0,
     skippedCount: 0,
   }
+}
+
+function fallback(...values: Array<string | undefined>): string {
+  return values.find((value) => value?.trim())?.trim() ?? ""
 }

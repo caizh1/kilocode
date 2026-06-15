@@ -19,6 +19,17 @@ function update(text: string, delta?: string, sid = "sess-1", partID = "p1") {
   return { ...msg, delta: { type: "text-delta", textDelta: delta } } as Item
 }
 
+function reasoning(text: string, delta?: string, sid = "sess-1", partID = "r1") {
+  const msg: Item = {
+    type: "partUpdated",
+    sessionID: sid,
+    messageID: "m1",
+    part: { id: partID, type: "reasoning", messageID: "m1", text, time: { start: 1 } },
+  }
+  if (delta === undefined) return msg
+  return { ...msg, delta: { type: "text-delta", textDelta: delta } } as Item
+}
+
 function items(sent: Sent[]): Item[] {
   return sent.flatMap((msg) => (msg.type === "partsUpdated" ? msg.updates : [msg]))
 }
@@ -43,6 +54,14 @@ describe("SessionStreamScheduler / coalescing", () => {
   it("merges repeated text deltas", () => {
     const sent = items(flushSync(update("a", "a"), update("b", "b")))
     expect(sent).toHaveLength(1)
+    expect(partText(sent[0]!)).toBe("ab")
+    expect(sent[0]!.delta?.textDelta).toBe("ab")
+  })
+
+  it("merges repeated reasoning deltas without changing the part type", () => {
+    const sent = items(flushSync(reasoning("a", "a"), reasoning("b", "b")))
+    expect(sent).toHaveLength(1)
+    expect((sent[0]!.part as { type: string }).type).toBe("reasoning")
     expect(partText(sent[0]!)).toBe("ab")
     expect(sent[0]!.delta?.textDelta).toBe("ab")
   })

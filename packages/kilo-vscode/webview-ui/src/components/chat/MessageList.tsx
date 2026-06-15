@@ -9,7 +9,7 @@
  * Shows recent sessions in the empty state for quick resumption.
  */
 
-import { type Component, For, Show, createEffect, createMemo, createSignal, on, onCleanup, JSX } from "solid-js"
+import { type Component, For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { Spinner } from "@kilocode/kilo-ui/spinner"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
@@ -23,6 +23,7 @@ import { FeedbackDialog } from "./FeedbackDialog"
 import { VscodeSessionTurn } from "./VscodeSessionTurn"
 import { RevertBanner } from "./RevertBanner"
 import { AccountSwitcher } from "../shared/AccountSwitcher"
+import { ChipMateLogo } from "../shared/ChipMateLogo"
 import { KiloNotifications } from "./KiloNotifications"
 import { WorkingIndicator } from "../shared/WorkingIndicator"
 import { TurnOutcome } from "../shared/TurnOutcome"
@@ -38,19 +39,6 @@ import {
   type MessageTurn,
 } from "../../context/session-queue"
 import type { QuestionRequest, SuggestionRequest } from "../../types/messages"
-
-const ChipMateLogo = (): JSX.Element => {
-  const iconsBaseUri = (window as { ICONS_BASE_URI?: string }).ICONS_BASE_URI || ""
-  const isLight =
-    document.body.classList.contains("vscode-light") || document.body.classList.contains("vscode-high-contrast-light")
-  const iconFile = isLight ? "kilo-light.svg" : "kilo-dark.svg"
-
-  return (
-    <div class="kilo-logo">
-      <img src={`${iconsBaseUri}/${iconFile}`} alt="ChipMate" />
-    </div>
-  )
-}
 
 interface MessageListProps {
   onSelectSession?: (id: string) => void
@@ -223,7 +211,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
           </Show>
           <Show when={isEmpty() && !props.readonly}>
             <div class="message-list-empty">
-              <ChipMateLogo />
+              <ChipMateLogo class="kilo-logo" />
               <p class="kilo-about-text">{language.t("session.messages.welcome")}</p>
               <Show when={recent().length > 0 && props.onSelectSession}>
                 <div class="recent-sessions">

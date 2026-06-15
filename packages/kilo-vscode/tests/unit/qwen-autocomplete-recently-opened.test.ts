@@ -4,7 +4,10 @@ import path from "node:path"
 import * as vscode from "vscode"
 import type { QwenAutocompleteCache } from "../../src/services/qwen-autocomplete/autocompleteLruCache"
 import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
-import { buildQwenFimPrompt, getContinueAutocompleteStopTokens } from "../../src/services/qwen-autocomplete/fimTemplates"
+import {
+  buildQwenFimPrompt,
+  getContinueAutocompleteStopTokens,
+} from "../../src/services/qwen-autocomplete/fimTemplates"
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
 import type { QwenRecentlyEditedSource } from "../../src/services/qwen-autocomplete/recentlyEdited"
@@ -13,7 +16,10 @@ import {
   recentlyOpenedFilesToQwenSnippets,
   type QwenRecentlyOpenedSource,
 } from "../../src/services/qwen-autocomplete/recentlyOpened"
-import { QwenAutocompleteSnippetType, type QwenAutocompleteCodeSnippet } from "../../src/services/qwen-autocomplete/snippets"
+import {
+  QwenAutocompleteSnippetType,
+  type QwenAutocompleteCodeSnippet,
+} from "../../src/services/qwen-autocomplete/snippets"
 import type { QwenAutocompleteConfig } from "../../src/services/qwen-autocomplete/types"
 
 type Pos = { line: number; character: number }
@@ -72,13 +78,11 @@ const originalFetch = globalThis.fetch
 const originalInline = vscode.languages.registerInlineCompletionItemProvider
 
 afterEach(() => {
-  ;(vscode.workspace as unknown as { onDidOpenTextDocument: typeof originalOpen }).onDidOpenTextDocument =
-    originalOpen
+  ;(vscode.workspace as unknown as { onDidOpenTextDocument: typeof originalOpen }).onDidOpenTextDocument = originalOpen
   ;(vscode.workspace as unknown as { onDidCloseTextDocument: typeof originalClose }).onDidCloseTextDocument =
     originalClose
-  ;(
-    vscode.window as unknown as { onDidChangeActiveTextEditor: typeof originalActive }
-  ).onDidChangeActiveTextEditor = originalActive
+  ;(vscode.window as unknown as { onDidChangeActiveTextEditor: typeof originalActive }).onDidChangeActiveTextEditor =
+    originalActive
   ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = originalConfig
   ;(vscode.workspace as unknown as { onDidChangeConfiguration: typeof originalChange }).onDidChangeConfiguration =
     originalChange
@@ -96,9 +100,8 @@ describe("qwen recently opened tracker", () => {
   it("does not register listeners, seed documents, or produce payload by default", async () => {
     const events = openedEvents()
     ;(vscode.workspace as unknown as { textDocuments: vscode.TextDocument[] }).textDocuments = [doc("int seed;")]
-    ;(vscode.window as unknown as { visibleTextEditors: Array<{ document: vscode.TextDocument }> }).visibleTextEditors = [
-      { document: doc("int visible;", { path: "/repo/src/visible.c" }) },
-    ]
+    ;(vscode.window as unknown as { visibleTextEditors: Array<{ document: vscode.TextDocument }> }).visibleTextEditors =
+      [{ document: doc("int visible;", { path: "/repo/src/visible.c" }) }]
     let guarded = 0
     const tracker = new QwenRecentlyOpenedTracker({
       guard: () => {
@@ -135,7 +138,10 @@ describe("qwen recently opened tracker", () => {
     await tracker.flush()
 
     expect(tracker.count()).toBe(2)
-    const snippets = await tracker.snippets({ ...cfg, recentlyOpenedEnabled: true }, doc("int current;", { path: "/repo/src/main.c" }))
+    const snippets = await tracker.snippets(
+      { ...cfg, recentlyOpenedEnabled: true },
+      doc("int current;", { path: "/repo/src/main.c" }),
+    )
     expect(snippets.snippets.map((item) => item.filepath)).toEqual(["/repo/src/c.c", "/repo/src/a.c"])
 
     events.fireClose(doc("", { path: "/repo/src/a.c" }))
@@ -172,7 +178,10 @@ describe("qwen recently opened tracker", () => {
     events.fireOpen(doc("int slow;", { path: "/repo/src/slow.c" }))
     await tracker.flush()
 
-    const result = await tracker.snippets({ ...cfg, recentlyOpenedEnabled: true, recentlyOpenedFileReadTimeoutMs: 1 }, doc("int main;", { path: "/repo/src/main.c" }))
+    const result = await tracker.snippets(
+      { ...cfg, recentlyOpenedEnabled: true, recentlyOpenedFileReadTimeoutMs: 1 },
+      doc("int main;", { path: "/repo/src/main.c" }),
+    )
 
     expect(result.snippets.map((item) => item.filepath)).toEqual(["/repo/src/other.c"])
     expect(result.skippedCount).toBeGreaterThanOrEqual(4)
@@ -191,9 +200,11 @@ describe("qwen recently opened tracker", () => {
         type: QwenAutocompleteSnippetType.Code,
       },
     ])
-    expect(recentlyOpenedFilesToQwenSnippets([{ filepath: "/repo/src/a.c", content: "int a;" }], {
-      useRecentlyOpened: false,
-    })).toEqual([])
+    expect(
+      recentlyOpenedFilesToQwenSnippets([{ filepath: "/repo/src/a.c", content: "int a;" }], {
+        useRecentlyOpened: false,
+      }),
+    ).toEqual([])
   })
 })
 
@@ -418,9 +429,9 @@ function openedEvents() {
     closes.push(callback as (document: vscode.TextDocument) => void)
     return { dispose: () => disposed++ }
   }
-  ;(
-    vscode.window as unknown as { onDidChangeActiveTextEditor: typeof originalActive }
-  ).onDidChangeActiveTextEditor = (callback) => {
+  ;(vscode.window as unknown as { onDidChangeActiveTextEditor: typeof originalActive }).onDidChangeActiveTextEditor = (
+    callback,
+  ) => {
     actives.push(callback as (editor: { document: vscode.TextDocument } | undefined) => void)
     return { dispose: () => disposed++ }
   }
@@ -438,7 +449,9 @@ function openedEvents() {
 function configEvents(read: () => QwenAutocompleteConfig) {
   let callback: ((event: { affectsConfiguration: (section: string) => boolean }) => void) | undefined
   let disposed = 0
-  ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (section?: string) => {
+  ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (
+    section?: string,
+  ) => {
     if (section !== "kilo.autocomplete") return originalConfig(section)
     return {
       get: (key: string, fallback?: unknown) => setting(read(), key) ?? fallback,
@@ -591,10 +604,7 @@ function opts(config: QwenAutocompleteConfig) {
   }
 }
 
-function doc(
-  text: string,
-  input: { languageId?: string; path?: string; scheme?: string; version?: number } = {},
-) {
+function doc(text: string, input: { languageId?: string; path?: string; scheme?: string; version?: number } = {}) {
   const lines = text.split("\n")
   const file = input.path ?? "/repo/src/main.c"
   return {

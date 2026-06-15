@@ -3,7 +3,7 @@ import { CodeIndexAnalysisService, CodeIndexManager } from "@kilocode/kilo-index
 import { normalizeIndexingStatus } from "@kilocode/kilo-indexing/status"
 import type { Config } from "../../src/config/config"
 import { GlobalBus } from "../../src/bus/global"
-import { KiloIndexing } from "../../src/kilocode/indexing"
+import { failed, KiloIndexing } from "../../src/kilocode/indexing"
 import { IndexingWorker } from "../../src/kilocode/indexing-worker-client"
 import { WithInstance } from "../../src/project/with-instance"
 import { Server } from "../../src/server/server"
@@ -75,6 +75,27 @@ const configDir = process.env["KILO_CONFIG_DIR"]
 const disabled = process.env["KILO_DISABLE_CODEBASE_INDEXING"]
 const error = new Error("test indexing initialization failed")
 
+test("keeps initialization diagnostics non-empty", () => {
+  const circular: Record<string, unknown> = {}
+  circular.self = circular
+
+  const cases: Array<[unknown, string]> = [
+    [new Error(""), ""],
+    [{ error: "structured error" }, "structured error"],
+    [{ data: { message: "nested data error" } }, "nested data error"],
+    ["", "Unknown indexing initialization error"],
+    [circular, "Unknown indexing initialization error"],
+  ]
+
+  for (const [input, expected] of cases) {
+    const status = failed(input)
+    const message = status.pipelines?.rag.recentErrors?.[0]?.message ?? ""
+
+    expect(message.trim()).not.toBe("")
+    if (expected) expect(message).toContain(expected)
+  }
+})
+
 function inline(directory: string, root: string, hooks: IndexingWorker.Hooks): IndexingWorker.Driver {
   const manager = new CodeIndexManager(directory, root)
   const progress = manager.onProgressUpdate.on(() => hooks.status(normalizeIndexingStatus(manager)))
@@ -83,6 +104,10 @@ function inline(directory: string, root: string, hooks: IndexingWorker.Hooks): I
   return {
     async init(input) {
       await manager.initialize(input)
+      return normalizeIndexingStatus(manager)
+    },
+    async updateConfig(input) {
+      await manager.handleSettingsChange(input)
       return normalizeIndexingStatus(manager)
     },
     search: (query, directoryPrefix) => manager.searchIndex(query, directoryPrefix),
@@ -103,6 +128,20 @@ async function wait(read: () => Promise<KiloIndexing.Status>, state: KiloIndexin
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
   throw new Error(`indexing did not reach ${state}`)
+}
+
+async function waitFor(
+  read: () => Promise<KiloIndexing.Status>,
+  check: (status: KiloIndexing.Status) => boolean,
+  label: string,
+) {
+  let last: KiloIndexing.Status | undefined
+  for (const _ of Array.from({ length: 300 })) {
+    last = await read()
+    if (check(last)) return last
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error(`${label} did not settle: ${JSON.stringify(last)}`)
 }
 
 async function called(init: ReturnType<typeof spyOn<CodeIndexManager, "initialize">>) {
@@ -284,6 +323,9 @@ describe("indexing startup degradation", () => {
       async init() {
         return done
       },
+      async updateConfig() {
+        return done
+      },
       async search() {
         return []
       },
@@ -359,53 +401,61 @@ describe("indexing startup degradation", () => {
           await called(init)
 
           expect(init).toHaveBeenCalled()
-        expect(KiloIndexing.ready()).toBe(false)
-        expect(await KiloIndexing.available()).toBe(false)
-        expect(await KiloIndexing.search("boot failure")).toEqual([])
-        expect(await KiloIndexing.codeGraphStatus()).toMatchObject({
-          state: "disabled",
-          evidenceAvailable: false,
-        })
-      },
-    })
+          expect(KiloIndexing.ready()).toBe(false)
+          expect(await KiloIndexing.available()).toBe(false)
+          expect(await KiloIndexing.search("boot failure")).toEqual([])
+          expect(await KiloIndexing.codeGraphStatus()).toMatchObject({
+            state: "disabled",
+            evidenceAvailable: false,
+          })
+        },
+      })
     } finally {
       gate.resolve({ requiresRestart: false })
       init.mockRestore()
     }
   })
 
-  test("stays disabled when indexing enablement is unset", async () => {
+  test("keeps Code Graph enabled when RAG indexing enablement is unset", async () => {
     await using tmp = await tmpdir({ git: true, config: unset })
     process.env["KILO_CONFIG_DIR"] = tmp.path
     const init = spyOn(CodeIndexManager.prototype, "initialize")
 
-    await WithInstance.provide({
-      directory: tmp.path,
-      fn: async () => {
-        const status = await wait(() => KiloIndexing.current(), "Disabled")
+    try {
+      await WithInstance.provide({
+        directory: tmp.path,
+        fn: async () => {
+          const status = await waitFor(
+            () => KiloIndexing.current(),
+            (item) =>
+              item.state !== "Error" &&
+              item.pipelines?.rag.state === "Disabled" &&
+              item.pipelines?.codeGraph.state !== "Disabled" &&
+              item.pipelines?.codeGraph.state !== "Error",
+            "graph-only indexing",
+          )
 
-        expect(status).toMatchObject({
-          state: "Disabled",
-          message: "Indexing disabled.",
-          pipelines: {
-            codeGraph: { state: "Disabled" },
-            rag: { state: "Disabled" },
-          },
-        })
-        expect(await KiloIndexing.available()).toBe(false)
-        expect(KiloIndexing.ready()).toBe(false)
-        expect(await KiloIndexing.search("disabled")).toEqual([])
-        expect(await KiloIndexing.codeGraphStatus()).toMatchObject({
-          state: "disabled",
-          evidenceAvailable: false,
-          detail: "indexing-not-active",
-        })
-        expect(init).not.toHaveBeenCalled()
-      },
-    })
+          expect(status.state).not.toBe("Error")
+          expect(status.pipelines?.codeGraph.state).not.toBe("Disabled")
+          expect(status.pipelines?.rag.state).toBe("Disabled")
+          expect(await KiloIndexing.available()).toBe(false)
+          expect(KiloIndexing.ready()).toBe(false)
+          expect(KiloIndexing.analysisReady()).toBe(true)
+          expect(await KiloIndexing.search("disabled")).toEqual([])
+          expect(await KiloIndexing.codeGraphStatus()).toMatchObject({
+            state: "container_ready",
+            enabled: true,
+            evidenceAvailable: false,
+          })
+          expect(init).toHaveBeenCalled()
+        },
+      })
+    } finally {
+      init.mockRestore()
+    }
   })
 
-  test("does not allocate an engine when indexing configuration is disabled", async () => {
+  test("allocates a graph-only engine when RAG indexing is disabled", async () => {
     const created: string[] = []
     IndexingWorker.override((directory, root, hooks) => {
       created.push(directory)
@@ -418,16 +468,24 @@ describe("indexing startup degradation", () => {
     await WithInstance.provide({
       directory: tmp.path,
       fn: async () => {
-        const status = await wait(() => KiloIndexing.current(), "Disabled")
+        const status = await waitFor(
+          () => KiloIndexing.current(),
+          (item) =>
+            item.state !== "Error" &&
+            item.pipelines?.rag.state === "Disabled" &&
+            item.pipelines?.codeGraph.state !== "Disabled" &&
+            item.pipelines?.codeGraph.state !== "Error",
+          "graph-only indexing",
+        )
 
-        expect(status).toMatchObject({
-          state: "Disabled",
-          message: "Indexing disabled.",
-        })
+        expect(status.state).not.toBe("Error")
+        expect(status.pipelines?.codeGraph.state).not.toBe("Disabled")
+        expect(status.pipelines?.rag.state).toBe("Disabled")
         expect(await KiloIndexing.available()).toBe(false)
         expect(KiloIndexing.ready()).toBe(false)
+        expect(KiloIndexing.analysisReady()).toBe(true)
         expect(await KiloIndexing.search("disabled")).toEqual([])
-        expect(created).toEqual([])
+        expect(created).toEqual([tmp.path])
       },
     })
   })

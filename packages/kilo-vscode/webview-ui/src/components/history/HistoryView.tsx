@@ -12,6 +12,7 @@ import { useSession } from "../../context/session"
 import { CloudImportDialog } from "../chat/CloudImportDialog"
 import SessionList from "./SessionList"
 import CloudSessionList from "./CloudSessionList"
+import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 
 interface HistoryViewProps {
   onSelectSession: (id: string) => void
@@ -23,6 +24,7 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
   const dialog = useDialog()
   const session = useSession()
   const [tab, setTab] = createSignal<"local" | "cloud">("local")
+  const internal = isInternalOfflineBuild()
   let local: HTMLButtonElement | undefined
   let cloud: HTMLButtonElement | undefined
   let localPanel: HTMLDivElement | undefined
@@ -58,6 +60,7 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
   }
 
   function move(event: KeyboardEvent, current: "local" | "cloud") {
+    if (internal) return
     const next =
       event.key === "Home"
         ? local
@@ -95,25 +98,29 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
           >
             {language.t("session.tab.local")}
           </button>
-          <button
-            ref={cloud}
-            id="history-tab-cloud"
-            class="history-tab-btn"
-            classList={{ "history-tab-btn--active": tab() === "cloud" }}
-            type="button"
-            role="tab"
-            aria-selected={tab() === "cloud"}
-            aria-controls="history-panel-cloud"
-            tabIndex={tab() === "cloud" ? 0 : -1}
-            onClick={() => setTab("cloud")}
-            onKeyDown={(event) => move(event, "cloud")}
-          >
-            {language.t("session.tab.cloud")}
-          </button>
+          {!internal && (
+            <button
+              ref={cloud}
+              id="history-tab-cloud"
+              class="history-tab-btn"
+              classList={{ "history-tab-btn--active": tab() === "cloud" }}
+              type="button"
+              role="tab"
+              aria-selected={tab() === "cloud"}
+              aria-controls="history-panel-cloud"
+              tabIndex={tab() === "cloud" ? 0 : -1}
+              onClick={() => setTab("cloud")}
+              onKeyDown={(event) => move(event, "cloud")}
+            >
+              {language.t("session.tab.cloud")}
+            </button>
+          )}
         </div>
-        <Button variant="secondary" size="small" onClick={openImport} class="history-import-btn">
-          {language.t("session.cloud.import")}
-        </Button>
+        {!internal && (
+          <Button variant="secondary" size="small" onClick={openImport} class="history-import-btn">
+            {language.t("session.cloud.import")}
+          </Button>
+        )}
       </div>
 
       <div
@@ -126,16 +133,18 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
       >
         {tab() === "local" && <SessionList onSelectSession={props.onSelectSession} />}
       </div>
-      <div
-        class="history-view-content"
-        ref={cloudPanel}
-        id="history-panel-cloud"
-        role="tabpanel"
-        aria-labelledby="history-tab-cloud"
-        hidden={tab() !== "cloud"}
-      >
-        {tab() === "cloud" && <CloudSessionList onSelectSession={selectCloudSession} />}
-      </div>
+      {!internal && (
+        <div
+          class="history-view-content"
+          ref={cloudPanel}
+          id="history-panel-cloud"
+          role="tabpanel"
+          aria-labelledby="history-tab-cloud"
+          hidden={tab() !== "cloud"}
+        >
+          {tab() === "cloud" && <CloudSessionList onSelectSession={selectCloudSession} />}
+        </div>
+      )}
     </div>
   )
 }

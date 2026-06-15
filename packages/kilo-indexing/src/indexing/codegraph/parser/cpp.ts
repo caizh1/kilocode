@@ -124,7 +124,10 @@ function macroSymbols(text: string, starts: number[]): CodeGraphMacro[] {
       endLine: line,
       shortSnippet: lineText(text, starts, line),
     }
-    const params = match[2]?.split(",").map((item) => item.trim()).filter(Boolean)
+    const params = match[2]
+      ?.split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
     if (params?.length) macro.parameters = params
     result.push(macro)
   }
@@ -291,7 +294,9 @@ function typeSymbols(original: string, masked: string, starts: number[]): CodeGr
     result.set(`typedef:${name}:${startLine}`, symbol)
   }
 
-  return [...result.values()].sort((left, right) => left.startLine - right.startLine || left.name.localeCompare(right.name))
+  return [...result.values()].sort(
+    (left, right) => left.startLine - right.startLine || left.name.localeCompare(right.name),
+  )
 }
 
 function globalSymbols(
@@ -411,7 +416,12 @@ function regFamilies(file: string, macros: CodeGraphMacro[]): CodeGraphRegisterM
       endLine: Math.max(...macros.map((macro) => macro.endLine)),
       macros: macros.sort((left, right) => left.startLine - right.startLine || left.name.localeCompare(right.name)),
       mmioIdentifiers: unique(mmio.get(family) ?? []),
-      shortSnippet: short(macros.map((macro) => macro.shortSnippet).filter(Boolean).join("\n")),
+      shortSnippet: short(
+        macros
+          .map((macro) => macro.shortSnippet)
+          .filter(Boolean)
+          .join("\n"),
+      ),
     }))
     .sort((left, right) => left.startLine - right.startLine || left.family.localeCompare(right.family))
 }
@@ -421,7 +431,11 @@ function fields(original: string, masked: string, start: number, end: number, st
   for (const match of masked.slice(start, end).matchAll(/([^;{}]+);/g)) {
     const raw = match[1].trim()
     if (!raw || raw.includes("(")) continue
-    const cleaned = raw.replace(/\[[^\]]*\]/g, "").replace(/\s*:\s*\d+\s*$/, "").replace(/\s+/g, " ").trim()
+    const cleaned = raw
+      .replace(/\[[^\]]*\]/g, "")
+      .replace(/\s*:\s*\d+\s*$/, "")
+      .replace(/\s+/g, " ")
+      .trim()
     const field = /^(.+?)\s+(\**\s*)?([A-Za-z_]\w*)$/.exec(cleaned)
     if (!field || control.has(field[3])) continue
     const line = lineFor(starts, start + (match.index ?? 0))

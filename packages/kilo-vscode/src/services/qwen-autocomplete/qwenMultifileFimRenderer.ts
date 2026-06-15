@@ -2,11 +2,7 @@ import { buildQwenFimPrompt } from "./fimTemplates"
 import type { QwenAutocompleteHelperVars } from "./helperVars"
 import type { QwenAutocompleteCodeSnippet } from "./snippets"
 import { countTokens, pruneLinesFromBottom, pruneLinesFromTop } from "./tokenPruning"
-import type {
-  QwenAutocompleteConfig,
-  QwenPromptRendererMode,
-  QwenSnippetInjectionBlockedReason,
-} from "./types"
+import type { QwenAutocompleteConfig, QwenPromptRendererMode, QwenSnippetInjectionBlockedReason } from "./types"
 
 export type QwenPromptPlan = {
   availablePromptTokens: number | null
@@ -102,8 +98,15 @@ export function renderQwenMultifileFimPromptWithTokenLimit(input: RenderInput, l
   return single(input, blocked("insufficient-context-length", "blocked", limit))
 }
 
-function build(prefix: string, suffixText: string, input: RenderInput): { prefix: string; prompt: string; suffix: string } {
-  const paths = unique([...input.snippets.map((snippet) => snippet.filepath), input.helper.filepath], input.helper.workspaceUris)
+function build(
+  prefix: string,
+  suffixText: string,
+  input: RenderInput,
+): { prefix: string; prompt: string; suffix: string } {
+  const paths = unique(
+    [...input.snippets.map((snippet) => snippet.filepath), input.helper.filepath],
+    input.helper.workspaceUris,
+  )
   const files = input.snippets
     .map((snippet, index) => `${FILE}${paths[index]?.uniquePath ?? safeName(snippet.filepath)}\n${snippet.content}`)
     .join("\n")
@@ -118,7 +121,11 @@ function template(prefix: string, suffixText: string): string {
   return `${before}\n<|fim_prefix|>${after.join("")}<|fim_suffix|>${suffixText}<|fim_middle|>`
 }
 
-function injected(input: RenderInput, out: { prefix: string; prompt: string; suffix: string }, tokens: number): QwenPromptPlan {
+function injected(
+  input: RenderInput,
+  out: { prefix: string; prompt: string; suffix: string },
+  tokens: number,
+): QwenPromptPlan {
   const estimate = countTokens(out.prompt, input.cfg.model)
   return {
     availablePromptTokens: tokens,
@@ -152,11 +159,7 @@ function single(input: RenderInput, gate: Gate): QwenPromptPlan {
   }
 }
 
-function blocked(
-  reason: QwenSnippetInjectionBlockedReason,
-  mode: QwenPromptRendererMode,
-  tokens: number | null,
-): Gate {
+function blocked(reason: QwenSnippetInjectionBlockedReason, mode: QwenPromptRendererMode, tokens: number | null): Gate {
   return {
     allowed: false,
     availablePromptTokens: tokens,

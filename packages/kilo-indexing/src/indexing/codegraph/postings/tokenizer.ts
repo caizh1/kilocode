@@ -31,10 +31,7 @@ export type LexicalToken = {
 }
 
 export function tokenizeQuery(query: string): string[] {
-  return unique([
-    ...tokens(query, "code").map((item) => item.term),
-    ...pathTokens(query).map((item) => item.term),
-  ])
+  return unique([...tokens(query, "code").map((item) => item.term), ...pathTokens(query).map((item) => item.term)])
 }
 
 export function tokenizeField(text: string, field: CodePostingsField): LexicalToken[] {
@@ -45,7 +42,9 @@ export function tokenizePath(filePath: string): LexicalToken[] {
   return pathTokens(filePath)
 }
 
-export function extractCommentTokens(text: string): Array<{ startLine: number; endLine: number; snippet: string; tokens: LexicalToken[] }> {
+export function extractCommentTokens(
+  text: string,
+): Array<{ startLine: number; endLine: number; snippet: string; tokens: LexicalToken[] }> {
   const out: Array<{ startLine: number; endLine: number; snippet: string; tokens: LexicalToken[] }> = []
   const starts = lines(text)
   const pattern = /\/\*[\s\S]*?\*\/|\/\/[^\n\r]*/g

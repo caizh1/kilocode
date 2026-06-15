@@ -463,12 +463,14 @@ export interface ConfigUpdatedMessage {
   config: Config
   globalConfig?: Config
   features: FeatureFlags
+  requestId?: string
 }
 
 export interface ConfigUpdateFailedMessage {
   type: "configUpdateFailed"
   message: string
   details?: string
+  requestId?: string
 }
 
 export interface GlobalConfigLoadedMessage {

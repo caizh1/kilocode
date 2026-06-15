@@ -178,7 +178,10 @@ export class UpdateCheckService implements vscode.Disposable {
 
     const file = await this.download(cfg, manifest, url)
     await this.install(cfg, file)
-    const reload = await vscode.window.showInformationMessage("ChipMate update installed. Reload Window to finish.", RELOAD)
+    const reload = await vscode.window.showInformationMessage(
+      "ChipMate update installed. Reload Window to finish.",
+      RELOAD,
+    )
     if (reload === RELOAD) await vscode.commands.executeCommand("workbench.action.reloadWindow")
   }
 
@@ -315,7 +318,9 @@ export class UpdateCheckService implements vscode.Disposable {
 export function registerUpdateCheck(context: vscode.ExtensionContext): UpdateCheckService {
   const service = new UpdateCheckService(context)
   context.subscriptions.push(service)
-  context.subscriptions.push(vscode.commands.registerCommand("kilo-code.new.checkForUpdates", () => service.checkManual()))
+  context.subscriptions.push(
+    vscode.commands.registerCommand("kilo-code.new.checkForUpdates", () => service.checkManual()),
+  )
   return service
 }
 

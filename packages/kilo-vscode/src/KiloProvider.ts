@@ -78,6 +78,7 @@ import { routeEarlyMessage } from "./kilo-provider/early-message"
 import * as ModelState from "./kilo-provider/model-state"
 import { handleForkSession } from "./kilo-provider/fork-session"
 import { openConfig } from "./kilo-provider/open-config"
+import { recordIndexingStatus as writeIndexingStatus } from "./services/indexing-output"
 import * as McpOAuth from "./kilo-provider/mcp-oauth"
 import { retryable, backoff, MAX_RETRIES } from "./util/retry"
 import { hasGit } from "./kilo-provider/git-status"
@@ -117,6 +118,7 @@ import {
 } from "./kilo-provider/handlers/question"
 import { fetchAndSendPendingSuggestions } from "./kilo-provider/handlers/suggestion"
 import { nativeTitle } from "./kilo-provider/native-tab-title"
+import { isInternalOfflineBuild } from "./shared/internal-offline"
 
 import {
   buildActionContext,
@@ -915,7 +917,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           )
           break
         case "updateConfig":
-          await this.handleUpdateConfig(message.config, message.projectConfig)
+          await this.handleUpdateConfig(message.config, message.projectConfig, message.requestId)
           break
         case "openSettingsTab":
           if (message.tab === "indexing") {
@@ -995,6 +997,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           )
           break
         case "requestCloudSessions":
+          if (isInternalOfflineBuild()) {
+            this.postMessage({ type: "cloudSessionsLoaded", sessions: [], nextCursor: null })
+            break
+          }
           await handleRequestCloudSessions(this.cloudSessionCtx, message)
           break
         case "requestGitRemoteUrl":
@@ -1003,9 +1009,25 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           })
           break
         case "requestCloudSessionData":
+          if (isInternalOfflineBuild()) {
+            this.postMessage({
+              type: "cloudSessionImportFailed",
+              cloudSessionId: message.sessionId,
+              error: "Cloud sessions are disabled in this build",
+            })
+            break
+          }
           void handleRequestCloudSessionData(this.cloudSessionCtx, message.sessionId)
           break
         case "importAndSend": {
+          if (isInternalOfflineBuild()) {
+            this.postMessage({
+              type: "cloudSessionImportFailed",
+              cloudSessionId: message.cloudSessionId,
+              error: "Cloud sessions are disabled in this build",
+            })
+            break
+          }
           const files = parseMessageFiles(message.files)
           void handleImportAndSend(
             this.cloudSessionCtx,
@@ -2033,6 +2055,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const status = (await res.json()) as IndexingStatus
+      this.recordIndexingStatus(status)
       const message = {
         type: "indexingStatusLoaded",
         status,
@@ -2042,6 +2065,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Failed to fetch indexing status:", error)
     }
+  }
+
+  private recordIndexingStatus(status: IndexingStatus): void {
+    if (!this.extensionContext) return
+    writeIndexingStatus(this.extensionContext, status)
   }
 
   private async fetchAndSendKiloEmbeddingModels(): Promise<void> {
@@ -2072,6 +2100,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
    */
   private async fetchAndSendConfigUpdated(): Promise<void> {
     if (!this.client || this.connectionState !== "connected") return
+    if (this.pending > 0) return
     try {
       const dir = this.getWorkspaceDirectory()
       const { data: config } = await retry(() => this.client!.config.get({ directory: dir }, { throwOnError: true }))
@@ -2137,6 +2166,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
    * Uses the cached message pattern so the webview gets data immediately on refresh.
    */
   private async fetchAndSendNotifications(): Promise<void> {
+    if (isInternalOfflineBuild()) {
+      const message = { type: "notificationsLoaded", notifications: [], dismissedIds: [] }
+      this.cachedNotificationsMessage = message
+      this.postMessage(message)
+      return
+    }
     if (!this.client) {
       if (this.cachedNotificationsMessage) {
         // Merge the latest dismissed IDs from globalState into the cached
@@ -2239,9 +2274,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     return getBusySessionCount(this.sessionStatusMap)
   }
 
-  private async handleUpdateConfig(partial: Partial<Config>, project: Partial<Config> = {}): Promise<void> {
+  private async handleUpdateConfig(
+    partial: Partial<Config>,
+    project: Partial<Config> = {},
+    requestId: string,
+  ): Promise<void> {
     if (!this.client || this.connectionState !== "connected") {
-      this.postMessage({ type: "configUpdateFailed", message: "Not connected to CLI backend" })
+      this.postMessage({ type: "configUpdateFailed", requestId, message: "Not connected to CLI backend" })
       return
     }
 
@@ -2265,7 +2304,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       if (hasGlobal) await this.client.global.config.update({ config: partial }, { throwOnError: true })
       if (hasProject) await this.client.config.update({ config: project, directory: dir }, { throwOnError: true })
     } catch (error) {
-      this.postConfigFailure(error)
+      this.postConfigFailure(error, requestId)
       this.pending--
       return
     }
@@ -2282,6 +2321,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       }
       this.postMessage({
         type: "configUpdated",
+        requestId,
         config: merged,
         globalConfig: global,
         features: configFeatures(merged),
@@ -2302,6 +2342,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         cached && typeof cached === "object" ? { ...(cached as Record<string, unknown>), ...patch } : patch
       this.postMessage({
         type: "configUpdated",
+        requestId,
         config: optimistic,
         globalConfig: this.cachedGlobalConfig ?? undefined,
         features: features ?? configFeatures(optimistic as Config),
@@ -2310,10 +2351,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       this.pending--
     }
   }
-  private postConfigFailure(error: unknown): void {
+  private postConfigFailure(error: unknown, requestId: string): void {
     console.error("[Kilo New] KiloProvider: Failed to update config:", error)
     this.postMessage({
       type: "configUpdateFailed",
+      requestId,
       message: getErrorMessage(error) || "Failed to update config",
       details: getConfigErrorDetails(error),
     })
@@ -2991,6 +3033,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const next = msg.type === "messageCreated" ? { ...msg, message: this.slimInfo(msg.message) } : msg
     if (next.type === "indexingStatusLoaded") {
       this.cachedIndexingStatusMessage = next
+      this.recordIndexingStatus(next.status)
     }
     this.streams.flush(sessionID)
     this.postMessage(next)

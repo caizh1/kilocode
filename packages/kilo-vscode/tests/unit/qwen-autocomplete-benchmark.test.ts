@@ -256,7 +256,10 @@ describe("qwen autocomplete benchmark reporting", () => {
     const root = path.join(__dirname, "../..")
     const extension = readFileSync(path.join(root, "src/extension.ts"), "utf8")
     const qwen = readFileSync(path.join(root, "src/services/qwen-autocomplete/index.ts"), "utf8")
-    const provider = readFileSync(path.join(root, "src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider.ts"), "utf8")
+    const provider = readFileSync(
+      path.join(root, "src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider.ts"),
+      "utf8",
+    )
 
     expect(extension).not.toContain("benchmark")
     expect(qwen).not.toContain("benchmark")
@@ -290,7 +293,9 @@ function reasonsFor(
     }),
     guard: false,
     called: true,
-    items: [new vscode.InlineCompletionItem(insert, new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0)))],
+    items: [
+      new vscode.InlineCompletionItem(insert, new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0))),
+    ],
     insert,
     linePrefix,
     lineSuffix,

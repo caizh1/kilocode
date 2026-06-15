@@ -10,10 +10,7 @@ import {
   QWEN_FIM_STOP,
 } from "../../src/services/qwen-autocomplete/fimTemplates"
 import { constructInitialPrefixSuffix } from "../../src/services/qwen-autocomplete/constructPrefixSuffix"
-import {
-  createQwenAutocompleteHelper,
-  QWEN_HELPER_DEFAULTS,
-} from "../../src/services/qwen-autocomplete/helperVars"
+import { createQwenAutocompleteHelper, QWEN_HELPER_DEFAULTS } from "../../src/services/qwen-autocomplete/helperVars"
 import { resetQwenSafetyGuardsForTests } from "../../src/services/qwen-autocomplete/guard"
 import { shouldCompleteMultilineQwen } from "../../src/services/qwen-autocomplete/multiline"
 import { QwenFimClient, QwenFimRequestError } from "../../src/services/qwen-autocomplete/QwenFimClient"
@@ -99,11 +96,7 @@ const qwenTemplateLocalStops = [
   "<|im_start|>",
   "<|im_end|>",
 ]
-const continueCommonStops = [
-  "/src/",
-  "#- coding: utf-8",
-  "```",
-]
+const continueCommonStops = ["/src/", "#- coding: utf-8", "```"]
 const continueQwenCoderEffectiveStops = [...qwenTemplateLocalStops, ...continueCommonStops]
 
 afterEach(async () => {
@@ -243,7 +236,9 @@ function offset(lines: string[], pos: Pos): number {
 }
 
 function stubConfig(values: Record<string, unknown>) {
-  ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (section?: string) => {
+  ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (
+    section?: string,
+  ) => {
     if (section !== "kilo.autocomplete") return originalConfig(section)
     return {
       get: (key: string, fallback?: unknown) => values[key] ?? fallback,
@@ -253,9 +248,8 @@ function stubConfig(values: Record<string, unknown>) {
 }
 
 function stubRegistration(calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }>) {
-  ;(
-    vscode.workspace as unknown as { onDidChangeConfiguration: typeof originalChange }
-  ).onDidChangeConfiguration = () => ({ dispose: () => {} })
+  ;(vscode.workspace as unknown as { onDidChangeConfiguration: typeof originalChange }).onDidChangeConfiguration =
+    () => ({ dispose: () => {} })
   ;(
     vscode.languages as unknown as { registerInlineCompletionItemProvider: typeof originalInline }
   ).registerInlineCompletionItemProvider = (selector, provider) => {
@@ -411,12 +405,14 @@ describe("qwen autocomplete config and prompt", () => {
   })
 
   it("builds Continue-style HelperVars and token-budget pruned prefix/suffix", () => {
-    const prefix = Array.from({ length: 40 }, (_, index) => `int pre_${index.toString().padStart(4, "0")}_marker = ${index};`).join(
-      "\n",
-    )
-    const suffix = Array.from({ length: 40 }, (_, index) => `int suf_${index.toString().padStart(4, "0")}_marker = ${index};`).join(
-      "\n",
-    )
+    const prefix = Array.from(
+      { length: 40 },
+      (_, index) => `int pre_${index.toString().padStart(4, "0")}_marker = ${index};`,
+    ).join("\n")
+    const suffix = Array.from(
+      { length: 40 },
+      (_, index) => `int suf_${index.toString().padStart(4, "0")}_marker = ${index};`,
+    ).join("\n")
     const document = doc(`${prefix}\nHERE\n${suffix}`)
     const helper = createQwenAutocompleteHelper(document, new vscode.Position(40, 4), undefined, {
       maxPromptTokens: 80,
@@ -551,7 +547,9 @@ describe("QwenFimClient", () => {
   })
 
   it("rejects non-completions response shapes without chat fallback", async () => {
-    const client = new QwenFimClient(async () => new Response(JSON.stringify({ choices: [{ message: { content: "x" } }] })))
+    const client = new QwenFimClient(
+      async () => new Response(JSON.stringify({ choices: [{ message: { content: "x" } }] })),
+    )
 
     await expect(
       client.complete({
@@ -573,22 +571,22 @@ describe("qwen document gating and postprocess", () => {
   })
 
   it("blocks non-file schemes, unsupported extensions, and clear non-code language ids", () => {
-    expect(isQwenSupportedDocument(doc("", { path: "/repo/src/main.c", languageId: "markdown", scheme: "untitled" }))).toBe(
-      false,
-    )
+    expect(
+      isQwenSupportedDocument(doc("", { path: "/repo/src/main.c", languageId: "markdown", scheme: "untitled" })),
+    ).toBe(false)
     expect(isQwenSupportedDocument(doc("", { path: "/repo/src/readme.md", languageId: "markdown" }))).toBe(false)
     expect(isQwenSupportedDocument(doc("", { path: "/repo/src/main.c", languageId: "json" }))).toBe(false)
     expect(isQwenSupportedDocument(doc("", { path: "/repo/src/main.c", languageId: "plaintext" }))).toBe(false)
   })
 
   it("prefilters empty documents without widening C/C++ file support", () => {
-    expect(shouldPrefilterQwenDocument(doc("", { path: "/repo/src/main.c", languageId: "c", scheme: "untitled" }))).toBe(
-      true,
-    )
-    expect(shouldPrefilterQwenDocument(doc("", { path: "/repo/include/device.h", languageId: "plaintext" }))).toBe(
-      true,
-    )
-    expect(shouldPrefilterQwenDocument(doc("int device;", { path: "/repo/include/device.h", languageId: "plaintext" }))).toBe(false)
+    expect(
+      shouldPrefilterQwenDocument(doc("", { path: "/repo/src/main.c", languageId: "c", scheme: "untitled" })),
+    ).toBe(true)
+    expect(shouldPrefilterQwenDocument(doc("", { path: "/repo/include/device.h", languageId: "plaintext" }))).toBe(true)
+    expect(
+      shouldPrefilterQwenDocument(doc("int device;", { path: "/repo/include/device.h", languageId: "plaintext" })),
+    ).toBe(false)
     expect(shouldPrefilterQwenDocument(doc("", { path: "/repo/src/readme.md", languageId: "markdown" }))).toBe(true)
   })
 
@@ -695,7 +693,7 @@ describe("qwen multiline classification and non-streaming filters", () => {
 
   it("truncates at Continue lines-to-stop markers without stopping inside quotes or identifiers", () => {
     expect(filtered("int a;\n# End of file. done\nint b;")).toBe("int a;")
-    expect(filtered("int a;\nprintf(\"# End of file. not really\");\nint b;")).toBe(
+    expect(filtered('int a;\nprintf("# End of file. not really");\nint b;')).toBe(
       'int a;\nprintf("# End of file. not really");\nint b;',
     )
     expect(filtered("int a;\nkeep# End of file.\nint b;")).toBe("int a;\nkeep# End of file.\nint b;")
@@ -704,12 +702,12 @@ describe("qwen multiline classification and non-streaming filters", () => {
   it("truncates at exact and similar line below cursor", () => {
     const text = "int main() {\n  \n  finish_long_value_1234();\n}"
 
-    expect(filtered("step();\n  finish_long_value_1234();\nafter();", { text, position: new vscode.Position(1, 2) })).toBe(
-      "step();",
-    )
-    expect(filtered("step();\n  finish_long_value_1235();\nafter();", { text, position: new vscode.Position(1, 2) })).toBe(
-      "step();",
-    )
+    expect(
+      filtered("step();\n  finish_long_value_1234();\nafter();", { text, position: new vscode.Position(1, 2) }),
+    ).toBe("step();")
+    expect(
+      filtered("step();\n  finish_long_value_1235();\nafter();", { text, position: new vscode.Position(1, 2) }),
+    ).toBe("step();")
   })
 
   it("keeps Continue lineIsRepeated length and ratio behavior", () => {

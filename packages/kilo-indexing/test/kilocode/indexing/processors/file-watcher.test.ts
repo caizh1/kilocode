@@ -12,6 +12,8 @@ import type {
 } from "../../../../src/indexing/interfaces"
 import { FileWatcher } from "../../../../src/indexing/processors/file-watcher"
 import { loadIgnore } from "../../../../src/indexing/shared/load-ignore"
+import { CodeGraphJsonStorage, CodePostingsJsonStorage } from "../../../../src/indexing/codegraph/storage"
+import { IndexingRunLock } from "../../../../src/indexing/run-lock"
 
 function createEmbedder(): IEmbedder {
   return {
@@ -73,7 +75,75 @@ class RetryStore implements IVectorStore {
   async markIndexingIncomplete(): Promise<void> {}
 }
 
+class RecordStore extends RetryStore {
+  public points = 0
+
+  constructor() {
+    super(0)
+  }
+
+  override async upsertPoints(points: PointStruct[]): Promise<void> {
+    this.points += points.length
+  }
+}
+
 describe("FileWatcher", () => {
+  test("waits for the workspace lock before processing a watcher batch", async () => {
+    const oldRetry = process.env.KILO_INDEXING_LOCK_RETRY_MS
+    process.env.KILO_INDEXING_LOCK_RETRY_MS = "10"
+    try {
+      const root = await mkdtemp(path.join(tmpdir(), "file-watcher-lock-"))
+      const cacheDir = path.join(root, ".cache")
+      const file = path.join(root, "main.ts")
+
+      await mkdir(cacheDir, { recursive: true })
+      await writeFile(file, "export const value = 1\n")
+
+      const cache = new CacheManager(cacheDir, root)
+      await cache.initialize()
+      const held = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+      expect(held.status).toBe("acquired")
+
+      const watcher = new FileWatcher(
+        root,
+        cache,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { lockCacheDirectory: cacheDir },
+      )
+      let finished = false
+      watcher.onDidFinishBatchProcessing.on(() => {
+        finished = true
+      })
+      ;(
+        watcher as unknown as { accumulatedEvents: Map<string, { path: string; type: "change" }> }
+      ).accumulatedEvents.set(file, { path: file, type: "change" })
+
+      const run = (watcher as unknown as { triggerBatchProcessing: () => Promise<void> }).triggerBatchProcessing()
+      await new Promise((resolve) => setTimeout(resolve, 30))
+
+      expect(finished).toBe(false)
+      if (held.status === "acquired") await held.lock.release()
+      await run
+      expect(finished).toBe(true)
+
+      const next = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+      expect(next.status).toBe("acquired")
+      if (next.status === "acquired") await next.lock.release()
+      watcher.dispose()
+    } finally {
+      if (oldRetry === undefined) delete process.env.KILO_INDEXING_LOCK_RETRY_MS
+      else process.env.KILO_INDEXING_LOCK_RETRY_MS = oldRetry
+    }
+  })
+
   test("processFile preserves same-line segments during incremental updates", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "file-watcher-test-"))
     const cacheDir = path.join(root, ".cache")
@@ -240,5 +310,128 @@ describe("FileWatcher", () => {
 
     expect(result.status).toBe("skipped")
     expect(result.reason).toBe("File is ignored by .gitignore or .kilocodeignore")
+  })
+
+  test("processFile skips plugin state directories under the workspace root", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "file-watcher-test-"))
+    const cacheDir = path.join(root, ".cache")
+    const file = path.join(root, ".kilo", "worktrees", "feature", "main.c")
+
+    await mkdir(path.dirname(file), { recursive: true })
+    await mkdir(cacheDir, { recursive: true })
+    await writeFile(file, "int main(void) { return 0; }\n")
+
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+
+    const watcher = new FileWatcher(root, cache, createEmbedder())
+    const result = await watcher.processFile(file)
+
+    expect(result.status).toBe("skipped")
+    expect(result.reason).toBe("File is in an ignored directory")
+  })
+
+  test("processFile indexes an explicitly opened worktree root", async () => {
+    const base = await mkdtemp(path.join(tmpdir(), "file-watcher-test-"))
+    const root = path.join(base, ".kilo", "worktrees", "feature")
+    const cacheDir = path.join(base, ".cache")
+    const file = path.join(root, "main.c")
+
+    await mkdir(root, { recursive: true })
+    await mkdir(cacheDir, { recursive: true })
+    await writeFile(file, "int main(void) { return 0; }\n")
+
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+
+    const watcher = new FileWatcher(root, cache, createEmbedder())
+    const result = await watcher.processFile(file)
+
+    expect(result.status).toBe("processed_for_batching")
+  })
+
+  test("processBatch updates Code Graph before RAG embedding", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "file-watcher-test-"))
+    const cacheDir = path.join(root, ".cache")
+    const file = path.join(root, "main.c")
+
+    await mkdir(cacheDir, { recursive: true })
+    await writeFile(
+      file,
+      [
+        "int main(void) {",
+        ...Array.from({ length: 20 }, (_, index) => `  int value${index} = ${index};`),
+        "  return value0;",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const graph = new CodeGraphJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const postings = new CodePostingsJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const store = new RecordStore()
+    const watcher = new FileWatcher(
+      root,
+      cache,
+      createEmbedder(),
+      store,
+      undefined,
+      1,
+      1,
+      undefined,
+      undefined,
+      graph,
+      postings,
+    )
+    const order: string[] = []
+    const real = watcher.processFile.bind(watcher)
+    watcher.processFile = async (filePath, target = "all") => {
+      order.push(target)
+      if (target !== "rag") return real(filePath, target)
+
+      const data = await graph.getFileGraph(file)
+      expect(data?.functions[0]?.name).toBe("main")
+      return {
+        path: filePath,
+        status: "processed_for_batching" as const,
+        newHash: "manual-rag-hash",
+        pointsToUpsert: [
+          {
+            id: "manual-point",
+            vector: [1],
+            payload: {
+              active: false,
+              filePath,
+              codeChunk: "int main(void)",
+              startLine: 1,
+              endLine: 1,
+            },
+          },
+        ],
+      }
+    }
+    const data = watcher as unknown as {
+      processBatch(events: Map<string, { path: string; type: "create" | "change" | "delete" }>): Promise<void>
+    }
+
+    await data.processBatch(
+      new Map([
+        [
+          file,
+          {
+            path: file,
+            type: "create",
+          },
+        ],
+      ]),
+    )
+
+    expect(order).toEqual(["codeGraph", "rag"])
+    expect(store.points).toBeGreaterThan(0)
+    expect(cache.getHash(file)).toBe("manual-rag-hash")
+    expect((await graph.getFileGraph(file))?.functions[0]?.name).toBe("main")
+    expect((await postings.search("main"))[0]?.filePath).toBe("main.c")
   })
 })

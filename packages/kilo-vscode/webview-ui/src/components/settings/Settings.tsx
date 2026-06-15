@@ -24,6 +24,7 @@ import LanguageTab from "./LanguageTab"
 import AboutKiloCodeTab from "./AboutKiloCodeTab"
 import IndexingTab from "./IndexingTab"
 import { useServer } from "../../context/server"
+import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 
 export interface SettingsProps {
   tab?: string
@@ -39,6 +40,7 @@ const Settings: Component<SettingsProps> = (props) => {
   const session = useSession()
   const [active, setActive] = createSignal(props.tab ?? "models")
   const [errorExpanded, setErrorExpanded] = createSignal(false)
+  const internal = isInternalOfflineBuild()
 
   const busyCount = () => Object.values(session.allStatusMap()).filter((s) => s.type === "busy").length
 
@@ -103,6 +105,11 @@ const Settings: Component<SettingsProps> = (props) => {
 
   createEffect(() => {
     if (features().indexing || active() !== "indexing") return
+    onTabChange("providers")
+  })
+
+  createEffect(() => {
+    if (!internal || active() !== "notifications") return
     onTabChange("providers")
   })
 
@@ -177,10 +184,12 @@ const Settings: Component<SettingsProps> = (props) => {
             <Icon name="code-lines" />
             <span class="label">{language.t("settings.autocomplete.title")}</span>
           </Tabs.Trigger>
-          <Tabs.Trigger value="notifications">
-            <Icon name="circle-check" />
-            <span class="label">{language.t("settings.notifications.title")}</span>
-          </Tabs.Trigger>
+          <Show when={!internal}>
+            <Tabs.Trigger value="notifications">
+              <Icon name="circle-check" />
+              <span class="label">{language.t("settings.notifications.title")}</span>
+            </Tabs.Trigger>
+          </Show>
           <Tabs.Trigger value="context">
             <Icon name="server" />
             <span class="label">{language.t("settings.context.title")}</span>
@@ -242,10 +251,12 @@ const Settings: Component<SettingsProps> = (props) => {
           <h3>{language.t("settings.autocomplete.title")}</h3>
           <AutocompleteTab onNavigateToModels={() => onTabChange("models")} />
         </Tabs.Content>
-        <Tabs.Content value="notifications">
-          <h3>{language.t("settings.notifications.title")}</h3>
-          <NotificationsTab />
-        </Tabs.Content>
+        <Show when={!internal}>
+          <Tabs.Content value="notifications">
+            <h3>{language.t("settings.notifications.title")}</h3>
+            <NotificationsTab />
+          </Tabs.Content>
+        </Show>
         <Tabs.Content value="context">
           <h3>{language.t("settings.context.title")}</h3>
           <ContextTab />

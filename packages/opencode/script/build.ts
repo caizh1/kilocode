@@ -102,6 +102,26 @@ async function copyKiloConsole(input: string, outputDir: string) {
 }
 // kilocode_change end
 
+// kilocode_change start - build CodeGraph parser worker as a real sidecar file
+async function buildCodeGraphParserWorker(outputDir: string) {
+  const result = await Bun.build({
+    entrypoints: ["../kilo-indexing/src/indexing/codegraph/parser/worker.ts"],
+    outdir: outputDir,
+    naming: {
+      entry: "codegraph-parser-worker.mjs",
+    },
+    format: "esm",
+    target: "bun",
+    minify: true,
+    sourcemap: "none",
+  })
+  if (!result.success) {
+    throw new AggregateError(result.logs, "Failed to build CodeGraph parser worker")
+  }
+  console.log(`built CodeGraph parser worker at ${path.join(outputDir, "codegraph-parser-worker.mjs")}`)
+}
+// kilocode_change end
+
 // kilocode_change start - validate compiled binaries load the sidecar models snapshot
 function smokeEnv(root: string) {
   const env = { ...process.env }
@@ -250,7 +270,9 @@ const targets = singleFlag
 
 // kilocode_change start - prepare one validated models snapshot before any target compile
 const snapshot = await prepareModelsSnapshot()
-console.log(`Prepared models snapshot from ${snapshot.source} (${snapshot.providers} providers, ${snapshot.models} models)`)
+console.log(
+  `Prepared models snapshot from ${snapshot.source} (${snapshot.providers} providers, ${snapshot.models} models)`,
+)
 // kilocode_change end
 
 await $`rm -rf dist`
@@ -282,6 +304,7 @@ for (const item of targets) {
   const workerPath = "./src/cli/cmd/tui/worker.ts"
   const sessionExportWorkerPath = "./src/kilocode/session-export/worker.ts" // kilocode_change
   const indexingWorkerPath = "./src/kilocode/indexing-worker.ts" // kilocode_change
+  const codeGraphParserWorkerPath = "codegraph-parser-worker.mjs" // kilocode_change
 
   // Use platform-specific bunfs root path based on target OS // kilocode_change
   const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
@@ -327,6 +350,7 @@ for (const item of targets) {
       KILO_WORKER_PATH: workerPath,
       KILO_SESSION_EXPORT_WORKER_PATH: sessionExportWorkerPath, // kilocode_change
       KILO_INDEXING_WORKER_PATH: indexingWorkerPath, // kilocode_change
+      KILO_CODEGRAPH_WORKER_PATH: codeGraphParserWorkerPath, // kilocode_change
       KILO_CHANNEL: `'${Script.channel}'`,
       KILO_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
       KILO_BUILD_KIND: Script.release ? `'release'` : `'source'`, // kilocode_change
@@ -334,6 +358,7 @@ for (const item of targets) {
   })
 
   await fs.promises.copyFile(snapshot.path, path.resolve(dir, `dist/${name}/bin/models-snapshot.json`)) // kilocode_change
+  await buildCodeGraphParserWorker(path.resolve(dir, `dist/${name}/bin`)) // kilocode_change
   await copyTreeSitterWasms(path.resolve(dir, `dist/${name}/bin`)) // kilocode_change
   await copyKiloConsole(kiloConsoleDist, path.resolve(dir, `dist/${name}/bin`)) // kilocode_change
 

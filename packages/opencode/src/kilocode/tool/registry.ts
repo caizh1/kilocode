@@ -13,7 +13,7 @@ import * as Truncate from "@/tool/truncate"
 const log = Log.create({ service: "kilocode-tool-registry" })
 type Deps = { agent: Agent.Interface; truncate: Truncate.Interface }
 type Loaders = {
-  indexing?: () => Promise<{ KiloIndexing: { ready: () => boolean } }>
+  indexing?: () => Promise<{ KiloIndexing: { ready: () => boolean; analysisReady?: () => boolean } }>
   semantic?: () => Promise<Pick<typeof import("@/kilocode/tool/semantic-search"), "SemanticSearchTool">>
   analysis?: () => Promise<Pick<typeof import("@/kilocode/tool/codebase-analysis"), "CodebaseAnalysisTool">>
 }
@@ -51,8 +51,8 @@ export namespace KiloToolRegistry {
         process: Tool.init(tools.process),
       })
       const ready = yield* indexingReady(loaders)
-      const analysis = yield* analysisTool(deps, loaders, ready)
-      const semantic = yield* semanticTool(deps, loaders, ready)
+      const analysis = yield* analysisTool(deps, loaders, ready.analysis)
+      const semantic = yield* semanticTool(deps, loaders, ready.semantic)
       return { ...base, analysis, semantic }
     })
   }
@@ -61,12 +61,16 @@ export namespace KiloToolRegistry {
     return Effect.gen(function* () {
       const indexing = loaders.indexing ?? (() => import("@/kilocode/indexing"))
       const ready = yield* Effect.tryPromise(() =>
-        indexing().then((mod) => mod.KiloIndexing.ready()),
+        indexing().then((mod) => {
+          const semantic = mod.KiloIndexing.ready()
+          const analysis = mod.KiloIndexing.analysisReady?.() ?? semantic
+          return { analysis, semantic }
+        }),
       ).pipe(
         Effect.catch((err) =>
           Effect.sync(() => {
             log.warn("indexing tools unavailable", { err })
-            return false
+            return { analysis: false, semantic: false }
           }),
         ),
       )

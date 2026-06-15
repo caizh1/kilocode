@@ -4,6 +4,20 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+export function deepEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false
+    if (left.length !== right.length) return false
+    return left.every((item, index) => deepEqual(item, right[index]))
+  }
+  if (!isRecord(left) || !isRecord(right)) return false
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  return leftKeys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && deepEqual(left[key], right[key]))
+}
+
 /** Deep merge two objects, with source values overriding target values. */
 export function deepMerge(target: Config, source: Partial<Config>): Config {
   const result: Record<string, unknown> = { ...target }
@@ -52,10 +66,13 @@ export class ConfigState {
   dirty = false
   saving = false
   loading = true
+  request: string | undefined = undefined
 
   /** Accumulate a partial change (same as the toggle click path). */
   updateConfig(partial: Partial<Config>) {
-    this.config = stripNulls(deepMerge(this.config, partial))
+    const next = stripNulls(deepMerge(this.config, partial))
+    if (deepEqual(next, this.config)) return
+    this.config = next
     this.draft = deepMerge(this.draft as Config, partial)
     this.dirty = true
   }
@@ -69,9 +86,12 @@ export class ConfigState {
   }
 
   /** Handle an incoming configUpdated push from the extension. */
-  handleConfigUpdated(server: Config) {
+  handleConfigUpdated(server: Config, request?: string) {
+    if (!this.saving && request !== undefined) return
     if (this.saving) {
+      if (request !== this.request) return
       this.saving = false
+      this.request = undefined
       this.draft = {}
       this.dirty = false
       this.config = server
@@ -85,23 +105,28 @@ export class ConfigState {
   handleConfigSaved() {
     if (!this.saving) return
     this.saving = false
+    this.request = undefined
     this.draft = {}
     this.dirty = false
     this.saved = this.config
   }
 
   /** Handle an explicit save failure from the extension. */
-  handleConfigSaveFailed(server: Config) {
+  handleConfigSaveFailed(server: Config, request?: string) {
+    if (!this.saving && request !== undefined) return
     if (!this.saving) return
+    if (request !== this.request) return
     this.saving = false
+    this.request = undefined
     this.saved = server
     this.config = resolveConfig(server, this.draft, this.dirty)
   }
 
   /** Send the draft to the backend. */
-  saveConfig() {
+  saveConfig(request = "request") {
     if (this.saving || Object.keys(this.draft).length === 0) return
     this.saving = true
+    this.request = request
   }
 
   /** Discard pending changes. */
@@ -109,5 +134,6 @@ export class ConfigState {
     this.config = this.saved
     this.draft = {}
     this.dirty = false
+    this.request = undefined
   }
 }

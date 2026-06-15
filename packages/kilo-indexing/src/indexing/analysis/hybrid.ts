@@ -103,7 +103,12 @@ export async function queryHybridEvidence(input: Planner): Promise<QueryEvidence
   }))
   const base = [...graphRefs, ...bm25.refs, ...vectorRefs]
   const errors = buildErrorPaths({ query: input.query, refs: base, budget: input.budget })
-  const states = buildStateEvidence({ query: input.query, refs: [...base, ...errors.refs], errorPaths: errors.paths, budget: input.budget })
+  const states = buildStateEvidence({
+    query: input.query,
+    refs: [...base, ...errors.refs],
+    errorPaths: errors.paths,
+    budget: input.budget,
+  })
   const errorRefs = errors.refs.map((item) => ({
     ...item,
     rank: rankError(item),
@@ -119,7 +124,9 @@ export async function queryHybridEvidence(input: Planner): Promise<QueryEvidence
         ? []
         : [...(states.trace.enabled ? stateRefs : []), ...(errors.trace.enabled ? errorRefs : []), ...base]
   const fused = dedupe(pool.sort(sort))
-  const kept = fused.refs.slice(0, input.budget.maxEvidenceItems).map((item) => limitSnippet(item, input.budget.maxSnippetCharsPerItem))
+  const kept = fused.refs
+    .slice(0, input.budget.maxEvidenceItems)
+    .map((item) => limitSnippet(item, input.budget.maxSnippetCharsPerItem))
   const keptIds = new Set(kept.map((item) => item.id))
   const paths = errors.paths.filter((item) => item.backingEvidenceRefs.some((id) => keptIds.has(id)))
   const state = finalizeStateEvidence(states, kept)
@@ -171,7 +178,13 @@ export async function queryHybridEvidence(input: Planner): Promise<QueryEvidence
       postingsCount: status.validFileCount,
       vector,
       maxVectorCandidates,
-      deduped: graphRefs.length + bm25.refs.length + vectorRefs.length + errorRefs.length + stateRefs.length - fused.refs.length,
+      deduped:
+        graphRefs.length +
+        bm25.refs.length +
+        vectorRefs.length +
+        errorRefs.length +
+        stateRefs.length -
+        fused.refs.length,
       dedupedVector: fused.dropped.vector,
       kept: kept.length,
       dropped,
@@ -420,8 +433,12 @@ function format(input: {
     ...input.states.transitions.flatMap((item) => item.backingEvidenceRefs),
     ...input.states.flows.flatMap((item) => item.backingEvidenceRefs),
   ])
-  const exact = input.refs.filter((item) => item.source === "graph" && (item.reason.includes("exact") || item.reason.includes("file path")))
-  const graph = input.refs.filter((item) => item.source === "graph" && !exact.includes(item) && !errorIds.has(item.id) && !stateIds.has(item.id))
+  const exact = input.refs.filter(
+    (item) => item.source === "graph" && (item.reason.includes("exact") || item.reason.includes("file path")),
+  )
+  const graph = input.refs.filter(
+    (item) => item.source === "graph" && !exact.includes(item) && !errorIds.has(item.id) && !stateIds.has(item.id),
+  )
   const bm25 = input.refs.filter((item) => item.source === "bm25" && !stateIds.has(item.id))
   const vector = input.refs.filter((item) => item.source === "vector" && !stateIds.has(item.id))
   const vectorOnly = input.refs.length > 0 && input.refs.every((item) => item.source === "vector")
@@ -460,11 +477,16 @@ function format(input: {
     ...lines(bm25, "No source-backed BM25 evidence matched this query."),
     "</bm25-evidence>",
     '<vector-evidence title="Semantic / vector evidence">',
-    ...lines(vector, `Semantic/vector evidence ${input.vector.status === "ok" ? "did not survive fusion." : `${input.vector.status}; reason=${input.vector.reason}`}`),
+    ...lines(
+      vector,
+      `Semantic/vector evidence ${input.vector.status === "ok" ? "did not survive fusion." : `${input.vector.status}; reason=${input.vector.reason}`}`,
+    ),
     "</vector-evidence>",
     `<limitations>${xml(limitations(input.vector, vectorOnly, input.errors, input.states))}</limitations>`,
     `<suggested-next-step>${xml(suggestion(input.errors, input.states))}</suggested-next-step>`,
-    input.refs.length === 0 ? "<missing-evidence>No file path and line-number evidence was returned.</missing-evidence>" : "",
+    input.refs.length === 0
+      ? "<missing-evidence>No file path and line-number evidence was returned.</missing-evidence>"
+      : "",
     input.diagnostics.length > 0 ? `<diagnostics count="${input.diagnostics.length}" />` : "",
     "</local-analysis-pack>",
   ]
@@ -472,14 +494,23 @@ function format(input: {
     .join("\n")
 }
 
-function limitations(vector: VectorEvidenceResult, vectorOnly: boolean, errors: ErrorPathBuildResult, states: StateBuildResult): string {
+function limitations(
+  vector: VectorEvidenceResult,
+  vectorOnly: boolean,
+  errors: ErrorPathBuildResult,
+  states: StateBuildResult,
+): string {
   const suffix: string[] = []
   if (errors.trace.enabled && errors.paths.length === 0) {
-    suffix.push("No source-backed error/cleanup path evidence was returned; do not infer cleanup order, return code, or failure behavior.")
+    suffix.push(
+      "No source-backed error/cleanup path evidence was returned; do not infer cleanup order, return code, or failure behavior.",
+    )
   }
   if (errors.trace.enabled && errors.paths.length > 0) suffix.push(...errors.paths.flatMap((item) => item.limitations))
   if (states.trace.enabled && states.transitions.length === 0 && states.flows.length === 0) {
-    suffix.push("No source-backed candidate state/flow/impact evidence was returned; do not infer states, transitions, order, or impact scope.")
+    suffix.push(
+      "No source-backed candidate state/flow/impact evidence was returned; do not infer states, transitions, order, or impact scope.",
+    )
   }
   if (states.trace.enabled) suffix.push(...states.trace.limitations)
   const text = suffix.length > 0 ? ` ${[...new Set(suffix)].join(" ")}` : ""
@@ -533,11 +564,7 @@ function clip(value: string, max: number): string {
 }
 
 function xml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;")
 }
 
 function hash(value: string): string {

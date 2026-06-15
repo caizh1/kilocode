@@ -2,8 +2,14 @@
 import { $ } from "bun"
 import { join, relative, dirname, basename } from "node:path"
 import { chmodSync, statSync, rmSync, readdirSync, existsSync } from "node:fs"
-import { copyTreeSitterResources, hasTreeSitterResources } from "../src/services/cli-backend/cli-resources"
+import {
+  copyCodeGraphParserWorker,
+  copyTreeSitterResources,
+  hasCodeGraphParserWorker,
+  hasTreeSitterResources,
+} from "../src/services/cli-backend/cli-resources"
 import { currentFfmpegTarget, ensureFfmpegForTarget } from "./ffmpeg-helper"
+import { ensureRipgrepForTarget } from "./ripgrep-helper"
 
 const forceRebuild = process.argv.includes("--force")
 
@@ -87,6 +93,12 @@ function platformTag(): string {
   return `cli-${os}-${process.arch}`
 }
 
+function vscodeTarget(): string {
+  const os = process.platform === "win32" ? "win32" : process.platform
+  const arch = process.arch === "x64" ? "x64" : process.arch === "arm64" ? "arm64" : process.arch
+  return `${os}-${arch}`
+}
+
 async function findKiloBinaryInOpencodeDist(): Promise<string | null> {
   const distDir = join(opencodeDir, "dist")
 
@@ -102,6 +114,7 @@ async function findKiloBinaryInOpencodeDist(): Promise<string | null> {
   try {
     statSync(preferred)
     if (!hasTreeSitterResources(preferred)) return null
+    if (!hasCodeGraphParserWorker(preferred)) return null
     if (!existsSync(snapshotForBinary(preferred))) return null
     return preferred
   } catch {
@@ -129,6 +142,7 @@ async function findKiloBinaryInOpencodeDist(): Promise<string | null> {
       }
       if (e.isFile() && (e.name === "kilo" || e.name === "kilo.exe") && basename(dirname(p)) === "bin") {
         if (!hasTreeSitterResources(p)) continue
+        if (!hasCodeGraphParserWorker(p)) continue
         if (!existsSync(snapshotForBinary(p))) continue
         return p
       }
@@ -193,6 +207,7 @@ async function writeSourceWrapper() {
   chmodSync(targetBinPath, 0o755)
   if (existsSync(devSnapshotPath)) await $`cp ${devSnapshotPath} ${targetSnapshotPath}`
   await ensureFfmpegForTarget(currentFfmpegTarget(), targetBinDir)
+  await ensureRipgrepForTarget(vscodeTarget(), targetBinDir)
 
   const hash = await cliSourceHash()
   if (hash) await Bun.write(versionFile, hash + "\n")
@@ -216,6 +231,7 @@ async function main() {
       `CLI binary already present at ${relative(kiloVscodeDir, targetBinPath)} (${Math.round(st.size / 1024 / 1024)}MB). Use --force to rebuild.`,
     )
     await ensureFfmpegForTarget(currentFfmpegTarget(), targetBinDir)
+    await ensureRipgrepForTarget(vscodeTarget(), targetBinDir)
     return
   }
 
@@ -248,8 +264,10 @@ async function main() {
   await $`cp ${sourceSnapshotPath} ${targetSnapshotPath}`
   await $`cp ${sourceBinPath} ${targetBinPath}`
   await copyTreeSitterResources(sourceBinPath, targetBinPath)
+  await copyCodeGraphParserWorker(sourceBinPath, targetBinPath)
   chmodSync(targetBinPath, 0o755)
   await ensureFfmpegForTarget(currentFfmpegTarget(), targetBinDir)
+  await ensureRipgrepForTarget(vscodeTarget(), targetBinDir)
 
   // Record the CLI source version so future runs detect when a rebuild is needed
   const hash = await cliSourceHash()

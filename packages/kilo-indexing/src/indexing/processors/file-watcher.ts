@@ -4,17 +4,14 @@ import { createHash } from "crypto"
 import path from "path"
 import type { Ignore } from "ignore"
 import { Emitter, type Disposable } from "../runtime"
-import {
-  MAX_FILE_SIZE_BYTES,
-  BATCH_SEGMENT_THRESHOLD,
-  MAX_BATCH_RETRIES,
-  INITIAL_RETRY_DELAY_MS,
-} from "../constants"
+import { MAX_FILE_SIZE_BYTES, BATCH_SEGMENT_THRESHOLD, MAX_BATCH_RETRIES, INITIAL_RETRY_DELAY_MS } from "../constants"
 import { scannerExtensions } from "../shared/supported-extensions"
 import {
   type IFileWatcher,
+  type WatcherSyntheticEvent,
   type FileProcessingResult,
   type IEmbedder,
+  type IndexingScanTarget,
   type IVectorStore,
   type PointStruct,
   type BatchProcessingSummary,
@@ -34,6 +31,7 @@ import { Log } from "../../util/log"
 import { sanitizeErrorMessage } from "../shared/validation-helpers"
 import type { RagCheckpointMeta } from "../rag-checkpoint"
 import { fallbackCheckpointMeta, generationForFile, pointForBlock, vectorContext } from "../rag-checkpoint"
+import { IndexingRunLock } from "../run-lock"
 
 const log = Log.create({ service: "file-watcher" })
 
@@ -57,6 +55,7 @@ export class FileWatcher implements IFileWatcher {
   private ready?: Promise<void>
   private runId: string = globalThis.crypto.randomUUID()
   private ragMeta: RagCheckpointMeta | undefined
+  private readonly writeCache: boolean
 
   public readonly onDidStartBatchProcessing = new Emitter<string[]>()
   public readonly onBatchProgressUpdate = new Emitter<{
@@ -78,13 +77,18 @@ export class FileWatcher implements IFileWatcher {
     private readonly telemetryMeta?: IndexingTelemetryMeta,
     private readonly graph?: ICodeGraphStorage,
     private readonly postings?: ICodePostingsStorage,
+    opts: { writeCache?: boolean; lockCacheDirectory?: string } = {},
   ) {
     if (ignoreInstance) {
       this.ignoreInstance = ignoreInstance
     }
     this.batchSegmentThreshold = batchSegmentThreshold ?? BATCH_SEGMENT_THRESHOLD
     this.maxBatchRetries = maxBatchRetries ?? MAX_BATCH_RETRIES
+    this.writeCache = opts.writeCache ?? true
+    this.lockCacheDirectory = opts.lockCacheDirectory
   }
+
+  private readonly lockCacheDirectory?: string
 
   private emitRetry(attempt: number, batchSize: number, err: unknown): void {
     if (!this.onTelemetry || !this.telemetryMeta) {
@@ -103,7 +107,7 @@ export class FileWatcher implements IFileWatcher {
     })
   }
 
-  private emitError(location: string, err: unknown, retryCount?: number): void {
+  private emitError(location: string, err: unknown, retryCount?: number, file?: string): void {
     if (!this.onTelemetry || !this.telemetryMeta) {
       return
     }
@@ -115,6 +119,7 @@ export class FileWatcher implements IFileWatcher {
       mode: "incremental",
       location,
       error: sanitizeErrorMessage(msg),
+      file,
       retryCount,
       maxRetries: this.maxBatchRetries,
     })
@@ -132,7 +137,15 @@ export class FileWatcher implements IFileWatcher {
       return
     }
 
-    log.info("initializing file watcher", { workspacePath: this.workspacePath })
+    const started = Date.now()
+    const pending = this.accumulatedEvents.size
+    log.info("initializing file watcher", {
+      visible: true,
+      workspacePath: this.workspacePath,
+      blocking: false,
+      ignoredRoots: FileIgnore.FOLDERS,
+      pendingBeforeReady: pending,
+    })
 
     this.watcher = chokidarWatch(this.workspacePath, {
       ignored: (filePath: string) => {
@@ -153,7 +166,19 @@ export class FileWatcher implements IFileWatcher {
       this.watcher?.once("error", reject)
     })
     await this.ready
-    log.info("file watcher ready", { workspacePath: this.workspacePath })
+    log.info("file watcher ready", {
+      visible: true,
+      workspacePath: this.workspacePath,
+      blocking: false,
+      readyMs: Date.now() - started,
+      pendingBeforeReady: pending,
+      pendingAfterReady: this.accumulatedEvents.size,
+      ignoredRoots: FileIgnore.FOLDERS,
+    })
+  }
+
+  getPendingEventCount(): number {
+    return this.accumulatedEvents.size
   }
 
   setCollecting(collecting: boolean): void {
@@ -164,6 +189,23 @@ export class FileWatcher implements IFileWatcher {
       pendingEvents: this.accumulatedEvents.size,
     })
     if (collecting) this.scheduleBatchProcessing()
+  }
+
+  enqueueSyntheticEvents(events: WatcherSyntheticEvent[]): void {
+    let queued = 0
+    for (const event of events) {
+      if (!this.shouldIndex(event.path)) continue
+      this.accumulatedEvents.set(event.path, event)
+      queued += 1
+    }
+    log.info("queued synthetic watcher events", {
+      visible: true,
+      workspacePath: this.workspacePath,
+      queued,
+      pendingEvents: this.accumulatedEvents.size,
+      collecting: this.collecting,
+    })
+    if (this.collecting) this.scheduleBatchProcessing()
   }
 
   /**
@@ -233,12 +275,42 @@ export class FileWatcher implements IFileWatcher {
       this.accumulatedEvents.clear()
 
       const filePathsInBatch = Array.from(eventsToProcess.keys())
+      const lock = await this.acquireBatchLock()
+      if (this.lockCacheDirectory && !lock) break
       this.onDidStartBatchProcessing.fire(filePathsInBatch)
-      await this.processBatch(eventsToProcess)
+      try {
+        await this.processBatch(eventsToProcess)
+      } finally {
+        await lock?.release()
+      }
     }
 
     this.draining = false
     log.info("completed watcher event drain", { workspacePath: this.workspacePath })
+  }
+
+  private async acquireBatchLock(): Promise<IndexingRunLock | undefined> {
+    if (!this.lockCacheDirectory) return undefined
+
+    while (this.collecting) {
+      const result = await IndexingRunLock.acquire({
+        cacheDirectory: this.lockCacheDirectory,
+        workspacePath: this.workspacePath,
+      })
+      if (result.status === "acquired") return result.lock
+
+      log.warn("watcher batch waiting for indexing lock", {
+        visible: true,
+        workspacePath: this.workspacePath,
+        reason: result.reason,
+        ownerPid: result.owner?.pid,
+        ownerRunId: result.owner?.runId,
+        retryAfterMs: result.retryAfterMs,
+      })
+      await delay(result.retryAfterMs)
+    }
+
+    return undefined
   }
 
   private shouldIndex(filePath: string) {
@@ -274,13 +346,32 @@ export class FileWatcher implements IFileWatcher {
       if (fileDetail.originalType === "change") continue
     }
 
+    if (allPathsToClearFromDB.size > 0 && !this.vectorStore) {
+      for (const path of pathsToExplicitlyDelete) {
+        if (this.writeCache) {
+          this.cacheManager.deleteHash(path)
+          await this.cacheManager.flush()
+        }
+        batchResults.push({ path, status: "success" })
+        processedCountInBatch++
+        this.onBatchProgressUpdate.fire({
+          processedInBatch: processedCountInBatch,
+          totalInBatch: totalFilesInBatch,
+          currentFile: path,
+        })
+      }
+      return { overallBatchError, clearedPaths: allPathsToClearFromDB, processedCount: processedCountInBatch }
+    }
+
     if (allPathsToClearFromDB.size > 0 && this.vectorStore) {
       try {
         await this.vectorStore.deletePointsByMultipleFilePaths(Array.from(allPathsToClearFromDB))
 
         for (const path of pathsToExplicitlyDelete) {
-          this.cacheManager.deleteHash(path)
-          await this.cacheManager.flush()
+          if (this.writeCache) {
+            this.cacheManager.deleteHash(path)
+            await this.cacheManager.flush()
+          }
           batchResults.push({ path, status: "success" })
           processedCountInBatch++
           this.onBatchProgressUpdate.fire({
@@ -327,6 +418,7 @@ export class FileWatcher implements IFileWatcher {
     processedCountInBatch: number,
     totalFilesInBatch: number,
     pathsToExplicitlyDelete: string[],
+    target: IndexingScanTarget = "all",
   ): Promise<{
     pointsForBatchUpsert: PointStruct[]
     successfullyProcessedForUpsert: Array<{ path: string; newHash?: string }>
@@ -346,7 +438,7 @@ export class FileWatcher implements IFileWatcher {
           currentFile: fileDetail.path,
         })
         try {
-          const result = await this.processFile(fileDetail.path)
+          const result = await this.processFile(fileDetail.path, target)
           return { path: fileDetail.path, result: result, error: undefined }
         } catch (e) {
           const error = e as Error
@@ -422,6 +514,45 @@ export class FileWatcher implements IFileWatcher {
     }
   }
 
+  private async _processGraphUpdates(
+    filesToUpsertDetails: Array<{ path: string; originalType: "create" | "change" }>,
+    batchResults: FileProcessingResult[],
+    processedCountInBatch: number,
+    totalFilesInBatch: number,
+  ): Promise<{ failed: Set<string>; processedCount: number }> {
+    const failed = new Set<string>()
+    if (!this.graph || filesToUpsertDetails.length === 0) return { failed, processedCount: processedCountInBatch }
+
+    for (let i = 0; i < filesToUpsertDetails.length; i += this.FILE_PROCESSING_CONCURRENCY_LIMIT) {
+      const chunk = filesToUpsertDetails.slice(i, i + this.FILE_PROCESSING_CONCURRENCY_LIMIT)
+      const settled = await Promise.allSettled(chunk.map((item) => this.processFile(item.path, "codeGraph")))
+
+      for (let index = 0; index < settled.length; index += 1) {
+        const file = chunk[index]!.path
+        const item = settled[index]!
+        if (item.status === "rejected") {
+          const err = item.reason instanceof Error ? item.reason : new Error(String(item.reason))
+          failed.add(file)
+          batchResults.push({ path: file, status: "error", error: err })
+          this.emitError("file-watcher:graphPhase", err, undefined, file)
+        } else if (item.value.status === "error" || item.value.status === "local_error") {
+          failed.add(file)
+          batchResults.push(item.value)
+          if (item.value.error) this.emitError("file-watcher:graphPhase", item.value.error, undefined, file)
+        }
+
+        processedCountInBatch += failed.has(file) ? 1 : 0
+        this.onBatchProgressUpdate.fire({
+          processedInBatch: processedCountInBatch,
+          totalInBatch: totalFilesInBatch,
+          currentFile: file,
+        })
+      }
+    }
+
+    return { failed, processedCount: processedCountInBatch }
+  }
+
   /**
    * Executes batch upsert operations against the vector store with retry logic.
    */
@@ -469,8 +600,10 @@ export class FileWatcher implements IFileWatcher {
             const generation = this.fileGeneration(path, newHash)
             await this.vectorStore.activateFileGeneration(path, generation, this.runId)
             await this.vectorStore.deleteInactiveFilePoints(path, generation)
-            this.cacheManager.updateHash(path, newHash)
-            await this.cacheManager.flush()
+            if (this.writeCache) {
+              this.cacheManager.updateHash(path, newHash)
+              await this.cacheManager.flush()
+            }
           }
           batchResults.push({ path, status: "success" })
         }
@@ -494,7 +627,7 @@ export class FileWatcher implements IFileWatcher {
       }
     } else if (!overallBatchError) {
       for (const { path, newHash } of successfullyProcessedForUpsert) {
-        if (newHash) {
+        if (newHash && this.writeCache) {
           this.cacheManager.updateHash(path, newHash)
           await this.cacheManager.flush()
         }
@@ -560,16 +693,24 @@ export class FileWatcher implements IFileWatcher {
     processedCountInBatch = deletionCount
 
     // Phase 2: Process files and prepare upserts
+    const split = !!this.graph && !!this.embedder && !!this.vectorStore
+    const graph = split
+      ? await this._processGraphUpdates(filesToUpsertDetails, batchResults, processedCountInBatch, totalFilesInBatch)
+      : { failed: new Set<string>(), processedCount: processedCountInBatch }
+    processedCountInBatch = graph.processedCount
+    const ragFiles = split ? filesToUpsertDetails.filter((item) => !graph.failed.has(item.path)) : filesToUpsertDetails
+
     const {
       pointsForBatchUpsert,
       successfullyProcessedForUpsert,
       processedCount: upsertCount,
     } = await this._processFilesAndPrepareUpserts(
-      filesToUpsertDetails,
+      ragFiles,
       batchResults,
       processedCountInBatch,
       totalFilesInBatch,
       pathsToExplicitlyDelete,
+      split ? "rag" : "all",
     )
     processedCountInBatch = upsertCount
 
@@ -618,8 +759,11 @@ export class FileWatcher implements IFileWatcher {
    * Processes a single file: checks ignore rules, reads content, computes hash,
    * parses code blocks, creates embeddings, and returns points for batch upsert.
    */
-  async processFile(filePath: string): Promise<FileProcessingResult> {
+  async processFile(filePath: string, target: IndexingScanTarget = "all"): Promise<FileProcessingResult> {
     try {
+      const graphEnabled = target !== "rag"
+      const ragEnabled = target !== "codeGraph"
+
       // Check if file is in an ignored directory
       const relativeFilePath = generateRelativeIgnorePath(filePath, this.workspacePath)
       if (!relativeFilePath) {
@@ -665,7 +809,7 @@ export class FileWatcher implements IFileWatcher {
 
       // Check if file has changed
       if (this.cacheManager.getHash(filePath) === newHash) {
-        await this.updateFileGraph(filePath, content, newHash)
+        if (graphEnabled) await this.updateFileGraph(filePath, content, newHash)
         return {
           path: filePath,
           status: "skipped" as const,
@@ -673,7 +817,15 @@ export class FileWatcher implements IFileWatcher {
         }
       }
 
-      await this.updateFileGraph(filePath, content, newHash)
+      if (graphEnabled) await this.updateFileGraph(filePath, content, newHash)
+
+      if (!ragEnabled) {
+        return {
+          path: filePath,
+          status: "success" as const,
+          newHash,
+        }
+      }
 
       // Parse file
       const blocks = await codeParser.parseFile(filePath, { content, fileHash: newHash })
@@ -755,6 +907,7 @@ export class FileWatcher implements IFileWatcher {
         filePath,
         error: sanitizeErrorMessage(msg),
       })
+      this.emitError("file-watcher:updateFileGraph", err, undefined, filePath)
       try {
         await this.graph.markFileGraphStatus(filePath, "parse_error", {
           fileHash,
@@ -769,6 +922,7 @@ export class FileWatcher implements IFileWatcher {
           filePath,
           error: sanitizeErrorMessage(mark instanceof Error ? mark.message : String(mark)),
         })
+        this.emitError("file-watcher:markFileGraphStatus", mark, undefined, filePath)
       }
     }
   }
@@ -783,6 +937,7 @@ export class FileWatcher implements IFileWatcher {
         filePath,
         error: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
       })
+      this.emitError("file-watcher:removeFileGraph", err, undefined, filePath)
     }
   }
 
@@ -801,6 +956,7 @@ export class FileWatcher implements IFileWatcher {
         filePath,
         error: sanitizeErrorMessage(msg),
       })
+      this.emitError("file-watcher:updateFilePostings", err, undefined, filePath)
       try {
         await this.postings.markFilePostingsStatus(filePath, "postings_error", {
           fileHash,
@@ -811,7 +967,12 @@ export class FileWatcher implements IFileWatcher {
           filePath,
           error: sanitizeErrorMessage(mark instanceof Error ? mark.message : String(mark)),
         })
+        this.emitError("file-watcher:markFilePostingsStatus", mark, undefined, filePath)
       }
     }
   }
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms))
 }

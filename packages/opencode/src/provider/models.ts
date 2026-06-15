@@ -14,6 +14,7 @@ import { Config } from "../config/config"
 import { ModelCache } from "./model-cache"
 import { Auth } from "../auth"
 import { AI_SDK_PROVIDERS, KILO_OPENROUTER_BASE, PROMPTS } from "@kilocode/kilo-gateway"
+import { isInternalOffline } from "../kilocode/internal-offline"
 // kilocode_change end
 
 // kilocode_change start
@@ -207,6 +208,21 @@ export const layer: Layer.Layer<Service, never, Requirements> = Layer.effect(
       const config = yield* cfg.get()
       const disabled = new Set(config.disabled_providers ?? [])
       const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
+      if (isInternalOffline()) {
+        const custom = new Set(
+          Object.entries(config.provider ?? {})
+            .filter(
+              ([id, item]) =>
+                item?.npm === "@ai-sdk/openai-compatible" &&
+                id !== "kilo" &&
+                id !== "apertis" &&
+                (!enabled || enabled.has(id)),
+            )
+            .map(([id]) => id),
+        )
+        for (const id of disabled) custom.delete(id)
+        return Object.fromEntries(Object.entries(providers).filter(([id]) => custom.has(id)))
+      }
       const kiloAllowed = (!enabled || enabled.has("kilo")) && !disabled.has("kilo")
       const apt = config.provider?.apertis?.options
       const aptBase = apt?.baseURL ?? "https://api.apertis.ai/v1"

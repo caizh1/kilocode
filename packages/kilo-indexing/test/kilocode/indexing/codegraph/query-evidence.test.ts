@@ -5,6 +5,8 @@ import { describe, expect, mock, test } from "bun:test"
 import {
   CODE_GRAPH_PARSER_VERSION,
   CODE_GRAPH_SCHEMA_VERSION,
+  CODE_GRAPH_STORAGE_VERSION_DIR,
+  CODE_POSTINGS_STORAGE_VERSION_DIR,
   type CodeGraphFileGraph,
   type CodeGraphManifest,
 } from "../../../../src/indexing/codegraph"
@@ -298,7 +300,9 @@ describe("graph-only queryEvidence", () => {
       branchKind: "cleanup-call",
       confidence: "low",
       filePath: "src/semantic.c",
-      limitations: expect.arrayContaining(["Only semantic/vector evidence supports this path; verify with source reads."]),
+      limitations: expect.arrayContaining([
+        "Only semantic/vector evidence supports this path; verify with source reads.",
+      ]),
     })
     expect(semantic.evidenceRefs[0]).toMatchObject({
       source: "vector",
@@ -528,7 +532,9 @@ describe("graph-only queryEvidence", () => {
     expect(result.evidenceRefs).toEqual([])
     expect(result.stateTransitions).toEqual([])
     expect(result.moduleFlows).toEqual([])
-    expect(result.formattedPackText).toContain("No source-backed candidate state/transition evidence matched this query.")
+    expect(result.formattedPackText).toContain(
+      "No source-backed candidate state/transition evidence matched this query.",
+    )
     expect(result.formattedPackText).toContain("do not infer states")
   })
 
@@ -803,7 +809,7 @@ describe("graph-only queryEvidence", () => {
 
   test("does not read old graph when schema or parser version needs rebuild", async () => {
     const ctx = await fixture()
-    const manifestPath = path.join(ctx.cacheDirectory, "codegraph/v1/manifest.json")
+    const manifestPath = path.join(ctx.cacheDirectory, "codegraph", CODE_GRAPH_STORAGE_VERSION_DIR, "manifest.json")
     const manifest = JSON.parse(await readFile(manifestPath, "utf-8")) as CodeGraphManifest
     await writeFile(
       manifestPath,
@@ -831,7 +837,12 @@ describe("graph-only queryEvidence", () => {
 
   test("does not read old postings when tokenizer version needs rebuild", async () => {
     const ctx = await fixture()
-    const manifestPath = path.join(ctx.cacheDirectory, "codepostings/v1/manifest.json")
+    const manifestPath = path.join(
+      ctx.cacheDirectory,
+      "codepostings",
+      CODE_POSTINGS_STORAGE_VERSION_DIR,
+      "manifest.json",
+    )
     const manifest = JSON.parse(await readFile(manifestPath, "utf-8"))
     await writeFile(
       manifestPath,
@@ -841,7 +852,10 @@ describe("graph-only queryEvidence", () => {
       }),
       "utf-8",
     )
-    const postings = new CodePostingsJsonStorage({ workspacePath: ctx.workspacePath, cacheDirectory: ctx.cacheDirectory })
+    const postings = new CodePostingsJsonStorage({
+      workspacePath: ctx.workspacePath,
+      cacheDirectory: ctx.cacheDirectory,
+    })
     const service = new CodeIndexAnalysisService(ctx.storage, postings)
     const result = await service.queryEvidence("timeout device_ready", { retrievalMode: "hybrid" })
 

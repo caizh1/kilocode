@@ -1,6 +1,8 @@
 import { Emitter } from "./runtime"
+import type { IndexingNotice } from "./interfaces/manager"
 
 export type IndexingState = "Standby" | "Indexing" | "Indexed" | "Error"
+export type IndexingActivePipeline = "codeGraph" | "rag"
 
 export type IndexingPipelineProgress = {
   state: IndexingState
@@ -16,7 +18,9 @@ export class CodeIndexStateManager {
   private _processedFiles = 0
   private _totalFiles = 0
   private _percent = 0
+  private _activePipeline?: IndexingActivePipeline
   private _codeGraphProgress?: IndexingPipelineProgress
+  private _notices: IndexingNotice[] = []
   private _gitBranch?: string
   private _manifest?: {
     totalFiles: number
@@ -39,6 +43,8 @@ export class CodeIndexStateManager {
       totalItems: this._totalFiles,
       currentItemUnit: "files",
       percent: this._percent,
+      activePipeline: this._activePipeline,
+      notices: this._notices.slice(),
       gitBranch: this._gitBranch,
       manifest: this._manifest,
     }
@@ -70,6 +76,7 @@ export class CodeIndexStateManager {
     if (graphChanged) this._codeGraphProgress = undefined
 
     if (newState !== "Indexing") {
+      this._activePipeline = undefined
       this._percent = newState === "Indexed" ? 100 : 0
       if (newState === "Standby" && message === undefined) this._statusMessage = "Ready."
       if (newState === "Indexed" && message === undefined) this._statusMessage = "Index up-to-date."
@@ -80,6 +87,30 @@ export class CodeIndexStateManager {
       this._manifest = undefined
     }
 
+    this._progressEmitter.fire(this.getCurrentStatus())
+  }
+
+  public setActivePipeline(pipeline?: IndexingActivePipeline): void {
+    if (pipeline === this._activePipeline) return
+    this._activePipeline = pipeline
+    this._progressEmitter.fire(this.getCurrentStatus())
+  }
+
+  public clearCodeGraphProgress(): void {
+    if (!this._codeGraphProgress) return
+    this._codeGraphProgress = undefined
+    this._progressEmitter.fire(this.getCurrentStatus())
+  }
+
+  public upsertNotice(notice: IndexingNotice): void {
+    const index = this._notices.findIndex((item) => item.id === notice.id)
+    if (index >= 0 && JSON.stringify(this._notices[index]) === JSON.stringify(notice)) return
+    if (index >= 0) {
+      this._notices[index] = notice
+    } else {
+      this._notices.unshift(notice)
+    }
+    this._notices.splice(5)
     this._progressEmitter.fire(this.getCurrentStatus())
   }
 

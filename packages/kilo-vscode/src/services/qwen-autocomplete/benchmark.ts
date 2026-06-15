@@ -287,9 +287,7 @@ export async function writeBenchmarkReports(
 }
 
 export async function loadBenchmarkFixtures(dir: string): Promise<Loaded[]> {
-  const files = (await fs.readdir(dir))
-    .filter((file) => file.endsWith(".json"))
-    .sort((a, b) => a.localeCompare(b))
+  const files = (await fs.readdir(dir)).filter((file) => file.endsWith(".json")).sort((a, b) => a.localeCompare(b))
   const loaded = await Promise.all(files.map((file) => loadFixture(path.join(dir, file))))
   return loaded.flat()
 }
@@ -613,7 +611,7 @@ function buildReport(opts: BenchmarkRunOptions, dir: string, runs: Run[]): Bench
       timeoutMs: opts.timeoutMs,
       cacheEnabled: opts.cache ?? false,
       endpoint: opts.mode === "real" ? opts.endpoint : undefined,
-      model: opts.mode === "real" ? opts.model : opts.model ?? DEFAULT_MODEL,
+      model: opts.mode === "real" ? opts.model : (opts.model ?? DEFAULT_MODEL),
       redactedPrompts: opts.redactPrompts,
     },
     summary: {
@@ -662,7 +660,8 @@ function buildMetrics(
     multilineAllowedCount: cases.filter((item) => item.observed.multilineShown && allowMultiline(item, runs)).length,
     multilineDisallowedCount: cases.filter((item) => !allowMultiline(item, runs)).length,
     multilineShownCount: cases.filter((item) => item.observed.multilineShown).length,
-    multilineUnexpectedlyShownCount: cases.filter((item) => item.failureReasons.includes("UNEXPECTED_MULTILINE")).length,
+    multilineUnexpectedlyShownCount: cases.filter((item) => item.failureReasons.includes("UNEXPECTED_MULTILINE"))
+      .length,
     multilineUnexpectedlyRejectedCount: cases.filter((item) =>
       item.failureReasons.includes("UNEXPECTED_MULTILINE_REJECT"),
     ).length,

@@ -43,6 +43,7 @@ import {
 } from "./model-selector-utils"
 import { ModelPreview } from "./ModelPreview"
 import { searchMatch } from "../../utils/search-match"
+import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 
 // ---------------------------------------------------------------------------
 // Row / group key helpers — single source of truth for key formatting
@@ -193,8 +194,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   const visibleModels = createMemo(() => {
     if (props.models) return props.models
     const c = connected()
+    const internal = isInternalOfflineBuild()
     return models().filter((m) => {
       if (!props.includeAutoSmall && isSmall(m)) return false
+      if (internal) return m.providerID !== KILO_GATEWAY_ID && c.includes(m.providerID)
       return m.providerID === KILO_GATEWAY_ID || c.includes(m.providerID)
     })
   })
@@ -615,13 +618,14 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         onOpenChange={setOpen}
         triggerAs={Button}
         triggerProps={{
+          class: "prompt-selector-trigger prompt-selector-trigger--model",
           variant: "secondary",
           size: "normal",
           get disabled() {
             return !canOpen()
           },
           get title() {
-            return activeModel()?.id
+            return activeModel()?.id ?? controlLabel()
           },
           get ["aria-label"]() {
             return controlLabel()
@@ -632,6 +636,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         }}
         trigger={
           <>
+            <span class="prompt-selector-icon" aria-hidden="true">
+              <span class="codicon codicon-beaker" />
+            </span>
             <span class="model-selector-trigger-label">{triggerLabel()}</span>
             <Show when={activeCollectsData()}>
               <Tooltip value={dataLabel()} placement="top">
@@ -640,7 +647,13 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                 </span>
               </Tooltip>
             </Show>
-            <svg class="model-selector-trigger-chevron" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+            <svg
+              class="model-selector-trigger-chevron prompt-selector-chevron"
+              width="10"
+              height="10"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+            >
               <path d="M8 4l4 5H4l4-5z" />
             </svg>
           </>

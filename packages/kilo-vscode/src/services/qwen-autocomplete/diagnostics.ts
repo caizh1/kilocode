@@ -553,7 +553,11 @@ function enabled(cfg: QwenAutocompleteConfig): boolean {
   return cfg.trace && cfg.logLevel !== "off"
 }
 
-function selectedInfo(selected?: vscode.SelectedCompletionInfo): { present: boolean; length: number | null; range: string | null } {
+function selectedInfo(selected?: vscode.SelectedCompletionInfo): {
+  present: boolean
+  length: number | null
+  range: string | null
+} {
   if (!selected) return { present: false, length: null, range: null }
   return {
     present: true,

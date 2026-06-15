@@ -11,7 +11,11 @@ export type QwenDefinition = {
 // qwen/Kilo adapter for Continue IDE.gotoDefinition and readRangeInFile.
 // It normalizes VS Code Location and LocationLink outputs before any caller
 // reads target content.
-export async function lookupQwenDefinitions(filepath: string, position: Pos, timeout: number): Promise<QwenDefinition[]> {
+export async function lookupQwenDefinitions(
+  filepath: string,
+  position: Pos,
+  timeout: number,
+): Promise<QwenDefinition[]> {
   const uri = vscode.Uri.file(filepath)
   const defs = await withTimeout(
     vscode.commands.executeCommand<unknown[]>(
@@ -54,7 +58,10 @@ function normalize(def: unknown): QwenDefinition[] {
 
 async function withTimeout<T>(promise: PromiseLike<T>, timeout: number): Promise<T | null> {
   try {
-    return await Promise.race([Promise.resolve(promise), new Promise<null>((resolve) => setTimeout(() => resolve(null), timeout))])
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeout)),
+    ])
   } catch (err) {
     void err
     return null

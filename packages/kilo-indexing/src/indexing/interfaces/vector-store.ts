@@ -1,3 +1,5 @@
+import type { VectorStoreCleanupStats } from "./cleanup"
+
 /**
  * Interface for vector database clients
  */
@@ -7,12 +9,23 @@ export type PointStruct = {
   payload: Record<string, any>
 }
 
+export type VectorStoreCompatibilityDecision = {
+  action: "reuse" | "rebuild"
+  reason: string
+  created: boolean
+}
+
 export interface IVectorStore {
   /**
    * Initializes the vector store
    * @returns Promise resolving to boolean indicating if a new collection was created
    */
   initialize(): Promise<boolean>
+
+  /**
+   * Returns the last compatibility decision made while initializing the store.
+   */
+  getLastCompatibilityDecision?(): VectorStoreCompatibilityDecision | undefined
 
   /**
    * Upserts points into the vector store
@@ -56,6 +69,11 @@ export interface IVectorStore {
    * Removes inactive generations for a file after the replacement generation is active.
    */
   deleteInactiveFilePoints?(filePath: string, activeGeneration: string): Promise<void>
+
+  /**
+   * Removes abandoned inactive points from the current workspace collection/table.
+   */
+  cleanupInactivePoints?(): Promise<VectorStoreCleanupStats>
 
   /**
    * Stable vector collection/table identity used in checkpoint compatibility metadata.

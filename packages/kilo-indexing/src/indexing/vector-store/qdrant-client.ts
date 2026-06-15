@@ -6,6 +6,7 @@ import type { Payload, VectorStoreSearchResult } from "../interfaces"
 import { DEFAULT_MAX_SEARCH_RESULTS, DEFAULT_SEARCH_MIN_SCORE } from "../constants"
 import { Log } from "../../util/log"
 import type { EmbeddingProfile } from "../embedding-profile"
+import type { VectorStoreCleanupStats } from "../interfaces/cleanup"
 
 const log = Log.create({ service: "qdrant-store" })
 
@@ -227,7 +228,14 @@ export class QdrantVectorStore implements IVectorStore {
       ? `${stored.provider}:${stored.modelId}:${stored.dimension}`
       : "missing embedding metadata on populated collection"
     const to = `${this.profile.provider}:${this.profile.modelId}:${this.profile.dimension}`
-    log.warn(`Collection ${this.collectionName} embedding profile changed (${from} -> ${to}). Recreating collection.`)
+    log.warn("Qdrant compatibility decision", {
+      visible: true,
+      collection: this.collectionName,
+      action: "rebuild",
+      reason: stored ? "embedding profile mismatch" : "missing compatibility metadata",
+      from,
+      to,
+    })
 
     await this.client.deleteCollection(this.collectionName)
     await new Promise((resolve) => setTimeout(resolve, 100))
@@ -254,6 +262,13 @@ export class QdrantVectorStore implements IVectorStore {
         // Collection info not retrieved (assume not found or inaccessible), create it
         await this.createCollection()
         created = true
+        log.info("Qdrant compatibility decision", {
+          visible: true,
+          collection: this.collectionName,
+          action: "rebuild",
+          reason: "missing collection",
+          vectorSize: this.vectorSize,
+        })
       } else {
         // Collection exists, check vector size
         const vectorsConfig = collectionInfo.config?.params?.vectors
@@ -276,11 +291,28 @@ export class QdrantVectorStore implements IVectorStore {
           const pointCount = collectionInfo.points_count ?? 0
           if (pointCount === 0) {
             created = false
+            log.info("Qdrant compatibility decision", {
+              visible: true,
+              collection: this.collectionName,
+              action: "reuse",
+              reason: "compatible empty collection",
+              vectorSize: this.vectorSize,
+            })
           } else {
             const payload = await this.getMetadataPayload()
             const profile = this.getStoredProfile(payload)
-            created =
-              !profile || !this.isProfileMatch(profile) ? await this.recreateCollectionForProfile(profile) : false
+            if (!profile || !this.isProfileMatch(profile)) {
+              created = await this.recreateCollectionForProfile(profile)
+            } else {
+              created = false
+              log.info("Qdrant compatibility decision", {
+                visible: true,
+                collection: this.collectionName,
+                action: "reuse",
+                reason: "compatible",
+                vectorSize: this.vectorSize,
+              })
+            }
           }
         } else {
           // Exists but wrong vector size, recreate with enhanced error handling
@@ -317,9 +349,14 @@ export class QdrantVectorStore implements IVectorStore {
    * @returns Promise resolving to boolean indicating if a new collection was created
    */
   private async _recreateCollectionWithNewDimension(existingVectorSize: number): Promise<boolean> {
-    log.warn(
-      `Collection ${this.collectionName} exists with vector size ${existingVectorSize}, but expected ${this.vectorSize}. Recreating collection.`,
-    )
+    log.warn("Qdrant compatibility decision", {
+      visible: true,
+      collection: this.collectionName,
+      action: "rebuild",
+      reason: "vector size mismatch",
+      existingVectorSize,
+      vectorSize: this.vectorSize,
+    })
 
     let deletionSucceeded = false
     let recreationAttempted = false
@@ -516,17 +553,17 @@ export class QdrantVectorStore implements IVectorStore {
           )
           const segments = cleanedPrefix.split("/").filter(Boolean)
           if (segments.length > 0) {
-          filter = {
-            must: [
-              ...(filter?.must ?? []),
-              ...segments.map((segment, index) => ({
-                key: `pathSegments.${index}`,
-                match: { value: segment },
-              })),
-            ],
+            filter = {
+              must: [
+                ...(filter?.must ?? []),
+                ...segments.map((segment, index) => ({
+                  key: `pathSegments.${index}`,
+                  match: { value: segment },
+                })),
+              ],
+            }
           }
         }
-      }
       }
 
       // Always exclude metadata points at query-time to avoid wasting top-k
@@ -602,6 +639,26 @@ export class QdrantVectorStore implements IVectorStore {
       },
       wait: true,
     })
+  }
+
+  async cleanupInactivePoints(): Promise<VectorStoreCleanupStats> {
+    const stats: VectorStoreCleanupStats = { skipped: [] }
+    try {
+      if (!(await this.collectionExists())) return stats
+      await this.client.delete(this.collectionName, {
+        filter: {
+          must: [{ key: "active", match: { value: false } }],
+          must_not: [{ key: "type", match: { value: "metadata" } }],
+        },
+        wait: true,
+      })
+      return stats
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      stats.skipped.push(`qdrant inactive cleanup failed: ${msg}`)
+      log.warn("failed to clean inactive Qdrant points", { error: msg, collection: this.collectionName })
+      return stats
+    }
   }
 
   async deletePointsByMultipleFilePaths(filePaths: string[]): Promise<void> {

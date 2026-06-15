@@ -1,8 +1,9 @@
 import { createHash } from "crypto"
 import * as path from "path"
 import type { Connection, Table, VectorQuery } from "@lancedb/lancedb"
-import type { IVectorStore } from "../interfaces/vector-store"
+import type { IVectorStore, VectorStoreCompatibilityDecision } from "../interfaces/vector-store"
 import type { Payload, VectorStoreSearchResult } from "../interfaces"
+import type { VectorStoreCleanupStats } from "../interfaces/cleanup"
 import { DEFAULT_MAX_SEARCH_RESULTS, DEFAULT_SEARCH_MIN_SCORE } from "../constants"
 import fs from "fs"
 import { Log } from "../../util/log"
@@ -20,6 +21,25 @@ const KEY = {
   dimension: "embedding_dimension",
 }
 
+const VECTOR_SCHEMA_FIELDS = [
+  "id",
+  "vector",
+  "workspaceId",
+  "normalizedRoot",
+  "filePath",
+  "fileHash",
+  "chunkHash",
+  "chunkRange",
+  "runId",
+  "generation",
+  "checkpointMetaHash",
+  "active",
+  "codeChunk",
+  "startLine",
+  "endLine",
+  "segmentHash",
+]
+
 /**
  * Local implementation of the vector store using LanceDB
  */
@@ -33,6 +53,7 @@ export class LanceDBVectorStore implements IVectorStore {
   private readonly vectorTableName = "vector"
   private readonly metadataTableName = "metadata"
   private lancedbModule: any = null
+  private decision: VectorStoreCompatibilityDecision | undefined
 
   constructor(workspacePath: string, vectorSize: number, dbDirectory: string, profile?: EmbeddingProfile) {
     this.vectorSize = vectorSize
@@ -191,6 +212,14 @@ export class LanceDBVectorStore implements IVectorStore {
     await db.createTable(this.metadataTableName, this._createMetadataData())
   }
 
+  getLastCompatibilityDecision(): VectorStoreCompatibilityDecision | undefined {
+    return this.decision
+  }
+
+  private setDecision(decision: VectorStoreCompatibilityDecision): void {
+    this.decision = decision
+  }
+
   /**
    * Drops a table if it exists.
    * @param db The LanceDB connection.
@@ -266,6 +295,12 @@ export class LanceDBVectorStore implements IVectorStore {
     )
   }
 
+  private async _missingVectorSchemaFields(table: Table): Promise<string[]> {
+    const schema = await table.schema()
+    const names = new Set(schema.fields.map((field) => field.name))
+    return VECTOR_SCHEMA_FIELDS.filter((field) => !names.has(field))
+  }
+
   async initialize(): Promise<boolean> {
     try {
       await this.closeConnect()
@@ -275,14 +310,18 @@ export class LanceDBVectorStore implements IVectorStore {
       const vectorTableExists = tableNames.includes(this.vectorTableName)
       const metadataTableExists = tableNames.includes(this.metadataTableName)
 
-      let needsRecreation = false
+      let rebuildReason: string | undefined
 
       if (!vectorTableExists) {
         await this._createVectorTable(db)
         await this._createMetadataTable(db)
-        log.info("LanceDB store initialized", {
+        this.setDecision({ action: "rebuild", reason: "missing vector table", created: true })
+        log.info("LanceDB compatibility decision", {
+          visible: true,
           workspacePath: this.workspacePath,
           dbPath: this.dbPath,
+          action: "rebuild",
+          reason: "missing vector table",
           created: true,
           vectorSize: this.vectorSize,
         })
@@ -294,37 +333,60 @@ export class LanceDBVectorStore implements IVectorStore {
       const storedVectorSize = metadataTableExists ? await this._getStoredVectorSize(db) : null
       const pointCount = await this.table.countRows()
 
-      if (storedVectorSize === null || storedVectorSize !== this.vectorSize) {
-        needsRecreation = true
+      if (storedVectorSize === null) {
+        rebuildReason = "missing compatibility metadata"
+      } else if (storedVectorSize !== this.vectorSize) {
+        rebuildReason = "vector size mismatch"
       }
 
-      if (!needsRecreation && pointCount > 0) {
-        const storedProfile = metadataTableExists ? await this._getStoredEmbeddingProfile(db) : undefined
-        if (!storedProfile || !this._isEmbeddingProfileMatch(storedProfile)) {
-          needsRecreation = true
+      if (!rebuildReason) {
+        const missing = await this._missingVectorSchemaFields(this.table)
+        if (missing.length > 0) {
+          rebuildReason = "vector schema mismatch"
+          log.warn("LanceDB vector schema mismatch", {
+            visible: true,
+            workspacePath: this.workspacePath,
+            dbPath: this.dbPath,
+            missingFields: missing,
+          })
         }
       }
 
-      if (needsRecreation) {
+      if (!rebuildReason && pointCount > 0) {
+        const storedProfile = metadataTableExists ? await this._getStoredEmbeddingProfile(db) : undefined
+        if (!storedProfile || !this._isEmbeddingProfileMatch(storedProfile)) {
+          rebuildReason = storedProfile ? "embedding profile mismatch" : "missing compatibility metadata"
+        }
+      }
+
+      if (rebuildReason) {
         await this._dropTableIfExists(db, this.vectorTableName)
         await this._dropTableIfExists(db, this.metadataTableName)
         await this._createVectorTable(db)
         await this._createMetadataTable(db)
-        this.optimizeTable()
+        await this.optimizeTable()
 
-        log.info("LanceDB store reinitialized for embedding profile change", {
+        this.setDecision({ action: "rebuild", reason: rebuildReason, created: true })
+        log.warn("LanceDB compatibility decision", {
+          visible: true,
           workspacePath: this.workspacePath,
           dbPath: this.dbPath,
+          action: "rebuild",
+          reason: rebuildReason,
           created: true,
           vectorSize: this.vectorSize,
         })
 
         return true
       }
-      this.optimizeTable()
-      log.info("LanceDB store initialized", {
+      await this.optimizeTable()
+      this.setDecision({ action: "reuse", reason: "compatible", created: false })
+      log.info("LanceDB compatibility decision", {
+        visible: true,
         workspacePath: this.workspacePath,
         dbPath: this.dbPath,
+        action: "reuse",
+        reason: "compatible",
         created: false,
         vectorSize: this.vectorSize,
       })
@@ -507,6 +569,21 @@ export class LanceDBVectorStore implements IVectorStore {
     const escaped = this.escapeSqlString(normalized)
     const gen = this.escapeSqlString(activeGeneration)
     await table.delete(`\`filePath\` = '${escaped}' AND \`generation\` != '${gen}'`)
+  }
+
+  async cleanupInactivePoints(): Promise<VectorStoreCleanupStats> {
+    const stats: VectorStoreCleanupStats = { skipped: [] }
+    try {
+      const table = await this.getTable()
+      await table.delete("`active` = false")
+      await this.optimizeTable()
+      return stats
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      stats.skipped.push(`lancedb inactive cleanup failed: ${msg}`)
+      log.warn("failed to clean inactive LanceDB points", { error: msg, workspacePath: this.workspacePath })
+      return stats
+    }
   }
 
   async deletePointsByMultipleFilePaths(filePaths: string[]): Promise<void> {

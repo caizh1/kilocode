@@ -1,7 +1,7 @@
 import { minimatch } from "minimatch"
 
 export namespace FileIgnore {
-  const folders = new Set([
+  export const FOLDERS = [
     "node_modules",
     "bower_components",
     ".pnpm-store",
@@ -19,6 +19,9 @@ export namespace FileIgnore {
     ".hg",
     ".vscode",
     ".idea",
+    ".kilo",
+    ".opencode",
+    ".kilocode",
     ".turbo",
     ".output",
     "desktop",
@@ -30,7 +33,9 @@ export namespace FileIgnore {
     "mypy_cache",
     ".history",
     ".gradle",
-  ])
+  ] as const
+
+  const folders = new Set<string>(FOLDERS)
 
   const files = [
     "**/*.swp",

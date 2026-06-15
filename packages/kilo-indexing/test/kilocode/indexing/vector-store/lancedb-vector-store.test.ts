@@ -8,6 +8,31 @@ import type { Payload } from "../../../../src/indexing/interfaces"
 import * as path from "path"
 import fs from "fs"
 
+const vectorFields = [
+  "id",
+  "vector",
+  "workspaceId",
+  "normalizedRoot",
+  "filePath",
+  "fileHash",
+  "chunkHash",
+  "chunkRange",
+  "runId",
+  "generation",
+  "checkpointMetaHash",
+  "active",
+  "codeChunk",
+  "startLine",
+  "endLine",
+  "segmentHash",
+]
+
+function schema(missing: string[] = []) {
+  return {
+    fields: vectorFields.filter((field) => !missing.includes(field)).map((name) => ({ name })),
+  }
+}
+
 const mockTable = {
   delete: mock().mockResolvedValue(undefined),
   add: mock().mockResolvedValue(undefined),
@@ -25,7 +50,7 @@ const mockTable = {
   isOpen: true,
   close: mock(),
   display: mock(),
-  schema: {},
+  schema: mock().mockResolvedValue(schema()),
   count: mock(),
   get: mock(),
   create: mock(),
@@ -42,6 +67,7 @@ const mockTable = {
   metadata: {},
   batch: mock(),
   distanceRange: mock().mockReturnThis(),
+  optimize: mock().mockResolvedValue(undefined),
 }
 const mockDb = {
   openTable: mock().mockResolvedValue(mockTable),
@@ -90,6 +116,7 @@ const allMocks = [
   mockTable.search,
   mockTable.close,
   mockTable.display,
+  mockTable.schema,
   mockTable.count,
   mockTable.get,
   mockTable.create,
@@ -102,6 +129,7 @@ const allMocks = [
   mockTable.dropIndex,
   mockTable.batch,
   mockTable.distanceRange,
+  mockTable.optimize,
   mockDb.openTable,
   mockDb.createTable,
   mockDb.dropTable,
@@ -131,7 +159,9 @@ function resetAllMocks() {
   mockTable.postfilter.mockReturnThis()
   mockTable.openTable.mockResolvedValue(undefined)
   mockTable.search.mockReturnThis()
+  mockTable.schema.mockResolvedValue(schema())
   mockTable.distanceRange.mockReturnThis()
+  mockTable.optimize.mockResolvedValue(undefined)
   mockDb.openTable.mockResolvedValue(mockTable)
   mockDb.createTable.mockResolvedValue(mockTable)
   mockDb.dropTable.mockResolvedValue(undefined)
@@ -201,6 +231,36 @@ describe("LocalVectorStore", () => {
       store["_getStoredVectorSize"] = mock().mockResolvedValue(vectorSize)
       const result = await store.initialize()
       expect(result).toBe(false)
+      expect(mockDb.dropTable).not.toHaveBeenCalled()
+      expect(store.getLastCompatibilityDecision()).toMatchObject({
+        action: "reuse",
+        reason: "compatible",
+        created: false,
+      })
+    })
+
+    test("should recreate legacy vector tables when current schema fields are missing", async () => {
+      mockDb.tableNames.mockResolvedValue(["vector", "metadata"])
+      mockDb.openTable.mockResolvedValue(mockTable)
+      mockTable.countRows.mockResolvedValue(2)
+      mockTable.schema.mockResolvedValue(schema(["workspaceId", "active"]))
+      store["_getStoredVectorSize"] = mock().mockResolvedValue(vectorSize)
+      store["_getStoredEmbeddingProfile"] = mock().mockResolvedValue({
+        provider: "openai",
+        modelId: "",
+        dimension: vectorSize,
+      })
+
+      const result = await store.initialize()
+
+      expect(result).toBe(true)
+      expect(mockDb.dropTable).toHaveBeenCalledWith("vector")
+      expect(mockDb.dropTable).toHaveBeenCalledWith("metadata")
+      expect(store.getLastCompatibilityDecision()).toMatchObject({
+        action: "rebuild",
+        reason: "vector schema mismatch",
+        created: true,
+      })
     })
 
     test("should throw error on LanceDB failure", async () => {
@@ -338,6 +398,15 @@ describe("LocalVectorStore", () => {
       mockTable.add.mockRejectedValue(new Error("fail"))
       await expect(store.upsertPoints(points)).rejects.toThrow()
     })
+  })
+
+  test("cleans inactive points without clearing or deleting the collection", async () => {
+    const stats = await store.cleanupInactivePoints()
+
+    expect(stats.skipped).toEqual([])
+    expect(mockTable.delete).toHaveBeenCalledWith("`active` = false")
+    expect(mockTable.optimize).toHaveBeenCalled()
+    expect(mockDb.dropTable).not.toHaveBeenCalled()
   })
 
   describe("indexing metadata", () => {

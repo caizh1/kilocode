@@ -3,6 +3,8 @@
    ============================================ */
 
 .model-selector-popover {
+  box-sizing: border-box;
+  min-width: 0;
   transition:
     width 0.2s ease,
     max-width 0.2s ease;

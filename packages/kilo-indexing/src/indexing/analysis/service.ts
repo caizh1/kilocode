@@ -115,10 +115,7 @@ export function resolveEvidenceBudget(options: CodeGraphEvidenceQueryOptions = {
   return {
     maxEvidenceItems: positive(options.maxEvidenceItems, DEFAULT_EVIDENCE_BUDGET.maxEvidenceItems),
     maxPackChars: positive(options.maxPackChars, DEFAULT_EVIDENCE_BUDGET.maxPackChars),
-    maxSnippetCharsPerItem: positive(
-      options.maxSnippetCharsPerItem,
-      DEFAULT_EVIDENCE_BUDGET.maxSnippetCharsPerItem,
-    ),
+    maxSnippetCharsPerItem: positive(options.maxSnippetCharsPerItem, DEFAULT_EVIDENCE_BUDGET.maxSnippetCharsPerItem),
   }
 }
 
@@ -189,9 +186,5 @@ function formatPack(input: {
 }
 
 function xml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;")
 }

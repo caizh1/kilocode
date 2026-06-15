@@ -23,6 +23,15 @@ function formatAgentLabel(agent: AgentInfo): string {
     .join(" ")
 }
 
+const icons = {
+  architect: "checklist",
+  ask: "comment-discussion",
+  build: "code",
+  code: "code",
+  debug: "debug-alt",
+  plan: "checklist",
+} as const
+
 // ---------------------------------------------------------------------------
 // Reusable base component
 // ---------------------------------------------------------------------------
@@ -98,6 +107,8 @@ export const ModeSwitcherBase: Component<ModeSwitcherBaseProps> = (props) => {
     if (agent) return formatAgentLabel(agent)
     return props.value || "Code"
   }
+  const glyph = () => icons[props.value.toLowerCase() as keyof typeof icons] ?? "comment-discussion"
+  const desc = () => `Mode: ${triggerLabel()}`
 
   return (
     <Show when={hasAgents()}>
@@ -109,11 +120,24 @@ export const ModeSwitcherBase: Component<ModeSwitcherBaseProps> = (props) => {
         open={open()}
         onOpenChange={onOpen}
         triggerAs={Button}
-        triggerProps={{ variant: "ghost", size: "small" }}
+        triggerProps={{
+          variant: "ghost",
+          size: "small",
+          class: "prompt-selector-trigger prompt-selector-trigger--mode",
+          get title() {
+            return desc()
+          },
+          get ["aria-label"]() {
+            return desc()
+          },
+        }}
         trigger={
           <>
+            <span class="prompt-selector-icon" aria-hidden="true">
+              <span class={`codicon codicon-${glyph()}`} />
+            </span>
             <span class="mode-switcher-trigger-label">{triggerLabel()}</span>
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style={{ "flex-shrink": "0" }}>
+            <svg class="prompt-selector-chevron" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8 4l4 5H4l4-5z" />
             </svg>
           </>

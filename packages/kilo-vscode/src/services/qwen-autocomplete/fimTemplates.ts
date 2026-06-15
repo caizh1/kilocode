@@ -16,11 +16,7 @@ const QWEN_TEMPLATE_LOCAL_STOPS = [
 ]
 
 // Continue getStopTokens appends these common stops after template-local stops.
-const CONTINUE_COMMON_STOPS = [
-  "/src/",
-  "#- coding: utf-8",
-  "```",
-]
+const CONTINUE_COMMON_STOPS = ["/src/", "#- coding: utf-8", "```"]
 
 const CONTINUE_QWEN_CODER_EFFECTIVE_STOPS = [...QWEN_TEMPLATE_LOCAL_STOPS, ...CONTINUE_COMMON_STOPS]
 

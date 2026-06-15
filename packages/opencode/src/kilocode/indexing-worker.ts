@@ -1,4 +1,8 @@
-import { CodeIndexAnalysisService, CodeIndexManager, disabledCodeGraphSidecarStatus } from "@kilocode/kilo-indexing/engine"
+import {
+  CodeIndexAnalysisService,
+  CodeIndexManager,
+  disabledCodeGraphSidecarStatus,
+} from "@kilocode/kilo-indexing/engine"
 import { normalizeIndexingStatus } from "@kilocode/kilo-indexing/status"
 import type { Request, Result, Event } from "./indexing-worker-protocol"
 
@@ -46,6 +50,19 @@ onmessage = async (event: MessageEvent<Request>) => {
     if (request.method === "search") {
       const value = manager ? await manager.searchIndex(request.input.query, request.input.directoryPrefix) : []
       send({ type: "result", id: request.id, method: "search", ok: true, value })
+      return
+    }
+
+    if (request.method === "updateConfig") {
+      if (!manager) throw new Error("Indexing worker is not initialized.")
+      await manager.handleSettingsChange(request.input)
+      send({
+        type: "result",
+        id: request.id,
+        method: "updateConfig",
+        ok: true,
+        value: normalizeIndexingStatus(manager),
+      })
       return
     }
 

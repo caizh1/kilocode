@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import * as vscode from "vscode"
-import { buildQwenFimPrompt, getContinueAutocompleteStopTokens } from "../../src/services/qwen-autocomplete/fimTemplates"
+import {
+  buildQwenFimPrompt,
+  getContinueAutocompleteStopTokens,
+} from "../../src/services/qwen-autocomplete/fimTemplates"
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
 import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
@@ -89,9 +92,7 @@ describe("qwen autocomplete snippet scaffold", () => {
     expect(selection.totalCount).toBe(0)
     expect(selection.selectedCount).toBe(0)
     expect(selection.selectedSnippetTokens).toBe(0)
-    expect(selection.snippetTokenBudget).toBe(
-      cfg.maxPromptTokens - countTokens(helper.prunedCaretWindow, cfg.model),
-    )
+    expect(selection.snippetTokenBudget).toBe(cfg.maxPromptTokens - countTokens(helper.prunedCaretWindow, cfg.model))
     expect(helper.prunedPrefix).toBe(before.prefix)
     expect(helper.prunedSuffix).toBe(before.suffix)
   })
@@ -190,7 +191,9 @@ describe("qwen autocomplete snippet scaffold", () => {
 
     expect(off.snippets).toEqual([])
     expect(on.snippets).toHaveLength(2)
-    expect(on.snippets).toEqual(expect.arrayContaining([payload.importDefinitionSnippets[0], payload.rootPathSnippets[0]]))
+    expect(on.snippets).toEqual(
+      expect.arrayContaining([payload.importDefinitionSnippets[0], payload.rootPathSnippets[0]]),
+    )
   })
 
   it("keeps FIM prompt and request body byte-for-byte unchanged with empty snippets", async () => {

@@ -6,17 +6,20 @@ import {
   createKiloFallbackProvider,
   providerOrderIndex,
 } from "../../../../src/shared/provider-model"
+import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 
 export const CUSTOM_PROVIDER_ID = "_custom"
 export { POPULAR_PROVIDER_IDS }
 
 const POPULAR_PROVIDER_SET = new Set<string>(POPULAR_PROVIDER_IDS)
 
-export function isPopularProvider(providerID: string) {
+export function isPopularProvider(providerID: string, internal = isInternalOfflineBuild()) {
+  if (internal) return false
   return POPULAR_PROVIDER_SET.has(providerID)
 }
 
-export function popularProviderIndex(providerID: string) {
+export function popularProviderIndex(providerID: string, internal = isInternalOfflineBuild()) {
+  if (internal) return POPULAR_PROVIDER_IDS.length
   return providerOrderIndex(providerID, POPULAR_PROVIDER_IDS)
 }
 
@@ -30,7 +33,8 @@ export function kiloFallbackProvider(): Provider {
   return createKiloFallbackProvider()
 }
 
-export function providerNoteKey(providerID: string) {
+export function providerNoteKey(providerID: string, internal = isInternalOfflineBuild()) {
+  if (internal) return undefined
   if (providerID === "kilo") return "dialog.provider.kilo.note"
   if (providerID === "opencode") return "dialog.provider.opencode.note"
   if (providerID === "anthropic") return "dialog.provider.anthropic.note"

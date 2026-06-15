@@ -2,8 +2,13 @@ import { describe, expect, it } from "bun:test"
 import {
   applyIndexingStatusMessage,
   ensureIndexingPipelines,
+  formatIndexingDiagnostic,
+  formatIndexingDiagnostics,
   formatIndexingLabel,
   formatIndexingPipelineLabel,
+  hasIndexingDiagnostics,
+  indexingDiagnosticMessage,
+  indexingPipelineDescription,
   indexingPipelineTone,
   indexingTone,
 } from "../../webview-ui/src/context/indexing-utils"
@@ -96,6 +101,77 @@ describe("indexing formatting", () => {
     }
 
     expect(formatIndexingPipelineLabel("RAG", status)).toBe("RAG In Progress")
+  })
+
+  it("uses recent errors as pipeline detail fallback and copy text", () => {
+    const status = {
+      state: "Error" as const,
+      message: "RAG indexing unavailable.",
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 0,
+      errorCount: 1,
+      staleCount: 0,
+      skippedCount: 0,
+      recentErrors: [
+        {
+          time: "2026-06-15T00:00:00.000Z",
+          source: "scan",
+          location: "orchestrator:startIndexing",
+          message: "LanceDB failed to initialize",
+          file: "src/main.c",
+        },
+      ],
+    }
+
+    expect(indexingPipelineDescription(status)).toBe("LanceDB failed to initialize")
+    expect(formatIndexingDiagnostics("RAG", status)).toContain(
+      "scan:orchestrator:startIndexing file=src/main.c - LanceDB failed to initialize",
+    )
+  })
+
+  it("falls back when recent error message is empty", () => {
+    const status = {
+      state: "Error" as const,
+      message: "RAG indexing unavailable.",
+      detail: "Failed to initialize: LanceDB unavailable",
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 0,
+      errorCount: 1,
+      staleCount: 0,
+      skippedCount: 0,
+      recentErrors: [
+        {
+          time: "2026-06-15T00:00:00.000Z",
+          source: "indexing",
+          location: "indexing:initialize",
+          message: "",
+        },
+      ],
+    }
+
+    expect(indexingDiagnosticMessage(status.recentErrors[0], status)).toBe("Failed to initialize: LanceDB unavailable")
+    expect(formatIndexingDiagnostic(status.recentErrors[0], status)).toContain(
+      "indexing:indexing:initialize - Failed to initialize: LanceDB unavailable",
+    )
+  })
+
+  it("copies pipeline diagnostics even when recentErrors is missing", () => {
+    const status = {
+      state: "Error" as const,
+      message: "Code Graph unavailable.",
+      detail: "Code Graph needs rebuild.",
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 0,
+      errorCount: 1,
+      staleCount: 0,
+      skippedCount: 0,
+    }
+
+    expect(hasIndexingDiagnostics(status)).toBe(true)
+    expect(formatIndexingDiagnostics("Code Graph", status)).toContain("- Code Graph needs rebuild.")
   })
 })
 
