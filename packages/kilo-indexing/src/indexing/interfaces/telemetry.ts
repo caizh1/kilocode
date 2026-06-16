@@ -4,7 +4,7 @@ export type IndexingTelemetryTrigger = "background" | "manual"
 export type IndexingTelemetryMode = "full" | "incremental"
 export type IndexingTelemetrySource = "scan" | "watcher"
 export type IndexingVectorStore = "lancedb" | "qdrant"
-export type IndexingTelemetryPipeline = "codeGraph" | "rag"
+export type IndexingTelemetryPipeline = "codeGraph" | "rag" | "documents"
 
 export type IndexingTelemetryMeta = {
   provider: EmbedderProvider

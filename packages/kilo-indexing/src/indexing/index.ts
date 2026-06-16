@@ -21,6 +21,7 @@ export { CodeIndexOrchestrator } from "./orchestrator"
 export { CodeIndexServiceFactory } from "./service-factory"
 export { CacheManager } from "./cache-manager"
 export { Emitter, type Disposable } from "./runtime"
+export { DocumentIndexService } from "./documents"
 
 export type { ICodeIndexManager, IndexProgressUpdate, EmbedderProvider } from "./interfaces/manager"
 
@@ -33,6 +34,8 @@ export type {
 } from "./interfaces/telemetry"
 
 export type { CodeIndexConfig, PreviousConfigSnapshot } from "./interfaces/config"
+
+export type { DocumentIndexStatus, DocumentSearchOptions, DocumentSearchResult, DocumentSection } from "./documents"
 
 export type {
   CodeGraphCall,

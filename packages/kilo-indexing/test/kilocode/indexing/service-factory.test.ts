@@ -47,6 +47,24 @@ describe("CodeIndexServiceFactory", () => {
     expect(store.dbPath).toContain(dir)
   })
 
+  test("uses separate LanceDB directory for document vectors", () => {
+    const factory = createFactory({ vectorStoreProvider: "lancedb", lancedbVectorStoreDirectory: undefined })
+
+    const store = factory.createDocumentVectorStore() as unknown as { dbPath: string }
+
+    expect(store).toBeDefined()
+    expect(store.dbPath).toContain(path.join(cacheDirectory, "lancedb-documents"))
+  })
+
+  test("nests document vectors under explicit LanceDB directory", () => {
+    const dir = "/tmp/custom-lancedb"
+    const factory = createFactory({ vectorStoreProvider: "lancedb", lancedbVectorStoreDirectory: dir })
+
+    const store = factory.createDocumentVectorStore() as unknown as { dbPath: string }
+
+    expect(store.dbPath).toContain(path.join(dir, "documents"))
+  })
+
   test("passes configured dimension to Ollama embed requests", async () => {
     const fn = mock(() =>
       Promise.resolve({

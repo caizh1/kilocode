@@ -273,16 +273,16 @@ describe("server workspace helpers", () => {
 })
 
 describe("server bundled tool env", () => {
-  it("prepends extension bin to PATH so bundled tools are preferred", () => {
+  it("prepends extension tool directories to PATH so bundled tools are preferred", () => {
     const env = buildBundledToolEnv("/extension", { PATH: "/usr/bin" })
 
-    expect(env).toEqual({ PATH: `/extension/bin${path.delimiter}/usr/bin` })
+    expect(env).toEqual({ PATH: `/extension/bin/poppler${path.delimiter}/extension/bin${path.delimiter}/usr/bin` })
   })
 
-  it("sets PATH to extension bin when no PATH exists", () => {
+  it("sets PATH to extension tool directories when no PATH exists", () => {
     const env = buildBundledToolEnv("/extension", {})
 
-    expect(env).toEqual({ PATH: "/extension/bin" })
+    expect(env).toEqual({ PATH: `/extension/bin/poppler${path.delimiter}/extension/bin` })
   })
 })
 

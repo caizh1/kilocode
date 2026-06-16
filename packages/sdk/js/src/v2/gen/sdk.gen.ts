@@ -85,6 +85,7 @@ import type {
   GlobalHealthResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
+  IndexingDocumentsRebuildResponses,
   IndexingStatusResponses,
   InstanceDisposeResponses,
   KiloAudioTranscriptionsErrors,
@@ -6061,6 +6062,38 @@ export class EnhancePrompt extends HeyApiClient {
   }
 }
 
+export class Documents extends HeyApiClient {
+  /**
+   * Rebuild document index
+   *
+   * Trigger a rebuild of the configured workspace document RAG index.
+   */
+  public rebuild<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<IndexingDocumentsRebuildResponses, unknown, ThrowOnError>({
+      url: "/indexing/documents/rebuild",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Indexing extends HeyApiClient {
   /**
    * Get indexing status
@@ -6090,6 +6123,11 @@ export class Indexing extends HeyApiClient {
       ...options,
       ...params,
     })
+  }
+
+  private _documents?: Documents
+  get documents(): Documents {
+    return (this._documents ??= new Documents({ client: this.client }))
   }
 }
 

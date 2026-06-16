@@ -38,7 +38,14 @@ export class QdrantVectorStore implements IVectorStore {
    * @param workspacePath Path to the workspace
    * @param url Optional URL to the Qdrant server
    */
-  constructor(workspacePath: string, url: string, vectorSize: number, apiKey?: string, profile?: EmbeddingProfile) {
+  constructor(
+    workspacePath: string,
+    url: string,
+    vectorSize: number,
+    apiKey?: string,
+    profile?: EmbeddingProfile,
+    suffix?: string,
+  ) {
     // Parse the URL to determine the appropriate QdrantClient configuration
     const parsedUrl = this.parseQdrantUrl(url)
 
@@ -101,7 +108,7 @@ export class QdrantVectorStore implements IVectorStore {
         modelId: "",
         dimension: vectorSize,
       } as EmbeddingProfile)
-    this.collectionName = `ws-${hash.substring(0, 16)}`
+    this.collectionName = `ws-${hash.substring(0, 16)}${suffix ? `-${suffix}` : ""}`
   }
 
   /**

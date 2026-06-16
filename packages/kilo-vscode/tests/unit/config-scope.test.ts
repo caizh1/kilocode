@@ -39,6 +39,40 @@ describe("splitConfigByScope", () => {
     expect(split.project).toEqual({ indexing: { enabled: true } })
   })
 
+  it("writes document indexing settings to project config", () => {
+    const split = splitConfigByScope({
+      indexing: {
+        provider: "openai-compatible",
+        documents: {
+          enabled: true,
+          paths: ["docs"],
+          include: ["**/*.pdf"],
+          exclude: ["**/archive/**"],
+          maxFileBytes: 52428800,
+          chunkChars: 1200,
+          chunkOverlapChars: 200,
+          searchMaxResults: 8,
+        },
+      },
+    })
+
+    expect(split.global).toEqual({ indexing: { provider: "openai-compatible" } })
+    expect(split.project).toEqual({
+      indexing: {
+        documents: {
+          enabled: true,
+          paths: ["docs"],
+          include: ["**/*.pdf"],
+          exclude: ["**/archive/**"],
+          maxFileBytes: 52428800,
+          chunkChars: 1200,
+          chunkOverlapChars: 200,
+          searchMaxResults: 8,
+        },
+      },
+    })
+  })
+
   it("can write indexing enablement to global config through a global draft", () => {
     const split = splitConfigByScope({ username: "marius" })
     const draft = { indexing: { enabled: true } }

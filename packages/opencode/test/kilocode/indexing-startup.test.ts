@@ -111,6 +111,11 @@ function inline(directory: string, root: string, hooks: IndexingWorker.Hooks): I
       return normalizeIndexingStatus(manager)
     },
     search: (query, directoryPrefix) => manager.searchIndex(query, directoryPrefix),
+    documentSearch: (query, options) => manager.searchDocuments(query, options),
+    async rebuildDocuments() {
+      await manager.rebuildDocuments()
+      return normalizeIndexingStatus(manager)
+    },
     queryEvidence: (query, options) => manager.queryEvidence(query, options),
     codeGraphStatus: () => Promise.resolve(manager.getCodeGraphStatus()),
     async dispose() {
@@ -328,6 +333,12 @@ describe("indexing startup degradation", () => {
       },
       async search() {
         return []
+      },
+      async documentSearch() {
+        return []
+      },
+      async rebuildDocuments() {
+        return done
       },
       async queryEvidence(query, options = {}) {
         calls.push({ query, options })

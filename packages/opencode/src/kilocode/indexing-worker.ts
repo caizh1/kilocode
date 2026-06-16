@@ -53,6 +53,26 @@ onmessage = async (event: MessageEvent<Request>) => {
       return
     }
 
+    if (request.method === "documentSearch") {
+      const { query, ...options } = request.input
+      const value = manager ? await manager.searchDocuments(query, options) : []
+      send({ type: "result", id: request.id, method: "documentSearch", ok: true, value })
+      return
+    }
+
+    if (request.method === "rebuildDocuments") {
+      if (!manager) throw new Error("Indexing worker is not initialized.")
+      await manager.rebuildDocuments()
+      send({
+        type: "result",
+        id: request.id,
+        method: "rebuildDocuments",
+        ok: true,
+        value: normalizeIndexingStatus(manager),
+      })
+      return
+    }
+
     if (request.method === "updateConfig") {
       if (!manager) throw new Error("Indexing worker is not initialized.")
       await manager.handleSettingsChange(request.input)

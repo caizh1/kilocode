@@ -1,5 +1,16 @@
 import type { EmbedderProvider } from "./manager"
 
+export type DocumentIndexConfig = {
+  enabled?: boolean
+  paths?: string[]
+  include?: string[]
+  exclude?: string[]
+  maxFileBytes?: number
+  chunkChars?: number
+  chunkOverlapChars?: number
+  searchMaxResults?: number
+}
+
 /**
  * Configuration state for the code indexing feature.
  *
@@ -30,6 +41,7 @@ export interface CodeIndexConfig {
   searchMaxResults?: number
   embeddingBatchSize?: number
   scannerMaxBatchRetries?: number
+  documents?: DocumentIndexConfig
 }
 
 export type PreviousConfigSnapshot = {
@@ -57,4 +69,5 @@ export type PreviousConfigSnapshot = {
   voyageApiKey?: string
   qdrantUrl?: string
   qdrantApiKey?: string
+  documents?: DocumentIndexConfig
 }

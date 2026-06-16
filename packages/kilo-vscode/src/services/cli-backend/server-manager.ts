@@ -34,8 +34,10 @@ export function resolveIndexingEnv(folders: readonly WorkspaceFolderLike[] | und
 export function buildBundledToolEnv(root: string, base: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const key = pathKey(base)
   const bin = path.join(root, "bin")
+  const poppler = path.join(bin, "poppler")
   const value = base[key]
-  return { [key]: value ? `${bin}${path.delimiter}${value}` : bin }
+  const prefix = `${poppler}${path.delimiter}${bin}`
+  return { [key]: value ? `${prefix}${path.delimiter}${value}` : prefix }
 }
 
 function pathKey(base: NodeJS.ProcessEnv): string {

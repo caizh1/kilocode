@@ -1,0 +1,7 @@
+This package may include third-party binaries for offline internal builds.
+
+Poppler for Windows
+- Purpose: provides pdftotext.exe for local PDF text extraction.
+- Source package: https://github.com/oschwartz10612/poppler-windows
+- Upstream project: https://poppler.freedesktop.org/
+- Notes: the Windows package is assembled from conda-forge Poppler and includes Poppler data files. Review the bundled package licenses before distributing outside the internal offline package channel.

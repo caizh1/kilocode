@@ -1,8 +1,15 @@
 import type { VectorStoreSearchResult } from "./interfaces"
 import type { IndexingState } from "./interfaces/manager"
-import type { IndexingTelemetryEvent, IndexingTelemetryMeta, IndexingTelemetryTrigger } from "./interfaces/telemetry"
+import type {
+  IndexingTelemetryEvent,
+  IndexingTelemetryMeta,
+  IndexingTelemetryPipeline,
+  IndexingTelemetryTrigger,
+} from "./interfaces/telemetry"
 import type { CodeGraphEvidenceQueryOptions, QueryEvidenceResult } from "./analysis"
 import type { CodeGraphSidecarStatus } from "./codegraph"
+import type { DocumentIndexStatus, DocumentSearchOptions, DocumentSearchResult } from "./documents"
+import { DocumentIndexService } from "./documents"
 import { CodeIndexConfigManager, type IndexingConfigInput } from "./config-manager"
 import { INITIAL_MANAGER_RECOVERY_DELAY_MS, MAX_MANAGER_RECOVERY_ATTEMPTS } from "./constants"
 import { CodeIndexStateManager } from "./state-manager"
@@ -37,6 +44,7 @@ export class CodeIndexManager {
   private _serviceFactory: CodeIndexServiceFactory | undefined
   private _orchestrator: CodeIndexOrchestrator | undefined
   private _searchService: CodeIndexSearchService | undefined
+  private _documentService: DocumentIndexService | undefined
   private readonly _analysisService: CodeIndexAnalysisService
   private readonly _graphStorage: CodeGraphJsonStorage
   private readonly _postingsStorage: CodePostingsJsonStorage
@@ -105,7 +113,12 @@ export class CodeIndexManager {
     })
   }
 
-  private emitError(location: string, err: unknown, trigger?: IndexingTelemetryTrigger): void {
+  private emitError(
+    location: string,
+    err: unknown,
+    trigger?: IndexingTelemetryTrigger,
+    pipeline?: IndexingTelemetryPipeline,
+  ): void {
     const meta = this.getTelemetryMeta()
     if (!meta) {
       return
@@ -117,6 +130,7 @@ export class CodeIndexManager {
       source: "scan",
       location,
       trigger,
+      pipeline,
       error: sanitizeErrorMessage(msg),
     })
   }
@@ -293,6 +307,7 @@ export class CodeIndexManager {
     return {
       codeGraph: this._recentErrors.codeGraph?.slice(),
       rag: this._recentErrors.rag?.slice(),
+      documents: this._recentErrors.documents?.slice(),
     }
   }
 
@@ -353,6 +368,7 @@ export class CodeIndexManager {
       this._codeGraph.start("code-graph-default-enabled")
       this._stateManager.setSystemState("Standby", msg)
       this._orchestrator?.startIndexing("background")
+      await this.configureDocuments("background")
       return { requiresRestart }
     }
 
@@ -400,6 +416,7 @@ export class CodeIndexManager {
       this._orchestrator?.startIndexing("background")
     }
 
+    await this.configureDocuments("background")
     return { requiresRestart }
   }
 
@@ -474,6 +491,7 @@ export class CodeIndexManager {
     // scanner.cancel(), which cooperatively aborts any in-flight scan. Using only
     // stopWatcher() left the orchestrator's _runScan() unaware it should exit.
     this._orchestrator?.cancelIndexing()
+    this._documentService?.dispose()
     this._codeGraph.dispose("manager-disposed")
     this._stateManager.dispose()
     this._telemetry.dispose()
@@ -484,6 +502,7 @@ export class CodeIndexManager {
     await this._orchestrator!.clearIndexData()
     await this._cacheManager!.clearCacheFile()
     await this._graphStorage.clear()
+    await this._documentService?.rebuild("manual")
   }
 
   public clearErrorState(): void {
@@ -510,10 +529,32 @@ export class CodeIndexManager {
     return this._stateManager.getCodeGraphProgress()
   }
 
+  public getDocumentStatus(): DocumentIndexStatus {
+    if (this._documentService) return this._documentService.getStatus()
+    if (!this._configManager) return documentDisabled("Document RAG is not initialized.")
+    const cfg = this._configManager.currentDocuments
+    if (!cfg.enabled) return documentDisabled("Document RAG disabled.")
+    if (cfg.paths.length === 0) return documentStandby("No document folders configured.")
+    if (!this.isFeatureConfigured) return documentError("Document RAG requires configured embeddings.")
+    return documentStandby("Document RAG starting.")
+  }
+
   public async searchIndex(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]> {
     if (!this.isFeatureEnabled || !this.isFeatureConfigured) return []
     this.assertInitialized()
     return this._searchService!.searchIndex(query, directoryPrefix)
+  }
+
+  public async searchDocuments(query: string, options: DocumentSearchOptions = {}): Promise<DocumentSearchResult[]> {
+    if (!this._documentService) return []
+    return this._documentService.search(query, options)
+  }
+
+  public async rebuildDocuments(): Promise<void> {
+    await this.configureDocuments("manual", { start: false })
+    if (!this._documentService) return
+    await this._documentService.rebuild("manual")
+    this._stateManager.notify()
   }
 
   public async queryEvidence(query: string, options: CodeGraphEvidenceQueryOptions = {}): Promise<QueryEvidenceResult> {
@@ -641,6 +682,55 @@ export class CodeIndexManager {
     log.info("indexing services are ready", { workspacePath: this.workspacePath })
   }
 
+  private async configureDocuments(
+    trigger: IndexingTelemetryTrigger,
+    opts: { start?: boolean; force?: boolean } = {},
+  ): Promise<void> {
+    if (!this._configManager) return
+    const cfg = this._configManager.currentDocuments
+    if (!cfg.enabled) {
+      this._documentService?.dispose()
+      this._documentService = undefined
+      this._stateManager.notify()
+      return
+    }
+
+    await this.ensureCache()
+    if (this._disposed) return
+
+    if (!this.isFeatureConfigured) {
+      this._documentService?.dispose()
+      this._documentService = undefined
+      this._stateManager.notify()
+      return
+    }
+
+    const loaded = await loadIgnoreWithFingerprint(this.workspacePath)
+    const factory = new CodeIndexServiceFactory(
+      this._configManager,
+      this.workspacePath,
+      this._cacheManager!,
+      this.cacheDirectory,
+      loaded.fingerprint,
+      (event) => this.handleTelemetry(event),
+      this._graphStorage,
+      this._postingsStorage,
+    )
+    if (!this._serviceFactory) this._serviceFactory = factory
+
+    const next = factory.createDocumentService(loaded.ignore, () => this._stateManager.notify())
+    this._documentService?.dispose()
+    this._documentService = next
+    this._stateManager.notify()
+
+    if (opts.start === false) return
+    void next.start(trigger, opts.force === true).catch((err) => {
+      log.error("failed to start document indexing", { err })
+      this.emitError("documents:start", err, trigger, "documents")
+      this._stateManager.notify()
+    })
+  }
+
   public async handleSettingsChange(input: IndexingConfigInput): Promise<void> {
     if (!this._configManager) return
 
@@ -665,6 +755,7 @@ export class CodeIndexManager {
           : "RAG indexing is disabled. Code Graph is available.",
       )
       this._orchestrator?.startIndexing("background")
+      await this.configureDocuments("background")
       return
     }
 
@@ -687,11 +778,15 @@ export class CodeIndexManager {
           log.error("failed to start RAG-only indexing after settings change", { err })
           this.emitError("manager:handleSettingsChange", err, "background")
         })
+        await this.configureDocuments("background", { force: true })
       } catch (err) {
         log.error("failed to recreate services on settings change", { err })
         throw err
       }
+      return
     }
+
+    await this.configureDocuments("background", { force: true })
   }
 }
 
@@ -706,6 +801,7 @@ function errorPipelines(
 ): Array<keyof IndexingPipelineRecentErrors> {
   if (event.pipeline) return [event.pipeline]
   const location = event.location.toLowerCase()
+  if (location.includes("document")) return ["documents"]
   if (location.includes("graph") || location.includes("posting")) return ["codeGraph"]
   if (
     location.includes("batch") ||
@@ -716,4 +812,33 @@ function errorPipelines(
     return ["rag"]
   }
   return ["codeGraph", "rag"]
+}
+
+function documentDisabled(message: string): DocumentIndexStatus {
+  return {
+    state: "Disabled",
+    message,
+    processedFiles: 0,
+    totalFiles: 0,
+    percent: 0,
+    detail: message,
+    errorCount: 0,
+    staleCount: 0,
+    skippedCount: 0,
+  }
+}
+
+function documentStandby(message: string): DocumentIndexStatus {
+  return {
+    ...documentDisabled(message),
+    state: "Standby",
+  }
+}
+
+function documentError(message: string): DocumentIndexStatus {
+  return {
+    ...documentDisabled(message),
+    state: "Error",
+    errorCount: 1,
+  }
 }

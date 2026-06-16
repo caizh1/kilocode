@@ -17,6 +17,20 @@ const providers = [
 ] as const satisfies readonly EmbedderProvider[]
 const stores = ["lancedb", "qdrant"] as const
 
+const DocumentConfig = z
+  .object({
+    enabled: z.boolean().optional().describe("Enable document RAG indexing"),
+    paths: z.array(z.string()).optional().describe("Workspace-relative document folders or files to index"),
+    include: z.array(z.string()).optional().describe("Optional glob patterns to include inside document paths"),
+    exclude: z.array(z.string()).optional().describe("Optional glob patterns to exclude from document indexing"),
+    maxFileBytes: z.number().int().positive().optional().describe("Maximum document size in bytes (default: 50 MiB)"),
+    chunkChars: z.number().int().positive().optional().describe("Target document chunk size in characters"),
+    chunkOverlapChars: z.number().int().nonnegative().optional().describe("Document chunk overlap in characters"),
+    searchMaxResults: z.number().int().positive().optional().describe("Maximum document search results"),
+  })
+  .strict()
+  .meta({ ref: "DocumentIndexConfig" })
+
 export const IndexingConfig = z
   .object({
     enabled: z.boolean().optional().describe("Enable codebase indexing"),
@@ -125,6 +139,7 @@ export const IndexingConfig = z
       .positive()
       .optional()
       .describe("Maximum retry attempts for failed embedding batches (default: 3)"),
+    documents: DocumentConfig.optional().describe("Document RAG configuration"),
   })
   .strict()
   .meta({ ref: "IndexingConfig" })
@@ -134,7 +149,36 @@ export type IndexingConfig = z.infer<typeof IndexingConfig>
 const Provider = Schema.Literals(providers)
 const Store = Schema.Literals(stores)
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
+const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Score = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1))
+
+const DocumentSchema = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).annotate({ description: "Enable document RAG indexing" }),
+  paths: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description: "Workspace-relative document folders or files to index",
+  }),
+  include: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description: "Optional glob patterns to include inside document paths",
+  }),
+  exclude: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description: "Optional glob patterns to exclude from document indexing",
+  }),
+  maxFileBytes: Schema.optional(PositiveInt).annotate({
+    description: "Maximum document size in bytes (default: 50 MiB)",
+  }),
+  chunkChars: Schema.optional(PositiveInt).annotate({
+    description: "Target document chunk size in characters",
+  }),
+  chunkOverlapChars: Schema.optional(NonNegativeInt).annotate({
+    description: "Document chunk overlap in characters",
+  }),
+  searchMaxResults: Schema.optional(PositiveInt).annotate({
+    description: "Maximum document search results",
+  }),
+}).annotate({
+  identifier: "DocumentIndexConfig",
+  description: "Document RAG configuration",
+})
 
 export const IndexingSchema = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({ description: "Enable codebase indexing" }),
@@ -226,6 +270,9 @@ export const IndexingSchema = Schema.Struct({
   scannerMaxBatchRetries: Schema.optional(PositiveInt).annotate({
     description: "Maximum retry attempts for failed embedding batches (default: 3)",
   }),
+  documents: Schema.optional(DocumentSchema).annotate({
+    description: "Document RAG configuration",
+  }),
 }).annotate({
   identifier: "IndexingConfig",
   description: "Codebase indexing configuration",
@@ -262,5 +309,6 @@ export function toIndexingConfigInput(cfg: IndexingConfig | undefined): Indexing
     openRouterApiKey: cfg?.openrouter?.apiKey,
     openRouterSpecificProvider: cfg?.openrouter?.specificProvider,
     voyageApiKey: cfg?.voyage?.apiKey,
+    documents: cfg?.documents,
   }
 }

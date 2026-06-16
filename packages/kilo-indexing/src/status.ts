@@ -1,5 +1,6 @@
 import z from "zod"
 import type { CodeGraphSidecarStatus } from "./indexing/codegraph"
+import type { DocumentIndexStatus } from "./indexing/documents"
 import type { IndexingNotice as StateIndexingNotice, IndexingState } from "./indexing/interfaces/manager"
 
 type StatusSource = {
@@ -7,6 +8,7 @@ type StatusSource = {
   readonly isFeatureConfigured: boolean
   getCodeGraphStatus?(): CodeGraphSidecarStatus
   getCodeGraphProgress?(): ActivePipelineProgress | undefined
+  getDocumentStatus?(): DocumentIndexStatus
   getRecentErrors?(): IndexingPipelineRecentErrors
   getCurrentStatus(): {
     systemStatus: IndexingState
@@ -14,7 +16,7 @@ type StatusSource = {
     processedItems: number
     totalItems: number
     currentItemUnit: string
-    activePipeline?: "codeGraph" | "rag"
+    activePipeline?: "codeGraph" | "rag" | "documents"
     notices?: StateIndexingNotice[]
   }
 }
@@ -48,6 +50,7 @@ export type IndexingDiagnostic = z.infer<typeof IndexingDiagnostic>
 export type IndexingPipelineRecentErrors = {
   codeGraph?: IndexingDiagnostic[]
   rag?: IndexingDiagnostic[]
+  documents?: IndexingDiagnostic[]
 }
 
 export const IndexingNotice = z
@@ -84,6 +87,7 @@ export const IndexingStatusPipelines = z
   .object({
     codeGraph: IndexingPipelineStatus,
     rag: IndexingPipelineStatus,
+    documents: IndexingPipelineStatus,
   })
   .meta({ ref: "IndexingStatusPipelines" })
 
@@ -126,6 +130,8 @@ export function normalizeIndexingStatus(manager: StatusSource): IndexingStatus {
   const errors = manager.getRecentErrors?.()
   const graphErrors = errors?.codeGraph
   const ragErrors = errors?.rag
+  const docErrors = errors?.documents
+  const docStatus = manager.getDocumentStatus?.()
   const notices = cfg.notices?.slice(0, 5)
   const notice = notices && notices.length > 0 ? { notices } : {}
 
@@ -142,6 +148,7 @@ export function normalizeIndexingStatus(manager: StatusSource): IndexingStatus {
       pipelines: {
         codeGraph: codeGraphPipeline(graphStatus, graphProgress, graphErrors),
         rag: disabledPipeline(message, ragErrors),
+        documents: documentPipeline(docStatus, docErrors),
       },
     }
   }
@@ -159,6 +166,7 @@ export function normalizeIndexingStatus(manager: StatusSource): IndexingStatus {
               ragErrors,
             )
           : ragPipeline(status, ragErrors),
+      documents: documentPipeline(docStatus, docErrors),
     },
   })
 
@@ -205,6 +213,7 @@ function disabledPipelines(message: string, errors?: IndexingPipelineRecentError
   return {
     codeGraph: { ...disabledPipeline(message, errors?.codeGraph), message: "Code Graph disabled." },
     rag: disabledPipeline(message, errors?.rag),
+    documents: documentPipeline(undefined, errors?.documents),
   }
 }
 
@@ -370,6 +379,35 @@ function codeGraphPipeline(
     skippedCount: skipped,
     validFileCount: valid,
     recentErrors,
+  })
+}
+
+function documentPipeline(status?: DocumentIndexStatus, recentErrors?: IndexingDiagnostic[]): IndexingPipelineStatus {
+  if (!status) {
+    return pipeline({
+      state: "Disabled",
+      message: "Document RAG disabled.",
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 0,
+      detail: "Document RAG service is not active.",
+      recentErrors,
+    })
+  }
+
+  return pipeline({
+    state: status.state,
+    message: status.message,
+    processedFiles: status.processedFiles,
+    totalFiles: status.totalFiles,
+    percent: status.percent,
+    detail: status.detail,
+    lastFullScanAt: status.lastFullScanAt,
+    errorCount: status.errorCount,
+    staleCount: status.staleCount,
+    skippedCount: status.skippedCount,
+    validFileCount: status.validFileCount,
+    recentErrors: status.recentErrors ?? recentErrors,
   })
 }
 

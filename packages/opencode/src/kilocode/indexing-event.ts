@@ -47,6 +47,7 @@ export const IndexingStatusInfo = Schema.Struct({
     Schema.Struct({
       codeGraph: IndexingPipelineStatusInfo,
       rag: IndexingPipelineStatusInfo,
+      documents: IndexingPipelineStatusInfo,
     }),
   ),
   notices: Schema.optional(Schema.Array(IndexingNoticeInfo)),

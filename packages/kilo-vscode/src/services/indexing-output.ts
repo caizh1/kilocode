@@ -9,7 +9,7 @@ const CHANNEL = "ChipMate Indexing"
 const OPEN_INDEXING_OUTPUT = "Open Indexing Output"
 const UNKNOWN = "Unknown indexing error"
 const INDEXING_STDERR_PATTERN =
-  /\b(indexing|code\s*graph|codegraph|rag|lancedb|tree-sitter|treesitter|ripgrep|rg(?:\.exe)?|file\s*watcher|watcher|indexing-worker|worker)\b/i
+  /\b(indexing|code\s*graph|codegraph|rag|document|documents|pdf|docx|xlsx|ods|lancedb|tree-sitter|treesitter|ripgrep|rg(?:\.exe)?|file\s*watcher|watcher|indexing-worker|worker)\b/i
 
 let channel: vscode.OutputChannel | undefined
 let wired = false
@@ -110,6 +110,7 @@ export function formatIndexingStatus(status: IndexingStatus): string[] {
 
   lines.push(...pipelineLines("Code Graph", pipes.codeGraph, status))
   lines.push(...pipelineLines("RAG", pipes.rag, status))
+  if (pipes.documents) lines.push(...pipelineLines("Documents", pipes.documents, status))
   return lines
 }
 
@@ -145,7 +146,7 @@ function formatDiagnostic(err: IndexingDiagnostic, pipe: IndexingPipelineStatus,
 function hasIssue(status: IndexingStatus): boolean {
   const pipes = status.pipelines
   if (status.state === "Error") return true
-  return [pipes?.codeGraph, pipes?.rag].some(
+  return [pipes?.codeGraph, pipes?.rag, pipes?.documents].some(
     (pipe) =>
       pipe?.state === "Error" ||
       (pipe?.errorCount ?? 0) > 0 ||
@@ -160,6 +161,7 @@ function statusKey(status: IndexingStatus): string {
     message: fallback(status.message),
     codeGraph: pipelineKey(status.pipelines?.codeGraph, status),
     rag: pipelineKey(status.pipelines?.rag, status),
+    documents: pipelineKey(status.pipelines?.documents, status),
   })
 }
 

@@ -6,6 +6,8 @@ import {
   disabledCodeGraphSidecarStatus,
   type CodeGraphEvidenceQueryOptions,
   type CodeGraphSidecarStatus,
+  type DocumentSearchOptions,
+  type DocumentSearchResult,
   type IndexingTelemetryEvent,
   type QueryEvidenceResult,
   type VectorStoreSearchResult,
@@ -76,6 +78,7 @@ export function failed(
     pipelines: {
       codeGraph: inactivePipeline("Error", "Code Graph unavailable.", text, [item]),
       rag: inactivePipeline("Error", "RAG indexing unavailable.", text, [item]),
+      documents: inactivePipeline("Error", "Document RAG unavailable.", text, [item]),
     },
   }
 }
@@ -90,6 +93,7 @@ function pending(): z.infer<typeof IndexingStatus> {
     pipelines: {
       codeGraph: inactivePipeline("In Progress", "Code Graph initializing.", "Waiting for indexing worker."),
       rag: inactivePipeline("In Progress", "RAG indexing initializing.", "Waiting for indexing worker."),
+      documents: inactivePipeline("In Progress", "Document RAG initializing.", "Waiting for indexing worker."),
     },
   }
 }
@@ -313,6 +317,12 @@ function trackTelemetry(event: IndexingTelemetryEvent): void {
   })
 }
 
+function needsVectorRuntime(cfg: CodeIndexConfigManager): boolean {
+  const info = cfg.getConfig()
+  const docs = info.documents?.enabled === true
+  return info.vectorStoreProvider === "lancedb" && cfg.isFeatureConfigured && (cfg.isFeatureEnabled || docs)
+}
+
 export namespace KiloIndexing {
   export const Status = IndexingStatus
   export type Status = z.infer<typeof Status>
@@ -425,6 +435,8 @@ export namespace KiloIndexing {
           const nextConfig = await AppRuntime.runPromise(Config.Service.use((svc) => svc.get()))
           if (!hasIndexingPlugin(nextConfig.plugin)) return
           const nextInput = await inputFromConfig(nextConfig)
+          const nextRag = new CodeIndexConfigManager(nextInput)
+          if (needsVectorRuntime(nextRag)) await LanceDBRuntime.ensure(nextRag.getConfig().vectorStoreProvider)
           if (!base.engine) {
             const engine = IndexingWorker.create(dir, root, { status, telemetry, failure })
             base.engine = engine
@@ -470,9 +482,7 @@ export namespace KiloIndexing {
 
     const rag = new CodeIndexConfigManager(cfgInput)
     const err = await (
-      rag.isFeatureEnabled && rag.isFeatureConfigured
-        ? LanceDBRuntime.ensure(rag.getConfig().vectorStoreProvider)
-        : Promise.resolve()
+      needsVectorRuntime(rag) ? LanceDBRuntime.ensure(rag.getConfig().vectorStoreProvider) : Promise.resolve()
     )
       .then(async () => {
         if (hit.disposed) return
@@ -569,6 +579,10 @@ export namespace KiloIndexing {
     return status.pipelines?.codeGraph.state !== "Disabled"
   }
 
+  function documents(status: Status): boolean {
+    return status.pipelines?.documents.state !== "Disabled" && status.pipelines?.documents.state !== "Error"
+  }
+
   export function ready(): boolean {
     const entry = cache.get(Instance.directory)?.entry
     if (!entry?.initialized) return false
@@ -581,6 +595,12 @@ export namespace KiloIndexing {
     return graph(entry.current())
   }
 
+  export function documentReady(): boolean {
+    const entry = cache.get(Instance.directory)?.entry
+    if (!entry?.initialized || !entry.engine) return false
+    return documents(entry.current())
+  }
+
   export async function available(): Promise<boolean> {
     const entry = await hit().ready
     if (!entry.initialized) return false
@@ -591,6 +611,23 @@ export namespace KiloIndexing {
     const entry = await hit().ready
     if (!entry.initialized || !rag(entry.current()) || !entry.engine) return []
     return entry.engine.search(query, directoryPrefix)
+  }
+
+  export async function searchDocuments(
+    query: string,
+    options: DocumentSearchOptions = {},
+  ): Promise<DocumentSearchResult[]> {
+    const entry = await hit().ready
+    if (!entry.initialized || !documents(entry.current()) || !entry.engine) return []
+    return entry.engine.documentSearch(query, options)
+  }
+
+  export async function rebuildDocuments(): Promise<Status> {
+    const entry = await hit().ready
+    if (!entry.initialized || !entry.engine) return entry.current()
+    const status = await entry.engine.rebuildDocuments()
+    await entry.publish()
+    return status
   }
 
   export async function queryEvidence(

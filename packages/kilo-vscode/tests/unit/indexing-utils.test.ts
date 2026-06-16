@@ -70,6 +70,7 @@ describe("indexing formatting", () => {
       skippedCount: 0,
     })
     expect(pipelines.rag.processedFiles).toBe(3)
+    expect(pipelines.documents.processedFiles).toBe(3)
   })
 
   it("formats and tones individual pipeline statuses", () => {

@@ -44,6 +44,7 @@ export function ensureIndexingPipelines(status: IndexingStatus): IndexingPipelin
   return {
     codeGraph: fallbackPipeline(status, "Code Graph status unavailable."),
     rag: fallbackPipeline(status, status.message || "RAG indexing status unavailable."),
+    documents: fallbackPipeline(status, status.message || "Document RAG status unavailable."),
   }
 }
 

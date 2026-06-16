@@ -57,7 +57,7 @@ const imageDrafts = new Map<string, ImageAttachment[]>()
 
 const IndexingProgressButton: Component<{
   title: string
-  icon: "graph" | "database"
+  icon: "graph" | "database" | "book"
   fillAxis: "horizontal" | "vertical"
   status: () => IndexingPipelineStatus
   onClick: () => void
@@ -1201,6 +1201,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               icon="database"
               fillAxis="vertical"
               status={() => indexing.pipelines().rag}
+              onClick={handleOpenIndexingSettings}
+            />
+            <IndexingProgressButton
+              title="Documents index"
+              icon="book"
+              fillAxis="horizontal"
+              status={() => indexing.pipelines().documents}
               onClick={handleOpenIndexingSettings}
             />
           </Show>

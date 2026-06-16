@@ -13,14 +13,18 @@ import * as Truncate from "@/tool/truncate"
 const log = Log.create({ service: "kilocode-tool-registry" })
 type Deps = { agent: Agent.Interface; truncate: Truncate.Interface }
 type Loaders = {
-  indexing?: () => Promise<{ KiloIndexing: { ready: () => boolean; analysisReady?: () => boolean } }>
+  indexing?: () => Promise<{
+    KiloIndexing: { ready: () => boolean; analysisReady?: () => boolean; documentReady?: () => boolean }
+  }>
   semantic?: () => Promise<Pick<typeof import("@/kilocode/tool/semantic-search"), "SemanticSearchTool">>
   analysis?: () => Promise<Pick<typeof import("@/kilocode/tool/codebase-analysis"), "CodebaseAnalysisTool">>
+  document?: () => Promise<Pick<typeof import("@/kilocode/tool/document-search"), "DocumentSearchTool">>
 }
 
 export namespace KiloToolRegistry {
   const hint = [
     "- For C/C++ symbols, callers/callees/call chains, macro/register/MMIO usage, state machines, error paths, cleanup paths, module flow, or impact analysis, use the `codebase_analysis` tool first.",
+    "- For configured workspace PDF, DOCX, XLSX, ODS, Markdown, CSV, TSV, RST, or text documents, use the `document_search` tool before answering document-grounded questions.",
     "- When you are doing an open-ended conceptual search where you do not know the exact symbol name, use the `semantic_search` tool first to narrow down the search scope, then follow up with `Grep` and/or `Read`.",
   ].join("\n")
 
@@ -53,7 +57,8 @@ export namespace KiloToolRegistry {
       const ready = yield* indexingReady(loaders)
       const analysis = yield* analysisTool(deps, loaders, ready.analysis)
       const semantic = yield* semanticTool(deps, loaders, ready.semantic)
-      return { ...base, analysis, semantic }
+      const document = yield* documentTool(deps, loaders, ready.document)
+      return { ...base, analysis, semantic, document }
     })
   }
 
@@ -61,16 +66,21 @@ export namespace KiloToolRegistry {
     return Effect.gen(function* () {
       const indexing = loaders.indexing ?? (() => import("@/kilocode/indexing"))
       const ready = yield* Effect.tryPromise(() =>
-        indexing().then((mod) => {
-          const semantic = mod.KiloIndexing.ready()
-          const analysis = mod.KiloIndexing.analysisReady?.() ?? semantic
-          return { analysis, semantic }
+        indexing().then(async (mod) => {
+          const semantic = await Promise.resolve(mod.KiloIndexing.ready())
+          const analysis = mod.KiloIndexing.analysisReady
+            ? await Promise.resolve(mod.KiloIndexing.analysisReady())
+            : semantic
+          const document = mod.KiloIndexing.documentReady
+            ? await Promise.resolve(mod.KiloIndexing.documentReady())
+            : false
+          return { analysis, semantic, document }
         }),
       ).pipe(
         Effect.catch((err) =>
           Effect.sync(() => {
             log.warn("indexing tools unavailable", { err })
-            return { analysis: false, semantic: false }
+            return { analysis: false, semantic: false, document: false }
           }),
         ),
       )
@@ -126,12 +136,37 @@ export namespace KiloToolRegistry {
     })
   }
 
+  function documentTool(deps: Deps, loaders: Loaders, ready: boolean) {
+    return Effect.gen(function* () {
+      if (!ready) return undefined
+
+      const document = loaders.document ?? (() => import("@/kilocode/tool/document-search"))
+      const mod = yield* Effect.tryPromise(() => document()).pipe(
+        Effect.catch((err) =>
+          Effect.sync(() => {
+            log.warn("document search tool unavailable", { err })
+            return undefined
+          }),
+        ),
+      )
+      if (!mod) return undefined
+
+      const info = yield* mod.DocumentSearchTool.pipe(
+        Effect.provideService(Agent.Service, deps.agent),
+        Effect.provideService(Truncate.Service, deps.truncate),
+      )
+      if (!info) return undefined
+      return yield* Tool.init(info)
+    })
+  }
+
   /** Kilo-specific tools to append to the builtin list */
   export function extra(
     tools: {
       codebase: Tool.Def
       analysis?: Tool.Def
       semantic?: Tool.Def
+      document?: Tool.Def
       recall: Tool.Def
       manager: Tool.Def
       process: Tool.Def
@@ -142,6 +177,7 @@ export namespace KiloToolRegistry {
       ...(cfg.experimental?.codebase_search === true ? [tools.codebase] : []),
       ...(tools.analysis ? [tools.analysis] : []),
       ...(tools.semantic ? [tools.semantic] : []),
+      ...(tools.document ? [tools.document] : []),
       tools.recall,
       ...(Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode" ? [tools.process] : []),
       // The extension is the only client that can consume the Agent Manager start event.
@@ -149,8 +185,11 @@ export namespace KiloToolRegistry {
     ]
   }
 
-  export function describe(tools: Tool.Def[], extra: { analysis?: Tool.Def; semantic?: Tool.Def }): Tool.Def[] {
-    if (!extra.analysis && !extra.semantic) return tools
+  export function describe(
+    tools: Tool.Def[],
+    extra: { analysis?: Tool.Def; semantic?: Tool.Def; document?: Tool.Def },
+  ): Tool.Def[] {
+    if (!extra.analysis && !extra.semantic && !extra.document) return tools
     return tools.map((tool) => {
       if (tool.id !== "glob" && tool.id !== "grep") return tool
       return { ...tool, description: `${tool.description}\n${hint}` }

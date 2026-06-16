@@ -17,6 +17,7 @@ import { VoyageEmbedder } from "./embedders/voyage"
 import { QdrantVectorStore } from "./vector-store/qdrant-client"
 import { LanceDBVectorStore } from "./vector-store/lancedb-vector-store"
 import { codeParser, DirectoryScanner, FileWatcher } from "./processors"
+import { DocumentIndexService } from "./documents"
 import type { ICodeParser, IEmbedder, IFileWatcher, IVectorStore } from "./interfaces"
 import type { ICodeGraphStorage, ICodePostingsStorage } from "./codegraph"
 import type { CodeIndexConfigManager } from "./config-manager"
@@ -215,6 +216,49 @@ export class CodeIndexServiceFactory {
     return new QdrantVectorStore(this.workspacePath, config.qdrantUrl, profile.dimension, config.qdrantApiKey, profile)
   }
 
+  public createDocumentVectorStore(): IVectorStore {
+    const config = this.configManager.getConfig()
+    const profile = resolveEmbeddingProfile(config.embedderProvider, config.modelId, config.modelDimension)
+
+    if (!profile || profile.dimension <= 0) {
+      throw new Error(
+        `Cannot determine vector dimension for model "${config.modelId ?? getDefaultModelId(config.embedderProvider)}" with provider "${config.embedderProvider}". ` +
+          (config.embedderProvider === "openai-compatible"
+            ? "Please set the model dimension explicitly."
+            : "Check your model configuration."),
+      )
+    }
+
+    if (config.vectorStoreProvider === "lancedb") {
+      const base = config.lancedbVectorStoreDirectoryPlaceholder ?? this.cacheDirectory
+      const dbDir = path.join(base, config.lancedbVectorStoreDirectoryPlaceholder ? "documents" : "lancedb-documents")
+      log.info("creating document vector store", {
+        provider: config.embedderProvider,
+        vectorStore: "lancedb",
+        model: profile.modelId,
+        vectorSize: profile.dimension,
+        dbDir,
+      })
+      return new LanceDBVectorStore(this.workspacePath, profile.dimension, dbDir, profile)
+    }
+
+    if (!config.qdrantUrl) throw new Error("Qdrant URL is required.")
+    log.info("creating document vector store", {
+      provider: config.embedderProvider,
+      vectorStore: "qdrant",
+      model: profile.modelId,
+      vectorSize: profile.dimension,
+    })
+    return new QdrantVectorStore(
+      this.workspacePath,
+      config.qdrantUrl,
+      profile.dimension,
+      config.qdrantApiKey,
+      profile,
+      "documents",
+    )
+  }
+
   public createRagCheckpointMeta(vectorStore: IVectorStore): RagCheckpointMeta {
     const config = this.configManager.getConfig()
     const profile = resolveEmbeddingProfile(config.embedderProvider, config.modelId, config.modelDimension)
@@ -347,5 +391,24 @@ export class CodeIndexServiceFactory {
     })
 
     return { embedder, vectorStore, parser, scanner, fileWatcher, ragMeta }
+  }
+
+  public createDocumentService(ignoreInstance: Ignore, onStatus?: () => void): DocumentIndexService {
+    if (!this.configManager.isFeatureConfigured) {
+      throw new Error("Document RAG requires configured embeddings.")
+    }
+
+    const embedder = this.createEmbedder()
+    const vectorStore = this.createDocumentVectorStore()
+    return new DocumentIndexService(
+      this.workspacePath,
+      this.cacheDirectory,
+      this.configManager,
+      embedder,
+      vectorStore,
+      ignoreInstance,
+      onStatus,
+      this.onTelemetry,
+    )
   }
 }

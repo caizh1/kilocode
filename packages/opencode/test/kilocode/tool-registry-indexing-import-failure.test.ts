@@ -25,6 +25,7 @@ describe("kilocode tool registry indexing import failure", () => {
 
       expect(result.analysis).toBeUndefined()
       expect(result.semantic).toBeUndefined()
+      expect(result.document).toBeUndefined()
       expect(result.recall.id).toBe("recall")
       expect(warn.mock.calls[0]?.[0]).toBe("indexing tools unavailable")
       expect(warn.mock.calls[0]?.[1]?.err).toBeDefined()

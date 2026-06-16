@@ -14,6 +14,7 @@ const root = "/indexing"
 
 export const IndexingPaths = {
   status: `${root}/status`,
+  documentsRebuild: `${root}/documents/rebuild`,
 } as const
 
 export const IndexingApi = HttpApi.make("indexing")
@@ -28,6 +29,18 @@ export const IndexingApi = HttpApi.make("indexing")
             identifier: "indexing.status",
             summary: "Get indexing status",
             description: "Retrieve the current code indexing status for the active project.",
+          }),
+        ),
+      )
+      .add(
+        HttpApiEndpoint.post("documentsRebuild", IndexingPaths.documentsRebuild, {
+          query: WorkspaceRoutingQuery,
+          success: described(IndexingStatusInfo, "Indexing status"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "indexing.documents.rebuild",
+            summary: "Rebuild document index",
+            description: "Trigger a rebuild of the configured workspace document RAG index.",
           }),
         ),
       )

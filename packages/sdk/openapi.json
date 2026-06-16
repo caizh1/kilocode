@@ -10998,6 +10998,50 @@
         ]
       }
     },
+    "/indexing/documents/rebuild": {
+      "post": {
+        "tags": ["indexing"],
+        "operationId": "indexing.documents.rebuild",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Indexing status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingStatus"
+                }
+              }
+            }
+          }
+        },
+        "description": "Trigger a rebuild of the configured workspace document RAG index.",
+        "summary": "Rebuild document index",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\n\nconst client = createKiloClient()\nawait client.indexing.documents.rebuild({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/kilo/profile": {
       "get": {
         "tags": ["kilo"],
@@ -14850,9 +14894,72 @@
                   "skippedCount"
                 ],
                 "additionalProperties": false
+              },
+              "documents": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "$ref": "#/components/schemas/IndexingStatusState"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "processedFiles": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "totalFiles": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "percent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "lastFullScanAt": {
+                    "type": "string"
+                  },
+                  "errorCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "staleCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "skippedCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "validFileCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "recentErrors": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/IndexingDiagnostic"
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "message",
+                  "processedFiles",
+                  "totalFiles",
+                  "percent",
+                  "errorCount",
+                  "staleCount",
+                  "skippedCount"
+                ],
+                "additionalProperties": false
               }
             },
-            "required": ["codeGraph", "rag"],
+            "required": ["codeGraph", "rag", "documents"],
             "additionalProperties": false
           },
           "notices": {
@@ -17384,6 +17491,49 @@
           "$ref": "#/components/schemas/ReferenceConfigEntry"
         }
       },
+      "DocumentIndexConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "include": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exclude": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "maxFileBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "chunkChars": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "chunkOverlapChars": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "searchMaxResults": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "IndexingConfig": {
         "type": "object",
         "properties": {
@@ -17572,6 +17722,9 @@
           "scannerMaxBatchRetries": {
             "type": "integer",
             "exclusiveMinimum": 0
+          },
+          "documents": {
+            "$ref": "#/components/schemas/DocumentIndexConfig"
           }
         },
         "additionalProperties": false

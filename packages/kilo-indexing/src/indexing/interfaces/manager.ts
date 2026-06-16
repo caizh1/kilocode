@@ -1,6 +1,7 @@
 import type { VectorStoreSearchResult } from "./vector-store"
 import type { CodeGraphEvidenceQueryOptions, QueryEvidenceResult } from "../analysis"
 import type { CodeGraphSidecarStatus } from "../codegraph"
+import type { DocumentSearchOptions, DocumentSearchResult } from "../documents"
 import type { Emitter } from "../runtime"
 import type { IndexingTelemetryEvent } from "./telemetry"
 
@@ -37,7 +38,9 @@ export interface ICodeIndexManager {
   stopWatcher(): void
   clearIndexData(): Promise<void>
   searchIndex(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]>
+  searchDocuments(query: string, options?: DocumentSearchOptions): Promise<DocumentSearchResult[]>
   queryEvidence(query: string, options?: CodeGraphEvidenceQueryOptions): Promise<QueryEvidenceResult>
+  rebuildDocuments(): Promise<void>
   getCodeGraphStatus(): CodeGraphSidecarStatus
   getCurrentStatus(): {
     systemStatus: IndexingState

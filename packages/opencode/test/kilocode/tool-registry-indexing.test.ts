@@ -40,6 +40,7 @@ describe("kilocode tool registry indexing", () => {
 
             expect(ids).not.toContain("codebase_analysis")
             expect(ids).not.toContain("semantic_search")
+            expect(ids).not.toContain("document_search")
             expect(ids).toContain("question")
             expect(ids).toContain("read")
             expect(ids).toContain("suggest")
@@ -68,6 +69,7 @@ describe("kilocode tool registry indexing", () => {
 
             expect(ids).not.toContain("codebase_analysis")
             expect(ids).not.toContain("semantic_search")
+            expect(ids).not.toContain("document_search")
             expect(ids).toContain("question")
             expect(ids).toContain("read")
             expect(ids).toContain("suggest")
@@ -96,6 +98,7 @@ describe("kilocode tool registry indexing", () => {
 
             expect(ids).not.toContain("codebase_analysis")
             expect(ids).not.toContain("semantic_search")
+            expect(ids).not.toContain("document_search")
             expect(ids).toContain("question")
             expect(ids).toContain("read")
             expect(ids).toContain("suggest")
@@ -115,6 +118,8 @@ describe("kilocode tool registry indexing", () => {
       () =>
         Effect.gen(function* () {
           const ready = spyOn(KiloIndexing, "ready").mockReturnValue(true)
+          const analysisReady = spyOn(KiloIndexing, "analysisReady").mockReturnValue(true)
+          const documentReady = spyOn(KiloIndexing, "documentReady").mockReturnValue(true)
 
           try {
             const registry = yield* ToolRegistry.Service
@@ -122,8 +127,11 @@ describe("kilocode tool registry indexing", () => {
 
             expect(ids).toContain("codebase_analysis")
             expect(ids).toContain("semantic_search")
+            expect(ids).toContain("document_search")
           } finally {
             ready.mockRestore()
+            analysisReady.mockRestore()
+            documentReady.mockRestore()
           }
         }),
       { git: true },
@@ -146,8 +154,10 @@ describe("kilocode tool registry indexing", () => {
 
             expect(glob).not.toContain("codebase_analysis")
             expect(glob).not.toContain("semantic_search")
+            expect(glob).not.toContain("document_search")
             expect(grep).not.toContain("codebase_analysis")
             expect(grep).not.toContain("semantic_search")
+            expect(grep).not.toContain("document_search")
           } finally {
             ready.mockRestore()
           }
@@ -161,6 +171,8 @@ describe("kilocode tool registry indexing", () => {
       () =>
         Effect.gen(function* () {
           const ready = spyOn(KiloIndexing, "ready").mockReturnValue(true)
+          const analysisReady = spyOn(KiloIndexing, "analysisReady").mockReturnValue(true)
+          const documentReady = spyOn(KiloIndexing, "documentReady").mockReturnValue(true)
 
           try {
             const agent = yield* Agent.Service
@@ -173,12 +185,17 @@ describe("kilocode tool registry indexing", () => {
 
             expect(ids).toContain("codebase_analysis")
             expect(ids).toContain("semantic_search")
+            expect(ids).toContain("document_search")
             expect(glob).toContain("codebase_analysis")
             expect(glob).toContain("semantic_search")
+            expect(glob).toContain("document_search")
             expect(grep).toContain("codebase_analysis")
             expect(grep).toContain("semantic_search")
+            expect(grep).toContain("document_search")
           } finally {
             ready.mockRestore()
+            analysisReady.mockRestore()
+            documentReady.mockRestore()
           }
         }),
       { git: true },
@@ -197,6 +214,7 @@ describe("kilocode tool registry indexing", () => {
       codebase: def("codebase_search"),
       analysis: def("codebase_analysis"),
       semantic: def("semantic_search"),
+      document: def("document_search"),
       recall: def("recall"),
       manager: def("agent_manager"),
       process: def("background_process"),
@@ -207,19 +225,29 @@ describe("kilocode tool registry indexing", () => {
       expect(KiloToolRegistry.extra(tools, {}).map((tool) => tool.id)).toEqual([
         "codebase_analysis",
         "semantic_search",
+        "document_search",
         "recall",
         "background_process",
       ])
       expect(KiloToolRegistry.extra(tools, { experimental: { codebase_search: true } }).map((tool) => tool.id)).toEqual(
-        ["codebase_search", "codebase_analysis", "semantic_search", "recall", "background_process"],
+        ["codebase_search", "codebase_analysis", "semantic_search", "document_search", "recall", "background_process"],
       )
 
       process.env["KILO_CLIENT"] = "vscode"
       expect(KiloToolRegistry.extra(tools, { experimental: { codebase_search: true } }).map((tool) => tool.id)).toEqual(
-        ["codebase_search", "codebase_analysis", "semantic_search", "recall", "background_process", "agent_manager"],
+        [
+          "codebase_search",
+          "codebase_analysis",
+          "semantic_search",
+          "document_search",
+          "recall",
+          "background_process",
+          "agent_manager",
+        ],
       )
       expect(KiloToolRegistry.extra({ ...tools, semantic: undefined }, {}).map((tool) => tool.id)).toEqual([
         "codebase_analysis",
+        "document_search",
         "recall",
         "background_process",
         "agent_manager",
@@ -229,6 +257,7 @@ describe("kilocode tool registry indexing", () => {
       expect(KiloToolRegistry.extra(tools, {}).map((tool) => tool.id)).toEqual([
         "codebase_analysis",
         "semantic_search",
+        "document_search",
         "recall",
       ])
     } finally {

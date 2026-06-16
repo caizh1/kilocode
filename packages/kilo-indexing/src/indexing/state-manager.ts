@@ -2,7 +2,7 @@ import { Emitter } from "./runtime"
 import type { IndexingNotice } from "./interfaces/manager"
 
 export type IndexingState = "Standby" | "Indexing" | "Indexed" | "Error"
-export type IndexingActivePipeline = "codeGraph" | "rag"
+export type IndexingActivePipeline = "codeGraph" | "rag" | "documents"
 
 export type IndexingPipelineProgress = {
   state: IndexingState
@@ -93,6 +93,10 @@ export class CodeIndexStateManager {
   public setActivePipeline(pipeline?: IndexingActivePipeline): void {
     if (pipeline === this._activePipeline) return
     this._activePipeline = pipeline
+    this._progressEmitter.fire(this.getCurrentStatus())
+  }
+
+  public notify(): void {
     this._progressEmitter.fire(this.getCurrentStatus())
   }
 

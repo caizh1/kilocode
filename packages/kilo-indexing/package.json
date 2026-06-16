@@ -45,12 +45,14 @@
     "hono": "catalog:",
     "hono-openapi": "catalog:",
     "ignore": "7.0.5",
+    "mammoth": "1.12.0",
     "minimatch": "10.2.5",
     "openai": "6.27.0",
     "p-limit": "7.3.0",
     "tree-sitter-wasms": "0.1.13",
     "uuid": "14.0.0",
     "web-tree-sitter": "0.25.10",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "catalog:"
   },
   "devDependencies": {

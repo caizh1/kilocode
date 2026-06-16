@@ -1,5 +1,6 @@
 import type {
   CodeGraphSidecarStatus,
+  DocumentSearchResult,
   IndexingConfigInput,
   IndexingTelemetryEvent,
   QueryEvidenceResult,
@@ -7,7 +8,7 @@ import type {
 } from "@kilocode/kilo-indexing/engine"
 import type { IndexingStatus } from "@kilocode/kilo-indexing/status"
 import { withTimeout } from "@/util/timeout"
-import type { Message, QueryEvidenceInput, Request, Result } from "./indexing-worker-protocol"
+import type { DocumentSearchInput, Message, QueryEvidenceInput, Request, Result } from "./indexing-worker-protocol"
 
 declare global {
   const KILO_INDEXING_WORKER_PATH: string
@@ -24,6 +25,8 @@ export namespace IndexingWorker {
     init(input: IndexingConfigInput): Promise<IndexingStatus>
     updateConfig(input: IndexingConfigInput): Promise<IndexingStatus>
     search(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]>
+    documentSearch(query: string, options?: Omit<DocumentSearchInput, "query">): Promise<DocumentSearchResult[]>
+    rebuildDocuments(): Promise<IndexingStatus>
     queryEvidence(query: string, options?: Omit<QueryEvidenceInput, "query">): Promise<QueryEvidenceResult>
     codeGraphStatus(): Promise<CodeGraphSidecarStatus>
     dispose(): Promise<void>
@@ -125,6 +128,25 @@ export namespace IndexingWorker {
         return call(request, (message) => {
           if (message.ok && message.method === "search") return message.value
           throw new Error("Unexpected indexing worker search response.")
+        })
+      },
+      documentSearch(query, options = {}) {
+        const request: Request = {
+          type: "request",
+          id: id++,
+          method: "documentSearch",
+          input: { query, ...options },
+        }
+        return call(request, (message) => {
+          if (message.ok && message.method === "documentSearch") return message.value
+          throw new Error("Unexpected indexing worker documentSearch response.")
+        })
+      },
+      rebuildDocuments() {
+        const request: Request = { type: "request", id: id++, method: "rebuildDocuments", input: undefined }
+        return call(request, (message) => {
+          if (message.ok && message.method === "rebuildDocuments") return message.value
+          throw new Error("Unexpected indexing worker rebuildDocuments response.")
         })
       },
       queryEvidence(query, options = {}) {

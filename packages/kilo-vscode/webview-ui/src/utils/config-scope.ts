@@ -4,7 +4,7 @@ import type { Config } from "../types/messages"
 // global one. Settings that are inherently per-repository (e.g. commit message
 // conventions) belong here so they don't leak across workspaces.
 const PROJECT_SCOPED_KEYS: ReadonlySet<string> = new Set(["commit_message"])
-const PROJECT_INDEXING_KEYS: ReadonlySet<string> = new Set(["enabled"])
+const PROJECT_INDEXING_KEYS: ReadonlySet<string> = new Set(["enabled", "documents"])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)

@@ -11,6 +11,12 @@ export const indexingHandlers = HttpApiBuilder.group(InstanceHttpApi, "indexing"
       return current
     })
 
-    return handlers.handle("status", status)
+    const documentsRebuild = Effect.fn("IndexingHttpApi.documentsRebuild")(function* () {
+      const mod = yield* Effect.promise(() => import("@/kilocode/indexing"))
+      const current = yield* EffectBridge.fromPromise(() => mod.KiloIndexing.rebuildDocuments())
+      return current
+    })
+
+    return handlers.handle("status", status).handle("documentsRebuild", documentsRebuild)
   }),
 )

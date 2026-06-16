@@ -22,6 +22,7 @@ import { useKiloEmbeddingModels } from "../../context/kilo-embedding-models"
 import { useLanguage } from "../../context/language"
 import { useProvider } from "../../context/provider"
 import { useServer } from "../../context/server"
+import { useVSCode } from "../../context/vscode"
 import type { IndexingConfig, IndexingPipelineStatus, IndexingProvider as ProviderId } from "../../types/messages"
 import { KILO_PROVIDER_ID } from "../../../../src/shared/provider-model"
 import { INTERNAL_OFFLINE_INDEXING_DEFAULTS, isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
@@ -30,6 +31,7 @@ import SettingsRow from "./SettingsRow"
 
 type Option = { value: string; label: string }
 type TuningKey = "searchMinScore" | "searchMaxResults" | "embeddingBatchSize" | "scannerMaxBatchRetries"
+type DocumentNumberKey = "maxFileBytes" | "chunkChars" | "chunkOverlapChars" | "searchMaxResults"
 
 const allProviders: { value: ProviderId; label: string }[] = [
   { value: "kilo", label: "Kilo" },
@@ -156,15 +158,24 @@ const IndexingTab: Component = () => {
   const language = useLanguage()
   const provider = useProvider()
   const server = useServer()
+  const vscode = useVSCode()
   const [providerDrafts, setProviderDrafts] = createSignal<Record<string, string>>({})
   const [storeDrafts, setStoreDrafts] = createSignal<Record<string, string>>({})
   const [tuningDrafts, setTuningDrafts] = createSignal<Record<string, string>>({})
+  const [documentDrafts, setDocumentDrafts] = createSignal<Record<string, string>>({})
   const [copied, setCopied] = createSignal<string>()
   let timer: ReturnType<typeof setTimeout> | undefined
 
   onCleanup(() => {
     if (timer) clearTimeout(timer)
   })
+
+  onCleanup(
+    vscode.onMessage((message) => {
+      if (message.type !== "documentRagFoldersSelected") return
+      addDocumentPaths(message.paths)
+    }),
+  )
 
   const rawCfg = createMemo<IndexingConfig>(() => config().indexing ?? {})
   const rawGlobalCfg = createMemo<IndexingConfig>(() => globalConfig().indexing ?? {})
@@ -174,6 +185,10 @@ const IndexingTab: Component = () => {
 
   const updateIndexing = (partial: IndexingConfig) => {
     updateConfig({ indexing: { ...rawCfg(), ...partial } })
+  }
+
+  const updateDocuments = (partial: NonNullable<IndexingConfig["documents"]>) => {
+    updateIndexing({ documents: { ...(rawCfg().documents ?? {}), ...partial } })
   }
 
   const copyDiagnostics = (label: string, status: IndexingPipelineStatus) => {
@@ -190,6 +205,8 @@ const IndexingTab: Component = () => {
   }
 
   const vectorStore = () => cfg().vectorStore ?? "lancedb"
+  const documents = () => cfg().documents ?? {}
+  const documentPaths = () => documents().paths ?? []
   const kiloDefault = () =>
     getKiloEmbeddingModel(embeds.catalog().defaultModel, embeds.catalog())?.id ?? embeds.catalog().defaultModel
   const kiloModels = createMemo(() =>
@@ -327,6 +344,47 @@ const IndexingTab: Component = () => {
     return value === undefined ? "" : String(value)
   }
 
+  const documentValue = (key: DocumentNumberKey) => {
+    const draft = documentDrafts()[key]
+    if (draft !== undefined) return draft
+    const value = documents()[key]
+    return value === undefined ? "" : String(value)
+  }
+
+  const saveDocumentNumber = (key: DocumentNumberKey, value: string, min = 0) => {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      updateDocuments({ [key]: undefined })
+      return
+    }
+    const num = Math.floor(Number(trimmed))
+    if (!Number.isFinite(num) || num < min) return
+    updateDocuments({ [key]: num })
+  }
+
+  const saveDocumentPatterns = (key: "include" | "exclude", value: string) => {
+    const patterns = value
+      .split(/[,\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+    updateDocuments({ [key]: patterns.length > 0 ? patterns : undefined })
+  }
+
+  const addDocumentPaths = (paths: string[]) => {
+    const next = [...new Set([...documentPaths(), ...paths])]
+    updateDocuments({ paths: next })
+  }
+
+  const setDocumentPath = (index: number, value: string) => {
+    const next = documentPaths().slice()
+    next[index] = value.trim()
+    updateDocuments({ paths: next.filter(Boolean) })
+  }
+
+  const removeDocumentPath = (index: number) => {
+    updateDocuments({ paths: documentPaths().filter((_, item) => item !== index) })
+  }
+
   return (
     <div style={{ display: "flex", "flex-direction": "column", gap: "16px" }}>
       <Card>
@@ -341,6 +399,9 @@ const IndexingTab: Component = () => {
         <SettingsRow title="RAG" description={indexingPipelineDescription(indexing.pipelines().rag)}>
           <PipelineBadge label="RAG" status={indexing.pipelines().rag} />
         </SettingsRow>
+        <SettingsRow title="Documents" description={indexingPipelineDescription(indexing.pipelines().documents)}>
+          <PipelineBadge label="DOC" status={indexing.pipelines().documents} />
+        </SettingsRow>
         <PipelineDiagnostics
           label="Code Graph"
           status={indexing.pipelines().codeGraph}
@@ -351,6 +412,12 @@ const IndexingTab: Component = () => {
           label="RAG"
           status={indexing.pipelines().rag}
           copied={copied() === "RAG"}
+          onCopy={copyDiagnostics}
+        />
+        <PipelineDiagnostics
+          label="Documents"
+          status={indexing.pipelines().documents}
+          copied={copied() === "Documents"}
           onCopy={copyDiagnostics}
         />
         <SettingsRow
@@ -566,6 +633,130 @@ const IndexingTab: Component = () => {
             </SettingsRow>
           </>
         </Show>
+      </Card>
+
+      <Card>
+        <SettingsRow
+          title="Documents"
+          description="Index configured workspace document folders into a separate RAG store."
+        >
+          <Switch checked={documents().enabled === true} onChange={(enabled) => updateDocuments({ enabled })} hideLabel>
+            Documents
+          </Switch>
+        </SettingsRow>
+        <SettingsRow title="Document Folders" description="Workspace-relative folders scanned for document RAG.">
+          <div style={{ display: "flex", "flex-direction": "column", gap: "8px", width: "min(360px, 100%)" }}>
+            <For
+              each={documentPaths()}
+              fallback={
+                <span style={{ color: "var(--vscode-descriptionForeground)", "font-size": "var(--kilo-font-size-12)" }}>
+                  No folders
+                </span>
+              }
+            >
+              {(item, index) => (
+                <div style={{ display: "flex", "align-items": "center", gap: "8px", "min-width": 0 }}>
+                  <TextField value={item} placeholder="docs" onChange={(value) => setDocumentPath(index(), value)} />
+                  <Button variant="ghost" size="small" icon="trash" onClick={() => removeDocumentPath(index())}>
+                    Remove
+                  </Button>
+                </div>
+              )}
+            </For>
+            <div style={{ display: "flex", "align-items": "center", gap: "8px", "justify-content": "flex-end" }}>
+              <Button
+                variant="secondary"
+                size="small"
+                icon="folder"
+                onClick={() => vscode.postMessage({ type: "selectDocumentRagFolder" })}
+              >
+                Add Folder
+              </Button>
+              <Button
+                variant="secondary"
+                size="small"
+                icon="reset"
+                onClick={() => vscode.postMessage({ type: "rebuildDocumentRag" })}
+              >
+                Rebuild
+              </Button>
+            </div>
+          </div>
+        </SettingsRow>
+        <SettingsRow title="Include" description="Optional comma-separated glob patterns for document files.">
+          <TextField
+            value={(documents().include ?? []).join(", ")}
+            placeholder="**/*.pdf, docs/**/*.md"
+            onChange={(value) => saveDocumentPatterns("include", value)}
+          />
+        </SettingsRow>
+        <SettingsRow title="Exclude" description="Optional comma-separated glob patterns skipped by document RAG.">
+          <TextField
+            value={(documents().exclude ?? []).join(", ")}
+            placeholder="**/archive/**"
+            onChange={(value) => saveDocumentPatterns("exclude", value)}
+          />
+        </SettingsRow>
+        <SettingsRow title="Max File Bytes" description="Documents larger than this are skipped.">
+          <TextField
+            value={documentValue("maxFileBytes")}
+            placeholder="52428800"
+            onInput={(e: InputEvent) => {
+              const target = e.currentTarget as HTMLInputElement
+              setDocumentDrafts((prev) => ({ ...prev, maxFileBytes: target.value }))
+            }}
+            onBlur={(e: FocusEvent) => {
+              const target = e.currentTarget as HTMLInputElement
+              saveDocumentNumber("maxFileBytes", target.value, 1)
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow title="Chunk Chars" description="Approximate character budget for each document chunk.">
+          <TextField
+            value={documentValue("chunkChars")}
+            placeholder="1200"
+            onInput={(e: InputEvent) => {
+              const target = e.currentTarget as HTMLInputElement
+              setDocumentDrafts((prev) => ({ ...prev, chunkChars: target.value }))
+            }}
+            onBlur={(e: FocusEvent) => {
+              const target = e.currentTarget as HTMLInputElement
+              saveDocumentNumber("chunkChars", target.value, 1)
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow title="Chunk Overlap Chars" description="Character overlap between adjacent document chunks.">
+          <TextField
+            value={documentValue("chunkOverlapChars")}
+            placeholder="200"
+            onInput={(e: InputEvent) => {
+              const target = e.currentTarget as HTMLInputElement
+              setDocumentDrafts((prev) => ({ ...prev, chunkOverlapChars: target.value }))
+            }}
+            onBlur={(e: FocusEvent) => {
+              const target = e.currentTarget as HTMLInputElement
+              saveDocumentNumber("chunkOverlapChars", target.value, 0)
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="Search Max Results"
+          description="Default number of snippets returned by document_search."
+          last
+        >
+          <TextField
+            value={documentValue("searchMaxResults")}
+            placeholder="8"
+            onInput={(e: InputEvent) => {
+              const target = e.currentTarget as HTMLInputElement
+              setDocumentDrafts((prev) => ({ ...prev, searchMaxResults: target.value }))
+            }}
+            onBlur={(e: FocusEvent) => {
+              const target = e.currentTarget as HTMLInputElement
+              saveDocumentNumber("searchMaxResults", target.value, 1)
+            }}
+          />
+        </SettingsRow>
       </Card>
 
       <Card>

@@ -919,6 +919,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             console.error("[Kilo New] fetchAndSendIndexingStatus failed:", e),
           )
           break
+        case "selectDocumentRagFolder":
+          this.selectDocumentRagFolder().catch((e) => console.error("[Kilo New] selectDocumentRagFolder failed:", e))
+          break
+        case "rebuildDocumentRag":
+          this.rebuildDocumentRag().catch((e) => console.error("[Kilo New] rebuildDocumentRag failed:", e))
+          break
         case "requestKiloEmbeddingModels":
           this.fetchAndSendKiloEmbeddingModels().catch((e) =>
             console.error("[Kilo New] fetchAndSendKiloEmbeddingModels failed:", e),
@@ -2080,6 +2086,66 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       this.postMessage(message)
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Failed to fetch indexing status:", error)
+    }
+  }
+
+  private async selectDocumentRagFolder(): Promise<void> {
+    const root = this.getWorkspaceDirectory(this.currentSession?.id)
+    if (!root) {
+      void vscode.window.showWarningMessage("Open a workspace folder before adding Document RAG folders.")
+      return
+    }
+
+    const picks = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: true,
+      defaultUri: vscode.Uri.file(root),
+      openLabel: "Add Folder",
+    })
+    if (!picks || picks.length === 0) return
+
+    const paths = picks.flatMap((uri) => {
+      const rel = path.relative(root, uri.fsPath)
+      if (!rel || rel === ".") return ["."]
+      if (path.isAbsolute(rel) || rel === ".." || rel.startsWith(`..${path.sep}`)) return []
+      return [rel.replaceAll(path.sep, "/")]
+    })
+    if (paths.length !== picks.length) {
+      void vscode.window.showWarningMessage("Document RAG folders must be inside the current workspace.")
+    }
+    if (paths.length > 0) this.postMessage({ type: "documentRagFoldersSelected", paths })
+  }
+
+  private async rebuildDocumentRag(): Promise<void> {
+    const config = this.connectionService.getServerConfig()
+    if (!config) {
+      this.postMessage({ type: "error", message: "Not connected to CLI backend" })
+      return
+    }
+
+    try {
+      const dir = this.getWorkspaceDirectory(this.currentSession?.id)
+      const auth = Buffer.from(`kilo:${config.password}`).toString("base64")
+      const res = await fetch(`${config.baseUrl}/indexing/documents/rebuild`, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${auth}`,
+          ...(dir ? { "x-kilo-directory": dir } : {}),
+        },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const status = (await res.json()) as IndexingStatus
+      this.recordIndexingStatus(status)
+      const message = {
+        type: "indexingStatusLoaded",
+        status,
+      }
+      this.cachedIndexingStatusMessage = message
+      this.postMessage(message)
+    } catch (error) {
+      console.error("[Kilo New] KiloProvider: Failed to rebuild document index:", error)
+      this.postMessage({ type: "error", message: getErrorMessage(error) || "Failed to rebuild document index" })
     }
   }
 

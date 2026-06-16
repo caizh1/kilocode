@@ -225,6 +225,20 @@ export type IndexingStatus = {
       validFileCount?: number
       recentErrors?: Array<IndexingDiagnostic>
     }
+    documents: {
+      state: IndexingStatusState
+      message: string
+      processedFiles: number
+      totalFiles: number
+      percent: number
+      detail?: string
+      lastFullScanAt?: string
+      errorCount: number
+      staleCount: number
+      skippedCount: number
+      validFileCount?: number
+      recentErrors?: Array<IndexingDiagnostic>
+    }
   }
   notices?: Array<IndexingNotice>
 }
@@ -1085,6 +1099,17 @@ export type ReferenceConfig = {
   [key: string]: ReferenceConfigEntry
 }
 
+export type DocumentIndexConfig = {
+  enabled?: boolean
+  paths?: Array<string>
+  include?: Array<string>
+  exclude?: Array<string>
+  maxFileBytes?: number
+  chunkChars?: number
+  chunkOverlapChars?: number
+  searchMaxResults?: number
+}
+
 export type IndexingConfig = {
   enabled?: boolean
   provider?:
@@ -1147,6 +1172,7 @@ export type IndexingConfig = {
   searchMaxResults?: number
   embeddingBatchSize?: number
   scannerMaxBatchRetries?: number
+  documents?: DocumentIndexConfig
 }
 
 export type PermissionActionConfig = "ask" | "allow" | "deny"
@@ -8310,6 +8336,26 @@ export type IndexingStatusResponses = {
 }
 
 export type IndexingStatusResponse = IndexingStatusResponses[keyof IndexingStatusResponses]
+
+export type IndexingDocumentsRebuildData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/indexing/documents/rebuild"
+}
+
+export type IndexingDocumentsRebuildResponses = {
+  /**
+   * Indexing status
+   */
+  200: IndexingStatus
+}
+
+export type IndexingDocumentsRebuildResponse =
+  IndexingDocumentsRebuildResponses[keyof IndexingDocumentsRebuildResponses]
 
 export type KiloProfileData = {
   body?: never

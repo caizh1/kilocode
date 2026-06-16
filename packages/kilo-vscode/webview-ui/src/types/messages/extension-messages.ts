@@ -298,6 +298,11 @@ export interface IndexingStatusLoadedMessage {
   status: IndexingStatus
 }
 
+export interface DocumentRagFoldersSelectedMessage {
+  type: "documentRagFoldersSelected"
+  paths: string[]
+}
+
 export interface KiloEmbeddingModelsLoadedMessage {
   type: "kiloEmbeddingModelsLoaded"
   catalog: KiloEmbeddingModelCatalog
@@ -960,6 +965,7 @@ export type ExtensionMessage =
   | DeviceAuthCancelledMessage
   | NavigateMessage
   | IndexingStatusLoadedMessage
+  | DocumentRagFoldersSelectedMessage
   | KiloEmbeddingModelsLoadedMessage
   | ProvidersLoadedMessage
   | AgentsLoadedMessage

@@ -1,5 +1,5 @@
 import type { EmbedderProvider } from "./interfaces/manager"
-import type { CodeIndexConfig, PreviousConfigSnapshot } from "./interfaces/config"
+import type { CodeIndexConfig, DocumentIndexConfig, PreviousConfigSnapshot } from "./interfaces/config"
 import { DEFAULT_SEARCH_MIN_SCORE, DEFAULT_MAX_SEARCH_RESULTS } from "./constants"
 import { getDefaultModelId, getModelDimension, getModelScoreThreshold } from "./model-registry"
 import { isEmbeddingProfileEqual, resolveEmbeddingProfile } from "./embedding-profile"
@@ -37,7 +37,13 @@ export interface IndexingConfigInput {
   openRouterApiKey?: string
   openRouterSpecificProvider?: string
   voyageApiKey?: string
+  documents?: DocumentIndexConfig
 }
+
+const DEFAULT_DOCUMENT_MAX_FILE_BYTES = 50 * 1024 * 1024
+const DEFAULT_DOCUMENT_CHUNK_CHARS = 1200
+const DEFAULT_DOCUMENT_CHUNK_OVERLAP_CHARS = 200
+const DEFAULT_DOCUMENT_SEARCH_MAX_RESULTS = 8
 
 /**
  * Manages configuration state and validation for the code indexing feature.
@@ -70,6 +76,16 @@ export class CodeIndexConfigManager {
   private searchMaxResults?: number
   private embeddingBatchSize?: number
   private scannerMaxBatchRetries?: number
+  private documents: Required<DocumentIndexConfig> = {
+    enabled: false,
+    paths: [],
+    include: [],
+    exclude: [],
+    maxFileBytes: DEFAULT_DOCUMENT_MAX_FILE_BYTES,
+    chunkChars: DEFAULT_DOCUMENT_CHUNK_CHARS,
+    chunkOverlapChars: DEFAULT_DOCUMENT_CHUNK_OVERLAP_CHARS,
+    searchMaxResults: DEFAULT_DOCUMENT_SEARCH_MAX_RESULTS,
+  }
 
   constructor(input: IndexingConfigInput) {
     this.applyInput(input)
@@ -96,6 +112,7 @@ export class CodeIndexConfigManager {
     this.searchMaxResults = input.searchMaxResults
     this.embeddingBatchSize = input.embeddingBatchSize
     this.scannerMaxBatchRetries = input.scannerMaxBatchRetries
+    this.documents = this.normalizeDocuments(input.documents)
     this.modelId = input.modelId
 
     // Validate and set model dimension
@@ -154,6 +171,7 @@ export class CodeIndexConfigManager {
       voyageApiKey: this.voyageOptions?.apiKey ?? "",
       qdrantUrl: this.qdrantUrl ?? "",
       qdrantApiKey: this.qdrantApiKey ?? "",
+      documents: this.documents,
     }
   }
 
@@ -278,6 +296,22 @@ export class CodeIndexConfigManager {
       searchMaxResults: this.currentSearchMaxResults,
       embeddingBatchSize: this.currentEmbeddingBatchSize,
       scannerMaxBatchRetries: this.currentScannerMaxBatchRetries,
+      documents: this.currentDocuments,
+    }
+  }
+
+  private normalizeDocuments(input?: DocumentIndexConfig): Required<DocumentIndexConfig> {
+    const chunkChars = positive(input?.chunkChars, DEFAULT_DOCUMENT_CHUNK_CHARS)
+    const overlap = nonnegative(input?.chunkOverlapChars, DEFAULT_DOCUMENT_CHUNK_OVERLAP_CHARS)
+    return {
+      enabled: input?.enabled === true,
+      paths: cleanList(input?.paths),
+      include: cleanList(input?.include),
+      exclude: cleanList(input?.exclude),
+      maxFileBytes: positive(input?.maxFileBytes, DEFAULT_DOCUMENT_MAX_FILE_BYTES),
+      chunkChars,
+      chunkOverlapChars: Math.min(overlap, Math.max(0, chunkChars - 1)),
+      searchMaxResults: positive(input?.searchMaxResults, DEFAULT_DOCUMENT_SEARCH_MAX_RESULTS),
     }
   }
 
@@ -324,4 +358,33 @@ export class CodeIndexConfigManager {
   public get currentScannerMaxBatchRetries(): number | undefined {
     return this.scannerMaxBatchRetries
   }
+
+  public get currentDocuments(): Required<DocumentIndexConfig> {
+    return {
+      enabled: this.documents.enabled,
+      paths: this.documents.paths.slice(),
+      include: this.documents.include.slice(),
+      exclude: this.documents.exclude.slice(),
+      maxFileBytes: this.documents.maxFileBytes,
+      chunkChars: this.documents.chunkChars,
+      chunkOverlapChars: this.documents.chunkOverlapChars,
+      searchMaxResults: this.documents.searchMaxResults,
+    }
+  }
+}
+
+function cleanList(input?: string[]): string[] {
+  return [...new Set((input ?? []).map((item) => item.trim()).filter(Boolean))]
+}
+
+function positive(input: number | undefined, fallback: number): number {
+  if (input === undefined) return fallback
+  const value = Math.floor(Number(input))
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function nonnegative(input: number | undefined, fallback: number): number {
+  if (input === undefined) return fallback
+  const value = Math.floor(Number(input))
+  return Number.isFinite(value) && value >= 0 ? value : fallback
 }

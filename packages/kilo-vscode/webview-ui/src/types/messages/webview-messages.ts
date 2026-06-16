@@ -412,6 +412,14 @@ export interface RequestIndexingStatusMessage {
   type: "requestIndexingStatus"
 }
 
+export interface SelectDocumentRagFolderMessage {
+  type: "selectDocumentRagFolder"
+}
+
+export interface RebuildDocumentRagMessage {
+  type: "rebuildDocumentRag"
+}
+
 export interface RequestKiloEmbeddingModelsMessage {
   type: "requestKiloEmbeddingModels"
 }
@@ -1130,6 +1138,8 @@ export type WebviewMessage =
   | RequestConfigMessage
   | RequestGlobalConfigMessage
   | RequestIndexingStatusMessage
+  | SelectDocumentRagFolderMessage
+  | RebuildDocumentRagMessage
   | RequestKiloEmbeddingModelsMessage
   | UpdateConfigMessage
   | OpenSettingsTabRequest

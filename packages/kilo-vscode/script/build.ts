@@ -6,6 +6,7 @@ import { copyCodeGraphParserWorker, copyTreeSitterResources } from "../src/servi
 import { ensureFfmpegForTarget } from "./ffmpeg-helper"
 import { ensureRipgrepForTarget } from "./ripgrep-helper"
 import { copyLanceDBRuntime } from "./lancedb-helper"
+import { ensurePopplerForTarget } from "./poppler-helper"
 
 type Target = {
   target: string
@@ -137,6 +138,8 @@ for (const config of targets) {
   if (config.internal) {
     console.log("Adding bundled LanceDB runtime...")
     await copyLanceDBRuntime(binDir)
+    console.log("Adding bundled Poppler pdftotext helper...")
+    await ensurePopplerForTarget(config.vsceTarget ?? config.target, binDir)
   }
 
   console.log(`  📦 Packaging .vsix for ${config.target}${prerelease ? " (pre-release)" : ""}...`)
@@ -172,6 +175,7 @@ async function verifyInternalVsix(vsix: string): Promise<void> {
   const required = [
     "extension/bin/kilo.exe",
     "extension/bin/rg.exe",
+    "extension/bin/poppler/pdftotext.exe",
     "extension/bin/models-snapshot.json",
     "extension/bin/codegraph-parser-worker.mjs",
     "extension/bin/tree-sitter/tree-sitter.wasm",
@@ -190,6 +194,12 @@ async function verifyInternalVsix(vsix: string): Promise<void> {
   ]
   for (const file of required) {
     if (!files.includes(file)) throw new Error(`Internal VSIX missing required file: ${file}`)
+  }
+  if (!files.some((file) => file.startsWith("extension/bin/poppler/") && file.toLowerCase().endsWith(".dll"))) {
+    throw new Error("Internal VSIX missing bundled Poppler DLL dependencies.")
+  }
+  if (!files.some((file) => file.startsWith("extension/bin/poppler/share/poppler/"))) {
+    throw new Error("Internal VSIX missing bundled Poppler data files.")
   }
   const forbidden = files.filter((file) => file === "extension/bin/ffmpeg.exe" || file.endsWith(".map"))
   if (forbidden.length > 0) {

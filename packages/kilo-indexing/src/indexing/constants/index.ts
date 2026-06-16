@@ -32,6 +32,7 @@ export const DEFAULT_MAX_SEARCH_RESULTS = CODEBASE_INDEX_DEFAULTS.DEFAULT_SEARCH
 
 /**File Watcher */
 export const QDRANT_CODE_BLOCK_NAMESPACE = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+export const DOCUMENT_CHUNK_NAMESPACE = "04a967d5-dfd7-4e82-a3a5-1b8f0f2df7b4"
 export const MAX_FILE_SIZE_BYTES = 1 * 1024 * 1024 // 1MB
 
 /**Directory Scanner */

@@ -86,6 +86,16 @@ export interface IndexingConfig {
   searchMaxResults?: number
   embeddingBatchSize?: number
   scannerMaxBatchRetries?: number
+  documents?: {
+    enabled?: boolean
+    paths?: string[]
+    include?: string[]
+    exclude?: string[]
+    maxFileBytes?: number
+    chunkChars?: number
+    chunkOverlapChars?: number
+    searchMaxResults?: number
+  }
 }
 
 export type KiloEmbeddingModel = {
