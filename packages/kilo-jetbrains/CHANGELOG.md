@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.4.0
+
+### Minor Changes
+
+- [#11165](https://github.com/Kilo-Org/kilocode/pull/11165) [`bf67155`](https://github.com/Kilo-Org/kilocode/commit/bf6715594bae4a1160abb7cfdfdedaba4b8358ec) - Enhance draft prompts from the JetBrains chat composer using the configured small model.
+
 ## 7.3.42
 
 ### Patch Changes
@@ -25,6 +31,17 @@
 ### Patch Changes
 
 ## [Unreleased]
+
+## [7.0.1-rc.9] - 2026-06-15
+
+### Added
+
+- Add prompt enhancement support.
+- Support prompt and transcript attachments, including paste, drop, preview, and editor tab opening flows.
+
+### Fixed
+
+- Improve shell and markdown rendering, including code block spacing, terminal block retention, shell command highlighting, and session layout polish.
 
 ## [7.0.1-rc.8] - 2026-06-09
 

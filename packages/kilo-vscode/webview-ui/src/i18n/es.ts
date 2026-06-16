@@ -531,6 +531,8 @@ export const dict = {
   "notification.permission.titleSubagent": "Permiso requerido (subagente)",
   "notification.permission.description": "{{sessionTitle}} en {{projectName}} necesita permiso",
   "ui.permission.manageAutoApprove": "Gestionar reglas de aprobación automática",
+  "ui.permission.doomLoop.prompt": "Se detectó un posible bucle en la herramienta {{tool}}. ¿Continuar ejecutando?",
+  "ui.permission.doomLoop.rule": "Continuar llamadas a {{tool}}",
   "ui.permission.rule.addToAllowed": "Añadir a la lista de permitidos",
   "ui.permission.rule.removeFromAllowed": "Quitar de la lista de permitidos",
   "ui.permission.rule.addToDenied": "Añadir a la lista de denegados",
@@ -877,6 +879,9 @@ export const dict = {
   "settings.providers.subagentModel.title": "Modelo de subagente",
   "settings.providers.subagentModel.description":
     "Modelo predeterminado y esfuerzo de razonamiento para los subagentes de task-tool. Déjelo sin configurar para heredar el modelo del agente invocador.",
+  "settings.models.hidePromptTraining.title": "Ocultar modelos que entrenan con prompts",
+  "settings.models.hidePromptTraining.description":
+    "Oculta los modelos de Kilo Gateway cuyos proveedores pueden usar tus prompts para entrenamiento.",
   "settings.providers.modeModels": "Modelo por modo",
   "settings.providers.custom.note": "Agrega un proveedor compatible con OpenAI mediante URL base.",
   "settings.providers.modeModels.description":
@@ -1058,6 +1063,33 @@ export const dict = {
   "feedback.dialog.github": "Reportar un problema en GitHub",
   "feedback.dialog.discord": "Unirse a nuestra comunidad de Discord",
   "feedback.dialog.support": "Atención al cliente",
+  "workStyle.onboarding.welcome": "Te damos la bienvenida a Kilo",
+  "workStyle.onboarding.title": "Elige cómo quieres trabajar",
+  "workStyle.onboarding.settingsNote": "Puedes cambiar estas opciones en cualquier momento en",
+  "workStyle.onboarding.settings": "Configuración.",
+  "workStyle.onboarding.description":
+    "Esto establece los valores iniciales de permisos, bloques de razonamiento, salida del terminal y cronología de contexto. Solo se aplica una vez y omite los ajustes que ya hayas personalizado.",
+  "workStyle.onboarding.skip": "Omitir por ahora",
+  "workStyle.toast.saved.title": "Modo guardado correctamente",
+  "workStyle.toast.saved.description": "Actualiza tus preferencias cuando quieras en Configuración.",
+  "workStyle.toast.saved.action": "Ir a Configuración",
+  "workStyle.choice.permissions": "Permisos",
+  "workStyle.choice.bash": "Bash",
+  "workStyle.choice.visibility": "Visibilidad",
+  "workStyle.choice.human-in-the-loop.eyebrow": "Supervisión humana",
+  "workStyle.choice.human-in-the-loop.title": "Revisar primero",
+  "workStyle.choice.human-in-the-loop.description": "Kilo se detiene y te muestra su plan mientras trabaja.",
+  "workStyle.choice.human-in-the-loop.permissions": "Pide permiso antes de editar archivos o ejecutar comandos.",
+  "workStyle.choice.human-in-the-loop.bash": "Pide permiso para ejecutar todos los comandos del terminal.",
+  "workStyle.choice.human-in-the-loop.visibility":
+    "Muestra todos los detalles de la conversación, incluido el razonamiento.",
+  "workStyle.choice.autonomous.eyebrow": "Menos interrupciones",
+  "workStyle.choice.autonomous.title": "Alta autonomía",
+  "workStyle.choice.autonomous.description": "Menos interrupciones y una interfaz optimizada.",
+  "workStyle.choice.autonomous.permissions":
+    "Edita archivos y ejecuta comandos en el espacio de trabajo sin preguntar.",
+  "workStyle.choice.autonomous.bash": "Puede ejecutar comandos en el terminal del espacio de trabajo sin aprobación.",
+  "workStyle.choice.autonomous.visibility": "Los detalles permanecen contraídos hasta que los despliegues.",
   "session.cloud.import.title": "Importar desde la nube",
   "session.cloud.import.placeholder": "ID de sesión, URL o comando kilo import",
   "session.cloud.import.button": "Importar",
@@ -1260,6 +1292,10 @@ export const dict = {
   "settings.notifications.errors.title": "Errores",
   "settings.notifications.errors.description": "Mostrar notificación en errores",
   "settings.notifications.sounds": "Sonidos",
+  "settings.notifications.enable.title": "Activar las notificaciones sonoras",
+  "settings.notifications.enable.description":
+    "Reproducir sonidos cuando las sesiones finalicen, se produzca un error o se requiera tu intervención",
+  "settings.notifications.testSound": "Probar",
   "settings.notifications.agentSound.title": "Sonido de finalización del agente",
   "settings.notifications.agentSound.description": "Sonido a reproducir cuando el agente finaliza",
   "settings.notifications.permSound.title": "Sonido de solicitud de permiso",
@@ -1267,6 +1303,9 @@ export const dict = {
   "settings.notifications.errorSound.title": "Sonido de error",
   "settings.notifications.errorSound.description": "Sonido a reproducir en errores",
   "settings.notifications.sound.default": "Predeterminado",
+  "settings.notifications.sound.system": "Sistema",
+  "settings.notifications.sound.description":
+    "La opción predeterminada utiliza sonidos diferentes para la finalización, la intervención y los errores. Las demás opciones utilizan un solo sonido para todos los eventos.",
   "settings.notifications.sound.none": "Ninguno",
   "settings.experimental.share.title": "Modo de compartir",
   "settings.experimental.share.description": "Comportamiento de compartir sesión",
@@ -1277,8 +1316,6 @@ export const dict = {
   "settings.experimental.formatter.description": "Habilitar el formateador automático de código",
   "settings.experimental.lsp.title": "LSP",
   "settings.experimental.lsp.description": "Habilitar integración del protocolo de servidor de lenguaje",
-  "settings.experimental.pasteSummary.title": "Deshabilitar resumen de pegado",
-  "settings.experimental.pasteSummary.description": "No resumir contenido pegado grande",
   "settings.experimental.batch.title": "Herramienta por lotes",
   "settings.experimental.batch.description": "Habilitar procesamiento por lotes de llamadas a herramientas",
   "settings.experimental.codebaseSearch.title": "Búsqueda de código",
@@ -1463,8 +1500,7 @@ export const dict = {
   "settings.autoApprove.tool.todoreadwrite":
     "Administrar lista de tareas. Permite leer y actualizar la lista de tareas interna.",
   "settings.autoApprove.tool.webfetch": "Obtener una URL. Permite recuperar contenido de una URL específica.",
-  "settings.autoApprove.tool.websearchcodesearch":
-    "Buscar en la web o en el código. Permite realizar búsquedas externas en la web o en el código.",
+  "settings.autoApprove.tool.websearch": "Buscar en la web. Permite realizar búsquedas externas en la web.",
   "settings.autoApprove.tool.external_directory":
     "Acceder a archivos fuera del espacio de trabajo. Se activa al acceder a archivos fuera del directorio del proyecto actual.",
   "settings.autoApprove.tool.doom_loop":

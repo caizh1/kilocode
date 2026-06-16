@@ -530,6 +530,8 @@ export const dict = {
   "notification.permission.titleSubagent": "Toestemming vereist (subagent)",
   "notification.permission.description": "{{sessionTitle}} in {{projectName}} heeft toestemming nodig",
   "ui.permission.manageAutoApprove": "Beheer automatisch goedkeuren regels",
+  "ui.permission.doomLoop.prompt": "Mogelijke lus gedetecteerd voor het hulpmiddel {{tool}}. Doorgaan met uitvoeren?",
+  "ui.permission.doomLoop.rule": "Doorgaan met {{tool}}-aanroepen",
   "ui.permission.rule.addToAllowed": "Toevoegen aan toegestane lijst",
   "ui.permission.rule.removeFromAllowed": "Verwijderen van toegestane lijst",
   "ui.permission.rule.addToDenied": "Toevoegen aan geweigerde lijst",
@@ -1010,6 +1012,33 @@ export const dict = {
   "feedback.dialog.github": "Meld een probleem op GitHub",
   "feedback.dialog.discord": "Word lid van onze Discord community",
   "feedback.dialog.support": "Klantenservice",
+  "workStyle.onboarding.welcome": "Welkom bij Kilo",
+  "workStyle.onboarding.title": "Kies hoe je wilt werken",
+  "workStyle.onboarding.description":
+    "Hiermee stel je de beginwaarden in voor machtigingen, redeneerblokken, terminaluitvoer en de contexttijdlijn. Dit wordt slechts één keer toegepast en slaat instellingen over die je al hebt aangepast.",
+  "workStyle.onboarding.settingsNote": "Je kunt deze opties op elk moment wijzigen in",
+  "workStyle.onboarding.settings": "Instellingen.",
+  "workStyle.onboarding.skip": "Voorlopig overslaan",
+  "workStyle.toast.saved.title": "Modus succesvol opgeslagen",
+  "workStyle.toast.saved.description": "Werk je voorkeuren op elk moment bij in Instellingen.",
+  "workStyle.toast.saved.action": "Naar Instellingen",
+  "workStyle.choice.permissions": "Machtigingen",
+  "workStyle.choice.bash": "Bash",
+  "workStyle.choice.visibility": "Zichtbaarheid",
+  "workStyle.choice.human-in-the-loop.eyebrow": "Menselijke controle",
+  "workStyle.choice.human-in-the-loop.title": "Eerst controleren",
+  "workStyle.choice.human-in-the-loop.description": "Kilo pauzeert en toont tijdens het werk zijn plan.",
+  "workStyle.choice.human-in-the-loop.permissions":
+    "Vraagt toestemming voordat bestanden worden bewerkt of opdrachten worden uitgevoerd.",
+  "workStyle.choice.human-in-the-loop.bash": "Vraagt toestemming voor elke terminalopdracht.",
+  "workStyle.choice.human-in-the-loop.visibility": "Toont alle gespreksdetails, inclusief de redenering.",
+  "workStyle.choice.autonomous.eyebrow": "Minder onderbrekingen",
+  "workStyle.choice.autonomous.title": "Hoge autonomie",
+  "workStyle.choice.autonomous.description": "Minder onderbrekingen, gestroomlijnde interface.",
+  "workStyle.choice.autonomous.permissions":
+    "Bewerkt bestanden en voert opdrachten in de werkruimte uit zonder toestemming te vragen.",
+  "workStyle.choice.autonomous.bash": "Kan terminalopdrachten in de werkruimte zonder goedkeuring uitvoeren.",
+  "workStyle.choice.autonomous.visibility": "Details blijven ingeklapt totdat je ze uitvouwt.",
   "session.cloud.import.title": "Importeer uit de cloud",
   "session.cloud.import.placeholder": "Sessie-ID, URL, of kilo import commando",
   "session.cloud.import.button": "Importeren",
@@ -1248,6 +1277,10 @@ export const dict = {
   "settings.notifications.errors.title": "Fouten",
   "settings.notifications.errors.description": "Toon melding bij fouten",
   "settings.notifications.sounds": "Geluiden",
+  "settings.notifications.enable.title": "Geluidsmeldingen inschakelen",
+  "settings.notifications.enable.description":
+    "Geluiden afspelen wanneer sessies worden voltooid, er een fout optreedt of uw invoer vereist is",
+  "settings.notifications.testSound": "Testen",
   "settings.notifications.agentSound.title": "Agent Voltooiingsgeluid",
   "settings.notifications.agentSound.description": "Geluid om af te spelen wanneer agent voltooit",
   "settings.notifications.permSound.title": "Toestemmingsverzoek Geluid",
@@ -1255,6 +1288,9 @@ export const dict = {
   "settings.notifications.errorSound.title": "Fout Geluid",
   "settings.notifications.errorSound.description": "Geluid om af te spelen bij fouten",
   "settings.notifications.sound.default": "Standaard",
+  "settings.notifications.sound.system": "Systeem",
+  "settings.notifications.sound.description":
+    "Standaard worden verschillende geluiden gebruikt voor voltooiing, invoer en fouten. Andere keuzes gebruiken voor elke gebeurtenis hetzelfde geluid.",
   "settings.notifications.sound.none": "Geen",
 
   "settings.experimental.share.title": "Deelmodus",
@@ -1266,8 +1302,6 @@ export const dict = {
   "settings.experimental.formatter.description": "Schakel de automatische code formatter in",
   "settings.experimental.lsp.title": "LSP",
   "settings.experimental.lsp.description": "Schakel language server protocol integratie in",
-  "settings.experimental.pasteSummary.title": "Plak-samenvatting uitschakelen",
-  "settings.experimental.pasteSummary.description": "Vat grote geplakte inhoud niet samen",
   "settings.experimental.batch.title": "Batch Tool",
   "settings.experimental.batch.description": "Schakel batching van meerdere tool calls in",
   "settings.experimental.codebaseSearch.title": "Codebase Zoeken",
@@ -1417,8 +1451,7 @@ export const dict = {
   "settings.autoApprove.tool.todoreadwrite":
     "Takenlijst beheren. Staat het lezen en bijwerken van de interne takenlijst toe.",
   "settings.autoApprove.tool.webfetch": "Een URL ophalen. Staat het ophalen van inhoud van een specifieke URL toe.",
-  "settings.autoApprove.tool.websearchcodesearch":
-    "Zoek op web of in code. Staat het uitvoeren van externe web- of code-zoekopdrachten toe.",
+  "settings.autoApprove.tool.websearch": "Zoek op het web. Staat het uitvoeren van externe web-zoekopdrachten toe.",
   "settings.autoApprove.tool.doom_loop":
     "Voorkom herhaalde identieke acties. Geactiveerd wanneer dezelfde tool call herhaald wordt met identieke invoer.",
 
@@ -1470,6 +1503,9 @@ export const dict = {
   "settings.providers.subagentModel.title": "Subagentmodel",
   "settings.providers.subagentModel.description":
     "Standaardmodel en redeneerinspanning voor task-tool subagenten. Laat leeg om het model van de aanroepende agent over te nemen.",
+  "settings.models.hidePromptTraining.title": "Modellen die prompts voor training gebruiken verbergen",
+  "settings.models.hidePromptTraining.description":
+    "Verberg Kilo Gateway-modellen waarvan providers je prompts mogelijk voor training gebruiken.",
   "settings.providers.modeModels": "Model per Modus",
   "settings.providers.modeModels.description":
     "Overschrijf het standaard model voor specifieke modi. Indien niet ingesteld, wordt het globale standaard model gebruikt.",

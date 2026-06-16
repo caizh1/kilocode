@@ -17,9 +17,9 @@ import { PartTable, SessionTable } from "./session.sql"
 import { Storage } from "@/storage/storage"
 import * as Log from "@opencode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
-import type { InstanceContext } from "../project/instance"
+import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
-import { Instance } from "@/project/instance" // kilocode_change - children() uses Instance.current to scope by project_id
+import { capture } from "@/kilocode/instance" // kilocode_change - children() scopes by current project when available
 import { Snapshot } from "@/snapshot"
 import { ProjectID } from "../project/schema"
 import { WorkspaceID } from "../control-plane/schema"
@@ -608,9 +608,9 @@ export const layer: Layer.Layer<
 
     // kilocode_change start - scope by project_id when instance context is available
     const children = Effect.fn("Session.children")(function* (parentID: SessionID) {
-      const ctx = yield* Effect.try({ try: () => Instance.current, catch: () => undefined }).pipe(Effect.option)
+      const ctx = capture()
       const conditions = [eq(SessionTable.parent_id, parentID)]
-      if (Option.isSome(ctx)) conditions.push(eq(SessionTable.project_id, ctx.value.project.id))
+      if (ctx) conditions.push(eq(SessionTable.project_id, ctx.project.id))
       const rows = yield* db((d) =>
         d
           .select()
@@ -648,7 +648,7 @@ export const layer: Layer.Layer<
           )
         }
         // kilocode_change end
-        yield* sync.run(Event.Deleted, { sessionID, info: session }, { publish: hasInstance }) // kilocode_change
+        yield* sync.run(Event.Deleted, { sessionID, info: session }, { publish: hasInstance })
         // kilocode_change - capture final session-export workspace delta on close/delete
         const workspaceKey = hasInstance ? yield* InstanceState.directory : undefined // kilocode_change
         yield* Effect.promise(() => SessionExport.onSessionClose(sessionID, workspaceKey)) // kilocode_change
@@ -661,10 +661,11 @@ export const layer: Layer.Layer<
     const updateMessage = <T extends MessageV2.Info>(msg: T): Effect.Effect<T> =>
       Effect.gen(function* () {
         // kilocode_change start - ignore FK errors when session was deleted while processor was still running
-        yield* KiloSession.runSyncSafe(
-          sync.run(MessageV2.Event.Updated, { sessionID: msg.sessionID, info: msg }),
-          { type: "message update", id: msg.id, sessionID: msg.sessionID },
-        )
+        yield* KiloSession.runSyncSafe(sync.run(MessageV2.Event.Updated, { sessionID: msg.sessionID, info: msg }), {
+          type: "message update",
+          id: msg.id,
+          sessionID: msg.sessionID,
+        })
         // kilocode_change end
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
@@ -727,7 +728,7 @@ export const layer: Layer.Layer<
         model: input?.model,
         permission: input?.permission,
         platform: input?.platform, // kilocode_change
-        workspaceID: input?.workspaceID ?? workspace, // kilocode_change - allow explicit override
+        workspaceID: input?.workspaceID ?? workspace,
       })
       return session
     })
@@ -744,6 +745,7 @@ export const layer: Layer.Layer<
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
       const idMap = new Map<string, MessageID>()
+      const writer = KiloSession.writer(session.id, sync) // kilocode_change - commit copied transcript in one transaction
 
       for (const msg of msgs) {
         if (input.messageID && msg.info.id >= input.messageID) break
@@ -751,13 +753,15 @@ export const layer: Layer.Layer<
         idMap.set(msg.info.id, newID)
 
         const parentID = msg.info.role === "assistant" && msg.info.parentID ? idMap.get(msg.info.parentID) : undefined
-        const cloned = yield* updateMessage({
+        // kilocode_change start - queue copied messages for the atomic transcript commit
+        const cloned = writer.message({
           ...msg.info,
           sessionID: session.id,
           id: newID,
-          ...(msg.info.role === "assistant" && { cost: 0 }), // kilocode_change - count only spend incurred after the fork
+          ...(msg.info.role === "assistant" && { cost: 0 }), // count only spend incurred after the fork
           ...(parentID && { parentID }),
         })
+        // kilocode_change end
 
         for (const part of msg.parts) {
           const p: MessageV2.Part = {
@@ -770,9 +774,10 @@ export const layer: Layer.Layer<
           if (p.type === "compaction" && p.tail_start_id) {
             p.tail_start_id = idMap.get(p.tail_start_id)
           }
-          yield* updatePart(p)
+          writer.part(p) // kilocode_change - queue copied parts for the atomic transcript commit
         }
       }
+      yield* writer.commit() // kilocode_change - the caller hydrates after commit; copied-row events stay silent
       // kilocode_change start - preserve imported/cumulative diffs when forking sessions
       const local = yield* storage
         .read<Snapshot.FileDiff[]>(["session_diff", input.sessionID])
@@ -1033,7 +1038,7 @@ export function* listGlobal(input?: {
 }
 // kilocode_change end
 
-// kilocode_change - preserve Kilo recursive fork/remap behavior without a Session service-local Promise runtime
+// kilocode_change - delegate the exported Promise facade to the Kilo session runtime
 export const fork = kiloSessionFork
 
 export * as Session from "./session"

@@ -86,6 +86,43 @@ describe("Kilo auto-compaction threshold", () => {
 
     expect(isOverflow({ cfg: conf, model: mdl, tokens: tokens(150_000) })).toBe(false)
   })
+
+  test("uses a lower configured output ceiling for overflow capacity", () => {
+    const conf = cfg({ threshold_percent: null })
+    const mdl = model({ context: 200_000, output: 100_000 })
+
+    expect(usable({ cfg: conf, model: mdl, outputTokenMax: 8_000 })).toBe(192_000)
+    expect(isOverflow({ cfg: conf, model: mdl, tokens: tokens(180_000), outputTokenMax: 8_000 })).toBe(false)
+  })
+
+  test("uses a higher configured output ceiling for overflow capacity", () => {
+    const conf = cfg({ threshold_percent: null })
+    const mdl = model({ context: 200_000, output: 100_000 })
+
+    expect(usable({ cfg: conf, model: mdl, outputTokenMax: 64_000 })).toBe(136_000)
+    expect(isOverflow({ cfg: conf, model: mdl, tokens: tokens(136_000), outputTokenMax: 64_000 })).toBe(true)
+  })
+
+  test("uses normalized fields when the provider total disagrees", () => {
+    const conf = cfg({ threshold_percent: 75 })
+    const mdl = model({ context: 200_000, output: 32_000 })
+
+    expect(isOverflow({ cfg: conf, model: mdl, tokens: { ...tokens(80_000), total: 250_000 } })).toBe(false)
+  })
+
+  test("counts reasoning tokens", () => {
+    const conf = cfg({ threshold_percent: 75 })
+    const mdl = model({ context: 200_000, output: 32_000 })
+
+    expect(isOverflow({ cfg: conf, model: mdl, tokens: { ...tokens(149_999), reasoning: 1 } })).toBe(true)
+  })
+
+  test("falls back to provider total when normalized usage is unavailable", () => {
+    const conf = cfg({ threshold_percent: 75 })
+    const mdl = model({ context: 200_000, output: 32_000 })
+
+    expect(isOverflow({ cfg: conf, model: mdl, tokens: { ...tokens(0), total: 150_000 } })).toBe(true)
+  })
 })
 
 describe("Kilo request estimation", () => {

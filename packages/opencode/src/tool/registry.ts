@@ -28,7 +28,6 @@ import { Provider } from "@/provider/provider"
 import { ProviderID, type ModelID } from "../provider/schema"
 import { WebSearchTool } from "./websearch"
 import { KiloToolRegistry } from "../kilocode/tool/registry" // kilocode_change
-import { CodeSearchTool } from "./codesearch" // kilocode_change
 import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
 import { Flag } from "@opencode-ai/core/flag/flag" // kilocode_change
@@ -137,7 +136,6 @@ export const layer: Layer.Layer<
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
-    const codesearch = yield* CodeSearchTool // kilocode_change
     const repoClone = yield* RepoCloneTool
     const repoOverview = yield* RepoOverviewTool
     const shell = yield* ShellTool
@@ -219,7 +217,8 @@ export const layer: Layer.Layer<
           // `match` is an absolute filesystem path from `Glob.scanSync(..., { absolute: true })`.
           // Import it as `file://` so Node on Windows accepts the dynamic import.
           const mod = yield* Effect.promise(() => import(pathToFileURL(match).href))
-          for (const [id, def] of Object.entries<ToolDefinition>(mod)) {
+          for (const [id, def] of Object.entries(mod)) {
+            if (!isPluginTool(def)) continue
             custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
           }
         }
@@ -247,7 +246,6 @@ export const layer: Layer.Layer<
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
-          code: Tool.init(codesearch), // kilocode_change
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
           skill: Tool.init(skilltool),
@@ -278,7 +276,6 @@ export const layer: Layer.Layer<
               tool.fetch,
               tool.todo,
               tool.search,
-              tool.code, // kilocode_change
               ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
               tool.skill,
               tool.patch,
@@ -432,6 +429,10 @@ function isZodType(value: unknown): value is z.ZodType {
   return typeof value === "object" && value !== null && "_zod" in value
 }
 
+function isPluginTool(value: unknown): value is ToolDefinition {
+  return typeof value === "object" && value !== null && "args" in value && "description" in value && "execute" in value
+}
+
 function isJsonSchemaDefinition(value: unknown): value is JSONSchema7Definition {
   return typeof value === "boolean" || (typeof value === "object" && value !== null && !Array.isArray(value))
 }
@@ -448,12 +449,38 @@ function legacyJsonSchema(entries: [string, unknown][]): JSONSchema7 {
 }
 
 function zodJsonSchema(schema: z.ZodType): JSONSchema7 {
-  const result = normalizeZodJsonSchema(z.toJSONSchema(schema, { io: "input" }))
+  const result = normalizeZodJsonSchema(z.toJSONSchema(schema, { io: "input", metadata: zodMetadataRegistry(schema) }))
   if (!isJsonSchemaObject(result)) throw new Error("plugin tool Zod schema produced a non-object JSON Schema")
   const { $defs, ...rest } = result
   return (
     $defs && isJsonSchemaObject($defs) ? { ...rest, definitions: $defs as JSONSchema7["definitions"] } : rest
   ) as JSONSchema7
+}
+
+function zodMetadataRegistry(schema: z.ZodType) {
+  const registry = z.registry<Record<string, unknown>>()
+  const seen = new WeakSet<object>()
+  const collect = (value: unknown) => {
+    if (typeof value !== "object" || value === null) return
+    if (seen.has(value)) return
+    seen.add(value)
+
+    if (isZodType(value)) {
+      const metadata = typeof value.meta === "function" ? value.meta() : undefined
+      const description = typeof value.description === "string" ? value.description : undefined
+      const merged = {
+        ...(metadata && typeof metadata === "object" ? metadata : {}),
+        ...(description ? { description } : {}),
+      }
+      if (Object.keys(merged).length) registry.add(value, merged)
+      collect(value._zod.def)
+      return
+    }
+
+    for (const item of Object.values(value)) collect(item)
+  }
+  collect(schema)
+  return registry
 }
 
 function normalizeZodJsonSchema(value: unknown): unknown {

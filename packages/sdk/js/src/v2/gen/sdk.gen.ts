@@ -85,7 +85,9 @@ import type {
   GlobalHealthResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
+  IndexingModelsResponses,
   IndexingStatusResponses,
+  IndexingWarningsResponses,
   InstanceDisposeResponses,
   KiloAudioTranscriptionsErrors,
   KiloAudioTranscriptionsResponses,
@@ -5044,14 +5046,14 @@ export class Model extends HeyApiClient {
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
-      instance?: {
+      location?: {
         directory?: string
         workspace?: string
       }
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "instance" }] }])
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2ModelListResponses, unknown, ThrowOnError>({
       url: "/api/model",
       ...options,
@@ -5068,14 +5070,14 @@ export class Provider2 extends HeyApiClient {
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
-      instance?: {
+      location?: {
         directory?: string
         workspace?: string
       }
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "instance" }] }])
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2ProviderListResponses, unknown, ThrowOnError>({
       url: "/api/provider",
       ...options,
@@ -5091,7 +5093,7 @@ export class Provider2 extends HeyApiClient {
   public get<ThrowOnError extends boolean = false>(
     parameters: {
       providerID: string
-      instance?: {
+      location?: {
         directory?: string
         workspace?: string
       }
@@ -5104,7 +5106,7 @@ export class Provider2 extends HeyApiClient {
         {
           args: [
             { in: "path", key: "providerID" },
-            { in: "query", key: "instance" },
+            { in: "query", key: "location" },
           ],
         },
       ],
@@ -6187,6 +6189,66 @@ export class Indexing extends HeyApiClient {
       ...params,
     })
   }
+
+  /**
+   * Get indexing warnings
+   *
+   * Retrieve code indexing warnings for the active project.
+   */
+  public warnings<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<IndexingWarningsResponses, unknown, ThrowOnError>({
+      url: "/indexing/warnings",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List Kilo embedding models
+   *
+   * Retrieve the embedding models available through the active Kilo account.
+   */
+  public models<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<IndexingModelsResponses, unknown, ThrowOnError>({
+      url: "/indexing/models",
+      ...options,
+      ...params,
+    })
+  }
 }
 
 export class Audio extends HeyApiClient {
@@ -7107,7 +7169,7 @@ export class Kilocode extends HeyApiClient {
   /**
    * Remove a skill
    *
-   * Remove a skill by deleting its directory from disk and clearing it from cache.
+   * Remove a skill by deleting its manifest from disk and clearing it from cache.
    */
   public removeSkill<ThrowOnError extends boolean = false>(
     parameters?: {

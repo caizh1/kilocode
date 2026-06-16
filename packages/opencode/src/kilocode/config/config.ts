@@ -65,7 +65,7 @@ export namespace KilocodeConfig {
    *
    * This mirrors the Kilo project-config load chain: prefer existing config files
    * in ancestor config directories, then existing root config files, and create
-   * `.kilo/kilo.json` when no project config exists yet.
+   * `.kilo/kilo.jsonc` when no project config exists yet.
    */
   export const projectConfigUpdateTarget = Effect.fn("KilocodeConfig.projectConfigUpdateTarget")(function* (input: {
     fs: AppFileSystem.Interface
@@ -79,7 +79,7 @@ export namespace KilocodeConfig {
       .up({ targets: [...ALL_CONFIG_FILES], start: input.directory, stop: input.worktree })
       .pipe(Effect.orDie)
     const files = [...dirs.flatMap((dir) => ALL_CONFIG_FILES.map((file) => path.join(dir, file))), ...roots]
-    return files.find((file) => existsSync(file)) ?? path.join(input.directory, ".kilo", "kilo.json")
+    return files.find((file) => existsSync(file)) ?? path.join(input.directory, ".kilo", "kilo.jsonc")
   })
 
   export const updateProjectConfig = Effect.fn("KilocodeConfig.updateProjectConfig")(function* (input: {
@@ -98,6 +98,7 @@ export namespace KilocodeConfig {
     const patch = input.writable(input.config)
 
     if (file.endsWith(".jsonc")) {
+      if (source === undefined && Object.keys(mergeConfig({}, patch)).length === 0) return
       const updated = input.patch(before, patch)
       yield* input.fs.writeWithDirs(file, updated).pipe(Effect.orDie)
       return
@@ -180,8 +181,9 @@ export namespace KilocodeConfig {
     const err = new ConfigError.InvalidError({ path: item, issues }, { cause })
     if (warnings) warnings.push({ path: item, message, detail: text || undefined })
     try {
-      const { Session } = await import("@/session/session")
-      Bus.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
+      const [{ Session }, { capture }] = await Promise.all([import("@/session/session"), import("@/kilocode/instance")])
+      const ctx = capture()
+      if (ctx) Bus.publish(ctx, Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
     } catch (e) {
       log.warn("could not publish session error", { message, err: e })
     }
