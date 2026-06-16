@@ -7,6 +7,7 @@ import { createContext, useContext, createSignal, onMount, onCleanup, ParentComp
 import { useVSCode } from "./vscode"
 import type { ConnectionState, ServerInfo, ProfileData, DeviceAuthState, ExtensionMessage } from "../types/messages"
 import { applyFontSize } from "../font-size"
+import { canUseGatewayUi, gatewayTarget } from "../utils/internal-offline-ui"
 
 interface ServerContextValue {
   connectionState: Accessor<ConnectionState>
@@ -147,6 +148,7 @@ export const ServerProvider: ParentComponent = (props) => {
   })
 
   const startLogin = () => {
+    if (!canUseGatewayUi()) return
     const status = deviceAuth().status
     if (status === "initiating" || status === "pending") {
       return
@@ -164,7 +166,8 @@ export const ServerProvider: ParentComponent = (props) => {
    * user has no way to see the code or cancel if the browser is dismissed.
    */
   const goToLogin = () => {
-    window.postMessage({ type: "navigate", view: "profile" }, "*")
+    window.postMessage({ type: "navigate", ...gatewayTarget() }, "*")
+    if (!canUseGatewayUi()) return
     startLogin()
   }
 

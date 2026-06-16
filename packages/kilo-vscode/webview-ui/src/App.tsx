@@ -35,6 +35,7 @@ import { NotificationsProvider } from "./context/notifications"
 import { FeedbackProvider } from "./context/feedback"
 import { KiloEmbeddingModelsProvider } from "./context/kilo-embedding-models"
 import type { Message as SDKMessage, Part as SDKPart } from "@kilocode/sdk/v2"
+import { gatewayTarget } from "./utils/internal-offline-ui"
 import "./styles/chat.css"
 
 type ViewType = "newTask" | "history" | "profile" | "settings" | "subAgentViewer"
@@ -213,7 +214,11 @@ const AppContent: Component = () => {
         setCurrentView("history")
         break
       case "profileButtonClicked":
-        setCurrentView("profile")
+        {
+          const target = gatewayTarget()
+          if (target.tab) setSettingsTab(target.tab)
+          setCurrentView(target.view)
+        }
         break
       case "settingsButtonClicked":
         setCurrentView("settings")
@@ -253,9 +258,10 @@ const AppContent: Component = () => {
       }
       if (message?.type === "navigate" && message.view && VALID_VIEWS.has(message.view)) {
         console.log("[Kilo New] App: 🧭 navigate:", message.view, message.tab ? `tab=${message.tab}` : "")
-        if (message.tab) setSettingsTab(message.tab)
-        setCurrentView(message.view as ViewType)
-        vscode.postMessage({ type: "settingsTabChanged", tab: message.tab })
+        const target = message.view === "profile" ? gatewayTarget() : { view: message.view as ViewType, tab: message.tab }
+        if (target.tab) setSettingsTab(target.tab)
+        setCurrentView(target.view)
+        vscode.postMessage({ type: "settingsTabChanged", tab: target.tab })
       }
       if (message?.type === "openCloudSession" && message.sessionId) {
         console.log("[Kilo New] App: ☁️ openCloudSession:", message.sessionId)

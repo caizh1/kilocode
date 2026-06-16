@@ -16,6 +16,7 @@ import {
   isUnauthorizedPromotionLimitError,
 } from "../../utils/errorUtils"
 import ProviderConnectDialog from "../settings/ProviderConnectDialog"
+import { canUseGatewayUi } from "../../utils/internal-offline-ui"
 
 export interface ErrorDisplayProps {
   error: NonNullable<AssistantMessage["error"]>
@@ -26,6 +27,7 @@ export const ErrorDisplay: Component<ErrorDisplayProps> = (props) => {
   const { t } = useLanguage()
   const dialog = useDialog()
   const provider = useProvider()
+  const gateway = canUseGatewayUi()
   const parsed = createMemo(() => parseAssistantError(props.error))
   const auth = createMemo(() => parseProviderAuthError(props.error))
   const authProvider = createMemo(() => {
@@ -34,6 +36,7 @@ export const ErrorDisplay: Component<ErrorDisplayProps> = (props) => {
     return provider.providers()[err.providerID]
   })
   const canAuth = createMemo(() => {
+    if (!gateway) return false
     const err = auth()
     if (!err || !authProvider()) return false
     return (provider.authMethods()[err.providerID] ?? []).length > 0
@@ -80,7 +83,7 @@ export const ErrorDisplay: Component<ErrorDisplayProps> = (props) => {
         </Card>
       }
     >
-      <Match when={isUnauthorizedPaidModelError(parsed())}>
+      <Match when={gateway && isUnauthorizedPaidModelError(parsed())}>
         <div data-component="auth-prompt">
           <div data-slot="auth-prompt-header">
             <span data-slot="auth-prompt-icon">✨</span>
@@ -92,7 +95,7 @@ export const ErrorDisplay: Component<ErrorDisplayProps> = (props) => {
           </Button>
         </div>
       </Match>
-      <Match when={isUnauthorizedPromotionLimitError(parsed())}>
+      <Match when={gateway && isUnauthorizedPromotionLimitError(parsed())}>
         <div data-component="auth-prompt">
           <div data-slot="auth-prompt-header">
             <span data-slot="auth-prompt-icon">🕙</span>

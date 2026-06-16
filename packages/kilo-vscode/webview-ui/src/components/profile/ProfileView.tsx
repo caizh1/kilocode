@@ -1,13 +1,13 @@
 import { Component, Show, createSignal, createMemo, createEffect, onMount } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Card } from "@kilocode/kilo-ui/card"
-import { Icon } from "@kilocode/kilo-ui/icon"
 import { Select } from "@kilocode/kilo-ui/select"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { useVSCode } from "../../context/vscode"
 import { useLanguage } from "../../context/language"
 import DeviceAuthCard from "./DeviceAuthCard"
 import type { ProfileData, DeviceAuthState } from "../../types/messages"
+import { canUseGatewayUi } from "../../utils/internal-offline-ui"
 
 export type { ProfileData }
 
@@ -33,9 +33,11 @@ const ProfileView: Component<ProfileViewProps> = (props) => {
   const vscode = useVSCode()
   const language = useLanguage()
   const [target, setTarget] = createSignal<string | null>(null)
+  const gateway = canUseGatewayUi()
 
   // Always fetch fresh profile+balance when navigating to this view
   onMount(() => {
+    if (!gateway) return
     vscode.postMessage({ type: "refreshProfile" })
   })
 
@@ -67,6 +69,7 @@ const ProfileView: Component<ProfileViewProps> = (props) => {
   })
 
   const selectOrg = (option: OrgOption | undefined) => {
+    if (!gateway) return
     if (!option) return
     const current = props.profileData?.currentOrgId ?? PERSONAL
     if (option.value === current) return
@@ -78,23 +81,32 @@ const ProfileView: Component<ProfileViewProps> = (props) => {
   }
 
   const handleLogin = () => {
+    if (!gateway) return
     props.onLogin()
   }
 
   const handleLogout = () => {
+    if (!gateway) return
     vscode.postMessage({ type: "logout" })
   }
 
   const handleRefresh = () => {
+    if (!gateway) return
     vscode.postMessage({ type: "refreshProfile" })
   }
 
   const handleDashboard = () => {
+    if (!gateway) return
     vscode.postMessage({ type: "openExternal", url: "https://app.kilo.ai/profile" })
   }
 
   const handleCancelLogin = () => {
+    if (!gateway) return
     vscode.postMessage({ type: "cancelLogin" })
+  }
+
+  if (!gateway) {
+    return <div style={{ display: "none" }} />
   }
 
   return (

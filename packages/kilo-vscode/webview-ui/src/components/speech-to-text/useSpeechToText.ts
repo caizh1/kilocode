@@ -2,6 +2,7 @@ import { createSignal, onCleanup } from "solid-js"
 import { showToast } from "@kilocode/kilo-ui/toast"
 import type { Accessor } from "solid-js"
 import type { ExtensionMessage, WebviewMessage } from "../../types/messages"
+import { canUseGatewayUi } from "../../utils/internal-offline-ui"
 
 type VSCode = {
   postMessage: (message: WebviewMessage) => void
@@ -97,6 +98,11 @@ export function useSpeechToText(vscode: VSCode, server: Server, lang: Lang): Spe
     if (active()) return
     insert = opts.insert
     setError(undefined)
+
+    if (!canUseGatewayUi()) {
+      fail(lang.t("speechToText.error.loginRequired"), false)
+      return
+    }
 
     if (!server.profileData()) {
       showToast({

@@ -267,7 +267,7 @@
     },
     "packages/kilo-vscode": {
       "name": "chipmate",
-      "version": "0.0.30",
+      "version": "0.0.35",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.39.0",
         "@kilocode/kilo-gateway": "workspace:*",

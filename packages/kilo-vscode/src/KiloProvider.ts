@@ -119,6 +119,7 @@ import {
 import { fetchAndSendPendingSuggestions } from "./kilo-provider/handlers/suggestion"
 import { nativeTitle } from "./kilo-provider/native-tab-title"
 import { isInternalOfflineBuild } from "./shared/internal-offline"
+import { handleInternalOfflineAuth } from "./kilo-provider/internal-offline-auth"
 
 import {
   buildActionContext,
@@ -432,14 +433,20 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     // Profile returns 401 when user isn't logged into Kilo Gateway — that's expected.
     // Use fire-and-forget (no throwOnError) to match old getProfile() which returned null on error.
     if (this.connectionState === "connected" && this.client) {
-      console.log("[Kilo New] KiloProvider: 👤 syncWebviewState fetching profile...")
-      const profileResult = await retry(() => this.client!.kilo.profile())
-      const profileData = profileResult.data ?? null
-      console.log("[Kilo New] KiloProvider: 👤 syncWebviewState profile:", profileData ? "received" : "null")
-      this.postMessage({
-        type: "profileData",
-        data: profileData,
-      })
+      const internal = isInternalOfflineBuild()
+      if (internal) {
+        this.postMessage({ type: "profileData", data: null })
+      }
+      if (!internal) {
+        console.log("[Kilo New] KiloProvider: 👤 syncWebviewState fetching profile...")
+        const profileResult = await retry(() => this.client!.kilo.profile())
+        const profileData = profileResult.data ?? null
+        console.log("[Kilo New] KiloProvider: 👤 syncWebviewState profile:", profileData ? "received" : "null")
+        this.postMessage({
+          type: "profileData",
+          data: profileData,
+        })
+      }
 
       // Re-send cached worktree stats and git status after webview reload.
       if (this.cachedStats) this.postMessage(this.cachedStats)
@@ -677,6 +684,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       ) {
         return
       }
+      if (handleInternalOfflineAuth(message, (msg) => this.postMessage(msg))) return
       this.visibleTaskStreams.handle(message)
       switch (message.type) {
         case "webviewReady":
@@ -1233,9 +1241,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           try {
             // Profile fetch is best-effort — returns 401 when user isn't logged into gateway.
             const sdkClient = this.client
-            if (sdkClient) {
+            const internal = isInternalOfflineBuild()
+            if (sdkClient && !internal) {
               const profileResult = await sdkClient.kilo.profile()
               this.postMessage({ type: "profileData", data: profileResult.data ?? null })
+            }
+            if (internal) {
+              this.postMessage({ type: "profileData", data: null })
             }
             await this.syncWebviewState("sse-connected")
             await this.flushPendingSessionRefresh("sse-connected")
@@ -1262,6 +1274,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
       // Subscribe to profile change broadcast from other KiloProvider instances
       this.unsubscribeProfileChange = this.connectionService.onProfileChanged((data) => {
+        if (isInternalOfflineBuild()) {
+          this.postMessage({ type: "profileData", data: null })
+          return
+        }
         this.postMessage({ type: "profileData", data })
       })
 
