@@ -37,9 +37,12 @@ import { KiloEmbeddingModelsProvider } from "./context/kilo-embedding-models"
 import type { Message as SDKMessage, Part as SDKPart } from "@kilocode/sdk/v2"
 import { gatewayTarget } from "./utils/internal-offline-ui"
 import "./styles/chat.css"
+import Sidebar from "./components/Sidebar"
+import CodeGraphPanel from "./components/codegraph/CodeGraphPanel"
+import "./styles/sidebar.css"
 
-type ViewType = "newTask" | "history" | "profile" | "settings" | "subAgentViewer"
-const VALID_VIEWS = new Set<string>(["newTask", "history", "profile", "settings", "subAgentViewer"])
+type ViewType = "newTask" | "history" | "profile" | "settings" | "subAgentViewer" | "codeGraph"
+const VALID_VIEWS = new Set<string>(["newTask", "history", "profile", "settings", "subAgentViewer", "codeGraph"])
 
 /**
  * Bridge our session store to the DataProvider's expected Data shape.
@@ -223,6 +226,9 @@ const AppContent: Component = () => {
       case "settingsButtonClicked":
         setCurrentView("settings")
         break
+      case "codeGraphButtonClicked":
+        setCurrentView("codeGraph")
+        break
       case "cycleAgentMode":
         if (document.hasFocus()) cycleAgent(1)
         break
@@ -294,57 +300,63 @@ const AppContent: Component = () => {
   }
 
   return (
-    <div class="container">
-      {/* legacy-migration start — state-driven overlay, independent of currentView */}
-      <Show
-        when={migrationNeeded()}
-        fallback={
-          <Switch
-            fallback={
-              <ChatView
-                continueInWorktree
-                onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
-                promptBoxId="sidebar:fallback"
-              />
-            }
-          >
-            <Match when={currentView() === "newTask"}>
-              <ChatView
-                onSelectSession={handleSelectSession}
-                onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
-                continueInWorktree
-                promptBoxId="sidebar:new-task"
-              />
-            </Match>
-            <Match when={currentView() === "history"}>
-              <HistoryView onSelectSession={handleSelectSession} onBack={() => setCurrentView("newTask")} />
-            </Match>
-            <Match when={currentView() === "profile"}>
-              <ProfileView
-                profileData={server.profileData()}
-                deviceAuth={server.deviceAuth()}
-                onLogin={server.startLogin}
-              />
-            </Match>
-            <Match when={currentView() === "settings"}>
-              <Settings
-                tab={settingsTab()}
-                onTabChange={setSettingsTab}
-                onMigrateClick={() => {
-                  setMigrationNeeded(true)
-                  vscode.postMessage({ type: "requestLegacyMigrationData" })
-                }}
-              />
-            </Match>
-            <Match when={currentView() === "subAgentViewer"}>
-              <ChatView readonly />
-            </Match>
-          </Switch>
-        }
-      >
-        <MigrationWizard onBack={() => setMigrationNeeded(false)} onComplete={() => setMigrationNeeded(false)} />
-      </Show>
-      {/* legacy-migration end */}
+    <div class="app-container">
+      <Sidebar currentView={currentView()} onAction={handleViewAction} />
+      <main class="container app-main">
+        {/* legacy-migration start — state-driven overlay, independent of currentView */}
+        <Show
+          when={migrationNeeded()}
+          fallback={
+            <Switch
+              fallback={
+                <ChatView
+                  continueInWorktree
+                  onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
+                  promptBoxId="sidebar:fallback"
+                />
+              }
+            >
+              <Match when={currentView() === "newTask"}>
+                <ChatView
+                  onSelectSession={handleSelectSession}
+                  onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
+                  continueInWorktree
+                  promptBoxId="sidebar:new-task"
+                />
+              </Match>
+              <Match when={currentView() === "history"}>
+                <HistoryView onSelectSession={handleSelectSession} onBack={() => setCurrentView("newTask")} />
+              </Match>
+              <Match when={currentView() === "profile"}>
+                <ProfileView
+                  profileData={server.profileData()}
+                  deviceAuth={server.deviceAuth()}
+                  onLogin={server.startLogin}
+                />
+              </Match>
+              <Match when={currentView() === "settings"}>
+                <Settings
+                  tab={settingsTab()}
+                  onTabChange={setSettingsTab}
+                  onMigrateClick={() => {
+                    setMigrationNeeded(true)
+                    vscode.postMessage({ type: "requestLegacyMigrationData" })
+                  }}
+                />
+              </Match>
+              <Match when={currentView() === "codeGraph"}>
+                <CodeGraphPanel />
+              </Match>
+              <Match when={currentView() === "subAgentViewer"}>
+                <ChatView readonly />
+              </Match>
+            </Switch>
+          }
+        >
+          <MigrationWizard onBack={() => setMigrationNeeded(false)} onComplete={() => setMigrationNeeded(false)} />
+        </Show>
+        {/* legacy-migration end */}
+      </main>
     </div>
   )
 }
