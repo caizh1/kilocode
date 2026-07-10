@@ -19,6 +19,9 @@ type Loaders = {
   semantic?: () => Promise<Pick<typeof import("@/kilocode/tool/semantic-search"), "SemanticSearchTool">>
   analysis?: () => Promise<Pick<typeof import("@/kilocode/tool/codebase-analysis"), "CodebaseAnalysisTool">>
   document?: () => Promise<Pick<typeof import("@/kilocode/tool/document-search"), "DocumentSearchTool">>
+  artifact?: () => Promise<Pick<typeof import("@/kilocode/tool/document-artifacts"), "DocumentArtifactTools">>
+  word?: () => Promise<Pick<typeof import("@/kilocode/tool/word-documents"), "WordDocumentTools">>
+  mermaid?: () => Promise<Pick<typeof import("@/kilocode/tool/mermaid-documents"), "MermaidDocumentTools">>
 }
 
 export namespace KiloToolRegistry {
@@ -58,7 +61,10 @@ export namespace KiloToolRegistry {
       const analysis = yield* analysisTool(deps, loaders, ready.analysis)
       const semantic = yield* semanticTool(deps, loaders, ready.semantic)
       const document = yield* documentTool(deps, loaders, ready.document)
-      return { ...base, analysis, semantic, document }
+      const artifacts = yield* artifactTools(deps, loaders)
+      const word = yield* wordTools(deps, loaders)
+      const mermaid = yield* mermaidTools(deps, loaders)
+      return { ...base, analysis, semantic, document, artifacts, word, mermaid }
     })
   }
 
@@ -160,6 +166,89 @@ export namespace KiloToolRegistry {
     })
   }
 
+  function artifactTools(deps: Deps, loaders: Loaders) {
+    return Effect.gen(function* () {
+      const artifact = loaders.artifact ?? (() => import("@/kilocode/tool/document-artifacts"))
+      const mod = yield* Effect.tryPromise(() => artifact()).pipe(
+        Effect.catch((err) =>
+          Effect.sync(() => {
+            log.warn("document artifact tools unavailable", { err })
+            return undefined
+          }),
+        ),
+      )
+      if (!mod) return []
+
+      const infos = yield* mod.DocumentArtifactTools.pipe(
+        Effect.provideService(Agent.Service, deps.agent),
+        Effect.provideService(Truncate.Service, deps.truncate),
+      )
+      return yield* Effect.all([
+        Tool.init(infos.declare),
+        Tool.init(infos.list),
+        Tool.init(infos.open),
+        Tool.init(infos.diagnostics),
+      ])
+    })
+  }
+
+  function wordTools(deps: Deps, loaders: Loaders) {
+    return Effect.gen(function* () {
+      const word = loaders.word ?? (() => import("@/kilocode/tool/word-documents"))
+      const mod = yield* Effect.tryPromise(() => word()).pipe(
+        Effect.catch((err) =>
+          Effect.sync(() => {
+            log.warn("word document tools unavailable", { err })
+            return undefined
+          }),
+        ),
+      )
+      if (!mod) return []
+
+      const infos = yield* mod.WordDocumentTools.pipe(
+        Effect.provideService(Agent.Service, deps.agent),
+        Effect.provideService(Truncate.Service, deps.truncate),
+      )
+      return yield* Effect.all([
+        Tool.init(infos.create),
+        Tool.init(infos.inspect),
+        Tool.init(infos.applyEdits),
+        Tool.init(infos.applyTemplateStyles),
+        Tool.init(infos.materializeFields),
+        Tool.init(infos.merge),
+        Tool.init(infos.diff),
+        Tool.init(infos.normalizeTableSpec),
+        Tool.init(infos.render),
+      ])
+    })
+  }
+
+  function mermaidTools(deps: Deps, loaders: Loaders) {
+    return Effect.gen(function* () {
+      const mermaid = loaders.mermaid ?? (() => import("@/kilocode/tool/mermaid-documents"))
+      const mod = yield* Effect.tryPromise(() => mermaid()).pipe(
+        Effect.catch((err) =>
+          Effect.sync(() => {
+            log.warn("mermaid document tools unavailable", { err })
+            return undefined
+          }),
+        ),
+      )
+      if (!mod) return []
+
+      const infos = yield* mod.MermaidDocumentTools.pipe(
+        Effect.provideService(Agent.Service, deps.agent),
+        Effect.provideService(Truncate.Service, deps.truncate),
+      )
+      return yield* Effect.all([
+        Tool.init(infos.validate),
+        Tool.init(infos.render),
+        Tool.init(infos.save),
+        Tool.init(infos.insertIntoWord),
+      ])
+    })
+  }
+
   /** Kilo-specific tools to append to the builtin list */
   export function extra(
     tools: {
@@ -167,6 +256,9 @@ export namespace KiloToolRegistry {
       analysis?: Tool.Def
       semantic?: Tool.Def
       document?: Tool.Def
+      artifacts?: Tool.Def[]
+      word?: Tool.Def[]
+      mermaid?: Tool.Def[]
       recall: Tool.Def
       manager: Tool.Def
       process: Tool.Def
@@ -178,6 +270,9 @@ export namespace KiloToolRegistry {
       ...(tools.analysis ? [tools.analysis] : []),
       ...(tools.semantic ? [tools.semantic] : []),
       ...(tools.document ? [tools.document] : []),
+      ...(tools.artifacts ?? []),
+      ...(tools.word ?? []),
+      ...(tools.mermaid ?? []),
       tools.recall,
       ...(Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode" ? [tools.process] : []),
       // The extension is the only client that can consume the Agent Manager start event.

@@ -1,5 +1,6 @@
 import { $ } from "bun"
-import { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs"
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs"
+import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
 const version = "26.02.0-0"
@@ -27,27 +28,51 @@ export async function ensurePopplerForTarget(target: string, bin: string): Promi
     return
   }
 
+  const preseededArchive = process.env.POPPLER_WINDOWS_ARCHIVE?.trim()
+  const cacheDir = process.env.KILO_POPPLER_CACHE_DIR?.trim() || join(homedir(), ".cache", "kilocode", "poppler")
+  mkdirSync(cacheDir, { recursive: true })
+  const cachedArchive = join(cacheDir, file)
+
   const tmp = join(bin, ".poppler-tmp")
   rmSync(tmp, { recursive: true, force: true })
   mkdirSync(tmp, { recursive: true })
 
   try {
-    const archive = join(tmp, file)
-    const res = await fetch(url).catch((cause: unknown) => {
-      const msg = cause instanceof Error ? cause.message : String(cause)
-      throw new Error(
-        `Failed to download Poppler from ${url}. Set POPPLER_WINDOWS_DIR to a preseeded Poppler Windows directory for offline builds: ${msg}`,
-        { cause },
-      )
-    })
-    if (!res.ok) throw new Error(`Failed to download Poppler from ${url}: HTTP ${res.status}`)
-    await Bun.write(archive, await res.arrayBuffer())
+    const archive = preseededArchive || (existsSync(cachedArchive) ? cachedArchive : join(tmp, file))
+    if (!preseededArchive && !existsSync(cachedArchive)) {
+      const res = await fetchWithRetry(url, 4)
+      await Bun.write(archive, await res.arrayBuffer())
+      copyFileSync(archive, cachedArchive)
+    }
     await extract(archive, tmp)
     copy(tmp, dir)
     verify(bin)
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
+}
+
+async function fetchWithRetry(url: string, attempts: number): Promise<Response> {
+  let last: unknown
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 120_000)
+    try {
+      const res = await fetch(url, { signal: controller.signal })
+      if (res.ok) return res
+      last = new Error(`HTTP ${res.status}`)
+    } catch (err) {
+      last = err
+    } finally {
+      clearTimeout(timeout)
+    }
+    await Bun.sleep(750 * attempt)
+  }
+  const msg = last instanceof Error ? last.message : String(last)
+  throw new Error(
+    `Failed to download Poppler from ${url}. For offline Windows builds, preseed POPPLER_WINDOWS_DIR, POPPLER_WINDOWS_ARCHIVE, or KILO_POPPLER_CACHE_DIR: ${msg}`,
+    { cause: last },
+  )
 }
 
 function copy(root: string, dest: string): void {

@@ -1,5 +1,5 @@
 import * as vscode from "vscode"
-import { ServerManager } from "./server-manager"
+import { ServerManager, type ServerExitInfo } from "./server-manager"
 import { createKiloClient, type KiloClient, type Event } from "@kilocode/sdk/v2/client"
 import { SdkSSEAdapter } from "./sdk-sse-adapter"
 import type { ServerConfig } from "./types"
@@ -83,7 +83,7 @@ export class KiloConnectionService {
   private unsubRemote: (() => void) | null = null
 
   constructor(context: vscode.ExtensionContext) {
-    this.serverManager = new ServerManager(context, (code) => this.handleServerExit(code))
+    this.serverManager = new ServerManager(context, (info) => this.handleServerExit(info))
   }
 
   /**
@@ -567,12 +567,20 @@ export class KiloConnectionService {
     this.info = null
   }
 
-  private handleServerExit(code: number | null): void {
-    console.warn("[Kilo New] ConnectionService: CLI background process exited:", code)
+  private handleServerExit(info: ServerExitInfo): void {
+    console.warn("[Kilo New] ConnectionService: CLI background process exited:", info)
     this.resetConnection()
+    const exitReason = info.signal ? `signal ${info.signal}` : `code ${info.code ?? "unknown"}`
+    const stderr = info.stderr
+      .flatMap((line) => line.split("\n"))
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-8)
+      .join("\n")
+    const detail = stderr ? `\nLast CLI stderr:\n${stderr}` : ""
     this.setState(
       "error",
-      new Error(`CLI background process exited with code ${code ?? "unknown"}. Retry to reconnect.`),
+      new Error(`CLI background process exited with ${exitReason}. Retry to reconnect.${detail}`),
     )
   }
 

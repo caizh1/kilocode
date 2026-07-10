@@ -226,6 +226,30 @@ describe("ConfigState", () => {
       expect(s.draft).toEqual({})
     })
 
+    it("preserves pending indexing model when a stale configLoaded arrives", () => {
+      const s = new ConfigState()
+      s.handleConfigLoaded({ indexing: { provider: "openai-compatible" } })
+      s.updateConfig({ indexing: { provider: "openai-compatible", model: "custom-embedding" } })
+
+      s.handleConfigLoaded({ indexing: { provider: "openai-compatible" } })
+
+      expect(s.config).toEqual({ indexing: { provider: "openai-compatible", model: "custom-embedding" } })
+      expect(s.dirty).toBe(true)
+    })
+
+    it("preserves confirmed indexing model when save refresh omits it", () => {
+      const s = new ConfigState()
+      s.handleConfigLoaded({ indexing: { provider: "openai-compatible" } })
+      s.updateConfig({ indexing: { provider: "openai-compatible", model: "custom-embedding" } })
+      s.saveConfig("save")
+
+      s.handleConfigUpdated({ indexing: { provider: "openai-compatible" } }, "save")
+
+      expect(s.config).toEqual({ indexing: { provider: "openai-compatible", model: "custom-embedding" } })
+      expect(s.saved).toEqual({ indexing: { provider: "openai-compatible", model: "custom-embedding" } })
+      expect(s.dirty).toBe(false)
+    })
+
     it("does not clear draft for configUpdated without the active save request", () => {
       const s = new ConfigState()
       s.handleConfigLoaded({ snapshot: true, username: "alice" })

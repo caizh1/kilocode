@@ -20,7 +20,13 @@ export interface ServerInstance {
 const STARTUP_TIMEOUT_SECONDS = 30
 
 type WorkspaceFolderLike = { uri: { fsPath: string } }
-type ServerExitListener = (code: number | null) => void
+export type ServerExitInfo = {
+  code: number | null
+  signal: NodeJS.Signals | null
+  stderr: string[]
+  cliPath: string
+}
+type ServerExitListener = (info: ServerExitInfo) => void
 
 export function resolveServerCwd(folders: readonly WorkspaceFolderLike[] | undefined, storage: string): string {
   return folders?.[0]?.uri.fsPath ?? storage
@@ -35,9 +41,13 @@ export function buildBundledToolEnv(root: string, base: NodeJS.ProcessEnv = proc
   const key = pathKey(base)
   const bin = path.join(root, "bin")
   const poppler = path.join(bin, "poppler")
+  const rg = path.join(bin, process.platform === "win32" ? "rg.exe" : "rg")
   const value = base[key]
   const prefix = `${poppler}${path.delimiter}${bin}`
-  return { [key]: value ? `${prefix}${path.delimiter}${value}` : prefix }
+  return {
+    [key]: value ? `${prefix}${path.delimiter}${value}` : prefix,
+    ...(base.KILO_RIPGREP_PATH ? {} : { KILO_RIPGREP_PATH: rg }),
+  }
 }
 
 function pathKey(base: NodeJS.ProcessEnv): string {
@@ -48,6 +58,7 @@ function pathKey(base: NodeJS.ProcessEnv): string {
 export class ServerManager {
   private instance: ServerInstance | null = null
   private startupPromise: Promise<ServerInstance> | null = null
+  private lastExitInfo: ServerExitInfo | null = null
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -102,6 +113,9 @@ export class ServerManager {
     return new Promise((resolve, reject) => {
       console.log("[Kilo New] ServerManager: 🎬 Spawning CLI process:", cliPath, ["serve", "--port", "0"])
       const cfg = vscode.workspace.getConfiguration("kilo-code.new")
+      const render = renderEnv()
+      const internal = internalOfflineEnv()
+      const indexingControl = indexingControlEnv(internal)
       const claudeCompat = cfg.get<boolean>("claudeCodeCompat", false)
       // Pin cwd so the CLI doesn't inherit the extension host's cwd ("/" under F5 debug)
       // or "$HOME" in empty VS Code windows.
@@ -128,6 +142,7 @@ export class ServerManager {
           ...(extraCaCerts && { NODE_EXTRA_CA_CERTS: extraCaCerts }),
           ...(!proxyStrictSSL && { NODE_TLS_REJECT_UNAUTHORIZED: "0" }),
           ...process.env,
+          ...render,
           // VS Code's http.proxy / http.noProxy settings are not reflected in
           // process.env, so spawned children bypass the user's configured proxy
           // and fail behind corporate firewalls. Forward them as the standard
@@ -145,7 +160,8 @@ export class ServerManager {
           KILO_CLIENT: "vscode",
           KILO_ENABLE_QUESTION_TOOL: "true",
           KILOCODE_FEATURE: "vscode-extension",
-          ...internalOfflineEnv(),
+          ...internal,
+          ...indexingControl,
           ...indexingEnv,
           KILO_TELEMETRY_LEVEL: vscode.env.isTelemetryEnabled ? "all" : "off",
           KILO_APP_NAME: "chipmate",
@@ -184,7 +200,7 @@ export class ServerManager {
         const errorOutput = data.toString()
         console.error("[Kilo New] ServerManager: ⚠️ CLI Server stderr:", errorOutput)
         this.appendIndexingOutput(errorOutput)
-        stderrLines.push(errorOutput)
+        rememberStderr(stderrLines, errorOutput)
       })
 
       serverProcess.on("error", (error) => {
@@ -194,15 +210,17 @@ export class ServerManager {
         }
       })
 
-      serverProcess.on("exit", (code) => {
-        console.log("[Kilo New] ServerManager: 🛑 Process exited with code:", code)
+      serverProcess.on("exit", (code, signal) => {
+        console.log("[Kilo New] ServerManager: 🛑 Process exited:", { code, signal })
+        this.lastExitInfo = { code, signal, stderr: [...stderrLines], cliPath }
+        this.appendIndexingOutput(formatServerExitInfo(this.lastExitInfo))
         if (this.instance?.process === serverProcess) {
           this.instance = null
-          this.onExit?.(code)
+          this.onExit?.(this.lastExitInfo)
         }
         if (!resolved) {
           const { userMessage, userDetails } = toErrorMessage(
-            t("server.processExited", { code: code ?? "null" }),
+            processExitMessage(code, signal),
             stderrLines,
             cliPath,
           )
@@ -223,6 +241,10 @@ export class ServerManager {
         }
       }, STARTUP_TIMEOUT_SECONDS * 1000)
     })
+  }
+
+  getLastExitInfo(): ServerExitInfo | null {
+    return this.lastExitInfo
   }
 
   private getCliPath(): string {
@@ -282,6 +304,37 @@ export class ServerManager {
   }
 }
 
+function renderEnv(): Record<string, string> {
+  const cfg = vscode.workspace.getConfiguration("kilo.documents")
+  const word = cfg.get<string>("wordRender.remoteEndpoint", "").trim()
+  const mermaid = cfg.get<string>("mermaidRender.remoteEndpoint", "").trim()
+  return {
+    ...(word && !process.env.KILO_WORD_RENDER_ENDPOINT ? { KILO_WORD_RENDER_ENDPOINT: word } : {}),
+    ...(mermaid && !process.env.KILO_MERMAID_RENDER_ENDPOINT ? { KILO_MERMAID_RENDER_ENDPOINT: mermaid } : {}),
+  }
+}
+
+function indexingControlEnv(internal: Record<string, string>): Record<string, string> {
+	const cfg = vscode.workspace.getConfiguration("kilo.indexing")
+	const enabled = cfg.get<boolean>("enabled", true)
+	const openAICompatibleBaseUrl = cfg.get<string>("openaiCompatible.baseUrl", "").trim()
+	return {
+		...(enabled === false && !process.env.KILO_DISABLE_CODEBASE_INDEXING
+			? { KILO_DISABLE_CODEBASE_INDEXING: "vscode-disabled" }
+			: {}),
+		...(Object.keys(internal).length > 0 &&
+		openAICompatibleBaseUrl &&
+		!process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL
+			? { KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL: openAICompatibleBaseUrl }
+			: {}),
+		...(process.platform === "linux" &&
+		Object.keys(internal).length > 0 &&
+		!process.env.KILO_CODEGRAPH_WORKER_CONCURRENCY
+      ? { KILO_CODEGRAPH_WORKER_CONCURRENCY: "2" }
+      : {}),
+  }
+}
+
 export class ServerStartupError extends Error {
   readonly userMessage: string
   readonly userDetails: string
@@ -295,6 +348,33 @@ export class ServerStartupError extends Error {
 
 function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*m/g, "")
+}
+
+function processExitMessage(code: number | null, signal: NodeJS.Signals | null): string {
+  if (signal) return `CLI process exited from signal ${signal} before server started`
+  return t("server.processExited", { code: code ?? "null" })
+}
+
+function formatServerExitInfo(info: ServerExitInfo): string {
+  const reason = info.signal ? `signal ${info.signal}` : `code ${info.code ?? "unknown"}`
+  const stderr = info.stderr
+    .flatMap((line) => line.split("\n"))
+    .map((line) => stripAnsi(line).trim())
+    .filter(Boolean)
+    .slice(-8)
+    .join("\n")
+  return [
+    `[${new Date().toISOString()}] CLI background process exited with ${reason}.`,
+    `CLI path: ${info.cliPath}`,
+    stderr ? `Last CLI stderr:\n${stderr}` : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+function rememberStderr(lines: string[], output: string): void {
+  lines.push(output)
+  if (lines.length > 40) lines.splice(0, lines.length - 40)
 }
 
 /**

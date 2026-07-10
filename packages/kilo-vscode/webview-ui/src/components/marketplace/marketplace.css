@@ -36,6 +36,47 @@
   align-items: center;
 }
 
+.marketplace-identity-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border-base, var(--vscode-widget-border)) 72%, transparent);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--background-base) 82%, white 18%), transparent),
+    color-mix(in srgb, var(--background-base) 86%, var(--text-interactive-base) 7%);
+  box-shadow: 0 10px 26px color-mix(in srgb, black 12%, transparent);
+}
+
+.marketplace-identity-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-weak);
+  font-size: var(--kilo-font-size-12);
+}
+
+.marketplace-identity-label {
+  color: var(--text-weak);
+}
+
+.marketplace-identity-value {
+  color: var(--text-base);
+  font-weight: 600;
+}
+
+.marketplace-identity-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 360px;
+  opacity: 0.75;
+}
+
 .marketplace-search-field {
   flex: 1;
 }
@@ -161,6 +202,27 @@
   color: var(--text-weak);
 }
 
+.marketplace-skill-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-weak);
+  font-size: var(--kilo-font-size-12);
+}
+
+.marketplace-skill-meta span {
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--border-base, var(--vscode-widget-border)) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-base) 84%, white 8%);
+}
+
+.marketplace-skill-meta .marketplace-skill-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
 .marketplace-card-description {
   font-size: var(--kilo-font-size-13);
   color: var(--text-weak);
@@ -213,13 +275,6 @@
 .marketplace-badge-installed {
   color: var(--text-on-success-base) !important;
   border-color: var(--border-success-base) !important;
-}
-
-/* Remove button */
-
-.marketplace-remove-btn {
-  color: var(--text-on-critical-base) !important;
-  border-color: var(--border-critical-base) !important;
 }
 
 /* Remove dialog actions */

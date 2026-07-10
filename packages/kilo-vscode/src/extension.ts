@@ -22,6 +22,8 @@ import { registerHeapSnapshot } from "./commands/heap-snapshot"
 import { RemoteStatusService } from "./services/RemoteStatusService"
 import { markWorkspace } from "./util/spotlight"
 import { registerUpdateCheck } from "./services/update-check"
+import { registerDocumentArtifactCommands } from "./services/document-artifacts"
+import { registerAgentTerminal } from "./services/agent-terminal"
 
 let agentManager: AgentManagerProvider | undefined
 let shuttingDown = false
@@ -490,6 +492,8 @@ export function activate(context: vscode.ExtensionContext) {
   // Register autocomplete command shims and the isolated qwen-direct provider.
   registerAutocompleteProvider(context)
   registerQwenAutocompleteProvider(context)
+  registerDocumentArtifactCommands(context)
+  registerAgentTerminal(context)
 
   // Register commit message generation
   registerCommitMessageService(context, connectionService)

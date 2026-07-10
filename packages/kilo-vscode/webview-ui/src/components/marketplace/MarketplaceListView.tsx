@@ -8,9 +8,10 @@ import type {
   McpMarketplaceItem,
   SkillMarketplaceItem,
   MarketplaceInstalledMetadata,
+  MarketplaceUser,
 } from "../../types/marketplace"
 import { useLanguage } from "../../context/language"
-import { isInstalled } from "./utils"
+import { filterMarketplaceItems, marketplaceTags } from "./filter"
 import { ItemCard } from "./ItemCard"
 import { MarketplaceContribute } from "./MarketplaceContribute"
 
@@ -28,6 +29,12 @@ interface Props {
   emptyMessage: string
   onInstall: (item: MarketplaceItem) => void
   onRemove: (item: MarketplaceItem, scope: "project" | "global") => void
+  marketplaceUser?: MarketplaceUser
+  marketplaceBaseUrl?: string
+  marketplaceSkillsOnly?: boolean
+  marketplaceMode?: "skills-only" | "full"
+  onUploadMarketplaceSkill?: (item: SkillMarketplaceItem) => void
+  onStarMarketplaceSkill?: (item: MarketplaceItem) => void
 }
 
 export const MarketplaceListView = (props: Props) => {
@@ -42,15 +49,10 @@ export const MarketplaceListView = (props: Props) => {
     { value: "notInstalled", label: t("marketplace.filter.notInstalled") },
   ]
 
-  const tagsFor = (item: MarketplaceItem): string[] => {
-    if (item.type === "skill") return [(item as SkillMarketplaceItem).displayCategory]
-    return item.tags ?? []
-  }
-
   const allTags = createMemo(() => {
     const counts = new Map<string, number>()
     for (const item of props.items) {
-      for (const tag of tagsFor(item)) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+      for (const tag of marketplaceTags(item)) counts.set(tag, (counts.get(tag) ?? 0) + 1)
     }
     const min = props.type === "mcp" ? 5 : 1
     return Array.from(counts.entries())
@@ -69,30 +71,28 @@ export const MarketplaceListView = (props: Props) => {
   }
 
   const filtered = createMemo(() => {
-    const q = search().toLowerCase()
-    const s = status().value
-    const active = tags()
-    return props.items.filter((item) => {
-      if (s === "installed" && !isInstalled(item.id, item.type, props.metadata)) return false
-      if (s === "notInstalled" && isInstalled(item.id, item.type, props.metadata)) return false
-      if (active.length > 0 && !active.some((tag) => tagsFor(item).includes(tag))) return false
-      if (!q) return true
-      const skill = item.type === "skill" ? (item as SkillMarketplaceItem) : undefined
-      return (
-        item.id.toLowerCase().includes(q) ||
-        item.name.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q) ||
-        (item.author?.toLowerCase().includes(q) ?? false) ||
-        (skill?.displayName.toLowerCase().includes(q) ?? false)
-      )
-    })
+    return filterMarketplaceItems(props.items, props.metadata, search(), status().value, tags())
   })
 
   return (
     <div class="marketplace-list">
+      <Show when={props.type === "skill"}>
+        <div class="marketplace-identity-bar">
+          <div class="marketplace-identity-copy">
+            <span class="marketplace-identity-label">市场用户：</span>
+            <span class="marketplace-identity-value">{props.marketplaceUser?.name ?? "未验证"}</span>
+            <Show when={props.marketplaceBaseUrl}>
+              <span class="marketplace-identity-url">{props.marketplaceBaseUrl}</span>
+            </Show>
+            <span class="marketplace-identity-url">
+              市场模式：{props.marketplaceMode === "skills-only" || props.marketplaceSkillsOnly ? "仅技能" : "完整市场"}
+            </span>
+          </div>
+        </div>
+      </Show>
       <div class="marketplace-filters">
         <div class="marketplace-search-field">
-          <TextField placeholder={props.searchPlaceholder} value={search()} onChange={setSearch} />
+          <TextField placeholder={props.searchPlaceholder} value={search()} onInput={(event) => setSearch(event.currentTarget.value)} />
         </div>
         <Select
           options={options()}
@@ -147,7 +147,9 @@ export const MarketplaceListView = (props: Props) => {
                     linkUrl={skill?.githubUrl ?? mcp?.url}
                     onInstall={props.onInstall}
                     onRemove={props.onRemove}
-                    footer={<For each={tagsFor(item)}>{(tag) => <Tag>{tag}</Tag>}</For>}
+                    onStar={props.onStarMarketplaceSkill}
+                    onUpload={props.onUploadMarketplaceSkill}
+                    footer={<For each={marketplaceTags(item)}>{(tag) => <Tag>{tag}</Tag>}</For>}
                   />
                 )
               }}

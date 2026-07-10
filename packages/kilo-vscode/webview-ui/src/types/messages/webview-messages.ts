@@ -1069,6 +1069,16 @@ export interface RemoveInstalledMarketplaceItemMessage {
   mpInstallOptions: InstallMarketplaceItemOptions
 }
 
+export interface UploadMarketplaceSkillMessage {
+  type: "uploadMarketplaceSkill"
+  mpSkillId: string
+}
+
+export interface StarMarketplaceSkillMessage {
+  type: "starMarketplaceSkill"
+  mpSkillId: string
+}
+
 export interface DismissAgentMigrationBannerMessage {
   type: "dismissAgentMigrationBanner"
 }
@@ -1231,6 +1241,8 @@ export type WebviewMessage =
   | FilterMarketplaceItemsMessage
   | InstallMarketplaceItemMessage
   | RemoveInstalledMarketplaceItemMessage
+  | UploadMarketplaceSkillMessage
+  | StarMarketplaceSkillMessage
   | DismissAgentMigrationBannerMessage
   | ConnectProviderMessage
   | AuthorizeProviderOAuthMessage

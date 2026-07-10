@@ -35,6 +35,17 @@ export const ControlPaths = {
 export const ControlApi = HttpApi.make("control").add(
   HttpApiGroup.make("control")
     .add(
+      HttpApiEndpoint.get("authGet", ControlPaths.auth, {
+        params: AuthParams,
+        success: described(Schema.NullOr(Auth.Info), "Authentication credentials for provider"),
+        error: HttpApiError.BadRequest,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "auth.get",
+          summary: "Get auth credentials",
+          description: "Get authentication credentials for a provider.",
+        }),
+      ),
       HttpApiEndpoint.put("authSet", ControlPaths.auth, {
         params: AuthParams,
         payload: Auth.Info,

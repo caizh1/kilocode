@@ -59,10 +59,15 @@ function resolveLocale(lang: string): string {
   return "en"
 }
 
+export function resolveConfiguredLocale(cfg: string | undefined, env: string): string {
+  return resolveLocale(cfg === undefined ? env : cfg || env)
+}
+
 function loadTranslations(): Record<string, string> {
-  // vscode.env.language is available at module load time in the extension host
+  // vscode.env.language and configuration defaults are available at module load time in the extension host.
   const vscode = require("vscode") as typeof import("vscode")
-  const locale = resolveLocale(vscode.env.language)
+  const cfg = vscode.workspace.getConfiguration("kilo-code.new").get<string>("language")
+  const locale = resolveConfiguredLocale(cfg, vscode.env.language)
   return { ...en, ...(bundles[locale] ?? {}) }
 }
 

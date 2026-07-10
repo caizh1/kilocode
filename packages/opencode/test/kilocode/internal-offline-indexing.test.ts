@@ -1,8 +1,18 @@
-import { describe, expect, it } from "bun:test"
+import { afterEach, describe, expect, it } from "bun:test"
 
 import { applyInternalIndexingDefaults } from "../../src/kilocode/internal-offline"
 
 describe("applyInternalIndexingDefaults", () => {
+  const originalBaseUrl = process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL
+
+  afterEach(() => {
+    if (originalBaseUrl === undefined) {
+      delete process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL
+    } else {
+      process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL = originalBaseUrl
+    }
+  })
+
   it("keeps public indexing config unchanged", () => {
     expect(applyInternalIndexingDefaults(undefined, false)).toBeUndefined()
     expect(applyInternalIndexingDefaults({}, false)).toEqual({})
@@ -38,5 +48,43 @@ describe("applyInternalIndexingDefaults", () => {
 
   it("does not override other explicit providers", () => {
     expect(applyInternalIndexingDefaults({ provider: "ollama" }, true)).toEqual({ provider: "ollama" })
+  })
+
+  it("injects only the internal openai-compatible baseUrl when provided by runtime env", () => {
+    process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL = "https://example.test/v1/embeddings"
+
+    expect(applyInternalIndexingDefaults({}, true)).toEqual({
+      provider: "openai-compatible",
+      model: "qwen3-embedding-8b",
+      dimension: 2048,
+      vectorStore: "lancedb",
+      "openai-compatible": {
+        baseUrl: "https://example.test/v1/embeddings",
+      },
+    })
+  })
+
+  it("preserves user apiKey and does not default one", () => {
+    process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL = "https://example.test/v1/embeddings"
+
+    expect(
+      applyInternalIndexingDefaults(
+        {
+          "openai-compatible": {
+            apiKey: "user-key",
+          },
+        },
+        true,
+      ),
+    ).toEqual({
+      provider: "openai-compatible",
+      model: "qwen3-embedding-8b",
+      dimension: 2048,
+      vectorStore: "lancedb",
+      "openai-compatible": {
+        baseUrl: "https://example.test/v1/embeddings",
+        apiKey: "user-key",
+      },
+    })
   })
 })

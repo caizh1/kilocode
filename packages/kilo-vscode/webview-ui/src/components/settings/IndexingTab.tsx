@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal, onCleanup } from "solid-js"
+import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Card } from "@kilocode/kilo-ui/card"
 import { formatKiloEmbeddingModelLabel, getKiloEmbeddingModel } from "@kilocode/kilo-indexing/embedding-models"
@@ -26,7 +26,11 @@ import { useVSCode } from "../../context/vscode"
 import type { IndexingConfig, IndexingPipelineStatus, IndexingProvider as ProviderId } from "../../types/messages"
 import { KILO_PROVIDER_ID } from "../../../../src/shared/provider-model"
 import { INTERNAL_OFFLINE_INDEXING_DEFAULTS, isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
-import { applyInternalIndexingDefaults } from "../../utils/indexing-defaults"
+import {
+  applyInternalIndexingDefaults,
+  materializeInternalIndexingDefaultsForSave,
+  mergeIndexingConfigForDisplay,
+} from "../../utils/indexing-defaults"
 import SettingsRow from "./SettingsRow"
 
 type Option = { value: string; label: string }
@@ -163,6 +167,10 @@ const IndexingTab: Component = () => {
   const [storeDrafts, setStoreDrafts] = createSignal<Record<string, string>>({})
   const [tuningDrafts, setTuningDrafts] = createSignal<Record<string, string>>({})
   const [documentDrafts, setDocumentDrafts] = createSignal<Record<string, string>>({})
+  const [modelDraft, setModelDraft] = createSignal<string>()
+  const [dimensionDraft, setDimensionDraft] = createSignal<string>()
+  const [pendingModelCommit, setPendingModelCommit] = createSignal<string>()
+  const [pendingDimensionCommit, setPendingDimensionCommit] = createSignal<number>()
   const [copied, setCopied] = createSignal<string>()
   let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -179,12 +187,14 @@ const IndexingTab: Component = () => {
 
   const rawCfg = createMemo<IndexingConfig>(() => config().indexing ?? {})
   const rawGlobalCfg = createMemo<IndexingConfig>(() => globalConfig().indexing ?? {})
-  const cfg = createMemo<IndexingConfig>(() => applyInternalIndexingDefaults(rawCfg()))
+  const effectiveRawCfg = createMemo<IndexingConfig>(() => mergeIndexingConfigForDisplay(rawGlobalCfg(), rawCfg()))
+  const cfg = createMemo<IndexingConfig>(() => applyInternalIndexingDefaults(effectiveRawCfg()))
   const globalCfg = createMemo<IndexingConfig>(() => applyInternalIndexingDefaults(rawGlobalCfg()))
   const globalOn = createMemo(() => globalCfg().enabled === true)
 
   const updateIndexing = (partial: IndexingConfig) => {
-    updateConfig({ indexing: { ...rawCfg(), ...partial } })
+    const materialized = materializeInternalIndexingDefaultsForSave(effectiveRawCfg(), partial)
+    updateConfig({ indexing: { ...rawCfg(), ...materialized } })
   }
 
   const updateDocuments = (partial: NonNullable<IndexingConfig["documents"]>) => {
@@ -203,6 +213,22 @@ const IndexingTab: Component = () => {
         console.warn("failed to copy indexing diagnostics", err)
       })
   }
+
+  createEffect(() => {
+    const pending = pendingModelCommit()
+    if (pending === undefined) return
+    if ((cfg().model ?? "") !== pending) return
+    setModelDraft(undefined)
+    setPendingModelCommit(undefined)
+  })
+
+  createEffect(() => {
+    const pending = pendingDimensionCommit()
+    if (pending === undefined) return
+    if (cfg().dimension !== pending) return
+    setDimensionDraft(undefined)
+    setPendingDimensionCommit(undefined)
+  })
 
   const vectorStore = () => cfg().vectorStore ?? "lancedb"
   const documents = () => cfg().documents ?? {}
@@ -227,6 +253,8 @@ const IndexingTab: Component = () => {
   const fields = createMemo(() => providerFields(selectedProvider()))
 
   const saveProvider = (next: ProviderId | undefined) => {
+    setModelDraft(undefined)
+    setDimensionDraft(undefined)
     if (next === "kilo") {
       const model = knownKiloModel(cfg().model) ?? (kiloDefault() || null)
       updateIndexing({
@@ -280,8 +308,17 @@ const IndexingTab: Component = () => {
   const saveModel = (value: string) => {
     if (selectedProvider() === "kilo") return
     const trimmed = value.trim()
-    updateIndexing({ model: trimmed || null })
+    if (!trimmed) {
+      updateIndexing({ model: null })
+      setModelDraft(undefined)
+      setPendingModelCommit(undefined)
+      return
+    }
+    updateIndexing({ model: trimmed })
+    setPendingModelCommit(trimmed)
   }
+
+  const modelValue = () => modelDraft() ?? (cfg().model ?? "")
 
   const providerValue = (group: string, key: string) => {
     const draftKey = `${group}.${key}`
@@ -316,16 +353,11 @@ const IndexingTab: Component = () => {
   ) => {
     const trimmed = value.trim()
     if (!trimmed) {
-      updateIndexing({
-        [key]:
-          key === "dimension" &&
-          isInternalOfflineBuild() &&
-          selectedProvider() === INTERNAL_OFFLINE_INDEXING_DEFAULTS.provider
-            ? INTERNAL_OFFLINE_INDEXING_DEFAULTS.dimension
-            : key === "dimension"
-              ? null
-              : undefined,
-      })
+      updateIndexing({ [key]: key === "dimension" ? null : undefined })
+      if (key === "dimension") {
+        setDimensionDraft(undefined)
+        setPendingDimensionCommit(undefined)
+      }
       return
     }
 
@@ -335,6 +367,7 @@ const IndexingTab: Component = () => {
     if (options?.min !== undefined && num < options.min) return
     if (options?.max !== undefined && num > options.max) return
     updateIndexing({ [key]: num })
+    if (key === "dimension") setPendingDimensionCommit(num)
   }
 
   const tuningValue = (key: TuningKey) => {
@@ -342,6 +375,12 @@ const IndexingTab: Component = () => {
     if (draft !== undefined) return draft
     const value = cfg()[key]
     return value === undefined ? "" : String(value)
+  }
+
+  const dimensionValue = () => {
+    const draft = dimensionDraft()
+    if (draft !== undefined) return draft
+    return staleKiloModel() || cfg().dimension === undefined || cfg().dimension === null ? "" : String(cfg().dimension)
   }
 
   const documentValue = (key: DocumentNumberKey) => {
@@ -488,9 +527,16 @@ const IndexingTab: Component = () => {
             description={language.t("settings.indexing.model.description")}
           >
             <TextField
-              value={cfg().model ?? ""}
+              value={modelValue()}
               placeholder={isInternalOfflineBuild() ? INTERNAL_OFFLINE_INDEXING_DEFAULTS.model : "Enter model ID"}
-              onChange={saveModel}
+              onInput={(e: InputEvent) => {
+                const target = e.currentTarget as HTMLInputElement
+                setModelDraft(target.value)
+              }}
+              onBlur={(e: FocusEvent) => {
+                const target = e.currentTarget as HTMLInputElement
+                saveModel(target.value)
+              }}
             />
           </SettingsRow>
         </Show>
@@ -500,17 +546,20 @@ const IndexingTab: Component = () => {
           last={!selectedProvider() || (fields().length === 0 && !(selectedProvider() === "kilo" && !kiloAvailable()))}
         >
           <TextField
-            value={
-              staleKiloModel() || cfg().dimension === undefined || cfg().dimension === null
-                ? ""
-                : String(cfg().dimension)
-            }
+            value={dimensionValue()}
             placeholder={
               isInternalOfflineBuild() && selectedProvider() === INTERNAL_OFFLINE_INDEXING_DEFAULTS.provider
                 ? String(INTERNAL_OFFLINE_INDEXING_DEFAULTS.dimension)
                 : language.t("settings.indexing.dimension.placeholder")
             }
-            onChange={(value) => saveNumber("dimension", value, { integer: true, min: 1 })}
+            onInput={(e: InputEvent) => {
+              const target = e.currentTarget as HTMLInputElement
+              setDimensionDraft(target.value)
+            }}
+            onBlur={(e: FocusEvent) => {
+              const target = e.currentTarget as HTMLInputElement
+              saveNumber("dimension", target.value, { integer: true, min: 1 })
+            }}
           />
         </SettingsRow>
         <Show when={selectedProvider() === "kilo" && !kiloAvailable()}>

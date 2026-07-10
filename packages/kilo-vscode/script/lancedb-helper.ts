@@ -3,14 +3,24 @@ import { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statS
 
 const root = join(import.meta.dir, "..", "..", "..")
 const store = join(root, "node_modules", ".bun", "node_modules")
-const modules = [
+const baseModules = [
   "@lancedb/lancedb",
-  "@lancedb/lancedb-win32-x64-msvc",
   "apache-arrow",
   "flatbuffers",
   "reflect-metadata",
   "tslib",
 ] as const
+
+const nativeModules: Record<string, { module: string; binary: string }> = {
+  "win32-x64": {
+    module: "@lancedb/lancedb-win32-x64-msvc",
+    binary: "lancedb.win32-x64-msvc.node",
+  },
+  "linux-x64": {
+    module: "@lancedb/lancedb-linux-x64-gnu",
+    binary: "lancedb.linux-x64-gnu.node",
+  },
+}
 
 export function lancedbRuntimeDir(bin: string): string {
   return join(bin, "lancedb")
@@ -20,15 +30,17 @@ export function lancedbRuntimeEntry(bin: string): string {
   return join(lancedbRuntimeDir(bin), "node_modules", "@lancedb", "lancedb", "dist", "index.js")
 }
 
-export async function copyLanceDBRuntime(bin: string): Promise<void> {
+export async function copyLanceDBRuntime(bin: string, target = "win32-x64"): Promise<void> {
+  const native = nativeModules[target]
+  if (!native) throw new Error(`Unsupported LanceDB runtime target for internal packaging: ${target}`)
   const dir = lancedbRuntimeDir(bin)
   const dest = join(dir, "node_modules")
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dest, { recursive: true })
 
-  for (const name of modules) copy(name, dest)
+  for (const name of [...baseModules, native.module]) copy(name, dest)
   prune(dir)
-  verify(bin)
+  verify(bin, native)
 }
 
 function copy(name: string, dest: string): void {
@@ -62,11 +74,11 @@ function prune(dir: string): void {
   }
 }
 
-function verify(bin: string): void {
+function verify(bin: string, native: { module: string; binary: string }): void {
   const required = [
     lancedbRuntimeEntry(bin),
     join(lancedbRuntimeDir(bin), "node_modules", "@lancedb", "lancedb", "dist", "native.js"),
-    join(lancedbRuntimeDir(bin), "node_modules", "@lancedb", "lancedb-win32-x64-msvc", "lancedb.win32-x64-msvc.node"),
+    join(lancedbRuntimeDir(bin), "node_modules", ...parts(native.module), native.binary),
     join(lancedbRuntimeDir(bin), "node_modules", "apache-arrow", "Arrow.node.js"),
     join(lancedbRuntimeDir(bin), "node_modules", "flatbuffers", "js", "flatbuffers.js"),
     join(lancedbRuntimeDir(bin), "node_modules", "reflect-metadata", "Reflect.js"),

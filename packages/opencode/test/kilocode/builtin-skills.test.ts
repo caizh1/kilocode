@@ -1,6 +1,7 @@
 import { expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { existsSync } from "fs"
 import path from "path"
 import { Skill } from "../../src/skill"
 import { BUILTIN_SKILLS } from "../../src/kilocode/skills/builtin"
@@ -18,7 +19,11 @@ it.instance(
       for (const builtin of BUILTIN_SKILLS) {
         const found = skills.find((s) => s.name === builtin.name)
         expect(found).toBeDefined()
-        expect(found!.location).toBe(Skill.BUILTIN_LOCATION)
+        if (builtin.files) {
+          expect(found!.location).toContain(path.join("builtin-skills", builtin.name, "SKILL.md"))
+        } else {
+          expect(found!.location).toBe(Skill.BUILTIN_LOCATION)
+        }
         expect(found!.description).toBe(builtin.description)
         expect(found!.content.length).toBeGreaterThan(0)
       }
@@ -36,6 +41,30 @@ it.instance(
       expect(item!.name).toBe("kilo-config")
       expect(item!.location).toBe(Skill.BUILTIN_LOCATION)
       expect(item!.content).toContain("kilo")
+    }),
+  { git: true },
+)
+
+it.instance(
+  "document deliverable skills ship as built-ins without replacing QA",
+  () =>
+    Effect.gen(function* () {
+      const skill = yield* Skill.Service
+
+      const documents = yield* skill.get("documents")
+      expect(documents).toBeDefined()
+      expect(documents!.location).toBe(Skill.BUILTIN_LOCATION)
+      expect(documents!.content).toContain("not a QA pipeline")
+      expect(documents!.content).toContain("generic Word/Mermaid/artifact guidance")
+
+      const sourceBacked = yield* skill.get("source-backed-detail-design")
+      expect(sourceBacked).toBeDefined()
+      expect(sourceBacked!.location).toContain(path.join("builtin-skills", "source-backed-detail-design", "SKILL.md"))
+      expect(sourceBacked!.content).toContain("not a migrated Word/document contract")
+      expect(sourceBacked!.content).toContain("Kilo built-in skill")
+      expect(sourceBacked!.content).toContain("Do not force ordinary code QA")
+      expect(existsSync(path.join(path.dirname(sourceBacked!.location), "references", "01-core-principles.md"))).toBe(true)
+      expect(existsSync(path.join(path.dirname(sourceBacked!.location), "references", "15-business-flow-abstraction-rules.md"))).toBe(true)
     }),
   { git: true },
 )

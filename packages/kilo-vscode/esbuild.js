@@ -11,7 +11,10 @@ const internalOffline =
   process.env.KILO_INTERNAL_OFFLINE === "1"
 
 const define = {
-  __CHIPMATE_INTERNAL_OFFLINE__: JSON.stringify(internalOffline),
+	__CHIPMATE_INTERNAL_OFFLINE__: JSON.stringify(internalOffline),
+	__CHIPMATE_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL__: JSON.stringify(
+		process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL || "",
+	),
 }
 
 /**

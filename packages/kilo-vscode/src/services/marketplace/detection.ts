@@ -2,12 +2,15 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import type { MarketplaceInstalledMetadata } from "./types"
 import { MarketplacePaths } from "./paths"
+import { normalizeSkillKey } from "./skills"
 
 type Entry = [string, { type: string }]
 
 export interface CliSkill {
   name: string
+  description?: string
   location: string
+  content?: string
 }
 
 export class InstallationDetector {
@@ -52,7 +55,8 @@ export class InstallationDetector {
           ? !!workspace && this.isProjectSkill(s.location, workspace)
           : !workspace || !this.isProjectSkill(s.location, workspace),
       )
-      .map((s) => [s.name, { type: "skill" }])
+      .map((s): Entry => [normalizeSkillKey(s.name), { type: "skill" }])
+      .filter(([id]) => Boolean(id))
   }
 
   /** Scan .kilo/agents/*.md files to detect installed marketplace agents. */

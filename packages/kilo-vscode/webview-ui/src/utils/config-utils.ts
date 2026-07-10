@@ -90,15 +90,16 @@ export class ConfigState {
     if (!this.saving && request !== undefined) return
     if (this.saving) {
       if (request !== this.request) return
+      const acknowledged = stripNulls(deepMerge(server, this.draft))
       this.saving = false
       this.request = undefined
       this.draft = {}
       this.dirty = false
-      this.config = server
+      this.config = acknowledged
     } else {
       this.config = resolveConfig(server, this.draft, this.dirty)
     }
-    this.saved = server
+    this.saved = this.config
   }
 
   /** Handle a confirmed save when merged config refresh is still pending. */

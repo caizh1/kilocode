@@ -165,9 +165,7 @@ export const LanguageProvider: ParentComponent<LanguageProviderProps> = (props) 
   // Initialize from extension-side override
   createEffect(() => {
     const override = props.languageOverride?.()
-    if (override) {
-      setUserOverride(normalizeLocale(override))
-    }
+    if (override !== undefined) setUserOverride(override ? normalizeLocale(override) : "")
   })
 
   // Resolved locale: user override → VS Code language → browser language → "en"

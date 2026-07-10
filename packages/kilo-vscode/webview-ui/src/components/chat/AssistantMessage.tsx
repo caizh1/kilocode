@@ -25,8 +25,10 @@ import { useLanguage } from "../../context/language"
 import { useServer } from "../../context/server"
 import { snapshotProgress } from "../../context/session-utils"
 import { planDisplayPath } from "../../utils/plan-path"
+import type { ToolPart as WebToolPart } from "../../types/messages"
 import { QuestionDock } from "./QuestionDock"
 import { SuggestBar } from "./SuggestBar"
+import { DocumentArtifactCard } from "./DocumentArtifactCard"
 
 // Tools that the upstream message-part renderer suppresses (returns null for).
 // We render these ourselves via ToolRegistry when they complete,
@@ -238,21 +240,29 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                                 <Show
                                   when={isUpstreamSuppressed}
                                   fallback={
-                                    <Part
-                                      part={part}
-                                      message={props.message as SDKMessage}
-                                      showAssistantCopyPartID={props.showAssistantCopyPartID}
-                                      reasoningAutoCollapse={display.reasoningAutoCollapse()}
-                                      feedback={props.feedback}
-                                      animate={
-                                        part.type === "tool" &&
-                                        ((part as unknown as ToolPart).state?.status === "pending" ||
-                                          (part as unknown as ToolPart).state?.status === "running")
-                                      }
-                                    />
+                                    <>
+                                      <Part
+                                        part={part}
+                                        message={props.message as SDKMessage}
+                                        showAssistantCopyPartID={props.showAssistantCopyPartID}
+                                        reasoningAutoCollapse={display.reasoningAutoCollapse()}
+                                        feedback={props.feedback}
+                                        animate={
+                                          part.type === "tool" &&
+                                          ((part as unknown as ToolPart).state?.status === "pending" ||
+                                            (part as unknown as ToolPart).state?.status === "running")
+                                        }
+                                      />
+                                      <Show when={part.type === "tool"}>
+                                        <DocumentArtifactCard part={part as unknown as WebToolPart} />
+                                      </Show>
+                                    </>
                                   }
                                 >
-                                  <TodoToolCard part={part as unknown as ToolPart} />
+                                  <>
+                                    <TodoToolCard part={part as unknown as ToolPart} />
+                                    <DocumentArtifactCard part={part as unknown as WebToolPart} />
+                                  </>
                                 </Show>
                               }
                             >

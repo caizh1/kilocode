@@ -211,7 +211,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
           </Show>
           <Show when={isEmpty() && !props.readonly}>
             <div class="message-list-empty">
-              <ChipMateLogo class="kilo-logo" />
+              <ChipMateLogo class="kilo-logo" welcome />
               <p class="kilo-about-text">{language.t("session.messages.welcome")}</p>
               <Show when={recent().length > 0 && props.onSelectSession}>
                 <div class="recent-sessions">

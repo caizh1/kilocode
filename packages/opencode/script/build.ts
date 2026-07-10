@@ -54,6 +54,15 @@ const singleFlag = process.argv.includes("--single")
 const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
+const targetsArg = process.argv.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length) ?? process.env.KILO_BUILD_TARGETS
+const requestedTargets = targetsArg
+  ? new Set(
+      targetsArg
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    )
+  : undefined
 const plugin = createSolidTransformPlugin()
 // kilocode_change - packages/app was removed; the web UI embed step is no longer applicable
 
@@ -247,7 +256,25 @@ const allTargets: {
   },
 ]
 
-const targets = singleFlag
+function packageNameForTarget(item: (typeof allTargets)[number]) {
+  return [
+    pkg.name,
+    // changing to win32 flags npm for some reason
+    item.os === "win32" ? "windows" : item.os,
+    item.arch,
+    item.avx2 === false ? "baseline" : undefined,
+    item.abi === undefined ? undefined : item.abi,
+  ]
+    .filter(Boolean)
+    .join("-")
+}
+
+function targetAliases(item: (typeof allTargets)[number]) {
+  const name = packageNameForTarget(item)
+  return [name, name.replace(`${pkg.name}-`, "")]
+}
+
+const baseTargets = singleFlag
   ? allTargets.filter((item) => {
       if (item.os !== process.platform || item.arch !== process.arch) {
         return false
@@ -268,6 +295,14 @@ const targets = singleFlag
     })
   : allTargets
 
+const targets = requestedTargets
+  ? baseTargets.filter((item) => targetAliases(item).some((alias) => requestedTargets.has(alias)))
+  : baseTargets
+
+if (requestedTargets && targets.length === 0) {
+  throw new Error(`No build targets matched --targets=${Array.from(requestedTargets).join(",")}`)
+}
+
 // kilocode_change start - prepare one validated models snapshot before any target compile
 const snapshot = await prepareModelsSnapshot()
 console.log(
@@ -284,16 +319,7 @@ if (!skipInstall) {
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
 }
 for (const item of targets) {
-  const name = [
-    pkg.name,
-    // changing to win32 flags npm for some reason
-    item.os === "win32" ? "windows" : item.os,
-    item.arch,
-    item.avx2 === false ? "baseline" : undefined,
-    item.abi === undefined ? undefined : item.abi,
-  ]
-    .filter(Boolean)
-    .join("-")
+  const name = packageNameForTarget(item)
 
   console.log(`building ${name}`)
   await $`mkdir -p dist/${name}/bin`

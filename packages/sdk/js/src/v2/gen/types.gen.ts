@@ -3934,6 +3934,33 @@ export type AuthRemoveResponses = {
 
 export type AuthRemoveResponse = AuthRemoveResponses[keyof AuthRemoveResponses]
 
+export type AuthGetData = {
+  body?: never
+  path: {
+    providerID: string
+  }
+  query?: never
+  url: "/auth/{providerID}"
+}
+
+export type AuthGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type AuthGetError = AuthGetErrors[keyof AuthGetErrors]
+
+export type AuthGetResponses = {
+  /**
+   * Authentication credentials for provider
+   */
+  200: Auth
+}
+
+export type AuthGetResponse = AuthGetResponses[keyof AuthGetResponses]
+
 export type AuthSetData = {
   body?: Auth
   path: {

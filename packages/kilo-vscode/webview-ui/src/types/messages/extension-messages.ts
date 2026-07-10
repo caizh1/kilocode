@@ -2,7 +2,7 @@ import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@kilocode/sd
 import type { DiffSourceCapabilities, DiffSourceDescriptor } from "../../../../src/diff/sources/types"
 import type { PartBatch, PartRemove, PartUpdate } from "../../../../src/shared/stream-messages"
 import type { SessionMode } from "../../context/worktree-mode"
-import type { MarketplaceItem, MarketplaceInstalledMetadata } from "../marketplace"
+import type { MarketplaceItem, MarketplaceInstalledMetadata, MarketplaceUser } from "../marketplace"
 import type { ConnectionState, ServerInfo, SessionStatus } from "./connection"
 import type { FileAttachment, Part } from "./parts"
 import type { CloudSessionInfo, Message, MessageLoadMode, SessionCloseReason, SessionInfo } from "./sessions"
@@ -852,6 +852,10 @@ export interface MarketplaceDataMessage {
   type: "marketplaceData"
   marketplaceItems: MarketplaceItem[]
   marketplaceInstalledMetadata: MarketplaceInstalledMetadata
+  marketplaceUser?: MarketplaceUser
+  marketplaceBaseUrl?: string
+  marketplaceSkillsOnly?: boolean
+  marketplaceMode?: "skills-only" | "full"
   errors?: string[]
   showAgentMigrationBanner?: boolean
 }

@@ -44,6 +44,7 @@ const UNKNOWN_INITIALIZATION_ERROR = "Unknown indexing initialization error"
 const missing = () => disabledIndexingStatus("Indexing plugin is not enabled for this workspace.")
 const noWorkspace = () =>
   disabledIndexingStatus("Codebase indexing is disabled because no workspace folder is open in VS Code.")
+const vscodeDisabled = () => disabledIndexingStatus("Codebase indexing is disabled by the VS Code setting.")
 
 function worktreeDisabled(): z.infer<typeof IndexingStatus> {
   return disabledIndexingStatus("Indexing is disabled in worktree sessions. Use the main workspace for indexing.")
@@ -380,6 +381,9 @@ export namespace KiloIndexing {
     const cfg = await AppRuntime.runPromise(Config.Service.use((svc) => svc.get()))
     if (process.env["KILO_DISABLE_CODEBASE_INDEXING"] === "vscode-no-workspace") {
       return track(hit, await inert(() => noWorkspace()))
+    }
+    if (process.env["KILO_DISABLE_CODEBASE_INDEXING"] === "vscode-disabled") {
+      return track(hit, await inert(() => vscodeDisabled()))
     }
     if (!hasIndexingPlugin(cfg.plugin)) {
       return track(hit, await inert(() => missing()))

@@ -2,6 +2,7 @@ import * as vscode from "vscode"
 import { readQwenAutocompleteConfig, qwenAutocompleteEnabled } from "./config"
 import { exportQwenAutocompleteDiagnostics, showQwenAutocompleteLogs } from "./diagnostics"
 import { KiloQwenInlineCompletionProvider, QWEN_DOCUMENT_SELECTOR } from "./KiloQwenInlineCompletionProvider"
+import { qwenDiagnosticSmoke } from "./smoke"
 import { QwenImportDefinitionsTracker } from "./importDefinitions"
 import { QwenRecentlyEditedTracker } from "./recentlyEdited"
 import { QwenRecentlyOpenedTracker } from "./recentlyOpened"
@@ -16,6 +17,7 @@ export function registerQwenAutocompleteProvider(context: vscode.ExtensionContex
       "kilo-code.new.qwenAutocomplete.exportDiagnostics",
       exportQwenAutocompleteDiagnostics,
     ),
+    vscode.commands.registerCommand("kilo-code.new.qwenAutocomplete.smokeDiagnostics", qwenDiagnosticSmoke),
   )
   return reg
 }

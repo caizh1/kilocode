@@ -1,0 +1,30 @@
+{
+  "name": "embedded-c-module-detail-design",
+  "prompt": "为当前嵌入式 C 模块生成源码驱动详细设计文档，包含业务流程、代码流程、状态机、Mermaid PNG 和 Word 输出。",
+  "expectedNativeEvidenceTools": [
+    "codebase_analysis",
+    "semantic_search",
+    "document_search"
+  ],
+  "expectedArtifactTools": [
+    "declare_artifact",
+    "render_mermaid_diagram",
+    "save_mermaid_artifact",
+    "create_word_document",
+    "render_word_document"
+  ],
+  "expectedOutputs": [
+    "source evidence",
+    "business flow",
+    "code flow",
+    "state machine",
+    "Mermaid PNG",
+    "Word docx",
+    "quality gate report"
+  ],
+  "forbiddenRuntimeMarkers": [
+    "DesignDocAgentFlow",
+    "chipmate_run_skill_script",
+    "chipmate_read_skill_resource"
+  ]
+}

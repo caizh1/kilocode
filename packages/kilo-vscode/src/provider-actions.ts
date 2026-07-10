@@ -30,6 +30,17 @@ function customProvider(config: unknown) {
   return record(config) && config.npm === CUSTOM_PROVIDER_PACKAGE
 }
 
+function normalizeCustomProviderModelIDs<T extends { models: Record<string, unknown> }>(providerID: string, config: T): T {
+  const prefix = `${providerID}/`
+  const models = Object.fromEntries(
+    Object.entries(config.models).map(([modelID, model]) => [
+      modelID.startsWith(prefix) ? modelID.slice(prefix.length) : modelID,
+      model,
+    ]),
+  )
+  return { ...config, models }
+}
+
 function same(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (Array.isArray(a) || Array.isArray(b)) {
@@ -412,7 +423,8 @@ export async function saveCustomProvider(
     const disabled = globalConfig.disabled_providers ?? []
     const nextDisabled = disabled.filter((item: string) => item !== id)
     const existing = (globalConfig.provider as Record<string, unknown> | undefined)?.[id]
-    const patch = withCustomProviderDeletions(existing, sanitized.value)
+    const normalized = normalizeCustomProviderModelIDs(id, sanitized.value)
+    const patch = withCustomProviderDeletions(existing, normalized)
     const { data: updated } = await ctx.client.global.config.update(
       {
         config: {

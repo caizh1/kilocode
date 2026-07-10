@@ -45,10 +45,17 @@ export interface AgentMarketplaceItem extends MarketplaceItemBase {
 export interface SkillMarketplaceItem extends MarketplaceItemBase {
   type: "skill"
   category: string
-  githubUrl: string
+  githubUrl?: string
   content: string
   displayName: string
   displayCategory: string
+  uploadedBy?: string
+  uploadedAt?: string
+  updatedAt?: string
+  downloadCount?: number
+  stars?: number
+  localOnly?: boolean
+  uploadable?: boolean
 }
 
 export type MarketplaceItem = McpMarketplaceItem | AgentMarketplaceItem | SkillMarketplaceItem
@@ -67,4 +74,9 @@ export interface MarketplaceFilters {
   type?: string
   search?: string
   tags?: string[]
+}
+
+export interface MarketplaceUser {
+  name: string
+  tokenName?: string
 }

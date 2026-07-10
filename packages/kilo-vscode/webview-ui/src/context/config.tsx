@@ -112,8 +112,13 @@ export const ConfigProvider: ParentComponent = (props) => {
     }
     if (message.type === "configUpdated") {
       if (!saving() && message.requestId !== undefined) return
+      let confirmedConfig = message.config
       if (saving()) {
         if (message.requestId !== request()) return
+        const acknowledged = stripNulls(deepMerge(message.config, draft()))
+        const acknowledgedGlobal =
+          message.globalConfig !== undefined ? stripNulls(deepMerge(message.globalConfig, globalDraft())) : undefined
+        confirmedConfig = acknowledged
         // This configUpdated is the confirmation of our saveConfig() write.
         // Clear the draft now that the server has confirmed the write.
         setSaving(false)
@@ -121,10 +126,10 @@ export const ConfigProvider: ParentComponent = (props) => {
         setDraft({})
         setGlobalDraft({})
         setSaveError(null)
-        setConfig(message.config)
-        if (message.globalConfig !== undefined) {
-          setGlobalConfig(stripNulls(deepMerge(message.globalConfig, globalDraft())))
-          setSavedGlobal(message.globalConfig)
+        setConfig(acknowledged)
+        if (acknowledgedGlobal !== undefined) {
+          setGlobalConfig(acknowledgedGlobal)
+          setSavedGlobal(acknowledgedGlobal)
         }
         setFeatures(message.features)
       } else {
@@ -137,7 +142,7 @@ export const ConfigProvider: ParentComponent = (props) => {
         }
         setFeatures(message.features)
       }
-      setSaved(message.config)
+      setSaved(confirmedConfig)
       return
     }
     if (message.type === "configUpdateFailed") {

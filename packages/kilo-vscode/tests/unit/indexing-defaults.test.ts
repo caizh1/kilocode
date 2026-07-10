@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test"
 
-import { applyInternalIndexingDefaults } from "../../webview-ui/src/utils/indexing-defaults"
+import {
+  applyInternalIndexingDefaults,
+  materializeInternalIndexingDefaultsForSave,
+  mergeIndexingConfigForDisplay,
+} from "../../webview-ui/src/utils/indexing-defaults"
 
 describe("applyInternalIndexingDefaults", () => {
   it("keeps public builds unchanged", () => {
@@ -37,5 +41,100 @@ describe("applyInternalIndexingDefaults", () => {
 
   it("does not force qwen defaults onto other explicit providers", () => {
     expect(applyInternalIndexingDefaults({ provider: "openai" }, true)).toEqual({ provider: "openai" })
+  })
+
+  it("preserves explicit openai-compatible provider options while applying internal defaults", () => {
+    expect(
+      applyInternalIndexingDefaults(
+        {
+          "openai-compatible": {
+            apiKey: "user-key",
+          },
+        },
+        true,
+      ),
+    ).toEqual({
+      provider: "openai-compatible",
+      model: "qwen3-embedding-8b",
+      dimension: 2048,
+      vectorStore: "lancedb",
+      "openai-compatible": {
+        apiKey: "user-key",
+      },
+    })
+  })
+
+  it("materializes internal defaults when saving a custom model over inferred defaults", () => {
+    expect(materializeInternalIndexingDefaultsForSave({}, { model: "custom-embedding" }, true)).toEqual({
+      provider: "openai-compatible",
+      model: "custom-embedding",
+      dimension: 2048,
+      vectorStore: "lancedb",
+    })
+  })
+
+  it("keeps an explicit empty model as a default-model delete sentinel", () => {
+    expect(materializeInternalIndexingDefaultsForSave({}, { model: null }, true)).toEqual({
+      provider: "openai-compatible",
+      model: null,
+      dimension: 2048,
+      vectorStore: "lancedb",
+    })
+  })
+
+  it("does not materialize internal defaults for project-only indexing changes", () => {
+    expect(materializeInternalIndexingDefaultsForSave({}, { enabled: true }, true)).toEqual({ enabled: true })
+  })
+
+  it("uses global provider settings and project enablement as the display config", () => {
+    expect(
+      mergeIndexingConfigForDisplay(
+        { provider: "openai-compatible", model: "custom-embedding", dimension: 1024 },
+        { enabled: true },
+      ),
+    ).toEqual({
+      provider: "openai-compatible",
+      model: "custom-embedding",
+      dimension: 1024,
+      enabled: true,
+    })
+  })
+
+  it("preserves an existing custom model when materializing another indexing field", () => {
+    expect(
+      materializeInternalIndexingDefaultsForSave(
+        { provider: "openai-compatible", model: "custom-embedding", dimension: 1024 },
+        { vectorStore: "qdrant" },
+        true,
+      ),
+    ).toEqual({
+      provider: "openai-compatible",
+      model: "custom-embedding",
+      dimension: 1024,
+      vectorStore: "qdrant",
+    })
+  })
+
+  it("preserves provider options when materializing another indexing field", () => {
+    expect(
+      materializeInternalIndexingDefaultsForSave(
+        {
+          provider: "openai-compatible",
+          "openai-compatible": {
+            apiKey: "user-key",
+          },
+        },
+        { model: "custom-embedding" },
+        true,
+      ),
+    ).toEqual({
+      provider: "openai-compatible",
+      model: "custom-embedding",
+      dimension: 2048,
+      vectorStore: "lancedb",
+      "openai-compatible": {
+        apiKey: "user-key",
+      },
+    })
   })
 })

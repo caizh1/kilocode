@@ -62,8 +62,14 @@ function checkVariant(v: VariantEntry, seen: Set<string>, t: Translator) {
   return { name: undefined }
 }
 
-function checkModel(m: ModelEntry, seenModels: Set<string>, t: Translator) {
-  const id = m.id.trim()
+function normalizeModelID(providerID: string, modelID: string): string {
+  const id = modelID.trim()
+  const prefix = `${providerID}/`
+  return providerID && id.startsWith(prefix) ? id.slice(prefix.length).trim() : id
+}
+
+function checkModel(providerID: string, m: ModelEntry, seenModels: Set<string>, t: Translator) {
+  const id = normalizeModelID(providerID, m.id)
   let idErr: string | undefined
   if (!id) idErr = t("provider.custom.error.required")
   else if (seenModels.has(id)) idErr = t("provider.custom.error.duplicate")
@@ -111,12 +117,12 @@ function serializeVariant(v: VariantEntry): [string, Record<string, unknown>] {
   return [v.name.trim(), cfg]
 }
 
-function serializeModel(m: ModelEntry): [string, Record<string, unknown>] {
+function serializeModel(providerID: string, m: ModelEntry): [string, Record<string, unknown>] {
   const ventries = m.reasoning ? m.variants.filter((v) => v.name.trim()).map(serializeVariant) : []
   const entry: Record<string, unknown> = { name: m.name.trim() }
   if (m.reasoning) entry.reasoning = true
   if (ventries.length > 0) entry.variants = Object.fromEntries(ventries)
-  return [m.id.trim(), entry]
+  return [normalizeModelID(providerID, m.id), entry]
 }
 
 function resolveEnv(rawEnv: string | undefined, savedEnv: string[] | undefined) {
@@ -152,7 +158,7 @@ export function validateCustomProvider(input: ValidateArgs): ValidateResult {
       : undefined
 
   const seenModels = new Set<string>()
-  const modelErrors = input.form.models.map((m) => checkModel(m, seenModels, input.t))
+  const modelErrors = input.form.models.map((m) => checkModel(providerID, m, seenModels, input.t))
   const modelsValid = modelErrors.every((m) => !m.id && !m.name && m.variants.every((v) => !v.name))
 
   const seenHeaders = new Set<string>()
@@ -193,7 +199,7 @@ export function validateCustomProvider(input: ValidateArgs): ValidateResult {
         name,
         ...resolveEnv(rawEnv, savedEnv),
         options,
-        models: Object.fromEntries(input.form.models.map(serializeModel)),
+        models: Object.fromEntries(input.form.models.map((m) => serializeModel(providerID, m))),
       },
     },
   }

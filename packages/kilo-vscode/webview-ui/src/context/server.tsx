@@ -67,7 +67,7 @@ export const ServerProvider: ParentComponent = (props) => {
           if (message.vscodeLanguage) {
             setVscodeLanguage(message.vscodeLanguage)
           }
-          if (message.languageOverride) {
+          if ("languageOverride" in message) {
             setLanguageOverride(message.languageOverride)
           }
           if (message.workspaceDirectory) {
@@ -80,7 +80,7 @@ export const ServerProvider: ParentComponent = (props) => {
           break
 
         case "languageChanged":
-          setLanguageOverride(message.locale || undefined)
+          setLanguageOverride(message.locale)
           break
 
         case "connectionState":

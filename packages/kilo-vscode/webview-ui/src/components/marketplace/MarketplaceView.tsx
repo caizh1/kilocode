@@ -12,6 +12,7 @@ import type {
   AgentMarketplaceItem,
   SkillMarketplaceItem,
   MarketplaceInstalledMetadata,
+  MarketplaceUser,
 } from "../../types/marketplace"
 import { TelemetryEventName } from "../../../../src/services/telemetry/types"
 import { MarketplaceListView } from "./MarketplaceListView"
@@ -34,6 +35,10 @@ export const MarketplaceView = () => {
   const [tab, setTab] = createSignal("agent")
   const [pending, setPending] = createSignal<{ item: MarketplaceItem; scope: "project" | "global" } | null>(null)
   const [showMigrationBanner, setShowMigrationBanner] = createSignal(false)
+  const [marketplaceUser, setMarketplaceUser] = createSignal<MarketplaceUser | undefined>()
+  const [marketplaceBaseUrl, setMarketplaceBaseUrl] = createSignal<string | undefined>()
+  const [marketplaceSkillsOnly, setMarketplaceSkillsOnly] = createSignal<boolean | undefined>()
+  const [marketplaceMode, setMarketplaceMode] = createSignal<"skills-only" | "full" | undefined>()
 
   const skills = createMemo(() => items().filter((i): i is SkillMarketplaceItem => i.type === "skill"))
   const mcps = createMemo(() => items().filter((i): i is McpMarketplaceItem => i.type === "mcp"))
@@ -53,6 +58,10 @@ export const MarketplaceView = () => {
         setErrors(msg.errors ?? [])
         setFetching(false)
         setShowMigrationBanner(msg.showAgentMigrationBanner ?? false)
+        setMarketplaceUser(msg.marketplaceUser)
+        setMarketplaceBaseUrl(msg.marketplaceBaseUrl)
+        setMarketplaceSkillsOnly(msg.marketplaceSkillsOnly)
+        setMarketplaceMode(msg.marketplaceMode)
       }
       if (msg.type === "marketplaceRemoveResult") {
         const removed = pending()
@@ -145,6 +154,15 @@ export const MarketplaceView = () => {
     vscode.postMessage({ type: "dismissAgentMigrationBanner" })
   }
 
+  const uploadMarketplaceSkill = (item: SkillMarketplaceItem) => {
+    vscode.postMessage({ type: "uploadMarketplaceSkill", mpSkillId: item.id })
+  }
+
+  const starMarketplaceSkill = (item: MarketplaceItem) => {
+    if (item.type !== "skill") return
+    vscode.postMessage({ type: "starMarketplaceSkill", mpSkillId: item.id })
+  }
+
   return (
     <div class="marketplace-view">
       <Show when={errors().length > 0}>
@@ -210,6 +228,12 @@ export const MarketplaceView = () => {
               emptyMessage={t("marketplace.empty")}
               onInstall={handleInstall}
               onRemove={handleRemove}
+              marketplaceUser={marketplaceUser()}
+              marketplaceBaseUrl={marketplaceBaseUrl()}
+              marketplaceSkillsOnly={marketplaceSkillsOnly()}
+              marketplaceMode={marketplaceMode()}
+              onUploadMarketplaceSkill={uploadMarketplaceSkill}
+              onStarMarketplaceSkill={starMarketplaceSkill}
             />
           </Tabs.Content>
         </div>

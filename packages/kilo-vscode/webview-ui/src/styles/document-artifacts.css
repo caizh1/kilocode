@@ -1,0 +1,129 @@
+.document-artifact-card {
+  position: relative;
+  overflow: hidden;
+  margin: 8px 0 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vscode-editor-background) 88%, white 12%), color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-focusBorder) 8%)),
+    color-mix(in srgb, var(--vscode-editor-background) 90%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, black 18%, transparent);
+  backdrop-filter: blur(18px) saturate(1.25);
+}
+
+.document-artifact-card::before {
+  content: "";
+  display: block;
+  height: 1px;
+  margin: -11px -10px 10px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, white 48%, var(--vscode-focusBorder) 20%), transparent);
+}
+
+.document-artifact-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.document-artifact-card__eyebrow {
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--font-size-x-small);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.document-artifact-card__title {
+  margin-top: 2px;
+  color: var(--vscode-foreground);
+  font-size: var(--font-size-base);
+  font-weight: 700;
+}
+
+.document-artifact-card__status {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: var(--font-size-small);
+  font-weight: 700;
+  background: color-mix(in srgb, var(--vscode-badge-background) 20%, transparent);
+  color: var(--vscode-badge-foreground);
+}
+
+.document-artifact-card__status[data-quality="warning"] {
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 20%, transparent);
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.document-artifact-card__status[data-quality="failed"] {
+  background: color-mix(in srgb, var(--vscode-errorForeground) 18%, transparent);
+  color: var(--vscode-errorForeground);
+}
+
+.document-artifact-card__status[data-quality="ok"] {
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed) 18%, transparent);
+  color: var(--vscode-testing-iconPassed);
+}
+
+.document-artifact-card__path {
+  margin-top: 8px;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+}
+
+.document-artifact-card__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.document-artifact-card__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 30%, transparent);
+  border-radius: 999px;
+  color: var(--vscode-textLink-foreground);
+  background: color-mix(in srgb, var(--vscode-focusBorder) 9%, transparent);
+  font-size: var(--font-size-small);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.document-artifact-card__link:hover {
+  border-color: color-mix(in srgb, var(--vscode-focusBorder) 56%, transparent);
+  background: color-mix(in srgb, var(--vscode-focusBorder) 15%, transparent);
+}
+
+.document-artifact-card__previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.document-artifact-card__preview {
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 80%, white 20%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 22%, transparent);
+}
+
+.document-artifact-card__warnings {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--font-size-small);
+}

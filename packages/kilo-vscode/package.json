@@ -2,7 +2,7 @@
   "name": "chipmate",
   "displayName": "ChipMate: AI Coding Agent, Copilot, and Autocomplete",
   "description": "Open Source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
-  "version": "0.0.37",
+  "version": "0.0.39",
   "icon": "assets/icons/logo-outline-black.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -10,7 +10,7 @@
   },
   "publisher": "chipmate",
   "engines": {
-    "vscode": "^1.105.1"
+    "vscode": "^1.93.0"
   },
   "license": "MIT",
   "author": {
@@ -93,6 +93,14 @@
         }
       ]
     },
+    "terminal": {
+      "profiles": [
+        {
+          "id": "kilo.agentTerminal",
+          "title": "Kilo Agent Terminal"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "kilo-code.new.plusButtonClicked",
@@ -111,7 +119,7 @@
       },
       {
         "command": "kilo-code.new.marketplaceButtonClicked",
-        "title": "Marketplace",
+        "title": "市场",
         "icon": "$(extensions)"
       },
       {
@@ -146,7 +154,7 @@
       },
       {
         "command": "kilo-code.new.sidebarTitle.marketplaceButtonClicked",
-        "title": "Marketplace",
+        "title": "市场",
         "icon": "$(extensions)"
       },
       {
@@ -211,6 +219,32 @@
         "command": "kilo-code.new.qwenAutocomplete.exportDiagnostics",
         "title": "ChipMate: Export qwen-direct Autocomplete Diagnostics",
         "category": "ChipMate"
+      },
+      {
+        "command": "kilo-code.new.qwenAutocomplete.smokeDiagnostics",
+        "title": "ChipMate: Enable qwen-direct Autocomplete Diagnostics and Smoke",
+        "category": "ChipMate"
+      },
+      {
+        "command": "kilo-code.new.documents.openArtifact",
+        "title": "ChipMate: Open Document Artifact",
+        "category": "ChipMate"
+      },
+      {
+        "command": "kilo-code.new.documents.openArtifactFolder",
+        "title": "ChipMate: Open Document Artifact Folder",
+        "category": "ChipMate"
+      },
+      {
+        "command": "kilo-code.new.documents.exportDiagnostics",
+        "title": "ChipMate: Export Document Artifact Diagnostics",
+        "category": "ChipMate"
+      },
+      {
+        "command": "kilo-code.new.agentTerminal.open",
+        "title": "ChipMate: Open Agent Terminal",
+        "category": "ChipMate",
+        "icon": "$(terminal)"
       },
       {
         "command": "kilo-code.new.agentManager.previousSession",
@@ -795,8 +829,8 @@
       "properties": {
         "kilo-code.new.language": {
           "type": "string",
-          "default": "",
-          "description": "Override the UI language for ChipMate (e.g. en, de, ja). Empty means use VS Code's display language.",
+          "default": "zh",
+          "description": "Override the UI language for ChipMate (e.g. en, de, ja). Defaults to Simplified Chinese; choose Auto to use VS Code's display language.",
           "enum": [
             "",
             "en",
@@ -886,6 +920,56 @@
           "default": 209715200,
           "minimum": 1,
           "description": "Maximum downloaded VSIX size in bytes for ChipMate update checks."
+        },
+        "kilo.documents.artifacts.root": {
+          "type": "string",
+          "default": ".kilo/artifacts",
+          "description": "Workspace-relative root directory used by VS Code document artifact commands. Document generation tools currently default to .kilo/artifacts unless configured separately."
+        },
+        "kilo.documents.wordRender.remoteEndpoint": {
+          "type": "string",
+          "default": "http://10.10.5.21:6001/render/word",
+          "description": "Optional remote renderer endpoint for explicit Word/PDF/PNG artifact verification integrations. The opencode render tool can also be driven by its remoteEndpoint parameter or KILO_WORD_RENDER_ENDPOINT."
+        },
+        "kilo.documents.mermaidRender.remoteEndpoint": {
+          "type": "string",
+          "default": "http://10.10.5.21:6001/render/mermaid",
+          "description": "Optional remote renderer endpoint for explicit Mermaid PNG artifact integrations. The opencode Mermaid tool can also be driven by its remoteEndpoint parameter or KILO_MERMAID_RENDER_ENDPOINT."
+        },
+        "kilo.documents.wordRender.autoVerify": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt-in flag for explicit document workflows that choose to render Word documents after generation or edits. It is disabled by default and does not affect ordinary QA."
+        },
+        "kilo.documents.tools.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable VS Code document artifact commands. The opencode document tools remain explicit sidecar tools; ordinary Kilo QA, Document RAG, autocomplete, and native terminal behavior are unchanged."
+        },
+        "kilo.marketplace.baseUrl": {
+          "type": "string",
+          "default": "http://10.10.5.21:6001/marketplace",
+          "description": "Optional marketplace API base URL. Internal/offline packages may set this to an internal skill market; public builds default to the official Kilo marketplace."
+        },
+        "kilo.marketplace.skillsOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fetch only marketplace skills from the configured marketplace base URL. Internal/offline packages enable this when targeting the ChipMate skill market."
+        },
+        "kilo.indexing.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable codebase indexing in the bundled CLI backend. Disable this to keep native QA available while diagnosing indexing crashes."
+        },
+        "kilo.indexing.openaiCompatible.baseUrl": {
+          "type": "string",
+          "default": "https://ai.ramaxel.com/v1/embeddings",
+          "description": "Optional OpenAI-compatible embeddings endpoint for codebase RAG indexing. Internal/offline packages may set this at packaging time; API keys are never defaulted."
+        },
+        "kilo.agentTerminal.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the optional Agent Terminal profile and command helper. Disabled by default so native Kilo terminal and shell tooling remain unchanged."
         },
         "kilo-code.new.model.providerID": {
           "type": "string",
@@ -1250,7 +1334,7 @@
     "watch:cli": "bun script/watch-cli.ts",
     "package": "bun run prepare:cli-binary && bun run rebuild-sdk && bun run typecheck && bun run lint && node esbuild.js --production",
     "package:internal-offline": "bun script/build.ts --internal-offline",
-    "compile-tests": "tsc -p . --outDir out",
+    "compile-tests": "tsc -p tsconfig.test.json --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "bun run compile-tests && bun run compile && bun run lint",
     "check-types": "tsc --noEmit",
@@ -1284,7 +1368,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/qrcode": "^1.5.6",
-    "@types/vscode": "^1.105.1",
+    "@types/vscode": "1.93.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.7.1",

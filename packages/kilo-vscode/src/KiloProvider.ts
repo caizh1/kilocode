@@ -941,7 +941,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         case "setLanguage":
           await vscode.workspace
             .getConfiguration("kilo-code.new")
-            .update("language", message.locale || undefined, vscode.ConfigurationTarget.Global)
+            .update("language", message.locale, vscode.ConfigurationTarget.Global)
           this.connectionService.notifyLanguageChanged(message.locale as string)
           break
         case "requestChatCompletion": {

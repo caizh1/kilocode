@@ -17,7 +17,7 @@ import { ConfigMarkdown } from "@/config/markdown"
 import { Glob } from "@opencode-ai/core/util/glob"
 import * as Log from "@opencode-ai/core/util/log"
 import { Discovery } from "./discovery"
-import { rm } from "fs/promises" // kilocode_change
+import { mkdir, rm, writeFile } from "fs/promises" // kilocode_change
 import { BUILTIN_SKILLS } from "../kilocode/skills/builtin" // kilocode_change
 import CUSTOMIZE_OPENCODE_SKILL_BODY from "./prompt/customize-opencode.md" with { type: "text" }
 
@@ -221,10 +221,12 @@ const discoverSkills = Effect.fnUntraced(function* (
 const loadSkills = Effect.fnUntraced(function* (state: State, discovered: DiscoveryState, bus: Bus.Interface) {
   // kilocode_change start - seed built-in skills before discovery so user skills can override
   for (const skill of BUILTIN_SKILLS) {
+    const location = yield* Effect.promise(() => materializeBuiltinSkill(skill))
+    if (location !== BUILTIN_LOCATION) state.dirs.add(path.dirname(location))
     state.skills[skill.name] = {
       name: skill.name,
       description: skill.description,
-      location: BUILTIN_LOCATION,
+      location,
       content: skill.content,
     }
   }
@@ -237,6 +239,33 @@ const loadSkills = Effect.fnUntraced(function* (state: State, discovered: Discov
 
   log.info("init", { count: Object.keys(state.skills).length })
 })
+
+// kilocode_change start - materialize complex built-in skills so references/scripts/templates are readable offline
+async function materializeBuiltinSkill(skill: (typeof BUILTIN_SKILLS)[number]): Promise<string> {
+  if (!skill.files || Object.keys(skill.files).length === 0) return BUILTIN_LOCATION
+
+  const root = path.join(Global.Path.cache, "builtin-skills", skill.name)
+  await rm(root, { recursive: true, force: true })
+  await mkdir(root, { recursive: true })
+  await writeFile(path.join(root, "SKILL.md"), skill.content, "utf8")
+
+  for (const [relative, content] of Object.entries(skill.files)) {
+    if (!isSafeBuiltinSkillRelativePath(relative)) continue
+    const target = path.join(root, relative)
+    await mkdir(path.dirname(target), { recursive: true })
+    await writeFile(target, content, "utf8")
+  }
+
+  return path.join(root, "SKILL.md")
+}
+
+function isSafeBuiltinSkillRelativePath(relative: string): boolean {
+  if (!relative || path.isAbsolute(relative)) return false
+  const normalized = path.normalize(relative)
+  if (normalized.startsWith("..") || normalized.includes(`..${path.sep}`)) return false
+  return normalized === relative
+}
+// kilocode_change end
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Skill") {}
 

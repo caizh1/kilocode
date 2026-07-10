@@ -73,6 +73,28 @@ describe("splitConfigByScope", () => {
     })
   })
 
+  it("writes indexing provider and model to global config", () => {
+    const split = splitConfigByScope({
+      indexing: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "custom-embedding",
+        dimension: 2048,
+        vectorStore: "lancedb",
+      },
+    })
+
+    expect(split.global).toEqual({
+      indexing: {
+        provider: "openai-compatible",
+        model: "custom-embedding",
+        dimension: 2048,
+        vectorStore: "lancedb",
+      },
+    })
+    expect(split.project).toEqual({ indexing: { enabled: true } })
+  })
+
   it("can write indexing enablement to global config through a global draft", () => {
     const split = splitConfigByScope({ username: "marius" })
     const draft = { indexing: { enabled: true } }

@@ -148,7 +148,7 @@ async function narrow(root: string, patterns: string[]): Promise<string[]> {
 }
 
 export async function runRg(input: { cwd: string; patterns: string[]; timeoutMs: number }): Promise<string[]> {
-  const bin = process.platform === "win32" ? "rg.exe" : "rg"
+  const bin = process.env.KILO_RIPGREP_PATH?.trim() || (process.platform === "win32" ? "rg.exe" : "rg")
   const args = [
     "--files",
     "--null",

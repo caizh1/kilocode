@@ -11,6 +11,10 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
   Effect.gen(function* () {
     const auth = yield* Auth.Service
 
+    const authGet = Effect.fn("ControlHttpApi.authGet")(function* (ctx: { params: { providerID: ProviderID } }) {
+      return (yield* auth.get(ctx.params.providerID).pipe(Effect.orDie)) ?? null
+    })
+
     const authSet = Effect.fn("ControlHttpApi.authSet")(function* (ctx: {
       params: { providerID: ProviderID }
       payload: Auth.Info
@@ -32,6 +36,6 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
       return true
     })
 
-    return handlers.handle("authSet", authSet).handle("authRemove", authRemove).handle("log", log)
+    return handlers.handle("authGet", authGet).handle("authSet", authSet).handle("authRemove", authRemove).handle("log", log)
   }),
 )

@@ -6,6 +6,7 @@ node_modules
 .sst
 .env
 .env.local
+.kilo-render-defaults.local.json
 .idea/*
 !.idea/gradle.xml
 !.idea/.run
@@ -57,6 +58,7 @@ tsconfig.tsbuildinfo
 .kilo/bun.lock
 .kilo/yarn.lock
 .kilo/node_modules
+.kilo/artifacts/
 .kilo/plans/
 .kilo/plans/*upstream-merge-report-*.md
 .kilocode/.gitignore
@@ -66,8 +68,10 @@ tsconfig.tsbuildinfo
 .kilocode/bun.lock
 .kilocode/yarn.lock
 .kilocode/node_modules
+.kilocode/artifacts/
 
 # Test Artifacts
 packages/app/.artifacts/
 packages/opencode/.artifacts/
 packages/kilo-vscode/benchmark-results/
+docs/chipmate-feature-migration-validation-runs/
