@@ -132,7 +132,9 @@ import {
   completeProviderOAuth as completeOAuthAction,
   disconnectProvider as disconnectProviderAction,
   saveCustomProvider as saveCustomProviderAction,
+  resolveStoredKey,
 } from "./provider-actions"
+import type { StoredProviderKey } from "./provider-actions"
 import { fetchOpenAIModels, FetchModelsError } from "./shared/fetch-models"
 import type { Agent } from "@kilocode/sdk/v2/client"
 import { configFeatures } from "./features"
@@ -175,6 +177,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private readonly extensionVersion =
     vscode.extensions.getExtension("chipmate.chipmate")?.packageJSON?.version ?? "unknown"
   private cachedProvidersMessage: unknown = null
+  /** Stored provider keys remain extension-side and are never posted to the webview. */
+  private storedProviderKeys: Record<string, StoredProviderKey> = {}
   /** Coalesce provider refreshes — at most one follow-up rerun when a request lands mid-flight. */
   private providersRefresh: Promise<void> | null = null
   private providersQueued = false
@@ -1744,12 +1748,16 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           return
         }
         try {
-          const { response, authMethods, authStates } = await fetchProviderData(client, this.getWorkspaceDirectory())
+          const { response, authMethods, authStates, storedKeys } = await fetchProviderData(
+            client,
+            this.getWorkspaceDirectory(),
+          )
           if (generation !== this.providersGeneration || client !== this.client) {
             if (!this.providersQueued) return
             generation = this.providersGeneration
             continue
           }
+          this.storedProviderKeys = storedKeys
           const settings = vscode.workspace.getConfiguration("kilo-code.new.model")
           const message = {
             type: "providersLoaded",
@@ -1836,7 +1844,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const rid = typeof msg.requestId === "string" ? msg.requestId : ""
     const url = typeof msg.baseURL === "string" ? msg.baseURL : ""
     if (!rid || !url) return
-    const key = typeof msg.apiKey === "string" ? msg.apiKey : undefined
+    const key =
+      typeof msg.apiKey === "string"
+        ? msg.apiKey
+        : resolveStoredKey(this.storedProviderKeys, msg.providerID, url)
     const headers = msg.headers && typeof msg.headers === "object" ? (msg.headers as Record<string, string>) : undefined
     try {
       const models = await fetchOpenAIModels({ baseURL: url, apiKey: key, headers })
