@@ -55,10 +55,42 @@ describe("CodeIndexConfigManager", () => {
     expect(cfg.getConfig().vectorStoreProvider).toBe("lancedb")
   })
 
+  test("normalizes omitted vector store config to LanceDB for hosts", () => {
+    expect(toIndexingConfigInput(undefined).vectorStoreProvider).toBe("lancedb")
+  })
+
   test("uses explicit qdrant vector store", () => {
     const cfg = new CodeIndexConfigManager(createInput({ vectorStoreProvider: "qdrant" }))
 
     expect(cfg.getConfig().vectorStoreProvider).toBe("qdrant")
+  })
+
+  test("configures an OpenAI-compatible endpoint without an API key", () => {
+    const cfg = new CodeIndexConfigManager(
+      createInput({
+        embedderProvider: "openai-compatible",
+        openAiKey: undefined,
+        openAiCompatibleBaseUrl: "http://localhost:1234/v1",
+      }),
+    )
+
+    expect(cfg.isFeatureConfigured).toBe(true)
+    expect(cfg.getConfig().openAiCompatibleOptions).toEqual({
+      baseUrl: "http://localhost:1234/v1",
+      apiKey: undefined,
+    })
+  })
+
+  test("requires a base URL for an OpenAI-compatible endpoint", () => {
+    const cfg = new CodeIndexConfigManager(
+      createInput({
+        embedderProvider: "openai-compatible",
+        openAiKey: undefined,
+        openAiCompatibleApiKey: "sk-test",
+      }),
+    )
+
+    expect(cfg.isFeatureConfigured).toBe(false)
   })
 
   test("configures Kilo with hosted auth options and explicit model metadata", () => {

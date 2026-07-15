@@ -55,9 +55,9 @@ describe("local Skill import transactions", () => {
         project,
       )
       expect(globalResult.items[0]?.status).toBe("installed")
-      expect((await discoverSkillCandidates(path.join(home, ".kilo", "skills", "portable-skill")))[0]?.snapshot.valid).toBe(
-        true,
-      )
+      expect(
+        (await discoverSkillCandidates(path.join(home, ".kilo", "skills", "portable-skill")))[0]?.snapshot.valid,
+      ).toBe(true)
       expect(records.items).toHaveLength(2)
       expect(records.items[0]?.sourceSha256).toHaveLength(64)
       expect(records.items[0]?.installedSha256).toHaveLength(64)
@@ -107,12 +107,12 @@ describe("local Skill import transactions", () => {
         project,
       )
       expect(installed.items[0]?.status).toBe("installed")
-      expect(await fs.readFile(path.join(project, ".kilo", "skills", "portable-skill", "references", "guide.md"), "utf8")).toBe(
-        "changed guide\n",
-      )
-      expect((await fs.readdir(path.join(project, ".kilo", "skills"))).some((name) => name.startsWith(".backup-"))).toBe(
-        false,
-      )
+      expect(
+        await fs.readFile(path.join(project, ".kilo", "skills", "portable-skill", "references", "guide.md"), "utf8"),
+      ).toBe("changed guide\n")
+      expect(
+        (await fs.readdir(path.join(project, ".kilo", "skills"))).some((name) => name.startsWith(".backup-")),
+      ).toBe(false)
     })
   })
 
@@ -152,9 +152,9 @@ describe("local Skill import transactions", () => {
       expect(await fs.readFile(path.join(project, ".kilo", "skills", "bad-skill", "SKILL.md"), "utf8")).toContain(
         "Old managed instructions",
       )
-      expect((await discoverSkillCandidates(path.join(project, ".kilo", "skills", "good-skill")))[0]?.snapshot.valid).toBe(
-        true,
-      )
+      expect(
+        (await discoverSkillCandidates(path.join(project, ".kilo", "skills", "good-skill")))[0]?.snapshot.valid,
+      ).toBe(true)
     } finally {
       await fs.rm(root, { recursive: true, force: true })
     }
@@ -194,9 +194,7 @@ describe("local Skill import transactions", () => {
   })
 })
 
-async function fixture(
-  run: (value: { root: string; source: string; project: string; home: string }) => Promise<void>,
-) {
+async function fixture(run: (value: { root: string; source: string; project: string; home: string }) => Promise<void>) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-local-import-"))
   const source = path.join(root, "source-skill")
   const project = path.join(root, "project")

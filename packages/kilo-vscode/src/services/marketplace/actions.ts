@@ -28,11 +28,14 @@ export async function fetchMarketplaceData(
   ctx: MarketplaceActionContext,
   project: string | undefined,
   dir: string | undefined,
-  apiKey?: string,
+  auth?: string | readonly vscode.Uri[],
   details = true,
+  extra: readonly vscode.Uri[] = [],
 ): Promise<MarketplaceDataResponse> {
   const skills = dir ? await fetchMarketplaceSkills(ctx, dir) : undefined
-  return ctx.marketplace.fetchData(project, skills, apiKey, details)
+  const apiKey = typeof auth === "string" ? auth : undefined
+  const roots = Array.isArray(auth) ? auth : extra
+  return ctx.marketplace.fetchData(project, skills, roots, apiKey, details)
 }
 
 export async function installMarketplaceItem(

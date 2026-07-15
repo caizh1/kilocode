@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test"
+import type { LLMEvent } from "@opencode-ai/llm"
 import { KiloSessionThinking } from "../../src/kilocode/session/thinking"
-import type { LLM } from "../../src/session/llm"
 
-function delta(text: string): LLM.Event {
-  return { type: "text-delta", id: "text", text, delta: text } as LLM.Event
+function delta(text: string): LLMEvent {
+  return { type: "text-delta", id: "text", text, delta: text } as LLMEvent
 }
 
-function end(): LLM.Event {
-  return { type: "text-end", id: "text", providerMetadata: undefined } as LLM.Event
+function end(): LLMEvent {
+  return { type: "text-end", id: "text", providerMetadata: undefined } as LLMEvent
 }
 
-function parts(events: LLM.Event[]) {
+function parts(events: LLMEvent[]) {
   return events.map((event) => {
     if (event.type === "text-delta") return { type: event.type, text: event.text }
     if (event.type === "reasoning-delta") return { type: event.type, text: event.text }
@@ -87,7 +87,7 @@ describe("KiloSessionThinking", () => {
       { type: "reasoning-start", id: "reasoning", providerMetadata: undefined },
       { type: "reasoning-delta", id: "reasoning", text: "<think>native</think>", providerMetadata: undefined },
       { type: "reasoning-end", id: "reasoning", providerMetadata: undefined },
-    ] as LLM.Event[]
+    ] as LLMEvent[]
 
     expect(KiloSessionThinking.events(native)).toEqual(native)
   })

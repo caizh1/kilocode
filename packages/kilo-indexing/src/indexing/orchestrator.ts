@@ -23,6 +23,8 @@ import type { RagCheckpointMeta } from "./rag-checkpoint"
 import { IndexingRunLock } from "./run-lock"
 import type { IndexingCleanupSummary } from "./interfaces/cleanup"
 import type { IndexingPressure } from "./memory"
+import { DEFAULT_VECTOR_STORE } from "./constants"
+import type { WorktreeOverlay } from "./worktree-overlay"
 
 const log = Log.create({ service: "indexing-orchestrator" })
 const LOCKED_MESSAGE = "Another indexing run is already active for this workspace."
@@ -52,6 +54,7 @@ export class CodeIndexOrchestrator {
   private _watcherToken = 0
   private _followUpScanRequested = false
   private _followUpScanScheduled = false
+  private _active?: Promise<void>
 
   constructor(
     private readonly configManager: CodeIndexConfigManager,
@@ -64,13 +67,14 @@ export class CodeIndexOrchestrator {
     private readonly cacheDirectory: string,
     private readonly ragMeta: RagCheckpointMeta,
     private readonly onTelemetry?: IndexingTelemetryReporter,
+    private readonly overlay?: WorktreeOverlay,
   ) {}
 
   private getTelemetryMeta(): IndexingTelemetryMeta {
     const cfg = this.configManager.getConfig()
     return {
       provider: cfg.embedderProvider,
-      vectorStore: cfg.vectorStoreProvider ?? "lancedb",
+      vectorStore: cfg.vectorStoreProvider ?? DEFAULT_VECTOR_STORE,
       modelId: cfg.modelId,
     }
   }
@@ -135,6 +139,7 @@ export class CodeIndexOrchestrator {
             workspacePath: this.workspacePath,
             totalInBatch,
           })
+          if (this.stateManager.state === "Error") return
           if (totalInBatch > 0) {
             this.stateManager.setSystemState("Indexed", "File changes processed. Index up-to-date.")
           } else if (this.stateManager.state === "Indexing") {
@@ -145,6 +150,9 @@ export class CodeIndexOrchestrator {
       this.fileWatcher.onDidFinishBatchProcessing.on((summary: BatchProcessingSummary) => {
         if (summary.batchError) {
           log.error("batch processing failed", { err: summary.batchError })
+          this.overlay?.prepare()
+          this.stateManager.setSystemState("Error", `Failed to process file changes: ${summary.batchError.message}`)
+          this.emitError("orchestrator:watcher", summary.batchError, "watcher")
         }
         if (!this.fileWatcher.takeReconciliationRequest?.()) return
         this._followUpScanRequested = true
@@ -285,7 +293,16 @@ export class CodeIndexOrchestrator {
     })
   }
 
-  public async startIndexing(trigger: IndexingTelemetryTrigger = "background"): Promise<void> {
+  public startIndexing(trigger: IndexingTelemetryTrigger = "background"): Promise<void> {
+    if (this._active) return this._active
+    const task = this.runIndexing(trigger).finally(() => {
+      if (this._active === task) this._active = undefined
+    })
+    this._active = task
+    return task
+  }
+
+  private async runIndexing(trigger: IndexingTelemetryTrigger): Promise<void> {
     log.info("indexing start requested", {
       workspacePath: this.workspacePath,
       state: this.stateManager.state,
@@ -336,6 +353,7 @@ export class CodeIndexOrchestrator {
       this.scanner.setRunContext(lock.runId, this.ragMeta)
       this.fileWatcher.setRunContext?.(lock.runId, this.ragMeta)
       await this.ensureCompatible("startup")
+      this.overlay?.prepare()
 
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
@@ -391,12 +409,27 @@ export class CodeIndexOrchestrator {
         return
       }
 
-      if (collectionCreated) {
+      if (this.overlay) {
+        if (!collectionCreated) await this.vectorStore.clearCollection()
         await this.cacheManager.clearCacheFile()
-        log.info("cleared indexing cache after new collection creation", { workspacePath: this.workspacePath })
+        this.cacheManager.seedHashes(this.overlay.seed())
+        await this.cacheManager.flush?.()
+        log.info("seeded worktree index from shared baseline", {
+          workspacePath: this.workspacePath,
+          baselinePath: this.overlay.baselinePath,
+          files: this.overlay.baseline.size,
+        })
       }
 
-      const hasExistingData = await this.vectorStore.hasIndexedData()
+      const hasExistingData = this.overlay ? false : await this.vectorStore.hasIndexedData()
+      if (!this.overlay && !hasExistingData) {
+        if (!collectionCreated) await this.vectorStore.clearCollection()
+        await this.cacheManager.clearCacheFile()
+        log.info("cleared indexing cache before full scan", {
+          workspacePath: this.workspacePath,
+          collectionCreated,
+        })
+      }
       log.info("checked vector store indexed data", {
         workspacePath: this.workspacePath,
         hasExistingData,
@@ -566,6 +599,8 @@ export class CodeIndexOrchestrator {
   ): Promise<ScanSummary | undefined> {
     if (this._cancelRequested) {
       log.info("scan skipped: cancellation was requested", { workspacePath: this.workspacePath, mode, target })
+      if (mode === "incremental") await this.vectorStore?.markIndexingComplete()
+      this.stateManager.setSystemState("Standby", "Indexing cancelled.")
       return
     }
 
@@ -657,6 +692,10 @@ export class CodeIndexOrchestrator {
     })
 
     if (this._cancelRequested || this.scanner.isCancelled) {
+      if (mode === "incremental" && result.stats.processed === 0 && batchErrors.length === 0) {
+        await this.vectorStore?.markIndexingComplete()
+        log.info("preserved unchanged index after cancelled scan", { workspacePath: this.workspacePath })
+      }
       this._isProcessing = false
       if (this.stateManager.state !== "Error") {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
@@ -664,6 +703,10 @@ export class CodeIndexOrchestrator {
       await this.releaseLock()
       log.info("workspace scan cancelled", { workspacePath: this.workspacePath, mode, target })
       return
+    }
+
+    if (this.overlay && batchErrors.length > 0) {
+      throw batchErrors[0]
     }
 
     if (this.vectorStore && target === "rag" && mode === "full") {
@@ -690,6 +733,8 @@ export class CodeIndexOrchestrator {
       cumulativeFilesProcessed = totalFiles
       if (target !== "codeGraph") reportFileProgress()
     }
+    this.overlay?.reconcile(this.cacheManager.getAllHashes())
+    await this.cacheManager.flush?.()
 
     if (graphTotalFiles > 0 && graphFilesProcessed < graphTotalFiles) {
       graphFilesProcessed = graphTotalFiles
@@ -929,6 +974,19 @@ export class CodeIndexOrchestrator {
       totalBlocks: summary.totalBlocks,
       batchErrors: summary.batchErrors,
     })
+  }
+
+  public async shutdown(): Promise<void> {
+    this._cancelRequested = true
+    this.scanner.cancel()
+    this.fileWatcher.setCollecting(false)
+    await this._active
+    for (const sub of this._fileWatcherSubscriptions) sub.dispose()
+    this._fileWatcherSubscriptions = []
+    if (this.fileWatcher.shutdown) await this.fileWatcher.shutdown()
+    else this.fileWatcher.dispose()
+    await this.vectorStore?.close?.()
+    this._isProcessing = false
   }
 
   public stopWatcher(): void {

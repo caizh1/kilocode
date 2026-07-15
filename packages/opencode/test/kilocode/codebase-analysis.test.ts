@@ -5,8 +5,7 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { CodebaseAnalysisTool } from "../../src/kilocode/tool/codebase-analysis"
 import { KiloIndexing } from "../../src/kilocode/indexing"
-import { WithInstance } from "../../src/project/with-instance"
-import { tmpdir } from "../fixture/fixture"
+import { provideTestInstance, tmpdir } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
 import { MessageID, SessionID } from "../../src/session/schema"
 import { Tool } from "../../src/tool/tool"
@@ -50,7 +49,7 @@ describe("tool.codebase_analysis", () => {
 
   test("asks permission and forwards options to queryEvidence", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
@@ -115,7 +114,7 @@ describe("tool.codebase_analysis", () => {
 
   test("defaults to hybrid mode", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const stub = CodeIndexAnalysisService.createStub("find callers", { retrievalMode: "hybrid" })
@@ -139,7 +138,7 @@ describe("tool.codebase_analysis", () => {
 
   test("returns fused graph bm25 and vector evidence in default hybrid mode", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const stub = CodeIndexAnalysisService.createStub("start_device timeout", { retrievalMode: "hybrid" })
@@ -257,7 +256,7 @@ describe("tool.codebase_analysis", () => {
 
   test("surfaces structured error path evidence from queryEvidence", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const stub = CodeIndexAnalysisService.createStub("error path start_device", { retrievalMode: "hybrid" })
@@ -351,7 +350,7 @@ describe("tool.codebase_analysis", () => {
 
   test("surfaces structured candidate state and flow evidence from queryEvidence", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const stub = CodeIndexAnalysisService.createStub("module flow start_device", { retrievalMode: "hybrid" })
@@ -479,7 +478,7 @@ describe("tool.codebase_analysis", () => {
 
   test("does not surface error path output for ordinary analysis queries", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const stub = CodeIndexAnalysisService.createStub("start_device", { retrievalMode: "hybrid" })
@@ -527,7 +526,7 @@ describe("tool.codebase_analysis", () => {
 
   test("surfaces vector fallback without failing the tool", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const stub = CodeIndexAnalysisService.createStub("timeout", { retrievalMode: "hybrid" })
@@ -589,7 +588,7 @@ describe("tool.codebase_analysis", () => {
 
   test("returns graph evidence output and metadata in graph-only mode", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const stub = CodeIndexAnalysisService.createStub("who calls start_device", { retrievalMode: "graph-only" })
@@ -666,7 +665,7 @@ describe("tool.codebase_analysis", () => {
 
   test("rejects paths outside the workspace", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const query = spyOn(KiloIndexing, "queryEvidence").mockResolvedValue(

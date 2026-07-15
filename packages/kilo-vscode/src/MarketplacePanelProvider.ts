@@ -2,7 +2,7 @@ import * as os from "os"
 import * as path from "path"
 import { createHash, randomUUID } from "crypto"
 import * as vscode from "vscode"
-import type { Event, SessionStatus } from "@kilocode/sdk/v2/client"
+import type { GlobalEvent, SessionStatus } from "@kilocode/sdk/v2/client"
 import { buildWebviewHtml, getWebviewFontSize } from "./utils"
 import { watchFontSizeConfig } from "./kilo-provider/font-size"
 import { mapSSEEventToWebviewMessage } from "./kilo-provider-utils"
@@ -82,7 +82,10 @@ export class MarketplacePanelProvider implements vscode.Disposable {
   private project: string | null = null
   private ready = false
   private restored = false
+  private generation = 0
+  private timer: ReturnType<typeof setTimeout> | undefined
   private statuses = new Map<string, SessionStatus["type"]>()
+  private pendingInstall: MarketplaceItem | undefined
   private disposables: vscode.Disposable[] = []
   private subscriptions: Array<() => void> = []
   private readonly marketplace = new MarketplaceService()
@@ -135,6 +138,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     if (this.panel) {
       this.setProjectDirectory(project)
       this.panel.reveal(vscode.ViewColumn.One)
+      this.scheduleRefresh()
       return
     }
 
@@ -296,6 +300,13 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     await this.fetchData()
   }
 
+  /** Open the panel and surface the install dialog for a specific item, project scope preselected. */
+  openInstall(item: MarketplaceItem): void {
+    this.openPanel()
+    this.pendingInstall = item
+    this.flushPendingInstall()
+  }
+
   dispose(): void {
     this.panel?.dispose()
     this.cleanup()
@@ -325,6 +336,10 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       panel.webview.onDidReceiveMessage((msg) => void this.handle(msg as MarketplaceMessage)),
       panel.onDidDispose(() => this.cleanup()),
       watchFontSizeConfig((msg) => this.post(msg)),
+      vscode.extensions.onDidChange(() => this.scheduleRefresh()),
+      vscode.workspace.onDidCreateFiles(() => this.scheduleRefresh()),
+      vscode.workspace.onDidDeleteFiles(() => this.scheduleRefresh()),
+      vscode.workspace.onDidRenameFiles(() => this.scheduleRefresh()),
     )
     this.subscriptions.push(
       this.marketplace.subscribe((name) => {
@@ -337,19 +352,24 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       this.connection.onLanguageChanged((locale) => this.post({ type: "languageChanged", locale })),
       this.connection.onEventFiltered(
         (event) => event.type === "session.status",
-        (event) => this.handleStatus(event),
+        (event) => {
+          if (event.type === "session.status") this.handleStatus(event)
+        },
       ),
     )
     void this.connect()
   }
 
   private cleanup(): void {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = undefined
     for (const disposable of this.disposables) disposable.dispose()
     for (const unsubscribe of this.subscriptions) unsubscribe()
     this.disposables = []
     this.subscriptions = []
     this.panel = undefined
     this.ready = false
+    this.generation++
     this.statuses.clear()
     this.importer.dispose()
     this.removal.dispose()
@@ -400,6 +420,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         await this.restoreManaged()
         await this.fetchData()
         void this.analytics.track("market_impression", { context: { source: "marketplace-panel" } })
+        this.flushPendingInstall()
         return
       case "retryConnection":
         await this.connect()
@@ -463,11 +484,36 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     }
   }
 
+  /** Ask the webview to open the install dialog for a queued suggestion, once it can receive it. */
+  private flushPendingInstall(): void {
+    if (!this.pendingInstall || !this.ready) return
+    const item = this.pendingInstall
+    this.pendingInstall = undefined
+    this.post({ type: "openInstallModal", mpItem: item })
+  }
+
+  private scheduleRefresh(): void {
+    if (!this.ready) return
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      void this.fetchData()
+    }, 250)
+  }
+
   private async fetchData(): Promise<void> {
+    const generation = ++this.generation
     try {
       const project = this.project ?? undefined
       const apiKey = await this.getCurrentProviderApiKey()
-      const data = await fetchMarketplaceData(this.marketplaceCtx, project, this.directory(), apiKey)
+      const data = await fetchMarketplaceData(
+        this.marketplaceCtx,
+        project,
+        this.directory(),
+        apiKey,
+        true,
+        this.relevanceRoots(),
+      )
       const skills = (await fetchMarketplaceSkills(this.marketplaceCtx, this.directory())) ?? []
       const targets = this.removal.issue(skills, project)
       await this.removal.reconcile(project)
@@ -477,6 +523,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
           .filter((item): item is SkillMarketplaceItem => item.type === "skill" && Boolean(item.uploadable))
           .map((item) => item.id),
       )
+      if (generation !== this.generation) return
       const dismissed = this.context.globalState.get<boolean>("kilo.agentMigrationBannerDismissed") ?? false
       this.post({
         type: "marketplaceData",
@@ -490,6 +537,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     } catch (err) {
       this.uploadableSkillIds.clear()
       const error = marketplaceDataErrorMessage(err)
+      if (generation !== this.generation) return
       console.warn("[Kilo New] Marketplace data fetch failed:", err)
       this.post({
         type: "marketplaceData",
@@ -499,6 +547,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         marketplaceBaseUrl: this.marketplace.marketplaceBaseUrl(),
         marketplaceSkillsOnly: this.marketplace.marketplaceSkillsOnly(),
         marketplaceMode: this.marketplace.marketplaceMode(),
+        marketplaceRelevance: {},
         errors: [error],
       })
     }
@@ -874,8 +923,6 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         .filter((provider): provider is { id: string; key: string } => Boolean(provider.id && provider.key))
 
       if (selectedProvider) {
-        const selectedAuthKey = await this.providerAuthApiKey(selectedProvider)
-        if (selectedAuthKey) return selectedAuthKey
         const selected = keyed.find((provider) => provider.id === selectedProvider)
         if (selected) return selected.key
         const selectedConfigKey = configApiKey(config?.provider?.[selectedProvider])
@@ -887,22 +934,6 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       console.warn("[Kilo New] Marketplace failed to read current provider API key:", err)
     }
     return undefined
-  }
-
-  private async providerAuthApiKey(providerID: string): Promise<string | undefined> {
-    try {
-      const client = this.connection.getClient()
-      if (!client) return undefined
-      const { data } = await client.auth.get({ providerID }, { throwOnError: true })
-      if (!data || typeof data !== "object") return undefined
-      const record = data as Record<string, unknown>
-      if (record.type !== "api") return undefined
-      const key = typeof record.key === "string" ? record.key.trim() : ""
-      return key || undefined
-    } catch (err) {
-      console.warn(`[Kilo New] Marketplace failed to read auth key for provider "${providerID}":`, err)
-      return undefined
-    }
   }
 
   private async resolveMarketplaceUser(apiKey: string, notify: boolean): Promise<boolean> {
@@ -1019,8 +1050,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     }
   }
 
-  private handleStatus(event: Event): void {
-    if (event.type !== "session.status") return
+  private handleStatus(event: Extract<GlobalEvent["payload"], { type: "session.status" }>): void {
     const sid = event.properties.sessionID
     this.statuses.set(sid, event.properties.status.type)
     const msg = mapSSEEventToWebviewMessage(event, sid)
@@ -1029,6 +1059,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
 
   private setProjectDirectory(project: string | null): void {
     if (this.project === project) return
+    this.generation++
     this.project = project
     this.post({ type: "workspaceDirectoryChanged", directory: project ?? "" })
   }
@@ -1044,6 +1075,12 @@ export class MarketplacePanelProvider implements vscode.Disposable {
 
   private directory(): string {
     return this.project ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
+  }
+
+  private relevanceRoots(): vscode.Uri[] {
+    if (!this.project) return vscode.workspace.workspaceFolders?.map((folder) => folder.uri) ?? []
+    const folder = vscode.workspace.workspaceFolders?.find((item) => item.uri.fsPath === this.project)
+    return [folder?.uri ?? vscode.Uri.file(this.project)]
   }
 
   private openExternal(raw: unknown): void {

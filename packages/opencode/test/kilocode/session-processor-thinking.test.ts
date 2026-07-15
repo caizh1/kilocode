@@ -2,15 +2,21 @@ import { NodeFileSystem } from "@effect/platform-node"
 import { describe, expect } from "bun:test"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
+import { LLMEvent, type LLMEvent as Event } from "@opencode-ai/llm"
+import { Database } from "@opencode-ai/core/database/database"
 import path from "path"
 import { Agent as AgentSvc, type Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
 import { Config } from "../../src/config/config"
+import { RuntimeFlags } from "../../src/effect/runtime-flags"
+import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Image } from "../../src/image/image"
 import { Permission } from "../../src/permission"
 import { Plugin } from "../../src/plugin"
 import type { Provider } from "../../src/provider/provider"
-import { ModelID, ProviderID } from "../../src/provider/schema"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import { Reference } from "../../src/reference/reference"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionProcessor } from "../../src/session/processor"
@@ -22,22 +28,22 @@ import { Snapshot } from "../../src/snapshot"
 import { SyncEvent } from "../../src/sync"
 import * as CrossSpawnSpawner from "@opencode-ai/core/cross-spawn-spawner"
 import * as Log from "@opencode-ai/core/util/log"
-import { provideTmpdirInstance } from "../fixture/fixture"
+import { provideTmpdirProject } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 Log.init({ print: false })
 
 const ref = {
-  providerID: ProviderID.make("test"),
-  modelID: ModelID.make("test-model"),
+  providerID: ProviderV2.ID.make("test"),
+  modelID: ModelV2.ID.make("test-model"),
 }
 
-type Script = Stream.Stream<LLM.Event, unknown>
+type Script = Stream.Stream<Event, unknown>
 
 class TestLLM extends Context.Service<
   TestLLM,
   {
-    readonly reply: (...items: LLM.Event[]) => Effect.Effect<void>
+    readonly reply: (...items: Event[]) => Effect.Effect<void>
   }
 >()("@test/ThinkingLLM") {}
 
@@ -72,7 +78,7 @@ function usage() {
 const llm = Layer.unwrap(
   Effect.gen(function* () {
     const queue: Script[] = []
-    const reply = (...items: LLM.Event[]) => {
+    const reply = (...items: Event[]) => {
       queue.push(Stream.make(...items))
       return Effect.void
     }
@@ -88,7 +94,14 @@ const llm = Layer.unwrap(
   }),
 )
 
-const status = SessionStatus.layer.pipe(Layer.provideMerge(Bus.layer))
+const reference = Layer.mock(Reference.Service)({
+  init: () => Effect.void,
+  list: () => Effect.succeed([]),
+  get: () => Effect.succeed(undefined),
+  ensure: () => Effect.void,
+  contains: () => Effect.succeed(false),
+})
+const status = Layer.mergeAll(SessionStatus.defaultLayer, Bus.layer)
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 const deps = Layer.mergeAll(
   Session.defaultLayer,
@@ -97,18 +110,22 @@ const deps = Layer.mergeAll(
   Permission.defaultLayer,
   Plugin.defaultLayer,
   Config.defaultLayer,
+  RuntimeFlags.layer(),
+  reference,
   SessionSummary.defaultLayer,
   Image.defaultLayer,
   SyncEvent.defaultLayer,
+  EventV2Bridge.defaultLayer,
+  Database.defaultLayer,
   status,
   llm,
 ).pipe(Layer.provideMerge(infra))
-const env = SessionProcessor.layer.pipe(Layer.provideMerge(deps))
+const env = SessionProcessor.layer.pipe(Layer.provideMerge(deps), Layer.provide(reference))
 
 const it = testEffect(env)
 
-function textDelta(text: string): LLM.Event {
-  return { type: "text-delta", id: "text", text, delta: text, providerMetadata: undefined } as LLM.Event
+function textDelta(text: string): Event {
+  return LLMEvent.textDelta({ id: "text", text })
 }
 
 function agent(): Agent.Info {
@@ -117,7 +134,7 @@ function agent(): Agent.Info {
 
 describe("session processor thinking stream", () => {
   it.effect("turns text think tags into reasoning parts", () =>
-    provideTmpdirInstance(
+    provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
           const test = yield* TestLLM
@@ -125,20 +142,14 @@ describe("session processor thinking stream", () => {
           const session = yield* Session.Service
 
           yield* test.reply(
-            { type: "start" } as LLM.Event,
-            { type: "start-step" } as LLM.Event,
-            { type: "text-start", id: "text", providerMetadata: undefined } as LLM.Event,
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "text" }),
             textDelta("visible <thi"),
             textDelta("nk>checking local context</thi"),
             textDelta("nk> answer"),
-            { type: "text-end", id: "text", providerMetadata: undefined } as LLM.Event,
-            {
-              type: "finish-step",
-              finishReason: "stop",
-              usage: usage(),
-              providerMetadata: undefined,
-            } as LLM.Event,
-            { type: "finish" } as LLM.Event,
+            LLMEvent.textEnd({ id: "text" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop", usage: usage() }),
+            LLMEvent.finish({ reason: "stop", usage: usage() }),
           )
 
           const chat = yield* session.create({})
@@ -183,7 +194,7 @@ describe("session processor thinking stream", () => {
             tools: {},
           })
 
-          const parts = MessageV2.parts(msg.id)
+          const parts = yield* MessageV2.parts(msg.id)
           const text = parts
             .filter((part): part is MessageV2.TextPart => part.type === "text")
             .map((part) => part.text)
@@ -201,7 +212,7 @@ describe("session processor thinking stream", () => {
   )
 
   it.effect("keeps provider-native reasoning events structured", () =>
-    provideTmpdirInstance(
+    provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
           const test = yield* TestLLM
@@ -209,23 +220,12 @@ describe("session processor thinking stream", () => {
           const session = yield* Session.Service
 
           yield* test.reply(
-            { type: "start" } as LLM.Event,
-            { type: "start-step" } as LLM.Event,
-            { type: "reasoning-start", id: "reasoning", providerMetadata: undefined } as LLM.Event,
-            {
-              type: "reasoning-delta",
-              id: "reasoning",
-              text: "<think>native</think>",
-              providerMetadata: undefined,
-            } as LLM.Event,
-            { type: "reasoning-end", id: "reasoning", providerMetadata: undefined } as LLM.Event,
-            {
-              type: "finish-step",
-              finishReason: "stop",
-              usage: usage(),
-              providerMetadata: undefined,
-            } as LLM.Event,
-            { type: "finish" } as LLM.Event,
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.reasoningStart({ id: "reasoning" }),
+            LLMEvent.reasoningDelta({ id: "reasoning", text: "<think>native</think>" }),
+            LLMEvent.reasoningEnd({ id: "reasoning" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop", usage: usage() }),
+            LLMEvent.finish({ reason: "stop", usage: usage() }),
           )
 
           const chat = yield* session.create({})
@@ -270,7 +270,7 @@ describe("session processor thinking stream", () => {
             tools: {},
           })
 
-          const reasoning = MessageV2.parts(msg.id)
+          const reasoning = (yield* MessageV2.parts(msg.id))
             .filter((part): part is MessageV2.ReasoningPart => part.type === "reasoning")
             .map((part) => part.text)
 

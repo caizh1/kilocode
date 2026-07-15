@@ -11,8 +11,20 @@ import type { EmbeddingProfile } from "../embedding-profile"
 import { loadLanceDB } from "./lancedb-loader"
 
 const log = Log.create({ service: "lancedb-store" })
+let nativeQueue = Promise.resolve()
 
+function native<T>(run: () => Promise<T>): Promise<T> {
+  const task = nativeQueue.then(run)
+  nativeQueue = task.then(
+    () => undefined,
+    () => undefined,
+  )
+  return task
+}
+
+const SCHEMA = "2"
 const KEY = {
+  schema: "index_schema",
   size: "vector_size",
   complete: "indexing_complete",
   runIncomplete: "indexing_run_incomplete",
@@ -96,19 +108,16 @@ export class LanceDBVectorStore implements IVectorStore {
    * @returns The LanceDB connection.
    */
   private async getDb(): Promise<Connection> {
-    if (this.db) {
-      return this.db
-    }
+    if (this.db) return this.db
 
-    const lancedb = await this.loadLanceDBModule()
+    return native(async () => {
+      if (this.db) return this.db
+      const lancedb = await this.loadLanceDBModule()
 
-    // Create parent directory if needed
-    if (!fs.existsSync(this.dbPath)) {
-      fs.mkdirSync(this.dbPath, { recursive: true })
-    }
-
-    this.db = await lancedb.connect(this.dbPath)
-    return this.db as Connection
+      if (!fs.existsSync(this.dbPath)) fs.mkdirSync(this.dbPath, { recursive: true })
+      this.db = await lancedb.connect(this.dbPath)
+      return this.db as Connection
+    })
   }
 
   /**
@@ -124,7 +133,7 @@ export class LanceDBVectorStore implements IVectorStore {
 
     try {
       // Try to open existing table
-      const table = await db.openTable(this.vectorTableName)
+      const table = await native(() => db.openTable(this.vectorTableName))
       this.table = table
       return table
     } catch (error) {
@@ -167,6 +176,10 @@ export class LanceDBVectorStore implements IVectorStore {
   private _createMetadataData() {
     return [
       {
+        key: KEY.schema,
+        value: SCHEMA,
+      },
+      {
         key: KEY.size,
         value: String(this.vectorSize),
       },
@@ -198,7 +211,7 @@ export class LanceDBVectorStore implements IVectorStore {
    * @param db The LanceDB connection.
    */
   private async _createVectorTable(db: Connection): Promise<void> {
-    this.table = await db.createTable(this.vectorTableName, this._createSampleData())
+    this.table = await native(() => db.createTable(this.vectorTableName, this._createSampleData()))
     if (this.table) {
       await this.table.delete("id = 'sample'")
     }
@@ -209,7 +222,7 @@ export class LanceDBVectorStore implements IVectorStore {
    * @param db The LanceDB connection.
    */
   private async _createMetadataTable(db: Connection): Promise<void> {
-    await db.createTable(this.metadataTableName, this._createMetadataData())
+    await native(() => db.createTable(this.metadataTableName, this._createMetadataData()))
   }
 
   getLastCompatibilityDecision(): VectorStoreCompatibilityDecision | undefined {
@@ -238,15 +251,10 @@ export class LanceDBVectorStore implements IVectorStore {
    * @returns The stored vector size, or null if not found.
    */
   private async _getStoredVectorSize(db: Connection): Promise<number | null> {
-    try {
-      const value = await this._getMetadataValue(db, KEY.size)
-      if (value === undefined) return null
-      const dim = this._parseNumber(value)
-      return dim ?? null
-    } catch (error) {
-      log.warn("Failed to read metadata table", { error })
-      return null
-    }
+    const value = await this._getMetadataValue(db, KEY.size)
+    if (value === undefined) return null
+    const dim = this._parseNumber(value)
+    return dim ?? null
   }
 
   private isValidMetadataKey(key: string): boolean {
@@ -263,27 +271,22 @@ export class LanceDBVectorStore implements IVectorStore {
     if (!this.isValidMetadataKey(key)) {
       throw new Error(`Invalid metadata key: ${key}`)
     }
-    const metadataTable = await db.openTable(this.metadataTableName)
+    const metadataTable = await native(() => db.openTable(this.metadataTableName))
     const rows = await metadataTable.query().where(`key = '${key}'`).toArray()
     return rows.length > 0 ? rows[0].value : undefined
   }
 
   private async _getStoredEmbeddingProfile(db: Connection): Promise<EmbeddingProfile | undefined> {
-    try {
-      const provider = await this._getMetadataValue(db, KEY.provider)
-      const modelId = await this._getMetadataValue(db, KEY.model)
-      const dimension = await this._getMetadataValue(db, KEY.dimension)
-      if (typeof provider !== "string" || typeof modelId !== "string") return undefined
-      const dim = this._parseNumber(dimension)
-      if (!dim) return undefined
-      return {
-        provider: provider as EmbeddingProfile["provider"],
-        modelId,
-        dimension: dim,
-      }
-    } catch (error) {
-      log.warn("Failed to read embedding profile metadata", { error })
-      return undefined
+    const provider = await this._getMetadataValue(db, KEY.provider)
+    const modelId = await this._getMetadataValue(db, KEY.model)
+    const dimension = await this._getMetadataValue(db, KEY.dimension)
+    if (typeof provider !== "string" || typeof modelId !== "string") return undefined
+    const dim = this._parseNumber(dimension)
+    if (!dim) return undefined
+    return {
+      provider: provider as EmbeddingProfile["provider"],
+      modelId,
+      dimension: dim,
     }
   }
 
@@ -293,6 +296,27 @@ export class LanceDBVectorStore implements IVectorStore {
       profile.modelId === this.profile.modelId &&
       profile.dimension === this.profile.dimension
     )
+  }
+
+  async openExisting(): Promise<void> {
+    if (!fs.existsSync(this.dbPath)) throw new Error("Baseline LanceDB store does not exist")
+
+    const db = await this.getDb()
+    const tables = await db.tableNames()
+    if (!tables.includes(this.vectorTableName) || !tables.includes(this.metadataTableName)) {
+      throw new Error("Baseline LanceDB store is incomplete")
+    }
+
+    const profile = await this._getStoredEmbeddingProfile(db)
+    if (!profile || !this._isEmbeddingProfileMatch(profile)) {
+      throw new Error("Baseline LanceDB embedding profile does not match the worktree")
+    }
+
+    const schema = await this._getMetadataValue(db, KEY.schema)
+    if (String(schema) !== SCHEMA) throw new Error("Baseline LanceDB index schema does not match the worktree")
+    const complete = await this._getMetadataValue(db, KEY.complete)
+    if (String(complete) !== "true") throw new Error("Baseline LanceDB index is not complete")
+    this.table = await native(() => db.openTable(this.vectorTableName))
   }
 
   private async _missingVectorSchemaFields(table: Table): Promise<string[]> {
@@ -328,15 +352,18 @@ export class LanceDBVectorStore implements IVectorStore {
         return true
       }
 
-      this.table = await db.openTable(this.vectorTableName)
+      this.table = await native(() => db.openTable(this.vectorTableName))
 
       const storedVectorSize = metadataTableExists ? await this._getStoredVectorSize(db) : null
+      const storedSchema = metadataTableExists ? await this._getMetadataValue(db, KEY.schema) : undefined
       const pointCount = await this.table.countRows()
 
       if (storedVectorSize === null) {
         rebuildReason = "missing compatibility metadata"
       } else if (storedVectorSize !== this.vectorSize) {
         rebuildReason = "vector size mismatch"
+      } else if (String(storedSchema) !== SCHEMA) {
+        rebuildReason = "vector schema mismatch"
       }
 
       if (!rebuildReason) {
@@ -479,7 +506,7 @@ export class LanceDBVectorStore implements IVectorStore {
     if (!payload) {
       return false
     }
-    const validKeys = ["filePath", "codeChunk", "startLine", "endLine"]
+    const validKeys = ["filePath", "fileHash", "codeChunk", "startLine", "endLine"]
     const hasValidKeys = validKeys.every((key) => key in payload)
     return hasValidKeys
   }
@@ -521,12 +548,12 @@ export class LanceDBVectorStore implements IVectorStore {
         score: 1 - result._distance, // Convert distance to similarity score
         payload: {
           filePath: result.filePath,
+          fileHash: result.fileHash,
           codeChunk: result.codeChunk,
           startLine: result.startLine,
           endLine: result.endLine,
           workspaceId: result.workspaceId,
           normalizedRoot: result.normalizedRoot,
-          fileHash: result.fileHash,
           chunkHash: result.chunkHash,
           chunkRange: result.chunkRange,
           runId: result.runId,
@@ -640,7 +667,7 @@ export class LanceDBVectorStore implements IVectorStore {
         const tableNames = await db.tableNames()
 
         if (tableNames.includes(this.metadataTableName)) {
-          const metadataTable = await db.openTable(this.metadataTableName)
+          const metadataTable = await native(() => db.openTable(this.metadataTableName))
           await metadataTable.delete("true")
         }
       } catch (metadataError) {
@@ -663,6 +690,10 @@ export class LanceDBVectorStore implements IVectorStore {
     } catch (error) {
       return false
     }
+  }
+
+  async close(): Promise<void> {
+    await this.closeConnect()
   }
 
   private async closeConnect(): Promise<void> {
@@ -709,7 +740,7 @@ export class LanceDBVectorStore implements IVectorStore {
         })
         return false
       }
-      const metadataTable = await db.openTable(this.metadataTableName)
+      const metadataTable = await native(() => db.openTable(this.metadataTableName))
       const metadataResults = await metadataTable.query().where(`key = '${KEY.complete}'`).toArray()
       const indexed = metadataResults.length > 0 ? String(metadataResults[0].value) === "true" : false
       log.info("LanceDB indexing metadata evaluated", {
@@ -719,8 +750,8 @@ export class LanceDBVectorStore implements IVectorStore {
       })
       return indexed
     } catch (error) {
-      log.warn("Failed to check if collection has data", { error })
-      return false
+      log.error("Failed to check if collection has data", { error })
+      throw error
     }
   }
 
@@ -735,6 +766,7 @@ export class LanceDBVectorStore implements IVectorStore {
   }
 
   private async _persistEmbeddingProfile(metadataTable: Table): Promise<void> {
+    await this._upsertMetadata(metadataTable, KEY.schema, SCHEMA)
     await this._upsertMetadata(metadataTable, KEY.provider, this.profile.provider)
     await this._upsertMetadata(metadataTable, KEY.model, this.profile.modelId)
     await this._upsertMetadata(metadataTable, KEY.dimension, this.profile.dimension)
@@ -748,7 +780,7 @@ export class LanceDBVectorStore implements IVectorStore {
   async markIndexingComplete(): Promise<void> {
     try {
       const db = await this.getDb()
-      const metadataTable = await db.openTable(this.metadataTableName)
+      const metadataTable = await native(() => db.openTable(this.metadataTableName))
       await this._persistEmbeddingProfile(metadataTable)
       await this._upsertMetadata(metadataTable, KEY.complete, "true")
       await this._upsertMetadata(metadataTable, KEY.runIncomplete, "false")
@@ -766,7 +798,7 @@ export class LanceDBVectorStore implements IVectorStore {
   async markIndexingIncomplete(): Promise<void> {
     try {
       const db = await this.getDb()
-      const metadataTable = await db.openTable(this.metadataTableName)
+      const metadataTable = await native(() => db.openTable(this.metadataTableName))
       await this._persistEmbeddingProfile(metadataTable)
       await this._upsertMetadata(metadataTable, KEY.runIncomplete, "true")
       log.info("Marked indexing as incomplete (in progress)")

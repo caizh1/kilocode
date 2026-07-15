@@ -1,6 +1,8 @@
 /**
  * Codebase Index Constants
  */
+export const DEFAULT_VECTOR_STORE = "lancedb" as const
+
 export const CODEBASE_INDEX_DEFAULTS = {
   MIN_SEARCH_RESULTS: 10,
   MAX_SEARCH_RESULTS: 200,
@@ -49,7 +51,7 @@ export const INITIAL_MANAGER_RECOVERY_DELAY_MS = 500
 
 /**Embedder Validation */
 export const REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS = 15_000
-export const REMOTE_EMBEDDER_VALIDATION_MAX_RETRIES = 0
+export const REMOTE_EMBEDDER_VALIDATION_MAX_RETRIES = 2
 export const OLLAMA_EMBEDDER_REQUEST_TIMEOUT_MS = 120_000
 
 /**OpenAI Embedder */

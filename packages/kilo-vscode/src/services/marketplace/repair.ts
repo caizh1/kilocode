@@ -1,6 +1,6 @@
 import * as vscode from "vscode"
-import type { Event } from "@kilocode/sdk/v2/client"
 import type { KiloConnectionService } from "../cli-backend"
+import type { SSEPayload } from "../cli-backend/sdk-sse-adapter"
 
 export async function generateAiRepair(connection: KiloConnectionService, dir: string, runId: string, content: string) {
   const client = await connection.getClientAsync(dir)
@@ -79,7 +79,7 @@ export async function confirmRepairDiff(before: string, after: string, title: st
   return answer === "确认应用"
 }
 
-function sessionEvent(event: Event, id: string) {
+function sessionEvent(event: SSEPayload, id: string) {
   if (event.type === "session.status") return event.properties.sessionID === id
   if (event.type === "session.error") return event.properties.sessionID === id
   return false

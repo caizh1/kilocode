@@ -33,7 +33,7 @@ export const MARKET_ENDPOINTS = [
   "/api/v1/events/batch",
   "/api/v1/analytics/overview",
   "/api/v1/analytics/skills/{id}",
-  "/api/v1/status"
+  "/api/v1/status",
 ] as const satisfies readonly Path[]
 
 export interface MarketClientOptions {

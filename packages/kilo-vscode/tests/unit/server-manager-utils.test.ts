@@ -5,13 +5,16 @@ import {
   isIndexingDiagnosticLine,
   resolveServerCwd,
   resolveIndexingEnv,
+  resolveManagedServerEnv,
   ServerManager,
   toErrorMessage,
 } from "../../src/services/cli-backend/server-manager"
 import {
+  copyKiloSandboxWorker,
   copyIndexingProcess,
   copyTreeSitterResources,
   indexingProcessForBinary,
+  kiloSandboxWorkerForBinary,
   lancedbEntryForExtension,
   resolveTreeSitterEnv,
   resolveLanceDBEnv,
@@ -167,6 +170,7 @@ describe("cli tree-sitter resources", () => {
 
     expect(treeSitterDirForBinary(bin)).toBe(`${root}/bin/tree-sitter`)
     expect(treeSitterDirForExtension(root)).toBe(`${root}/bin/tree-sitter`)
+    expect(kiloSandboxWorkerForBinary(bin)).toBe(`${root}/bin/kilo-sandbox-mutation-worker.js`)
     expect(resolveTreeSitterEnv(root)).toEqual({ KILO_TREE_SITTER_WASM_DIR: `${root}/bin/tree-sitter` })
   })
 
@@ -176,9 +180,27 @@ describe("cli tree-sitter resources", () => {
 
     expect(treeSitterDirForBinary(bin)).toBe(String.raw`${root}\bin\tree-sitter`)
     expect(treeSitterDirForExtension(root)).toBe(String.raw`${root}\bin\tree-sitter`)
+    expect(kiloSandboxWorkerForBinary(bin)).toBe(String.raw`${root}\bin\kilo-sandbox-mutation-worker.js`)
     expect(resolveTreeSitterEnv(root)).toEqual({
       KILO_TREE_SITTER_WASM_DIR: String.raw`${root}\bin\tree-sitter`,
     })
+  })
+
+  it("copies the Kilo sandbox worker with the packaged CLI binary", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-sandbox-worker-"))
+    try {
+      const source = path.join(root, "dist", "@kilocode", "cli-darwin-arm64", "bin", "kilo")
+      const target = path.join(root, "extension", "bin", "kilo")
+      await fs.mkdir(path.dirname(source), { recursive: true })
+      await fs.mkdir(path.dirname(target), { recursive: true })
+      await fs.writeFile(kiloSandboxWorkerForBinary(source), "worker")
+
+      await copyKiloSandboxWorker(source, target)
+
+      expect(await fs.readFile(kiloSandboxWorkerForBinary(target), "utf8")).toBe("worker")
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
   })
 
   it("copies runtime and language WASMs with the packaged CLI binary", async () => {
@@ -296,6 +318,13 @@ describe("server workspace helpers", () => {
     expect(resolveIndexingEnv(undefined)).toEqual({ KILO_DISABLE_CODEBASE_INDEXING: "vscode-no-workspace" })
     expect(resolveIndexingEnv([])).toEqual({ KILO_DISABLE_CODEBASE_INDEXING: "vscode-no-workspace" })
     expect(resolveIndexingEnv([{ uri: { fsPath: "/repo" } }])).toEqual({})
+  })
+
+  it("uses the shared database for the managed backend while preserving the environment", () => {
+    expect(resolveManagedServerEnv({ PATH: "/usr/bin", KILO_DISABLE_CHANNEL_DB: "false" })).toEqual({
+      PATH: "/usr/bin",
+      KILO_DISABLE_CHANNEL_DB: "true",
+    })
   })
 })
 

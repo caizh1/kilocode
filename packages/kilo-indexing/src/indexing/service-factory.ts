@@ -1,4 +1,3 @@
-import type { Ignore } from "ignore"
 import path from "path"
 
 import { getDefaultModelId } from "./model-registry"
@@ -32,10 +31,12 @@ import {
 } from "./rag-checkpoint"
 import {
   BATCH_SEGMENT_THRESHOLD,
+  DEFAULT_VECTOR_STORE,
   OLLAMA_EMBEDDER_REQUEST_TIMEOUT_MS,
   REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS,
 } from "./constants"
 import { Log } from "../util/log"
+import type { IgnoreMatcher } from "./shared/load-ignore"
 
 const log = Log.create({ service: "indexing-factory" })
 
@@ -67,7 +68,7 @@ export class CodeIndexServiceFactory {
     const cfg = this.configManager.getConfig()
     return {
       provider: cfg.embedderProvider,
-      vectorStore: cfg.vectorStoreProvider ?? "lancedb",
+      vectorStore: cfg.vectorStoreProvider ?? DEFAULT_VECTOR_STORE,
       modelId: cfg.modelId,
     }
   }
@@ -96,8 +97,7 @@ export class CodeIndexServiceFactory {
       return new CodeIndexOllamaEmbedder(config.ollamaOptions.baseUrl, config.modelId, config.modelDimension)
     }
     if (provider === "openai-compatible") {
-      if (!config.openAiCompatibleOptions?.baseUrl || !config.openAiCompatibleOptions?.apiKey)
-        throw new Error("OpenAI-compatible base URL and API key are required.")
+      if (!config.openAiCompatibleOptions?.baseUrl) throw new Error("OpenAI-compatible base URL is required.")
       return new OpenAICompatibleEmbedder(
         config.openAiCompatibleOptions.baseUrl,
         config.openAiCompatibleOptions.apiKey,
@@ -181,7 +181,7 @@ export class CodeIndexServiceFactory {
     }
   }
 
-  public createVectorStore(): IVectorStore {
+  public createVectorStore(workspacePath = this.workspacePath): IVectorStore {
     const config = this.configManager.getConfig()
     const profile = resolveEmbeddingProfile(config.embedderProvider, config.modelId, config.modelDimension)
 
@@ -203,7 +203,7 @@ export class CodeIndexServiceFactory {
         vectorSize: profile.dimension,
         dbDir,
       })
-      return new LanceDBVectorStore(this.workspacePath, profile.dimension, dbDir, profile)
+      return new LanceDBVectorStore(workspacePath, profile.dimension, dbDir, profile)
     }
 
     if (!config.qdrantUrl) throw new Error("Qdrant URL is required.")
@@ -213,7 +213,7 @@ export class CodeIndexServiceFactory {
       model: profile.modelId,
       vectorSize: profile.dimension,
     })
-    return new QdrantVectorStore(this.workspacePath, config.qdrantUrl, profile.dimension, config.qdrantApiKey, profile)
+    return new QdrantVectorStore(workspacePath, config.qdrantUrl, profile.dimension, config.qdrantApiKey, profile)
   }
 
   public createDocumentVectorStore(): IVectorStore {
@@ -284,7 +284,7 @@ export class CodeIndexServiceFactory {
     embedder: IEmbedder | undefined,
     vectorStore: IVectorStore | undefined,
     parser: ICodeParser,
-    ignoreInstance: Ignore,
+    ignoreInstance: IgnoreMatcher,
     opts: { writeCache?: boolean } = {},
   ): DirectoryScanner {
     const config = this.configManager.getConfig()
@@ -312,7 +312,7 @@ export class CodeIndexServiceFactory {
     embedder: IEmbedder | undefined,
     vectorStore: IVectorStore | undefined,
     cacheManager: CacheManager,
-    ignoreInstance: Ignore,
+    ignoreInstance: IgnoreMatcher,
     opts: { writeCache?: boolean } = {},
   ): IFileWatcher {
     const config = this.configManager.getConfig()
@@ -338,7 +338,7 @@ export class CodeIndexServiceFactory {
 
   public createGraphServices(
     cacheManager: CacheManager,
-    ignoreInstance: Ignore,
+    ignoreInstance: IgnoreMatcher,
   ): {
     parser: ICodeParser
     scanner: DirectoryScanner
@@ -355,7 +355,7 @@ export class CodeIndexServiceFactory {
 
   public createServices(
     cacheManager: CacheManager,
-    ignoreInstance: Ignore,
+    ignoreInstance: IgnoreMatcher,
   ): {
     embedder: IEmbedder
     vectorStore: IVectorStore
@@ -393,7 +393,7 @@ export class CodeIndexServiceFactory {
     return { embedder, vectorStore, parser, scanner, fileWatcher, ragMeta }
   }
 
-  public createDocumentService(ignoreInstance: Ignore, onStatus?: () => void): DocumentIndexService {
+  public createDocumentService(ignoreInstance: IgnoreMatcher, onStatus?: () => void): DocumentIndexService {
     if (!this.configManager.isFeatureConfigured) {
       throw new Error("Document RAG requires configured embeddings.")
     }

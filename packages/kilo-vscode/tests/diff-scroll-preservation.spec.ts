@@ -36,10 +36,28 @@ async function openStory(page: Page) {
   return first
 }
 
+async function showTarget(page: Page) {
+  const target = page.locator('[data-file-path="src/target.ts"]')
+  await page.locator(".am-review-diff").evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  await expect(target).toBeAttached()
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  return target
+}
+
+async function alignTarget(page: Page) {
+  await page.locator(".am-review-diff").evaluate((el) => {
+    const target = el.querySelector('[data-file-path="src/target.ts"]')
+    if (!(target instanceof HTMLElement)) throw new Error("Target diff row not found")
+    el.scrollTop += target.getBoundingClientRect().top - el.getBoundingClientRect().top - 24
+  })
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+}
+
 test("preserves diff scroll position while an agent edit refreshes a file", async ({ page }) => {
   const first = await openStory(page)
   const scroller = page.locator(".am-review-diff")
-  const target = page.locator('[data-file-path="src/target.ts"]')
 
   // The initial tall diff rendered eagerly. Restore the real observer before
   // moving it offscreen so an unfixed row remount takes the deferred path.
@@ -52,11 +70,10 @@ test("preserves diff scroll position while an agent edit refreshes a file", asyn
     })
   })
 
-  await scroller.evaluate((el) => {
-    const target = el.querySelector('[data-file-path="src/target.ts"]')
-    if (!(target instanceof HTMLElement)) throw new Error("Target diff row not found")
-    el.scrollTop += target.getBoundingClientRect().top - el.getBoundingClientRect().top - 24
-  })
+  const target = await showTarget(page)
+
+  await alignTarget(page)
+  await alignTarget(page)
 
   const before = await scroller.evaluate((el) => el.scrollTop)
   const top = await target.evaluate((el) => el.getBoundingClientRect().top)
@@ -73,8 +90,42 @@ test("preserves diff scroll position while an agent edit refreshes a file", asyn
   expect(next).toBeCloseTo(top, 0)
 })
 
-test("remounts diff rows when the review context changes", async ({ page }) => {
+test("preserves scroll while adding and editing a review comment", async ({ page }) => {
+  await openStory(page)
+  const scroller = page.locator(".am-review-diff")
+  const target = await showTarget(page)
+
+  await alignTarget(page)
+  await alignTarget(page)
+
+  const line = target.locator('[data-line="1"]').last()
+  await line.hover()
+  await target.locator("[data-utility-button]").last().click()
+  await expect(target.locator(".am-annotation-textarea")).toBeVisible()
+  await target.locator(".am-annotation-textarea").fill("Keep this stable")
+  const top = await target.evaluate((el) => el.getBoundingClientRect().top)
+  const before = await scroller.evaluate((el) => el.scrollTop)
+
+  await page.getByRole("button", { name: "Apply agent edit" }).click()
+  await expect(page.getByTestId("agent-edit-version")).toHaveText("after")
+  await expect(target.locator(".am-annotation-textarea")).toHaveValue("Keep this stable")
+  await expect.poll(async () => scroller.evaluate((el) => el.scrollTop)).toBeCloseTo(before, 0)
+  await expect.poll(async () => target.evaluate((el) => el.getBoundingClientRect().top)).toBeCloseTo(top, 0)
+
+  await target.getByRole("button", { name: "Comment" }).click()
+  await expect(target.getByText("Keep this stable")).toBeVisible()
+  const saved = await scroller.evaluate((el) => el.scrollTop)
+
+  await target.getByTitle("Edit").click()
+  await target.locator(".am-annotation-textarea").fill("Still stable")
+  await target.getByRole("button", { name: "Save" }).click()
+  await expect(target.getByText("Still stable")).toBeVisible()
+  await expect.poll(async () => scroller.evaluate((el) => el.scrollTop)).toBeCloseTo(saved, 0)
+})
+
+test("resets virtual measurements and scroll when the review context changes", async ({ page }) => {
   const first = await openStory(page)
+  const scroller = page.locator(".am-review-diff")
   await page.evaluate(() => {
     class IdleObserver {
       readonly root = null
@@ -96,7 +147,15 @@ test("remounts diff rows when the review context changes", async ({ page }) => {
     })
   })
 
+  // Move away from the origin so the context switch must reset both the
+  // virtualizer's cached measurements and the shared scroller position.
+  await scroller.evaluate((el) => {
+    el.scrollTop = 2_000
+  })
+  await expect.poll(async () => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(1_000)
+
   await page.getByRole("button", { name: "Switch review context" }).click()
   await expect(page.getByTestId("review-context")).toHaveText("changed-context")
   await expect.poll(async () => first.evaluate((el) => el.getBoundingClientRect().height)).toBe(1_200)
+  await expect.poll(async () => scroller.evaluate((el) => el.scrollTop)).toBe(0)
 })

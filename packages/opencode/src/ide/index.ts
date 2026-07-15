@@ -1,5 +1,4 @@
-import { BusEvent } from "@/bus/bus-event"
-import z from "zod"
+import { EventV2 } from "@opencode-ai/core/event"
 import { Schema } from "effect"
 import { NamedError } from "@opencode-ai/core/util/error"
 
@@ -12,22 +11,19 @@ const SUPPORTED_IDES = [
 ]
 
 export const Event = {
-  Installed: BusEvent.define(
-    "ide.installed",
-    Schema.Struct({
+  Installed: EventV2.define({
+    type: "ide.installed",
+    schema: {
       ide: Schema.String,
-    }),
-  ),
+    },
+  }),
 }
 
-export const AlreadyInstalledError = NamedError.create("AlreadyInstalledError", z.object({}))
+export const AlreadyInstalledError = NamedError.create("AlreadyInstalledError", {})
 
-export const InstallFailedError = NamedError.create(
-  "InstallFailedError",
-  z.object({
-    stderr: z.string(),
-  }),
-)
+export const InstallFailedError = NamedError.create("InstallFailedError", {
+  stderr: Schema.String,
+})
 
 export function ide() {
   if (process.env["TERM_PROGRAM"] === "vscode") {

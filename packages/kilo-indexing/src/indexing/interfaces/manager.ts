@@ -50,7 +50,7 @@ export interface ICodeIndexManager {
     currentItemUnit: string
     notices?: IndexingNotice[]
   }
-  dispose(): void
+  dispose(): Promise<void>
 }
 
 export type IndexingState = "Standby" | "Indexing" | "Indexed" | "Error"

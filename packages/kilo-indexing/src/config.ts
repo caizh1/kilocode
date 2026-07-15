@@ -1,7 +1,10 @@
 import { Schema } from "effect"
 import z from "zod"
 import type { IndexingConfigInput } from "./indexing/config-manager"
+import { DEFAULT_VECTOR_STORE } from "./indexing/constants"
 import type { EmbedderProvider } from "./indexing/interfaces/manager"
+
+export { DEFAULT_VECTOR_STORE } from "./indexing/constants"
 
 const providers = [
   "kilo",
@@ -297,7 +300,7 @@ export function toIndexingConfigInput(cfg: IndexingConfig | undefined): Indexing
   return {
     enabled: cfg?.enabled ?? false,
     embedderProvider: provider,
-    vectorStoreProvider: cfg?.vectorStore,
+    vectorStoreProvider: cfg?.vectorStore ?? DEFAULT_VECTOR_STORE,
     modelId: cfg?.model ?? undefined,
     modelDimension: cfg?.dimension ?? undefined,
     lancedbVectorStoreDirectory: cfg?.lancedb?.directory,

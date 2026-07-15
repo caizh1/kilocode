@@ -26,7 +26,7 @@ export function createIndexingHost(send: (message: Result | Event) => void) {
   const init = async (request: Extract<Request, { method: "init" }>) => {
     await dispose()
     if (request.input.lancedbPath) process.env.KILO_LANCEDB_PATH = request.input.lancedbPath
-    const next = new CodeIndexManager(request.input.directory, request.input.root)
+    const next = new CodeIndexManager(request.input.directory, request.input.root, request.input.baselineDirectory)
     manager = next
     next.setMemoryPressure(mode)
     progress = next.onProgressUpdate.on(() => {

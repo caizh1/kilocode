@@ -37,6 +37,7 @@ describe("Settings UI alignment", () => {
       ["commitMessage", "comment"],
       ["indexing", "database"],
       ["experimental", "beaker"],
+      ["sandboxing", "shield"],
       ["language", "symbol-text"],
       ["aboutKiloCode", "info"],
     ])

@@ -1,6 +1,6 @@
 // kilocode_change - new file
 import * as Stream from "effect/Stream"
-import type { Event } from "@/session/llm"
+import type { LLMEvent as Event } from "@opencode-ai/llm"
 
 const OPEN = "<think>"
 const CLOSE = "</think>"

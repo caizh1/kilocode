@@ -10,7 +10,9 @@ import type { VectorStoreCleanupStats } from "../interfaces/cleanup"
 
 const log = Log.create({ service: "qdrant-store" })
 
+const SCHEMA = 2
 const KEY = {
+  schema: "index_schema",
   complete: "indexing_complete",
   runIncomplete: "indexing_run_incomplete",
   provider: "embedding_provider",
@@ -230,7 +232,7 @@ export class QdrantVectorStore implements IVectorStore {
     })
   }
 
-  private async recreateCollectionForProfile(stored?: EmbeddingProfile): Promise<boolean> {
+  private async recreateCollectionForCompatibility(stored?: EmbeddingProfile): Promise<boolean> {
     const from = stored
       ? `${stored.provider}:${stored.modelId}:${stored.dimension}`
       : "missing embedding metadata on populated collection"
@@ -254,6 +256,28 @@ export class QdrantVectorStore implements IVectorStore {
 
     await this.createCollection()
     return true
+  }
+
+  async openExisting(): Promise<void> {
+    const info = await this.getCollectionInfo()
+    if (!info) throw new Error("Baseline Qdrant collection does not exist")
+
+    const vectors = info.config?.params?.vectors
+    const size =
+      typeof vectors === "number"
+        ? vectors
+        : vectors && typeof vectors === "object" && "size" in vectors && typeof vectors.size === "number"
+          ? vectors.size
+          : 0
+    if (size !== this.vectorSize) throw new Error("Baseline Qdrant vector dimension does not match the worktree")
+
+    const payload = await this.getMetadataPayload()
+    const profile = this.getStoredProfile(payload)
+    if (!profile || !this.isProfileMatch(profile)) {
+      throw new Error("Baseline Qdrant embedding profile does not match the worktree")
+    }
+    if (payload?.[KEY.schema] !== SCHEMA) throw new Error("Baseline Qdrant index schema does not match the worktree")
+    if (payload?.[KEY.complete] !== true) throw new Error("Baseline Qdrant index is not complete")
   }
 
   /**
@@ -308,10 +332,8 @@ export class QdrantVectorStore implements IVectorStore {
           } else {
             const payload = await this.getMetadataPayload()
             const profile = this.getStoredProfile(payload)
-            if (!profile || !this.isProfileMatch(profile)) {
-              created = await this.recreateCollectionForProfile(profile)
-            } else {
-              created = false
+            const compatible = payload?.[KEY.schema] === SCHEMA && profile && this.isProfileMatch(profile)
+            if (compatible) {
               log.info("Qdrant compatibility decision", {
                 visible: true,
                 collection: this.collectionName,
@@ -319,6 +341,8 @@ export class QdrantVectorStore implements IVectorStore {
                 reason: "compatible",
                 vectorSize: this.vectorSize,
               })
+            } else {
+              created = await this.recreateCollectionForCompatibility(profile)
             }
           }
         } else {
@@ -518,7 +542,7 @@ export class QdrantVectorStore implements IVectorStore {
     if (!payload) {
       return false
     }
-    const validKeys = ["filePath", "codeChunk", "startLine", "endLine"]
+    const validKeys = ["filePath", "fileHash", "codeChunk", "startLine", "endLine"]
     const hasValidKeys = validKeys.every((key) => key in payload)
     return hasValidKeys
   }
@@ -592,7 +616,7 @@ export class QdrantVectorStore implements IVectorStore {
           exact: false,
         },
         with_payload: {
-          include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+          include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
         },
       }
 
@@ -764,14 +788,7 @@ export class QdrantVectorStore implements IVectorStore {
    */
   async hasIndexedData(): Promise<boolean> {
     try {
-      const collectionInfo = await this.getCollectionInfo()
-      if (!collectionInfo) {
-        log.info("Qdrant collection has no indexed data", {
-          collection: this.collectionName,
-          reason: "collection_missing",
-        })
-        return false
-      }
+      const collectionInfo = await this.client.getCollection(this.collectionName)
       // Check if the collection has any points indexed
       const pointsCount = collectionInfo.points_count ?? 0
       if (pointsCount === 0) {
@@ -801,8 +818,8 @@ export class QdrantVectorStore implements IVectorStore {
       log.info("No indexing metadata marker found. Using backward compatibility mode (checking points_count > 0).")
       return pointsCount > 0
     } catch (error) {
-      log.warn("Failed to check if collection has data", { error })
-      return false
+      log.error("Failed to check if collection has data", { error })
+      throw error
     }
   }
 
@@ -819,6 +836,7 @@ export class QdrantVectorStore implements IVectorStore {
             vector: new Array(this.vectorSize).fill(0),
             payload: {
               type: "metadata",
+              [KEY.schema]: SCHEMA,
               [KEY.complete]: true,
               [KEY.runIncomplete]: false,
               [KEY.provider]: this.profile.provider,
@@ -853,6 +871,7 @@ export class QdrantVectorStore implements IVectorStore {
               type: "metadata",
               ...(current?.[KEY.complete] === true ? { [KEY.complete]: true } : {}),
               [KEY.runIncomplete]: true,
+              [KEY.schema]: SCHEMA,
               [KEY.provider]: this.profile.provider,
               [KEY.model]: this.profile.modelId,
               [KEY.dimension]: this.profile.dimension,

@@ -1,9 +1,10 @@
 import { Config } from "@/config/config"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
-import { Bus } from "@/bus"
+import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
 import * as ProviderSave from "@/kilocode/server/provider-save-lifecycle" // kilocode_change
+import { disconnect } from "@/kilocode/server/sse" // kilocode_change
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { MemoryDebug } from "@/kilocode/memory-debug" // kilocode_change
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
@@ -43,7 +44,9 @@ function isIndexingOnlyConfig(input: unknown): boolean {
 }
 // kilocode_change end
 
-function eventResponse() {
+// kilocode_change start
+function eventResponse(request: HttpServerRequest.HttpServerRequest) {
+  // kilocode_change end
   log.info("global event connected")
   const events = Stream.callback<GlobalBusEvent>((queue) => {
     const handler = (event: GlobalBusEvent) => Queue.offerUnsafe(queue, event)
@@ -54,15 +57,20 @@ function eventResponse() {
   })
   const heartbeat = Stream.tick("10 seconds").pipe(
     Stream.drop(1),
-    Stream.map(() => ({ payload: { id: Bus.createID(), type: "server.heartbeat", properties: {} } })),
+    Stream.map(() => ({ payload: { id: EventV2.ID.create(), type: "server.heartbeat", properties: {} } })),
   )
 
   return HttpServerResponse.stream(
-    Stream.make({ payload: { id: Bus.createID(), type: "server.connected", properties: {} } }).pipe(
+    Stream.make({ payload: { id: EventV2.ID.create(), type: "server.connected", properties: {} } }).pipe(
       Stream.concat(events.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }))),
       Stream.map(eventData),
       Stream.pipeThroughChannel(Sse.encode()),
       Stream.encodeText,
+      // kilocode_change start - prevent disconnected SSE clients from retaining full diff payloads
+      // Explicit interruption closes the stream scope, unregisters its GlobalBus listener, and
+      // releases the unbounded callback queue even when transport cancellation is not propagated.
+      Stream.interruptWhen(disconnect(request)),
+      // kilocode_change end
       Stream.ensuring(Effect.sync(() => log.info("global event disconnected"))),
     ),
     {
@@ -87,7 +95,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const event = Effect.fn("GlobalHttpApi.event")(function* () {
-      return eventResponse()
+      const request = yield* HttpServerRequest.HttpServerRequest // kilocode_change
+      return eventResponse(request) // kilocode_change
     })
 
     const configGet = Effect.fn("GlobalHttpApi.configGet")(function* () {

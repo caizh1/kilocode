@@ -3,7 +3,7 @@ import path from "path"
 import type { QueryEvidenceResult } from "@kilocode/kilo-indexing/engine"
 import * as Tool from "@/tool/tool"
 import { KiloIndexing } from "@/kilocode/indexing"
-import { Instance } from "@/project/instance"
+import { Instance } from "@/kilocode/instance"
 
 import DESCRIPTION from "./codebase-analysis.txt"
 

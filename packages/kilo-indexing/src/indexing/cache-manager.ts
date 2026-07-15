@@ -135,6 +135,12 @@ export class CacheManager implements ICacheManager {
     await this.performSave()
   }
 
+  seedHashes(hashes: Readonly<Record<string, string>>): void {
+    this.fileHashes = { ...hashes }
+    this.pending = new Map(Object.entries(this.fileHashes))
+    this.scheduleSave()
+  }
+
   getHash(filePath: string): string | undefined {
     return this.fileHashes[filePath]
   }
@@ -171,6 +177,18 @@ export class CacheManager implements ICacheManager {
         log.warn("ignored incomplete indexing cache checkpoint", { err })
       }
     }
+  }
+
+  signature(): string {
+    const entries = Object.entries(this.fileHashes).sort(([left], [right]) => left.localeCompare(right))
+    return createHash("sha256").update(JSON.stringify(entries)).digest("hex")
+  }
+
+  async stamp(): Promise<string | undefined> {
+    return fs
+      .stat(this.cachePath)
+      .then((value) => `${value.mtimeMs}:${value.ctimeMs}:${value.size}`)
+      .catch(() => undefined)
   }
 }
 

@@ -62,7 +62,8 @@ export class LocalSkillImporter {
   async install(selection: SkillImportSelection, project: string | undefined): Promise<SkillImportResult> {
     this.clean()
     const run = this.runs.get(selection.token)
-    if (!run || run.expires <= Date.now()) throw new Error("Local Skill import preview expired; select the source again")
+    if (!run || run.expires <= Date.now())
+      throw new Error("Local Skill import preview expired; select the source again")
     if (selection.scope === "project" && !project) throw new Error("No workspace is available for project import")
     const selected = new Set(selection.candidateIds)
     const replace = new Set(selection.replaceIds)
@@ -156,7 +157,8 @@ export class LocalSkillImporter {
     await fs.mkdir(base, { recursive: true })
     const current = await this.conflict(candidate, scope, project)
     if (current.state === "same") return { id: candidate.id, status: "unchanged" }
-    if (current.state !== "none" && !replace) return { id: candidate.id, status: "skipped", error: "Replace was not confirmed" }
+    if (current.state !== "none" && !replace)
+      return { id: candidate.id, status: "skipped", error: "Replace was not confirmed" }
 
     const stage = await fs.mkdtemp(path.join(base, `.import-${candidate.id}-`))
     const backup = path.join(base, `.backup-${candidate.id}-${randomUUID()}`)
@@ -168,7 +170,8 @@ export class LocalSkillImporter {
         await fs.writeFile(output, file.data, { mode: file.mode ?? 0o644 })
       }
       const verified = await discoverSkillCandidates(stage)
-      if (verified.length !== 1 || !verified[0]?.snapshot.valid) throw new Error("Installed snapshot failed final validation")
+      if (verified.length !== 1 || !verified[0]?.snapshot.valid)
+        throw new Error("Installed snapshot failed final validation")
       if (verified[0].snapshot.snapshotSha256 !== candidate.snapshot.snapshotSha256)
         throw new Error("Installed snapshot hash changed during staging")
       if (await exists(target)) {

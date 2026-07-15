@@ -11,6 +11,7 @@ import {
   onMount,
   Show,
   Switch,
+  untrack,
   useContext,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
@@ -21,7 +22,7 @@ import { useSync } from "@tui/context/sync"
 import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
-import { selectedForeground, useTheme } from "@tui/context/theme"
+import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "@tui/context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 // kilocode_change start
 import type { KeyEvent } from "@opentui/core"
@@ -29,7 +30,16 @@ import type { CommandContext } from "@opentui/keymap"
 // kilocode_change end
 import { Prompt, type PromptRef } from "@tui/component/prompt"
 // kilocode_change start
-import type { AssistantMessage, Part, Provider, ToolPart, UserMessage, TextPart, ReasoningPart } from "@kilocode/sdk/v2"
+import type {
+  AssistantMessage,
+  Part,
+  Provider,
+  ToolPart,
+  UserMessage,
+  TextPart,
+  ReasoningPart,
+  StepFinishPart,
+} from "@kilocode/sdk/v2"
 import * as Log from "@opencode-ai/core/util/log"
 // kilocode_change end
 import { useLocal } from "@tui/context/local"
@@ -51,13 +61,14 @@ import type { QuestionTool } from "@/tool/question"
 import type { SkillTool } from "@/tool/skill"
 // kilocode_change start
 import type { BackgroundProcessTool } from "@/kilocode/tool/background-process"
+import type { InteractiveTerminalTool } from "@/kilocode/tool/interactive-terminal"
 import type { SemanticSearchTool } from "@/kilocode/tool/semantic-search"
 // kilocode_change end
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { useSDK } from "@tui/context/sdk"
 import { useEditorContext } from "@tui/context/editor"
-import type { DialogContext } from "@tui/ui/dialog"
 import { useDialog } from "../../ui/dialog"
+import { DialogAlert } from "../../ui/dialog-alert"
 import { TodoItem } from "../../component/todo-item"
 import { DialogMessage } from "./dialog-message"
 import type { PromptInfo } from "../../component/prompt/history"
@@ -68,7 +79,6 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
-import { Flag } from "@opencode-ai/core/flag/flag"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import parsers from "../../../../../../parsers-config.ts"
 import * as Clipboard from "../../util/clipboard"
@@ -86,6 +96,7 @@ import { QuestionPrompt } from "./question"
 import { Suggest } from "@/kilocode/suggestion/tui/render"
 import { SuggestPrompt } from "@/kilocode/suggestion/tui/prompt"
 import { NetworkPrompt } from "./network"
+import { TerminalPrompt } from "./terminal"
 // kilocode_change end
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import * as Model from "../../util/model"
@@ -95,19 +106,20 @@ import { useTuiConfig } from "../../context/tui-config"
 // kilocode_change start
 import { splitDiffHunks } from "@/kilocode/tui/diff"
 import { session as banner } from "@/kilocode/cli/logo"
+import { RoutedModelMeta } from "@/kilocode/cli/cmd/tui/routes/session/routed-model-meta"
 
 import { formatMarkdownTables } from "../../util/markdown"
-import { bell } from "@/kilocode/bell"
-import { SessionIndexing } from "@/kilocode/components/session-indexing"
 import { submitFeedback } from "@/kilocode/cli/cmd/tui/feedback"
+import { MemoryMessageMeta, MemorySessionTui } from "@/kilocode/cli/cmd/tui/routes/session/memory" // kilocode_change
 // kilocode_change end
+import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
+import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { SessionRetry } from "@/session/retry"
 import { getRevertDiffFiles } from "../../util/revert-diff"
-import { useCommandPalette } from "../../context/command-palette"
-import { useBindings, useCommandShortcut } from "../../keymap"
+import { KILO_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
 
 addDefaultParsers(parsers.parsers)
@@ -152,12 +164,6 @@ const sessionBindingCommands = [
   "session.toggle.actions",
   "session.toggle.scrollbar",
   "session.toggle.generic_tool_output",
-  "session.page.up",
-  "session.page.down",
-  "session.line.up",
-  "session.line.down",
-  "session.half.page.up",
-  "session.half.page.down",
   "session.first",
   "session.last",
   "session.messages_last_user",
@@ -176,10 +182,22 @@ const sessionBindingCommands = [
   "session.child.previous",
 ] as const
 
+const sessionGlobalBindingCommands = [
+  "session.page.up",
+  "session.page.down",
+  "session.line.up",
+  "session.line.down",
+  "session.half.page.up",
+  "session.half.page.down",
+] as const
+
+const sessionGlobalUnfocusedBindingCommands = ["session.first", "session.last"] as const
+
 const context = createContext<{
   width: number
   sessionID: string
   conceal: () => boolean
+  thinkingMode: () => ThinkingMode
   showThinking: () => boolean
   showTimestamps: () => boolean
   showDetails: () => boolean
@@ -214,6 +232,17 @@ export function Session() {
       .toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   })
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
+  const foregroundTasks = createMemo(() =>
+    messages().flatMap((message) =>
+      (sync.data.part[message.id] ?? []).filter(
+        (part): part is ToolPart =>
+          part.type === "tool" &&
+          part.tool === "task" &&
+          part.state.status === "running" &&
+          part.state.metadata?.background !== true,
+      ),
+    ),
+  )
   const permissions = createMemo(() => {
     if (session()?.parentID) return []
     return children().flatMap((x) => sync.data.permission[x.id] ?? [])
@@ -231,6 +260,11 @@ export function Session() {
     if (session()?.parentID) return []
     return children().flatMap((x) => sync.data.network[x.id] ?? [])
   })
+  const terminals = createMemo(() => {
+    if (session()?.parentID) return []
+    return children().flatMap((x) => sync.data.interactive_terminal[x.id] ?? [])
+  })
+  const terminal = createMemo(() => terminals()[0])
   const blockingQuestions = createMemo(() => questions().filter((q) => q.blocking !== false))
   const nonBlockingQuestions = createMemo(() => questions().filter((q) => q.blocking === false))
   const question = createMemo(() => blockingQuestions()[0] ?? nonBlockingQuestions()[0])
@@ -243,13 +277,15 @@ export function Session() {
       permissions().length === 0 &&
       blockingQuestions().length === 0 &&
       blockingSuggestions().length === 0 &&
-      network().length === 0,
+      network().length === 0 &&
+      terminals().length === 0,
   )
   const networkVisible = createMemo(
     () =>
       permissions().length === 0 &&
       blockingQuestions().length === 0 &&
       blockingSuggestions().length === 0 &&
+      terminals().length === 0 &&
       network().length > 0,
   )
   const disabled = createMemo(
@@ -257,68 +293,34 @@ export function Session() {
       permissions().length > 0 ||
       blockingQuestions().length > 0 ||
       blockingSuggestions().length > 0 ||
-      network().length > 0,
+      network().length > 0 ||
+      terminals().length > 0,
   )
+  // kilocode_change end
 
   const pending = createMemo(() => {
-    return messages().findLast((x) => x.role === "assistant" && !x.time.completed)?.id
+    const completed = messages().findLast((x) => x.role === "assistant" && x.time.completed)?.id
+    return messages().findLast((x) => x.role === "assistant" && !x.time.completed && (!completed || x.id > completed))
+      ?.id
   })
 
   const lastAssistant = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant")
   })
 
-  createEffect(
-    on(
-      () => [route.sessionID, sync.data.session_status?.[route.sessionID]?.type] as const,
-      ([id, type], prev) => {
-        if (!prev || prev[0] !== id) return
-        if (prev[1] && prev[1] !== "idle" && type === "idle" && bellEnabled()) bell()
-      },
-    ),
-  )
-
-  createEffect(
-    on(
-      () => [route.sessionID, permissions().length] as const,
-      ([id, len], prev) => {
-        if (!prev || prev[0] !== id) return
-        if (len > prev[1] && bellEnabled()) bell()
-      },
-    ),
-  )
-  createEffect(
-    on(
-      () => [route.sessionID, questions().length] as const,
-      ([id, len], prev) => {
-        if (!prev || prev[0] !== id) return
-        if (len > prev[1] && bellEnabled()) bell()
-      },
-    ),
-  )
-  createEffect(
-    on(
-      () => [route.sessionID, suggestions().length + network().length] as const,
-      ([id, len], prev) => {
-        if (!prev || prev[0] !== id) return
-        if (len > prev[1] && bellEnabled()) bell()
-      },
-    ),
-  )
-  // kilocode_change end
-
   const dimensions = useTerminalDimensions()
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
   const [conceal, setConceal] = createSignal(true)
-  const [showThinking, setShowThinking] = kv.signal("thinking_visibility", true)
+  const thinking = useThinkingMode()
+  const thinkingMode = thinking.mode
+  const showThinking = createMemo(() => true)
   const [timestamps, setTimestamps] = kv.signal<"hide" | "show">("timestamps", "hide")
   const [showDetails, setShowDetails] = kv.signal("tool_details_visibility", true)
   const [showAssistantMetadata, _setShowAssistantMetadata] = kv.signal("assistant_metadata_visibility", true)
   const [showScrollbar, setShowScrollbar] = kv.signal("scrollbar_visible", false)
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
-  const [bellEnabled, _setBellEnabled] = kv.signal("bell_enabled", true) // kilocode_change - terminal bell toggle (toggled via kv.set in app.tsx command)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
 
   const wide = createMemo(() => dimensions().width > 120)
@@ -378,7 +380,7 @@ export function Session() {
   createEffect(() => {
     const sessionID = route.sessionID
     void (async () => {
-      const previousWorkspace = project.workspace.current()
+      const previousWorkspace = untrack(() => project.workspace.current())
       const result = await sdk.client.session.get({ sessionID }, { throwOnError: true })
       if (!result.data) {
         toast.show({
@@ -416,8 +418,8 @@ export function Session() {
   })
 
   let lastSwitch: string | undefined = undefined
-  event.on("message.part.updated", (evt) => {
-    const part = evt.properties.part
+  event.onSync("message.part.updated.1", (evt) => {
+    const part = evt.data.part
     if (part.type !== "tool") return
     if (part.sessionID !== route.sessionID) return
     if (part.state.status !== "completed") return
@@ -440,7 +442,7 @@ export function Session() {
     seeded = true
     r.set(route.prompt)
   }
-  const command = useCommandPalette()
+  const keymap = useOpencodeKeymap()
   const dialog = useDialog()
   const renderer = useRenderer()
 
@@ -463,6 +465,8 @@ export function Session() {
       kv.set(keys.lastSeenAt, Date.now())
     })
   })
+
+  onCleanup(MemorySessionTui.attach({ event, toast, sessionID: route.sessionID })) // kilocode_change
 
   const exit = useExit()
 
@@ -547,15 +551,19 @@ export function Session() {
 
   const local = useLocal()
 
+  function enterChild(sessionID: string) {
+    navigate({
+      type: "session",
+      sessionID,
+    })
+    const status = sync.data.session_status[sessionID]
+    if (status?.type === "retry") void DialogAlert.show(dialog, "Retry Error", status.message)
+  }
+
   function moveFirstChild() {
     if (children().length === 1) return
     const next = children().find((x) => !!x.parentID)
-    if (next) {
-      navigate({
-        type: "session",
-        sessionID: next.id,
-      })
-    }
+    if (next) enterChild(next.id)
   }
 
   function moveChild(direction: number) {
@@ -566,12 +574,7 @@ export function Session() {
 
     if (next >= sessions.length) next = 0
     if (next < 0) next = sessions.length - 1
-    if (sessions[next]) {
-      navigate({
-        type: "session",
-        sessionID: sessions[next].id,
-      })
-    }
+    if (sessions[next]) enterChild(sessions[next].id)
   }
 
   function childSessionHandler(func: () => void) {
@@ -824,7 +827,11 @@ export function Session() {
       },
     },
     {
-      title: showThinking() ? "Hide thinking" : "Show thinking",
+      title: (() => {
+        const next = nextThinkingMode(thinkingMode())
+        if (next === "hide") return "Collapse thinking"
+        return "Expand thinking"
+      })(),
       value: "session.toggle.thinking",
       category: "Session",
       slash: {
@@ -832,7 +839,7 @@ export function Session() {
         aliases: ["toggle-thinking"],
       },
       run: () => {
-        setShowThinking((prev) => !prev)
+        thinking.set(nextThinkingMode(thinkingMode()))
         dialog.clear()
       },
     },
@@ -887,7 +894,7 @@ export function Session() {
       title: "Line up",
       value: "session.line.up",
       category: "Session",
-      enabled: false,
+      hidden: true,
       run: () => {
         scroll.scrollBy(-1)
         dialog.clear()
@@ -897,7 +904,7 @@ export function Session() {
       title: "Line down",
       value: "session.line.down",
       category: "Session",
-      enabled: false,
+      hidden: true,
       run: () => {
         scroll.scrollBy(1)
         dialog.clear()
@@ -992,6 +999,11 @@ export function Session() {
       title: "Copy last assistant message",
       value: "messages.copy",
       category: "Session",
+      // kilocode_change start - /copy copies the latest assistant response
+      slash: {
+        name: "copy",
+      },
+      // kilocode_change end
       run: () => {
         const revertID = session()?.revert?.messageID
         const lastAssistantMessage = messages().findLast(
@@ -1049,7 +1061,7 @@ export function Session() {
       value: "session.copy",
       category: "Session",
       slash: {
-        name: "copy",
+        name: "copy-session", // kilocode_change - transcript copy moved off /copy
       },
       run: async () => {
         try {
@@ -1126,7 +1138,14 @@ export function Session() {
 
           if (options.openWithoutSaving) {
             // Just open in editor without saving
-            await Editor.open({ value: transcript, renderer })
+            await Editor.open({
+              value: transcript,
+              renderer,
+              cwd:
+                (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree) ||
+                project.instance.directory() ||
+                process.cwd(),
+            })
           } else {
             const exportDir = process.cwd()
             const filename = options.filename.trim()
@@ -1135,7 +1154,14 @@ export function Session() {
             await Filesystem.write(filepath, transcript)
 
             // Open with EDITOR if available
-            const result = await Editor.open({ value: transcript, renderer })
+            const result = await Editor.open({
+              value: transcript,
+              renderer,
+              cwd:
+                (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree) ||
+                project.instance.directory() ||
+                process.cwd(),
+            })
             if (result !== undefined) {
               await Filesystem.write(filepath, result)
             }
@@ -1149,13 +1175,27 @@ export function Session() {
       },
     },
     {
+      title: "Background subagents",
+      value: "session.background",
+      category: "Session",
+      hidden: true,
+      enabled: foregroundTasks().length > 0,
+      run: () => {
+        void sdk.client.experimental.session.background({
+          sessionID: route.sessionID,
+          workspace: project.workspace.current(),
+        })
+        dialog.clear()
+      },
+    },
+    {
       title: "Go to child session",
       value: "session.child.first",
       category: "Session",
       hidden: true,
       run: () => {
-        moveFirstChild()
         dialog.clear()
+        moveFirstChild()
       },
     },
     {
@@ -1182,8 +1222,8 @@ export function Session() {
       hidden: true,
       enabled: !!session()?.parentID,
       run: childSessionHandler(() => {
-        moveChild(1)
         dialog.clear()
+        moveChild(1)
       }),
     },
     {
@@ -1193,8 +1233,8 @@ export function Session() {
       hidden: true,
       enabled: !!session()?.parentID,
       run: childSessionHandler(() => {
-        moveChild(-1)
         dialog.clear()
+        moveChild(-1)
       }),
     },
   ])
@@ -1215,8 +1255,24 @@ export function Session() {
   }))
 
   useBindings(() => ({
-    enabled: command.matcher,
+    bindings: tuiConfig.keybinds.gather("session.global", sessionGlobalBindingCommands),
+  }))
+
+  useBindings(() => ({
+    enabled: () => renderer.currentFocusedEditor === null,
+    bindings: tuiConfig.keybinds.gather("session.global.unfocused", sessionGlobalUnfocusedBindingCommands),
+  }))
+
+  useBindings(() => ({
+    mode: KILO_BASE_MODE,
     bindings: tuiConfig.keybinds.gather("session", sessionBindingCommands),
+  }))
+
+  useBindings(() => ({
+    mode: KILO_BASE_MODE,
+    enabled: foregroundTasks().length > 0,
+    priority: 1,
+    bindings: tuiConfig.keybinds.get("session.background"),
   }))
 
   const revertInfo = createMemo(() => session()?.revert)
@@ -1254,6 +1310,7 @@ export function Session() {
           },
           sessionID: route.sessionID,
           conceal,
+          thinkingMode,
           showThinking,
           showTimestamps,
           showDetails,
@@ -1298,7 +1355,6 @@ export function Session() {
                     <Switch>
                       <Match when={message.id === revert()?.messageID}>
                         {(function () {
-                          const command = useCommandPalette()
                           const redoShortcut = useCommandShortcut("session.redo")
                           const [hover, setHover] = createSignal(false)
                           const dialog = useDialog()
@@ -1310,7 +1366,7 @@ export function Session() {
                               "Are you sure you want to restore the reverted messages?",
                             )
                             if (confirmed) {
-                              command.run("session.redo")
+                              keymap.dispatchCommand("session.redo")
                             }
                           }
 
@@ -1390,20 +1446,29 @@ export function Session() {
                 </For>
               </scrollbox>
               <box flexShrink={0}>
-                <Show when={permissions().length > 0}>
-                  <PermissionPrompt request={permissions()[0]} />
+                {/* kilocode_change start - the terminal owns the input area while active */}
+                <Show when={!terminal() && permissions().length > 0}>
+                  <PermissionPrompt
+                    request={permissions()[0]}
+                    directory={sync.session.get(permissions()[0].sessionID)?.directory}
+                  />
                 </Show>
+                {/* kilocode_change end */}
                 {/* kilocode_change start */}
-                <Show when={permissions().length === 0 && question()} keyed>
+                <Show when={terminal()} keyed>
+                  {(value) => <TerminalPrompt sessionID={value.info.sessionID} terminalID={value.info.id} />}
+                </Show>
+                <Show when={!terminal() && permissions().length === 0 ? question() : undefined} keyed>
                   {(request) => (
                     <QuestionPrompt
                       request={request}
                       nonBlocking={request.blocking === false}
                       inputFocused={() => prompt?.focused ?? false}
+                      directory={sync.session.get(request.sessionID)?.directory}
                     />
                   )}
                 </Show>
-                <Show when={permissions().length === 0 && !question()}>
+                <Show when={!terminal() && permissions().length === 0 && !question()}>
                   <Show when={blockingSuggestion()} keyed>
                     {(request) => <SuggestPrompt request={request} />}
                   </Show>
@@ -1414,7 +1479,7 @@ export function Session() {
                 <Show when={networkVisible()}>
                   <NetworkPrompt request={network()[0]} />
                 </Show>
-                <Show when={!session()?.parentID}>
+                <Show when={!terminal() && !session()?.parentID}>
                   <TuiPluginRuntime.Slot
                     name="session_prompt"
                     mode="replace"
@@ -1432,6 +1497,7 @@ export function Session() {
                         toBottom()
                       }}
                       sessionID={route.sessionID}
+                      directory={session()?.directory}
                       right={<TuiPluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
                     />
                   </TuiPluginRuntime.Slot>
@@ -1439,9 +1505,6 @@ export function Session() {
                 {/* kilocode_change end */}
               </box>
             </Show>
-            {/* kilocode_change start */}
-            <SessionIndexing />
-            {/* kilocode_change end */}
             <Toast />
           </box>
           <Show when={sidebarVisible()}>
@@ -1593,6 +1656,8 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const sync = useSync()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
   const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
+  const routed = createMemo(() => RoutedModelMeta.info(ctx.providers(), props.parts, ctx.showDetails(), props.message)) // kilocode_change
+  const route = createMemo(() => routed().footer) // kilocode_change
 
   const final = createMemo(() => {
     return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
@@ -1607,34 +1672,52 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   })
 
   const childShortcut = useCommandShortcut("session.child.first")
+  const backgroundShortcut = useCommandShortcut("session.background")
 
   return (
     <>
-      <For each={props.parts}>
-        {(part, index) => {
-          const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
-          return (
-            <Show when={component()}>
-              <Dynamic
-                last={index() === props.parts.length - 1}
-                component={component()}
-                part={part as any}
-                message={props.message}
-              />
-            </Show>
-          )
-        }}
-      </For>
+      {/* kilocode_change start - provide compact routed-model metadata to part renderers */}
+      <RoutedModelMeta.Context.Provider value={routed}>
+        <For each={props.parts}>
+          {(part, index) => {
+            const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
+            return (
+              <Show when={component()}>
+                <Dynamic
+                  last={index() === props.parts.length - 1}
+                  component={component()}
+                  part={part as any}
+                  message={props.message}
+                />
+              </Show>
+            )
+          }}
+        </For>
+      </RoutedModelMeta.Context.Provider>
+      {/* kilocode_change end */}
       <Show when={props.parts.some((x) => x.type === "tool" && x.tool === "task")}>
         <box paddingTop={1} paddingLeft={3}>
           <text fg={theme.text}>
             {childShortcut()}
             <span style={{ fg: theme.textMuted }}> view subagents</span>
+            <Show
+              when={props.parts.some(
+                (x) =>
+                  x.type === "tool" &&
+                  x.tool === "task" &&
+                  x.state.status === "running" &&
+                  x.state.metadata?.background !== true,
+              )}
+            >
+              <span style={{ fg: theme.textMuted }}> · </span>
+              {backgroundShortcut()}
+              <span style={{ fg: theme.textMuted }}> background</span>
+            </Show>
           </text>
         </box>
       </Show>
+      {/* kilocode_change start - Kilo-specific error display */}
       <Show when={props.message.error && props.message.error.name !== "MessageAbortedError"}>
-        {/* kilocode_change start - Kilo-specific error display */}
         <KiloErrorBlock
           error={props.message.error!}
           fallback={
@@ -1652,8 +1735,8 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
             </box>
           }
         />
-        {/* kilocode_change end */}
       </Show>
+      {/* kilocode_change end */}
       <Switch>
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
           <box paddingLeft={3}>
@@ -1670,9 +1753,15 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               </span>{" "}
               <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
+              {/* kilocode_change start - show routed model in regular assistant footer */}
+              <Show when={route()}>
+                <span style={{ fg: theme.textMuted }}> · {route()}</span>
+              </Show>
+              {/* kilocode_change end */}
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
               </Show>
+              <MemoryMessageMeta parts={props.parts} color={theme.textMuted} /> {/* kilocode_change */}
               <Show when={props.message.error?.name === "MessageAbortedError"}>
                 <span style={{ fg: theme.textMuted }}> · interrupted</span>
               </Show>
@@ -1682,44 +1771,149 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       </Switch>
     </>
   )
-}
+} // kilocode_change
 
+// kilocode_change start - register rendered step-finish parts
 const PART_MAPPING = {
   text: TextPart,
   tool: ToolPart,
   reasoning: ReasoningPart,
+  "step-finish": StepFinishPart,
 }
+// kilocode_change end
 
-function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
-  const { theme, subtleSyntax } = useTheme()
+const INLINE_TOOL_ICON_WIDTH = 2 // kilocode_change
+
+// kilocode_change start - show concrete routed models reported by gateway/provider responses
+function StepFinishPart(props: { last: boolean; part: StepFinishPart; message: AssistantMessage }) {
   const ctx = use()
-  const content = createMemo(() => {
-    // Filter out redacted reasoning chunks from OpenRouter
-    // OpenRouter sends encrypted reasoning data that appears as [REDACTED]
-    return props.part.text.replace("[REDACTED]", "").trim()
+  const { theme } = useTheme()
+  const info = useContext(RoutedModelMeta.Context)
+  const routed = createMemo(() => {
+    if (props.message.providerID !== "kilo") return undefined
+    if (!props.message.modelID.startsWith("kilo-auto/")) return undefined
+    const model = props.part.model
+    if (!model) return undefined
+    if (model.providerID === props.message.providerID && model.modelID === props.message.modelID) return undefined
+    return RoutedModelMeta.label(ctx.providers(), model)
   })
+  const consumed = createMemo(() => info().consumed.has(props.part.id))
+
   return (
-    <Show when={content() && ctx.showThinking()}>
-      <box
-        id={"text-" + props.part.id}
-        paddingLeft={2}
-        marginTop={1}
-        flexDirection="column"
-        border={["left"]}
-        customBorderChars={SplitBorder.customBorderChars}
-        borderColor={theme.backgroundElement}
-      >
-        <code
-          filetype="markdown"
-          drawUnstyledText={false}
-          streaming={true}
-          syntaxStyle={subtleSyntax()}
-          content={"_Thinking:_ " + content()}
-          conceal={ctx.conceal()}
-          fg={theme.textMuted}
-        />
+    <Show when={routed() && !consumed()}>
+      <box paddingLeft={3} marginTop={1}>
+        <text fg={theme.textMuted}>Routed to {routed()}</text>
       </box>
     </Show>
+  )
+}
+// kilocode_change end
+
+function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
+  const { theme } = useTheme()
+  const ctx = use()
+  // Collapsed by default in hide mode: a single line throughout, so the
+  // layout never shifts. Click to open the full markdown block, click to close.
+  const [expanded, setExpanded] = createSignal(false)
+
+  const content = createMemo(() => {
+    // OpenRouter encrypts some reasoning blocks; drop the placeholder.
+    return props.part.text.replace("[REDACTED]", "").trim()
+  })
+  // Reasoning is finalized when the server sets `time.end` (see processor.ts).
+  // Flips independently of the parent message completing.
+  const isDone = createMemo(() => props.part.time.end !== undefined)
+  const inMinimal = createMemo(() => ctx.thinkingMode() === "hide")
+  const duration = createMemo(() => {
+    const end = props.part.time.end
+    return end === undefined ? 0 : Math.max(0, end - props.part.time.start)
+  })
+  const summary = createMemo(() => reasoningSummary(content()))
+  const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
+
+  const toggle = () => {
+    if (!inMinimal()) return
+    setExpanded((prev) => !prev)
+  }
+
+  return (
+    <Show when={content()}>
+      <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexDirection="column" flexShrink={0}>
+        <box onMouseUp={toggle}>
+          <ReasoningHeader
+            /* kilocode_change start */
+            partID={props.part.id}
+            /* kilocode_change end */
+            toggleable={inMinimal()}
+            open={!inMinimal() || expanded()}
+            done={isDone()}
+            title={summary().title}
+            duration={isDone() ? Locale.duration(duration()) : undefined}
+          />
+        </box>
+        <Show when={(!inMinimal() || expanded()) && summary().body}>
+          <box paddingLeft={inMinimal() ? 2 : 0} marginTop={1}>
+            <code
+              filetype="markdown"
+              drawUnstyledText={false}
+              streaming={true}
+              syntaxStyle={syntax()}
+              content={summary().body}
+              conceal={ctx.conceal()}
+              fg={theme.textMuted}
+            />
+          </box>
+        </Show>
+      </box>
+    </Show>
+  )
+}
+
+function ReasoningHeader(props: {
+  partID: string // kilocode_change
+  toggleable: boolean
+  open: boolean
+  done: boolean
+  title: string | null
+  duration?: string
+}) {
+  const { theme } = useTheme()
+  const fg = () =>
+    props.open
+      ? RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
+      : theme.warning
+
+  return (
+    <Switch>
+      <Match when={!props.done}>
+        <box flexDirection="row">
+          <Spinner color={fg()}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
+        </box>
+      </Match>
+      <Match when={true}>
+        <text fg={fg()} wrapMode="none">
+          <Show when={props.toggleable}>
+            <span>{props.open ? "- " : "+ "}</span>
+          </Show>
+          <span>Thought</span>
+          <Show when={props.title || props.duration}>
+            <span>: </span>
+          </Show>
+          <Show when={props.title}>
+            <span>{props.title}</span>
+          </Show>
+          <Show when={props.duration}>
+            <span>
+              {props.title ? " · " : ""}
+              {props.duration}
+            </span>
+          </Show>
+          {/* kilocode_change start */}
+          <RoutedModelMeta.View id={props.partID} />
+          {/* kilocode_change end */}
+        </text>
+      </Match>
+    </Switch>
   )
 }
 
@@ -1732,29 +1926,16 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
   return (
     <Show when={props.part.text.trim()}>
       <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexShrink={0}>
-        <Switch>
-          <Match when={Flag.KILO_EXPERIMENTAL_MARKDOWN}>
-            <markdown
-              syntaxStyle={syntax()}
-              streaming={true}
-              content={props.part.text.trim()}
-              conceal={ctx.conceal()}
-              fg={theme.markdownText}
-              bg={theme.background}
-            />
-          </Match>
-          <Match when={!Flag.KILO_EXPERIMENTAL_MARKDOWN}>
-            <code
-              filetype="markdown"
-              drawUnstyledText={false}
-              streaming={true}
-              syntaxStyle={syntax()}
-              content={props.part.text.trim()}
-              conceal={ctx.conceal()}
-              fg={theme.text}
-            />
-          </Match>
-        </Switch>
+        <markdown
+          syntaxStyle={syntax()}
+          streaming={true}
+          internalBlockMode="top-level"
+          content={content()} // kilocode_change
+          tableOptions={{ style: "grid" }}
+          conceal={ctx.conceal()}
+          fg={theme.markdownText}
+          bg={theme.background}
+        />
       </box>
     </Show>
   )
@@ -1814,6 +1995,9 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
         {/* kilocode_change start */}
         <Match when={props.part.tool === "background_process"}>
           <BackgroundProcess {...toolprops} />
+        </Match>
+        <Match when={props.part.tool === "interactive_terminal"}>
+          <InteractiveTerminal {...toolprops} />
         </Match>
         <Match when={props.part.tool === "semantic_search"}>
           <SemanticSearch {...toolprops} />
@@ -1883,12 +2067,12 @@ function GenericTool(props: ToolProps<any>) {
   const ctx = use()
   const output = createMemo(() => props.output?.trim() ?? "")
   const [expanded, setExpanded] = createSignal(false)
-  const lines = createMemo(() => output().split("\n"))
   const maxLines = 3
-  const overflow = createMemo(() => lines().length > maxLines)
+  const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
+  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
   const limited = createMemo(() => {
-    if (expanded() || !overflow()) return output()
-    return [...lines().slice(0, maxLines), "…"].join("\n")
+    if (expanded() || !collapsed().overflow) return output()
+    return collapsed().output
   })
 
   return (
@@ -1903,11 +2087,11 @@ function GenericTool(props: ToolProps<any>) {
       <BlockTool
         title={`# ${props.tool} ${input(props.input)}`}
         part={props.part}
-        onClick={overflow() ? () => setExpanded((prev) => !prev) : undefined}
+        onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
       >
         <box gap={1}>
           <text fg={theme.text}>{limited()}</text>
-          <Show when={overflow()}>
+          <Show when={collapsed().overflow}>
             <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
           </Show>
         </box>
@@ -1919,31 +2103,26 @@ function GenericTool(props: ToolProps<any>) {
 function InlineTool(props: {
   icon: string
   iconColor?: RGBA
+  color?: RGBA
   complete: any
   pending: string
   spinner?: boolean
+  subagent?: boolean
   children: JSX.Element
   part: ToolPart
   onClick?: () => void
 }) {
-  const [margin, setMargin] = createSignal(0)
   const { theme } = useTheme()
   const ctx = use()
   const sync = useSync()
   const renderer = useRenderer()
   const [hover, setHover] = createSignal(false)
+  const [errorExpanded, setErrorExpanded] = createSignal(false)
 
   const permission = createMemo(() => {
     const callID = sync.data.permission[ctx.sessionID]?.at(0)?.tool?.callID
     if (!callID) return false
     return callID === props.part.callID
-  })
-
-  const fg = createMemo(() => {
-    if (permission()) return theme.warning
-    if (hover() && props.onClick) return theme.text
-    if (props.complete) return theme.textMuted
-    return theme.text
   })
 
   const error = createMemo(() => (props.part.state.status === "error" ? props.part.state.error : undefined))
@@ -1956,53 +2135,147 @@ function InlineTool(props: {
       error()?.includes("user dismissed"),
   )
 
+  const failed = createMemo(() => Boolean(error() && !denied()))
+  const clickable = createMemo(() => Boolean(props.onClick || failed()))
+  const fg = createMemo(() => {
+    if (props.color) return props.color
+    if (permission()) return theme.warning
+    if (failed()) return theme.error
+    if (hover() && props.onClick) return theme.text
+    if (props.complete) return theme.textMuted
+    return theme.text
+  })
+
   return (
-    <box
-      marginTop={margin()}
-      paddingLeft={3}
-      onMouseOver={() => props.onClick && setHover(true)}
+    <InlineToolRow
+      id={`tool-inline-${props.subagent ? "subagent-" : ""}${props.part.id}`}
+      icon={props.icon}
+      iconColor={props.iconColor}
+      color={fg()}
+      errorColor={theme.error}
+      failed={failed()}
+      denied={Boolean(denied())}
+      error={error()}
+      errorExpanded={errorExpanded()}
+      complete={props.complete}
+      pending={props.pending}
+      spinner={props.spinner}
+      routedID={props.part.id} /* kilocode_change */
+      subagent={props.subagent}
+      separateAfter={(id) =>
+        sync.data.message[ctx.sessionID]?.some((message) => message.role === "user" && message.id === id) ?? false
+      }
+      onMouseOver={() => clickable() && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {
         if (renderer.getSelection()?.getSelectedText()) return
+        if (failed()) {
+          setErrorExpanded((value) => !value)
+          return
+        }
         props.onClick?.()
       }}
+    >
+      {props.children}
+    </InlineToolRow>
+  )
+}
+
+export function InlineToolRow(props: {
+  id?: string
+  icon: string
+  iconColor?: RGBA
+  color?: RGBA
+  errorColor?: RGBA
+  failed?: boolean
+  denied?: boolean
+  error?: string
+  errorExpanded?: boolean
+  complete: any
+  pending: string
+  spinner?: boolean
+  routedID?: string // kilocode_change
+  subagent?: boolean
+  children: JSX.Element
+  separateAfter?: (id: string | undefined) => boolean
+  onMouseOver?: () => void
+  onMouseOut?: () => void
+  onMouseUp?: () => void
+}) {
+  const [margin, setMargin] = createSignal(0)
+
+  return (
+    <box
+      id={props.id}
+      marginTop={margin()}
+      paddingLeft={3}
+      onMouseOver={props.onMouseOver}
+      onMouseOut={props.onMouseOut}
+      onMouseUp={props.onMouseUp}
       renderBefore={function () {
         const el = this as BoxRenderable
         const parent = el.parent
         if (!parent) {
           return
         }
-        if (el.height > 1) {
-          setMargin(1)
-          return
-        }
         const children = parent.getChildren()
         const index = children.indexOf(el)
         const previous = children[index - 1]
-        if (!previous) {
-          setMargin(0)
-          return
-        }
-        if (previous.height > 1 || previous.id.startsWith("text-")) {
-          setMargin(1)
-          return
-        }
+        const previousInline = previous?.id.startsWith("tool-inline-") ?? false
+        const previousSubagent = previous?.id.startsWith("tool-inline-subagent-") ?? false
+        setMargin(
+          previous?.id.startsWith("text-") ||
+            previous?.id.startsWith("tool-block-") ||
+            (previousInline && previousSubagent !== Boolean(props.subagent)) ||
+            props.separateAfter?.(previous?.id)
+            ? 1
+            : 0,
+        )
       }}
     >
       <Switch>
         <Match when={props.spinner}>
-          <Spinner color={fg()} children={props.children} />
+          <Spinner color={props.color} children={props.children} />
         </Match>
         <Match when={true}>
-          <text paddingLeft={3} fg={fg()} attributes={denied() ? TextAttributes.STRIKETHROUGH : undefined}>
-            <Show fallback={<>~ {props.pending}</>} when={props.complete}>
-              <span style={{ fg: props.iconColor }}>{props.icon}</span> {props.children}
-            </Show>
-          </text>
+          <Show
+            fallback={
+              <text
+                paddingLeft={3}
+                fg={props.color}
+                attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
+              >
+                ~ {props.pending}
+              </text>
+            }
+            when={props.complete}
+          >
+            <box flexDirection="row">
+              <text
+                width={INLINE_TOOL_ICON_WIDTH}
+                fg={props.failed ? props.errorColor : (props.iconColor ?? props.color)}
+                attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
+              >
+                {props.icon}
+              </text>
+              <text
+                flexGrow={1}
+                fg={props.failed ? props.errorColor : props.color}
+                attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
+              >
+                {props.children}
+                {/* kilocode_change start */}
+                <RoutedModelMeta.View id={props.routedID} />
+                {/* kilocode_change end */}
+              </text>
+            </box>
+          </Show>
         </Match>
       </Switch>
-      <Show when={error() && !denied()}>
-        <text fg={theme.error}>{error()}</text>
+      <Show when={props.failed && props.errorExpanded}>
+        <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
+          <text fg={props.errorColor}>{props.error}</text>
+        </box>
       </Show>
     </box>
   )
@@ -2021,6 +2294,7 @@ function BlockTool(props: {
   const error = createMemo(() => (props.part?.state.status === "error" ? props.part.state.error : undefined))
   return (
     <box
+      id={props.part ? "tool-block-" + props.part.id : undefined}
       border={["left"]}
       paddingTop={1}
       paddingBottom={1}
@@ -2042,6 +2316,9 @@ function BlockTool(props: {
         fallback={
           <text paddingLeft={3} fg={theme.textMuted}>
             {props.title}
+            {/* kilocode_change start */}
+            <RoutedModelMeta.View id={props.part?.id} />
+            {/* kilocode_change end */}
           </text>
         }
       >
@@ -2058,14 +2335,16 @@ function BlockTool(props: {
 function Shell(props: ToolProps<typeof ShellTool>) {
   const { theme } = useTheme()
   const pathFormatter = usePathFormatter()
+  const ctx = use()
   const isRunning = createMemo(() => props.part.state.status === "running")
   const output = createMemo(() => stripAnsi(props.metadata.output?.trim() ?? ""))
   const [expanded, setExpanded] = createSignal(false)
-  const lines = createMemo(() => output().split("\n"))
-  const overflow = createMemo(() => lines().length > 10)
+  const maxLines = 10
+  const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
+  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
   const limited = createMemo(() => {
-    if (expanded() || !overflow()) return output()
-    return [...lines().slice(0, 10), "…"].join("\n")
+    if (expanded() || !collapsed().overflow) return output()
+    return collapsed().output
   })
 
   const workdirDisplay = createMemo(() => {
@@ -2089,14 +2368,14 @@ function Shell(props: ToolProps<typeof ShellTool>) {
           title={title()}
           part={props.part}
           spinner={isRunning()}
-          onClick={overflow() ? () => setExpanded((prev) => !prev) : undefined}
+          onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
         >
           <box gap={1}>
             <text fg={theme.text}>$ {props.input.command}</text>
             <Show when={output()}>
               <text fg={theme.text}>{limited()}</text>
             </Show>
-            <Show when={overflow()}>
+            <Show when={collapsed().overflow}>
               <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
             </Show>
           </box>
@@ -2179,8 +2458,8 @@ function Read(props: ToolProps<typeof ReadTool>) {
         Read {pathFormatter.format(props.input.filePath)} {input(props.input, ["filePath"])}
       </InlineTool>
       <For each={loaded()}>
-        {(filepath) => (
-          <box paddingLeft={3}>
+        {(filepath, index) => (
+          <box id={`tool-inline-loaded-${props.part.id}-${index()}`} paddingLeft={3}>
             <text paddingLeft={3} fg={theme.textMuted}>
               ↳ Loaded {pathFormatter.format(filepath)}
             </text>
@@ -2212,11 +2491,11 @@ function WebFetch(props: ToolProps<typeof WebFetchTool>) {
 }
 
 function WebSearch(props: ToolProps<typeof WebSearchTool>) {
-  const metadata = props.metadata as { numResults?: number; provider?: unknown }
+  const metadata = () => props.metadata as { numResults?: number; provider?: unknown }
   return (
     <InlineTool icon="◈" pending="Searching web..." complete={props.input.query} part={props.part}>
-      {webSearchProviderLabel(metadata.provider)} "{props.input.query}"{" "}
-      <Show when={metadata.numResults}>({metadata.numResults} results)</Show>
+      {webSearchProviderLabel(metadata().provider)} "{props.input.query}"{" "}
+      <Show when={metadata().numResults}>({metadata().numResults} results)</Show>
     </InlineTool>
   )
 }
@@ -2268,6 +2547,44 @@ function BackgroundProcess(props: ToolProps<typeof BackgroundProcessTool>) {
   )
 }
 
+function InteractiveTerminal(props: ToolProps<typeof InteractiveTerminalTool>) {
+  const sync = useSync()
+  const pathFormatter = usePathFormatter()
+  const running = createMemo(() => props.part.state.status === "running")
+  const command = createMemo(() => (typeof props.input.command === "string" ? props.input.command : ""))
+  const description = createMemo(() => props.input.description || command() || "interactive command")
+  const dir = createMemo(() => {
+    const raw = props.input.workdir
+    if (!raw || raw === ".") return undefined
+    const base = sync.path.directory
+    if (!base) return pathFormatter.format(raw)
+    const abs = path.resolve(base, raw)
+    if (abs === base) return undefined
+    return pathFormatter.format(abs)
+  })
+  const status = createMemo(() => {
+    if (props.metadata.closedBy === "user") return "closed by user"
+    if (props.metadata.closedBy === "abort") return "cancelled"
+    if (props.metadata.closedBy !== "exit") return undefined
+    return typeof props.metadata.exitCode === "number" ? `exit ${props.metadata.exitCode}` : "completed"
+  })
+
+  return (
+    <InlineTool
+      icon="$"
+      pending="Opening interactive terminal..."
+      complete={description()}
+      spinner={running()}
+      part={props.part}
+    >
+      Interactive terminal: {description()}
+      <Show when={dir()}> in {dir()}</Show>
+      <Show when={command()}> · $ {command()}</Show>
+      <Show when={status()}> ({status()})</Show>
+    </InlineTool>
+  )
+}
+
 function SemanticSearch(props: ToolProps<typeof SemanticSearchTool>) {
   const pathFormatter = usePathFormatter()
   const meta = createMemo(() => props.metadata as { results?: { length: number }[] })
@@ -2286,8 +2603,10 @@ function SemanticSearch(props: ToolProps<typeof SemanticSearchTool>) {
 // kilocode_change end
 
 function Task(props: ToolProps<typeof TaskTool>) {
+  const { theme } = useTheme()
   const { navigate } = useRoute()
   const sync = useSync()
+  const dialog = useDialog()
 
   onMount(() => {
     if (props.metadata.sessionId && !sync.data.message[props.metadata.sessionId]?.length)
@@ -2308,7 +2627,19 @@ function Task(props: ToolProps<typeof TaskTool>) {
     tools().findLast((x) => (x.state.status === "running" || x.state.status === "completed") && x.state.title),
   )
 
-  const isRunning = createMemo(() => props.part.state.status === "running")
+  const status = createMemo(() => sync.data.session_status[props.metadata.sessionId ?? ""])
+  const isRunning = createMemo(() => {
+    const value = status()
+    return (
+      props.part.state.status === "running" ||
+      (props.metadata.background === true && value !== undefined && value.type !== "idle")
+    )
+  })
+  const retry = createMemo(() => {
+    const value = status()
+    if (value?.type !== "retry") return
+    return value
+  })
 
   const duration = createMemo(() => {
     const first = messages().find((x) => x.role === "user")?.time.created
@@ -2319,24 +2650,29 @@ function Task(props: ToolProps<typeof TaskTool>) {
 
   const content = createMemo(() => {
     if (!props.input.description) return ""
-    let content = [`${Locale.titlecase(props.input.subagent_type ?? "General")} Task — ${props.input.description}`]
+    let content = [
+      formatSubagentTitle(
+        Locale.titlecase(props.input.subagent_type ?? "General"),
+        props.input.description,
+        props.metadata.background === true,
+      ),
+    ]
 
-    // kilocode_change start
-    if (isRunning()) {
-      if (tools().length === 0) {
-        content.push(`↳ Starting...`)
-      } else if (current()) {
+    const retrying = retry()
+    if (isRunning() && retrying) {
+      content.push(`↳ ${formatSubagentRetry(retrying.attempt, Locale.truncate(retrying.message, 80))}`)
+    } else if (isRunning() && tools().length > 0) {
+      if (current()) {
         const state = current()!.state
         const title = state.status === "running" || state.status === "completed" ? state.title : undefined
         content.push(`↳ ${Locale.titlecase(current()!.tool)} ${title}`)
       } else {
-        content.push(`↳ ${tools().length} toolcalls`)
+        content.push(`↳ ${formatSubagentToolcalls(tools().length)}`)
       }
-    }
-    // kilocode_change end
+    } else if (isRunning()) content.push(`↳ Starting...`) // kilocode_change
 
-    if (props.part.state.status === "completed") {
-      content.push(`└ ${tools().length} toolcalls · ${Locale.duration(duration())}`)
+    if (!isRunning() && props.part.state.status === "completed") {
+      content.push(`↳ ${formatCompletedSubagentDetail(tools().length, Locale.duration(duration()))}`)
     }
 
     return content.join("\n")
@@ -2344,7 +2680,9 @@ function Task(props: ToolProps<typeof TaskTool>) {
 
   return (
     <InlineTool
-      icon="│"
+      icon={props.part.state.status === "completed" ? "✓" : "│"}
+      subagent={true}
+      color={retry() ? theme.error : undefined}
       spinner={isRunning()}
       complete={props.input.description}
       pending="Delegating..."
@@ -2353,11 +2691,30 @@ function Task(props: ToolProps<typeof TaskTool>) {
         if (props.metadata.sessionId) {
           navigate({ type: "session", sessionID: props.metadata.sessionId })
         }
+        const status = retry()
+        if (status) void DialogAlert.show(dialog, "Retry Error", status.message)
       }}
     >
       {content()}
     </InlineTool>
   )
+}
+
+export function formatSubagentToolcalls(count: number) {
+  return `${count} toolcall${count === 1 ? "" : "s"}`
+}
+
+export function formatSubagentTitle(agent: string, description: string, background: boolean) {
+  return `${agent} Task${background ? " (background)" : ""} — ${description}`
+}
+
+export function formatSubagentRetry(attempt: number, message: string) {
+  return `Retrying (attempt ${attempt}) · ${message}`
+}
+
+export function formatCompletedSubagentDetail(toolcalls: number, duration: string) {
+  if (toolcalls === 0) return duration
+  return `${formatSubagentToolcalls(toolcalls)} · ${duration}`
 }
 
 function Edit(props: ToolProps<typeof EditTool>) {
@@ -2541,28 +2898,64 @@ function TodoWrite(props: ToolProps<typeof TodoWriteTool>) {
 function Question(props: ToolProps<typeof QuestionTool>) {
   const { theme } = useTheme()
   const count = createMemo(() => props.input.questions?.length ?? 0)
+  // kilocode_change start - show dismissed question content with toggle;
+  // use input.questions presence (not metadata) so dismissed/answered/error
+  // states all render content.  Clicking the one-liner expands to the full
+  // block; clicking the block title collapses back.
+  const dismissed = createMemo(
+    () =>
+      props.metadata.dismissed === true ||
+      (props.part.state.status === "error" && String(props.part.state.error ?? "").includes("dismissed")),
+  )
+  const [expanded, setExpanded] = createSignal(false)
 
   function format(answer?: ReadonlyArray<string>) {
+    if (dismissed()) return "Dismissed"
     if (!answer?.length) return "(no answer)"
     return answer.join(", ")
   }
 
+  const title = createMemo(() => (dismissed() ? "# Questions (dismissed)" : "# Questions"))
+  const subtitle = createMemo(() => {
+    if (dismissed()) return `${count()} dismissed`
+    if ((props.metadata.answers?.length ?? 0) > 0) return `${count()} answered`
+    return `${count()} question${count() !== 1 ? "s" : ""}`
+  })
+  // kilocode_change end
+
   return (
     <Switch>
-      <Match when={props.metadata.answers}>
-        <BlockTool title="# Questions" part={props.part}>
-          <box gap={1}>
-            <For each={props.input.questions ?? []}>
-              {(q, i) => (
-                <box flexDirection="column">
-                  <text fg={theme.textMuted}>{q.question}</text>
-                  <text fg={theme.text}>{format(props.metadata.answers?.[i()])}</text>
-                </box>
-              )}
-            </For>
-          </box>
-        </BlockTool>
+      {/* kilocode_change start - toggle between one-liner and full block */}
+      <Match when={count() > 0}>
+        <Show
+          when={expanded()}
+          fallback={
+            <InlineTool
+              icon="→"
+              complete={count()}
+              pending="Asking questions..."
+              part={props.part}
+              onClick={() => setExpanded(true)}
+            >
+              {subtitle()}
+            </InlineTool>
+          }
+        >
+          <BlockTool title={title()} part={props.part} onClick={() => setExpanded(false)}>
+            <box gap={1}>
+              <For each={props.input.questions ?? []}>
+                {(q, i) => (
+                  <box flexDirection="column">
+                    <text fg={theme.textMuted}>{q.question}</text>
+                    <text fg={theme.text}>{format(props.metadata.answers?.[i()])}</text>
+                  </box>
+                )}
+              </For>
+            </box>
+          </BlockTool>
+        </Show>
       </Match>
+      {/* kilocode_change end */}
       <Match when={true}>
         <InlineTool icon="→" pending="Asking questions..." complete={count()} part={props.part}>
           Asked {count()} question{count() !== 1 ? "s" : ""}
@@ -2583,7 +2976,7 @@ function Skill(props: ToolProps<typeof SkillTool>) {
 function Diagnostics(props: { diagnostics?: Record<string, Record<string, any>[]>; filePath: string }) {
   const { theme } = useTheme()
   const errors = createMemo(() => {
-    const normalized = Filesystem.normalizePath(props.filePath)
+    const normalized = Filesystem.normalizePath(typeof props.filePath === "string" ? props.filePath : "")
     const arr = props.diagnostics?.[normalized] ?? []
     return arr.filter((x) => x.severity === 1).slice(0, 3)
   })
@@ -2613,7 +3006,7 @@ function input(input: Record<string, any>, omit?: string[]): string {
 }
 
 function filetype(input?: string) {
-  if (!input) return "none"
+  if (typeof input !== "string" || !input) return "none"
   const ext = path.extname(input)
   const language = LANGUAGE_EXTENSIONS[ext]
   if (["typescriptreact", "javascriptreact", "javascript"].includes(language)) return "typescript"

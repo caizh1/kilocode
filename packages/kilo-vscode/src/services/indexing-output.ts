@@ -26,7 +26,7 @@ export function indexingOutput(context: vscode.ExtensionContext): vscode.OutputC
       `[${new Date().toISOString()}] ChipMate Indexing diagnostics ready. WARN/ERROR lines and cleanup summaries from indexing will appear here.`,
     )
   }
-  if (!wired) {
+  if (!wired && context.subscriptions) {
     wired = true
     context.subscriptions.push({
       dispose() {

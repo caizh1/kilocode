@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import fs from "node:fs/promises"
 import path from "path"
 import { Config } from "../../src/config/config"
 import { AppRuntime } from "../../src/effect/app-runtime"
-import { WithInstance } from "../../src/project/with-instance"
+import { provideTestInstance } from "../fixture/fixture"
 import { Filesystem } from "../../src/util/filesystem"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
 
@@ -15,6 +16,96 @@ afterEach(async () => {
 })
 
 describe("config resilience", () => {
+  test("retains untrusted provenance for external markdown paths selected by project config", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        const project = path.join(dir, "project")
+        const instruction = path.join(dir, "external.md")
+        await Filesystem.write(
+          path.join(project, "kilo.json"),
+          JSON.stringify({ instructions: [instruction], skills: { paths: ["../external-skills"] } }),
+        )
+        await Filesystem.write(instruction, "external")
+        await Filesystem.write(path.join(dir, "external-skills", "SKILL.md"), "external")
+        return { project, instruction }
+      },
+    })
+
+    await provideTestInstance({
+      directory: tmp.extra.project,
+      fn: async () => {
+        const cfg = await load()
+        expect(cfg.instruction_origins?.[tmp.extra.instruction]).toMatchObject({
+          trusted: false,
+          root: tmp.extra.project,
+        })
+        expect(cfg.skill_path_origins?.["../external-skills"]).toMatchObject({
+          trusted: false,
+          root: tmp.extra.project,
+        })
+      },
+    })
+  })
+
+  test("skips project markdown that references environment or out-of-project files", async () => {
+    const name = "KILO_CONFIG_MARKDOWN_PROJECT_SECRET"
+    const prior = process.env[name]
+    process.env[name] = "environment secret"
+    try {
+      await using tmp = await tmpdir({
+        init: async (dir) => {
+          const project = path.join(dir, "project")
+          const secret = path.join(dir, "secret.txt")
+          const prompt = [`{file:${secret}}`, `{env:${name}}`].join("\n")
+          await Filesystem.write(path.join(project, ".kilo", "agent", "unsafe.md"), prompt)
+          await Filesystem.write(path.join(project, ".kilo", "command", "unsafe.md"), prompt)
+          await Filesystem.write(secret, "file secret")
+          return project
+        },
+      })
+
+      await provideTestInstance({
+        directory: tmp.extra,
+        fn: async () => {
+          const cfg = await load()
+          const warns = await warnings()
+
+          expect(cfg.agent?.unsafe).toBeUndefined()
+          expect(cfg.command?.unsafe).toBeUndefined()
+          expect(warns.filter((warning) => warning.path.endsWith("unsafe.md"))).toHaveLength(2)
+        },
+      })
+    } finally {
+      if (prior === undefined) delete process.env[name]
+      else process.env[name] = prior
+    }
+  })
+
+  test("skips project markdown symlinks that escape the project root", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        const project = path.join(dir, "project")
+        const item = path.join(project, ".kilo", "agent", "unsafe.md")
+        const secret = path.join(dir, "secret.md")
+        await Filesystem.write(secret, "file secret")
+        await fs.mkdir(path.dirname(item), { recursive: true })
+        await fs.symlink(secret, item)
+        return project
+      },
+    })
+
+    await provideTestInstance({
+      directory: tmp.extra,
+      fn: async () => {
+        const cfg = await load()
+        const warns = await warnings()
+
+        expect(cfg.agent?.unsafe).toBeUndefined()
+        expect(warns.some((warning) => warning.path.endsWith("unsafe.md"))).toBe(true)
+      },
+    })
+  })
+
   test("skips invalid agent markdown configs", async () => {
     await using tmp = await tmpdir({
       init: async (dir) => {
@@ -35,7 +126,7 @@ Valid agent prompt`,
       },
     })
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const cfg = await load()
@@ -63,7 +154,7 @@ Broken agent prompt`,
       },
     })
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         await load()
@@ -94,7 +185,7 @@ Valid command template`,
       },
     })
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const cfg = await load()
@@ -121,7 +212,7 @@ Broken command template`,
       },
     })
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         await load()
@@ -145,7 +236,7 @@ Broken agent`,
       },
     })
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         await load()
@@ -169,7 +260,7 @@ Broken command`,
       },
     })
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         await load()
@@ -187,7 +278,7 @@ Broken command`,
       },
     })
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const cfg = await load()
@@ -208,7 +299,7 @@ Broken command`,
       },
     })
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const cfg = await load()
@@ -225,7 +316,7 @@ Broken command`,
       config: { model: "test/model" },
     })
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         await load()

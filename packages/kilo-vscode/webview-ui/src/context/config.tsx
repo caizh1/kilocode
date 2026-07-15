@@ -12,7 +12,15 @@ import { createContext, useContext, createSignal, createMemo, onCleanup } from "
 import type { ParentComponent, Accessor } from "solid-js"
 import { useVSCode } from "./vscode"
 import type { Config, ExtensionMessage, FeatureFlags } from "../types/messages"
-import { deepEqual, deepMerge, stripNulls, resolveConfig } from "../utils/config-utils"
+import {
+  configUnsetPaths,
+  deepEqual,
+  deepMerge,
+  mergeScopedConfig,
+  pruneConfigSet,
+  stripNulls,
+  resolveConfig,
+} from "../utils/config-utils"
 import { splitConfigByScope } from "../utils/config-scope"
 import { CHIPMATE_SERVER_KEY, normalizeChipmateServerBaseUrl } from "../../../src/shared/chipmate-server"
 import { buildAutocompleteSettingMessages } from "./autocomplete-settings"
@@ -35,6 +43,7 @@ export interface SaveError {
 interface ConfigContextValue {
   config: Accessor<Config>
   globalConfig: Accessor<Config>
+  projectConfig: Accessor<Config>
   settings: Accessor<Record<string, unknown>>
   features: Accessor<FeatureFlags>
   loading: Accessor<boolean>
@@ -44,6 +53,7 @@ interface ConfigContextValue {
   saveError: Accessor<SaveError | null>
   updateConfig: (partial: Partial<Config>) => void
   updateGlobalConfig: (partial: Partial<Config>) => void
+  updateProjectConfig: (partial: Partial<Config>) => void
   updateSetting: (key: string, value: unknown) => void
   saveConfig: () => void
   discardConfig: () => void
@@ -56,15 +66,20 @@ export const ConfigProvider: ParentComponent = (props) => {
 
   const [config, setConfig] = createSignal<Config>({})
   const [globalConfig, setGlobalConfig] = createSignal<Config>({})
+  const [projectConfig, setProjectConfig] = createSignal<Config>({})
   const [settings, setSettings] = createSignal<Record<string, unknown>>({})
-  const [features, setFeatures] = createSignal<FeatureFlags>({ indexing: false })
+  const [features, setFeatures] = createSignal<FeatureFlags>({ indexing: false, sandboxControls: false })
   const [loading, setLoading] = createSignal(true)
   const [draft, setDraft] = createSignal<Partial<Config>>({})
   const [globalDraft, setGlobalDraft] = createSignal<Partial<Config>>({})
+  const [projectDraft, setProjectDraft] = createSignal<Partial<Config>>({})
   const [settingsDraft, setSettingsDraft] = createSignal<Record<string, unknown>>({})
   const isDirty = createMemo(
     () =>
-      has(draft() as Record<string, unknown>) || has(globalDraft() as Record<string, unknown>) || has(settingsDraft()),
+      has(draft() as Record<string, unknown>) ||
+      has(globalDraft() as Record<string, unknown>) ||
+      has(projectDraft() as Record<string, unknown>) ||
+      has(settingsDraft()),
   )
   const canSave = createMemo(() => {
     const value = settingsDraft()[CHIPMATE_SERVER_KEY]
@@ -81,6 +96,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   // Last config received from the server — used to revert on discard
   const [saved, setSaved] = createSignal<Config>({})
   const [savedGlobal, setSavedGlobal] = createSignal<Config>({})
+  const [savedProject, setSavedProject] = createSignal<Config>({})
   const [savedSettings, setSavedSettings] = createSignal<Record<string, unknown>>({})
   // True while a saveConfig() write is in-flight — used to clear draft on success
   // and to guard against stale configLoaded messages overwriting optimistic state.
@@ -107,6 +123,10 @@ export const ConfigProvider: ParentComponent = (props) => {
         "autocomplete.automatic": message.settings.automatic,
         "autocomplete.scope": message.settings.scope,
       })
+      return true
+    }
+    if (message.type === "indexingSettingsLoaded") {
+      mergeSettings({ "indexing.showButtonWhenDisabled": message.settings.showButtonWhenDisabled })
       return true
     }
     if (message.type === "settingUpdated") {
@@ -137,6 +157,7 @@ export const ConfigProvider: ParentComponent = (props) => {
 
   // Register handler immediately (not in onMount) so we never miss
   // a configLoaded message that arrives before the DOM mount.
+  // eslint-disable-next-line complexity
   const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
     if (handleSettingMessage(message)) return
     if (message.type === "configLoaded") {
@@ -148,36 +169,48 @@ export const ConfigProvider: ParentComponent = (props) => {
       setConfig(resolveConfig(message.config, draft(), has(draft() as Record<string, unknown>)))
       setFeatures(message.features)
       setSaved(message.config)
+      if (message.settings) mergeSettings(message.settings)
       if (message.globalConfig !== undefined) {
-        setGlobalConfig(stripNulls(deepMerge(message.globalConfig, globalDraft())))
+        setGlobalConfig(mergeScopedConfig(message.globalConfig, globalDraft()))
         setSavedGlobal(message.globalConfig)
+      }
+      if (message.projectConfig !== undefined) {
+        setProjectConfig(mergeScopedConfig(message.projectConfig, projectDraft()))
+        setSavedProject(message.projectConfig)
       }
       setLoading(false)
       return
     }
     if (message.type === "globalConfigLoaded") {
       if (saving()) return
-      setGlobalConfig(stripNulls(deepMerge(message.config, globalDraft())))
+      setGlobalConfig(mergeScopedConfig(message.config, globalDraft()))
       setSavedGlobal(message.config)
       return
     }
     if (message.type === "configUpdated") {
       if (!saving() && message.requestId !== undefined) return
-      let confirmedConfig = message.config
+      let confirmed = message.config
       if (saving()) {
         if (message.requestId !== request()) return
         const acknowledged = stripNulls(deepMerge(message.config, draft()))
         const acknowledgedGlobal =
-          message.globalConfig !== undefined ? stripNulls(deepMerge(message.globalConfig, globalDraft())) : undefined
-        confirmedConfig = acknowledged
+          message.globalConfig !== undefined ? mergeScopedConfig(message.globalConfig, globalDraft()) : undefined
+        const acknowledgedProject =
+          message.projectConfig !== undefined ? mergeScopedConfig(message.projectConfig, projectDraft()) : undefined
+        confirmed = acknowledged
         // This configUpdated is the confirmation of our saveConfig() write.
         // Clear the draft now that the server has confirmed the write.
         setDraft({})
         setGlobalDraft({})
+        setProjectDraft({})
         setConfig(acknowledged)
         if (acknowledgedGlobal !== undefined) {
           setGlobalConfig(acknowledgedGlobal)
           setSavedGlobal(acknowledgedGlobal)
+        }
+        if (acknowledgedProject !== undefined) {
+          setProjectConfig(acknowledgedProject)
+          setSavedProject(acknowledgedProject)
         }
         setFeatures(message.features)
         setPendingConfig(false)
@@ -187,12 +220,17 @@ export const ConfigProvider: ParentComponent = (props) => {
         // Re-apply the draft on top so pending settings changes are preserved.
         setConfig(resolveConfig(message.config, draft(), has(draft() as Record<string, unknown>)))
         if (message.globalConfig !== undefined) {
-          setGlobalConfig(stripNulls(deepMerge(message.globalConfig, globalDraft())))
+          setGlobalConfig(mergeScopedConfig(message.globalConfig, globalDraft()))
           setSavedGlobal(message.globalConfig)
+        }
+        if (message.projectConfig !== undefined) {
+          setProjectConfig(mergeScopedConfig(message.projectConfig, projectDraft()))
+          setSavedProject(message.projectConfig)
         }
         setFeatures(message.features)
       }
-      setSaved(confirmedConfig)
+      if (message.settings) mergeSettings(message.settings)
+      setSaved(confirmed)
       return
     }
     if (message.type === "configUpdateFailed") {
@@ -226,6 +264,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   const requestInitialData = () => {
     vscode.postMessage({ type: "requestConfig" })
     vscode.postMessage({ type: "requestAutocompleteSettings" })
+    vscode.postMessage({ type: "requestIndexingSettings" })
     vscode.postMessage({ type: "requestChipmateServerSettings" })
   }
 
@@ -268,10 +307,19 @@ export const ConfigProvider: ParentComponent = (props) => {
 
   function updateGlobalConfig(partial: Partial<Config>) {
     const current = globalConfig()
-    const next = stripNulls(deepMerge(current, partial))
+    const next = mergeScopedConfig(current, partial)
     if (deepEqual(next, current)) return
     setGlobalConfig(next)
     setGlobalDraft((prev) => deepMerge(prev as Config, partial))
+    setSaveError(null)
+  }
+
+  function updateProjectConfig(partial: Partial<Config>) {
+    const current = projectConfig()
+    const next = mergeScopedConfig(current, partial)
+    if (deepEqual(next, current)) return
+    setProjectConfig(next)
+    setProjectDraft((prev) => deepMerge(prev as Config, partial))
     setSaveError(null)
   }
 
@@ -293,11 +341,13 @@ export const ConfigProvider: ParentComponent = (props) => {
     }
     const changes = draft()
     const globals = globalDraft()
+    const projects = projectDraft()
     const pending = settingsDraft()
     const configDirty = has(changes as Record<string, unknown>)
     const globalDirty = has(globals as Record<string, unknown>)
+    const projectDirty = has(projects as Record<string, unknown>)
     const settingsDirty = has(pending)
-    if (!configDirty && !globalDirty && !settingsDirty) return
+    if (!configDirty && !globalDirty && !projectDirty && !settingsDirty) return
     const id = createRequestId()
     vscode.postMessage({
       type: "memoryDebug",
@@ -306,9 +356,11 @@ export const ConfigProvider: ParentComponent = (props) => {
       data: {
         draftKeys: Object.keys(changes),
         globalDraftKeys: Object.keys(globals),
+        projectDraftKeys: Object.keys(projects),
         settingsDraftKeys: Object.keys(pending),
         configDirty,
         globalDirty,
+        projectDirty,
         settingsDirty,
       },
     })
@@ -317,25 +369,33 @@ export const ConfigProvider: ParentComponent = (props) => {
     setSaving(true)
     setRequest(id)
     setPendingSettings(new Set(Object.keys(pending)))
-    setPendingConfig(configDirty || globalDirty)
+    setPendingConfig(configDirty || globalDirty || projectDirty)
     setSaveError(null)
     if (settingsDirty) saveSettings(pending, id)
-    if (!configDirty && !globalDirty) {
-      return
-    }
+    if (!configDirty && !globalDirty && !projectDirty) return
     // Split so per-project settings (e.g. commit_message.prompt) land in the
     // workspace's kilo.json instead of the global one. Send one message so the
     // extension confirms only after both scopes are saved.
     const split = splitConfigByScope(changes)
     const next = deepMerge(split.global as Config, globals)
-    vscode.postMessage({ type: "updateConfig", requestId: id, config: next, projectConfig: split.project })
+    const project = deepMerge(split.project as Config, projects)
+    vscode.postMessage({
+      type: "updateConfig",
+      requestId: id,
+      config: pruneConfigSet(next) as Config,
+      projectConfig: pruneConfigSet(project) as Config,
+      globalUnset: configUnsetPaths(next),
+      projectUnset: configUnsetPaths(project),
+    })
   }
 
   function discardConfig() {
     setConfig(saved())
     setGlobalConfig(savedGlobal())
+    setProjectConfig(savedProject())
     setDraft({})
     setGlobalDraft({})
+    setProjectDraft({})
     setRequest(undefined)
     setPendingConfig(false)
     setPendingSettings(new Set<string>())
@@ -347,6 +407,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   const value: ConfigContextValue = {
     config,
     globalConfig,
+    projectConfig,
     settings,
     features,
     loading,
@@ -356,6 +417,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     saveError,
     updateConfig,
     updateGlobalConfig,
+    updateProjectConfig,
     updateSetting,
     saveConfig,
     discardConfig,

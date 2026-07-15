@@ -19,10 +19,12 @@ import {
   INDEXING_PROCESS_PREFIX,
   isIndexingMessage,
   type DocumentSearchInput,
+  type Log,
   type QueryEvidenceInput,
   type Request,
   type Result,
 } from "./indexing-worker-protocol"
+import type { IndexingWarning } from "./indexing-warning"
 
 declare global {
   const KILO_INDEXING_PROCESS_PATH: string
@@ -32,11 +34,13 @@ export namespace IndexingWorker {
   export type Hooks = {
     status(status: IndexingStatus): void
     telemetry(event: IndexingTelemetryEvent): void
+    warning(warning: IndexingWarning): void
+    log(event: Log): void
     failure(err: unknown): void
   }
 
   export type Driver = {
-    init(input: IndexingConfigInput): Promise<IndexingStatus>
+    init(input: IndexingConfigInput, baselineDirectory?: string): Promise<IndexingStatus>
     updateConfig(input: IndexingConfigInput): Promise<IndexingStatus>
     search(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]>
     documentSearch(query: string, options?: Omit<DocumentSearchInput, "query">): Promise<DocumentSearchResult[]>
@@ -115,6 +119,8 @@ export namespace IndexingWorker {
           if (stopping || stopped) return
           if (value.event === "status") hooks.status(value.data)
           if (value.event === "telemetry") hooks.telemetry(value.data)
+          if (value.event === "warning") hooks.warning(value.data)
+          if (value.event === "log") hooks.log(value.data)
           if (value.event !== "resource") return
           rss = value.data.rss
           if (rss >= budget.soft && !warned) {
@@ -182,12 +188,12 @@ export namespace IndexingWorker {
     }
 
     return {
-      init(config) {
+      init(config, baselineDirectory) {
         const request: Request = {
           type: "request",
           id: id++,
           method: "init",
-          input: { directory, root, config, lancedbPath: process.env.KILO_LANCEDB_PATH },
+          input: { directory, root, config, baselineDirectory, lancedbPath: process.env.KILO_LANCEDB_PATH },
         }
         return call(request, (result) => {
           if (result.ok && result.method === "init") return result.value
@@ -278,14 +284,35 @@ export namespace IndexingWorker {
     }
   }
 
-  let factory: Factory = worker
+  type Override = (
+    directory: string,
+    root: string,
+    hooks: Hooks,
+    options?: Options,
+  ) => Pick<Driver, "init" | "search" | "dispose"> & Partial<Driver>
+
+  let factory: Factory | undefined
 
   export function create(directory: string, root: string, hooks: Hooks, options?: Options) {
-    return factory(directory, root, hooks, options)
+    if (factory) return factory(directory, root, hooks, options)
+    return worker(directory, root, hooks, options)
   }
 
-  export function override(next?: Factory) {
-    factory = next ?? worker
+  export function override(next?: Override) {
+    factory = next
+      ? (directory, root, hooks, options) => {
+          const driver = next(directory, root, hooks, options)
+          const unsupported = () => Promise.reject(new Error("Indexing worker test driver method is unavailable."))
+          return {
+            updateConfig: unsupported,
+            documentSearch: unsupported,
+            rebuildDocuments: unsupported,
+            queryEvidence: unsupported,
+            codeGraphStatus: unsupported,
+            ...driver,
+          }
+        }
+      : undefined
   }
 }
 

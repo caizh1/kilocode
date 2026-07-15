@@ -11,6 +11,7 @@ import { Component, For, Show, createMemo } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { Part, PART_MAPPING, ToolRegistry } from "@kilocode/kilo-ui/message-part"
 import type { MessageFeedbackControls } from "@kilocode/kilo-ui/message-part"
+import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import type {
   AssistantMessage as SDKAssistantMessage,
   Part as SDKPart,
@@ -22,18 +23,26 @@ import { useSession } from "../../context/session"
 import { useDisplay } from "../../context/display"
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
+import { useMemory } from "../../context/memory"
 import { useServer } from "../../context/server"
-import { snapshotProgress } from "../../context/session-utils"
 import { planDisplayPath } from "../../utils/plan-path"
 import type { ToolPart as WebToolPart } from "../../types/messages"
+import { isRenderable, UPSTREAM_SUPPRESSED_TOOLS } from "../../utils/transcript-parts"
+import { MemoryMarkerMeta } from "@kilocode/kilo-memory/marker-meta"
+import { color as timelineColor } from "../../utils/timeline/colors"
+import type { Part as TimelinePart } from "../../types/messages"
+import type { TimelineHighlight } from "../../utils/timeline/highlight"
 import { QuestionDock } from "./QuestionDock"
 import { SuggestBar } from "./SuggestBar"
 import { DocumentArtifactCard } from "./DocumentArtifactCard"
 
-// Tools that the upstream message-part renderer suppresses (returns null for).
-// We render these ourselves via ToolRegistry when they complete,
-// so the user can see what the AI set up.
-export const UPSTREAM_SUPPRESSED_TOOLS = new Set(["todowrite", "todoread"])
+const EDIT_TOOLS = new Set(["edit", "write", "apply_patch"])
+
+function editOpen(part: SDKPart, open: boolean) {
+  if (part.type !== "tool") return undefined
+  const tool = (part as unknown as ToolPart).tool
+  return EDIT_TOOLS.has(tool) ? open : undefined
+}
 
 /** Extract plan path from a completed plan_exit tool part. */
 function planExitInfo(part: SDKPart): { plan: string } | undefined {
@@ -79,22 +88,6 @@ function PlanExitCard(props: { part: ToolPart }) {
   )
 }
 
-function isRenderable(part: SDKPart): boolean {
-  if (part.type === "tool") {
-    const tool = (part as SDKPart & { tool: string }).tool
-    const state = (part as SDKPart & { state: { status: string } }).state
-    if (UPSTREAM_SUPPRESSED_TOOLS.has(tool)) {
-      // Show todo parts only when completed (permissions are now in the dock)
-      return state.status === "completed"
-    }
-    // Always render question tool parts — active ones get the inline QuestionDock
-    return true
-  }
-  if (part.type === "text") return !snapshotProgress(part) && !!(part as SDKPart & { text: string }).text?.trim()
-  if (part.type === "reasoning") return !!(part as SDKPart & { text: string }).text?.trim()
-  return !!PART_MAPPING[part.type]
-}
-
 /**
  * Match a tool part to an active request (question or suggestion) by tool name
  * and callID/messageID. Returns the matched request or undefined.
@@ -112,8 +105,11 @@ function matchToolRequest<T extends { tool?: { callID: string; messageID: string
 
 interface AssistantMessageProps {
   message: SDKAssistantMessage
+  parts?: SDKPart[]
   showAssistantCopyPartID?: string | null
   feedback?: MessageFeedbackControls
+  /** Part behind the currently hovered/focused task-timeline bar, if any. */
+  highlight?: () => TimelineHighlight | undefined
 }
 
 type ToolStateProps = {
@@ -122,6 +118,8 @@ type ToolStateProps = {
   output?: string
   status?: string
 }
+
+type MemoryItem = MemoryMarkerMeta.Decoded
 
 function TodoToolCard(props: { part: ToolPart }) {
   const render = ToolRegistry.render(props.part.tool)
@@ -175,14 +173,70 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
   const data = useData()
   const session = useSession()
   const display = useDisplay()
+  const mem = useMemory()
+  const language = useLanguage()
   const { config } = useConfig()
   const open = createMemo(() => config().terminal_command_display !== "collapsed")
+  const edit = createMemo(() => config().code_edit_display === "expanded")
 
   const parts = createMemo(() => {
-    const stored = data.store.part?.[props.message.id]
+    const stored = props.parts ?? data.store.part?.[props.message.id]
     if (!stored) return []
-    return (stored as SDKPart[]).filter((part) => isRenderable(part))
+    return (stored as SDKPart[]).filter((part) => {
+      if (!isRenderable(part, props.message)) return false
+      if (part.type !== "tool" || part.tool !== "question") return true
+      if (part.state.status !== "pending" && part.state.status !== "running") return true
+      return !!matchToolRequest(part, "question", session.questions())
+    })
   })
+  const meta = createMemo(() =>
+    MemoryMarkerMeta.fromParts((props.parts ?? data.store.part?.[props.message.id] ?? []) as MemoryMarkerMeta.Part[]),
+  )
+  const fmt = (value: number) => value.toLocaleString(language.locale())
+  const count = (item: MemoryItem) => fmt(item.count)
+  const tokens = (item: MemoryItem) => fmt(item.tokens)
+  const label = (item: MemoryItem) =>
+    item.type === "startup" ? language.t("chat.memory.badge.injected") : language.t("chat.memory.badge.recalled")
+  const detail = (item: MemoryItem) =>
+    item.type === "startup"
+      ? language.t("chat.memory.badge.startupCtx")
+      : language.t("chat.memory.badge.items", { count: count(item) })
+  const tip = (item: MemoryItem) => {
+    const err = mem.error()
+    if (err) return <span>{err}</span>
+    const status = mem.status()
+    if (!status) return <span>{language.t("chat.memory.status.loading")}</span>
+    const ops = status.state.stats.lastOperationCount
+    const total = mem.totalTokens().toLocaleString(language.locale())
+    return (
+      <div style={{ "text-align": "left", "white-space": "normal", "max-width": "280px" }}>
+        <div>
+          {item.type === "startup"
+            ? language.t("chat.memory.session.tokens", { tokens: tokens(item) })
+            : language.t("chat.memory.badge.recalledDetail", { count: count(item), tokens: tokens(item) })}
+        </div>
+        <div>{language.t("chat.memory.total.tokens", { tokens: total })}</div>
+        <div>
+          {!status.state.enabled
+            ? language.t("chat.memory.project.disabled")
+            : language.t("chat.memory.project.enabled")}
+        </div>
+        <Show when={ops > 0}>
+          <div>
+            {language.t("chat.memory.savedOperations", {
+              count: ops.toLocaleString(language.locale()),
+            })}
+          </div>
+        </Show>
+        <Show when={mem.show()?.changes}>
+          <div>{mem.show()!.changes.split("\n").filter(Boolean).slice(-1)[0]}</div>
+        </Show>
+        <Show when={item.files.length > 0}>
+          <div>{language.t("chat.memory.badge.files", { files: item.files.join(", ") })}</div>
+        </Show>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -206,11 +260,15 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
             return part
           })
           const planExit = createMemo(() => {
-            if (part.type !== "tool") return
-            const tp = part as unknown as ToolPart
-            if (tp.tool !== "plan_exit") return
-            if (tp.state?.status !== "completed") return
-            return tp
+            if (!planExitInfo(part)) return
+            return part as unknown as ToolPart
+          })
+
+          // Lights up when this part is behind the hovered/focused task-timeline
+          // bar, using that bar's own color so the two stay easy to correlate.
+          const highlighted = createMemo(() => {
+            const h = props.highlight?.()
+            return h?.msgId === props.message.id && h?.partId === part.id
           })
 
           return (
@@ -224,7 +282,14 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                 PART_MAPPING[part.type]
               }
             >
-              <div data-component="tool-part-wrapper" data-part-type={part.type}>
+              <div
+                data-component="tool-part-wrapper"
+                data-part-type={part.type}
+                data-timeline-highlight={highlighted() ? "" : undefined}
+                style={
+                  highlighted() ? { "--timeline-color": timelineColor(part as unknown as TimelinePart) } : undefined
+                }
+              >
                 <Show
                   when={activeQuestion()}
                   fallback={
@@ -245,6 +310,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                                         part={part}
                                         message={props.message as SDKMessage}
                                         showAssistantCopyPartID={props.showAssistantCopyPartID}
+                                        defaultOpen={editOpen(part, edit())}
                                         reasoningAutoCollapse={display.reasoningAutoCollapse()}
                                         feedback={props.feedback}
                                         animate={
@@ -285,6 +351,15 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
           )
         }}
       </For>
+      <Show when={mem.enabled() && meta()}>
+        {(item) => (
+          <Tooltip value={tip(item())} placement="top">
+            <div data-component="assistant-memory-badge">
+              {label(item())} · {detail(item())} · {language.t("chat.memory.badge.tokens", { tokens: tokens(item()) })}
+            </div>
+          </Tooltip>
+        )}
+      </Show>
     </>
   )
 }

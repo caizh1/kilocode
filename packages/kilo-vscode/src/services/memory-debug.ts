@@ -22,7 +22,9 @@ let dir: string | undefined
 let queue = Promise.resolve()
 
 export function initialize(context: vscode.ExtensionContext) {
-  dir = path.join(context.globalStorageUri.fsPath, "memory-debug")
+  const root = context.globalStorageUri?.fsPath
+  if (!root) return
+  dir = path.join(root, "memory-debug")
   channel ??= vscode.window.createOutputChannel(CHANNEL)
   context.subscriptions.push(channel)
   void append({ event: "extension.memory-debug.ready", data: { directory: dir } })

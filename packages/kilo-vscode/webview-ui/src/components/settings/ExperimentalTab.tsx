@@ -6,15 +6,17 @@ import { TextField } from "@kilocode/kilo-ui/text-field"
 import { Card } from "@kilocode/kilo-ui/card"
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
-import { useProvider } from "../../context/provider"
-import { useServer } from "../../context/server"
 import { useVSCode } from "../../context/vscode"
+import { useImageModels } from "../../context/image-models"
+import { useProvider } from "../../context/provider"
 import type { ExtensionMessage } from "../../types/messages"
-import SettingsRow from "./SettingsRow"
+import { parseModelString } from "../../../../src/shared/provider-model"
+import { ModelSelectorBase } from "../shared/ModelSelector"
 import { DEFAULT_SPEECH_TO_TEXT_MODEL } from "../../../../src/speech-to-text/models"
 import { hasSpeechToTextAccess, selectedSpeechToTextModel } from "../speech-to-text/availability"
 import { SPEECH_TO_TEXT_MODEL_OPTIONS } from "../speech-to-text/model-selector"
 import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
+import SettingsRow from "./SettingsRow"
 
 interface ShareOption {
   value: string
@@ -30,8 +32,8 @@ const SHARE_OPTIONS: ShareOption[] = [
 const ExperimentalTab: Component = () => {
   const { config, updateConfig } = useConfig()
   const language = useLanguage()
+  const imageModels = useImageModels()
   const provider = useProvider()
-  const server = useServer()
   const vscode = useVSCode()
   const [active, setActive] = createSignal(false)
   const internal = isInternalOfflineBuild()
@@ -49,7 +51,7 @@ const ExperimentalTab: Component = () => {
   })
 
   const experimental = createMemo(() => config().experimental ?? {})
-  const kiloReady = createMemo(() => hasSpeechToTextAccess(config(), provider.connected(), server.profileData()))
+  const kiloReady = createMemo(() => hasSpeechToTextAccess(config(), provider.authStates()))
   const speechModel = createMemo(() => selectedSpeechToTextModel(config()))
 
   const updateExperimental = (key: string, value: unknown) => {
@@ -141,19 +143,6 @@ const ExperimentalTab: Component = () => {
         </SettingsRow>
 
         <SettingsRow
-          title={language.t("settings.experimental.pasteSummary.title")}
-          description={language.t("settings.experimental.pasteSummary.description")}
-        >
-          <Switch
-            checked={experimental().disable_paste_summary ?? false}
-            onChange={(checked) => updateExperimental("disable_paste_summary", checked)}
-            hideLabel
-          >
-            {language.t("settings.experimental.pasteSummary.title")}
-          </Switch>
-        </SettingsRow>
-
-        <SettingsRow
           title={language.t("settings.experimental.batch.title")}
           description={language.t("settings.experimental.batch.description")}
         >
@@ -181,15 +170,15 @@ const ExperimentalTab: Component = () => {
 
         <Show when={!internal}>
           <SettingsRow
-            title={language.t("settings.experimental.speechToTextModel.title")}
+            title={language.t("settings.models.speechToTextModel.title")}
             description={
               kiloReady()
-                ? language.t("settings.experimental.speechToTextModel.description")
-                : language.t("settings.experimental.speechToText.disabledDescription")
+                ? language.t("settings.models.speechToTextModel.description")
+                : language.t("settings.models.speechToText.disabledDescription")
             }
           >
             <Tooltip
-              value={language.t("settings.experimental.speechToText.disabledDescription")}
+              value={language.t("settings.models.speechToText.disabledDescription")}
               placement="top"
               inactive={kiloReady()}
             >
@@ -212,6 +201,54 @@ const ExperimentalTab: Component = () => {
         </Show>
 
         <SettingsRow
+          title={language.t("settings.experimental.imageGeneration.title")}
+          description={language.t("settings.experimental.imageGeneration.description")}
+        >
+          <Switch
+            checked={experimental().image_generation ?? false}
+            onChange={(checked) => updateExperimental("image_generation", checked)}
+            hideLabel
+          >
+            {language.t("settings.experimental.imageGeneration.title")}
+          </Switch>
+        </SettingsRow>
+
+        <Show when={experimental().image_generation}>
+          <SettingsRow
+            title={language.t("settings.experimental.imageGenerationModel.title")}
+            description={language.t("settings.experimental.imageGenerationModel.description")}
+          >
+            <Select
+              options={imageModels.models().map((m) => ({ value: m.id, label: m.name }))}
+              current={imageModels
+                .models()
+                .map((m) => ({ value: m.id, label: m.name }))
+                .find((m) => m.value === experimental().image_generation_model)}
+              value={(item) => item.value}
+              label={(item) => item.label}
+              onSelect={(item) => updateExperimental("image_generation_model", item?.value ?? undefined)}
+              variant="secondary"
+              size="small"
+              triggerVariant="settings"
+              placeholder={language.t("settings.experimental.imageGenerationModel.placeholder")}
+            />
+          </SettingsRow>
+        </Show>
+
+        <SettingsRow
+          title={language.t("settings.experimental.nativeNotebookTools.title")}
+          description={language.t("settings.experimental.nativeNotebookTools.description")}
+        >
+          <Switch
+            checked={experimental().native_notebook_tools ?? false}
+            onChange={(checked) => updateExperimental("native_notebook_tools", checked)}
+            hideLabel
+          >
+            {language.t("settings.experimental.nativeNotebookTools.title")}
+          </Switch>
+        </SettingsRow>
+
+        <SettingsRow
           title={language.t("settings.experimental.continueOnDeny.title")}
           description={language.t("settings.experimental.continueOnDeny.description")}
         >
@@ -223,6 +260,38 @@ const ExperimentalTab: Component = () => {
             {language.t("settings.experimental.continueOnDeny.title")}
           </Switch>
         </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.experimental.swePruner.title")}
+          description={language.t("settings.experimental.swePruner.description")}
+        >
+          <Switch
+            checked={experimental().swe_pruner ?? false}
+            onChange={(checked) => updateExperimental("swe_pruner", checked)}
+            hideLabel
+          >
+            {language.t("settings.experimental.swePruner.title")}
+          </Switch>
+        </SettingsRow>
+
+        <Show when={experimental().swe_pruner}>
+          <SettingsRow
+            title={language.t("settings.experimental.swePrunerModel.title")}
+            description={language.t("settings.experimental.swePrunerModel.description")}
+          >
+            <ModelSelectorBase
+              value={parseModelString(experimental().swe_pruner_model ?? undefined)}
+              onSelect={(providerID, modelID) =>
+                updateExperimental("swe_pruner_model", providerID && modelID ? `${providerID}/${modelID}` : null)
+              }
+              placement="bottom-start"
+              allowClear
+              clearLabel={language.t("settings.providers.notSet")}
+              label={language.t("settings.experimental.swePrunerModel.title")}
+              description={language.t("settings.experimental.swePrunerModel.description")}
+            />
+          </SettingsRow>
+        </Show>
 
         {/* MCP timeout */}
         <SettingsRow

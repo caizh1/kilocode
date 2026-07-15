@@ -13,6 +13,7 @@ import { Session } from "../../../src/session/session"
 import { Authorization } from "../../../src/server/routes/instance/httpapi/middleware/authorization"
 import { InstanceContextMiddleware } from "../../../src/server/routes/instance/httpapi/middleware/instance-context"
 import { schemaErrorLayer } from "../../../src/server/routes/instance/httpapi/middleware/schema-error"
+import { EventV2Bridge } from "../../../src/event-v2-bridge"
 import {
   WorkspaceRouteContext,
   WorkspaceRoutingMiddleware,
@@ -142,6 +143,7 @@ const layer = HttpRouter.serve(
       cache,
       providers,
       session,
+      EventV2Bridge.defaultLayer,
     ]),
   ),
   { disableListenLog: true, disableLogger: true },
@@ -358,6 +360,17 @@ describe("Kilo gateway HttpApi statuses", () => {
     }),
   )
 
+  it.live("reports locally stored API authentication without a Gateway request", () =>
+    Effect.gen(function* () {
+      yield* stub(() => Promise.reject(new Error("unexpected Gateway request")))
+
+      const response = yield* HttpClient.get(KiloGatewayPaths.authStatus)
+
+      expect(response.status).toBe(200)
+      expect(yield* response.json).toEqual({ authenticated: true, type: "api" })
+    }),
+  )
+
   it.live("preserves cloud session list rate limits", () =>
     Effect.gen(function* () {
       yield* stub(() => new Response("rate limited", { status: 429 }))
@@ -443,6 +456,32 @@ describe("Kilo gateway HttpApi statuses", () => {
 
       expect(response.status).toBe(500)
       expect(yield* response.json).toEqual({ error: "KiloClaw request failed: 500 worker failed" })
+    }),
+  )
+
+  it.live("normalizes numeric KiloClaw timestamps", () =>
+    Effect.gen(function* () {
+      const started = 1_700_000_000_000
+      yield* stub(() =>
+        Response.json({
+          status: "running",
+          sandboxId: "sandbox",
+          userId: "user",
+          lastStartedAt: started,
+          lastStoppedAt: null,
+        }),
+      )
+
+      const response = yield* HttpClient.get(KiloGatewayPaths.clawStatus)
+
+      expect(response.status).toBe(200)
+      expect(yield* response.json).toEqual({
+        status: "running",
+        sandboxId: "sandbox",
+        userId: "user",
+        lastStartedAt: new Date(started).toISOString(),
+        lastStoppedAt: null,
+      })
     }),
   )
 

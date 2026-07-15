@@ -8,10 +8,12 @@ import { mergeMarketplaceSkills } from "./skills"
 import { isInternalOfflineBuild } from "../../shared/internal-offline"
 import { createSkillArchive } from "./archive"
 import type { MarketEvent } from "./analytics"
+import { detectMarketplaceRelevance } from "./relevance"
 import type {
   MarketplaceItem,
   InstallMarketplaceItemOptions,
   MarketplaceDataResponse,
+  MarketplaceRelevanceMetadata,
   InstallResult,
   RemoveResult,
   MarketplaceUploadPayload,
@@ -25,6 +27,7 @@ export class MarketplaceService {
   private paths: MarketplacePaths
   private detector: InstallationDetector
   private installer: MarketplaceInstaller
+  private scans = new Map<string, Promise<MarketplaceRelevanceMetadata>>()
 
   constructor() {
     this.paths = new MarketplacePaths()
@@ -36,10 +39,17 @@ export class MarketplaceService {
   async fetchData(
     workspace?: string,
     skills?: CliSkill[],
+    roots: readonly vscode.Uri[] = [],
     apiKey?: string,
     details = true,
   ): Promise<MarketplaceDataResponse> {
-    const [fetched, metadata] = await Promise.all([this.api.fetchAll(apiKey), this.detector.detect(workspace, skills)])
+    const request = this.api.fetchAll(apiKey)
+    const relevance = request.then((result) => this.relevance(result.items, roots))
+    const [fetched, metadata, matches] = await Promise.all([
+      request,
+      this.detector.detect(workspace, skills),
+      relevance,
+    ])
     const merged = mergeMarketplaceSkills(fetched.items, skills, metadata, fetched.skillsFetched)
     const aligned = await this.api.alignedMode()
     const state =
@@ -52,7 +62,6 @@ export class MarketplaceService {
             apiKey ? this.api.analytics(apiKey).catch(() => []) : Promise.resolve([]),
           ])
         : []
-
     return {
       marketplaceItems: merged.marketplaceItems,
       marketplaceInstalledMetadata: merged.marketplaceInstalledMetadata,
@@ -61,6 +70,7 @@ export class MarketplaceService {
       marketplaceSkillsOnly: this.api.isSkillsOnly(),
       marketplaceMode: this.api.marketplaceMode(),
       marketplaceProtocol: aligned ? "aligned-v1" : "legacy",
+      marketplaceRelevance: matches,
       ...(state[0] ? { marketplaceCapabilities: state[0] } : {}),
       ...(state[1] ? { marketplaceStatus: state[1] } : {}),
       ...(aligned && details
@@ -116,6 +126,16 @@ export class MarketplaceService {
 
   applyPublicationPatches(id: string, patchIds: string[], apiKey: string) {
     return this.api.applyPublicationPatches(id, patchIds, apiKey)
+  }
+
+  private relevance(items: MarketplaceItem[], roots: readonly vscode.Uri[]): Promise<MarketplaceRelevanceMetadata> {
+    const key = `${roots.map((root) => root.toString()).join(",")}:${items.map((item) => `${item.type}:${item.id}`).join(",")}`
+    const current = this.scans.get(key)
+    if (current) return current
+
+    const scan = detectMarketplaceRelevance(items, roots).finally(() => this.scans.delete(key))
+    this.scans.set(key, scan)
+    return scan
   }
 
   async install(
@@ -195,6 +215,7 @@ export class MarketplaceService {
   }
 
   dispose(): void {
+    this.scans.clear()
     this.api.dispose()
   }
 }

@@ -1,30 +1,250 @@
 # Changelog
 
-## 7.3.42
+## 7.4.6
 
 ### Patch Changes
 
-- [#11015](https://github.com/Kilo-Org/kilocode/pull/11015) [`c90846a`](https://github.com/Kilo-Org/kilocode/commit/c90846a98938d3cdd666c46294ed4bb4871f7fcd) - Fix JetBrains session scrolling so mouse wheel and keyboard scrolling no longer snap back or bounce near the transcript bottom.
+- [#12215](https://github.com/Kilo-Org/kilocode/pull/12215) [`9f9509d`](https://github.com/Kilo-Org/kilocode/commit/9f9509dde55678c5f84b00741dca7f439237b467) - Scale the Kilo session UI with IntelliJ IDE zoom and presentation mode.
 
-- [#11015](https://github.com/Kilo-Org/kilocode/pull/11015) [`d505677`](https://github.com/Kilo-Org/kilocode/commit/d505677d88816cf528b64392e23b7ccdddf98a4a) - Prevent the JetBrains session scrollbar from covering transcript content.
+- [#12188](https://github.com/Kilo-Org/kilocode/pull/12188) [`349f972`](https://github.com/Kilo-Org/kilocode/commit/349f9723f55662ee4598d933c09264aae575df98) - Migrate legacy v5 markdown to-do lists into populated JetBrains To-dos cards.
 
-- [#11015](https://github.com/Kilo-Org/kilocode/pull/11015) [`5736a39`](https://github.com/Kilo-Org/kilocode/commit/5736a394597f250f64cf8c684d2426b56ca273ce) - Render glob search results in the JetBrains chat as collapsible tool output with separate directory and pattern rows.
+- [#12188](https://github.com/Kilo-Org/kilocode/pull/12188) [`048a0ee`](https://github.com/Kilo-Org/kilocode/commit/048a0ee52e8a26930787e3d1fcf41b4a3b5bd57b) - Render tools from imported legacy v5 sessions in assistant turns instead of prompt bubbles.
 
-- [#11015](https://github.com/Kilo-Org/kilocode/pull/11015) [`d1fa450`](https://github.com/Kilo-Org/kilocode/commit/d1fa4506c8b8e65b21cd08e0c6600598366aed0f) - Use matching VS Code-style icons for JetBrains session views.
+- [#12188](https://github.com/Kilo-Org/kilocode/pull/12188) [`17b0b22`](https://github.com/Kilo-Org/kilocode/commit/17b0b22d4432276ac314a2bbe9751d52f765dd47) - Import legacy v5 JetBrains settings and sessions through the migration wizard.
 
-- [#11015](https://github.com/Kilo-Org/kilocode/pull/11015) [`952241e`](https://github.com/Kilo-Org/kilocode/commit/952241ee07eebd22717bdf54ce07b3a6c66228af) - Refine JetBrains session card borders so prompt and question surfaces use brighter outlines while reasoning and tool cards use softer default borders.
+- [#12188](https://github.com/Kilo-Org/kilocode/pull/12188) [`8a859e4`](https://github.com/Kilo-Org/kilocode/commit/8a859e49bdd0e15c9a3598945f48dbe1d48bc1b3) - Add a "Later" option to the legacy migration wizard that defers the prompt to the next startup, and stop reporting the language preference as migrated since it cannot be applied in this version.
 
-- [#11015](https://github.com/Kilo-Org/kilocode/pull/11015) [`b9bff3b`](https://github.com/Kilo-Org/kilocode/commit/b9bff3b69cf27fc7e0d88d411eaa368616fc32d6) - Reset stale hover styling when moving between JetBrains session cards and draw card outlines only while expanded.
+- [#12214](https://github.com/Kilo-Org/kilocode/pull/12214) [`737993e`](https://github.com/Kilo-Org/kilocode/commit/737993e21c03f89ead970281915eeca5db0349ab) - Honor JetBrains certificate and proxy settings when downloading the CLI and fetching custom provider models.
 
-- [#11015](https://github.com/Kilo-Org/kilocode/pull/11015) [`5736a39`](https://github.com/Kilo-Org/kilocode/commit/5736a394597f250f64cf8c684d2426b56ca273ce) - Render grep searches in the JetBrains chat with a dedicated search header that shows stacked, clipped targets.
+- [#12180](https://github.com/Kilo-Org/kilocode/pull/12180) [`18e798e`](https://github.com/Kilo-Org/kilocode/commit/18e798e81cd3a6584c6820c9ac710ceac24d0a97) - Use the IntelliJ stop icon for the JetBrains prompt stop button.
 
-- [#11015](https://github.com/Kilo-Org/kilocode/pull/11015) [`01f2886`](https://github.com/Kilo-Org/kilocode/commit/01f28861900d4794d6329821f0c9f5c9efdedae3) - Improve mouse wheel scrolling speed in the JetBrains session view.
+- [#12180](https://github.com/Kilo-Org/kilocode/pull/12180) [`de06c40`](https://github.com/Kilo-Org/kilocode/commit/de06c407f91fd8131c6c703386b1684e3cf0e363) - Show elapsed time in the JetBrains progress footer while Kilo is working.
 
-## 7.3.29
+- [#12180](https://github.com/Kilo-Org/kilocode/pull/12180) [`b62105a`](https://github.com/Kilo-Org/kilocode/commit/b62105a6490b268526eca51ff139934f36d0d6b0) - Add a separator before the JetBrains prompt send button.
+
+- [#12180](https://github.com/Kilo-Org/kilocode/pull/12180) [`b62105a`](https://github.com/Kilo-Org/kilocode/commit/b62105a6490b268526eca51ff139934f36d0d6b0) - Match the JetBrains prompt send-button right padding to the bottom padding.
+
+- [#12180](https://github.com/Kilo-Org/kilocode/pull/12180) [`5c98a0d`](https://github.com/Kilo-Org/kilocode/commit/5c98a0d1d407efb06f92496fc66f1c823f12d577) - Fix JetBrains rollback and redo scrolling and align plan custom response font with the prompt input.
+
+- [#12180](https://github.com/Kilo-Org/kilocode/pull/12180) [`18e798e`](https://github.com/Kilo-Org/kilocode/commit/18e798e81cd3a6584c6820c9ac710ceac24d0a97) - Match the JetBrains prompt send icon color to the scroll-to-bottom button across themes.
+
+## 7.4.6
 
 ### Patch Changes
+
+- [#12059](https://github.com/Kilo-Org/kilocode/pull/12059) [`42a4966`](https://github.com/Kilo-Org/kilocode/commit/42a49667a946a2f4f22df44b82aa5c3ff11f9aee) - Return keyboard focus to the JetBrains prompt after clicking inline session dialog actions.
+
+- [#12105](https://github.com/Kilo-Org/kilocode/pull/12105) [`8ceeb0f`](https://github.com/Kilo-Org/kilocode/commit/8ceeb0fb990911f5dc4647f7f9d75b26f5ce0ec4) - Stop orphaned Kilo CLI processes when JetBrains IDEs close, including binaries that ignore graceful shutdown.
+
+- [#12059](https://github.com/Kilo-Org/kilocode/pull/12059) [`39cec20`](https://github.com/Kilo-Org/kilocode/commit/39cec2063572368462acd3347bbf588991f366e2) - Refresh the JetBrains prompt input chrome when switching IDE themes.
+
+- [#12059](https://github.com/Kilo-Org/kilocode/pull/12059) [`04a1aa1`](https://github.com/Kilo-Org/kilocode/commit/04a1aa1b123f1b64591786d32fd58a30019fe007) - Polish JetBrains prompt focus and copy toolbar positioning.
+
+- [#12104](https://github.com/Kilo-Org/kilocode/pull/12104) [`c1b206b`](https://github.com/Kilo-Org/kilocode/commit/c1b206b161b8376355fdb2c16a7f4e972e7806fd) - Show rollback/redo progress inline (on the message and redo controls) with a cancel action instead of a full-screen loading overlay.
+
+- [#12059](https://github.com/Kilo-Org/kilocode/pull/12059) [`7e7ab7e`](https://github.com/Kilo-Org/kilocode/commit/7e7ab7e795ca0922f16bfa549d088c23fe631c2f) - Support rollback and redo controls in JetBrains sessions and clarify when reverted changes can be redone.
+
+- [#12059](https://github.com/Kilo-Org/kilocode/pull/12059) [`c1415d2`](https://github.com/Kilo-Org/kilocode/commit/c1415d2879bd7eb38910df43f7593cd641dbd343) - Clarify in JetBrains rollback that only the conversation was reverted when snapshots are disabled.
+
+- [#12059](https://github.com/Kilo-Org/kilocode/pull/12059) [`eb8950c`](https://github.com/Kilo-Org/kilocode/commit/eb8950c1efc3386ebc479c09298187768c6e0cc5) - Polish JetBrains session message toolbar alignment, rollback icon, and copy tooltips.
+
+- [#12059](https://github.com/Kilo-Org/kilocode/pull/12059) [`8ea3f10`](https://github.com/Kilo-Org/kilocode/commit/8ea3f10495e28c8a131b805d51f8f7524895148b) - Increase spacing before non-initial user prompts in the JetBrains session transcript.
 
 ## [Unreleased]
+
+## [7.0.6] - 2026-07-14
+
+### Fixed
+
+- Honor the IDE's certificate and proxy settings for outbound HTTPS requests.
+- Scale the session UI correctly with IDE zoom, fixing double-scaled heights and extra empty space in the transcript and prompt composer.
+
+## [7.0.5] - 2026-07-14
+
+### Added
+
+- Add an elapsed-time indicator to the session progress footer so long-running tasks show how long they have been active.
+- Support importing legacy JetBrains v5 data directly from raw storage when the previous consolidated migration file is unavailable.
+
+### Fixed
+
+- Restore the v5 migration wizard for users whose legacy provider, OAuth, MCP, mode, setting, or session data was not detected during upgrade.
+- Improve migration reliability by preserving checklist todos, importing legacy tool calls as assistant parts, validating raw session IDs, and reducing migration memory usage.
+- Polish session controls with more native prompt icons, progress footer spacing, auto-hiding prompt scrollbars, and improved rollback/redo scrolling.
+
+### Changed
+
+- Keep the JetBrains plugin pinned to Kilo Core 7.4.5 for this release.
+
+## [7.0.4] - 2026-07-10
+
+### Fixed
+
+- Stop orphaned Kilo Core processes on Windows so closing the IDE no longer leaves a lingering `kilo serve` process or blocks the next IDE launch.
+- Improve JetBrains CLI shutdown ordering so app close kills the process tree before closing streams, preventing Windows shutdown deadlocks.
+
+## [7.0.3] - 2026-07-10
+
+### Added
+
+- Add rollback redo controls in JetBrains sessions so reverted changes can be restored from the chat UI.
+- Add inline revert progress in JetBrains sessions, including localized status text and safer cancellation handling.
+- Add Kilo Core support for localized commit-message generation, AI image generation, large bash-output pruning, and improved model-usage display.
+
+### Fixed
+
+- Harden Kilo Core startup and shutdown so startup failures show clearer diagnostics, app close stops the CLI process, and lingering child processes are cleaned up more reliably.
+- Fix workspace reload recovery so stale reload state no longer disrupts the session connection.
+- Fix JetBrains rollback and revert flows so prompt focus, scroll state, diff order, and turn state are preserved more reliably.
+- Fix Kilo Core Bedrock SSO credential resolution and commit-message error handling when no changes are available.
+
+### Changed
+
+- Update the JetBrains plugin to download Kilo Core 7.4.5.
+
+## [Unreleased]
+
+## [7.0.2] - 2026-07-07
+
+### Added
+
+- First GA release of the native Kilo extension for JetBrains IDEs.
+- Download the pinned Kilo Core release at runtime instead of bundling CLI binaries, keeping the JetBrains plugin smaller while verifying downloaded archives before use.
+- Show Kilo Core runtime details from the JetBrains plugin so users can see which Core release is active.
+
+### Fixed
+
+- Improve JetBrains runtime CLI download reliability by pruning stale binaries, using the shell environment for PATH resolution, and surfacing exact release-resolution failures.
+
+### Changed
+
+- Polish JetBrains chat UI with auto-collapsing reasoning previews, clearer retry/offline footer state, and more balanced prompt, code, question, todo, history, and popup spacing.
+- Show the active routed model name and remote status more consistently in CLI runtime surfaces.
+
+## [7.0.2-rc.2] - 2026-07-07
+
+### Added
+
+- Show compact previews for collapsed reasoning blocks so long assistant reasoning stays readable without taking over the transcript.
+- Add clearer Kilo Core runtime information and diagnostics for release download failures.
+
+### Fixed
+
+- Resolve the CLI executable using the user's shell environment so custom PATH setups work when sessions start from JetBrains.
+- Keep retry and offline status visible in the session footer while preserving transcript context.
+- Prevent oversized header popups by capping preview content.
+
+### Changed
+
+- Download the required Kilo Core release at runtime and prune stale cached runtime binaries automatically.
+- Polish JetBrains chat spacing, prompt input behavior, question/todo layout, history scrolling, code block padding, and session background colors.
+
+## [7.0.2-rc.1] - 2026-07-07
+
+### Added
+
+- Download the pinned Kilo Core release at runtime instead of bundling every CLI binary in the JetBrains plugin, keeping the Marketplace package smaller while still verifying downloaded artifacts.
+
+## [7.0.1] - 2026-07-06
+
+### Added
+
+- Launch the first public Kilo JetBrains release with native JetBrains sessions and remote development support.
+
+## [7.0.1-rc.15] - 2026-07-06
+
+### Fixed
+
+- Improve transcript rendering, prompt focus styling, settings clicks, and prompt picker interactions.
+
+## [7.0.1-rc.14] - 2026-07-02
+
+### Added
+
+- Add Agent Behavior settings
+- Show richer model picker details, including routed model information and clearer model badges.
+- Show Kilo Pass usage, bonus credits, renewal dates, and top-up actions in the JetBrains user profile.
+
+### Fixed
+
+- Recover backend startup more reliably when event streams stall, reconnect, or are interrupted by stale failures.
+- Resolve workspaces by project ID to avoid cross-project session confusion.
+- Improve CLI recovery, config paths, and `.kilo` config directory handling.
+
+## [7.0.1-rc.13] - 2026-06-23
+
+### Added
+
+- Add slash command and file mention completion in the prompt.
+- Add support for clickable and explainable `@file` mentions in the prompt.
+
+### Fixed
+
+- Fix prompt undo/redo behavior and restore prompt focus after history navigation.
+- Fix lazy session creation to avoid duplicate initialization.
+- Fix prompt-training model disclosure.
+
+### Changed
+
+- Update the bundled CLI to include upstream OpenCode 1.15.13 changes.
+
+## [7.0.1-rc.12] - 2026-06-18
+
+### Added
+
+- Provider settings management, including searchable provider lists, API-key configuration, OAuth provider login, provider enable/disable controls, disconnect actions, and shared provider metadata.
+- Add copy controls to session messages so prompts and assistant responses can be copied directly from the transcript.
+- Share codebase indexes across worktrees so Agent Manager and worktree sessions can use semantic search without duplicating the full index.
+
+### Fixed
+
+- Keep long JetBrains prompt input usable by capping growth, preserving scrolling, and hiding soft-wrap glyphs.
+- Copy actions correctly in session.
+
+### Changed
+
+- Update the bundled CLI runtime to OpenCode 1.15.9
+
+## [7.0.1-rc.11] - 2026-06-17
+
+### Added
+
+- Provider settings management, including provider catalog sections, provider descriptions, provider settings actions, disconnect flows, provider auth handling, and provider/model picker improvements.
+- Session copy controls for chat messages.
+
+### Fixed
+
+- Cap JetBrains prompt input growth and hide soft wrap glyphs in the prompt field.
+- Keep JetBrains provider toolbars and authentication overlays fixed, and improve provider API key dialog sizing.
+- Clean up restartless unload behavior.
+- Silence interrupted session notifications across clients.
+- Always deny tool calls for system agents.
+
+## [7.0.1-rc.10] - 2026-06-17
+
+### Added
+
+- Provider settings management, including provider catalog sections, provider descriptions, provider settings actions, disconnect flows, provider auth handling, and provider/model picker improvements.
+- Session copy controls for chat messages.
+
+### Fixed
+
+- Cap JetBrains prompt input growth and hide soft wrap glyphs in the prompt field.
+- Keep JetBrains provider toolbars and authentication overlays fixed, and improve provider API key dialog sizing.
+- Clean up restartless unload behavior.
+- Silence interrupted session notifications across clients.
+- Always deny tool calls for system agents.
+
+## [7.0.1-rc.9] - 2026-06-15
+
+### Added
+
+- Add prompt enhancement support.
+- Support prompt and transcript attachments, including paste, drop, preview, and editor tab opening flows.
+
+### Fixed
+
+- Improve shell and markdown rendering, including code block spacing, terminal block retention, shell command highlighting, and session layout polish.
 
 ## [7.0.1-rc.8] - 2026-06-09
 

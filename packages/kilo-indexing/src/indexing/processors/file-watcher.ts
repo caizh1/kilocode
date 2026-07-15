@@ -2,7 +2,6 @@ import { watch as chokidarWatch, type FSWatcher as ChokidarFSWatcher } from "cho
 import { stat, readFile } from "fs/promises"
 import { createHash } from "crypto"
 import path from "path"
-import type { Ignore } from "ignore"
 import { Emitter, type Disposable } from "../runtime"
 import { MAX_FILE_SIZE_BYTES, BATCH_SEGMENT_THRESHOLD, MAX_BATCH_RETRIES, INITIAL_RETRY_DELAY_MS } from "../constants"
 import { scannerExtensions } from "../shared/supported-extensions"
@@ -29,11 +28,13 @@ import {
 } from "../shared/get-relative-path"
 import { FileIgnore } from "../../file/ignore"
 import { Log } from "../../util/log"
+import type { WorktreeOverlay } from "../worktree-overlay"
 import { sanitizeErrorMessage } from "../shared/validation-helpers"
 import type { RagCheckpointMeta } from "../rag-checkpoint"
 import { fallbackCheckpointMeta, generationForFile, pointForBlock, vectorContext } from "../rag-checkpoint"
 import { IndexingRunLock } from "../run-lock"
 import { constrained, type IndexingPressure } from "../memory"
+import type { IgnoreMatcher } from "../shared/load-ignore"
 
 const log = Log.create({ service: "file-watcher" })
 
@@ -44,7 +45,7 @@ const log = Log.create({ service: "file-watcher" })
  * so the watcher works outside VS Code (CLI, tests, headless).
  */
 export class FileWatcher implements IFileWatcher {
-  private ignoreInstance?: Ignore
+  private ignoreInstance?: IgnoreMatcher
   private watcher?: ChokidarFSWatcher
   private accumulatedEvents: Map<string, { path: string; type: "create" | "change" | "delete" }> = new Map()
   private batchProcessDebounceTimer?: NodeJS.Timeout
@@ -53,15 +54,17 @@ export class FileWatcher implements IFileWatcher {
   private readonly MAX_PENDING_EVENTS = 1_000
   private batchSegmentThreshold: number
   private maxBatchRetries: number
-  private collecting = true
+  private collecting = false
   private draining = false
   private pressure: IndexingPressure = "normal"
   private reconcile = false
   private batchStartedAt: number | undefined
+  private drainTask?: Promise<void>
   private ready?: Promise<void>
   private runId: string = globalThis.crypto.randomUUID()
   private ragMeta: RagCheckpointMeta | undefined
   private readonly writeCache: boolean
+  private overlay?: WorktreeOverlay
 
   public readonly onDidStartBatchProcessing = new Emitter<string[]>()
   public readonly onBatchProgressUpdate = new Emitter<{
@@ -76,7 +79,7 @@ export class FileWatcher implements IFileWatcher {
     private readonly cacheManager: CacheManager,
     private embedder?: IEmbedder,
     private vectorStore?: IVectorStore,
-    ignoreInstance?: Ignore,
+    ignoreInstance?: IgnoreMatcher,
     batchSegmentThreshold?: number,
     maxBatchRetries?: number,
     private readonly onTelemetry?: IndexingTelemetryReporter,
@@ -204,8 +207,16 @@ export class FileWatcher implements IFileWatcher {
     this.pressure = pressure
   }
 
+  setOverlay(overlay?: WorktreeOverlay): void {
+    this.overlay = overlay
+  }
+
   setCollecting(collecting: boolean): void {
     this.collecting = collecting
+    if (!collecting && this.batchProcessDebounceTimer) {
+      clearTimeout(this.batchProcessDebounceTimer)
+      this.batchProcessDebounceTimer = undefined
+    }
     log.info("updated watcher collection mode", {
       workspacePath: this.workspacePath,
       collecting,
@@ -245,11 +256,20 @@ export class FileWatcher implements IFileWatcher {
   /**
    * Disposes the file watcher and cleans up resources.
    */
+  async shutdown(): Promise<void> {
+    this.collecting = false
+    if (this.batchProcessDebounceTimer) clearTimeout(this.batchProcessDebounceTimer)
+    this.batchProcessDebounceTimer = undefined
+    await this.watcher?.close()
+    await this.drainTask
+    this.dispose()
+  }
+
   dispose(): void {
-    this.watcher?.close()
-    if (this.batchProcessDebounceTimer) {
-      clearTimeout(this.batchProcessDebounceTimer)
-    }
+    this.collecting = false
+    void this.watcher?.close()
+    if (this.batchProcessDebounceTimer) clearTimeout(this.batchProcessDebounceTimer)
+    this.batchProcessDebounceTimer = undefined
     this.onDidStartBatchProcessing.dispose()
     this.onBatchProgressUpdate.dispose()
     this.onDidFinishBatchProcessing.dispose()
@@ -262,6 +282,7 @@ export class FileWatcher implements IFileWatcher {
    */
   private handleFileEvent(filePath: string, type: "create" | "change" | "delete"): void {
     if (!this.shouldIndex(filePath)) return
+    this.overlay?.block(filePath)
     this.queue({ path: filePath, type })
     if (!this.collecting) return
     this.scheduleBatchProcessing()
@@ -271,7 +292,7 @@ export class FileWatcher implements IFileWatcher {
    * Schedules batch processing with debounce.
    */
   private scheduleBatchProcessing(): void {
-    if (!this.collecting) return
+    if (!this.collecting || this.drainTask) return
     if (this.batchProcessDebounceTimer) {
       clearTimeout(this.batchProcessDebounceTimer)
     }
@@ -279,7 +300,18 @@ export class FileWatcher implements IFileWatcher {
     this.batchStartedAt ??= now
     const left = Math.max(0, this.BATCH_MAX_LATENCY_MS - (now - this.batchStartedAt))
     const wait = this.accumulatedEvents.size >= this.sliceSize() ? 0 : Math.min(this.BATCH_DEBOUNCE_DELAY_MS, left)
-    this.batchProcessDebounceTimer = setTimeout(() => this.triggerBatchProcessing(), wait)
+    this.batchProcessDebounceTimer = setTimeout(() => {
+      this.batchProcessDebounceTimer = undefined
+      const task = this.triggerBatchProcessing().catch((err) => {
+        const error = err instanceof Error ? err : new Error(String(err))
+        this.collecting = false
+        this.onDidFinishBatchProcessing.fire({ processedFiles: [], batchError: error })
+      })
+      this.drainTask = task.finally(() => {
+        this.drainTask = undefined
+        if (this.collecting && this.accumulatedEvents.size > 0) this.scheduleBatchProcessing()
+      })
+    }, wait)
   }
 
   /**
@@ -296,34 +328,37 @@ export class FileWatcher implements IFileWatcher {
       pendingEvents: this.accumulatedEvents.size,
     })
 
-    while (this.collecting && this.accumulatedEvents.size > 0) {
-      const eventsToProcess = new Map<string, { path: string; type: "create" | "change" | "delete" }>()
-      for (const [file, event] of this.accumulatedEvents) {
-        eventsToProcess.set(file, event)
-        this.accumulatedEvents.delete(file)
-        if (eventsToProcess.size >= this.sliceSize()) break
-      }
-
-      const filePathsInBatch = Array.from(eventsToProcess.keys())
-      const lock = await this.acquireBatchLock()
-      if (this.lockCacheDirectory && !lock) {
-        for (const [file, event] of eventsToProcess) {
-          if (!this.accumulatedEvents.has(file)) this.accumulatedEvents.set(file, event)
+    try {
+      while (this.collecting && this.accumulatedEvents.size > 0) {
+        const events = new Map<string, { path: string; type: "create" | "change" | "delete" }>()
+        for (const [file, event] of this.accumulatedEvents) {
+          events.set(file, event)
+          this.accumulatedEvents.delete(file)
+          if (events.size >= this.sliceSize()) break
         }
-        break
-      }
-      this.onDidStartBatchProcessing.fire(filePathsInBatch)
-      try {
-        await this.processBatch(eventsToProcess)
-      } finally {
-        await lock?.release()
-      }
-      await delay(0)
-    }
 
-    this.draining = false
-    this.batchStartedAt = this.accumulatedEvents.size > 0 ? Date.now() : undefined
-    log.info("completed watcher event drain", { workspacePath: this.workspacePath })
+        const filePathsInBatch = Array.from(events.keys())
+        const lock = await this.acquireBatchLock()
+        if (this.lockCacheDirectory && !lock) {
+          for (const [file, event] of events) {
+            if (!this.accumulatedEvents.has(file)) this.accumulatedEvents.set(file, event)
+          }
+          break
+        }
+        this.onDidStartBatchProcessing.fire(filePathsInBatch)
+        try {
+          await this.processBatch(events)
+        } finally {
+          await lock?.release()
+        }
+        await delay(0)
+      }
+    } finally {
+      this.draining = false
+      this.batchStartedAt = this.accumulatedEvents.size > 0 ? Date.now() : undefined
+      if (this.collecting && this.accumulatedEvents.size > 0) this.scheduleBatchProcessing()
+      log.info("completed watcher event drain", { workspacePath: this.workspacePath })
+    }
   }
 
   private queue(event: { path: string; type: "create" | "change" | "delete" }): boolean {
@@ -687,16 +722,33 @@ export class FileWatcher implements IFileWatcher {
     // Categorize events
     const pathsToExplicitlyDelete: string[] = []
     const filesToUpsertDetails: Array<{ path: string; originalType: "create" | "change" }> = []
+    const reverts = new Map<string, string>()
 
     for (const event of eventsToProcess.values()) {
       if (event.type === "delete") {
         pathsToExplicitlyDelete.push(event.path)
-      } else {
-        filesToUpsertDetails.push({
-          path: event.path,
-          originalType: event.type,
-        })
+        continue
       }
+
+      const cached = this.cacheManager.getHash(event.path)
+      const hash = await readFile(event.path, "utf-8")
+        .then((content) => createHash("sha256").update(content).digest("hex"))
+        .catch(() => undefined)
+      if (cached && hash === cached) {
+        batchResults.push({ path: event.path, status: "success", newHash: cached })
+        processedCountInBatch++
+        continue
+      }
+      if (hash && hash === this.overlay?.baselineHash(event.path)) {
+        pathsToExplicitlyDelete.push(event.path)
+        reverts.set(event.path, hash)
+        continue
+      }
+
+      filesToUpsertDetails.push({
+        path: event.path,
+        originalType: event.type,
+      })
     }
 
     log.info("processing file watcher batch", {
@@ -716,6 +768,9 @@ export class FileWatcher implements IFileWatcher {
     )
     overallBatchError = deletionError
     processedCountInBatch = deletionCount
+    if (!deletionError) {
+      for (const [filePath, hash] of reverts) this.cacheManager.updateHash(filePath, hash)
+    }
 
     // Phase 2: Process files and prepare upserts
     const split = !!this.graph && !!this.embedder && !!this.vectorStore
@@ -736,6 +791,16 @@ export class FileWatcher implements IFileWatcher {
     )
     processedCountInBatch = rag.processedCount
     overallBatchError = rag.overallBatchError
+
+    const resultError = batchResults.find((item) => item.status === "error" || item.status === "local_error")?.error
+    overallBatchError ??= resultError
+    await this.cacheManager.flush()
+
+    for (const event of eventsToProcess.values()) {
+      const result = batchResults.findLast((item) => item.path === event.path)
+      if (result?.status !== "success") continue
+      this.overlay?.settle(event.path, this.cacheManager.getHash(event.path), this.accumulatedEvents.has(event.path))
+    }
 
     // Finalize
     this.onDidFinishBatchProcessing.fire({

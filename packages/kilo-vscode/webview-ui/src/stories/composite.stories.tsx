@@ -8,7 +8,7 @@
  */
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
-import type { AssistantMessage as SDKAssistantMessage, TextPart, ToolPart } from "@kilocode/sdk/v2"
+import type { AssistantMessage as SDKAssistantMessage, ReasoningPart, TextPart, ToolPart } from "@kilocode/sdk/v2"
 import { StoryProviders, defaultMockData, mockSessionValue } from "./StoryProviders"
 import { AssistantMessage } from "../components/chat/AssistantMessage"
 import { VscodeSessionTurn } from "../components/chat/VscodeSessionTurn"
@@ -43,6 +43,15 @@ const baseAssistantMessage: SDKAssistantMessage = {
   path: { cwd: "/project", root: "/project" },
   cost: 0.0023,
   tokens: { total: 512, input: 256, output: 256, reasoning: 0, cache: { read: 0, write: 0 } },
+}
+
+const titleOnlyReasoning: ReasoningPart = {
+  id: "part-reasoning-title-only",
+  sessionID: SESSION_ID,
+  messageID: ASST_MSG_ID,
+  type: "reasoning",
+  text: "**Assessing search behavior**\n\n<!-- -->",
+  time: { start: now - 7000, end: now - 6500 },
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +221,36 @@ const backgroundLogsCompleted: ToolPart = {
     title: "Logs: Dev server",
     metadata: { processID: "bgp_01hv8devserver", status: "ready" },
     time: { start: now - 1800, end: now - 1200 },
+  },
+}
+
+const githubApiError: ToolPart = {
+  id: "part-github-error-001",
+  sessionID: SESSION_ID,
+  messageID: ASST_MSG_ID,
+  type: "tool",
+  callID: "call-github-error-001",
+  tool: "github-pr-search",
+  state: {
+    status: "error",
+    input: { query: "status-inline-self-test" },
+    error: "GitHub API error: 401 Unauthorized",
+    time: { start: now - 3000, end: now - 2500 },
+  },
+}
+
+const fileError: ToolPart = {
+  id: "part-file-error-001",
+  sessionID: SESSION_ID,
+  messageID: ASST_MSG_ID,
+  type: "tool",
+  callID: "call-file-error-001",
+  tool: "edit",
+  state: {
+    status: "error",
+    input: { filePath: "src/missing-file.tsx" },
+    error: "ENOENT: no such file or directory 'src/missing-file.tsx'",
+    time: { start: now - 2000, end: now - 1500 },
   },
 }
 
@@ -650,6 +689,37 @@ export const ToolCards: Story = {
   },
 }
 
+export const TimelineHighlightedTool: Story = {
+  name: "Task Timeline — highlighted tool",
+  render: () => {
+    const data = dataWith([readCompleted])
+    return (
+      <StoryProviders data={data} sessionID={SESSION_ID}>
+        <div class="vscode-session-turn" data-row="assistant">
+          <div class="vscode-session-turn-assistant">
+            <AssistantMessage
+              message={baseAssistantMessage}
+              highlight={() => ({ msgId: ASST_MSG_ID, partId: readCompleted.id })}
+            />
+          </div>
+        </div>
+      </StoryProviders>
+    )
+  },
+}
+
+export const TitleOnlyReasoning: Story = {
+  name: "Reasoning - title only",
+  render: () => {
+    const data = dataWith([titleOnlyReasoning, textPart])
+    return (
+      <StoryProviders data={data} sessionID={SESSION_ID}>
+        <AssistantMessage message={baseAssistantMessage} />
+      </StoryProviders>
+    )
+  },
+}
+
 export const BackgroundProcessToolCards: Story = {
   name: "Tool Cards — background process",
   render: () => {
@@ -962,9 +1032,9 @@ const externalDirPermission: PermissionRequest = {
   id: "perm-extdir-001",
   sessionID: SESSION_ID,
   toolName: "external_directory",
-  patterns: ["/home/user/other-project/*"],
-  always: ["/home/user/other-project/*"],
-  args: { filepath: "/home/user/other-project/config.json" },
+  patterns: ["/Users/developer/projects/kilo-bench/dashboard/app/routes/*"],
+  always: ["/Users/developer/projects/kilo-bench/dashboard/app/routes/*"],
+  args: { filepath: "/Users/developer/projects/kilo-bench/dashboard/app/routes/index.tsx" },
   tool: { messageID: ASST_MSG_ID, callID: "call-extdir-001" },
 }
 
@@ -1224,6 +1294,30 @@ const mcpShort: ToolPart = {
     title: "Search issues",
     metadata: {},
     time: { start: now - 3000, end: now - 2800 },
+  },
+}
+
+export const ToolErrors: Story = {
+  name: "Tool Errors — HTTP and filesystem",
+  render: () => {
+    const data = dataWith([githubApiError, fileError])
+    return (
+      <StoryProviders data={data} sessionID={SESSION_ID}>
+        <AssistantMessage message={baseAssistantMessage} />
+      </StoryProviders>
+    )
+  },
+}
+
+export const ToolErrors200: Story = {
+  name: "Tool Errors — HTTP and filesystem (200px)",
+  render: () => {
+    const data = dataWith([githubApiError, fileError])
+    return (
+      <StoryProviders data={data} sessionID={SESSION_ID}>
+        <AssistantMessage message={baseAssistantMessage} />
+      </StoryProviders>
+    )
   },
 }
 

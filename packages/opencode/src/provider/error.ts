@@ -1,7 +1,24 @@
 import { APICallError } from "ai"
 import { STATUS_CODES } from "http"
 import { iife } from "@/util/iife"
-import type { ProviderID } from "./schema"
+import * as KiloError from "@/kilocode/provider/error" // kilocode_change
+import type { ProviderV2 } from "@opencode-ai/core/provider"
+
+export class HeaderTimeoutError extends Error {
+  public override readonly name = "ProviderHeaderTimeoutError"
+
+  constructor(public readonly ms: number) {
+    super(`Provider response headers timed out after ${ms}ms`)
+  }
+}
+
+export class ResponseStreamError extends Error {
+  public override readonly name = "ProviderResponseStreamError"
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
+  }
+}
 
 // Adapted from overflow detection patterns in:
 // https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/utils/overflow.ts
@@ -45,8 +62,10 @@ function isOverflow(message: string) {
   return /^4(00|13)\s*(status code)?\s*\(no body\)/i.test(message)
 }
 
-function message(providerID: ProviderID, e: APICallError) {
+function message(providerID: ProviderV2.ID, e: APICallError) {
   return iife(() => {
+    const hint = KiloError.hint(providerID, e) // kilocode_change
+    if (hint) return hint // kilocode_change
     // kilocode_change start - surface a branded reauth hint for expired Copilot tokens
     if (providerID.includes("github-copilot") && e.statusCode === 403) {
       return "Please reauthenticate with the copilot provider to ensure your credentials work properly with Kilo."
@@ -135,6 +154,18 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
         message: "Input exceeds context window of this model",
         responseBody,
       }
+    // kilocode_change start - normalize empty provider rate-limit stream errors
+    case "rate_limit_exceeded":
+      return {
+        type: "api_error",
+        message:
+          typeof body?.error?.message === "string" && body.error.message.trim()
+            ? body.error.message
+            : "Provider rate limit exceeded. Please try again shortly.",
+        isRetryable: true,
+        responseBody,
+      }
+    // kilocode_change end
     case "insufficient_quota":
       return {
         type: "api_error",
@@ -183,7 +214,7 @@ export type ParsedAPICallError =
       metadata?: Record<string, string>
     }
 
-export function parseAPICallError(input: { providerID: ProviderID; error: APICallError }): ParsedAPICallError {
+export function parseAPICallError(input: { providerID: ProviderV2.ID; error: APICallError }): ParsedAPICallError {
   const m = message(input.providerID, input.error)
   const body = json(input.error.responseBody)
   if (isOverflow(m) || input.error.statusCode === 413 || body?.error?.code === "context_length_exceeded") {

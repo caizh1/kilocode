@@ -87,6 +87,7 @@ function transformSkill(raw: RawSkill): SkillMarketplaceItem {
     updatedAt: raw.updatedAt,
     downloadCount: typeof raw.downloadCount === "number" ? raw.downloadCount : undefined,
     stars: typeof raw.stars === "number" ? raw.stars : undefined,
+    suggest_for: raw.suggest_for,
   }
 }
 
@@ -513,10 +514,6 @@ export class MarketplaceApiClient {
     }
     if (name.startsWith("skill.") || name === "favorite.changed") this.cache.delete("skills")
     change(name)
-  }
-
-  clearCache(): void {
-    this.cache.clear()
   }
 
   dispose(): void {

@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer"
 import { spawn } from "node:child_process"
 import path from "node:path"
-import type { Ignore } from "ignore"
 import { glob } from "glob"
 import { CODE_GRAPH_SUPPORTED_EXTENSIONS } from "../codegraph/constants"
 import { shouldIndexCodeGraphPath } from "../codegraph/path-policy"
@@ -9,6 +8,7 @@ import type { IndexingScanTarget } from "../interfaces"
 import { generateRelativeIgnorePath } from "../shared/get-relative-path"
 import { scannerExtensions } from "../shared/supported-extensions"
 import { FileIgnore } from "../../file/ignore"
+import type { IgnoreMatcher } from "../shared/load-ignore"
 
 const timeout = 30_000
 
@@ -37,7 +37,7 @@ export async function discoverScanFiles(input: {
   directoryPath: string
   workspacePath: string
   target: IndexingScanTarget
-  ignoreInstance: Ignore
+  ignoreInstance: IgnoreMatcher
   runGit?: GitRunner
   runRg?: RgRunner
   timeoutMs?: number
@@ -198,7 +198,7 @@ function filter(input: {
   directoryPath: string
   workspacePath: string
   target: IndexingScanTarget
-  ignoreInstance: Ignore
+  ignoreInstance: IgnoreMatcher
 }): string[] {
   const out = new Set<string>()
   for (const item of input.paths) {

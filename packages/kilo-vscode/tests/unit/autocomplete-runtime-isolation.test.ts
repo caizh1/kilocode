@@ -5,7 +5,7 @@ import { Coordinator } from "../../src/services/autocomplete"
 type Target = { providerID: string; modelID: string }
 
 const qwen = { providerID: "qwen", modelID: "qwen-coder-30b0" }
-const builtin = { providerID: "kilo", modelID: "mistralai/codestral-2508" }
+const builtin = { providerID: "kilo", modelID: "inception/mercury-next-edit" }
 const original = vscode.workspace.getConfiguration
 
 afterEach(() => {
@@ -207,7 +207,7 @@ describe("autocomplete coordinator", () => {
     expect(directory).toBe("/repo")
   })
 
-  it("starts Codestral only when a public build has usable gateway authentication", async () => {
+  it("starts the built-in model only when a public build has usable gateway authentication", async () => {
     const cfg = config()
     const ctx = context()
     const fallback = manager()
@@ -226,7 +226,7 @@ describe("autocomplete coordinator", () => {
     expect(ctx.data.get("kilo.autocomplete.lastBuiltinTarget")).toEqual(builtin)
   })
 
-  it("does not start Codestral in an internal offline build without Qwen", async () => {
+  it("does not start the built-in model in an internal offline build without Qwen", async () => {
     const cfg = config()
     const ctx = context()
     const fallback = manager()

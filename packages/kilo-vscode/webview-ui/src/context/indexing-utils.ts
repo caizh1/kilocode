@@ -1,8 +1,15 @@
-import type { ExtensionMessage, IndexingPipelineStatus, IndexingStatus } from "../types/messages"
+import type { Config, ExtensionMessage, IndexingPipelineStatus, IndexingStatus } from "../types/messages"
 
 export type IndexingTone = "muted" | "warning" | "success" | "error"
 export type IndexingPipelines = NonNullable<IndexingStatus["pipelines"]>
 const UNKNOWN = "Unknown indexing error"
+
+export function indexingButtonVisible(feature: boolean, show: boolean, config: Config, global: Config) {
+  if (!feature) return false
+  if (show) return true
+  if (global.indexing?.enabled === true) return true
+  return config.indexing?.enabled === true
+}
 
 export function formatIndexingLabel(status: IndexingStatus): string {
   if (status.state === "In Progress") {

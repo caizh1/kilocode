@@ -2,6 +2,7 @@ import type { KiloConnectionService } from "./cli-backend/connection-service"
 import { routeAutocompleteMessage } from "./autocomplete/settings"
 import type * as vscode from "vscode"
 import { handleSpeechToTextCancel, handleSpeechToTextStart, handleSpeechToTextStop } from "../speech-to-text/handler"
+import { prewarmSpeechCapture } from "../speech-to-text/capture"
 
 type Msg = {
   type: string
@@ -19,6 +20,11 @@ type Ctx = {
 
 export async function routeInputToolMessage(message: Msg, ctx: Ctx): Promise<boolean> {
   if (await routeAutocompleteMessage(message, ctx.post, ctx.context)) return true
+
+  if (message.type === "speechToTextPrewarm") {
+    void prewarmSpeechCapture().catch((err: unknown) => console.warn("[Kilo New] Speech capture prewarm failed:", err))
+    return true
+  }
 
   if (message.type === "speechToTextStart") {
     if (!message.requestId) return true

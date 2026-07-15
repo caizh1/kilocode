@@ -3,7 +3,6 @@ import { readFile, stat } from "fs/promises"
 import path from "path"
 import { globIterate } from "glob"
 import { minimatch } from "minimatch"
-import type { Ignore } from "ignore"
 import { v5 as uuidv5 } from "uuid"
 import type { CodeIndexConfigManager } from "../config-manager"
 import type { IEmbedder } from "../interfaces/embedder"
@@ -19,6 +18,7 @@ import { Log } from "../../util/log"
 import { generateRelativeIgnorePath } from "../shared/get-relative-path"
 import { checkpointMetaHash, normalizedRoot, workspaceId } from "../rag-checkpoint"
 import { constrained, type IndexingPressure } from "../memory"
+import type { IgnoreMatcher } from "../shared/load-ignore"
 import { DocumentIndexCache } from "./cache"
 import { chunkDocument } from "./chunker"
 import { extractDocument } from "./extractors"
@@ -55,7 +55,7 @@ export class DocumentIndexService {
     private readonly config: CodeIndexConfigManager,
     private readonly embedder: IEmbedder | undefined,
     private readonly store: IVectorStore | undefined,
-    private readonly ignore: Ignore,
+    private readonly ignore: IgnoreMatcher,
     private readonly onStatus?: () => void,
     private readonly onTelemetry?: IndexingTelemetryReporter,
   ) {

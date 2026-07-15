@@ -4,7 +4,7 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { SemanticSearchTool } from "../../src/kilocode/tool/semantic-search"
 import { KiloIndexing } from "../../src/kilocode/indexing"
-import { WithInstance } from "../../src/project/with-instance"
+import { provideTestInstance } from "../fixture/fixture"
 import { tmpdir } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
 import { SessionID, MessageID } from "../../src/session/schema"
@@ -78,7 +78,7 @@ describe("tool.semantic_search", () => {
 
   test("asks permission and forwards normalized relative path to indexing search", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
@@ -121,7 +121,7 @@ describe("tool.semantic_search", () => {
 
   test("searches entire workspace when path is omitted", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const search = spyOn(KiloIndexing, "search").mockResolvedValue([])
@@ -144,7 +144,7 @@ describe("tool.semantic_search", () => {
 
   test("formats and normalizes search results", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const search = spyOn(KiloIndexing, "search").mockResolvedValue([
@@ -202,7 +202,7 @@ describe("tool.semantic_search", () => {
 
   test("rejects paths outside the workspace", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const search = spyOn(KiloIndexing, "search").mockResolvedValue([])
@@ -222,7 +222,7 @@ describe("tool.semantic_search", () => {
 
   test("returns a short fallback without asking permission when indexing is not ready", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const ready = spyOn(KiloIndexing, "ready").mockReturnValue(false)
@@ -259,7 +259,7 @@ describe("tool.semantic_search", () => {
 
   test("marks empty in-progress results as inconclusive", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const search = spyOn(KiloIndexing, "search").mockResolvedValue([])

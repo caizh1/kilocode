@@ -1,7 +1,8 @@
 import { Flag } from "@opencode-ai/core/flag/flag"
+import * as PowerShell from "@/kilocode/shell/shell" // kilocode_change - PowerShell args
 import { lazy } from "@/util/lazy"
 import { Filesystem } from "@/util/filesystem"
-import { which } from "@/util/which"
+import { which } from "@opencode-ai/core/util/which"
 import path from "path"
 import { spawn, type ChildProcess } from "child_process"
 import { setTimeout as sleep } from "node:timers/promises"
@@ -169,7 +170,7 @@ export function args(file: string, command: string, cwd: string) {
         cd -- "$1"
         eval ${JSON.stringify(command)}
       `,
-      "opencode",
+      "kilo", // kilocode_change
       cwd,
     ]
   }
@@ -183,12 +184,12 @@ export function args(file: string, command: string, cwd: string) {
         cd -- "$1"
         eval ${JSON.stringify(command)}
       `,
-      "opencode",
+      "kilo", // kilocode_change
       cwd,
     ]
   }
   if (n === "cmd") return ["/c", command]
-  if (ps(file)) return ["-NoProfile", "-Command", command]
+  if (ps(file)) return PowerShell.args(command) // kilocode_change - PowerShell args
   return ["-c", command]
 }
 

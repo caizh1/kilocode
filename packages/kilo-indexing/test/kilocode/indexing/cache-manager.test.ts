@@ -79,4 +79,20 @@ describe("CacheManager checkpoint metadata", () => {
     loaded.setCheckpointMeta(meta())
     expect(loaded.getHash(file)).toBe("checkpoint")
   })
+
+  test("flushes a stable signature used to detect baseline changes", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "index-cache-"))
+    const root = join(cacheDir, "workspace")
+    const first = new CacheManager(cacheDir, root)
+    await first.initialize()
+    first.seedHashes({ [join(root, "a.ts")]: "a" })
+    await first.flush()
+
+    const second = new CacheManager(cacheDir, root)
+    await second.initialize()
+    expect(second.signature()).toBe(first.signature())
+
+    second.updateHash(join(root, "a.ts"), "changed")
+    expect(second.signature()).not.toBe(first.signature())
+  })
 })

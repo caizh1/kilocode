@@ -53,10 +53,7 @@ describe("applyInternalIndexingDefaults", () => {
 
   it("preserves explicit internal RAG opt-outs and document paths", () => {
     expect(
-      applyInternalIndexingDefaults(
-        { enabled: false, documents: { enabled: false, paths: ["manuals"] } },
-        true,
-      ),
+      applyInternalIndexingDefaults({ enabled: false, documents: { enabled: false, paths: ["manuals"] } }, true),
     ).toEqual({
       enabled: false,
       documents: { enabled: false, paths: ["manuals"] },

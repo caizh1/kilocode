@@ -5,23 +5,32 @@
  */
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
-import { StoryProviders, mockSessionValue } from "./StoryProviders"
+import { StoryProviders, defaultMockData, mockSessionValue } from "./StoryProviders"
 import { FileTree } from "../../diff-viewer/FileTree"
 import { DiffPanel } from "../../agent-manager/DiffPanel"
 import { FullScreenDiffView } from "../../diff-viewer/FullScreenDiffView"
 import { WorktreeItem } from "../../agent-manager/WorktreeItem"
+import { ChatView } from "../components/chat/ChatView"
+import { registerVscodeToolOverrides } from "../components/chat/VscodeToolOverrides"
+import { SessionContext } from "../context/session"
+import { ServerContext } from "../context/server"
+import { WorktreeModeProvider } from "../context/worktree-mode"
+import { SidebarSearchMenu } from "../../agent-manager/SidebarSearchMenu"
+import { SidebarToggleButton } from "../../agent-manager/SidebarToggleButton"
+import type { SidebarSearchItem } from "../../agent-manager/sidebar-search"
 import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
 import { ContextMenu } from "@kilocode/kilo-ui/context-menu"
-import { createSignal, type JSX } from "solid-js"
-import type { PermissionRequest, WorktreeFileDiff, WorktreeState, WorktreeGitStats, PRStatus } from "../types/messages"
-import { SessionContext } from "../context/session"
-import { ChatView } from "../components/chat/ChatView"
-import { AgentConsoleSurface } from "../../agent-manager/AgentConsoleSurface"
+import { ThinkingSelectorBase } from "../components/shared/ThinkingSelector"
+import { createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import type { WorktreeFileDiff, WorktreeState, WorktreeGitStats, PRStatus } from "../types/messages"
+import type { ReviewComment } from "../../diff-viewer/review-comments"
 import "../../agent-manager/agent-manager.css"
 import "../../agent-manager/agent-manager-review.css"
+
+registerVscodeToolOverrides()
 
 // ---------------------------------------------------------------------------
 // Shared mock data
@@ -119,69 +128,137 @@ const meta: Meta = {
 export default meta
 type Story = StoryObj
 
-const CONSOLE_SESSION = "agent-console-story"
-const consolePermission: PermissionRequest = {
-  id: "agent-console-permission",
-  sessionID: CONSOLE_SESSION,
-  toolName: "bash",
-  patterns: ["df -h"],
-  always: ["df *"],
-  args: {
-    command: "df -h",
-    description: "Show disk capacity, used space, available space, and utilization for mounted filesystems.",
-    rules: ["df *"],
+// ---------------------------------------------------------------------------
+// Wide chat layout
+// ---------------------------------------------------------------------------
+
+const chatSessionID = "story-agent-manager-chat"
+const chatUserID = "story-agent-manager-user"
+const chatAssistantID = "story-agent-manager-assistant"
+const chatTime = 1_718_000_000_000
+const chatDiff = {
+  file: "webview-ui/src/styles/chat-layout.css",
+  status: "modified" as const,
+  additions: 12,
+  deletions: 4,
+  before: ".chat-view {\n  display: flex;\n}\n",
+  after: ".chat-view {\n  display: flex;\n  container: chat / inline-size;\n}\n",
+}
+const chatMessages = [
+  {
+    id: chatUserID,
+    sessionID: chatSessionID,
+    role: "user",
+    createdAt: new Date(chatTime).toISOString(),
+    time: { created: chatTime },
+    summary: { diffs: [chatDiff] },
   },
+  {
+    id: chatAssistantID,
+    sessionID: chatSessionID,
+    role: "assistant",
+    parentID: chatUserID,
+    createdAt: new Date(chatTime + 1000).toISOString(),
+    time: { created: chatTime + 1000, completed: chatTime + 5000 },
+    modelID: "anthropic/claude-sonnet-4-6",
+    providerID: "kilo",
+    mode: "default",
+    agent: "code",
+    path: { cwd: "/project", root: "/project" },
+  },
+]
+const chatParts = {
+  [chatUserID]: [
+    {
+      id: "story-agent-manager-user-text",
+      sessionID: chatSessionID,
+      messageID: chatUserID,
+      type: "text",
+      text: "Make the full-screen Agent Manager conversation easier to scan without squeezing tool output or diffs.",
+    },
+  ],
+  [chatAssistantID]: [
+    {
+      id: "story-agent-manager-assistant-text",
+      sessionID: chatSessionID,
+      messageID: chatAssistantID,
+      type: "text",
+      text: "The transcript now follows a centered 78 character reading lane. Long explanations share one consistent left edge, so the eye can move between turns without crossing the entire editor.\n\nTool output and the composer use the same lane, keeping every conversation element aligned.",
+    },
+    {
+      id: "story-agent-manager-bash",
+      sessionID: chatSessionID,
+      messageID: chatAssistantID,
+      type: "tool",
+      callID: "story-agent-manager-bash-call",
+      tool: "bash",
+      state: {
+        status: "completed",
+        input: { command: "bun run test:unit", description: "Run focused Agent Manager tests" },
+        output: "18 tests passed\n0 tests failed",
+        title: "Run focused Agent Manager tests",
+        metadata: {},
+        time: { start: chatTime + 2000, end: chatTime + 4000 },
+      },
+    },
+  ],
+}
+const chatData = {
+  ...defaultMockData,
+  message: { [chatSessionID]: chatMessages },
+  part: chatParts,
+}
+const chatServer = {
+  connectionState: () => "connected" as const,
+  serverInfo: () => undefined,
+  extensionVersion: () => "1.0.0",
+  errorMessage: () => undefined,
+  errorDetails: () => undefined,
+  isConnected: () => true,
+  profileData: () => null,
+  deviceAuth: () => ({ status: "idle" as const }),
+  startLogin: () => undefined,
+  goToLogin: () => undefined,
+  vscodeLanguage: () => "en",
+  languageOverride: () => undefined,
+  workspaceDirectory: () => "/project",
+  gitInstalled: () => true,
 }
 
-export const AgentConsoleApproval: Story = {
-  name: "Agent Console — visual command approval",
-  parameters: { layout: "fullscreen" },
-  render: () => {
-    const [mode, setMode] = createSignal<"agent" | "shell">("agent")
-    const session = {
-      ...mockSessionValue({ id: CONSOLE_SESSION, status: "busy", permissions: [consolePermission] }),
-      messages: () => [{ id: "console-message" }] as never[],
-    }
-    return (
-      <StoryProviders permissions={[consolePermission]} sessionID={CONSOLE_SESSION} status="busy" noPadding>
-        <SessionContext.Provider value={session as never}>
-          <div style={{ width: "100vw", height: "614px", display: "flex" }}>
-            <AgentConsoleSurface
-              console={() => true}
-              terminalActive={() => false}
-              terminal={
-                <div class="am-terminal-layer am-terminal-layer-active am-terminal-layer-console">
-                  <div class="am-terminal-slot am-terminal-slot-visible">
-                    <div class="am-terminal-host">
-                      <pre
-                        style={{
-                          margin: "0",
-                          color: "var(--vscode-terminal-foreground, #f4f4f4)",
-                          "font-family": "var(--vscode-editor-font-family, monospace)",
-                          "font-size": "17px",
-                          "line-height": "1.45",
-                          "white-space": "pre-wrap",
-                        }}
-                      >
-                        {`admin@workbench:~$ 当前还剩多少磁盘空间\nAgent Console is preparing a safe command preview…`}
-                      </pre>
-                    </div>
-                  </div>
-                </div>
-              }
-            >
-              <div class="am-chat-wrapper">
-                <ChatView
-                  consoleInput={{ mode, setMode, pending: () => false, onShell: () => undefined }}
-                  promptBoxId="agent-manager:local"
-                />
-              </div>
-            </AgentConsoleSurface>
-          </div>
+function renderChat() {
+  const session = {
+    ...mockSessionValue({ id: chatSessionID, status: "idle", closeReason: "completed" }),
+    messages: () => chatMessages,
+    visibleMessages: () => chatMessages,
+    userMessages: () => chatMessages.filter((message) => message.role === "user"),
+    getParts: (id: string) => chatParts[id as keyof typeof chatParts] ?? [],
+    worktreeStats: () => ({ files: 3, additions: 32, deletions: 8 }),
+  }
+  return (
+    <StoryProviders data={chatData} sessionID={chatSessionID} status="idle" noPadding>
+      <ServerContext.Provider value={chatServer}>
+        <SessionContext.Provider value={session as any}>
+          <WorktreeModeProvider>
+            <div class="am-chat-wrapper" style={{ height: "100vh" }}>
+              <ChatView onForkSession={() => undefined} />
+            </div>
+          </WorktreeModeProvider>
         </SessionContext.Provider>
-      </StoryProviders>
-    )
-  },
+      </ServerContext.Provider>
+    </StoryProviders>
+  )
+}
+
+export const ReadableChat1280: Story = {
+  name: "Chat - readable wide editor",
+  parameters: { layout: "fullscreen" },
+  render: renderChat,
+}
+
+export const ReadableChat420: Story = {
+  name: "Chat - constrained editor",
+  parameters: { layout: "fullscreen" },
+  render: renderChat,
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +428,7 @@ export const FullScreenDiffAgentEditScroll: Story = {
     const [diffs, setDiffs] = createSignal([edited("before"), tail])
     const [version, setVersion] = createSignal("before")
     const [key, setKey] = createSignal("agent-edit-scroll")
+    const [comments, setComments] = createSignal<ReviewComment[]>([])
     const update = () => {
       setDiffs([edited("after"), tail])
       setVersion("after")
@@ -379,8 +457,8 @@ export const FullScreenDiffAgentEditScroll: Story = {
               sessionKey={key()}
               diffStyle="unified"
               onDiffStyleChange={() => {}}
-              comments={[]}
-              onCommentsChange={() => {}}
+              comments={comments()}
+              onCommentsChange={setComments}
               onClose={() => {}}
             />
           </div>
@@ -749,18 +827,9 @@ const MockReviewTab = (props: { active?: boolean }) => (
   </div>
 )
 
-const MockTabsSearchButton = () => (
-  <button class="am-tabs-menu-trigger" type="button" aria-label="Search open tabs">
-    <svg class="am-tabs-search-icon" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="6.8" cy="6.8" r="4.3" />
-      <path d="M10.2 10.2L13.5 13.5" />
-    </svg>
-  </button>
-)
-
 const MockTabLeading = () => (
   <div class="am-tab-leading">
-    <MockTabsSearchButton />
+    <SidebarToggleButton collapsed={false} onClick={() => {}} />
   </div>
 )
 
@@ -859,4 +928,186 @@ export const TabBarSingleTab: Story = {
       </div>
     </StoryProviders>
   ),
+}
+
+// ---------------------------------------------------------------------------
+// NewWorktreeDialog — inline selector popovers must escape the dialog scroll
+// containers. Regression: the reasoning-variant and mode pickers were clipped
+// by .am-nv-dialog-content (overflow-y: auto) and .am-prompt-input-container
+// (overflow: hidden) because the overflow escape hatch only covered the model
+// picker. This fixture reproduces the real clipping chain (same CSS classes +
+// the real inline ThinkingSelectorBase with portal={false}) so a screenshot
+// baseline catches any future regression. Rendered inline (no dialog portal)
+// because the visual-regression harness screenshots #storybook-root.
+// ---------------------------------------------------------------------------
+
+const VariantPickerOpener = () => {
+  let frame = 0
+  let attempts = 0
+  const open = () => {
+    if (document.querySelector("[data-component='popover-content']")) return
+    if (attempts++ >= 120) return
+    window.dispatchEvent(new CustomEvent("openVariantPicker"))
+    frame = requestAnimationFrame(open)
+  }
+  onMount(() => {
+    frame = requestAnimationFrame(open)
+  })
+  onCleanup(() => cancelAnimationFrame(frame))
+  return null
+}
+
+export const NewWorktreeVariantDropdown1280: Story = {
+  name: "NewWorktreeDialog — variant dropdown open",
+  parameters: { layout: "fullscreen" },
+  render: () => (
+    <StoryProviders noPadding>
+      {/* Filler pushes the prompt container to the bottom of the dialog content.
+          The variant popover opens upward from the trigger, extending above the
+          container's top edge. Without the overflow escape fix, .am-prompt-input-container
+          (overflow: hidden + position: relative) clips the top of the popover. */}
+      <div style={{ height: "100vh", display: "flex", "flex-direction": "column" }}>
+        <div class="am-nv-dialog">
+          <div class="am-nv-dialog-content">
+            <div style={{ height: "500px", "flex-shrink": 0 }} />
+            <div
+              class="prompt-input-container am-prompt-input-container"
+              style={{ position: "relative", "flex-shrink": 0 }}
+            >
+              <div class="prompt-input-hint">
+                <div class="prompt-input-hint-selectors">
+                  <ThinkingSelectorBase
+                    variants={["low", "medium", "high"]}
+                    value="low"
+                    onSelect={() => {}}
+                    portal={false}
+                    deferDismiss
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <VariantPickerOpener />
+    </StoryProviders>
+  ),
+}
+
+const searchSection = { id: "polish", name: "Polish", color: "Blue", order: 0, collapsed: false }
+const slackedSection = { id: "slacked", name: "SLACKED", color: "Yellow", order: 1, collapsed: false }
+const sidebarSearchItems: SidebarSearchItem[] = [
+  {
+    key: "session:session-build",
+    kind: "session",
+    group: "sessions",
+    title: "Build grouped worktree search",
+    meta: ["Polish", "Agent Manager search", "feat/sidebar-search"],
+    search: "Build grouped worktree search Agent Manager search feat/sidebar-search Polish",
+    sessionId: "session-build",
+    location: "worktree",
+    worktreeId: "wt-search",
+    updatedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+    state: "busy",
+    visible: true,
+    section: searchSection,
+  },
+  {
+    key: "session:session-local",
+    kind: "session",
+    group: "sessions",
+    title: "Investigate local indexing",
+    meta: ["local"],
+    search: "Investigate local indexing local",
+    sessionId: "session-local",
+    location: "local",
+    updatedAt: new Date(Date.now() - 8 * 60_000).toISOString(),
+    state: "idle",
+    visible: true,
+  },
+  {
+    key: "session:session-render",
+    kind: "session",
+    group: "sessions",
+    title: "Render images in diff viewer",
+    meta: ["SLACKED", "images diff viewer", "utopian-approval"],
+    search: "Render images in diff viewer SLACKED images diff viewer utopian-approval",
+    sessionId: "session-render",
+    location: "worktree",
+    worktreeId: "wt-render",
+    updatedAt: new Date(Date.now() - 60 * 60_000).toISOString(),
+    state: "idle",
+    visible: true,
+    section: slackedSection,
+  },
+  {
+    key: "local",
+    kind: "local",
+    group: "contexts",
+    title: "local",
+    meta: ["main"],
+    search: "local main",
+    updatedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+    state: "idle",
+    visible: true,
+    count: 2,
+  },
+  {
+    key: "worktree:wt-search",
+    kind: "worktree",
+    group: "contexts",
+    title: "Agent Manager search",
+    meta: ["Polish", "feat/sidebar-search"],
+    search: "Agent Manager search Polish feat/sidebar-search",
+    worktreeId: "wt-search",
+    updatedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+    state: "busy",
+    visible: true,
+    section: searchSection,
+    count: 2,
+  },
+]
+
+export const SidebarSearchOpen: Story = {
+  name: "Sidebar search — worktrees and sessions",
+  render: () => {
+    const [selected, setSelected] = createSignal("worktree:wt-search")
+    let prompt!: HTMLTextAreaElement
+    const refocus = () => requestAnimationFrame(() => prompt.focus())
+    onMount(() => {
+      window.addEventListener("focusPrompt", refocus)
+      onCleanup(() => window.removeEventListener("focusPrompt", refocus))
+    })
+    return (
+      <StoryProviders noPadding>
+        <div style={{ "min-height": "430px", padding: "16px", background: "var(--surface-base)" }}>
+          <div class="am-section-header">
+            <span class="am-section-label">WORKTREES</span>
+            <div class="am-section-actions">
+              <SidebarSearchMenu
+                items={() => sidebarSearchItems}
+                keybind="⌘F"
+                current={() => sidebarSearchItems.find((item) => item.key === selected())}
+                labels={{
+                  search: "Search worktrees and sessions",
+                  scope: "Searches the local workspace, local sessions, worktrees, and their sessions",
+                  contexts: "LOCAL & WORKTREES",
+                  sessions: "SESSIONS",
+                  waiting: "Wait",
+                  retry: "Retry",
+                }}
+                onSelect={(item) => setSelected(item.key)}
+                defaultOpen
+                portal={false}
+              />
+            </div>
+          </div>
+          <output class="sr-only" data-slot="sidebar-search-selection">
+            {selected()}
+          </output>
+          <textarea ref={prompt} class="sr-only" aria-label="Story prompt" />
+        </div>
+      </StoryProviders>
+    )
+  },
 }

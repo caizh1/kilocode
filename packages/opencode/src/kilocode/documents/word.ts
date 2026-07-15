@@ -5,7 +5,7 @@ import path from "path"
 import { promisify } from "util"
 import { TextReader, TextWriter, Uint8ArrayReader, Uint8ArrayWriter, ZipReader, ZipWriter } from "@zip.js/zip.js"
 import { declareArtifact } from "@/kilocode/documents/artifacts"
-import { Instance } from "@/project/instance"
+import { Instance } from "@/kilocode/instance"
 
 const execFile = promisify(execFileCallback)
 

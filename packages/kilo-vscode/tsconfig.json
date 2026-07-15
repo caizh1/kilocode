@@ -2,7 +2,6 @@
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "target": "ES2022",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "sourceMap": true,

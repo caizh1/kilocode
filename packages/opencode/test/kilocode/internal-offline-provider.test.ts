@@ -6,9 +6,8 @@ import { Env } from "../../src/env"
 import { AppRuntime } from "../../src/effect/app-runtime"
 import { makeRuntime } from "../../src/effect/run-service"
 import { Provider } from "../../src/provider/provider"
-import { ProviderID } from "../../src/provider/schema"
-import { WithInstance } from "../../src/project/with-instance"
-import { tmpdir } from "../fixture/fixture"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import { provideTestInstance, tmpdir } from "../fixture/fixture"
 
 const runtime = makeRuntime(Env.Service, Env.defaultLayer)
 const set = (key: string, value: string) => runtime.runSync((env) => env.set(key, value))
@@ -68,7 +67,7 @@ test("internal offline mode keeps only configured custom providers", async () =>
     },
   })
 
-  await WithInstance.provide({
+  await provideTestInstance({
     directory: tmp.path,
     fn: async () => {
       set("OPENAI_API_KEY", "test-openai-key")
@@ -79,10 +78,10 @@ test("internal offline mode keeps only configured custom providers", async () =>
       const keys = Object.keys(providers)
 
       expect(keys).toEqual(["custom-provider"])
-      expect(providers[ProviderID.make("custom-provider")].models["custom-model"]).toBeDefined()
-      expect(providers[ProviderID.openai]).toBeUndefined()
-      expect(providers[ProviderID.make("kilo")]).toBeUndefined()
-      expect(providers[ProviderID.make("apertis")]).toBeUndefined()
+      expect(providers[ProviderV2.ID.make("custom-provider")].models["custom-model"]).toBeDefined()
+      expect(providers[ProviderV2.ID.make("openai")]).toBeUndefined()
+      expect(providers[ProviderV2.ID.make("kilo")]).toBeUndefined()
+      expect(providers[ProviderV2.ID.make("apertis")]).toBeUndefined()
     },
   })
 })

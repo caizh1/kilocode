@@ -2,6 +2,7 @@ import type { PointStruct } from "./vector-store"
 import type { Disposable, Emitter } from "../runtime"
 import type { IndexingTelemetryMode } from "./telemetry"
 import type { IndexingPressure } from "../memory"
+import type { WorktreeOverlay } from "../worktree-overlay"
 
 export type IndexingScanTarget = "all" | "codeGraph" | "rag"
 
@@ -70,6 +71,8 @@ export interface IFileWatcher extends Disposable {
   takeReconciliationRequest?(): boolean
   setMemoryPressure?(pressure: IndexingPressure): void
   setRunContext?(runId: string, meta: import("../rag-checkpoint").RagCheckpointMeta): void
+  setOverlay?(overlay?: WorktreeOverlay): void
+  shutdown?(): Promise<void>
 
   readonly onDidStartBatchProcessing: Emitter<string[]>
   readonly onBatchProgressUpdate: Emitter<{

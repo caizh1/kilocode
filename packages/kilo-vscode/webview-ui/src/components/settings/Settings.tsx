@@ -1,4 +1,4 @@
-import { Component, For, ParentComponent, createSignal, createEffect, on, Show } from "solid-js"
+import { Component, For, ParentComponent, createMemo, createSignal, createEffect, on, Show } from "solid-js"
 import { Tabs } from "@kilocode/kilo-ui/tabs"
 import { Button } from "@kilocode/kilo-ui/button"
 import { showToast } from "@kilocode/kilo-ui/toast"
@@ -23,15 +23,18 @@ import ExperimentalTab from "./ExperimentalTab"
 import LanguageTab from "./LanguageTab"
 import AboutKiloCodeTab from "./AboutKiloCodeTab"
 import IndexingTab from "./IndexingTab"
+import SandboxingTab from "./SandboxingTab"
+import * as Sandboxing from "./sandboxing"
 import { useServer } from "../../context/server"
 import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 import { ChipMateLogo } from "../shared/ChipMateLogo"
+import type { MigrationSource } from "../../types/messages"
 
 export interface SettingsProps {
   tab?: string
   onTabChange?: (tab: string) => void
   onClose?: () => void
-  onMigrateClick?: () => void // legacy-migration
+  onMigrationClick?: (source: MigrationSource) => void // legacy-migration
   chipmatePreview?: ChipmateServerTabProps["preview"]
   navPreview?: string
 }
@@ -40,7 +43,7 @@ type Item = {
   id: string
   key: string
   icon: string
-  show?: "public" | "indexing"
+  show?: "public" | "indexing" | "sandboxing"
 }
 
 const tabs: readonly Item[] = [
@@ -58,6 +61,7 @@ const tabs: readonly Item[] = [
   { id: "commitMessage", key: "settings.commitMessage.title", icon: "comment" },
   { id: "indexing", key: "settings.indexing.title", icon: "database", show: "indexing" },
   { id: "experimental", key: "settings.experimental.title", icon: "beaker" },
+  { id: "sandboxing", key: "settings.sandboxing.title", icon: "shield", show: "sandboxing" },
   { id: "language", key: "settings.language.title", icon: "symbol-text" },
   { id: "aboutKiloCode", key: "settings.aboutKiloCode.title", icon: "info" },
 ]
@@ -84,10 +88,12 @@ const Settings: Component<SettingsProps> = (props) => {
   const [active, setActive] = createSignal(props.tab ?? "models")
   const [errorExpanded, setErrorExpanded] = createSignal(false)
   const internal = isInternalOfflineBuild()
+  const sandboxing = createMemo(() => Sandboxing.visible(features()))
   const visible = () =>
     tabs.filter((item) => {
       if (item.show === "public") return !internal
       if (item.show === "indexing") return features().indexing
+      if (item.show === "sandboxing") return sandboxing()
       return true
     })
 
@@ -160,6 +166,11 @@ const Settings: Component<SettingsProps> = (props) => {
   createEffect(() => {
     if (!internal || active() !== "notifications") return
     onTabChange("providers")
+  })
+
+  createEffect(() => {
+    if (sandboxing() || active() !== "sandboxing") return
+    onTabChange("experimental")
   })
 
   const onTabChange = (tab: string) => {
@@ -295,6 +306,13 @@ const Settings: Component<SettingsProps> = (props) => {
                 <ExperimentalTab />
               </Panel>
             </Tabs.Content>
+            <Show when={sandboxing()}>
+              <Tabs.Content value="sandboxing" data-ui="settings-content">
+                <Panel title={language.t("settings.sandboxing.title")}>
+                  <SandboxingTab />
+                </Panel>
+              </Tabs.Content>
+            </Show>
             <Tabs.Content value="language" data-ui="settings-content">
               <Panel title={language.t("settings.language.title")}>
                 <LanguageTab />
@@ -306,7 +324,7 @@ const Settings: Component<SettingsProps> = (props) => {
                   port={server.serverInfo()?.port ?? null}
                   connectionState={server.connectionState()}
                   extensionVersion={server.extensionVersion()}
-                  onMigrateClick={props.onMigrateClick}
+                  onMigrationClick={props.onMigrationClick}
                 />
               </Panel>
             </Tabs.Content>

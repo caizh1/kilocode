@@ -25,6 +25,7 @@ const TSX_FILES = [
   path.join(ROOT, "webview-ui/agent-manager/sortable-tab.tsx"),
   path.join(ROOT, "webview-ui/agent-manager/DiffPanel.tsx"),
   path.join(ROOT, "webview-ui/diff-viewer/FullScreenDiffView.tsx"),
+  path.join(ROOT, "webview-ui/diff-viewer/ImageDiffView.tsx"),
   path.join(ROOT, "webview-ui/diff-viewer/MarkdownDiffView.tsx"),
   path.join(ROOT, "webview-ui/diff-viewer/MarkdownAnnotationLayer.tsx"),
   path.join(ROOT, "webview-ui/diff-viewer/markdown-comment-ranges.ts"),
@@ -36,8 +37,9 @@ const TSX_FILES = [
   path.join(ROOT, "webview-ui/agent-manager/ApplyDialog.tsx"),
   path.join(ROOT, "webview-ui/agent-manager/WorktreeItem.tsx"),
   path.join(ROOT, "webview-ui/agent-manager/SectionHeader.tsx"),
-  path.join(ROOT, "webview-ui/agent-manager/CurrentTabsMenu.tsx"),
+  path.join(ROOT, "webview-ui/agent-manager/SidebarSearchMenu.tsx"),
   path.join(ROOT, "webview-ui/agent-manager/SidebarToggleButton.tsx"),
+  path.join(ROOT, "webview-ui/agent-manager/WorktreeSectionActions.tsx"),
   path.join(ROOT, "webview-ui/agent-manager/tab-rendering.tsx"),
   path.join(ROOT, "webview-ui/agent-manager/terminal/TerminalTab.tsx"),
   path.join(ROOT, "webview-ui/agent-manager/terminal/SortableTerminalTab.tsx"),
@@ -46,6 +48,7 @@ const TSX_FILES = [
   // Shared components that consume agent-manager CSS classes (e.g. am-dropdown,
   // am-branch-item) used by both the agent manager and the diff viewer.
   path.join(ROOT, "webview-ui/src/components/shared/BranchSelect.tsx"),
+  path.join(ROOT, "webview-ui/src/components/chat/TabDnd.tsx"),
   path.join(ROOT, "webview-ui/diff-viewer/BaseBranchPicker.tsx"),
 ]
 const TSX_FILE = TSX_FILES[0]!
@@ -164,6 +167,16 @@ describe("Agent Manager Provider Messages", () => {
     expect(body).toContain("agentManager.sessionAdded")
   })
 
+  it("warms MCP before creating every new worktree session", () => {
+    const body = getMethodBody("createSessionInWorktree")
+    const warmup = body.indexOf("startSession(")
+    const create = body.indexOf("client.session.create(")
+
+    expect(warmup).toBeGreaterThanOrEqual(0)
+    expect(create).toBeGreaterThanOrEqual(0)
+    expect(warmup).toBeLessThan(create)
+  })
+
   it("state-mutating messages wait for state initialization", () => {
     const body = getMethodBody("shouldWaitForState")
     const messages = [
@@ -200,6 +213,51 @@ describe("Agent Manager Provider Messages", () => {
     const body = getMethodBody("disposeAsync")
     expect(body).toContain("await this.terminalRouter.dispose()")
     expect(body).not.toContain("void this.terminalRouter.dispose()")
+  })
+
+  it("stops both Local and worktree agents when their session tabs close", () => {
+    const text = fs.readFileSync(TSX_FILE, "utf-8")
+    const start = text.indexOf("const handleCloseTab =")
+    const end = text.indexOf("const handleTabMouseDown =", start)
+    const body = text.slice(start, end)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+    expect(body).toContain("closedDrafts.add(sessionId)")
+    expect(body).toContain('vscode.postMessage({ type: "agentManager.closeSession", sessionId })')
+    expect(body).not.toContain('type: "agentManager.forgetSession"')
+    expect(getMethodBody("onCloseSession")).toContain("await this.panel?.sessions.abortSessions([sessionId])")
+    expect(text).toContain("if (created.draftID && closedDrafts.delete(created.draftID)) return")
+  })
+
+  it("stops open sessions and clears remote registrations when the panel closes", () => {
+    const body = getMethodBody("attachPanel")
+    const abort = body.indexOf("ctx.sessions.abortSessions(ids)")
+    const dispose = body.indexOf("ctx.sessions.dispose()")
+    expect(abort).toBeGreaterThanOrEqual(0)
+    expect(dispose).toBeGreaterThan(abort)
+    expect(body).toContain("const ids = [...this.panelSessions]")
+    expect(body).toContain("if (this.activeSessionId) ids.push(this.activeSessionId)")
+    // Presence must be cleared via visiblePresence.clear() — a direct
+    // registerVisible("agent-manager", []) would leave a stale displayed id
+    // that re-registers on the next flush after the panel reopens.
+    expect(body).toContain("this.visiblePresence.clear()")
+    expect(body).not.toContain('this.connectionService.registerVisible("agent-manager"')
+    expect(body).not.toContain('this.connectionService.registerAttached("agent-manager"')
+    expect(body).toContain("this.activeSessionId = undefined")
+    const messages = getMethodBody("onSessionMessage")
+    expect(messages).toContain("if (m.draftID) this.panelSessions.add(m.draftID)")
+    expect(messages).toContain("this.panel?.sessions.acknowledgeDraft(m.draftID, m.sessionId)")
+    expect(messages).toContain("for (const id of m.sessionIDs) this.panelSessions.add(id)")
+  })
+
+  it("does not treat extension shutdown as a user panel close", () => {
+    const body = getMethodBody("disposeAsync")
+    expect(body.indexOf("this.panel = undefined")).toBeLessThan(body.indexOf("panel?.dispose()"))
+  })
+
+  it("reports all open Agent Manager sessions for remote control", () => {
+    const body = fs.readFileSync(TSX_FILE, "utf-8")
+    expect(body).toContain("reportRemoteSessions(vscode, localSessionIDs, managedSessions, isPending)")
   })
 })
 
@@ -290,13 +348,12 @@ describe("Agent Manager Provider — onMessage routing", () => {
     expect(text).toContain("syncOnSessionSwitch")
   })
 
-  it("terminal context keeps the current active terminal when present", () => {
+  it("terminal context reveals the terminal associated with the originating session", () => {
     const text = body("onSessionMessage")
-    const check = text.indexOf("!this.terminalManager.hasActiveTerminal()")
-    const show = text.indexOf("this.terminalManager.showExisting(m.sessionID)")
-    expect(check).toBeGreaterThan(-1)
+    const show = text.indexOf("this.terminalManager.prepareContext(m.sessionID)")
     expect(show).toBeGreaterThan(-1)
-    expect(check, "active terminal check must guard session terminal reveal").toBeLessThan(show)
+    expect(text).not.toContain("!this.terminalManager.hasActiveTerminal()")
+    expect(text).toContain('type: "terminalContextError"')
   })
 
   it("session routing handles clearSession for SSE re-registration", () => {
@@ -644,6 +701,10 @@ const VSCODE_ALLOWED: Record<string, { note: string }> = {
   "run/task.ts": {
     note: "vscode adapter for Agent Manager run scripts",
   },
+  // Reads terminal.integrated.* and editor.font* config for xterm font settings
+  "terminal-font.ts": {
+    note: "vscode config reader for integrated terminal font settings",
+  },
 }
 
 /**
@@ -771,6 +832,11 @@ describe("Agent Manager — provider chain parity with sidebar", () => {
     // which the agent manager already includes in its provider chain.
     "LanguageProvider",
     "DataProvider",
+    // Agent Manager owns its local session tabs and ChatView only reads this
+    // optional context in the standard sidebar/editor webview.
+    "LocalTabsProvider",
+    // Work-style onboarding is injected only into the sidebar empty state.
+    "WorkStyleProvider",
   ]
 
   it("agent manager includes all context providers from sidebar App.tsx", () => {

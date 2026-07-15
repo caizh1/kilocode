@@ -2,11 +2,21 @@ import { afterEach, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { Permission } from "../../src/permission"
-import { WithInstance } from "../../src/project/with-instance"
-import { disposeAllInstances, provideInstance, tmpdir } from "../fixture/fixture"
+import {
+  disposeAllInstances,
+  provideInstance,
+  provideTestInstance,
+  testInstanceStoreLayer,
+  tmpdir,
+} from "../fixture/fixture"
 
 function load<A>(dir: string, fn: (svc: Agent.Interface) => Effect.Effect<A>) {
-  return Effect.runPromise(provideInstance(dir)(Agent.Service.use(fn)).pipe(Effect.provide(Agent.defaultLayer)))
+  return Effect.runPromise(
+    provideInstance(dir)(Agent.Service.use(fn)).pipe(
+      Effect.provide(Agent.defaultLayer),
+      Effect.provide(testInstanceStoreLayer),
+    ),
+  )
 }
 
 async function offline(fn: () => Promise<void>) {
@@ -36,7 +46,7 @@ test("ask agent honors user MCP allow over generated ask rule", async () => {
     },
   })
 
-  await WithInstance.provide({
+  await provideTestInstance({
     directory: tmp.path,
     fn: async () => {
       const ask = await load(tmp.path, (svc) => svc.get("ask"))
@@ -55,7 +65,7 @@ test("plan agent honors user bash allow over read-only deny default", async () =
     },
   })
 
-  await WithInstance.provide({
+  await provideTestInstance({
     directory: tmp.path,
     fn: async () => {
       const plan = await load(tmp.path, (svc) => svc.get("plan"))
@@ -74,13 +84,14 @@ test("plan agent still hard-denies non-plan edits after user edit allow", async 
     },
   })
 
-  await WithInstance.provide({
+  await provideTestInstance({
     directory: tmp.path,
     fn: async () => {
       const plan = await load(tmp.path, (svc) => svc.get("plan"))
       expect(plan).toBeDefined()
       expect(Permission.evaluate("edit", "src/output.log", plan!.permission).action).toBe("deny")
       expect(Permission.evaluate("edit", ".kilo/plans/fix.md", plan!.permission).action).toBe("allow")
+      expect(Permission.evaluate("edit", "plans/fix.md", plan!.permission).action).toBe("allow")
       expect(Permission.evaluate("edit", ".plans/fix.md", plan!.permission).action).toBe("allow")
     },
   })
@@ -90,7 +101,7 @@ test.serial("internal code, explore, debug, and ask agents expose retrieval tool
   offline(async () => {
     await using tmp = await tmpdir({})
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         for (const name of ["code", "explore", "debug", "ask"]) {
@@ -118,7 +129,7 @@ test.serial("explicit user denies override internal retrieval defaults for code 
       },
     })
 
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         for (const name of ["code", "explore"]) {
@@ -142,7 +153,7 @@ test.serial("internal explore prompt routes retrieval without changing the publi
 
   try {
     await using publicDir = await tmpdir({})
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: publicDir.path,
       fn: async () => {
         delete process.env.KILO_INTERNAL_OFFLINE
@@ -153,7 +164,7 @@ test.serial("internal explore prompt routes retrieval without changing the publi
     await disposeAllInstances()
 
     await using internalDir = await tmpdir({})
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: internalDir.path,
       fn: async () => {
         process.env.KILO_INTERNAL_OFFLINE = "1"
@@ -167,4 +178,72 @@ test.serial("internal explore prompt routes retrieval without changing the publi
     if (prev === undefined) delete process.env.KILO_INTERNAL_OFFLINE
     if (prev !== undefined) process.env.KILO_INTERNAL_OFFLINE = prev
   }
+})
+
+test("system utility agents ignore per-agent permission allows", async () => {
+  await using tmp = await tmpdir({
+    config: {
+      agent: {
+        title: {
+          permission: {
+            bash: "allow",
+          },
+        },
+        summary: {
+          permission: {
+            read: "allow",
+          },
+        },
+        compaction: {
+          permission: {
+            skill: "allow",
+          },
+        },
+      },
+    },
+  })
+
+  await provideTestInstance({
+    directory: tmp.path,
+    fn: async () => {
+      const title = await load(tmp.path, (svc) => svc.get("title"))
+      const summary = await load(tmp.path, (svc) => svc.get("summary"))
+      const compaction = await load(tmp.path, (svc) => svc.get("compaction"))
+      expect(title).toBeDefined()
+      expect(summary).toBeDefined()
+      expect(compaction).toBeDefined()
+      expect(Permission.evaluate("bash", "*", title!.permission).action).toBe("deny")
+      expect(Permission.evaluate("read", "*", summary!.permission).action).toBe("deny")
+      expect(Permission.evaluate("skill", "using-superpowers", compaction!.permission).action).toBe("deny")
+    },
+  })
+})
+
+test("system utility agents deny tools after configured name override", async () => {
+  await using tmp = await tmpdir({
+    config: {
+      agent: {
+        title: {
+          name: "custom-title",
+          permission: {
+            bash: "allow",
+            read: "allow",
+            skill: "allow",
+          },
+        },
+      },
+    },
+  })
+
+  await provideTestInstance({
+    directory: tmp.path,
+    fn: async () => {
+      const title = await load(tmp.path, (svc) => svc.get("title"))
+      expect(title).toBeDefined()
+      expect(title?.name).toBe("custom-title")
+      expect(Permission.evaluate("bash", "*", title!.permission).action).toBe("deny")
+      expect(Permission.evaluate("read", "README.md", title!.permission).action).toBe("deny")
+      expect(Permission.evaluate("skill", "using-superpowers", title!.permission).action).toBe("deny")
+    },
+  })
 })

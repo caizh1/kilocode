@@ -1,9 +1,11 @@
 import type { NamedError } from "@opencode-ai/core/util/error"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Cause, Clock, Duration, Effect, Schedule } from "effect"
 import { MessageV2 } from "./message-v2"
 import { isKiloError } from "@/kilocode/kilo-errors" // kilocode_change
 import { SessionNetwork } from "./network" // kilocode_change
 import { iife } from "@/util/iife"
+import { isRecord } from "@/util/record"
 
 export type Err = ReturnType<NamedError["toObject"]>
 
@@ -30,7 +32,7 @@ function cap(ms: number) {
   return Math.min(ms, RETRY_MAX_DELAY)
 }
 
-export function delay(attempt: number, error?: MessageV2.APIError) {
+export function delay(attempt: number, error?: SessionV1.APIError) {
   if (error) {
     const headers = error.data.responseHeaders
     if (headers) {
@@ -66,8 +68,8 @@ export function delay(attempt: number, error?: MessageV2.APIError) {
 // kilocode_change - Kilo does not emit OpenCode Go actions
 export function retryable(error: Err, _provider?: string): Retryable | undefined {
   // context overflow errors should not be retried
-  if (MessageV2.ContextOverflowError.isInstance(error)) return undefined
-  if (MessageV2.APIError.isInstance(error)) {
+  if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
+  if (SessionV1.APIError.isInstance(error)) {
     const status = error.data.statusCode
     // kilocode_change start - Current Kilo errors require user action (login/signup), don't retry
     if (isKiloError(error)) return undefined
@@ -86,7 +88,7 @@ export function retryable(error: Err, _provider?: string): Retryable | undefined
   }
 
   // Check for rate limit patterns in plain text error messages
-  const msg = error.data?.message
+  const msg = isRecord(error.data) ? error.data.message : undefined
   if (typeof msg === "string") {
     const lower = msg.toLowerCase()
     if (
@@ -98,7 +100,7 @@ export function retryable(error: Err, _provider?: string): Retryable | undefined
     }
   }
 
-  const json = parseJSON(error.data?.message)
+  const json = parseJSON(msg)
   if (!json || typeof json !== "object") return undefined
   const code = typeof json.code === "string" ? json.code : ""
 
@@ -160,7 +162,7 @@ export function policy(opts: {
         }
         // kilocode_change end
 
-        const wait = delay(meta.attempt, MessageV2.APIError.isInstance(error) ? error : undefined)
+        const wait = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
         const now = yield* Clock.currentTimeMillis
         yield* opts.set({
           attempt: meta.attempt,

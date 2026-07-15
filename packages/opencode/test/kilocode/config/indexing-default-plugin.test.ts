@@ -2,20 +2,24 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Layer, Option } from "effect"
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import path from "path"
+import { Flag } from "@opencode-ai/core/flag/flag"
 import { hasIndexingPlugin } from "@kilocode/kilo-indexing/detect"
 import { Account } from "../../../src/account/account"
 import { Auth } from "../../../src/auth"
 import { Config } from "../../../src/config/config"
 import type { ConfigPlugin } from "../../../src/config/plugin"
+import type { ConfigPluginV1 } from "@opencode-ai/core/v1/config/plugin"
 import { KilocodeDefaultPlugins } from "../../../src/kilocode/config/default-plugins"
 import { INDEXING_PLUGIN } from "../../../src/kilocode/indexing-feature"
 import * as CrossSpawnSpawner from "@opencode-ai/core/cross-spawn-spawner"
 import { Env } from "../../../src/env"
-import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { Git } from "../../../src/git"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { Filesystem } from "../../../src/util/filesystem"
-import { WithInstance } from "../../../src/project/with-instance"
+import { provideTestInstance } from "../../fixture/fixture"
 import { Npm } from "@opencode-ai/core/npm"
+import { HttpClient } from "effect/unstable/http"
 import { disposeAllInstances, tmpdir } from "../../fixture/fixture"
 
 const infra = CrossSpawnSpawner.defaultLayer.pipe(
@@ -33,28 +37,29 @@ const noopNpm = Layer.mock(Npm.Service)({
   add: () => Effect.die("not implemented"),
   which: () => Effect.succeed(Option.none()),
 })
+const unexpectedHttp = HttpClient.make((request) =>
+  Effect.die(`unexpected http request: ${request.method} ${request.url}`),
+)
 const layer = Config.layer.pipe(
+  Layer.provide(Git.defaultLayer),
   Layer.provide(EffectFlock.defaultLayer),
-  Layer.provide(AppFileSystem.defaultLayer),
+  Layer.provide(FSUtil.defaultLayer),
   Layer.provide(Env.defaultLayer),
   Layer.provide(emptyAuth),
   Layer.provide(emptyAccount),
   Layer.provideMerge(infra),
   Layer.provide(noopNpm),
+  Layer.provide(Layer.succeed(HttpClient.HttpClient, unexpectedHttp)),
 )
 
 const load = () => Effect.runPromise(Config.Service.use((svc) => svc.get()).pipe(Effect.scoped, Effect.provide(layer)))
-const clear = () =>
-  Effect.runPromise(Config.Service.use((svc) => svc.invalidate()).pipe(Effect.scoped, Effect.provide(layer)))
-
 describe("kilocode default indexing plugin", () => {
   afterEach(async () => {
-    await clear()
     await disposeAllInstances()
   })
 
   test("injects indexing without registering an external plugin origin", () => {
-    const config: { plugin?: ConfigPlugin.Spec[]; plugin_origins?: ConfigPlugin.Origin[] } = {}
+    const config: { plugin?: ConfigPluginV1.Spec[]; plugin_origins?: ConfigPlugin.Origin[] } = {}
 
     KilocodeDefaultPlugins.apply(config, { disabled: false })
 
@@ -76,8 +81,8 @@ describe("kilocode default indexing plugin", () => {
   })
 
   test("does not hard-enable indexing plugin when default plugins are disabled", async () => {
-    const prev = process.env["KILO_DISABLE_DEFAULT_PLUGINS"]
-    process.env["KILO_DISABLE_DEFAULT_PLUGINS"] = "true"
+    const original = Flag.KILO_DISABLE_DEFAULT_PLUGINS
+    Flag.KILO_DISABLE_DEFAULT_PLUGINS = true
 
     try {
       await using tmp = await tmpdir({
@@ -92,7 +97,7 @@ describe("kilocode default indexing plugin", () => {
         },
       })
 
-      await WithInstance.provide({
+      await provideTestInstance({
         directory: tmp.path,
         fn: async () => {
           const config = await load()
@@ -100,8 +105,7 @@ describe("kilocode default indexing plugin", () => {
         },
       })
     } finally {
-      if (prev === undefined) delete process.env["KILO_DISABLE_DEFAULT_PLUGINS"]
-      else process.env["KILO_DISABLE_DEFAULT_PLUGINS"] = prev
+      Flag.KILO_DISABLE_DEFAULT_PLUGINS = original
     }
   })
 })

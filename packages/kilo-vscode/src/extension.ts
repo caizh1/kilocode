@@ -8,10 +8,14 @@ import { DiffSourceCatalog } from "./diff/sources/catalog"
 import { DiffVirtualProvider } from "./DiffVirtualProvider"
 import { SettingsEditorProvider } from "./SettingsEditorProvider"
 import { MarketplacePanelProvider } from "./MarketplacePanelProvider"
+import { MarketplaceNotifier } from "./services/marketplace/notifier"
 import { SubAgentViewerProvider } from "./SubAgentViewerProvider"
 import { EXTENSION_DISPLAY_NAME } from "./constants"
 import { KiloConnectionService } from "./services/cli-backend"
 import { registerAutocompleteProvider } from "./services/autocomplete"
+import { ensureBackendForAutocomplete } from "./services/autocomplete/ensure-backend"
+import { AutocompleteServiceManager } from "./services/autocomplete/AutocompleteServiceManager"
+import { AttentionService } from "./services/attention"
 import { BrowserAutomationService } from "./services/browser-automation"
 import { TelemetryEventName, TelemetryProxy } from "./services/telemetry"
 import { registerCommitMessageService } from "./services/commit-message"
@@ -25,6 +29,7 @@ import { registerUpdateCheck } from "./services/update-check"
 import { registerDocumentArtifactCommands } from "./services/document-artifacts"
 import { registerAgentTerminal } from "./services/agent-terminal"
 import { migrateChipmateServer } from "./services/chipmate-server"
+import { createNotebookBridge } from "./services/notebook"
 
 let agentManager: AgentManagerProvider | undefined
 let shuttingDown = false
@@ -43,6 +48,10 @@ const panelTitleHandler = (panel: vscode.WebviewPanel) => (title: string) => {
 // autocomplete, commit-message generation, and URI deep links all work immediately — without
 // requiring the user to open a Kilo sidebar or panel first. The CLI backend normally starts lazily;
 // configured autocomplete may prewarm the shared connection so ghost text works before a webview opens.
+// Activated via "onStartupFinished" and "onUri" (package.json) so that commands, code actions,
+// keybindings, autocomplete, commit-message generation, and URI deep links all work immediately —
+// without requiring the user to open a Kilo sidebar or panel first. The CLI backend is NOT spawned here;
+// it starts lazily when a webview connects or when ensureBackendForAutocomplete() triggers it.
 export function activate(context: vscode.ExtensionContext) {
   console.log("ChipMate extension is now active")
   shuttingDown = false
@@ -53,6 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Create shared connection service (one server for all webviews)
   const connectionService = new KiloConnectionService(context)
+  const notebookBridge = createNotebookBridge(connectionService)
   let restore = context.workspaceState.get<RestoreState>(RESTORE_KEY) ?? {}
   const remember = (patch: RestoreState) => {
     const next = { ...restore, ...patch }
@@ -146,7 +156,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(kiloClawProvider)
 
   // Create Agent Manager provider for editor panel
-  const agentManagerHost = new VscodeHost(context.extensionUri, connectionService, context)
+  const agentManagerHost = new VscodeHost(context.extensionUri, connectionService, context, remoteService)
   const agentManagerProvider = new AgentManagerProvider(agentManagerHost, connectionService)
   agentManagerProvider.onPanelVisibilityChange((visible) => remember({ agentManager: visible }))
   agentManager = agentManagerProvider
@@ -180,6 +190,13 @@ export function activate(context: vscode.ExtensionContext) {
       return [...dirs]
     },
   )
+  const attention = new AttentionService(connectionService, {
+    approve: (event, directory) => autoApprove.approve(event, directory),
+  })
+
+  // Prewarm only after all global event consumers are ready.
+  ensureBackendForAutocomplete(connectionService)
+
   provider.setAutoApproveController(autoApprove)
   agentManagerHost.setAutoApproveController(autoApprove)
 
@@ -264,6 +281,13 @@ export function activate(context: vscode.ExtensionContext) {
   settingsEditorProvider.setRemoteService(remoteService)
   const marketplacePanelProvider = new MarketplacePanelProvider(context.extensionUri, connectionService, context)
   context.subscriptions.push(settingsEditorProvider, marketplacePanelProvider)
+
+  // Surface a discardable notification when a marketplace item matches the workspace.
+  const marketplaceNotifier = new MarketplaceNotifier(connectionService, context, (item) =>
+    marketplacePanelProvider.openInstall(item),
+  )
+  context.subscriptions.push(marketplaceNotifier)
+  marketplaceNotifier.start()
 
   // Create sub-agent viewer provider (read-only editor panel for sub-agent sessions)
   const subAgentViewerProvider = new SubAgentViewerProvider(context.extensionUri, connectionService, context)
@@ -384,9 +408,29 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("kilo-code.new.openIndexingSettings", () => {
       settingsEditorProvider.openPanel("settings", "indexing")
     }),
+    vscode.commands.registerCommand("kilo-code.new.showMemory", async () => {
+      if (agentManagerProvider.isActive()) {
+        await agentManagerProvider.showMemory()
+        return
+      }
+      const target = activeTabProvider() ?? provider
+      if (target === provider) await vscode.commands.executeCommand("kilo-code.SidebarProvider.focus")
+      await target.waitForReady()
+      await target.showMemory()
+    }),
+    vscode.commands.registerCommand("kilo-code.new.toggleMemory", async () => {
+      if (agentManagerProvider.isActive()) {
+        await agentManagerProvider.toggleMemory()
+        return
+      }
+      const target = activeTabProvider() ?? provider
+      if (target === provider) await vscode.commands.executeCommand("kilo-code.SidebarProvider.focus")
+      await target.waitForReady()
+      await target.toggleMemory()
+    }),
     // legacy-migration start
     vscode.commands.registerCommand("kilo-code.new.openMigrationWizard", () => {
-      provider.postMessage({ type: "migrationState", needed: true })
+      provider.postMessage({ type: "migrationState", needed: true, source: "legacy" })
     }),
     // legacy-migration end
     vscode.commands.registerCommand("kilo-code.new.generateTerminalCommand", async () => {
@@ -434,6 +478,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("kilo-code.new.agentManager.nextTab", () => {
       agentManagerProvider.postMessage({ type: "action", action: "tabNext" })
     }),
+    vscode.commands.registerCommand("kilo-code.new.agentManager.search", () => {
+      agentManagerProvider.postMessage({ type: "action", action: "search" })
+    }),
     vscode.commands.registerCommand("kilo-code.new.agentManager.showTerminal", () => {
       // Route through the webview so it can reach into the active session
       // state and open the VS Code integrated terminal for it.
@@ -464,6 +511,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("kilo-code.new.agentManager.openWorktree", () => {
       agentManagerProvider.postMessage({ type: "action", action: "openWorktree" })
     }),
+    vscode.commands.registerCommand("kilo-code.new.agentManager.openPR", () => {
+      agentManagerProvider.postMessage({ type: "action", action: "openPR" })
+    }),
     vscode.commands.registerCommand("kilo-code.new.agentManager.closeWorktree", () => {
       agentManagerProvider.postMessage({ type: "action", action: "closeWorktree" })
     }),
@@ -478,6 +528,7 @@ export function activate(context: vscode.ExtensionContext) {
   )
 
   // Register URI handler for session imports and one-time Marketplace install intents.
+  // Register URI handler for extension deep links (vscode://kilocode.kilo-code/kilocode/...)
   context.subscriptions.push(
     vscode.window.registerUriHandler({
       async handleUri(uri: vscode.Uri) {
@@ -489,13 +540,23 @@ export function activate(context: vscode.ExtensionContext) {
           await marketplacePanelProvider.handleRepairUri(uri)
           return
         }
-        const match = uri.path.match(/^\/kilocode\/s\/([a-zA-Z0-9_-]+)$/)
-        if (!match) return
-        const sessionId = match[1]
-        if (!sessionId) return
-        console.log("[Kilo New] URI handler: opening cloud session:", sessionId)
+        const sessionMatch = uri.path.match(/^\/kilocode\/s\/([a-zA-Z0-9_-]+)$/)
+        const sessionId = sessionMatch?.[1]
+        if (sessionId) {
+          console.log("[Kilo New] URI handler: opening cloud session:", sessionId)
+          await vscode.commands.executeCommand(`${KiloProvider.viewType}.focus`)
+          provider.openCloudSession(sessionId)
+          return
+        }
+
+        if (uri.path !== "/kilocode/switch" && uri.path !== "/kilocode/model") return
+        const params = new URLSearchParams(uri.query)
+        const modelID = params.get("model") || undefined
+        const agent = params.get("agent") || undefined
+        if (!modelID && !agent) return
+        console.log("[Kilo New] URI handler: applying linked Kilo selection:", { modelID, agent })
         await vscode.commands.executeCommand(`${KiloProvider.viewType}.focus`)
-        provider.openCloudSession(sessionId)
+        provider.selectKiloModel(modelID, agent)
       },
     }),
   )
@@ -510,6 +571,12 @@ export function activate(context: vscode.ExtensionContext) {
   registerCommitMessageService(context, connectionService)
 
   registerHeapSnapshot(context, connectionService)
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("kilo-code.new.reload", () => {
+      provider.reload().catch((e) => console.error("[Kilo New] reload command failed:", e))
+    }),
+  )
 
   // Register code actions (editor context menus, terminal context menus, keyboard shortcuts)
   registerCodeActions(context, provider, agentManagerProvider)
@@ -532,8 +599,10 @@ export function activate(context: vscode.ExtensionContext) {
     dispose: () => {
       shuttingDown = true
       unsubscribeStateChange()
+      attention.dispose()
       browserAutomationService.dispose()
       provider.dispose()
+      notebookBridge.dispose()
       connectionService.dispose()
     },
   })

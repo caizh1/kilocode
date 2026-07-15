@@ -115,7 +115,10 @@
   color: var(--vscode-descriptionForeground, var(--text-weak));
   font-size: var(--kilo-font-size-11);
   white-space: nowrap;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
 }
 
 .local-skill-import__steps li span {

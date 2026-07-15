@@ -1,5 +1,5 @@
 import { createStore } from "solid-js/store"
-import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js"
+import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { Portal, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import type { TextareaRenderable } from "@opentui/core"
 import { useTheme, selectedForeground } from "../../context/theme"
@@ -13,21 +13,21 @@ import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import { Locale } from "@/util/locale"
 import { ShellID } from "@/tool/shell/id"
 import { webSearchProviderLabel } from "@/tool/websearch"
-import { useDialog } from "../../ui/dialog"
 import { getScrollAcceleration } from "../../util/scroll"
 import { useTuiConfig } from "../../context/tui-config"
 // kilocode_change start
 import { ConfigProtection } from "@/kilocode/permission/config-paths"
 import { splitDiffHunks } from "@/kilocode/tui/diff"
 import { normalizeUrls } from "@/kilocode/util/url"
+import { MemoryPermissionRegistry } from "@/kilocode/cli/cmd/tui/routes/session/memory-permission"
 // kilocode_change end
-import { useBindings, useCommandShortcut } from "../../keymap"
+import { KILO_BASE_MODE, useBindings, useCommandShortcut } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
 
 type PermissionStage = "permission" | "always" | "reject"
 
 function filetype(input?: string) {
-  if (!input) return "none"
+  if (typeof input !== "string" || !input) return "none"
   const ext = path.extname(input)
   const language = LANGUAGE_EXTENSIONS[ext]
   if (["typescriptreact", "javascriptreact", "javascript"].includes(language)) return "typescript"
@@ -41,8 +41,14 @@ function EditBody(props: { request: PermissionRequest }) {
   const config = useTuiConfig()
   const dimensions = useTerminalDimensions()
 
-  const filepath = createMemo(() => (props.request.metadata?.filepath as string) ?? "")
-  const diff = createMemo(() => (props.request.metadata?.diff as string) ?? "")
+  const filepath = createMemo(() => {
+    const value = props.request.metadata?.filepath
+    return typeof value === "string" ? value : ""
+  })
+  const diff = createMemo(() => {
+    const value = props.request.metadata?.diff
+    return typeof value === "string" ? value : ""
+  })
 
   const view = createMemo(() => {
     const diffStyle = config.diff_style
@@ -131,7 +137,7 @@ function TextBody(props: { title: string; description?: string; icon?: string })
   )
 }
 
-export function PermissionPrompt(props: { request: PermissionRequest }) {
+export function PermissionPrompt(props: { request: PermissionRequest; directory?: string }) {
   const sdk = useSDK()
   const project = useProject()
   const sync = useSync()
@@ -193,6 +199,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
             void sdk.client.permission.reply({
               reply: "always",
               requestID: props.request.id,
+              directory: props.directory,
               workspace: project.workspace.current(),
             })
           }}
@@ -204,6 +211,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
             void sdk.client.permission.reply({
               reply: "reject",
               requestID: props.request.id,
+              directory: props.directory,
               message: message || undefined,
               workspace: project.workspace.current(),
             })
@@ -405,6 +413,9 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
               }
             }
 
+            const custom = MemoryPermissionRegistry.render(permission, props.request) // kilocode_change
+            if (custom) return custom // kilocode_change
+
             return {
               icon: "⚙",
               title: `Call tool ${permission}`,
@@ -430,17 +441,21 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
                 </text>
                 <text fg={theme.text}>{current.title}</text>
               </box>
-              {/* kilocode_change start - explain config file edits always require approval */}
-              <Show when={props.request.metadata?.[ConfigProtection.DISABLE_ALWAYS_KEY]}>
+              {/* kilocode_change start - explain protected Kilo configuration access */}
+              <Show when={props.request.metadata?.[ConfigProtection.CONFIG_PROTECTED_KEY]}>
                 <box paddingLeft={4} flexShrink={0}>
-                  <text fg={theme.textMuted}>Config file edits always require approval</text>
+                  <text fg={theme.textMuted}>
+                    {props.request.permission === "edit"
+                      ? "Config file edits always require approval"
+                      : "Kilo configuration access always requires approval"}
+                  </text>
                 </box>
               </Show>
               {/* kilocode_change end */}
             </box>
           )
 
-          // kilocode_change start — hide "Always allow" for config file edits
+          // kilocode_change start - hide "Always allow" for protected Kilo configuration access
           const options: Record<string, string> = props.request.metadata?.[ConfigProtection.DISABLE_ALWAYS_KEY]
             ? { once: "Allow once", reject: "Reject" }
             : { once: "Allow once", always: "Allow always", reject: "Reject" }
@@ -467,6 +482,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
                   void sdk.client.permission.reply({
                     reply: "reject",
                     requestID: props.request.id,
+                    directory: props.directory,
                     workspace: project.workspace.current(),
                   })
                   return
@@ -474,6 +490,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
                 void sdk.client.permission.reply({
                   reply: "once",
                   requestID: props.request.id,
+                  directory: props.directory,
                   workspace: project.workspace.current(),
                 })
               }}
@@ -493,9 +510,8 @@ function RejectPrompt(props: { onConfirm: (message: string) => void; onCancel: (
   const tuiConfig = useTuiConfig()
   const dimensions = useTerminalDimensions()
   const narrow = createMemo(() => dimensions().width < 80)
-  const dialog = useDialog()
   useBindings(() => ({
-    enabled: dialog.stack.length === 0,
+    mode: KILO_BASE_MODE,
     commands: [
       {
         name: "app.exit",
@@ -587,11 +603,10 @@ function Prompt<const T extends Record<string, string>>(props: {
     expanded: false,
   })
   const narrow = createMemo(() => dimensions().width < 80)
-  const dialog = useDialog()
   const fullscreenHint = useCommandShortcut("permission.prompt.fullscreen")
 
   useBindings(() => ({
-    enabled: dialog.stack.length === 0,
+    mode: KILO_BASE_MODE,
     commands: [
       {
         name: "app.exit",

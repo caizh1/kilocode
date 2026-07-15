@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test"
+import { createHash } from "crypto"
 
 import { DEFAULT_MAX_SEARCH_RESULTS, DEFAULT_SEARCH_MIN_SCORE } from "../../../../src/indexing/constants"
 
@@ -31,14 +32,6 @@ mock.module("@qdrant/js-client-rest", () => ({
   QdrantClient: MockQdrantClientConstructor,
 }))
 
-const mockDigest = mock()
-const mockUpdate = mock(() => ({ update: mockUpdate, digest: mockDigest }))
-const mockCreateHash = mock((algorithm?: string) => fakeHash(algorithm))
-
-mock.module("crypto", () => ({
-  createHash: mockCreateHash,
-}))
-
 // Now import the module under test
 import { QdrantVectorStore } from "../../../../src/indexing/vector-store/qdrant-client"
 
@@ -58,8 +51,7 @@ describe("QdrantVectorStore", () => {
   const mockQdrantUrl = "http://mock-qdrant:6333"
   const mockApiKey = "test-api-key"
   const mockVectorSize = 1536
-  const mockHashedPath = "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
-  const expectedCollectionName = `ws-${mockHashedPath.substring(0, 16)}`
+  const expectedCollectionName = `ws-${createHash("sha256").update(mockWorkspacePath).digest("hex").substring(0, 16)}`
 
   beforeEach(() => {
     // Reset all mocks
@@ -74,15 +66,6 @@ describe("QdrantVectorStore", () => {
     mockDelete.mockReset()
     mockRetrieve.mockReset()
     mockSetPayload.mockReset()
-    mockCreateHash.mockReset()
-    mockUpdate.mockReset()
-    mockDigest.mockReset()
-
-    // Mock crypto.createHash chain
-    mockCreateHash.mockReturnValue({ update: mockUpdate, digest: mockDigest })
-    mockUpdate.mockReturnValue({ update: mockUpdate, digest: mockDigest })
-    mockDigest.mockReturnValue(mockHashedPath)
-
     vectorStore = new QdrantVectorStore(mockWorkspacePath, mockQdrantUrl, mockVectorSize, mockApiKey)
   })
 
@@ -97,10 +80,6 @@ describe("QdrantVectorStore", () => {
     mockDelete.mockReset()
     mockRetrieve.mockReset()
     mockSetPayload.mockReset()
-    mockCreateHash.mockReset()
-    mockUpdate.mockReset()
-    mockDigest.mockReset()
-    mockCreateHash.mockImplementation((algorithm?: string) => fakeHash(algorithm))
   })
 
   test("should correctly initialize QdrantClient and collectionName in constructor", () => {
@@ -114,9 +93,6 @@ describe("QdrantVectorStore", () => {
         "User-Agent": "Kilo-Code",
       },
     })
-    expect(mockCreateHash).toHaveBeenCalledWith("sha256")
-    expect(mockUpdate).toHaveBeenCalledWith(mockWorkspacePath)
-    expect(mockDigest).toHaveBeenCalledWith("hex")
     expect((vectorStore as any).collectionName).toBe(expectedCollectionName)
     expect((vectorStore as any).vectorSize).toBe(mockVectorSize)
   })
@@ -539,6 +515,31 @@ describe("QdrantVectorStore", () => {
   })
 
   describe("initialize", () => {
+    test("opens a complete compatible baseline without mutating it", async () => {
+      mockGetCollection.mockResolvedValue({
+        points_count: 3,
+        config: { params: { vectors: { size: mockVectorSize } } },
+      })
+      mockRetrieve.mockResolvedValue([
+        {
+          payload: {
+            index_schema: 2,
+            indexing_complete: true,
+            embedding_provider: "openai",
+            embedding_model_id: "",
+            embedding_dimension: mockVectorSize,
+          },
+        },
+      ])
+
+      await vectorStore.openExisting()
+
+      expect(mockCreateCollection).not.toHaveBeenCalled()
+      expect(mockDeleteCollection).not.toHaveBeenCalled()
+      expect(mockCreatePayloadIndex).not.toHaveBeenCalled()
+      expect(mockUpsert).not.toHaveBeenCalled()
+    })
+
     test("should create a new collection if none exists and return true", async () => {
       mockGetCollection.mockRejectedValue({
         response: { status: 404 },
@@ -611,6 +612,33 @@ describe("QdrantVectorStore", () => {
         })
       }
       expect(mockCreatePayloadIndex).toHaveBeenCalledTimes(11)
+    })
+
+    test("recreates a populated collection using the legacy payload schema", async () => {
+      mockGetCollection
+        .mockResolvedValueOnce({
+          points_count: 7,
+          config: { params: { vectors: { size: mockVectorSize } } },
+        } as any)
+        .mockRejectedValueOnce({ response: { status: 404 }, message: "Not found" })
+      mockRetrieve.mockResolvedValue([
+        {
+          payload: {
+            index_schema: 1,
+            indexing_complete: true,
+            embedding_provider: "openai",
+            embedding_model_id: "",
+            embedding_dimension: mockVectorSize,
+          },
+        },
+      ] as any)
+      mockDeleteCollection.mockResolvedValue(true as any)
+      mockCreateCollection.mockResolvedValue(true as any)
+      mockCreatePayloadIndex.mockResolvedValue({} as any)
+
+      expect(await vectorStore.initialize()).toBe(true)
+      expect(mockDeleteCollection).toHaveBeenCalledTimes(1)
+      expect(mockCreateCollection).toHaveBeenCalledTimes(1)
     })
 
     test("should recreate collection when stored embedding identity mismatches", async () => {
@@ -1327,6 +1355,7 @@ describe("QdrantVectorStore", () => {
             score: 0.85,
             payload: {
               filePath: "src/test.ts",
+              fileHash: "test-hash",
               codeChunk: "test code",
               startLine: 1,
               endLine: 5,
@@ -1338,6 +1367,7 @@ describe("QdrantVectorStore", () => {
             score: 0.75,
             payload: {
               filePath: "src/utils.ts",
+              fileHash: "test-hash",
               codeChunk: "utility code",
               startLine: 10,
               endLine: 15,
@@ -1362,7 +1392,7 @@ describe("QdrantVectorStore", () => {
           exact: false,
         },
         with_payload: {
-          include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+          include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
         },
       })
       expect(callArgs.filter).toEqual(activeFilter())
@@ -1381,6 +1411,7 @@ describe("QdrantVectorStore", () => {
             score: 0.85,
             payload: {
               filePath: "src/components/Button.tsx",
+              fileHash: "test-hash",
               codeChunk: "button code",
               startLine: 1,
               endLine: 5,
@@ -1400,7 +1431,7 @@ describe("QdrantVectorStore", () => {
         score_threshold: DEFAULT_SEARCH_MIN_SCORE,
         limit: DEFAULT_MAX_SEARCH_RESULTS,
         params: { hnsw_ef: 128, exact: false },
-        with_payload: { include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"] },
+        with_payload: { include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"] },
       })
       expect(callArgs2.filter).toEqual(
         activeFilter([
@@ -1431,7 +1462,7 @@ describe("QdrantVectorStore", () => {
           exact: false,
         },
         with_payload: {
-          include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+          include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
         },
       })
       expect(callArgs3.filter).toEqual(activeFilter())
@@ -1456,7 +1487,7 @@ describe("QdrantVectorStore", () => {
           exact: false,
         },
         with_payload: {
-          include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+          include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
         },
       })
       expect(callArgs4.filter).toEqual(activeFilter())
@@ -1471,6 +1502,7 @@ describe("QdrantVectorStore", () => {
             score: 0.85,
             payload: {
               filePath: "src/test.ts",
+              fileHash: "test-hash",
               codeChunk: "test code",
               startLine: 1,
               endLine: 5,
@@ -1488,6 +1520,7 @@ describe("QdrantVectorStore", () => {
             score: 0.55,
             payload: {
               filePath: "src/test2.ts",
+              fileHash: "test-hash",
               codeChunk: "test code 2",
               startLine: 10,
               endLine: 15,
@@ -1514,6 +1547,7 @@ describe("QdrantVectorStore", () => {
             score: 0.85,
             payload: {
               filePath: "src/test.ts",
+              fileHash: "test-hash",
               codeChunk: "test code",
               startLine: 1,
               endLine: 5,
@@ -1534,6 +1568,7 @@ describe("QdrantVectorStore", () => {
             score: 0.55,
             payload: {
               filePath: "src/test2.ts",
+              fileHash: "test-hash",
               codeChunk: "test code 2",
               startLine: 10,
               endLine: 15,
@@ -1582,7 +1617,7 @@ describe("QdrantVectorStore", () => {
           exact: false,
         },
         with_payload: {
-          include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+          include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
         },
       })
       expect(callArgs5.filter).toEqual(
@@ -1629,6 +1664,7 @@ describe("QdrantVectorStore", () => {
               score: 0.85,
               payload: {
                 filePath: "src/test.ts",
+                fileHash: "test-hash",
                 codeChunk: "test code",
                 startLine: 1,
                 endLine: 5,
@@ -1652,7 +1688,7 @@ describe("QdrantVectorStore", () => {
             exact: false,
           },
           with_payload: {
-            include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+            include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
         expect(callArgs7.filter).toEqual(activeFilter())
@@ -1679,7 +1715,7 @@ describe("QdrantVectorStore", () => {
             exact: false,
           },
           with_payload: {
-            include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+            include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
         expect(callArgs6.filter).toEqual(activeFilter())
@@ -1704,7 +1740,7 @@ describe("QdrantVectorStore", () => {
             exact: false,
           },
           with_payload: {
-            include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+            include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
         expect(callArgs8.filter).toEqual(activeFilter())
@@ -1729,7 +1765,7 @@ describe("QdrantVectorStore", () => {
             exact: false,
           },
           with_payload: {
-            include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+            include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
         expect(callArgs9.filter).toEqual(activeFilter())
@@ -1754,7 +1790,7 @@ describe("QdrantVectorStore", () => {
             exact: false,
           },
           with_payload: {
-            include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+            include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
         expect(callArgs10.filter).toEqual(activeFilter())
@@ -1779,7 +1815,7 @@ describe("QdrantVectorStore", () => {
             exact: false,
           },
           with_payload: {
-            include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+            include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
         expect(callArgs11.filter).toEqual(
@@ -1811,7 +1847,7 @@ describe("QdrantVectorStore", () => {
             exact: false,
           },
           with_payload: {
-            include: ["filePath", "codeChunk", "startLine", "endLine", "pathSegments"],
+            include: ["filePath", "fileHash", "codeChunk", "startLine", "endLine", "pathSegments"],
           },
         })
         expect(callArgs12.filter).toEqual(
@@ -1826,29 +1862,3 @@ describe("QdrantVectorStore", () => {
     })
   })
 })
-
-function fakeHash(algorithm = "sha256") {
-  let text = ""
-  const api = {
-    update(value: unknown) {
-      text += String(value)
-      return api
-    },
-    digest(encoding?: string) {
-      const size = algorithm === "sha1" ? 40 : 64
-      const hex = digest(text).padEnd(size, "0").slice(0, size)
-      if (encoding) return hex
-      return Buffer.from(hex, "hex")
-    },
-  }
-  return api
-}
-
-function digest(value: string): string {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < value.length; index++) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0")
-}

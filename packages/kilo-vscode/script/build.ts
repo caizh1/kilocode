@@ -5,6 +5,8 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 
 import {
   copyCodeGraphParserWorker,
   copyIndexingProcess,
+  copyKiloSandboxWorker,
+  copySandboxResources,
   copyTreeSitterResources,
   indexingProcessForBinary,
 } from "../src/services/cli-backend/cli-resources"
@@ -177,6 +179,8 @@ try {
     await copyTreeSitterResources(sourceBinary, targetBinary)
     await copyCodeGraphParserWorker(sourceBinary, targetBinary)
     await copyIndexingProcess(sourceBinary, targetBinary)
+    await copySandboxResources(sourceBinary, targetBinary)
+    await copyKiloSandboxWorker(sourceBinary, targetBinary)
 
     if (config.binary !== "kilo.exe") {
       chmodSync(targetBinary, 0o755)
@@ -407,6 +411,7 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     `extension/bin/${indexingProcessForBinary(config.binary)}`,
     "extension/bin/models-snapshot.json",
     "extension/bin/codegraph-parser-worker.mjs",
+    "extension/bin/kilo-sandbox-mutation-worker.js",
     "extension/bin/tree-sitter/tree-sitter.wasm",
     "extension/bin/lancedb/node_modules/@lancedb/lancedb/dist/index.js",
     "extension/bin/lancedb/node_modules/@lancedb/lancedb/dist/native.js",

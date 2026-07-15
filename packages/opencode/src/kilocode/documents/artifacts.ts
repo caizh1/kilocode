@@ -1,6 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
-import { Instance } from "@/project/instance"
+import { Instance } from "@/kilocode/instance"
 
 export const DEFAULT_ARTIFACT_ROOT = ".kilo/artifacts"
 

@@ -1,9 +1,13 @@
 import { Config } from "@/config/config"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { MessageV2 } from "@/session/message-v2"
 import * as Log from "@opencode-ai/core/util/log"
+import photonWasm from "@silvia-odwyer/photon-node/photon_rs_bg.wasm" with { type: "file" }
 import { Context, Effect, Layer, Schema } from "effect"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 
-export const MAX_BASE64_BYTES = 4.5 * 1024 * 1024 // kilocode_change - share user file pre-read limit
+export const MAX_BASE64_BYTES = 5 * 1024 * 1024 // kilocode_change - share user file pre-read limit
 const MAX_WIDTH = 2000
 const MAX_HEIGHT = 2000
 const AUTO_RESIZE = true
@@ -95,12 +99,12 @@ export function fallback(
 }
 // kilocode_change end
 
-export class PhotonUnavailableError extends Schema.TaggedErrorClass<PhotonUnavailableError>()(
-  "ImagePhotonUnavailableError",
+export class ResizerUnavailableError extends Schema.TaggedErrorClass<ResizerUnavailableError>()(
+  "ImageResizerUnavailableError",
   {},
 ) {
   override get message() {
-    return "Photon image processor is unavailable"
+    return "Image resizer is unavailable"
   }
 }
 
@@ -131,10 +135,10 @@ export class SizeError extends Schema.TaggedErrorClass<SizeError>()("ImageSizeEr
   }
 }
 
-export type Error = PhotonUnavailableError | InvalidDataUrlError | DecodeError | SizeError
+export type Error = ResizerUnavailableError | InvalidDataUrlError | DecodeError | SizeError
 
 export interface Interface {
-  readonly normalize: (input: MessageV2.FilePart) => Effect.Effect<MessageV2.FilePart, Error>
+  readonly normalize: (input: SessionV1.FilePart) => Effect.Effect<SessionV1.FilePart, Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Image") {}
@@ -144,23 +148,18 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const config = yield* Config.Service
     const loadPhoton = yield* Effect.cached(
-      Effect.promise(async () => {
-        try {
-          const photonWasm = (await import("@silvia-odwyer/photon-node/photon_rs_bg.wasm", { with: { type: "file" } }))
-            .default
-          // kilocode_change start - use Kilo's embedded WASM path in compiled binaries
-          ;(globalThis as typeof globalThis & { __KILOCODE_PHOTON_WASM_PATH?: string }).__KILOCODE_PHOTON_WASM_PATH =
-            photonWasm
-          // kilocode_change end
-          return await import("@silvia-odwyer/photon-node")
-        } catch (err) {
-          log.error("failed to load Photon image processor", { err }) // kilocode_change
-          return null
-        }
-      }),
+      Effect.sync(() => {
+        const wasm = path.isAbsolute(photonWasm) ? photonWasm : fileURLToPath(new URL(photonWasm, import.meta.url))
+        ;(globalThis as typeof globalThis & { __OPENCODE_PHOTON_WASM_PATH?: string }).__OPENCODE_PHOTON_WASM_PATH = wasm
+        ;(globalThis as typeof globalThis & { __KILOCODE_PHOTON_WASM_PATH?: string }).__KILOCODE_PHOTON_WASM_PATH = wasm
+      }).pipe(
+        Effect.andThen(() => Effect.tryPromise(() => import("@silvia-odwyer/photon-node"))),
+        Effect.tapError((error) => Effect.sync(() => log.warn("failed to load photon", { error }))),
+        Effect.mapError(() => new ResizerUnavailableError()),
+      ),
     )
 
-    const normalize = Effect.fn("Image.normalize")(function* (input: MessageV2.FilePart) {
+    const normalize = Effect.fn("Image.normalize")(function* (input: SessionV1.FilePart) {
       const image = (yield* config.get()).attachment?.image
       const info = {
         autoResize: image?.auto_resize ?? AUTO_RESIZE,
@@ -172,40 +171,35 @@ export const layer = Layer.effect(
         return yield* new InvalidDataUrlError({ url: input.url })
 
       const base64 = input.url.slice(input.url.indexOf(";base64,") + ";base64,".length)
-      const photon = yield* loadPhoton
-      // kilocode_change start - fail closed on invalid bytes but preserve valid in-limit images without Photon
-      if (!photon) {
-        const result = fallback(input, base64, {
-          bytes: info.maxBase64Bytes,
-          width: info.maxWidth,
-          height: info.maxHeight,
-        })
-        if (result instanceof Error) return yield* result
-        return result
-      }
-      // kilocode_change end
+      const bytes = Buffer.byteLength(base64, "utf8")
+      const photon = yield* loadPhoton.pipe(
+        Effect.catchTag("ImageResizerUnavailableError", () => {
+          const result = fallback(input, base64, {
+            bytes: info.maxBase64Bytes,
+            width: info.maxWidth,
+            height: info.maxHeight,
+          })
+          return result instanceof Error ? Effect.fail(result) : Effect.succeed(undefined)
+        }),
+      )
+      if (!photon) return input
 
-      const decoded = yield* Effect.sync(() => {
-        try {
-          return photon.PhotonImage.new_from_byteslice(Buffer.from(base64, "base64"))
-        } catch {
-          return undefined
-        }
+      const decoded = yield* Effect.try({
+        try: () => photon.PhotonImage.new_from_byteslice(Buffer.from(base64, "base64")),
+        catch: (error) => {
+          log.warn("failed to decode image", { error })
+          return new DecodeError()
+        },
       })
-      if (!decoded) return yield* new DecodeError()
 
       try {
         const originalWidth = decoded.get_width()
         const originalHeight = decoded.get_height()
-        if (
-          originalWidth <= info.maxWidth &&
-          originalHeight <= info.maxHeight &&
-          Buffer.byteLength(base64, "utf8") <= info.maxBase64Bytes
-        )
+        if (originalWidth <= info.maxWidth && originalHeight <= info.maxHeight && bytes <= info.maxBase64Bytes)
           return input
         if (!info.autoResize)
           return yield* new SizeError({
-            bytes: Buffer.byteLength(base64, "utf8"),
+            bytes,
             max: info.maxBase64Bytes,
             width: originalWidth,
             height: originalHeight,
@@ -256,7 +250,7 @@ export const layer = Layer.effect(
         }
 
         return yield* new SizeError({
-          bytes: Buffer.byteLength(base64, "utf8"),
+          bytes,
           max: info.maxBase64Bytes,
           width: originalWidth,
           height: originalHeight,

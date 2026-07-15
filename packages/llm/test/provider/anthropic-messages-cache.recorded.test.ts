@@ -3,14 +3,13 @@ import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { CacheHint, LLM } from "../../src"
 import { LLMClient } from "../../src/route"
-import * as AnthropicMessages from "../../src/protocols/anthropic-messages"
+import * as Anthropic from "../../src/providers/anthropic"
 import { LARGE_CACHEABLE_SYSTEM } from "../recorded-scenarios"
 import { recordedTests } from "../recorded-test"
 
-const model = AnthropicMessages.model({
-  id: "claude-haiku-4-5-20251001",
+const model = Anthropic.configure({
   apiKey: process.env.ANTHROPIC_API_KEY ?? "fixture",
-})
+}).model("claude-haiku-4-5-20251001")
 
 // Two identical generations in a row. The first call writes the prefix into
 // Anthropic's cache; the second should report a cache read against the same
@@ -20,6 +19,9 @@ const cacheRequest = LLM.request({
   model,
   system: [{ type: "text", text: LARGE_CACHEABLE_SYSTEM, cache: new CacheHint({ type: "ephemeral" }) }],
   prompt: "Say hi.",
+  // Manual hint on the system part is the only marker we want here — skip the
+  // auto-policy's latest-user-message breakpoint so the cassette body matches.
+  cache: "none",
   generation: { maxTokens: 16, temperature: 0 },
 })
 
@@ -28,7 +30,11 @@ const recorded = recordedTests({
   provider: "anthropic",
   protocol: "anthropic-messages",
   requires: ["ANTHROPIC_API_KEY"],
-  options: { redactor: Redactor.defaults({ requestHeaders: { allow: ["content-type", "anthropic-version"] } }) },
+  // Two identical requests in one cassette — replay walks the cassette in
+  // recording order so the second call replays the cached-hit interaction.
+  options: {
+    redactor: Redactor.defaults({ requestHeaders: { allow: ["content-type", "anthropic-version"] } }),
+  },
 })
 
 describe("Anthropic Messages cache recorded", () => {

@@ -1,4 +1,5 @@
-import type { VectorStoreSearchResult } from "./interfaces"
+import path from "path"
+import type { IVectorStore, VectorStoreSearchResult } from "./interfaces"
 import type { IndexingState } from "./interfaces/manager"
 import type {
   IndexingTelemetryEvent,
@@ -11,7 +12,7 @@ import type { CodeGraphSidecarStatus } from "./codegraph"
 import type { DocumentIndexStatus, DocumentSearchOptions, DocumentSearchResult } from "./documents"
 import { DocumentIndexService } from "./documents"
 import { CodeIndexConfigManager, type IndexingConfigInput } from "./config-manager"
-import { INITIAL_MANAGER_RECOVERY_DELAY_MS, MAX_MANAGER_RECOVERY_ATTEMPTS } from "./constants"
+import { DEFAULT_VECTOR_STORE, INITIAL_MANAGER_RECOVERY_DELAY_MS, MAX_MANAGER_RECOVERY_ATTEMPTS } from "./constants"
 import { CodeIndexStateManager } from "./state-manager"
 import { CodeIndexServiceFactory } from "./service-factory"
 import { CodeIndexSearchService } from "./search-service"
@@ -26,11 +27,22 @@ import { loadIgnoreWithFingerprint } from "./shared/load-ignore"
 import { sanitizeErrorMessage } from "./shared/validation-helpers"
 import type { IndexingDiagnostic, IndexingPipelineRecentErrors } from "../status"
 import type { IndexingPressure } from "./memory"
+import { WorktreeOverlay } from "./worktree-overlay"
 
 const log = Log.create({ service: "indexing-manager" })
 const MAX_RECENT_ERRORS = 5
 const MAX_DIAGNOSTIC_MESSAGE_LENGTH = 500
 const MAX_DIAGNOSTIC_FILE_LENGTH = 300
+const BASELINE_CHECK_INTERVAL = 1_000
+const BASELINE_SIGNATURE_INTERVAL = 30_000
+const BASELINE_PENDING = "Waiting for the primary worktree index to become available."
+
+type Baseline = {
+  store?: IVectorStore
+  signature: string
+  stamp?: string
+  overlay?: WorktreeOverlay
+}
 
 /**
  * RATIONALE: Removed the static singleton Map and vscode.ExtensionContext.
@@ -53,6 +65,13 @@ export class CodeIndexManager {
   private readonly _postingsStorage: CodePostingsJsonStorage
   private readonly _codeGraph: CodeGraphSidecarLifecycle
   private _cacheManager: CacheManager | undefined
+  private _baselineStore: IVectorStore | undefined
+  private _baselineSignature: string | undefined
+  private _baselineStamp: string | undefined
+  private _baselineChecked = 0
+  private _baselineSigned = 0
+  private _baselineRefresh: Promise<void> | undefined
+  private _overlay: WorktreeOverlay | undefined
   private _isRecoveringFromError = false
   private _retryTimer: ReturnType<typeof setTimeout> | undefined
   private _retryResolve: (() => void) | undefined
@@ -66,6 +85,7 @@ export class CodeIndexManager {
   constructor(
     public readonly workspacePath: string,
     private readonly cacheDirectory: string,
+    public readonly baselinePath?: string,
   ) {
     this._stateManager = new CodeIndexStateManager()
     this._graphStorage = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
@@ -98,7 +118,7 @@ export class CodeIndexManager {
     const cfg = this._configManager.getConfig()
     return {
       provider: cfg.embedderProvider,
-      vectorStore: cfg.vectorStoreProvider ?? "lancedb",
+      vectorStore: cfg.vectorStoreProvider ?? DEFAULT_VECTOR_STORE,
       modelId: cfg.modelId,
     }
   }
@@ -154,6 +174,12 @@ export class CodeIndexManager {
     this.clearRetryTimer()
   }
 
+  private waiting(): boolean {
+    if (!this.baselinePath || this._baselineStore) return false
+    this._stateManager.setSystemState("Standby", BASELINE_PENDING)
+    return true
+  }
+
   private async waitForRetry(delay: number): Promise<void> {
     await new Promise<void>((resolve) => {
       this._retryResolve = resolve
@@ -175,7 +201,7 @@ export class CodeIndexManager {
     }
 
     if (event.type !== "error") return
-    if (event.location !== "orchestrator:startIndexing") return
+    if (event.location !== "orchestrator:startIndexing" && event.location !== "orchestrator:watcher") return
     if (!this.isFeatureEnabled || !this.isFeatureConfigured) return
     if (this._retryTask || this._isRecoveringFromError) return
 
@@ -233,6 +259,11 @@ export class CodeIndexManager {
     try {
       await this._recreateServices()
       if (this._disposed) return
+      if (this.waiting()) {
+        this.resetRetryState()
+        this._isRecoveringFromError = false
+        return
+      }
       this.emitStart(trigger)
       await this._orchestrator!.startIndexing(trigger)
       if (this._disposed) return
@@ -411,6 +442,8 @@ export class CodeIndexManager {
       }
     }
 
+    if (this.waiting()) return { requiresRestart }
+
     const shouldStartOrRestart =
       requiresRestart || (needsServiceRecreation && (!this._orchestrator || this._orchestrator.state !== "Indexing"))
 
@@ -433,6 +466,9 @@ export class CodeIndexManager {
 
   public async startIndexing(): Promise<void> {
     if (this._disposed) return
+
+    await this.refreshBaseline()
+    if (this.waiting()) return
 
     log.info("manual indexing start requested", { workspacePath: this.workspacePath })
 
@@ -493,15 +529,13 @@ export class CodeIndexManager {
     await task
   }
 
-  public dispose(): void {
+  public async dispose(): Promise<void> {
     if (this._disposed) return
     this._disposed = true
     this.clearRetryTimer()
     this._retryTask = undefined
-    // RATIONALE: cancelIndexing() sets _cancelRequested and calls stopWatcher() +
-    // scanner.cancel(), which cooperatively aborts any in-flight scan. Using only
-    // stopWatcher() left the orchestrator's _runScan() unaware it should exit.
-    this._orchestrator?.cancelIndexing()
+    await this._orchestrator?.shutdown?.()
+    await this._baselineStore?.close?.()
     this._documentService?.dispose()
     this._codeGraph.dispose("manager-disposed")
     this._stateManager.dispose()
@@ -557,6 +591,8 @@ export class CodeIndexManager {
 
   public async searchIndex(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]> {
     if (!this.isFeatureEnabled || !this.isFeatureConfigured) return []
+    await this.refreshBaseline()
+    if (this.waiting()) return []
     this.assertInitialized()
     return this._searchService!.searchIndex(query, directoryPrefix)
   }
@@ -629,16 +665,97 @@ export class CodeIndexManager {
     log.info("code graph services are ready", { workspacePath: this.workspacePath, reason })
   }
 
-  private async _recreateServices(): Promise<void> {
+  private async refreshBaseline(): Promise<void> {
+    if (!this.baselinePath || this._disposed) return
+    if (this._baselineRefresh) return this._baselineRefresh
+    const now = Date.now()
+    if (now - this._baselineChecked < BASELINE_CHECK_INTERVAL) return
+    this._baselineChecked = now
+    const baselinePath = this.baselinePath
+
+    const task = (async () => {
+      const cache = new CacheManager(this.cacheDirectory, baselinePath)
+      const stamp = await cache.stamp()
+      const force = now - this._baselineSigned >= BASELINE_SIGNATURE_INTERVAL
+      if (!force && stamp === this._baselineStamp) return
+
+      await cache.initialize()
+      const signature = cache.signature()
+      this._baselineStamp = stamp
+      this._baselineSigned = now
+      if (signature === this._baselineSignature && this._baselineStore) return
+
+      const baseline = await this.createBaseline(this._serviceFactory!)
+      this._baselineStamp = baseline?.stamp ?? stamp
+      this._baselineSigned = now
+      if (!baseline?.store) {
+        if (!this._baselineStore) this._baselineSignature = signature
+        this.waiting()
+        return
+      }
+
+      log.info("shared indexing baseline changed; rebuilding worktree delta", {
+        workspacePath: this.workspacePath,
+        baselinePath,
+      })
+      await this._recreateServices(baseline)
+      if (this._disposed) return
+      await this._orchestrator?.startIndexing("background")
+    })().finally(() => {
+      this._baselineRefresh = undefined
+    })
+    this._baselineRefresh = task
+    return task
+  }
+
+  private async createBaseline(factory: CodeIndexServiceFactory): Promise<Baseline | undefined> {
+    if (!this.baselinePath) return
+
+    const cache = new CacheManager(this.cacheDirectory, this.baselinePath)
+    await cache.initialize()
+    const signature = cache.signature()
+    const stamp = await cache.stamp()
+    const hashes = new Map<string, string>()
+    for (const [filePath, hash] of Object.entries(cache.getAllHashes())) {
+      const rel = path.relative(this.baselinePath, filePath)
+      if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) continue
+      hashes.set(rel.replaceAll("\\", "/"), hash)
+    }
+
+    const store = factory.createVectorStore(this.baselinePath)
+    try {
+      if (!store.openExisting) throw new Error("The configured vector store cannot open a shared baseline")
+      // Validate compatibility without keeping every worktree baseline connection open.
+      await store.openExisting()
+      await store.close?.()
+      return {
+        store,
+        signature,
+        stamp,
+        overlay: new WorktreeOverlay(this.workspacePath, this.baselinePath, hashes),
+      }
+    } catch (err) {
+      await store.close?.()
+      log.info("shared indexing baseline is unavailable; waiting for the primary worktree index", {
+        workspacePath: this.workspacePath,
+        baselinePath: this.baselinePath,
+        err,
+      })
+      return { signature, stamp }
+    }
+  }
+
+  private async _recreateServices(prepared?: Baseline): Promise<void> {
     log.info("starting indexing service recreation", { workspacePath: this.workspacePath })
-    this._orchestrator?.stopWatcher()
+    const previous = this._orchestrator
+    previous?.stopWatcher()
     this._orchestrator = undefined
     this._searchService = undefined
     this._codeGraph.stop("indexing-services-recreating")
 
     const loaded = await loadIgnoreWithFingerprint(this.workspacePath)
     const ignoreInstance = loaded.ignore
-    this._serviceFactory = new CodeIndexServiceFactory(
+    const factory = new CodeIndexServiceFactory(
       this._configManager!,
       this.workspacePath,
       this._cacheManager!,
@@ -648,12 +765,13 @@ export class CodeIndexManager {
       this._graphStorage,
       this._postingsStorage,
     )
-
     const config = this._configManager!.getConfig()
-    const { embedder, vectorStore, scanner, fileWatcher, ragMeta } = this._serviceFactory.createServices(
+    const baseline = prepared ?? (await this.createBaseline(factory))
+    const { embedder, vectorStore, scanner, fileWatcher, ragMeta } = factory.createServices(
       this._cacheManager!,
       ignoreInstance,
     )
+    fileWatcher.setOverlay?.(baseline?.overlay)
     log.info("created indexing services", {
       workspacePath: this.workspacePath,
       provider: embedder.embedderInfo.name,
@@ -662,13 +780,12 @@ export class CodeIndexManager {
     })
 
     const shouldValidate = embedder && embedder.embedderInfo.name === config.embedderProvider
-
     if (shouldValidate) {
       log.info("validating embedder configuration", {
         workspacePath: this.workspacePath,
         provider: embedder.embedderInfo.name,
       })
-      const validationResult = await this._serviceFactory.validateEmbedder(embedder)
+      const validationResult = await factory.validateEmbedder(embedder)
       if (!validationResult.valid) {
         const errorMessage = validationResult.error || "Embedder configuration validation failed"
         this._stateManager.setSystemState("Error", errorMessage)
@@ -680,7 +797,7 @@ export class CodeIndexManager {
       })
     }
 
-    this._orchestrator = new CodeIndexOrchestrator(
+    const orchestrator = new CodeIndexOrchestrator(
       this._configManager!,
       this._stateManager,
       this.workspacePath,
@@ -691,11 +808,33 @@ export class CodeIndexManager {
       this.cacheDirectory,
       ragMeta,
       (event) => this.handleTelemetry(event),
+      baseline?.overlay,
     )
-    this._orchestrator.setMemoryPressure(this._pressure)
+    const search = new CodeIndexSearchService(
+      this._configManager!,
+      this._stateManager,
+      embedder,
+      vectorStore,
+      baseline?.store && baseline.overlay ? { store: baseline.store, overlay: baseline.overlay } : undefined,
+    )
+    orchestrator.setMemoryPressure(this._pressure)
 
-    this._searchService = new CodeIndexSearchService(this._configManager!, this._stateManager, embedder, vectorStore)
+    await previous?.shutdown?.()
+    await this._baselineStore?.close?.()
+    if (this._disposed) {
+      await orchestrator.shutdown()
+      await baseline?.store?.close?.()
+      return
+    }
 
+    this._serviceFactory = factory
+    this._orchestrator = orchestrator
+    this._searchService = search
+    this._baselineStore = baseline?.store
+    this._baselineSignature = baseline?.signature
+    this._baselineStamp = baseline?.stamp
+    this._baselineSigned = Date.now()
+    this._overlay = baseline?.overlay
     this._stateManager.setSystemState("Standby", "")
     log.info("indexing services are ready", { workspacePath: this.workspacePath })
   }

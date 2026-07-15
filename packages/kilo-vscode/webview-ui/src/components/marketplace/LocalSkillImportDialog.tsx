@@ -43,7 +43,9 @@ export const LocalSkillImportDialog = (props: Props) => {
       ]
     return [{ value: "global", label: t("marketplace.local.scope.global") }]
   })
-  const chosen = createMemo(() => [...selected()].filter((key) => preview()?.candidates.some((item) => item.key === key)))
+  const chosen = createMemo(() =>
+    [...selected()].filter((key) => preview()?.candidates.some((item) => item.key === key)),
+  )
   const phase = createMemo(() => (result() || installing() ? 6 : preview() ? 3 : 1))
 
   const unsub = vscode.onMessage((msg) => {
@@ -102,7 +104,15 @@ export const LocalSkillImportDialog = (props: Props) => {
   }
 
   const toggleAll = (checked: boolean) => {
-    setSelected(new Set(checked ? (preview()?.candidates.filter((item) => item.valid).map((item) => item.key) ?? []) : []))
+    setSelected(
+      new Set(
+        checked
+          ? (preview()
+              ?.candidates.filter((item) => item.valid)
+              .map((item) => item.key) ?? [])
+          : [],
+      ),
+    )
   }
 
   const toggleReplace = (key: string, checked: boolean) => {
@@ -205,7 +215,9 @@ export const LocalSkillImportDialog = (props: Props) => {
                 <label class="local-skill-import__check">
                   <input
                     type="checkbox"
-                    checked={chosen().length > 0 && chosen().length === data().candidates.filter((item) => item.valid).length}
+                    checked={
+                      chosen().length > 0 && chosen().length === data().candidates.filter((item) => item.valid).length
+                    }
                     onChange={(event) => toggleAll(event.currentTarget.checked)}
                   />
                   <span>{t("marketplace.local.selectAll")}</span>
@@ -236,9 +248,7 @@ export const LocalSkillImportDialog = (props: Props) => {
                       </div>
 
                       <div class="local-skill-import__meta">
-                        <For each={item.hints}>
-                          {(hint) => <span>{hint}</span>}
-                        </For>
+                        <For each={item.hints}>{(hint) => <span>{hint}</span>}</For>
                         <span>{t("marketplace.local.files", { count: item.fileCount })}</span>
                         <span>{formatBytes(item.totalBytes)}</span>
                         <span>SHA {item.snapshotSha256.slice(0, 12)}…</span>
@@ -264,9 +274,7 @@ export const LocalSkillImportDialog = (props: Props) => {
                         <details class="local-skill-import__report">
                           <summary>{t("marketplace.local.report", { count: item.issues.length })}</summary>
                           <ul>
-                            <For each={item.issues}>
-                              {(issue) => <li class={issue.severity}>{issue.message}</li>}
-                            </For>
+                            <For each={item.issues}>{(issue) => <li class={issue.severity}>{issue.message}</li>}</For>
                           </ul>
                         </details>
                       </Show>
@@ -352,14 +360,18 @@ export const LocalSkillImportDialog = (props: Props) => {
                     <div>
                       <strong>{item.id}</strong>
                       <span class={item.status}>{t(`marketplace.local.result.${item.status}`)}</span>
-                      <Show when={item.error}><small>{item.error}</small></Show>
+                      <Show when={item.error}>
+                        <small>{item.error}</small>
+                      </Show>
                     </div>
                   )}
                 </For>
               </div>
               <p>{t("marketplace.local.publishHint")}</p>
               <div class="local-skill-import__actions">
-                <Button variant="primary" onClick={props.onClose}>{t("marketplace.local.done")}</Button>
+                <Button variant="primary" onClick={props.onClose}>
+                  {t("marketplace.local.done")}
+                </Button>
               </div>
             </section>
           )}

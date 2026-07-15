@@ -19,7 +19,6 @@ function askRuleset(internal = false) {
     question: "allow",
     webfetch: "allow",
     websearch: "allow",
-    codesearch: "allow",
     codebase_search: "allow",
     codebase_analysis: "allow",
     semantic_search: "allow",
@@ -51,7 +50,6 @@ function askRulesetWithMcp(servers: string[], user: Permission.Ruleset = []) {
       question: "allow",
       webfetch: "allow",
       websearch: "allow",
-      codesearch: "allow",
       codebase_search: "allow",
       codebase_analysis: "allow",
       semantic_search: "allow",
@@ -128,6 +126,16 @@ describe("Ask agent bash permissions", () => {
       "sort names.txt --output=names.txt",
       "echo ok\ntouch ask-bypass.txt",
       "cat <(touch ask-bypass.txt)",
+      // Exec-via-flag escapes on otherwise read-only commands
+      'sort -S 1b --compress-program "sh" names.txt',
+      "sort --compress-program=sh names.txt",
+      "sort --files0-from=list names.txt",
+      "rg --pre sh -e . names.txt",
+      "rg --pre=sh -e . names.txt",
+      "ag --pager sh foo",
+      "man -P sh ls",
+      "man -Psh ls",
+      "man --pager=sh ls",
     ]
 
     for (const cmd of denied) {
@@ -229,7 +237,6 @@ describe("Ask agent tool disabled checks", () => {
       "question",
       "webfetch",
       "websearch",
-      "codesearch",
       "codebase_search",
       "codebase_analysis",
       "semantic_search",

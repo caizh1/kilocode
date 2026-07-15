@@ -3,7 +3,7 @@ import fs from "fs/promises"
 import path from "path"
 import { declareArtifact } from "@/kilocode/documents/artifacts"
 import { insertWordPngImage } from "@/kilocode/documents/word"
-import { Instance } from "@/project/instance"
+import { Instance } from "@/kilocode/instance"
 
 type Photon = typeof import("@silvia-odwyer/photon-node")
 type PhotonLoad = { module: Photon } | { error: unknown }

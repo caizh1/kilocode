@@ -4,8 +4,7 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { DocumentSearchTool } from "../../src/kilocode/tool/document-search"
 import { KiloIndexing } from "../../src/kilocode/indexing"
-import { WithInstance } from "../../src/project/with-instance"
-import { tmpdir } from "../fixture/fixture"
+import { provideTestInstance, tmpdir } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
 import { MessageID, SessionID } from "../../src/session/schema"
 import { Tool } from "../../src/tool/tool"
@@ -79,7 +78,7 @@ describe("tool.document_search", () => {
 
   test("asks permission and forwards normalized relative path to document search", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
@@ -127,7 +126,7 @@ describe("tool.document_search", () => {
 
   test("formats and truncates document results", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const search = spyOn(KiloIndexing, "searchDocuments").mockResolvedValue([
@@ -167,7 +166,7 @@ describe("tool.document_search", () => {
 
   test("rejects paths outside the workspace", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const search = spyOn(KiloIndexing, "searchDocuments").mockResolvedValue([])
@@ -187,7 +186,7 @@ describe("tool.document_search", () => {
 
   test("returns a bounded fallback without asking permission when indexing is not ready", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const ready = spyOn(KiloIndexing, "documentReady").mockReturnValue(false)
@@ -225,7 +224,7 @@ describe("tool.document_search", () => {
 
   test("returns a short fallback when document indexing is in error", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const search = spyOn(KiloIndexing, "searchDocuments").mockResolvedValue([])
