@@ -1,4 +1,4 @@
-import { buildQwenFimPrompt } from "./fimTemplates"
+import { buildQwenFimPrompt, normalizeQwenFimSuffix } from "./fimTemplates"
 import type { QwenAutocompleteHelperVars } from "./helperVars"
 import type { QwenAutocompleteCodeSnippet } from "./snippets"
 import { countTokens, pruneLinesFromBottom, pruneLinesFromTop } from "./tokenPruning"
@@ -69,12 +69,12 @@ export function resolveQwenSnippetInjectionGate(input: RenderInput): Gate {
 }
 
 export function renderQwenMultifileFimPromptWithTokenLimit(input: RenderInput, limit: number): QwenPromptPlan {
-  const initial = build(input.helper.prunedPrefix, suffix(input.helper.prunedSuffix), input)
+  const initial = build(input.helper.prunedPrefix, normalizeQwenFimSuffix(input.helper.prunedSuffix), input)
   if (countTokens(initial.prompt, input.cfg.model) <= limit) {
     return injected(input, initial, limit)
   }
   const prefixTokens = countTokens(input.helper.prunedPrefix, input.cfg.model)
-  const suffixTokens = countTokens(suffix(input.helper.prunedSuffix), input.cfg.model)
+  const suffixTokens = countTokens(normalizeQwenFimSuffix(input.helper.prunedSuffix), input.cfg.model)
   const total = prefixTokens + suffixTokens
   if (total > 0) {
     const prune = countTokens(initial.prompt, input.cfg.model) - limit
@@ -84,7 +84,7 @@ export function renderQwenMultifileFimPromptWithTokenLimit(input: RenderInput, l
     const suffixMax = Math.max(0, suffixTokens - dropSuffix)
     const pruned = build(
       pruneLinesFromTop(input.helper.prunedPrefix, prefixMax, input.cfg.model),
-      pruneLinesFromBottom(suffix(input.helper.prunedSuffix), suffixMax, input.cfg.model),
+      pruneLinesFromBottom(normalizeQwenFimSuffix(input.helper.prunedSuffix), suffixMax, input.cfg.model),
       input,
     )
     if (countTokens(pruned.prompt, input.cfg.model) <= limit) {
@@ -143,7 +143,8 @@ function injected(
 }
 
 function single(input: RenderInput, gate: Gate): QwenPromptPlan {
-  const prompt = buildQwenFimPrompt({ prefix: input.helper.prunedPrefix, suffix: input.helper.prunedSuffix })
+  const suffix = normalizeQwenFimSuffix(input.helper.prunedSuffix)
+  const prompt = buildQwenFimPrompt({ prefix: input.helper.prunedPrefix, suffix })
   return {
     availablePromptTokens: gate.availablePromptTokens,
     estimatedRenderedPromptTokens: countTokens(prompt, input.cfg.model),
@@ -152,8 +153,8 @@ function single(input: RenderInput, gate: Gate): QwenPromptPlan {
     renderedPrefix: input.helper.prunedPrefix,
     renderedPrefixChars: input.helper.prunedPrefix.length,
     renderedPromptChars: prompt.length,
-    renderedSuffix: input.helper.prunedSuffix,
-    renderedSuffixChars: input.helper.prunedSuffix.length,
+    renderedSuffix: suffix,
+    renderedSuffixChars: suffix.length,
     snippetInjectionBlockedReason: gate.snippetInjectionBlockedReason,
     snippetsInjectedIntoPrompt: false,
   }
@@ -172,10 +173,6 @@ function available(cfg: QwenAutocompleteConfig): number | null {
   if (cfg.contextLength <= 0) return null
   const safety = Math.min(1000, cfg.contextLength * 0.02)
   return cfg.contextLength - cfg.maxTokens - safety
-}
-
-function suffix(value: string): string {
-  return value === "" ? "\n" : value
 }
 
 function isQwenCoder(model: string): boolean {

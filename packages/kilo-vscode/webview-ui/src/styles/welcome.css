@@ -13,20 +13,13 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
-  filter:
-    saturate(1.2)
-    brightness(1.14)
-    drop-shadow(0 8px 18px rgba(43, 171, 255, 0.24))
+  filter: saturate(1.2) brightness(1.14) drop-shadow(0 8px 18px rgba(43, 171, 255, 0.24))
     drop-shadow(0 1px 0 rgba(255, 255, 255, 0.18));
 }
 
 .vscode-light .kilo-logo img,
 .vscode-high-contrast-light .kilo-logo img {
-  filter:
-    saturate(1.55)
-    contrast(1.3)
-    brightness(0.9)
-    drop-shadow(0 8px 18px rgba(0, 117, 188, 0.18))
+  filter: saturate(1.55) contrast(1.3) brightness(0.9) drop-shadow(0 8px 18px rgba(0, 117, 188, 0.18))
     drop-shadow(0 1px 0 rgba(255, 255, 255, 0.3));
 }
 
@@ -134,20 +127,13 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
-  filter:
-    saturate(1.18)
-    brightness(1.12)
-    drop-shadow(0 10px 22px rgba(43, 171, 255, 0.28))
+  filter: saturate(1.18) brightness(1.12) drop-shadow(0 10px 22px rgba(43, 171, 255, 0.28))
     drop-shadow(0 1px 0 rgba(255, 255, 255, 0.18));
 }
 
 .vscode-light .feedback-dialog-logo img,
 .vscode-high-contrast-light .feedback-dialog-logo img {
-  filter:
-    saturate(1.5)
-    contrast(1.28)
-    brightness(0.92)
-    drop-shadow(0 10px 22px rgba(0, 117, 188, 0.2))
+  filter: saturate(1.5) contrast(1.28) brightness(0.92) drop-shadow(0 10px 22px rgba(0, 117, 188, 0.2))
     drop-shadow(0 1px 0 rgba(255, 255, 255, 0.3));
 }
 

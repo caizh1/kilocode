@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
 import path from "node:path"
 import { encodeBoundedJson } from "../bounded-json"
 import { cleanupRoot, emptyCleanupStats, list, rel as relpath, removeSafe } from "../../cleanup"
@@ -9,14 +10,8 @@ import {
   CODE_GRAPH_STORAGE_DIR,
   CODE_GRAPH_STORAGE_VERSION_DIR,
 } from "../constants"
-import {
-  groupGraphsByShard,
-  mergeCodeGraphFileStorageParts,
-  shardFileName,
-  shardKeyForPath,
-  splitCodeGraphFilesForStorage,
-} from "../file-storage"
-import { buildCodeGraphDerivedIndex } from "../derived-index"
+import { mergeCodeGraphFileStorageParts, splitCodeGraphFilesForStorage } from "../file-storage"
+import { CodeGraphDerivedIndexBuilder } from "../derived-index"
 import { CODEGRAPH_DERIVED_SIDECAR_FIELDS, splitCodeGraphDerivedIndex } from "../derived-storage"
 import type { IndexingCleanupStats, IndexingCompatibilityDecision } from "../../interfaces/cleanup"
 import { Log } from "../../../util/log"
@@ -36,17 +31,22 @@ import { copy, dict, own } from "../dict"
 
 const log = Log.create({ service: "codegraph-storage" })
 const writeConcurrency = 4
+const derivedWindow = 64
+const cacheLimit = 64 * 1024 * 1024
 
 export class CodeGraphJsonStorage implements ICodeGraphStorage {
   private manifest?: CodeGraphManifest
   private stage?: CodeGraphManifest
   private old?: CodeGraphManifest
   private seen?: Set<string>
-  private pending = new Map<string, CodeGraphFileGraph>()
-  private cache?: { generation?: string; graphs: Record<string, CodeGraphFileGraph> }
+  private readonly cache = new Map<string, { graph: CodeGraphFileGraph; bytes: number }>()
+  private readonly loads = new Map<string, Promise<CodeGraphFileGraph | undefined>>()
+  private cacheBytes = 0
   private schemaMismatch = false
   private parserMismatch = false
   private rebuilding = false
+  private checkpointFiles = 0
+  private checkpointAt = 0
 
   constructor(
     private readonly opts: {
@@ -67,6 +67,7 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
       return
     }
 
+    if (!this.rebuilding) manifest.dataGeneration = globalThis.crypto.randomUUID()
     const record = this.record(rel, "ok", fileHash, manifest.dataGeneration)
     const data: CodeGraphFileGraph = {
       ...graph,
@@ -77,11 +78,14 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
       parserVersion: CODE_GRAPH_PARSER_VERSION,
       updatedAt: record.updatedAt,
     }
+    record.graphParts = await this.writeGraph(rel, data, manifest.dataGeneration!)
     manifest.records[rel] = record
-    this.pending.set(rel, data)
+    manifest.shards = this.graphShards(manifest)
+    this.remember(record, data)
     this.markSeen(rel)
 
-    if (!this.rebuilding) await this.commitActive(manifest)
+    if (this.rebuilding) await this.checkpoint(manifest)
+    else await this.commitActive(manifest)
   }
 
   public async removeFileGraph(filePath: string): Promise<void> {
@@ -93,13 +97,11 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     const staged = this.rebuilding ? this.stage : undefined
     const record = staged ? own(staged.records, rel) : undefined
     if (record && record.status !== "ok") return undefined
-    const pending = this.pending.get(rel)
-    if (pending) return pending
-    if (staged && record?.status === "ok") return (await this.graphs(staged))[rel]
+    if (staged && record?.status === "ok") return this.readGraph(record)
     const manifest = this.load()
     const current = own(manifest.records, rel)
     if (!current || current.status !== "ok") return undefined
-    const graph = (await this.graphs(manifest))[rel]
+    const graph = await this.readGraph(current)
     if (!graph || graph.fileHash !== current.fileHash) return undefined
     return graph
   }
@@ -113,13 +115,12 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   public async clear(): Promise<void> {
-    await rm(this.root, { recursive: true, force: true })
+    await rm(path.join(this.opts.cacheDirectory, CODE_GRAPH_STORAGE_DIR), { recursive: true, force: true })
     this.manifest = this.empty()
     this.stage = undefined
     this.old = undefined
     this.seen = undefined
-    this.pending.clear()
-    this.cache = undefined
+    this.clearCache()
     this.schemaMismatch = false
     this.parserMismatch = false
     this.rebuilding = false
@@ -174,6 +175,7 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
 
     const rel = this.relative(filePath)
     const manifest = this.active()
+    if (!this.rebuilding) manifest.dataGeneration = globalThis.crypto.randomUUID()
     const existing = own(manifest.records, rel)
     const record: CodeGraphFileRecord = {
       filePath: rel,
@@ -185,16 +187,20 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     if (hash) record.fileHash = hash
     if (input.error) record.error = input.error.slice(0, 500)
     manifest.records[rel] = record
-    this.pending.delete(rel)
+    this.forget(existing)
     if (status !== "stale") this.markSeen(rel)
-    if (!this.rebuilding) await this.commitActive(manifest)
+    if (this.rebuilding) await this.checkpoint(manifest)
+    else await this.commitActive(manifest)
   }
 
   public async beginFullScan(): Promise<void> {
     const current = this.load()
-    this.stage = this.needsRebuild() ? this.empty(globalThis.crypto.randomUUID()) : this.scanBase(current)
+    this.stage =
+      this.loadStage() ?? (this.needsRebuild() ? this.empty(globalThis.crypto.randomUUID()) : this.scanBase(current))
     this.seen = new Set()
-    this.pending.clear()
+    this.checkpointFiles = 0
+    this.checkpointAt = Date.now()
+    this.clearCache()
     this.schemaMismatch = false
     this.parserMismatch = false
     this.rebuilding = true
@@ -211,7 +217,7 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     this.manifest = manifest
     this.stage = undefined
     this.seen = undefined
-    this.pending.clear()
+    this.clearCache()
     this.rebuilding = false
     await this.cleanupOldShardGenerations()
   }
@@ -222,19 +228,29 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     if (!root) return stats
 
     const manifest = this.readManifestFile(this.manifestPath)
+    const stage = this.readManifestFile(this.stageManifestPath)
     if (manifest?.workspacePath && manifest.workspacePath !== this.opts.workspacePath) {
       stats.skipped.push("codegraph: active manifest workspace mismatch")
       return stats
     }
+    if (stage?.workspacePath && stage.workspacePath !== this.opts.workspacePath) {
+      stats.skipped.push("codegraph: rebuild manifest workspace mismatch")
+      return stats
+    }
 
-    await removeSafe(this.stageManifestPath, root, stats, "codegraph: rebuild manifest")
-    this.stage = undefined
-    if (!manifest) return stats
+    if (!manifest && !stage) return stats
 
-    const keep = new Set((manifest.shards ?? []).flatMap((shard) => shard.parts.map((part) => normalize(part.path))))
-    for (const part of this.derivedParts(manifest)) keep.add(normalize(part.path))
-    await this.cleanupShards(root, keep, manifest.dataGeneration, stats)
-    await this.cleanupDerived(root, keep, manifest.dataGeneration, stats)
+    const keep = new Set(
+      [manifest, stage]
+        .filter((item): item is CodeGraphManifest => item !== undefined)
+        .flatMap((item) => (item.shards ?? []).flatMap((shard) => shard.parts.map((part) => normalize(part.path)))),
+    )
+    for (const item of [manifest, stage]) {
+      if (!item) continue
+      for (const part of this.derivedParts(item)) keep.add(normalize(part.path))
+    }
+    await this.cleanupShards(root, keep, stats)
+    await this.cleanupDerived(root, keep, stats)
     return stats
   }
 
@@ -275,85 +291,191 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     if (!this.rebuilding || !this.seen) return
     for (const rel of Object.keys(manifest.records)) {
       if (this.seen.has(rel)) continue
+      const record = manifest.records[rel]
       delete manifest.records[rel]
-      this.pending.delete(rel)
+      this.forget(record)
     }
-  }
-
-  private async graphs(manifest: CodeGraphManifest): Promise<Record<string, CodeGraphFileGraph>> {
-    if (!manifest.shards?.length) return dict()
-    const cached = this.cache
-    if (cached && cached.generation === manifest.dataGeneration) return cached.graphs
-    const parts: CodeGraphShardData[] = []
-    for (const shard of manifest.shards) {
-      for (const part of shard.parts) {
-        const payload = await this.readJson<CodeGraphShardData>(part.path)
-        if (payload.key !== shard.key || payload.part !== part.key) {
-          throw new Error(`Code graph shard ${shard.key} part ${part.key} does not match the manifest.`)
-        }
-        parts.push(payload)
-      }
-    }
-    const graphs = mergeCodeGraphFileStorageParts(parts)
-    this.cache = { generation: manifest.dataGeneration, graphs }
-    return graphs
   }
 
   private async commitActive(manifest: CodeGraphManifest): Promise<void> {
-    await this.commit(manifest, this.manifestPath)
+    manifest.shards = this.graphShards(manifest)
+    await this.atomicJson(this.manifestPath, manifest)
     this.manifest = manifest
-    this.pending.clear()
     await this.cleanupOldShardGenerations()
   }
 
+  private async checkpoint(manifest: CodeGraphManifest): Promise<void> {
+    this.checkpointFiles += 1
+    const now = Date.now()
+    if (this.checkpointFiles < 64 && now - this.checkpointAt < 2_000) return
+    manifest.shards = this.graphShards(manifest)
+    await this.writeStageManifest()
+    this.checkpointFiles = 0
+    this.checkpointAt = now
+  }
+
   private async commit(manifest: CodeGraphManifest, file: string): Promise<void> {
-    const baseGraphs = await this.graphs(manifest)
-    const generation = globalThis.crypto.randomUUID()
+    const generation = manifest.dataGeneration ?? globalThis.crypto.randomUUID()
     manifest.dataGeneration = generation
-    const graphs = Object.create(null) as Record<string, CodeGraphFileGraph>
-    for (const [rel, record] of Object.entries(manifest.records)) {
-      if (record.status !== "ok") continue
-      const graph = this.pending.get(rel) ?? baseGraphs[rel]
-      if (!graph) continue
-      graphs[rel] = graph
-      record.graphFile = this.graphName(rel, generation)
-      record.fileHash = graph.fileHash
+    manifest.shards = this.graphShards(manifest)
+    manifest.derived = this.emptyDerived()
+    const records = Object.values(manifest.records)
+      .filter((record) => record.status === "ok")
+      .sort((left, right) => left.filePath.localeCompare(right.filePath))
+
+    const local = CODEGRAPH_DERIVED_SIDECAR_FIELDS.filter(
+      (field) => field !== "directoryStats" && field !== "moduleStats",
+    )
+    for (let index = 0; index < records.length; index += derivedWindow) {
+      const builder = new CodeGraphDerivedIndexBuilder(local)
+      for (const record of records.slice(index, index + derivedWindow)) {
+        const graph = await this.readGraph(record)
+        if (graph) builder.add(graph)
+      }
+      await this.writeDerived(manifest, builder, `derived/${generation}/batch-${index / derivedWindow}`)
     }
-    const groups = groupGraphsByShard(graphs)
-    const shards: CodeGraphShardInfo[] = []
-    for (const [key, group] of [...groups.entries()].sort(([left], [right]) => left.localeCompare(right))) {
-      const parts = splitCodeGraphFilesForStorage(group, {
-        shardKey: key,
-        label: `file shard ${key}`,
-        basePath: `shards/${generation}/${this.shardDirectoryName(key)}`,
-      })
-      shards.push({
-        key,
-        files: Object.keys(group).length,
-        functions: Object.values(group).reduce((sum, graph) => sum + graph.functions.length, 0),
-        macros: Object.values(group).reduce((sum, graph) => sum + graph.macros.length, 0),
-        bytes: 0,
-        parts: parts.map((part) => ({
-          key: part.key,
-          path: part.path,
-          entries: part.entries,
-          estimatedBytes: part.estimatedBytes,
-        })),
-      })
-      await writeParts(parts, async (part) => {
-        await this.atomicJson(path.join(this.root, part.path), part.payload)
-      })
+
+    const aggregate = new CodeGraphDerivedIndexBuilder(["directoryStats", "moduleStats"])
+    for (const record of records) {
+      const graph = await this.readGraph(record)
+      if (graph) aggregate.add(graph)
     }
-    manifest.shards = shards
-    const sidecar = splitCodeGraphDerivedIndex(buildCodeGraphDerivedIndex(graphs), {
-      basePath: `derived/${generation}`,
-    })
+    await this.writeDerived(manifest, aggregate, `derived/${generation}/aggregate`)
+    await this.atomicJson(file, manifest)
+  }
+
+  private async writeDerived(
+    manifest: CodeGraphManifest,
+    builder: CodeGraphDerivedIndexBuilder,
+    basePath: string,
+  ): Promise<void> {
+    const sidecar = splitCodeGraphDerivedIndex(builder.build(), { basePath })
     await writeParts(sidecar.parts, async (part) => {
       await this.atomicJson(path.join(this.root, part.path), part.payload)
     })
-    manifest.derived = sidecar.manifest
-    await this.atomicJson(file, manifest)
-    this.cache = { generation, graphs }
+    for (const field of CODEGRAPH_DERIVED_SIDECAR_FIELDS) {
+      manifest.derived!.fields[field].push(...sidecar.manifest.fields[field])
+    }
+  }
+
+  private async writeGraph(
+    rel: string,
+    graph: CodeGraphFileGraph,
+    generation: string,
+  ): Promise<CodeGraphFileRecord["graphParts"]> {
+    const key = this.fileKey(rel)
+    const parts = splitCodeGraphFilesForStorage(
+      { [rel]: graph },
+      {
+        shardKey: key,
+        label: `file ${rel}`,
+        basePath: this.graphName(rel, generation),
+      },
+    )
+    await writeParts(parts, async (part) => {
+      await this.atomicJson(path.join(this.root, part.path), part.payload)
+    })
+    return parts.map((part) => ({
+      key: part.key,
+      path: part.path,
+      entries: part.entries,
+      estimatedBytes: part.estimatedBytes,
+    }))
+  }
+
+  private readGraph(record: CodeGraphFileRecord): Promise<CodeGraphFileGraph | undefined> {
+    const key = this.cacheKey(record)
+    const cached = this.cache.get(key)
+    if (cached) {
+      this.cache.delete(key)
+      this.cache.set(key, cached)
+      return Promise.resolve(cached.graph)
+    }
+    const active = this.loads.get(key)
+    if (active) return active
+    const load = this.loadGraph(record).finally(() => this.loads.delete(key))
+    this.loads.set(key, load)
+    return load
+  }
+
+  private async loadGraph(record: CodeGraphFileRecord): Promise<CodeGraphFileGraph | undefined> {
+    if (!record.graphParts?.length) return undefined
+    const parts: CodeGraphShardData[] = []
+    const key = this.fileKey(record.filePath)
+    for (const part of record.graphParts) {
+      const payload = await this.readJson<CodeGraphShardData>(part.path)
+      if (payload.key !== key || payload.part !== part.key) {
+        throw new Error(`Code graph file ${record.filePath} part ${part.key} does not match the manifest.`)
+      }
+      parts.push(payload)
+    }
+    const graph = mergeCodeGraphFileStorageParts(parts)[record.filePath]
+    if (graph) this.remember(record, graph)
+    return graph
+  }
+
+  private graphShards(manifest: CodeGraphManifest): CodeGraphShardInfo[] {
+    return Object.values(manifest.records)
+      .sort((left, right) => left.filePath.localeCompare(right.filePath))
+      .flatMap((record) => {
+        const parts = record.status === "ok" ? record.graphParts : undefined
+        if (!parts?.length) return []
+        return [
+          {
+            key: this.fileKey(record.filePath),
+            files: 1,
+            functions: 0,
+            macros: 0,
+            bytes: parts.reduce((sum, part) => sum + part.estimatedBytes, 0),
+            parts,
+          },
+        ]
+      })
+  }
+
+  private remember(record: CodeGraphFileRecord, graph: CodeGraphFileGraph): void {
+    const key = this.cacheKey(record)
+    this.forgetPath(record.filePath)
+    const bytes = record.graphParts?.reduce((sum, part) => sum + part.estimatedBytes, 0) ?? 0
+    if (bytes > cacheLimit) return
+    this.cache.set(key, { graph, bytes })
+    this.cacheBytes += bytes
+    while (this.cacheBytes > cacheLimit) {
+      const oldest = this.cache.entries().next().value as
+        | [string, { graph: CodeGraphFileGraph; bytes: number }]
+        | undefined
+      if (!oldest) break
+      this.cache.delete(oldest[0])
+      this.cacheBytes -= oldest[1].bytes
+    }
+  }
+
+  private forget(record: CodeGraphFileRecord | undefined): void {
+    if (!record) return
+    const key = this.cacheKey(record)
+    const cached = this.cache.get(key)
+    if (!cached) return
+    this.cache.delete(key)
+    this.cacheBytes -= cached.bytes
+  }
+
+  private forgetPath(file: string): void {
+    const prefix = `${file}\0`
+    for (const [key, cached] of this.cache) {
+      if (!key.startsWith(prefix)) continue
+      this.cache.delete(key)
+      this.cacheBytes -= cached.bytes
+    }
+  }
+
+  private clearCache(): void {
+    this.cache.clear()
+    this.loads.clear()
+    this.cacheBytes = 0
+  }
+
+  private cacheKey(record: CodeGraphFileRecord): string {
+    return `${record.filePath}\0${record.fileHash ?? ""}`
   }
 
   private load(): CodeGraphManifest {
@@ -442,6 +564,13 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
         if (!existsSync(path.join(this.root, part.path))) return { action: "rebuild", reason: "missing graph shard" }
       }
     }
+    for (const record of Object.values(manifest.records)) {
+      if (record.status !== "ok") continue
+      if (!record.graphParts?.length) return { action: "rebuild", reason: "storage layout changed" }
+      for (const part of record.graphParts) {
+        if (!existsSync(path.join(this.root, part.path))) return { action: "rebuild", reason: "missing graph shard" }
+      }
+    }
     for (const field of CODEGRAPH_DERIVED_SIDECAR_FIELDS) {
       const parts = manifest.derived.fields[field]
       if (!Array.isArray(parts)) return { action: "rebuild", reason: "storage layout changed" }
@@ -487,10 +616,11 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   private scanBase(manifest: CodeGraphManifest): CodeGraphManifest {
-    if (!manifest.dataGeneration && Object.keys(manifest.records ?? {}).length === 0) {
+    if (!manifest.dataGeneration && Object.keys(manifest.records ?? {}).length === 0)
       return this.empty(globalThis.crypto.randomUUID())
-    }
-    return this.clone(manifest)
+    const next = this.clone(manifest)
+    next.dataGeneration = globalThis.crypto.randomUUID()
+    return next
   }
 
   private record(
@@ -517,11 +647,11 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   private graphName(filePath: string, generation = "active"): string {
-    return `shards/${generation}/${this.shardDirectoryName(shardKeyForPath(filePath))}`
+    return `shards/${generation}/${this.fileKey(filePath)}`
   }
 
-  private shardDirectoryName(key: string): string {
-    return shardFileName(key).replace(/\.json$/i, "") || "root"
+  private fileKey(file: string): string {
+    return createHash("sha256").update(normalize(file)).digest("hex")
   }
 
   private now(): string {
@@ -547,35 +677,23 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     await rename(tmp, file)
   }
 
-  private async cleanupShards(
-    root: string,
-    keep: Set<string>,
-    generation: string | undefined,
-    stats: IndexingCleanupStats,
-  ): Promise<void> {
+  private async cleanupShards(root: string, keep: Set<string>, stats: IndexingCleanupStats): Promise<void> {
     for (const item of await list(this.shards)) {
       if (!item.directory) continue
-      if (generation && item.name === generation) {
-        await this.cleanupTree(item.path, root, keep, stats)
-        continue
+      await this.cleanupTree(item.path, root, keep, stats)
+      if ((await list(item.path)).length === 0) {
+        await removeSafe(item.path, root, stats, `codegraph: empty shard generation ${item.name}`)
       }
-      await removeSafe(item.path, root, stats, `codegraph: orphan shard generation ${item.name}`)
     }
   }
 
-  private async cleanupDerived(
-    root: string,
-    keep: Set<string>,
-    generation: string | undefined,
-    stats: IndexingCleanupStats,
-  ): Promise<void> {
+  private async cleanupDerived(root: string, keep: Set<string>, stats: IndexingCleanupStats): Promise<void> {
     for (const item of await list(this.derived)) {
       if (!item.directory) continue
-      if (generation && item.name === generation) {
-        await this.cleanupTree(item.path, root, keep, stats)
-        continue
+      await this.cleanupTree(item.path, root, keep, stats)
+      if ((await list(item.path)).length === 0) {
+        await removeSafe(item.path, root, stats, `codegraph: empty derived generation ${item.name}`)
       }
-      await removeSafe(item.path, root, stats, `codegraph: orphan derived generation ${item.name}`)
     }
   }
 
@@ -585,7 +703,10 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
         await this.cleanupTree(item.path, root, keep, stats)
         continue
       }
-      if (!item.file) continue
+      if (!item.file) {
+        await removeSafe(item.path, root, stats, `codegraph: unsupported shard entry ${item.name}`)
+        continue
+      }
       const file = normalize(relpath(this.root, item.path))
       if (keep.has(file)) continue
       await removeSafe(item.path, root, stats, `codegraph: orphan shard part ${item.name}`)
@@ -600,8 +721,8 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     if (!root) return
     const keep = new Set((manifest.shards ?? []).flatMap((shard) => shard.parts.map((part) => normalize(part.path))))
     for (const part of this.derivedParts(manifest)) keep.add(normalize(part.path))
-    await this.cleanupShards(root, keep, manifest.dataGeneration, stats)
-    await this.cleanupDerived(root, keep, manifest.dataGeneration, stats)
+    await this.cleanupShards(root, keep, stats)
+    await this.cleanupDerived(root, keep, stats)
   }
 
   private emptyDerived(): CodeGraphDerivedSidecarManifest {

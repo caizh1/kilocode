@@ -21,6 +21,13 @@ import type { RunStatus } from "./run/manager"
 
 type SessionMode = "worktree" | "local"
 
+export type AgentManagerMode = "manager" | "console"
+
+export interface AgentManagerOpenOptions {
+  mode: AgentManagerMode
+  preserveFocus?: boolean
+}
+
 export type ApplyDiffStatus = "checking" | "applying" | "success" | "conflict" | "error"
 
 export type WorktreeDiffEntry = SnapshotFileDiff & {
@@ -281,6 +288,11 @@ interface ActionOutMessage {
   action: string
 }
 
+interface OpenModeMessage {
+  type: "agentManager.openMode"
+  mode: AgentManagerMode
+}
+
 interface RunStatusMessage extends RunStatus {
   type: "agentManager.runStatus"
 }
@@ -310,6 +322,7 @@ export type AgentManagerOutMessage =
   | RevertWorktreeFileResultMessage
   | PRStatusOutMessage
   | ActionOutMessage
+  | OpenModeMessage
   | RunStatusMessage
   | TerminalCreatedMessage
   | TerminalClosedMessage

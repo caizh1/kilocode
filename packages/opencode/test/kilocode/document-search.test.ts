@@ -33,6 +33,36 @@ const baseCtx = {
   ask: () => Effect.void,
 } satisfies Tool.Context
 
+function stub(state: KiloIndexing.Status["state"] = "Complete") {
+  const pipeline = {
+    state,
+    message: state,
+    processedFiles: 1,
+    totalFiles: 1,
+    percent: state === "Complete" ? 100 : 50,
+    errorCount: state === "Error" ? 1 : 0,
+    staleCount: 0,
+    skippedCount: 0,
+  }
+  const ready = spyOn(KiloIndexing, "documentReady").mockReturnValue(true)
+  const current = spyOn(KiloIndexing, "current").mockResolvedValue({
+    state,
+    message: state,
+    processedFiles: 1,
+    totalFiles: 1,
+    percent: state === "Complete" ? 100 : 50,
+    pipelines: {
+      codeGraph: pipeline,
+      rag: pipeline,
+      documents: pipeline,
+    },
+  })
+  return () => {
+    ready.mockRestore()
+    current.mockRestore()
+  }
+}
+
 describe("tool.document_search", () => {
   test("describes indexed workspace document search", async () => {
     const tool = await initTool()
@@ -54,6 +84,7 @@ describe("tool.document_search", () => {
       fn: async () => {
         const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
         const search = spyOn(KiloIndexing, "searchDocuments").mockResolvedValue([])
+        const restore = stub()
 
         try {
           const tool = await initTool()
@@ -87,6 +118,7 @@ describe("tool.document_search", () => {
           })
           expect(result.output).toBe('No relevant documents found for "retention policy" in docs/policy.')
         } finally {
+          restore()
           search.mockRestore()
         }
       },
@@ -108,6 +140,7 @@ describe("tool.document_search", () => {
             endLine: 4,
           },
         ])
+        const restore = stub()
 
         try {
           const tool = await initTool()
@@ -125,6 +158,7 @@ describe("tool.document_search", () => {
           expect(result.output).toContain("1. docs/policy.pdf#page=4 (score 0.9235)")
           expect(result.output).toContain("[Document search output truncated by maxPackChars.]")
         } finally {
+          restore()
           search.mockRestore()
         }
       },
@@ -145,6 +179,66 @@ describe("tool.document_search", () => {
           )
           expect(search).not.toHaveBeenCalled()
         } finally {
+          search.mockRestore()
+        }
+      },
+    })
+  })
+
+  test("returns a bounded fallback without asking permission when indexing is not ready", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const ready = spyOn(KiloIndexing, "documentReady").mockReturnValue(false)
+        const search = spyOn(KiloIndexing, "searchDocuments").mockResolvedValue([])
+        const requests: unknown[] = []
+
+        try {
+          const tool = await initTool()
+          const result = await rt.runPromise(
+            tool.execute(
+              { query: "retention policy", maxPackChars: 1000 },
+              {
+                ...baseCtx,
+                ask: (req) => {
+                  requests.push(req)
+                  return Effect.void
+                },
+              },
+            ),
+          )
+
+          expect(result.output).toContain("Document index is not ready yet")
+          expect(result.output).toContain("do not repeatedly retry document_search")
+          expect(result.output.length).toBeLessThan(240)
+          expect(result.metadata.maxPackChars).toBe(1000)
+          expect(requests).toHaveLength(0)
+          expect(search).not.toHaveBeenCalled()
+        } finally {
+          ready.mockRestore()
+          search.mockRestore()
+        }
+      },
+    })
+  })
+
+  test("returns a short fallback when document indexing is in error", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const search = spyOn(KiloIndexing, "searchDocuments").mockResolvedValue([])
+        const restore = stub("Error")
+
+        try {
+          const tool = await initTool()
+          const result = await rt.runPromise(tool.execute({ query: "retention policy" }, baseCtx))
+
+          expect(result.output).toContain("Document index is unavailable (Error)")
+          expect(search).not.toHaveBeenCalled()
+        } finally {
+          restore()
           search.mockRestore()
         }
       },

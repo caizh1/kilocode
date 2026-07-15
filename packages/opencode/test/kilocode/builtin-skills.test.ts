@@ -54,17 +54,40 @@ it.instance(
       const documents = yield* skill.get("documents")
       expect(documents).toBeDefined()
       expect(documents!.location).toBe(Skill.BUILTIN_LOCATION)
+      expect(documents!.content.startsWith("---\n")).toBe(true)
+      expect(documents!.content).not.toMatch(/^<hr\s*\/?/i)
       expect(documents!.content).toContain("not a QA pipeline")
       expect(documents!.content).toContain("generic Word/Mermaid/artifact guidance")
+      expect(documents!.content).toContain("diagramId -> targetSection -> pngPath -> QA status")
+      expect(documents!.content).toContain("sections[].blocks[]")
+      expect(documents!.content).toContain("inspect_word_document.imageCount")
+      expect(documents!.content).not.toContain("WordDocSpec")
+      expect(documents!.content).not.toContain("FigureSpec")
+      expect(documents!.content).not.toContain("artifactPath")
 
       const sourceBacked = yield* skill.get("source-backed-detail-design")
       expect(sourceBacked).toBeDefined()
       expect(sourceBacked!.location).toContain(path.join("builtin-skills", "source-backed-detail-design", "SKILL.md"))
+      expect(sourceBacked!.content.startsWith("---\n")).toBe(true)
+      expect(sourceBacked!.content).not.toMatch(/^<hr\s*\/?/i)
       expect(sourceBacked!.content).toContain("not a migrated Word/document contract")
       expect(sourceBacked!.content).toContain("Kilo built-in skill")
       expect(sourceBacked!.content).toContain("Do not force ordinary code QA")
-      expect(existsSync(path.join(path.dirname(sourceBacked!.location), "references", "01-core-principles.md"))).toBe(true)
-      expect(existsSync(path.join(path.dirname(sourceBacked!.location), "references", "15-business-flow-abstraction-rules.md"))).toBe(true)
+      expect(existsSync(path.join(path.dirname(sourceBacked!.location), "references", "01-core-principles.md"))).toBe(
+        true,
+      )
+      expect(
+        existsSync(
+          path.join(path.dirname(sourceBacked!.location), "references", "15-business-flow-abstraction-rules.md"),
+        ),
+      ).toBe(true)
+
+      const builtin = BUILTIN_SKILLS.find((item) => item.name === "source-backed-detail-design")
+      expect(builtin).toBeDefined()
+      for (const content of Object.values(builtin!.files ?? {})) {
+        expect(content.startsWith("#")).toBe(true)
+        expect(content).not.toMatch(/^<h[1-6]\b/i)
+      }
     }),
   { git: true },
 )

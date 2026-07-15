@@ -8,6 +8,7 @@ import { KiloGatewayApi, KiloGatewayPaths } from "../../../src/kilocode/server/h
 import { kiloGatewayHandlers } from "../../../src/kilocode/server/httpapi/handlers/kilo-gateway"
 import { InstanceStore } from "../../../src/project/instance-store"
 import { ModelCache } from "../../../src/provider/model-cache"
+import { Provider } from "../../../src/provider/provider"
 import { Session } from "../../../src/session/session"
 import { Authorization } from "../../../src/server/routes/instance/httpapi/middleware/authorization"
 import { InstanceContextMiddleware } from "../../../src/server/routes/instance/httpapi/middleware/instance-context"
@@ -20,10 +21,99 @@ import { testEffect } from "../../lib/effect"
 
 const TestHttpApi = HttpApi.make("opencode-instance").addHttpApi(KiloGatewayApi)
 const auth = Layer.mock(Auth.Service)({
-  get: () => Effect.succeed(new Auth.Api({ type: "api", key: "test-token" })),
+  get: (id) => Effect.succeed(id === "no-auth" ? undefined : new Auth.Api({ type: "api", key: "test-token" })),
 })
 const store = Layer.mock(InstanceStore.Service)({})
 const cache = Layer.mock(ModelCache.Service)({})
+const providers = Layer.mock(Provider.Service)({
+  list: () =>
+    Effect.succeed({
+      qwen: {
+        id: "qwen",
+        options: {
+          baseURL: "https://options.test/v1/",
+          headers: { "X-Layer": "provider", "X-Provider-Option": "configured" },
+        },
+        models: {
+          "qwen-coder-30b0": {
+            id: "qwen-coder-30b0",
+            api: {
+              id: "qwen-coder-30b0",
+              npm: "@ai-sdk/openai-compatible",
+              url: "https://ignored.test/v1",
+            },
+            headers: { "X-Layer": "model", "X-Provider": "configured" },
+          },
+        },
+      },
+      "qwen-model-url": {
+        id: "qwen-model-url",
+        options: {},
+        models: {
+          "qwen-coder-30b0": {
+            id: "qwen-coder-30b0",
+            api: {
+              id: "qwen-coder-30b0",
+              npm: "@ai-sdk/openai-compatible",
+              url: "https://model.test/v1/completions/",
+            },
+            headers: {},
+          },
+        },
+      },
+      "qwen-header-auth": {
+        id: "qwen-header-auth",
+        options: {
+          baseURL: "https://header.test/v1",
+          headers: { authorization: "Custom token" },
+        },
+        models: {
+          "qwen-coder-30b0": {
+            id: "qwen-coder-30b0",
+            api: {
+              id: "qwen-coder-30b0",
+              npm: "@ai-sdk/openai-compatible",
+              url: "",
+            },
+            headers: {},
+          },
+        },
+      },
+      "no-auth": {
+        id: "no-auth",
+        options: { baseURL: "https://no-auth.test/v1" },
+        models: {
+          "qwen-coder-30b0": {
+            id: "qwen-coder-30b0",
+            api: { id: "qwen-coder-30b0", npm: "@ai-sdk/openai-compatible", url: "" },
+            headers: {},
+          },
+        },
+      },
+      "wrong-type": {
+        id: "wrong-type",
+        options: { baseURL: "https://wrong.test/v1" },
+        models: {
+          "qwen-coder-30b0": {
+            id: "qwen-coder-30b0",
+            api: { id: "qwen-coder-30b0", npm: "@ai-sdk/anthropic", url: "" },
+            headers: {},
+          },
+        },
+      },
+      "missing-url": {
+        id: "missing-url",
+        options: {},
+        models: {
+          "qwen-coder-30b0": {
+            id: "qwen-coder-30b0",
+            api: { id: "qwen-coder-30b0", npm: "@ai-sdk/openai-compatible", url: "" },
+            headers: {},
+          },
+        },
+      },
+    } as never),
+})
 const session = Layer.mock(Session.Service)({})
 const passthroughAuthorization = Layer.succeed(
   Authorization,
@@ -50,6 +140,7 @@ const layer = HttpRouter.serve(
       auth,
       store,
       cache,
+      providers,
       session,
     ]),
   ),
@@ -57,14 +148,14 @@ const layer = HttpRouter.serve(
 ).pipe(Layer.provideMerge(NodeHttpServer.layerTest))
 const it = testEffect(layer)
 
-function stub(run: () => Response | Promise<Response>) {
+function stub(run: (input?: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>) {
   // These tests run sequentially; scope the process-global override and delegate in-process server traffic.
   const original = globalThis.fetch
   const fetch: typeof globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
       if (url.startsWith("http://127.0.0.1:")) return original(input, init)
-      return run()
+      return run(input, init)
     },
     { preconnect: original.preconnect },
   )
@@ -84,6 +175,189 @@ function post(path: string, body: Record<string, unknown>) {
 }
 
 describe("Kilo gateway HttpApi statuses", () => {
+  it.live("proxies configured Qwen FIM through the provider auth store", () =>
+    Effect.gen(function* () {
+      let body: Record<string, unknown> | undefined
+      let headers: Headers | undefined
+      let url: string | undefined
+      yield* stub((input, init) => {
+        url = String(input)
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        headers = new Headers(init?.headers)
+        return new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }))
+      })
+
+      const response = yield* post(KiloGatewayPaths.qwenFim, {
+        providerID: "qwen",
+        modelID: "qwen-coder-30b0",
+        prefix: "prefix",
+        suffix: "suffix",
+        stop: ["<|endoftext|>"],
+      })
+
+      expect(response.status).toBe(200)
+      expect(yield* response.json).toEqual({ text: "return ok;" })
+      expect(response.headers["x-chipmate-qwen-fim-phase"]).toBe("success")
+      expect(response.headers["x-chipmate-qwen-endpoint-source"]).toBe("provider-options")
+      expect(body).toEqual({
+        model: "qwen-coder-30b0",
+        prompt: "prefix",
+        max_tokens: 128,
+        temperature: 0.01,
+        stop: ["<|endoftext|>"],
+        stream: false,
+      })
+      expect(body).not.toHaveProperty("suffix")
+      expect(headers?.get("Authorization")).toBe("Bearer test-token")
+      expect(headers?.get("X-Provider")).toBe("configured")
+      expect(headers?.get("X-Provider-Option")).toBe("configured")
+      expect(headers?.get("X-Layer")).toBe("model")
+      expect(url).toBe("https://options.test/v1/completions")
+    }),
+  )
+
+  it.live("falls back to the model API URL without duplicating the completions path", () =>
+    Effect.gen(function* () {
+      let url: string | undefined
+      yield* stub((input) => {
+        url = String(input)
+        return new Response(JSON.stringify({ choices: [{ text: "ok" }] }))
+      })
+
+      const response = yield* post(KiloGatewayPaths.qwenFim, {
+        providerID: "qwen-model-url",
+        modelID: "qwen-coder-30b0",
+        prefix: "prefix",
+        suffix: "suffix",
+      })
+
+      expect(response.status).toBe(200)
+      expect(url).toBe("https://model.test/v1/completions")
+    }),
+  )
+
+  it.live("preserves a custom provider Authorization header", () =>
+    Effect.gen(function* () {
+      let headers: Headers | undefined
+      yield* stub((_input, init) => {
+        headers = new Headers(init?.headers)
+        return new Response(JSON.stringify({ choices: [{ text: "ok" }] }))
+      })
+
+      const response = yield* post(KiloGatewayPaths.qwenFim, {
+        providerID: "qwen-header-auth",
+        modelID: "qwen-coder-30b0",
+        prefix: "prefix",
+        suffix: "suffix",
+      })
+
+      expect(response.status).toBe(200)
+      expect(headers?.get("Authorization")).toBe("Custom token")
+    }),
+  )
+
+  it.live("returns unauthorized when neither headers nor the auth store contain credentials", () =>
+    Effect.gen(function* () {
+      const response = yield* post(KiloGatewayPaths.qwenFim, {
+        providerID: "no-auth",
+        modelID: "qwen-coder-30b0",
+        prefix: "prefix",
+        suffix: "suffix",
+      })
+
+      expect(response.status).toBe(401)
+    }),
+  )
+
+  it.live("rejects providers that are not OpenAI compatible", () =>
+    Effect.gen(function* () {
+      const response = yield* post(KiloGatewayPaths.qwenFim, {
+        providerID: "wrong-type",
+        modelID: "qwen-coder-30b0",
+        prefix: "prefix",
+        suffix: "suffix",
+      })
+
+      expect(response.status).toBe(400)
+    }),
+  )
+
+  it.live("rejects providers with no usable base URL", () =>
+    Effect.gen(function* () {
+      const response = yield* post(KiloGatewayPaths.qwenFim, {
+        providerID: "missing-url",
+        modelID: "qwen-coder-30b0",
+        prefix: "prefix",
+        suffix: "suffix",
+      })
+
+      expect(response.status).toBe(400)
+    }),
+  )
+
+  it.live("rejects the incorrect 0.0.48 and 0.0.49 Qwen model", () =>
+    Effect.gen(function* () {
+      const response = yield* post(KiloGatewayPaths.qwenFim, {
+        providerID: "qwen",
+        modelID: "qwen3-coder-30b0",
+        prefix: "prefix",
+        suffix: "suffix",
+      })
+
+      expect(response.status).toBe(400)
+    }),
+  )
+
+  it.live("reports an upstream non-success status without exposing the endpoint", () =>
+    Effect.gen(function* () {
+      yield* stub(() => new Response("temporarily unavailable", { status: 503 }))
+
+      const response = yield* post(KiloGatewayPaths.qwenFim, {
+        providerID: "qwen",
+        modelID: "qwen-coder-30b0",
+        prefix: "prefix",
+        suffix: "suffix",
+      })
+
+      expect(response.status).toBe(400)
+      expect(response.headers["x-chipmate-qwen-fim-phase"]).toBe("upstream-status")
+      expect(response.headers["x-chipmate-qwen-endpoint-source"]).toBe("provider-options")
+      expect(response.headers["x-chipmate-qwen-upstream-status"]).toBe("503")
+    }),
+  )
+
+  it.live("reports invalid upstream JSON as a distinct safe phase", () =>
+    Effect.gen(function* () {
+      yield* stub(() => new Response("not-json", { status: 200 }))
+
+      const response = yield* post(KiloGatewayPaths.qwenFim, {
+        providerID: "qwen",
+        modelID: "qwen-coder-30b0",
+        prefix: "prefix",
+        suffix: "suffix",
+      })
+
+      expect(response.status).toBe(400)
+      expect(response.headers["x-chipmate-qwen-fim-phase"]).toBe("response-json-invalid")
+    }),
+  )
+
+  it.live("reports a missing completion text as a distinct safe phase", () =>
+    Effect.gen(function* () {
+      yield* stub(() => Response.json({ choices: [{}] }))
+
+      const response = yield* post(KiloGatewayPaths.qwenFim, {
+        providerID: "qwen",
+        modelID: "qwen-coder-30b0",
+        prefix: "prefix",
+        suffix: "suffix",
+      })
+
+      expect(response.status).toBe(400)
+      expect(response.headers["x-chipmate-qwen-fim-phase"]).toBe("response-text-missing")
+    }),
+  )
+
   it.live("preserves cloud session list rate limits", () =>
     Effect.gen(function* () {
       yield* stub(() => new Response("rate limited", { status: 429 }))

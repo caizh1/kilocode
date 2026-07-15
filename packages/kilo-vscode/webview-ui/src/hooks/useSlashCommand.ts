@@ -40,6 +40,7 @@ export function useSlashCommand(vscode: VSCodeContext, exclude?: Set<string> | A
   const [query, setQuery] = createSignal<string | null>(null)
   const [index, setIndex] = createSignal(0)
   const [requested, setRequested] = createSignal(false)
+  const [slashEnd, setSlashEnd] = createSignal<number | null>(null)
 
   const all: SlashCommandEntry[] = [
     {
@@ -169,6 +170,7 @@ export function useSlashCommand(vscode: VSCodeContext, exclude?: Set<string> | A
 
   const close = () => {
     setQuery(null)
+    setSlashEnd(null)
   }
 
   const onInput = (val: string, cursor: number) => {
@@ -178,6 +180,7 @@ export function useSlashCommand(vscode: VSCodeContext, exclude?: Set<string> | A
       request()
       setQuery(match[1])
       setIndex(0)
+      setSlashEnd(cursor)
     } else {
       close()
     }
@@ -189,19 +192,22 @@ export function useSlashCommand(vscode: VSCodeContext, exclude?: Set<string> | A
     setText: (text: string) => void,
     onSelect?: () => void,
   ) => {
+    const pos = slashEnd() ?? textarea.selectionStart ?? 0
+    const suffix = textarea.value.substring(pos)
+
     if (cmd.action) {
-      textarea.value = ""
-      setText("")
+      textarea.value = suffix
+      setText(suffix)
       close()
       onSelect?.()
       cmd.action()
       return
     }
-    const text = `/${cmd.name} `
-    textarea.value = text
-    setText(text)
-    const pos = text.length
-    textarea.setSelectionRange(pos, pos)
+    const command = `/${cmd.name} `
+    const next = command + suffix
+    textarea.value = next
+    setText(next)
+    textarea.setSelectionRange(command.length, command.length)
     textarea.focus()
     close()
     onSelect?.()

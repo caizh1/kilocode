@@ -9,9 +9,13 @@ import { Effect } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { Agent } from "@/agent/agent"
 import * as Truncate from "@/tool/truncate"
+import type { Config } from "@/config/config"
+import { hasIndexingPlugin } from "@kilocode/kilo-indexing/detect"
+import { applyInternalIndexingDefaults, isInternalOffline } from "../internal-offline"
 
 const log = Log.create({ service: "kilocode-tool-registry" })
-type Deps = { agent: Agent.Interface; truncate: Truncate.Interface }
+type Deps = { agent: Agent.Interface; truncate: Truncate.Interface; internal?: boolean }
+type ConfigSource = Pick<Config.Interface, "get" | "getGlobal">
 type Loaders = {
   indexing?: () => Promise<{
     KiloIndexing: { ready: () => boolean; analysisReady?: () => boolean; documentReady?: () => boolean }
@@ -30,6 +34,27 @@ export namespace KiloToolRegistry {
     "- For configured workspace PDF, DOCX, XLSX, ODS, Markdown, CSV, TSV, RST, or text documents, use the `document_search` tool before answering document-grounded questions.",
     "- When you are doing an open-ended conceptual search where you do not know the exact symbol name, use the `semantic_search` tool first to narrow down the search scope, then follow up with `Grep` and/or `Read`.",
   ].join("\n")
+
+  const route = (ids: Set<string>) =>
+    [
+      ids.has("codebase_analysis")
+        ? "- For C/C++ symbols, call chains, state machines, registers, MMIO, or impact analysis, use `codebase_analysis` first."
+        : undefined,
+      ids.has("document_search")
+        ? "- For questions grounded in workspace documents, use `document_search` first."
+        : undefined,
+      ids.has("semantic_search")
+        ? "- For unfamiliar code concepts without an exact identifier, use `semantic_search` first."
+        : undefined,
+      "- Use `Grep` for exact identifiers or text, `Glob` for filenames, and `Read` to verify retrieved evidence.",
+      "- If an index reports that it is not ready, use the exact-search tools for this request and do not repeatedly retry the retrieval tool.",
+    ]
+      .filter((item): item is string => item !== undefined)
+      .join("\n")
+
+  export function internal(): boolean {
+    return isInternalOffline()
+  }
 
   /** Resolve Kilo-specific tool Infos outside any InstanceState, so their Truncate/Agent deps are
    * satisfied at the outer registry scope instead of leaking into InstanceState's Effect. */
@@ -57,7 +82,10 @@ export namespace KiloToolRegistry {
         manager: Tool.init(tools.manager),
         process: Tool.init(tools.process),
       })
-      const ready = yield* indexingReady(loaders)
+      const ready =
+        (deps.internal ?? internal())
+          ? { analysis: true, semantic: true, document: true }
+          : yield* indexingReady(loaders)
       const analysis = yield* analysisTool(deps, loaders, ready.analysis)
       const semantic = yield* semanticTool(deps, loaders, ready.semantic)
       const document = yield* documentTool(deps, loaders, ready.document)
@@ -283,11 +311,46 @@ export namespace KiloToolRegistry {
   export function describe(
     tools: Tool.Def[],
     extra: { analysis?: Tool.Def; semantic?: Tool.Def; document?: Tool.Def },
+    enabled = true,
   ): Tool.Def[] {
+    if (!enabled) return tools
     if (!extra.analysis && !extra.semantic && !extra.document) return tools
     return tools.map((tool) => {
       if (tool.id !== "glob" && tool.id !== "grep") return tool
       return { ...tool, description: `${tool.description}\n${hint}` }
+    })
+  }
+
+  /** Internal/offline builds preload retrieval definitions, then resolve their model visibility from
+   * effective config on every model step. Runtime indexing readiness never controls visibility here. */
+  export function resolve(tools: Tool.Def[], source: ConfigSource, enabled = internal()) {
+    return Effect.gen(function* () {
+      if (!enabled) return tools
+
+      const cfg = yield* source.get()
+      const global = yield* source.getGlobal()
+      const indexing = applyInternalIndexingDefaults({ ...global.indexing, ...cfg.indexing }, true)
+      const plugins = [...(global.plugin ?? []), ...(cfg.plugin ?? [])]
+      const allow = {
+        codebase_analysis: hasIndexingPlugin(plugins),
+        semantic_search: indexing?.enabled === true,
+        document_search: indexing?.documents?.enabled === true,
+      }
+      const filtered = tools.filter((tool) => {
+        if (tool.id === "codebase_analysis") return allow.codebase_analysis
+        if (tool.id === "semantic_search") return allow.semantic_search
+        if (tool.id === "document_search") return allow.document_search
+        return true
+      })
+      const ids = new Set(filtered.map((tool) => tool.id))
+      if (!ids.has("codebase_analysis") && !ids.has("semantic_search") && !ids.has("document_search")) {
+        return filtered
+      }
+      const routing = route(ids)
+      return filtered.map((tool) => {
+        if (tool.id !== "glob" && tool.id !== "grep") return tool
+        return { ...tool, description: `${tool.description}\n${routing}` }
+      })
     })
   }
 }

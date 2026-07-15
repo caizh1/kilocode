@@ -137,9 +137,7 @@ export const ModeSwitcherBase: Component<ModeSwitcherBaseProps> = (props) => {
               <span class={`codicon codicon-${glyph()}`} />
             </span>
             <span class="mode-switcher-trigger-label">{triggerLabel()}</span>
-            <svg class="prompt-selector-chevron" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 4l4 5H4l4-5z" />
-            </svg>
+            <span class="codicon codicon-chevron-down prompt-selector-chevron" aria-hidden="true" />
           </>
         }
       >

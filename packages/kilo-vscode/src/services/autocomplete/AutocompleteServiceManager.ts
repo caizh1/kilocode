@@ -13,6 +13,7 @@ import { toAllowedMercuryRecentSnippets } from "./next-edit/recentSnippetsAdapte
 import type { KiloConnectionService } from "../cli-backend"
 import { hasValidCredentials } from "./fim"
 import { DEFAULT_AUTOCOMPLETE_MODEL, getAutocompleteModel } from "../../shared/autocomplete-models"
+import { isQwenFimTarget } from "../../shared/qwen-autocomplete"
 
 const CONFIG_SECTION = "kilo-code.new.autocomplete"
 
@@ -45,6 +46,52 @@ async function writeSettings(patch: Partial<AutocompleteServiceSettings>): Promi
   }
 }
 
+type LoadRun = (generation: number, current: (generation: number) => boolean) => Promise<void>
+
+export class AutocompleteLoadLifecycle {
+  private disposed = false
+  private generation = 0
+  private pending = false
+  private loading: Promise<void> | null = null
+
+  constructor(private readonly run: LoadRun) {}
+
+  get isDisposed(): boolean {
+    return this.disposed
+  }
+
+  allowsFatal(provider?: string, model?: string): boolean {
+    return !this.disposed && !isQwenFimTarget(provider, model)
+  }
+
+  load(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    this.pending = true
+    if (this.loading) return this.loading
+    this.loading = this.drain().finally(() => {
+      this.loading = null
+      if (this.pending && !this.disposed) void this.load()
+    })
+    return this.loading
+  }
+
+  dispose(): boolean {
+    if (this.disposed) return false
+    this.disposed = true
+    this.pending = false
+    this.generation++
+    return true
+  }
+
+  private async drain(): Promise<void> {
+    while (this.pending && !this.disposed) {
+      this.pending = false
+      const generation = ++this.generation
+      await this.run(generation, (value) => !this.disposed && value === this.generation)
+    }
+  }
+}
+
 export class AutocompleteServiceManager {
   private static _instance: AutocompleteServiceManager | null = null
 
@@ -71,6 +118,7 @@ export class AutocompleteServiceManager {
   private inlineCompletionProviderKind: "classic" | "next-edit" | null = null
   private unsubscribeState: (() => void) | null = null
   private unsubscribeEvent: (() => void) | null = null
+  private readonly lifecycle: AutocompleteLoadLifecycle
   // Resolved copy of the classic provider's ignore controller for synchronous
   // snippet filtering. Null until the async initialize() resolves.
   private ignoreControllerSync: { validateAccess(fsPath: string): boolean } | null = null
@@ -84,6 +132,7 @@ export class AutocompleteServiceManager {
 
     this.context = context
     this.connectionService = connectionService
+    this.lifecycle = new AutocompleteLoadLifecycle((generation, current) => this.apply(generation, current))
     AutocompleteServiceManager._instance = this
 
     const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
@@ -152,6 +201,7 @@ export class AutocompleteServiceManager {
     // Also reset error backoff — a reconnect may mean the user re-authenticated
     // or added credits, so we should give autocomplete a fresh chance.
     this.unsubscribeState = connectionService.onStateChange(() => {
+      if (this.lifecycle.isDisposed) return
       this.inlineCompletionProvider.resetBackoff()
       void this.load()
     })
@@ -161,7 +211,9 @@ export class AutocompleteServiceManager {
     // reliable signal that credentials may have changed.
     this.unsubscribeEvent = connectionService.onEventFiltered(
       (event) => event.type === "global.disposed",
-      () => this.inlineCompletionProvider.resetBackoff(),
+      () => {
+        if (!this.lifecycle.isDisposed) this.inlineCompletionProvider.resetBackoff()
+      },
     )
 
     void this.load()
@@ -174,14 +226,20 @@ export class AutocompleteServiceManager {
     return AutocompleteServiceManager._instance
   }
 
-  public async load() {
-    this.settings = readSettings()
+  public load(): Promise<void> {
+    return this.lifecycle.load()
+  }
 
-    this.inlineCompletionProvider.setModel(getAutocompleteModel(this.settings.provider, this.settings.model).id)
-
+  private async apply(generation: number, current: (generation: number) => boolean): Promise<void> {
+    const settings = readSettings()
+    if (!current(generation)) return
+    this.settings = settings
+    this.inlineCompletionProvider.setModel(getAutocompleteModel(settings.provider, settings.model).id)
     await this.updateGlobalContext()
+    if (!current(generation)) return
     this.updateStatusBar()
     await this.ensureInlineCompletionProviderRegistration()
+    if (!current(generation)) return
     this.setupSnoozeTimerIfNeeded()
   }
 
@@ -415,6 +473,8 @@ export class AutocompleteServiceManager {
    * Shows a one-time notification to the user so they know autocomplete is paused.
    */
   private handleFatalAutocompleteError(status: number | null): void {
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION)
+    if (!this.lifecycle.allowsFatal(config.get<string>("provider"), config.get<string>("model"))) return
     const msg =
       status === 402
         ? t("kilocode:autocomplete.creditsExhausted.message")
@@ -471,6 +531,7 @@ export class AutocompleteServiceManager {
    * Dispose of all resources used by the AutocompleteServiceManager
    */
   public dispose(): void {
+    if (!this.lifecycle.dispose()) return
     this.statusBar?.dispose()
 
     if (this.snoozeTimer) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import {
+  buildActionContext,
   connectProvider,
   disconnectProvider,
   fetchProviderData,
@@ -8,31 +9,49 @@ import {
 } from "../../src/provider-actions"
 
 type ExistingGlobal = { disabled_providers?: string[]; provider?: Record<string, unknown> }
+type Options = { headers?: Record<string, string> }
 
-function createCtx(existing: ExistingGlobal = { disabled_providers: [] }, merged: ExistingGlobal = existing) {
+function createCtx(
+  existing: ExistingGlobal = { disabled_providers: [] },
+  merged: ExistingGlobal = existing,
+  error?: Error,
+) {
   const calls = {
     set: [] as Array<{ providerID: string; auth: { type: string; key: string; metadata?: Record<string, string> } }>,
     remove: [] as Array<{ providerID: string }>,
     posts: [] as unknown[],
     config: [] as Array<{ config: Record<string, unknown> }>,
     project: [] as Array<{ config: Record<string, unknown> }>,
+    configOptions: [] as Options[],
+    setOptions: [] as Options[],
+    removeOptions: [] as Options[],
     cached: [] as unknown[],
     refresh: 0,
     dispose: 0,
+    order: [] as string[],
   }
 
   const ctx = {
     client: {
       auth: {
-        set: async (input: {
-          providerID: string
-          auth: { type: string; key: string; metadata?: Record<string, string> }
-        }) => {
+        set: async (
+          input: {
+            providerID: string
+            auth: { type: string; key: string; metadata?: Record<string, string> }
+          },
+          opts?: Options,
+        ) => {
+          calls.order.push("auth.set")
+          if (error) throw error
           calls.set.push(input)
+          calls.setOptions.push(opts ?? {})
           return { data: true }
         },
-        remove: async (input: { providerID: string }) => {
+        remove: async (input: { providerID: string }, opts?: Options) => {
+          calls.order.push("auth.remove")
+          if (error) throw error
           calls.remove.push(input)
+          calls.removeOptions.push(opts ?? {})
           return { data: true }
         },
       },
@@ -56,15 +75,23 @@ function createCtx(existing: ExistingGlobal = { disabled_providers: [] }, merged
       },
       global: {
         config: {
-          get: async () => ({ data: existing }),
-          update: async (input: { config: Record<string, unknown> }) => {
+          get: async () => {
+            calls.order.push("global.get")
+            return { data: existing }
+          },
+          update: async (input: { config: Record<string, unknown> }, opts?: Options) => {
+            calls.order.push("global.update")
             calls.config.push(input)
+            calls.configOptions.push(opts ?? {})
             return { data: input }
           },
         },
       },
       config: {
-        get: async () => ({ data: merged }),
+        get: async () => {
+          calls.order.push("config.get")
+          return { data: merged }
+        },
         update: async (input: { config: Record<string, unknown> }) => {
           calls.project.push(input)
           return { data: input }
@@ -75,9 +102,11 @@ function createCtx(existing: ExistingGlobal = { disabled_providers: [] }, merged
     getErrorMessage: (error: unknown) => (error instanceof Error ? error.message : String(error)),
     workspaceDir: "/tmp",
     disposeGlobal: async () => {
+      calls.order.push("dispose")
       calls.dispose += 1
     },
     fetchAndSendProviders: async () => {
+      calls.order.push("providers")
       calls.refresh += 1
     },
   } as unknown as Parameters<typeof saveCustomProvider>[0]
@@ -175,6 +204,33 @@ describe("connectProvider", () => {
 })
 
 describe("saveCustomProvider", () => {
+  it("uses a normal final disposal request after deferred writes", async () => {
+    const calls: Options[] = []
+    const ctx = buildActionContext(
+      { global: { dispose: async (opts?: Options) => calls.push(opts ?? {}) } } as never,
+      () => {},
+      String,
+      "/tmp",
+      async () => {},
+      "custom-provider:abc",
+    )
+
+    await ctx.disposeGlobal("custom provider save")
+
+    expect(calls).toEqual([{ headers: { "x-kilo-memory-operation": "custom-provider:abc" } }])
+  })
+
+  it("defers config disposal until the single final refresh", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx()
+
+    await saveCustomProvider(ctx, "req", "myprovider", createProvider(), undefined, false, null, setCachedConfig)
+
+    expect(calls.configOptions[0]?.headers?.["x-kilo-defer-instance-dispose"]).toBe("1")
+    expect(calls.configOptions[0]?.headers?.["x-kilo-memory-operation"]).toMatch(/^custom-provider:/)
+    expect(calls.dispose).toBe(1)
+    expect(calls.order).toEqual(["global.get", "global.update", "dispose", "config.get", "providers"])
+  })
+
   it("preserves auth when the api key field is unchanged", async () => {
     const { ctx, calls, setCachedConfig } = createCtx()
 
@@ -201,6 +257,18 @@ describe("saveCustomProvider", () => {
 
     expect(calls.remove).toHaveLength(0)
     expect(calls.set).toEqual([{ providerID: "myprovider", auth: { type: "api", key: "sk-test" } }])
+    expect(calls.setOptions[0]?.headers?.["x-kilo-defer-instance-dispose"]).toBe("1")
+    expect(calls.order).toEqual(["global.get", "global.update", "auth.set", "dispose", "config.get", "providers"])
+  })
+
+  it("finalizes the saved config once when auth persistence fails", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx(undefined, undefined, new Error("auth failed"))
+
+    await saveCustomProvider(ctx, "req", "myprovider", createProvider(), "sk-test", true, null, setCachedConfig)
+
+    expect(calls.dispose).toBe(1)
+    expect(calls.refresh).toBe(1)
+    expect(calls.order).toEqual(["global.get", "global.update", "auth.set", "dispose", "config.get", "providers"])
   })
 
   // Regression tests for https://github.com/Kilo-Org/kilocode/issues/9186

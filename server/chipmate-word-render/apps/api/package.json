@@ -1,0 +1,18 @@
+{
+  "name": "@chipmate/market-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --import tsx src/start.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@chipmate/market-contracts": "0.1.0",
+    "@chipmate/market-db": "0.1.0",
+    "@chipmate/skill-spec": "0.1.0",
+    "fastify": "5.10.0"
+  }
+}

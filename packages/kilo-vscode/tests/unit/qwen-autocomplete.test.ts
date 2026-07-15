@@ -41,17 +41,17 @@ type Manual = {
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "http://unit.test/v1/completions",
+  providerID: "qwen",
   model: "qwen-coder-30b0",
-  apiKey: "",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
   modelTimeout: 150,
   maxSuffixPercentage: 0.2,
   prefixPercentage: 0.3,
-  temperature: 0.1,
+  temperature: 0.01,
   cacheEnabled: true,
   cacheMaxEntries: 1000,
   prefixChars: 12_000,
@@ -84,6 +84,9 @@ const originalConfig = vscode.workspace.getConfiguration
 const originalChange = vscode.workspace.onDidChangeConfiguration
 const originalInline = vscode.languages.registerInlineCompletionItemProvider
 const originalFolders = vscode.workspace.workspaceFolders
+const originalInfo = vscode.window.showInformationMessage
+const originalError = vscode.window.showErrorMessage
+const originalEditor = vscode.window.activeTextEditor
 const dirs: string[] = []
 const qwenTemplateLocalStops = [
   "<|endoftext|>",
@@ -124,6 +127,9 @@ afterEach(async () => {
   ;(
     vscode.languages as unknown as { registerInlineCompletionItemProvider: typeof originalInline }
   ).registerInlineCompletionItemProvider = originalInline
+  ;(vscode.window as unknown as { showInformationMessage: typeof originalInfo }).showInformationMessage = originalInfo
+  ;(vscode.window as unknown as { showErrorMessage: typeof originalError }).showErrorMessage = originalError
+  ;(vscode.window as unknown as { activeTextEditor: typeof originalEditor }).activeTextEditor = originalEditor
   resetQwenSafetyGuardsForTests()
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
@@ -239,6 +245,17 @@ function stubConfig(values: Record<string, unknown>) {
   ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (
     section?: string,
   ) => {
+    if (section === "kilo-code.new.autocomplete") {
+      return {
+        get: (key: string, fallback?: unknown) =>
+          ({
+            provider: values.providerID,
+            model: values.model,
+            enableAutoTrigger: values.enableAutoTrigger ?? values.enabled,
+          })[key] ?? fallback,
+        update: async () => {},
+      } as unknown as ReturnType<typeof originalConfig>
+    }
     if (section !== "kilo.autocomplete") return originalConfig(section)
     return {
       get: (key: string, fallback?: unknown) => values[key] ?? fallback,
@@ -248,14 +265,30 @@ function stubConfig(values: Record<string, unknown>) {
 }
 
 function stubRegistration(calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }>) {
-  ;(vscode.workspace as unknown as { onDidChangeConfiguration: typeof originalChange }).onDidChangeConfiguration =
-    () => ({ dispose: () => {} })
+  let callback: ((event: { affectsConfiguration: (section: string) => boolean }) => void) | undefined
+  let disposed = 0
+  ;(vscode.workspace as unknown as { onDidChangeConfiguration: typeof originalChange }).onDidChangeConfiguration = (
+    listener,
+  ) => {
+    callback = listener as (event: { affectsConfiguration: (section: string) => boolean }) => void
+    return { dispose: () => {} }
+  }
   ;(
     vscode.languages as unknown as { registerInlineCompletionItemProvider: typeof originalInline }
   ).registerInlineCompletionItemProvider = (selector, provider) => {
     calls.push({ selector, provider })
-    return { dispose: () => {} }
+    return { dispose: () => disposed++ }
   }
+  return {
+    disposed: () => disposed,
+    fire: (target: string) => callback?.({ affectsConfiguration: (section) => section === target }),
+  }
+}
+
+function connection() {
+  return {
+    getConnectionState: () => "connected",
+  } as never
 }
 
 async function tempWorkspace(): Promise<string> {
@@ -275,8 +308,9 @@ describe("qwen autocomplete config and prompt", () => {
 
     expect(readQwenAutocompleteConfig()).toMatchObject({
       enabled: false,
+      autoTrigger: true,
       provider: "none",
-      endpoint: "http://company-qwen-coder.example.com/v1/completions",
+      providerID: "",
       model: "qwen-coder-30b0",
       debounceMs: 350,
       maxTokens: 128,
@@ -284,7 +318,7 @@ describe("qwen autocomplete config and prompt", () => {
       modelTimeout: 150,
       maxSuffixPercentage: 0.2,
       prefixPercentage: 0.3,
-      temperature: 0.1,
+      temperature: 0.01,
       cacheEnabled: true,
       cacheMaxEntries: 1000,
       prefixChars: 12_000,
@@ -319,6 +353,25 @@ describe("qwen autocomplete config and prompt", () => {
     const { readQwenAutocompleteConfig } = await import("../../src/services/qwen-autocomplete/config")
 
     expect(readQwenAutocompleteConfig().debounceMs).toBe(42)
+  })
+
+  it("uses only the canonical target and requires the exact Qwen model", async () => {
+    const { readQwenAutocompleteConfig, qwenAutocompleteEnabled } = await import(
+      "../../src/services/qwen-autocomplete/config"
+    )
+
+    stubConfig({ enabled: true, provider: "qwen-direct" })
+    expect(qwenAutocompleteEnabled(readQwenAutocompleteConfig())).toBe(false)
+
+    stubConfig({ enabled: true, providerID: "qwen", model: "qwen3-coder-30b" })
+    expect(qwenAutocompleteEnabled(readQwenAutocompleteConfig())).toBe(false)
+
+    stubConfig({ enabled: true, providerID: "qwen", model: "qwen-coder-30b0" })
+    expect(qwenAutocompleteEnabled(readQwenAutocompleteConfig())).toBe(true)
+
+    stubConfig({ enableAutoTrigger: false, providerID: "qwen", model: "qwen-coder-30b0" })
+    expect(readQwenAutocompleteConfig()).toMatchObject({ enabled: true, autoTrigger: false })
+    expect(qwenAutocompleteEnabled(readQwenAutocompleteConfig())).toBe(true)
   })
 
   it("maps Continue-style prompt budget settings separately from output maxTokens", async () => {
@@ -464,7 +517,10 @@ describe("qwen autocomplete registration", () => {
     stubRegistration(calls)
     const { registerQwenAutocompleteProvider } = await import("../../src/services/qwen-autocomplete")
 
-    const reg = registerQwenAutocompleteProvider({ subscriptions: [] } as unknown as vscode.ExtensionContext)
+    const reg = registerQwenAutocompleteProvider(
+      { subscriptions: [] } as unknown as vscode.ExtensionContext,
+      connection(),
+    )
 
     expect(calls).toHaveLength(0)
     reg.dispose()
@@ -472,15 +528,66 @@ describe("qwen autocomplete registration", () => {
 
   it("registers only the qwen provider when qwen-direct is enabled", async () => {
     const calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }> = []
-    stubConfig({ enabled: true, provider: "qwen-direct" })
+    stubConfig({ enabled: true, providerID: "qwen", model: "qwen-coder-30b0" })
     stubRegistration(calls)
     const { registerQwenAutocompleteProvider } = await import("../../src/services/qwen-autocomplete")
 
-    const reg = registerQwenAutocompleteProvider({ subscriptions: [] } as unknown as vscode.ExtensionContext)
+    const reg = registerQwenAutocompleteProvider(
+      { subscriptions: [] } as unknown as vscode.ExtensionContext,
+      connection(),
+    )
 
     expect(calls).toHaveLength(1)
     expect(calls[0]!.selector).toEqual(QWEN_DOCUMENT_SELECTOR)
     expect(calls[0]!.provider).toBeInstanceOf(KiloQwenInlineCompletionProvider)
+    reg.dispose()
+  })
+
+  it("does not register the incorrect 0.0.48 and 0.0.49 Qwen model before coordinator migration", async () => {
+    const calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }> = []
+    stubConfig({ enabled: true, providerID: "qwen", model: "qwen3-coder-30b0" })
+    stubRegistration(calls)
+    const { registerQwenAutocompleteProvider } = await import("../../src/services/qwen-autocomplete")
+
+    const reg = registerQwenAutocompleteProvider(
+      { subscriptions: [] } as unknown as vscode.ExtensionContext,
+      connection(),
+    )
+
+    expect(calls).toHaveLength(0)
+    reg.dispose()
+  })
+
+  it("registers immediately after the canonical provider and model writes settle", async () => {
+    const calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }> = []
+    const values: Record<string, unknown> = { enabled: true }
+    stubConfig(values)
+    const events = stubRegistration(calls)
+    const { registerQwenAutocompleteProvider } = await import("../../src/services/qwen-autocomplete")
+    const reg = registerQwenAutocompleteProvider(
+      { subscriptions: [] } as unknown as vscode.ExtensionContext,
+      connection(),
+    )
+
+    values.providerID = "qwen"
+    events.fire("kilo-code.new.autocomplete")
+    expect(calls).toHaveLength(0)
+
+    values.model = "qwen-coder-30b0"
+    events.fire("kilo-code.new.autocomplete")
+    expect(calls).toHaveLength(1)
+
+    events.fire("kilo.autocomplete")
+    expect(calls).toHaveLength(1)
+
+    values.enabled = false
+    events.fire("kilo-code.new.autocomplete")
+    expect(calls).toHaveLength(1)
+    expect(events.disposed()).toBe(0)
+
+    values.model = undefined
+    events.fire("kilo-code.new.autocomplete")
+    expect(events.disposed()).toBe(1)
     reg.dispose()
   })
 })
@@ -511,56 +618,144 @@ describe("qwen autocomplete debouncer", () => {
 })
 
 describe("QwenFimClient", () => {
-  it("posts to /v1/completions with prompt and parses choices[0].text", async () => {
-    const seen: { url?: string; body?: Record<string, unknown>; auth?: string; signal?: AbortSignal } = {}
-    const client = new QwenFimClient(async (url, init) => {
-      seen.url = String(url)
-      seen.body = JSON.parse(String(init?.body)) as Record<string, unknown>
-      seen.auth = (init?.headers as Record<string, string>).Authorization
-      seen.signal = init?.signal as AbortSignal
-      return new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }))
-    })
+  it("uses the local CLI qwen FIM endpoint", async () => {
+    const seen: Record<string, unknown> = {}
+    const client = new QwenFimClient({
+      getClientAsync: async () => ({
+        kilo: {
+          qwenFim: async (input: Record<string, unknown>, options: { signal?: AbortSignal }) => {
+            Object.assign(seen, input, { signal: options.signal })
+            return { data: { text: "return ok;" }, response: new Response() }
+          },
+        },
+      }),
+    } as never)
     const abort = new AbortController()
 
     const text = await client.complete({
-      endpoint: "http://unit.test/v1/completions",
-      model: "qwen-coder-30b0",
-      apiKey: "secret",
+      directory: "/repo",
+      providerID: "qwen",
+      modelID: "qwen-coder-30b0",
       prompt: "<|fim_prefix|>a<|fim_suffix|>b<|fim_middle|>",
       maxTokens: 64,
       temperature: 0.2,
+      stop: continueQwenCoderEffectiveStops,
       signal: abort.signal,
     })
 
     expect(text).toBe("return ok;")
-    expect(seen.url).toBe("http://unit.test/v1/completions")
-    expect(seen.auth).toBe("Bearer secret")
-    expect(seen.signal).toBe(abort.signal)
-    expect(seen.body).toEqual({
-      model: "qwen-coder-30b0",
-      prompt: "<|fim_prefix|>a<|fim_suffix|>b<|fim_middle|>",
-      max_tokens: 64,
+    expect(seen).toEqual({
+      directory: "/repo",
+      providerID: "qwen",
+      modelID: "qwen-coder-30b0",
+      prefix: "<|fim_prefix|>a<|fim_suffix|>b<|fim_middle|>",
+      suffix: "",
+      maxTokens: 64,
       temperature: 0.2,
-      stream: false,
-      stop: QWEN_FIM_STOP,
+      stop: continueQwenCoderEffectiveStops,
+      signal: abort.signal,
     })
   })
 
-  it("rejects non-completions response shapes without chat fallback", async () => {
-    const client = new QwenFimClient(
-      async () => new Response(JSON.stringify({ choices: [{ message: { content: "x" } }] })),
-    )
+  it("rejects an empty CLI response without chat fallback", async () => {
+    const client = new QwenFimClient({
+      getClientAsync: async () => ({
+        kilo: {
+          qwenFim: async () => ({ data: undefined, response: new Response() }),
+        },
+      }),
+    } as never)
 
     await expect(
       client.complete({
-        endpoint: "http://unit.test/v1/completions",
-        model: "qwen",
-        apiKey: "",
+        providerID: "qwen",
+        modelID: "qwen-coder-30b0",
         prompt: "fim",
         maxTokens: 1,
         temperature: 0,
+        stop: continueQwenCoderEffectiveStops,
       }),
     ).rejects.toThrow(QwenFimRequestError)
+  })
+})
+
+describe("qwen smoke diagnostics", () => {
+  it("sends the synthetic C completion through the shared CLI connection", async () => {
+    const dir = await tempWorkspace()
+    let message = ""
+    ;(vscode.window as unknown as { showInformationMessage: typeof originalInfo }).showInformationMessage = async (
+      value,
+    ) => {
+      message = String(value)
+      return undefined
+    }
+    stubConfig({
+      enabled: true,
+      providerID: "qwen",
+      model: "qwen-coder-30b0",
+      "qwen.trace": true,
+      "qwen.logLevel": "debug",
+    })
+    const seen: Record<string, unknown> = {}
+    const shared = {
+      getConnectionState: () => "connected",
+      getClientAsync: async () => ({
+        kilo: {
+          qwenFim: async (input: Record<string, unknown>) => {
+            Object.assign(seen, input)
+            return { data: { text: "return 0;" }, response: new Response(undefined, { status: 200 }) }
+          },
+        },
+      }),
+    }
+    const { qwenDiagnosticSmoke } = await import("../../src/services/qwen-autocomplete/smoke")
+
+    await qwenDiagnosticSmoke(shared as never)
+
+    expect(seen).toMatchObject({
+      directory: dir,
+      providerID: "qwen",
+      modelID: "qwen-coder-30b0",
+      suffix: "",
+    })
+    expect(String(seen.prefix)).toContain("<|fim_prefix|>")
+    expect(message).toContain("provider=qwen")
+    expect(message).toContain("status=200")
+    expect(message).toContain("items=1")
+    expect(message).toContain("tests transport only")
+    const { qwenDiagnosticsForTests } = await import("../../src/services/qwen-autocomplete/diagnostics")
+    expect(qwenDiagnosticsForTests().some((line) => line.includes('"requestSource":"smoke"'))).toBe(true)
+  })
+
+  it("reports a safe status and phase when the transport test fails", async () => {
+    await tempWorkspace()
+    stubConfig({
+      enabled: true,
+      providerID: "qwen",
+      model: "qwen-coder-30b0",
+      "qwen.trace": true,
+      "qwen.logLevel": "debug",
+    })
+    let message = ""
+    ;(vscode.window as unknown as { showErrorMessage: typeof originalError }).showErrorMessage = async (value) => {
+      message = String(value)
+      return undefined
+    }
+    const shared = {
+      getConnectionState: () => "connected",
+      getClientAsync: async () => ({
+        kilo: {
+          qwenFim: async () => ({ data: undefined, response: new Response(undefined, { status: 401 }) }),
+        },
+      }),
+    }
+    const { qwenDiagnosticSmoke } = await import("../../src/services/qwen-autocomplete/smoke")
+
+    await qwenDiagnosticSmoke(shared as never)
+
+    expect(message).toContain("status=401")
+    expect(message).toContain("phase=auth-missing")
+    expect(message).not.toContain("Authorization")
   })
 })
 
@@ -579,13 +774,17 @@ describe("qwen document gating and postprocess", () => {
     expect(isQwenSupportedDocument(doc("", { path: "/repo/src/main.c", languageId: "plaintext" }))).toBe(false)
   })
 
-  it("prefilters empty documents without widening C/C++ file support", () => {
+  it("prefilters empty documents across supported file scopes", () => {
     expect(
       shouldPrefilterQwenDocument(doc("", { path: "/repo/src/main.c", languageId: "c", scheme: "untitled" })),
     ).toBe(true)
     expect(shouldPrefilterQwenDocument(doc("", { path: "/repo/include/device.h", languageId: "plaintext" }))).toBe(true)
     expect(
       shouldPrefilterQwenDocument(doc("int device;", { path: "/repo/include/device.h", languageId: "plaintext" })),
+    ).toBe(false)
+    expect(shouldPrefilterQwenDocument(doc("", { path: "/repo/src/main.py", languageId: "python" }))).toBe(true)
+    expect(
+      shouldPrefilterQwenDocument(doc("name: build", { path: "/repo/.gitea/workflows/build.yml", languageId: "yaml" })),
     ).toBe(false)
     expect(shouldPrefilterQwenDocument(doc("", { path: "/repo/src/readme.md", languageId: "markdown" }))).toBe(true)
   })
@@ -768,11 +967,51 @@ describe("processSingleLineCompletion", () => {
 })
 
 describe("KiloQwenInlineCompletionProvider", () => {
+  it("records an ordinary editor request and passes the selected target, workspace, and cancellation signal", async () => {
+    const dir = await tempWorkspace()
+    let seen: QwenFimCompleteInput | undefined
+    const provider = new KiloQwenInlineCompletionProvider({
+      read: () => ({ ...cfg, cacheEnabled: false, trace: true, logLevel: "debug" }),
+      guard: () => false,
+      client: {
+        complete: async (input: QwenFimCompleteInput) => {
+          seen = input
+          input.onResponse?.({ status: 200, endpointSource: "provider-options", serverPhase: "success" })
+          return "return editor_ok;"
+        },
+      } as unknown as QwenFimClient,
+      log: () => {},
+    })
+    const document = doc("int main() {\n  \n}", { path: path.join(dir, "main.c") })
+
+    const items = await provider.provideInlineCompletionItems(
+      document,
+      new vscode.Position(1, 2),
+      {} as vscode.InlineCompletionContext,
+      token().value as vscode.CancellationToken,
+    )
+
+    expect(items).toHaveLength(1)
+    expect(seen).toMatchObject({
+      directory: dir,
+      providerID: "qwen",
+      modelID: "qwen-coder-30b0",
+      stop: continueQwenCoderEffectiveStops,
+    })
+    expect(seen?.signal).toBeInstanceOf(AbortSignal)
+    const { qwenDiagnosticsForTests } = await import("../../src/services/qwen-autocomplete/diagnostics")
+    const lines = qwenDiagnosticsForTests()
+    expect(lines.some((line) => line.includes('"requestSource":"editor"'))).toBe(true)
+    expect(lines.some((line) => line.includes('"selectionOrigin":"explicit"'))).toBe(true)
+    expect(lines.some((line) => line.includes('"endpointSource":"provider-options"'))).toBe(true)
+  })
+
   it("debounces superseded provider requests before calling Qwen", async () => {
     const clock = manualTimers()
     let calls = 0
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => ({ ...cfg, debounceMs: 350 }),
+      guard: () => false,
       debouncer: new AutocompleteDebouncer(clock.timers),
       client: {
         complete: async () => {
@@ -804,6 +1043,72 @@ describe("KiloQwenInlineCompletionProvider", () => {
     expect(calls).toBe(1)
     expect(items).toHaveLength(1)
     expect(items[0]!.insertText).toBe("return ok;")
+  })
+
+  it("keeps manual invoke available when automatic triggers are disabled and bypasses debounce", async () => {
+    const clock = manualTimers()
+    let calls = 0
+    const provider = new KiloQwenInlineCompletionProvider({
+      read: () => ({ ...cfg, autoTrigger: false, debounceMs: 350 }),
+      guard: () => false,
+      debouncer: new AutocompleteDebouncer(clock.timers),
+      client: {
+        complete: async () => {
+          calls++
+          return "return ok;"
+        },
+      } as unknown as QwenFimClient,
+      log: () => {},
+    })
+    const document = doc("int main() {\n  \n}")
+
+    const automatic = await provider.provideInlineCompletionItems(
+      document,
+      new vscode.Position(1, 2),
+      { triggerKind: vscode.InlineCompletionTriggerKind.Automatic } as vscode.InlineCompletionContext,
+      token().value as vscode.CancellationToken,
+    )
+    const manual = await provider.provideInlineCompletionItems(
+      document,
+      new vscode.Position(1, 2),
+      { triggerKind: vscode.InlineCompletionTriggerKind.Invoke } as vscode.InlineCompletionContext,
+      token().value as vscode.CancellationToken,
+    )
+
+    expect(automatic).toEqual([])
+    expect(manual).toHaveLength(1)
+    expect(calls).toBe(1)
+    expect(clock.size()).toBe(0)
+  })
+
+  it("rejects multi-cursor requests before calling Qwen", async () => {
+    let calls = 0
+    const document = doc("int main() {\n  \n}")
+    ;(vscode.window as unknown as { activeTextEditor: unknown }).activeTextEditor = {
+      document,
+      selections: [{}, {}],
+    }
+    const provider = new KiloQwenInlineCompletionProvider({
+      read: () => cfg,
+      guard: () => false,
+      client: {
+        complete: async () => {
+          calls++
+          return "return ok;"
+        },
+      } as unknown as QwenFimClient,
+      log: () => {},
+    })
+
+    const items = await provider.provideInlineCompletionItems(
+      document,
+      new vscode.Position(1, 2),
+      { triggerKind: vscode.InlineCompletionTriggerKind.Invoke } as vscode.InlineCompletionContext,
+      token().value as vscode.CancellationToken,
+    )
+
+    expect(items).toEqual([])
+    expect(calls).toBe(0)
   })
 
   it("does not call Qwen when cancelled before debounce", async () => {
@@ -922,6 +1227,7 @@ describe("KiloQwenInlineCompletionProvider", () => {
   it("renders simple fresh qwen responses with Continue item properties", async () => {
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: { complete: async () => "return ok;" } as unknown as QwenFimClient,
       log: () => {},
     })
@@ -943,6 +1249,7 @@ describe("KiloQwenInlineCompletionProvider", () => {
   it("filters raw output before applying postprocess", async () => {
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: { complete: async () => "\n return ok;" } as unknown as QwenFimClient,
       log: () => {},
     })
@@ -995,6 +1302,7 @@ describe("KiloQwenInlineCompletionProvider", () => {
     ).join("\n")
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => ({ ...cfg, maxPromptTokens: 128, maxTokens: 7 }),
+      guard: () => false,
       client: {
         complete: async (input: QwenFimCompleteInput) => {
           seen.maxTokens = input.maxTokens
@@ -1025,7 +1333,8 @@ describe("KiloQwenInlineCompletionProvider", () => {
 
   it("uses pruned prefix and suffix for postprocess", async () => {
     const provider = new KiloQwenInlineCompletionProvider({
-      read: () => ({ ...cfg, model: "codestral" }),
+      read: () => cfg,
+      guard: () => false,
       client: { complete: async () => "\nnext" } as unknown as QwenFimClient,
       log: () => {},
     })
@@ -1058,6 +1367,7 @@ describe("KiloQwenInlineCompletionProvider", () => {
   it("renders multiline completions through the current line end", async () => {
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: { complete: async () => "hello\nworld" } as unknown as QwenFimClient,
       log: () => {},
     })
@@ -1078,6 +1388,7 @@ describe("KiloQwenInlineCompletionProvider", () => {
   it("limits provider completions to one line when multiline classification is false", async () => {
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: { complete: async () => "first\nsecond" } as unknown as QwenFimClient,
       log: () => {},
     })
@@ -1141,6 +1452,7 @@ describe("KiloQwenInlineCompletionProvider", () => {
     const seen: { prompt?: string } = {}
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: {
         complete: async (input: QwenFimCompleteInput) => {
           seen.prompt = input.prompt

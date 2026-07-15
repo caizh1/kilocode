@@ -39,13 +39,19 @@ export function registerDocumentArtifactCommands(context: vscode.ExtensionContex
       if (!uri) return
       await vscode.commands.executeCommand("vscode.open", uri)
     }),
-    vscode.commands.registerCommand("kilo-code.new.documents.openArtifactFolder", async (input?: string | vscode.Uri) => {
-      if (!(await ensureDocumentToolsEnabled())) return
-      const uri = await resolveInput(input, "Artifact file or folder path")
-      if (!uri) return
-      const stat = await fs.stat(uri.fsPath)
-      await vscode.commands.executeCommand("revealFileInOS", stat.isDirectory() ? uri : vscode.Uri.file(path.dirname(uri.fsPath)))
-    }),
+    vscode.commands.registerCommand(
+      "kilo-code.new.documents.openArtifactFolder",
+      async (input?: string | vscode.Uri) => {
+        if (!(await ensureDocumentToolsEnabled())) return
+        const uri = await resolveInput(input, "Artifact file or folder path")
+        if (!uri) return
+        const stat = await fs.stat(uri.fsPath)
+        await vscode.commands.executeCommand(
+          "revealFileInOS",
+          stat.isDirectory() ? uri : vscode.Uri.file(path.dirname(uri.fsPath)),
+        )
+      },
+    ),
     vscode.commands.registerCommand("kilo-code.new.documents.exportDiagnostics", async () => {
       if (!(await ensureDocumentToolsEnabled())) return
       const root = artifactRoot()
@@ -70,14 +76,26 @@ export function artifactManifestToCard(input: {
   webview?: vscode.Webview
 }): DocumentArtifactCard {
   const artifactDir = normalizeArtifactRelative(input.artifactDir)
-  const files = [input.manifest.primaryFile, ...(input.manifest.derivedFiles ?? [])].filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+  const files = [input.manifest.primaryFile, ...(input.manifest.derivedFiles ?? [])].filter(
+    (item): item is string => typeof item === "string" && item.trim().length > 0,
+  )
   const links = uniqueLinks([
     link("primary", "Open artifact", artifactPath(artifactDir, input.manifest.primaryFile)),
-    ...files.filter((file) => /\.pdf$/i.test(file)).map((file) => link("pdf", "Open PDF", artifactPath(artifactDir, file))),
-    ...files.filter((file) => /\.png$/i.test(file)).map((file, index) => pngLink(artifactDir, file, input.webview, index + 1)),
-    ...files.filter((file) => /diagnostic|diagnostics/i.test(file)).map((file) => link("diagnostics", "Open diagnostics", artifactPath(artifactDir, file))),
-    ...files.filter((file) => /\.json$/i.test(file) && !/diagnostic|diagnostics/i.test(file)).map((file) => link("json", "Open JSON", artifactPath(artifactDir, file))),
-    ...files.filter((file) => /\.mmd$/i.test(file)).map((file) => link("source", "Open Mermaid source", artifactPath(artifactDir, file))),
+    ...files
+      .filter((file) => /\.pdf$/i.test(file))
+      .map((file) => link("pdf", "Open PDF", artifactPath(artifactDir, file))),
+    ...files
+      .filter((file) => /\.png$/i.test(file))
+      .map((file, index) => pngLink(artifactDir, file, input.webview, index + 1)),
+    ...files
+      .filter((file) => /diagnostic|diagnostics/i.test(file))
+      .map((file) => link("diagnostics", "Open diagnostics", artifactPath(artifactDir, file))),
+    ...files
+      .filter((file) => /\.json$/i.test(file) && !/diagnostic|diagnostics/i.test(file))
+      .map((file) => link("json", "Open JSON", artifactPath(artifactDir, file))),
+    ...files
+      .filter((file) => /\.mmd$/i.test(file))
+      .map((file) => link("source", "Open Mermaid source", artifactPath(artifactDir, file))),
     link("folder", "Open artifact folder", artifactDir),
   ])
   return {
@@ -121,7 +139,12 @@ function artifactPath(artifactDir: string, file: string | undefined): string | u
   return normalizeArtifactRelative(path.posix.join(artifactDir, normalized))
 }
 
-function pngLink(artifactDir: string, file: string, webview: vscode.Webview | undefined, index: number): DocumentArtifactCardLink {
+function pngLink(
+  artifactDir: string,
+  file: string,
+  webview: vscode.Webview | undefined,
+  index: number,
+): DocumentArtifactCardLink {
   const relative = artifactPath(artifactDir, file) ?? file
   const absolute = vscode.Uri.file(path.join(workspaceRoot(), ...relative.split("/")))
   return {
@@ -132,7 +155,11 @@ function pngLink(artifactDir: string, file: string, webview: vscode.Webview | un
   }
 }
 
-function link(kind: DocumentArtifactCardLink["kind"], label: string, input: string | undefined): DocumentArtifactCardLink | undefined {
+function link(
+  kind: DocumentArtifactCardLink["kind"],
+  label: string,
+  input: string | undefined,
+): DocumentArtifactCardLink | undefined {
   if (!input?.trim()) return undefined
   return { kind, label, path: input }
 }
@@ -158,7 +185,10 @@ function quality(input: unknown, warnings: string[]): DocumentArtifactCard["qual
 }
 
 function normalizeArtifactRelative(input: string): string {
-  return input.split(/[\\/]+/).filter((part) => part && part !== "." && part !== "..").join("/")
+  return input
+    .split(/[\\/]+/)
+    .filter((part) => part && part !== "." && part !== "..")
+    .join("/")
 }
 
 async function readArtifacts(root: string): Promise<unknown[]> {
@@ -198,7 +228,9 @@ function artifactRootRelative(): string {
 async function ensureDocumentToolsEnabled(): Promise<boolean> {
   const enabled = vscode.workspace.getConfiguration().get<boolean>(DOCUMENT_TOOLS_ENABLED_CONFIG, true)
   if (enabled) return true
-  await vscode.window.showInformationMessage("Kilo document artifact commands are disabled by kilo.documents.tools.enabled.")
+  await vscode.window.showInformationMessage(
+    "Kilo document artifact commands are disabled by kilo.documents.tools.enabled.",
+  )
   return false
 }
 

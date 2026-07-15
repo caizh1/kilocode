@@ -1,5 +1,6 @@
 import type { KiloConnectionService } from "./cli-backend/connection-service"
 import { routeAutocompleteMessage } from "./autocomplete/settings"
+import type * as vscode from "vscode"
 import { handleSpeechToTextCancel, handleSpeechToTextStart, handleSpeechToTextStop } from "../speech-to-text/handler"
 
 type Msg = {
@@ -13,10 +14,11 @@ type Ctx = {
   connection: KiloConnectionService
   dir: string
   post: (msg: unknown) => void
+  context?: vscode.ExtensionContext
 }
 
 export async function routeInputToolMessage(message: Msg, ctx: Ctx): Promise<boolean> {
-  if (await routeAutocompleteMessage(message, ctx.post)) return true
+  if (await routeAutocompleteMessage(message, ctx.post, ctx.context)) return true
 
   if (message.type === "speechToTextStart") {
     if (!message.requestId) return true

@@ -53,7 +53,10 @@ describe("agent terminal runtime", () => {
 
   test("creates workspace-scoped context summaries and log artifacts", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-agent-terminal-"))
-    await fs.writeFile(path.join(workspace, "package.json"), JSON.stringify({ name: "demo", version: "1.2.3", scripts: { test: "bun test" } }))
+    await fs.writeFile(
+      path.join(workspace, "package.json"),
+      JSON.stringify({ name: "demo", version: "1.2.3", scripts: { test: "bun test" } }),
+    )
     await fs.writeFile(path.join(workspace, "README.md"), "# Demo\n")
     await fs.writeFile(path.join(workspace, "AGENTS.md"), "Use careful local commands.\n")
     await fs.writeFile(path.join(workspace, "meson.build"), "project('demo', 'c')\n")

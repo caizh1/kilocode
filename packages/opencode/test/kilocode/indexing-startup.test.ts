@@ -501,6 +501,43 @@ describe("indexing startup degradation", () => {
     })
   })
 
+  test("restarts a failed indexing process in forced low-memory mode", async () => {
+    const modes: boolean[] = []
+    IndexingWorker.override((directory, root, hooks, options) => {
+      const driver = inline(directory, root, hooks)
+      modes.push(options?.forcedLow === true)
+      if (modes.length !== 1) return driver
+      return {
+        ...driver,
+        async init(input) {
+          const status = await driver.init(input)
+          setTimeout(() => {
+            void driver.dispose().finally(() => {
+              hooks.failure(new Error("Indexing process requested a memory rollover"))
+            })
+          }, 0)
+          return status
+        },
+      }
+    })
+
+    await using tmp = await tmpdir({ git: true, config: inactive })
+    process.env["KILO_CONFIG_DIR"] = tmp.path
+
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const status = await waitFor(
+          () => KiloIndexing.current(),
+          (item) => modes.length >= 2 && item.state !== "Error",
+          "low-memory indexing recovery",
+        )
+        expect(modes.slice(0, 2)).toEqual([false, true])
+        expect(status.pipelines?.codeGraph.state).not.toBe("Error")
+      },
+    })
+  })
+
   test("enriches Kilo provider config from env auth", async () => {
     global.fetch = (() =>
       Promise.resolve(

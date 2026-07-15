@@ -1,0 +1,48 @@
+{
+  "name": "chipmate-word-render",
+  "version": "0.1.9",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run generate:check && npm run --workspaces --if-present build",
+    "dev": "node --import tsx apps/api/src/start.ts",
+    "generate": "tsx scripts/generate-contracts.ts",
+    "generate:check": "tsx scripts/generate-contracts.ts --check",
+    "lint": "eslint apps packages scripts",
+    "preview:seed": "tsx scripts/seed-preview.ts",
+    "test": "npm run --workspaces --if-present test",
+    "test:e2e:web": "playwright test --config playwright.web.config.ts",
+    "test:e2e:web:chrome": "playwright test --config playwright.web.config.ts --project chrome",
+    "test:e2e:web:edge": "playwright test --config playwright.web.config.ts --project edge",
+    "typecheck": "npm run --workspaces --if-present typecheck && npm run typecheck:e2e",
+    "typecheck:e2e": "tsc -p tsconfig.e2e.json",
+    "check": "npm run generate:check && npm run typecheck && npm run lint && npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "playwright-core": "1.57.0"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "mermaid": "^11.15.0",
+    "pngjs": "^7.0.0",
+    "tsx": "4.23.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "^1.57.0",
+    "@types/node": "26.1.1",
+    "eslint": "10.7.0",
+    "globals": "17.7.0",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.63.0"
+  }
+}

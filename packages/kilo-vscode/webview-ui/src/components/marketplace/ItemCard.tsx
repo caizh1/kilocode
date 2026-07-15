@@ -18,6 +18,7 @@ interface Props {
   onRemove: (item: MarketplaceItem, scope: "project" | "global") => void
   onStar?: (item: MarketplaceItem) => void
   onUpload?: (item: SkillMarketplaceItem) => void
+  onOpen?: (item: SkillMarketplaceItem) => void
   footer?: JSX.Element
 }
 
@@ -28,7 +29,18 @@ export const ItemCard = (props: Props) => {
   const installed = () => scopes().length > 0
   const name = () => props.displayName ?? props.item.name
   const skill = () => (props.item.type === "skill" ? (props.item as SkillMarketplaceItem) : undefined)
-  const local = () => Boolean(skill()?.localOnly)
+  const local = () => Boolean(skill()?.localOnly || skill()?.origin === "local-import")
+  const origin = () => {
+    if (skill()?.origin === "local-import") return t("marketplace.local.badge.imported")
+    if (skill()?.origin === "market") return t("marketplace.local.badge.managed")
+    return undefined
+  }
+  const published = () => {
+    const state = skill()?.publishState
+    if (!state) return undefined
+    return t(`marketplace.local.publish.${state}`)
+  }
+  const overridden = () => (skill()?.localState === "modified" ? t("marketplace.local.badge.override") : undefined)
   const [expanded, setExpanded] = createSignal(false)
   const [clamped, setClamped] = createSignal(false)
   let ref: HTMLParagraphElement | undefined
@@ -68,9 +80,9 @@ export const ItemCard = (props: Props) => {
         {(item) => (
           <div class="marketplace-skill-meta">
             <Show when={item().uploadedBy}>
-              <span>by {item().uploadedBy}</span>
+              <span>{t("marketplace.card.by", { author: item().uploadedBy! })}</span>
             </Show>
-            <span>下载 {item().downloadCount ?? 0}</span>
+            <span>{t("marketplace.aligned.downloads", { count: item().downloadCount ?? 0 })}</span>
             <span class="marketplace-skill-stat">
               <Icon name="star" size="small" />
               {item().stars ?? 0}
@@ -89,19 +101,37 @@ export const ItemCard = (props: Props) => {
             <Tag class="marketplace-badge-installed">{t("marketplace.card.installed")}</Tag>
           </Show>
           <Show when={local()}>
-            <Tag>本地 Skill</Tag>
+            <Tag>{t("marketplace.aligned.localSkill")}</Tag>
           </Show>
+          <Show when={origin()}>{(label) => <Tag>{label()}</Tag>}</Show>
+          <Show when={overridden()}>{(label) => <Tag>{label()}</Tag>}</Show>
+          <Show when={published()}>{(label) => <Tag>{label()}</Tag>}</Show>
           {props.footer}
         </div>
         <div class="marketplace-card-actions">
-          <Show when={skill()?.localOnly && skill()?.uploadable && props.onUpload}>
+          <Show when={skill() && !local() && props.onOpen}>
+            <Button size="small" variant="ghost" onClick={() => props.onOpen?.(skill()!)}>
+              {t("marketplace.aligned.details")}
+            </Button>
+          </Show>
+          <Show when={skill()?.uploadable && props.onUpload}>
             <IconButton
               icon="cloud-upload"
               size="small"
               variant="ghost"
-              aria-label="上传此 Skill 到市场"
-              title="上传此 Skill 到市场"
+              aria-label={t("marketplace.aligned.upload")}
+              title={t("marketplace.aligned.upload")}
               onClick={() => props.onUpload?.(skill()!)}
+            />
+          </Show>
+          <Show when={local() && skill()?.removeToken && skill()?.localScope}>
+            <IconButton
+              icon="trash"
+              size="small"
+              variant="ghost"
+              aria-label={t("marketplace.card.remove")}
+              title={t("marketplace.card.remove")}
+              onClick={() => props.onRemove(props.item, skill()!.localScope!)}
             />
           </Show>
           <Show when={props.item.type === "skill" && !local() && props.onStar}>
@@ -109,8 +139,9 @@ export const ItemCard = (props: Props) => {
               icon="star"
               size="small"
               variant="ghost"
-              aria-label="为 Skill 点赞"
-              title="为 Skill 点赞"
+              aria-label={skill()?.favorite ? t("marketplace.aligned.unfavorite") : t("marketplace.aligned.favorite")}
+              title={skill()?.favorite ? t("marketplace.aligned.unfavorite") : t("marketplace.aligned.favorite")}
+              class={skill()?.favorite ? "marketplace-favorite-active" : undefined}
               onClick={() => props.onStar?.(props.item)}
             />
           </Show>

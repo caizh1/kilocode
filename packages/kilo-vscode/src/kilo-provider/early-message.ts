@@ -4,6 +4,7 @@ import { routeInputToolMessage } from "../services/input-tools"
 import type { KiloConnectionService } from "../services/cli-backend/connection-service"
 import type { SuggestionContext } from "./handlers/suggestion"
 import type { KiloClient } from "@kilocode/sdk/v2/client"
+import type * as vscode from "vscode"
 
 type Ctx = {
   question: SuggestionContext
@@ -12,6 +13,7 @@ type Ctx = {
   dir: string
   post: (msg: unknown) => void
   exportTranscript: (sessionID: string) => Promise<void>
+  context?: vscode.ExtensionContext
 }
 
 export async function routeEarlyMessage(message: { type: string }, ctx: Ctx): Promise<boolean> {
@@ -22,5 +24,10 @@ export async function routeEarlyMessage(message: { type: string }, ctx: Ctx): Pr
     if (typeof input.sessionID === "string") await ctx.exportTranscript(input.sessionID)
     return true
   }
-  return await routeInputToolMessage(message, { connection: ctx.connection, dir: ctx.dir, post: ctx.post })
+  return await routeInputToolMessage(message, {
+    connection: ctx.connection,
+    dir: ctx.dir,
+    post: ctx.post,
+    context: ctx.context,
+  })
 }

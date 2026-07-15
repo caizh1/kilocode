@@ -18,4 +18,6 @@
 
 ## 5. 必需状态机图
 
-每个重要 FSM 至少生成 dispatch、state-overview、transition-conditions、error-retry-timeout、handler-<state> 图。状态边必须包含 trigger/event、guard condition、action、next state、evidence ID。
+每个重要 FSM 必须覆盖 dispatch、state-overview、transition-conditions、error-retry-timeout 和关键 `handler-<state>` 细节。可在标签保持可读、语义边界清楚时合并视图，也可按分支或 handler 拆分；不使用固定图片数量作为质量指标。状态边必须包含 trigger/event、guard condition、action、next state、evidence ID。
+
+状态机图必须放在所属目标模块或重要子模块的状态机小节中。全局状态机索引或父级状态总览只能用于说明跨单元转换，不能替代本地 dispatch、handler、失败和恢复分析。

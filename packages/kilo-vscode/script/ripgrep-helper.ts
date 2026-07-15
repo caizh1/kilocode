@@ -91,7 +91,13 @@ async function fetchWithRetry(url: string, attempts: number): Promise<Response> 
   )
 }
 
-async function extract(archive: string, member: string, tmp: string, dest: string, kind: "zip" | "tar.gz"): Promise<void> {
+async function extract(
+  archive: string,
+  member: string,
+  tmp: string,
+  dest: string,
+  kind: "zip" | "tar.gz",
+): Promise<void> {
   if (kind === "tar.gz") {
     const tar = Bun.which("tar")
     if (!tar) throw new Error("Extracting bundled Linux ripgrep requires tar.")

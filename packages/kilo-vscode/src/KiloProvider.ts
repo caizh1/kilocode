@@ -71,6 +71,8 @@ import { handleNetworkEvent, clearNetworkWaits } from "./kilo-provider/network"
 import { abortSession } from "./kilo-provider/abort"
 import {
   buildAutocompleteSettingsMessage,
+  resetAutocompleteAfterProviderRemoval as resetAutocompleteSelectionAfterProviderRemoval,
+  updateAutocompleteSelection,
   validAutocompleteSetting,
   watchAutocompleteConfig,
 } from "./services/autocomplete/settings"
@@ -82,6 +84,14 @@ import { recordIndexingStatus as writeIndexingStatus } from "./services/indexing
 import * as McpOAuth from "./kilo-provider/mcp-oauth"
 import { retryable, backoff, MAX_RETRIES } from "./util/retry"
 import { hasGit } from "./kilo-provider/git-status"
+import * as MemoryDebug from "./services/memory-debug"
+import { migrateChipmateServer, promptChipmateServerReload, testChipmateServer } from "./services/chipmate-server"
+import { CHIPMATE_SERVER_KEY, normalizeChipmateServerBaseUrl } from "./shared/chipmate-server"
+import {
+  LocalSkillRemoval,
+  type SkillRemovePhase,
+  type SkillRemoveRequest,
+} from "./services/marketplace/local-skill-removal"
 // legacy-migration start
 import {
   checkAndShowMigrationWizard,
@@ -143,6 +153,8 @@ import type { KiloProviderOptions } from "./kilo-provider/options"
 import { fetchKiloEmbeddingModelCatalog } from "@kilocode/kilo-gateway"
 import { stopSessionProcesses } from "./kilo-provider/background-process"
 
+const UPDATE_AUTO_INSTALL_KEY = "updateCheck.autoInstall"
+
 type MessageLoadMode = "replace" | "prepend" | "focus" | "reconcile"
 type ContextMessage = { contextDirectory?: unknown }
 // Helper to map agent data to the subset of fields sent to the webview
@@ -177,7 +189,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private readonly extensionVersion =
     vscode.extensions.getExtension("chipmate.chipmate")?.packageJSON?.version ?? "unknown"
   private cachedProvidersMessage: unknown = null
-  /** Stored provider keys remain extension-side and are never posted to the webview. */
+  /**
+   * Provider API keys retained extension-side for authenticated model
+   * fetches (#10139). Keys are stripped before provider data reaches the
+   * webview, so fetch requests for an existing provider carry a providerID
+   * and the key is resolved here. Refreshed on every provider fetch.
+   */
   private storedProviderKeys: Record<string, StoredProviderKey> = {}
   /** Coalesce provider refreshes — at most one follow-up rerun when a request lands mid-flight. */
   private providersRefresh: Promise<void> | null = null
@@ -239,6 +256,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private visibilityDisposable: vscode.Disposable | null = null
   private autoApproveBridge: ReturnType<typeof createAutoApproveBridge> | null = null
   private readonly marketplaceRemove = createMarketplaceRemover()
+  private readonly skillRemoval: LocalSkillRemoval | undefined
 
   private ignoreController: FileIgnoreController | null = null
   private ignoreControllerDir: string | null = null
@@ -273,6 +291,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   ) {
     this.projectDirectory = opts.projectDirectory
     this.slimEditMetadata = opts.slimEditMetadata ?? true
+    this.skillRemoval = extensionContext ? new LocalSkillRemoval(connectionService, extensionContext) : undefined
 
     TelemetryProxy.getInstance().setProvider(this)
   }
@@ -646,7 +665,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private setupWebviewMessageHandler(webview: vscode.Webview): void {
     this.webviewMessageDisposable?.dispose()
     this.autocompleteConfigDisposable?.dispose()
-    this.autocompleteConfigDisposable = watchAutocompleteConfig((msg) => this.postMessage(msg))
+    this.autocompleteConfigDisposable = watchAutocompleteConfig((msg) => this.postMessage(msg), this.extensionContext)
     this.telemetryStateDisposable?.dispose()
     this.telemetryStateDisposable = watchTelemetryState((msg) => this.postMessage(msg))
     this.webviewMessageDisposable = webview.onDidReceiveMessage(async (message) => {
@@ -667,6 +686,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           dir: this.getWorkspaceDirectory(this.currentSession?.id),
           post: (msg) => this.postMessage(msg),
           exportTranscript: (sessionID) => this.handleExportSessionTranscript(sessionID),
+          context: this.extensionContext,
         })
       ) {
         return
@@ -860,10 +880,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         case "requestCommands":
           this.fetchAndSendCommands().catch((e) => console.error("[Kilo New] fetchAndSendCommands failed:", e))
           break
-        case "removeSkill":
-          this.removeSkillViaCli(message.location).catch((e: unknown) =>
-            console.error("[Kilo New] removeSkill failed:", e),
-          )
+        case "removeLocalSkill":
+          await this.handleRemoveLocalSkill(message)
           break
         case "removeAgent":
           this.handleRemoveAgent(message.name).catch((e) => console.error("[Kilo New] handleRemoveAgent failed:", e))
@@ -937,6 +955,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         case "updateConfig":
           await this.handleUpdateConfig(message.config, message.projectConfig, message.requestId)
           break
+        case "memoryDebug":
+          void MemoryDebug.append({
+            event: message.event,
+            operationId: message.requestId ? MemoryDebug.operation("settings-save", message.requestId) : undefined,
+            data: message.data,
+          })
+          break
         case "openSettingsTab":
           if (message.tab === "indexing") {
             await vscode.commands.executeCommand("kilo-code.new.openIndexingSettings")
@@ -995,8 +1020,19 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           await this.handleRenameSession(message.sessionID, message.title)
           break
         case "updateSetting":
-          await this.handleUpdateSetting(message.key, message.value)
+          await this.handleUpdateSetting(message.key, message.value, message.requestId)
           break
+        case "updateAutocompleteSelection":
+          await this.handleAutocompleteSelection(message)
+          break
+        case "requestChipmateServerSettings":
+          await this.sendChipmateServerSettings()
+          break
+        case "testChipmateServer": {
+          const result = await testChipmateServer(message.baseUrl)
+          this.postMessage({ type: "chipmateServerTestResult", requestId: message.requestId, result })
+          break
+        }
         case "requestBrowserSettings":
           this.sendBrowserSettings()
           break
@@ -1813,12 +1849,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       })
       return
     }
+    const operation = msg.type === "saveCustomProvider" ? MemoryDebug.operation("custom-provider", rid) : undefined
     const ctx = buildActionContext(
       this.client,
       (m) => this.postMessage(m),
       getErrorMessage,
       this.getWorkspaceDirectory(),
       () => this.fetchAndSendProviders(),
+      operation,
     )
     const set = (m: unknown) => {
       this.cachedConfigMessage = m
@@ -1835,7 +1873,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (msg.type === "connectProvider" && key) return connectProviderAction(ctx, rid, pid, key, metadata)
     if (msg.type === "authorizeProviderOAuth") return authorizeOAuthAction(ctx, rid, pid, method)
     if (msg.type === "completeProviderOAuth") return completeOAuthAction(ctx, rid, pid, method, code)
-    if (msg.type === "disconnectProvider") return disconnectProviderAction(ctx, rid, pid, this.cachedConfigMessage, set)
+    if (msg.type === "disconnectProvider") {
+      const disconnected = await disconnectProviderAction(ctx, rid, pid, this.cachedConfigMessage, set)
+      if (disconnected) await this.resetAutocompleteAfterProviderRemoval(pid)
+      return
+    }
     if (msg.type === "saveCustomProvider" && config)
       return saveCustomProviderAction(ctx, rid, pid, config, key, keyChanged, this.cachedConfigMessage, set)
   }
@@ -1845,9 +1887,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const url = typeof msg.baseURL === "string" ? msg.baseURL : ""
     if (!rid || !url) return
     const key =
-      typeof msg.apiKey === "string"
-        ? msg.apiKey
-        : resolveStoredKey(this.storedProviderKeys, msg.providerID, url)
+      typeof msg.apiKey === "string" ? msg.apiKey : resolveStoredKey(this.storedProviderKeys, msg.providerID, url)
     const headers = msg.headers && typeof msg.headers === "object" ? (msg.headers as Record<string, string>) : undefined
     try {
       const models = await fetchOpenAIModels({ baseURL: url, apiKey: key, headers })
@@ -1905,9 +1945,15 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         this.client!.app.skills({ directory: workspaceDir }, { throwOnError: true }),
       )
 
+      const targets = this.skillRemoval?.issue(skills, workspaceDir) ?? []
+      const removable = new Map(targets.map((target) => [path.resolve(target.location), target]))
       const message = {
         type: "skillsLoaded",
-        skills,
+        skills: skills.map((skill) => {
+          const target = removable.get(path.resolve(skill.location))
+          if (!target) return skill
+          return { ...skill, removeToken: target.targetToken, scope: target.scope }
+        }),
       }
       this.cachedSkillsMessage = message
       this.postMessage(message)
@@ -1940,34 +1986,21 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
   }
 
-  /**
-   * Remove a skill via the CLI backend (deletes from disk + clears cache), then refresh.
-   * Returns true on success, false on failure.
-   * On failure, re-fetches skills so the webview reverts to the authoritative state.
-   */
-  private async removeSkillViaCli(location: string): Promise<boolean> {
-    if (!this.client) return false
-    try {
-      const dir = this.getWorkspaceDirectory()
-      const result = await this.client.kilocode.removeSkill({ location, directory: dir })
-      if (result.error) {
-        console.error("[Kilo New] removeSkill returned error:", result.error)
-        this.cachedSkillsMessage = null
-        this.clearCommandsCache()
-        await Promise.all([this.fetchAndSendSkills(), this.fetchAndSendCommands()])
-        return false
-      }
-    } catch (error) {
-      console.error("[Kilo New] Failed to remove skill:", error)
-      this.cachedSkillsMessage = null
-      this.cachedCommandsMessage = null
-      await Promise.all([this.fetchAndSendSkills(), this.fetchAndSendCommands()])
-      return false
-    }
+  private async handleRemoveLocalSkill(request: SkillRemoveRequest): Promise<void> {
+    const post = (phase: SkillRemovePhase) =>
+      this.postMessage({ type: "skillRemoveProgress", requestId: request.requestId, phase })
+    const result = this.skillRemoval
+      ? await this.skillRemoval.remove(request, this.getWorkspaceDirectory(), post)
+      : { ...request, success: false, error: "本地 Skill 删除服务不可用。" }
     this.cachedSkillsMessage = null
-    this.cachedCommandsMessage = null
+    this.clearCommandsCache()
     await Promise.all([this.fetchAndSendSkills(), this.fetchAndSendCommands()])
-    return true
+    this.postMessage({ type: "skillRemoveResult", ...result })
+    if (result.success) {
+      void vscode.window.showInformationMessage("Skill 已删除，无需重启。")
+      return
+    }
+    void vscode.window.showErrorMessage(`Skill 删除失败：${result.error ?? "未知错误"}`)
   }
 
   /** Remove an agent via CLI, falling back to kilo.json removal. */
@@ -2079,6 +2112,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
     try {
       const dir = this.getWorkspaceDirectory(this.currentSession?.id)
+      void MemoryDebug.append({ event: "indexing.status.request", data: { workspace: MemoryDebug.hash(dir) } })
       const auth = Buffer.from(`kilo:${config.password}`).toString("base64")
       const res = await fetch(`${config.baseUrl}/indexing/status`, {
         headers: {
@@ -2095,6 +2129,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       }
       this.cachedIndexingStatusMessage = message
       this.postMessage(message)
+      void MemoryDebug.append({
+        event: "indexing.status.response",
+        data: { workspace: MemoryDebug.hash(dir), state: status.state },
+      })
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Failed to fetch indexing status:", error)
     }
@@ -2391,12 +2429,29 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
     this.pending++
     const dir = this.getWorkspaceDirectory()
+    const operation = MemoryDebug.operation("settings-save", requestId)
+    void MemoryDebug.append({
+      event: "settings.save.begin",
+      operationId: operation,
+      data: { globalKeys: Object.keys(partial), projectKeys: Object.keys(project), workspace: MemoryDebug.hash(dir) },
+    })
 
     try {
+      void MemoryDebug.append({ event: "settings.save.drain-prompts.begin", operationId: operation })
       await this.connectionService.drainPendingPrompts()
-      if (hasGlobal) await this.client.global.config.update({ config: partial }, { throwOnError: true })
+      void MemoryDebug.append({ event: "settings.save.drain-prompts.end", operationId: operation })
+      if (hasGlobal)
+        await this.client.global.config.update(
+          { config: partial },
+          { throwOnError: true, headers: MemoryDebug.header(operation) },
+        )
       if (hasProject) await this.client.config.update({ config: project, directory: dir }, { throwOnError: true })
     } catch (error) {
+      void MemoryDebug.append({
+        event: "settings.save.failed",
+        operationId: operation,
+        data: { error: getErrorMessage(error) },
+      })
       this.postConfigFailure(error, requestId)
       this.pending--
       return
@@ -2423,6 +2478,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         refreshProviders ? this.fetchAndSendProviders() : Promise.resolve(),
         refreshAgents ? this.fetchAndSendAgents() : Promise.resolve(),
       ])
+      void MemoryDebug.append({ event: "settings.save.end", operationId: operation })
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Config write succeeded but post-write refresh failed:", error)
       const patch =
@@ -2901,15 +2957,85 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
    * Handle a generic setting update from the webview.
    * The key uses dot notation relative to `kilo-code.new` (e.g. "browserAutomation.enabled").
    */
-  private async handleUpdateSetting(key: string, value: unknown): Promise<void> {
-    const { section, leaf } = buildSettingPath(key)
-    if (section === "autocomplete" && !validAutocompleteSetting(leaf, value)) return
-    const config = vscode.workspace.getConfiguration(`kilo-code.new${section ? `.${section}` : ""}`)
-    // Normalize a webview-side clear to `undefined` so VS Code removes the
-    // key from settings.json rather than persisting a literal `null`. This
-    // lets the runtime fall back to the resolved default.
-    const next = value === null ? undefined : value
-    await config.update(leaf, next, vscode.ConfigurationTarget.Global)
+  private async handleUpdateSetting(key: string, value: unknown, requestId?: string): Promise<void> {
+    try {
+      if (key === UPDATE_AUTO_INSTALL_KEY) {
+        if (typeof value !== "boolean") throw new Error("Invalid update auto-install setting.")
+        await vscode.workspace
+          .getConfiguration("kilo.updateCheck")
+          .update("autoInstall", value, vscode.ConfigurationTarget.Global)
+        if (requestId) this.postMessage({ type: "settingUpdated", key, value, requestId })
+        return
+      }
+      const { section, leaf } = buildSettingPath(key)
+      if (section === "autocomplete" && !validAutocompleteSetting(leaf, value)) {
+        throw new Error(`Invalid autocomplete setting: ${leaf}`)
+      }
+      const config = vscode.workspace.getConfiguration(`kilo-code.new${section ? `.${section}` : ""}`)
+      // Normalize a webview-side clear to `undefined` so VS Code removes the
+      // key from settings.json rather than persisting a literal `null`. This
+      // lets the runtime fall back to the resolved default.
+      const raw = value === null ? undefined : value
+      const next = key === CHIPMATE_SERVER_KEY && typeof raw === "string" ? normalizeChipmateServerBaseUrl(raw) : raw
+      await config.update(leaf, next, vscode.ConfigurationTarget.Global)
+      if (!requestId) return
+      this.postMessage({ type: "settingUpdated", key, value: next, requestId })
+      if (key !== CHIPMATE_SERVER_KEY) return
+      await promptChipmateServerReload()
+    } catch (err) {
+      if (!requestId) throw err
+      this.postMessage({
+        type: "settingUpdateFailed",
+        key,
+        requestId,
+        message: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  private async handleAutocompleteSelection(message: Record<string, unknown>): Promise<void> {
+    const requestId = typeof message.requestId === "string" ? message.requestId : ""
+    if (!requestId || !this.extensionContext) return
+    const providerID = typeof message.providerID === "string" ? message.providerID : undefined
+    const modelID = typeof message.modelID === "string" ? message.modelID : undefined
+    const automatic = message.automatic === true
+    try {
+      const result = await updateAutocompleteSelection(this.extensionContext, { providerID, modelID, automatic })
+      this.postMessage({
+        type: "settingUpdated",
+        key: "autocomplete.provider",
+        value: result.providerID ?? null,
+        requestId,
+      })
+      this.postMessage({
+        type: "settingUpdated",
+        key: "autocomplete.model",
+        value: result.modelID ?? null,
+        requestId,
+      })
+    } catch (err) {
+      this.postMessage({
+        type: "settingUpdateFailed",
+        key: "autocomplete.selection",
+        requestId,
+        message: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  private async resetAutocompleteAfterProviderRemoval(providerID: string): Promise<void> {
+    if (!this.extensionContext) return
+    if (!(await resetAutocompleteSelectionAfterProviderRemoval(this.extensionContext, providerID))) return
+    this.postMessage(buildAutocompleteSettingsMessage(this.extensionContext))
+    void vscode.window.showInformationMessage(
+      "The removed autocomplete Provider was selected. ChipMate switched to Automatic and is looking for another compatible Qwen Provider.",
+    )
+  }
+
+  private async sendChipmateServerSettings(): Promise<void> {
+    const state = await migrateChipmateServer()
+    const autoInstall = vscode.workspace.getConfiguration("kilo.updateCheck").get<boolean>("autoInstall", true)
+    this.postMessage({ type: "chipmateServerSettingsLoaded", state, autoInstall })
   }
 
   /**
@@ -2948,7 +3074,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     await this.extensionContext?.globalState.update("kilo.agentMigrationBannerDismissed", undefined)
 
     // Re-send all settings to the webview so the UI reflects the reset
-    this.postMessage(buildAutocompleteSettingsMessage())
+    this.postMessage(buildAutocompleteSettingsMessage(this.extensionContext))
     this.sendBrowserSettings()
     this.sendNotificationSettings()
     this.sendTimelineSetting()
@@ -2992,6 +3118,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
   /** Re-fetch all server-side state after an auth change. */
   private async reloadAfterAuthChange(): Promise<void> {
+    void MemoryDebug.append({
+      event: "provider.reload.begin",
+      data: { workspace: MemoryDebug.hash(this.getWorkspaceDirectory()) },
+    })
     await this.fetchAndSendConfig()
     await Promise.all([
       this.fetchAndSendProviders(),
@@ -3001,6 +3131,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       this.fetchAndSendIndexingStatus(),
       this.fetchAndSendNotifications(),
     ])
+    void MemoryDebug.append({
+      event: "provider.reload.end",
+      data: { workspace: MemoryDebug.hash(this.getWorkspaceDirectory()) },
+    })
   }
 
   /**
@@ -3076,6 +3210,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     // Fetch and push the updated config + refresh agents and providers so the
     // Settings panel and mode/model pickers reflect the change.
     if (event.type === "global.config.updated") {
+      const props = event.properties as Record<string, unknown> | null
+      if (props?.deferred === true) {
+        void MemoryDebug.append({
+          event: "provider.config.reload.deferred",
+          data: { workspace: MemoryDebug.hash(this.getWorkspaceDirectory()) },
+        })
+        return
+      }
       void Promise.all([this.fetchAndSendConfigUpdated(), this.fetchAndSendAgents(), this.fetchAndSendProviders()])
       return
     }
@@ -3455,6 +3597,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.sessionDirectories.clear()
     this.permissionDirectories.clear()
     this.sessionStatusMap.clear()
+    this.skillRemoval?.dispose()
     this.ignoreController?.dispose()
     this.chatAutocomplete?.dispose()
     disposeGitChangesTarget()

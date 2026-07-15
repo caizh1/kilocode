@@ -9,14 +9,16 @@ import { RemoveAgentPayload, RemoveSkillPayload } from "../groups/kilocode"
 
 export const kilocodeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilocode", (handlers) =>
   Effect.gen(function* () {
+    const skill = yield* Skill.Service
+
     const heapSnapshot = Effect.fn("KilocodeHttpApi.heapSnapshot")(function* () {
-      return yield* Effect.sync(() => HeapSnapshot.write())
+      return yield* Effect.promise(() => HeapSnapshot.write())
     })
 
     const removeSkill = Effect.fn("KilocodeHttpApi.removeSkill")(function* (ctx: {
       payload: typeof RemoveSkillPayload.Type
     }) {
-      yield* Effect.promise(() => Skill.remove(ctx.payload.location))
+      yield* skill.remove(ctx.payload.location).pipe(Effect.orDie)
       return true
     })
 

@@ -65,6 +65,8 @@ describe("autocomplete settings", () => {
 
     expect(validAutocompleteSetting("model", "mercury-edit-2")).toBe(true)
     expect(validAutocompleteSetting("provider", "inception")).toBe(true)
+    expect(validAutocompleteSetting("model", "qwen-coder-30b0")).toBe(true)
+    expect(validAutocompleteSetting("provider", "configured-qwen")).toBe(true)
   })
 
   it("accepts null/undefined for provider and model so users can clear the setting", async () => {
@@ -76,11 +78,11 @@ describe("autocomplete settings", () => {
     expect(validAutocompleteSetting("model", undefined)).toBe(true)
   })
 
-  it("rejects unsupported autocomplete updates", async () => {
+  it("rejects unsupported model updates while allowing configured provider IDs", async () => {
     const { validAutocompleteSetting } = await import("../settings")
 
     expect(validAutocompleteSetting("model", "other/model")).toBe(false)
-    expect(validAutocompleteSetting("provider", "openrouter")).toBe(false)
+    expect(validAutocompleteSetting("provider", "openrouter")).toBe(true)
   })
 
   it("rejects non-boolean toggle updates", async () => {

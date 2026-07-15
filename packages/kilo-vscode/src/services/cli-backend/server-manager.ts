@@ -9,12 +9,15 @@ import { t } from "./i18n"
 import { parseServerPort } from "./server-utils"
 import { internalOfflineEnv } from "../../shared/internal-offline"
 import { appendIndexingStderr, indexingOutput } from "../indexing-output"
+import * as MemoryDebug from "../memory-debug"
+import { chipmateServerEndpoints, legacyChipmateServerEndpoints } from "../chipmate-server"
 export { isIndexingDiagnosticLine } from "../indexing-output"
 
 export interface ServerInstance {
   port: number
   password: string
   process: ChildProcess
+  runId: string
 }
 
 const STARTUP_TIMEOUT_SECONDS = 30
@@ -25,6 +28,9 @@ export type ServerExitInfo = {
   signal: NodeJS.Signals | null
   stderr: string[]
   cliPath: string
+  pid?: number
+  runId: string
+  expected: boolean
 }
 type ServerExitListener = (info: ServerExitInfo) => void
 
@@ -59,12 +65,14 @@ export class ServerManager {
   private instance: ServerInstance | null = null
   private startupPromise: Promise<ServerInstance> | null = null
   private lastExitInfo: ServerExitInfo | null = null
+  private readonly expected = new Set<ChildProcess>()
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly onExit?: ServerExitListener,
   ) {
     indexingOutput(context)
+    MemoryDebug.initialize(context)
   }
 
   /**
@@ -95,6 +103,7 @@ export class ServerManager {
 
   private async startServer(): Promise<ServerInstance> {
     const password = crypto.randomBytes(32).toString("hex")
+    const runId = MemoryDebug.runId()
     const cliPath = this.getCliPath()
     console.log("[Kilo New] ServerManager: 📍 CLI path:", cliPath)
     console.log("[Kilo New] ServerManager: 🔐 Generated password (length):", password.length)
@@ -114,6 +123,7 @@ export class ServerManager {
       console.log("[Kilo New] ServerManager: 🎬 Spawning CLI process:", cliPath, ["serve", "--port", "0"])
       const cfg = vscode.workspace.getConfiguration("kilo-code.new")
       const render = renderEnv()
+      console.log("[Kilo New] ServerManager: 🖼️ Mermaid render endpoint:", mermaidEndpoint(render))
       const internal = internalOfflineEnv()
       const indexingControl = indexingControlEnv(internal)
       const claudeCompat = cfg.get<boolean>("claudeCodeCompat", false)
@@ -156,6 +166,9 @@ export class ServerManager {
           // once per second per worktree) to reach multi-GB RSS in minutes.
           // See oven-sh/bun#18265 and Jarred's workaround note in #21560.
           MIMALLOC_PURGE_DELAY: "0",
+          KILO_MEMORY_DEBUG: "1",
+          KILO_MEMORY_DEBUG_DIR: MemoryDebug.directory(),
+          KILO_MEMORY_DEBUG_RUN_ID: runId,
           KILO_SERVER_PASSWORD: password,
           KILO_CLIENT: "vscode",
           KILO_ENABLE_QUESTION_TOOL: "true",
@@ -180,19 +193,61 @@ export class ServerManager {
         detached: true,
       })
       console.log("[Kilo New] ServerManager: 📦 Process spawned with PID:", serverProcess.pid)
+      void MemoryDebug.append({
+        event: "cli.spawned",
+        runId,
+        data: { pid: serverProcess.pid, cli: path.basename(cliPath) },
+      })
 
       let resolved = false
+      let reported = false
       const stderrLines: string[] = []
+
+      const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+        if (reported) return
+        reported = true
+        console.log("[Kilo New] ServerManager: 🛑 Process exited:", { code, signal })
+        this.lastExitInfo = {
+          code,
+          signal,
+          stderr: [...stderrLines],
+          cliPath,
+          pid: serverProcess.pid,
+          runId,
+          expected: this.expected.delete(serverProcess),
+        }
+        this.appendIndexingOutput(formatServerExitInfo(this.lastExitInfo))
+        void MemoryDebug.append({
+          event: "cli.exited",
+          runId,
+          data: {
+            code,
+            signal,
+            expected: this.lastExitInfo.expected,
+            pid: serverProcess.pid,
+            crash: MemoryDebug.parseCrash(stderrLines),
+            stderr: stderrLines.join("\n"),
+          },
+        })
+        if (this.instance?.process === serverProcess) {
+          this.instance = null
+        }
+        this.onExit?.(this.lastExitInfo)
+        if (resolved) return
+        const { userMessage, userDetails } = toErrorMessage(processExitMessage(code, signal), stderrLines, cliPath)
+        reject(new ServerStartupError(userMessage, userDetails))
+      }
 
       serverProcess.stdout?.on("data", (data: Buffer) => {
         const output = data.toString()
         console.log("[Kilo New] ServerManager: 📥 CLI Server stdout:", output)
+        void MemoryDebug.append({ event: "cli.stdout", runId, data: { output } })
 
         const port = parseServerPort(output)
         if (port !== null && !resolved) {
           resolved = true
           console.log("[Kilo New] ServerManager: 🎯 Port detected:", port)
-          resolve({ port, password, process: serverProcess })
+          resolve({ port, password, process: serverProcess, runId })
         }
       })
 
@@ -201,31 +256,18 @@ export class ServerManager {
         console.error("[Kilo New] ServerManager: ⚠️ CLI Server stderr:", errorOutput)
         this.appendIndexingOutput(errorOutput)
         rememberStderr(stderrLines, errorOutput)
+        void MemoryDebug.append({ event: "cli.stderr", runId, data: { output: errorOutput } })
       })
 
       serverProcess.on("error", (error) => {
         console.error("[Kilo New] ServerManager: ❌ Process error:", error)
-        if (!resolved) {
-          reject(error)
-        }
+        stderrLines.push(error.message)
+        void MemoryDebug.append({ event: "cli.process.error", runId, data: { error: error.message } })
+        finish(null, null)
       })
 
       serverProcess.on("exit", (code, signal) => {
-        console.log("[Kilo New] ServerManager: 🛑 Process exited:", { code, signal })
-        this.lastExitInfo = { code, signal, stderr: [...stderrLines], cliPath }
-        this.appendIndexingOutput(formatServerExitInfo(this.lastExitInfo))
-        if (this.instance?.process === serverProcess) {
-          this.instance = null
-          this.onExit?.(this.lastExitInfo)
-        }
-        if (!resolved) {
-          const { userMessage, userDetails } = toErrorMessage(
-            processExitMessage(code, signal),
-            stderrLines,
-            cliPath,
-          )
-          reject(new ServerStartupError(userMessage, userDetails))
-        }
+        finish(code, signal)
       })
 
       setTimeout(() => {
@@ -286,6 +328,7 @@ export class ServerManager {
     }
     const proc = this.instance.process
     this.instance = null
+    this.expected.add(proc)
 
     console.log("[Kilo New] ServerManager: 🔴 Disposing — sending SIGTERM to process group, PID:", proc.pid)
     ServerManager.killProcess(proc, "SIGTERM")
@@ -304,32 +347,61 @@ export class ServerManager {
   }
 }
 
-function renderEnv(): Record<string, string> {
-  const cfg = vscode.workspace.getConfiguration("kilo.documents")
-  const word = cfg.get<string>("wordRender.remoteEndpoint", "").trim()
-  const mermaid = cfg.get<string>("mermaidRender.remoteEndpoint", "").trim()
+export function renderEnv(): Record<string, string> {
+  const unified = chipmateServerEndpoints()
+  const legacy = legacyChipmateServerEndpoints()
+  const word = unified.endpoints?.word ?? (unified.state.source === "conflict" ? legacy.word : "")
+  const mermaid = unified.endpoints?.mermaid ?? (unified.state.source === "conflict" ? legacy.mermaid : "")
   return {
     ...(word && !process.env.KILO_WORD_RENDER_ENDPOINT ? { KILO_WORD_RENDER_ENDPOINT: word } : {}),
     ...(mermaid && !process.env.KILO_MERMAID_RENDER_ENDPOINT ? { KILO_MERMAID_RENDER_ENDPOINT: mermaid } : {}),
   }
 }
 
+export type MermaidEndpoint = {
+  state: "injected" | "inherited" | "absent"
+  endpoint?: string
+}
+
+export function mermaidEndpoint(
+  render: Record<string, string> = renderEnv(),
+  inherited = process.env.KILO_MERMAID_RENDER_ENDPOINT,
+): MermaidEndpoint {
+  const injected = render.KILO_MERMAID_RENDER_ENDPOINT
+  if (injected) return { state: "injected", endpoint: redactEndpoint(injected) }
+  if (inherited) return { state: "inherited", endpoint: redactEndpoint(inherited) }
+  return { state: "absent" }
+}
+
+function redactEndpoint(value: string): string {
+  try {
+    const url = new URL(value)
+    url.username = ""
+    url.password = ""
+    url.search = ""
+    url.hash = ""
+    return url.toString()
+  } catch {
+    return "<invalid>"
+  }
+}
+
 function indexingControlEnv(internal: Record<string, string>): Record<string, string> {
-	const cfg = vscode.workspace.getConfiguration("kilo.indexing")
-	const enabled = cfg.get<boolean>("enabled", true)
-	const openAICompatibleBaseUrl = cfg.get<string>("openaiCompatible.baseUrl", "").trim()
-	return {
-		...(enabled === false && !process.env.KILO_DISABLE_CODEBASE_INDEXING
-			? { KILO_DISABLE_CODEBASE_INDEXING: "vscode-disabled" }
-			: {}),
-		...(Object.keys(internal).length > 0 &&
-		openAICompatibleBaseUrl &&
-		!process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL
-			? { KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL: openAICompatibleBaseUrl }
-			: {}),
-		...(process.platform === "linux" &&
-		Object.keys(internal).length > 0 &&
-		!process.env.KILO_CODEGRAPH_WORKER_CONCURRENCY
+  const cfg = vscode.workspace.getConfiguration("kilo.indexing")
+  const enabled = cfg.get<boolean>("enabled", true)
+  const openAICompatibleBaseUrl = cfg.get<string>("openaiCompatible.baseUrl", "").trim()
+  return {
+    ...(enabled === false && !process.env.KILO_DISABLE_CODEBASE_INDEXING
+      ? { KILO_DISABLE_CODEBASE_INDEXING: "vscode-disabled" }
+      : {}),
+    ...(Object.keys(internal).length > 0 &&
+    openAICompatibleBaseUrl &&
+    !process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL
+      ? { KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL: openAICompatibleBaseUrl }
+      : {}),
+    ...(process.platform === "linux" &&
+    Object.keys(internal).length > 0 &&
+    !process.env.KILO_CODEGRAPH_WORKER_CONCURRENCY
       ? { KILO_CODEGRAPH_WORKER_CONCURRENCY: "2" }
       : {}),
   }

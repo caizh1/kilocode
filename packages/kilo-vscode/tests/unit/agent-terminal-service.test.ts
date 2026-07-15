@@ -1,148 +1,142 @@
-import { describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
+import * as vscode from "vscode"
+import { registerAgentTerminal } from "../../src/services/agent-terminal"
 
-type VscodeMockState = {
+type State = {
   workspaceRoot: string
   agentTerminalEnabled: boolean
   warningChoice: string | undefined
   registeredCommands: Map<string, (...args: unknown[]) => unknown>
-  executedCommands: Array<{ command: string; args: unknown[] }>
   createdTerminals: Array<{ options: Record<string, unknown>; shown: boolean; sent: string[] }>
-  registeredProfileProvider?: { provideTerminalProfile: () => unknown }
+  registeredProfileProvider?: vscode.TerminalProfileProvider
 }
 
-function vscodeMockState(): VscodeMockState {
-  const global = globalThis as typeof globalThis & { __kiloVscodeMockState?: VscodeMockState }
-  global.__kiloVscodeMockState ??= {
+const original = {
+  commands: vscode.commands.registerCommand,
+  config: vscode.workspace.getConfiguration,
+  folders: vscode.workspace.workspaceFolders,
+  terminal: vscode.window.createTerminal,
+  profile: vscode.window.registerTerminalProfileProvider,
+  warning: vscode.window.showWarningMessage,
+}
+
+afterEach(() => {
+  ;(vscode.commands as unknown as { registerCommand: typeof original.commands }).registerCommand = original.commands
+  ;(vscode.workspace as unknown as { getConfiguration: typeof original.config }).getConfiguration = original.config
+  ;(vscode.workspace as unknown as { workspaceFolders: typeof original.folders }).workspaceFolders = original.folders
+  ;(vscode.window as unknown as { createTerminal: typeof original.terminal }).createTerminal = original.terminal
+  ;(
+    vscode.window as unknown as { registerTerminalProfileProvider: typeof original.profile }
+  ).registerTerminalProfileProvider = original.profile
+  ;(vscode.window as unknown as { showWarningMessage: typeof original.warning }).showWarningMessage = original.warning
+})
+
+function state(): State {
+  return {
     workspaceRoot: "/workspace",
     agentTerminalEnabled: false,
     warningChoice: "Enable for Workspace",
     registeredCommands: new Map(),
-    executedCommands: [],
     createdTerminals: [],
   }
-  return global.__kiloVscodeMockState
 }
 
-mock.module("vscode", () => ({
-  ConfigurationTarget: {
-    Workspace: 2,
-  },
-  Uri: {
-    file: (fsPath: string) => ({ fsPath }),
-  },
-  commands: {
-    registerCommand: (command: string, callback: (...args: unknown[]) => unknown) => {
-      vscodeMockState().registeredCommands.set(command, callback)
-      return { dispose: () => vscodeMockState().registeredCommands.delete(command) }
-    },
-    executeCommand: (command: string, ...args: unknown[]) => {
-      vscodeMockState().executedCommands.push({ command, args })
-      return Promise.resolve()
-    },
-  },
-  workspace: {
-    getConfiguration: () => ({
-      get: (key: string, fallback: unknown) => (key === "kilo.agentTerminal.enabled" ? vscodeMockState().agentTerminalEnabled : fallback),
-      update: (key: string, value: unknown) => {
-        if (key === "kilo.agentTerminal.enabled") vscodeMockState().agentTerminalEnabled = Boolean(value)
-        return Promise.resolve()
+function install(value: State) {
+  ;(vscode.commands as unknown as { registerCommand: typeof original.commands }).registerCommand = (
+    command: string,
+    callback: (...args: unknown[]) => unknown,
+  ) => {
+    value.registeredCommands.set(command, callback)
+    return { dispose: () => value.registeredCommands.delete(command) }
+  }
+  ;(vscode.workspace as unknown as { getConfiguration: typeof original.config }).getConfiguration = () =>
+    ({
+      get: (key: string, fallback: unknown) =>
+        key === "kilo.agentTerminal.enabled" ? value.agentTerminalEnabled : fallback,
+      update: async (key: string, next: unknown) => {
+        if (key === "kilo.agentTerminal.enabled") value.agentTerminalEnabled = Boolean(next)
       },
-    }),
-    get workspaceFolders() {
-      return [{ uri: { fsPath: vscodeMockState().workspaceRoot } }]
-    },
-  },
-  window: {
-    showInputBox: () => undefined,
-    showInformationMessage: () => undefined,
-    showWarningMessage: () => Promise.resolve(vscodeMockState().warningChoice),
-    createTerminal: (options: Record<string, unknown>) => {
-      const terminal = {
-        options,
-        shown: false,
-        sent: [] as string[],
-        show: () => {
-          terminal.shown = true
-        },
-        sendText: (text: string) => {
-          terminal.sent.push(text)
-        },
-      }
-      vscodeMockState().createdTerminals.push(terminal)
-      return terminal
-    },
-    registerTerminalProfileProvider: (_id: string, provider: { provideTerminalProfile: () => unknown }) => {
-      vscodeMockState().registeredProfileProvider = provider
-      return { dispose: () => undefined }
-    },
-  },
-  TerminalProfile: class TerminalProfile {
-    options: unknown
-    constructor(options: unknown) {
-      this.options = options
+    }) as vscode.WorkspaceConfiguration
+  ;(vscode.workspace as unknown as { workspaceFolders: vscode.WorkspaceFolder[] }).workspaceFolders = [
+    { uri: { fsPath: value.workspaceRoot } } as vscode.WorkspaceFolder,
+  ]
+  ;(vscode.window as unknown as { showWarningMessage: typeof original.warning }).showWarningMessage = async () =>
+    value.warningChoice
+  ;(vscode.window as unknown as { createTerminal: typeof original.terminal }).createTerminal = (options) => {
+    const terminal = {
+      options: options as Record<string, unknown>,
+      shown: false,
+      sent: [] as string[],
+      show: () => {
+        terminal.shown = true
+      },
+      sendText: (text: string) => {
+        terminal.sent.push(text)
+      },
     }
-  },
-}))
-
-const { registerAgentTerminal } = await import("../../src/services/agent-terminal")
+    value.createdTerminals.push(terminal)
+    return terminal as unknown as vscode.Terminal
+  }
+  ;(
+    vscode.window as unknown as { registerTerminalProfileProvider: typeof original.profile }
+  ).registerTerminalProfileProvider = (_id, provider) => {
+    value.registeredProfileProvider = provider
+    return { dispose: () => undefined }
+  }
+}
 
 describe("agent terminal service", () => {
-  test("opens a default-off sidecar terminal after workspace confirmation", async () => {
-    const state = vscodeMockState()
-    state.workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-agent-terminal-service-"))
-    await fs.writeFile(path.join(state.workspaceRoot, "package.json"), JSON.stringify({ name: "demo", scripts: { build: "make" } }))
-    state.agentTerminalEnabled = false
-    state.warningChoice = "Enable for Workspace"
-    state.registeredCommands.clear()
-    state.createdTerminals.length = 0
-    state.registeredProfileProvider = undefined
+  test("opens Agent Console while keeping the legacy terminal profile", async () => {
+    const value = state()
+    value.workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-agent-terminal-service-"))
+    await fs.writeFile(
+      path.join(value.workspaceRoot, "package.json"),
+      JSON.stringify({ name: "demo", scripts: { build: "make" } }),
+    )
+    install(value)
+    let opens = 0
 
     const context = { subscriptions: [] as Array<{ dispose: () => void }> }
-    registerAgentTerminal(context as never)
+    registerAgentTerminal(context as never, () => opens++)
 
-    await state.registeredCommands.get("kilo-code.new.agentTerminal.open")?.()
+    await value.registeredCommands.get("kilo-code.new.agentTerminal.open")?.()
 
-    expect(state.agentTerminalEnabled).toBe(true)
-    expect(state.createdTerminals).toHaveLength(1)
-    expect(state.createdTerminals[0]?.options).toMatchObject({
-      name: "Kilo Agent Terminal",
-      cwd: state.workspaceRoot,
-      env: {
-        KILO_AGENT_TERMINAL: "1",
-      },
-    })
-    expect(state.createdTerminals[0]?.shown).toBe(true)
-    expect(state.createdTerminals[0]?.sent[0]).toContain("kilo_agent_intro")
-    expect(await fs.readFile(path.join(state.workspaceRoot, ".kilo", "agent-terminal", "agent-terminal.sh"), "utf8")).toContain("kilo_run_checked")
-    expect(await fs.readFile(path.join(state.workspaceRoot, ".kilo", "agent-terminal", "context.md"), "utf8")).toContain("Package: demo")
+    expect(opens).toBe(1)
+    expect(value.agentTerminalEnabled).toBe(false)
+    expect(value.createdTerminals).toHaveLength(0)
 
-    const profile = (await state.registeredProfileProvider?.provideTerminalProfile()) as { options?: Record<string, unknown> } | undefined
+    value.agentTerminalEnabled = true
+    const profile = (await value.registeredProfileProvider?.provideTerminalProfile(undefined)) as
+      | { options?: Record<string, unknown> }
+      | undefined
+    expect(
+      await fs.readFile(path.join(value.workspaceRoot, ".kilo", "agent-terminal", "agent-terminal.sh"), "utf8"),
+    ).toContain("kilo_run_checked")
+    expect(
+      await fs.readFile(path.join(value.workspaceRoot, ".kilo", "agent-terminal", "context.md"), "utf8"),
+    ).toContain("Package: demo")
     expect(profile?.options).toMatchObject({
-      name: "Kilo Agent Terminal",
-      cwd: state.workspaceRoot,
-      env: {
-        KILO_AGENT_TERMINAL: "1",
-      },
+      name: "Kilo Agent Terminal (Legacy)",
+      cwd: value.workspaceRoot,
+      env: { KILO_AGENT_TERMINAL: "1" },
     })
   })
 
-  test("does not open a terminal when the default-off prompt is cancelled", async () => {
-    const state = vscodeMockState()
-    state.workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-agent-terminal-cancel-"))
-    state.agentTerminalEnabled = false
-    state.warningChoice = "Cancel"
-    state.registeredCommands.clear()
-    state.createdTerminals.length = 0
+  test("does not create the legacy profile when its default-off prompt is cancelled", async () => {
+    const value = state()
+    value.workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-agent-terminal-cancel-"))
+    value.warningChoice = "Cancel"
+    install(value)
 
     const context = { subscriptions: [] as Array<{ dispose: () => void }> }
-    registerAgentTerminal(context as never)
+    registerAgentTerminal(context as never, () => undefined)
+    const profile = await value.registeredProfileProvider?.provideTerminalProfile(undefined)
 
-    await state.registeredCommands.get("kilo-code.new.agentTerminal.open")?.()
-
-    expect(state.agentTerminalEnabled).toBe(false)
-    expect(state.createdTerminals).toHaveLength(0)
+    expect(value.agentTerminalEnabled).toBe(false)
+    expect(value.createdTerminals).toHaveLength(0)
+    expect(profile).toBeUndefined()
   })
 })

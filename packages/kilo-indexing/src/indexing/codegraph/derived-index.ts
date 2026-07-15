@@ -1,5 +1,6 @@
 import type {
   CodeGraphDerivedIndex,
+  CodeGraphDerivedSidecarField,
   CodeGraphDirectoryStats,
   CodeGraphFileGraph,
   CodeGraphModuleStats,
@@ -10,111 +11,194 @@ import type {
 } from "./types"
 import { dict, own } from "./dict"
 
+export const CODEGRAPH_DERIVED_INDEX_FIELDS: CodeGraphDerivedSidecarField[] = [
+  "functionIdsByName",
+  "callerIdsByCallee",
+  "includeTargetsByFile",
+  "filePathsByInclude",
+  "directoryStats",
+  "symbolsByName",
+  "symbolsByPath",
+  "postingsByTerm",
+  "moduleStats",
+]
+
 export function buildCodeGraphDerivedIndex(files: Record<string, CodeGraphFileGraph>): CodeGraphDerivedIndex {
-  const ids = dict<string[]>()
-  const callers = dict<string[]>()
-  const targets = dict<string[]>()
-  const includers = dict<string[]>()
-  const dirs = dict<CodeGraphDirectoryStats>()
-  const names = dict<CodeGraphSymbol[]>()
-  const paths = dict<CodeGraphSymbol[]>()
-  const postings = dict<CodeGraphPosting[]>()
-  const modules = new Map<string, Set<string>>()
-  const owners = new Map<string, Set<string>>()
-
+  const builder = new CodeGraphDerivedIndexBuilder()
   for (const graph of Object.values(files).sort((left, right) => left.filePath.localeCompare(right.filePath))) {
+    builder.add(graph)
+  }
+  return builder.build()
+}
+
+export class CodeGraphDerivedIndexBuilder {
+  private readonly fields: Set<CodeGraphDerivedSidecarField>
+  private readonly ids = dict<string[]>()
+  private readonly callers = dict<string[]>()
+  private readonly targets = dict<string[]>()
+  private readonly includers = dict<string[]>()
+  private readonly dirs = dict<CodeGraphDirectoryStats>()
+  private readonly names = dict<CodeGraphSymbol[]>()
+  private readonly paths = dict<CodeGraphSymbol[]>()
+  private readonly postings = dict<CodeGraphPosting[]>()
+  private readonly modules = new Map<string, Set<string>>()
+  private readonly owners = new Map<string, Set<string>>()
+
+  constructor(fields: Iterable<CodeGraphDerivedSidecarField> = CODEGRAPH_DERIVED_INDEX_FIELDS) {
+    this.fields = new Set(fields)
+  }
+
+  public add(graph: CodeGraphFileGraph): void {
     const dir = moduleKey(graph.filePath)
-    const stats = get(dirs, dir, () => ({ files: 0, functions: 0, macros: 0, types: 0, globals: 0, bytes: 0 }))
-    stats.files += 1
-    stats.functions += graph.functions.length
-    stats.macros += graph.macros.length
-    stats.types += graph.types.length
-    stats.globals += graph.globals.length
-    stats.bytes += bytes(graph)
+    if (this.has("directoryStats") || this.has("moduleStats")) {
+      const stats = get(this.dirs, dir, () => ({
+        files: 0,
+        functions: 0,
+        macros: 0,
+        types: 0,
+        globals: 0,
+        bytes: 0,
+      }))
+      stats.files += 1
+      stats.functions += graph.functions.length
+      stats.macros += graph.macros.length
+      stats.types += graph.types.length
+      stats.globals += graph.globals.length
+      stats.bytes += bytes(graph)
+    }
 
-    addSymbol(names, paths, fileSymbol(graph))
-    for (const term of terms(graph.filePath)) addPosting(postings, term, graph.filePath, 1, "path", 3)
+    if (this.has("symbolsByName") || this.has("symbolsByPath")) {
+      addSymbol(
+        this.has("symbolsByName") ? this.names : undefined,
+        this.has("symbolsByPath") ? this.paths : undefined,
+        fileSymbol(graph),
+      )
+    }
+    if (this.has("postingsByTerm")) {
+      for (const term of terms(graph.filePath)) addPosting(this.postings, term, graph.filePath, 1, "path", 3)
+    }
 
-    targets[graph.filePath] = graph.includes.map((include) => include.target)
+    if (this.has("includeTargetsByFile")) this.targets[graph.filePath] = graph.includes.map((include) => include.target)
     for (const include of graph.includes) {
-      pushUnique(includers, include.target, graph.filePath)
-      addPosting(postings, include.target, graph.filePath, include.startLine, "include", 2.2)
+      if (this.has("filePathsByInclude")) pushUnique(this.includers, include.target, graph.filePath)
+      if (this.has("postingsByTerm")) {
+        addPosting(this.postings, include.target, graph.filePath, include.startLine, "include", 2.2)
+      }
     }
 
     for (const fn of graph.functions) {
-      pushUnique(ids, fn.name, fn.id)
-      addSymbol(names, paths, {
-        id: fn.id,
-        kind: "function",
-        name: fn.name,
-        path: graph.filePath,
-        startLine: fn.startLine,
-        endLine: fn.endLine,
-        signature: fn.signature,
-        snippet: fn.shortSnippet ?? fn.signature,
-      })
-      addPosting(postings, fn.name, graph.filePath, fn.startLine, "function", 6, fn.id)
-      addOwner(owners, fn.name, dir)
-      const callees = modules.get(dir) ?? new Set<string>()
-      for (const call of fn.calls) {
-        pushUnique(callers, call.calleeName, fn.id)
-        callees.add(call.calleeName)
+      if (this.has("functionIdsByName")) pushUnique(this.ids, fn.name, fn.id)
+      if (this.has("symbolsByName") || this.has("symbolsByPath")) {
+        addSymbol(
+          this.has("symbolsByName") ? this.names : undefined,
+          this.has("symbolsByPath") ? this.paths : undefined,
+          {
+            id: fn.id,
+            kind: "function",
+            name: fn.name,
+            path: graph.filePath,
+            startLine: fn.startLine,
+            endLine: fn.endLine,
+            signature: fn.signature,
+            snippet: fn.shortSnippet ?? fn.signature,
+          },
+        )
       }
-      modules.set(dir, callees)
+      if (this.has("postingsByTerm"))
+        addPosting(this.postings, fn.name, graph.filePath, fn.startLine, "function", 6, fn.id)
+      if (this.has("moduleStats")) addOwner(this.owners, fn.name, dir)
+      const callees = this.modules.get(dir) ?? new Set<string>()
+      for (const call of fn.calls) {
+        if (this.has("callerIdsByCallee")) pushUnique(this.callers, call.calleeName, fn.id)
+        if (this.has("moduleStats")) callees.add(call.calleeName)
+      }
+      if (this.has("moduleStats")) this.modules.set(dir, callees)
     }
 
     for (const macro of graph.macros) {
-      addSymbol(names, paths, {
-        id: `${graph.filePath}:macro:${macro.name}:${macro.startLine}`,
-        kind: "macro",
-        name: macro.name,
-        path: graph.filePath,
-        startLine: macro.startLine,
-        endLine: macro.endLine,
-        snippet: macro.shortSnippet ?? macro.name,
-      })
-      addPosting(postings, macro.name, graph.filePath, macro.startLine, "macro", 4.5)
+      if (this.has("symbolsByName") || this.has("symbolsByPath")) {
+        addSymbol(
+          this.has("symbolsByName") ? this.names : undefined,
+          this.has("symbolsByPath") ? this.paths : undefined,
+          {
+            id: `${graph.filePath}:macro:${macro.name}:${macro.startLine}`,
+            kind: "macro",
+            name: macro.name,
+            path: graph.filePath,
+            startLine: macro.startLine,
+            endLine: macro.endLine,
+            snippet: macro.shortSnippet ?? macro.name,
+          },
+        )
+      }
+      if (this.has("postingsByTerm"))
+        addPosting(this.postings, macro.name, graph.filePath, macro.startLine, "macro", 4.5)
     }
 
     for (const type of graph.types) {
-      addSymbol(names, paths, {
-        id: `${graph.filePath}:type:${type.name}:${type.startLine}`,
-        kind: "type",
-        name: type.name,
-        path: graph.filePath,
-        startLine: type.startLine,
-        endLine: type.endLine,
-        signature: type.kind,
-        snippet: type.shortSnippet ?? type.name,
-      })
-      addPosting(postings, type.name, graph.filePath, type.startLine, "type", 5)
-      for (const field of type.fields ?? []) addSymbol(names, paths, fieldSymbol(graph.filePath, type.name, field))
+      if (this.has("symbolsByName") || this.has("symbolsByPath")) {
+        addSymbol(
+          this.has("symbolsByName") ? this.names : undefined,
+          this.has("symbolsByPath") ? this.paths : undefined,
+          {
+            id: `${graph.filePath}:type:${type.name}:${type.startLine}`,
+            kind: "type",
+            name: type.name,
+            path: graph.filePath,
+            startLine: type.startLine,
+            endLine: type.endLine,
+            signature: type.kind,
+            snippet: type.shortSnippet ?? type.name,
+          },
+        )
+        for (const field of type.fields ?? []) {
+          addSymbol(
+            this.has("symbolsByName") ? this.names : undefined,
+            this.has("symbolsByPath") ? this.paths : undefined,
+            fieldSymbol(graph.filePath, type.name, field),
+          )
+        }
+      }
+      if (this.has("postingsByTerm")) addPosting(this.postings, type.name, graph.filePath, type.startLine, "type", 5)
     }
 
     for (const global of graph.globals) {
-      addSymbol(names, paths, {
-        id: `${graph.filePath}:global:${global.name}:${global.startLine}`,
-        kind: "global",
-        name: global.name,
-        path: graph.filePath,
-        startLine: global.startLine,
-        endLine: global.endLine,
-        snippet: global.shortSnippet ?? global.name,
-      })
-      addPosting(postings, global.name, graph.filePath, global.startLine, "global", 3.5)
+      if (this.has("symbolsByName") || this.has("symbolsByPath")) {
+        addSymbol(
+          this.has("symbolsByName") ? this.names : undefined,
+          this.has("symbolsByPath") ? this.paths : undefined,
+          {
+            id: `${graph.filePath}:global:${global.name}:${global.startLine}`,
+            kind: "global",
+            name: global.name,
+            path: graph.filePath,
+            startLine: global.startLine,
+            endLine: global.endLine,
+            snippet: global.shortSnippet ?? global.name,
+          },
+        )
+      }
+      if (this.has("postingsByTerm"))
+        addPosting(this.postings, global.name, graph.filePath, global.startLine, "global", 3.5)
     }
   }
 
-  return {
-    functionIdsByName: sortedArray(ids),
-    callerIdsByCallee: sortedArray(callers),
-    includeTargetsByFile: sortedArray(targets),
-    filePathsByInclude: sortedArray(includers),
-    directoryStats: sortedRecord(dirs),
-    symbolsByName: sortedSymbols(names),
-    symbolsByPath: sortedSymbols(paths),
-    postingsByTerm: sortedPostings(postings),
-    moduleStats: buildModuleStats(dirs, modules, owners),
+  public build(): CodeGraphDerivedIndex {
+    return {
+      functionIdsByName: sortedArray(this.ids),
+      callerIdsByCallee: sortedArray(this.callers),
+      includeTargetsByFile: sortedArray(this.targets),
+      filePathsByInclude: sortedArray(this.includers),
+      directoryStats: sortedRecord(this.dirs),
+      symbolsByName: sortedSymbols(this.names),
+      symbolsByPath: sortedSymbols(this.paths),
+      postingsByTerm: sortedPostings(this.postings),
+      moduleStats: this.has("moduleStats") ? buildModuleStats(this.dirs, this.modules, this.owners) : dict(),
+    }
+  }
+
+  private has(field: CodeGraphDerivedSidecarField): boolean {
+    return this.fields.has(field)
   }
 }
 
@@ -172,12 +256,12 @@ function fieldSymbol(path: string, type: string, field: CodeGraphTypeField): Cod
 }
 
 function addSymbol(
-  names: Record<string, CodeGraphSymbol[]>,
-  paths: Record<string, CodeGraphSymbol[]>,
+  names: Record<string, CodeGraphSymbol[]> | undefined,
+  paths: Record<string, CodeGraphSymbol[]> | undefined,
   symbol: CodeGraphSymbol,
 ): void {
-  pushUniqueSymbol(names, symbol.name.toLowerCase(), symbol)
-  pushUniqueSymbol(paths, symbol.path, symbol)
+  if (names) pushUniqueSymbol(names, symbol.name.toLowerCase(), symbol)
+  if (paths) pushUniqueSymbol(paths, symbol.path, symbol)
 }
 
 function addPosting(

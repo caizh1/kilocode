@@ -4,6 +4,8 @@ import { createKiloClient, type KiloClient, type Event } from "@kilocode/sdk/v2/
 import { SdkSSEAdapter } from "./sdk-sse-adapter"
 import type { ServerConfig } from "./types"
 import { resolveEventSessionId as resolveEventSessionIdPure } from "./connection-utils"
+import * as MemoryDebug from "../memory-debug"
+import { CrashRecovery, RESTART_MS, STABLE_MS } from "./recovery"
 
 export type ConnectionState = "connecting" | "connected" | "disconnected" | "error"
 type SSEEventListener = (event: Event, directory?: string) => void
@@ -81,6 +83,12 @@ export class KiloConnectionService {
   private readonly opened: Map<string, string[]> = new Map()
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private unsubRemote: (() => void) | null = null
+  private restartTimer: ReturnType<typeof setTimeout> | null = null
+  private stableTimer: ReturnType<typeof setTimeout> | null = null
+  private workspaceDir: string | null = null
+  private readonly recovery = new CrashRecovery()
+  private recovering = false
+  private disposed = false
 
   constructor(context: vscode.ExtensionContext) {
     this.serverManager = new ServerManager(context, (info) => this.handleServerExit(info))
@@ -90,6 +98,11 @@ export class KiloConnectionService {
    * Lazily start server + SSE. Multiple callers share the same promise.
    */
   async connect(workspaceDir: string): Promise<void> {
+    this.workspaceDir = workspaceDir
+    if (this.recovery.exhausted && !this.recovering) {
+      this.recovery.manual()
+      void MemoryDebug.append({ event: "recovery.manual-reset" })
+    }
     if (this.connectPromise) {
       return this.connectPromise
     }
@@ -97,12 +110,14 @@ export class KiloConnectionService {
       return
     }
 
-    // Mark as connecting early so concurrent callers won't start another connection attempt.
+    // Publish the shared attempt before notifying synchronous state listeners.
+    // Autocomplete may request the client again from a "connecting" listener;
+    // without this ordering, that re-entry starts another attempt recursively.
+    const promise = Promise.resolve().then(() => this.doConnect(workspaceDir))
+    this.connectPromise = promise
     this.setState("connecting")
-
-    this.connectPromise = this.doConnect(workspaceDir)
     try {
-      await this.connectPromise
+      await promise
     } catch (error) {
       // If doConnect() fails before SSE can emit a state transition, avoid leaving consumers stuck in "connecting".
       this.setState("error", this.error ?? (error instanceof Error ? error : new Error(String(error))))
@@ -475,7 +490,9 @@ export class KiloConnectionService {
    * Clean up everything: kill server, close SSE, clear listeners.
    */
   dispose(): void {
+    this.disposed = true
     this.stopHealthPoll()
+    this.stopRecovery()
     this.sseClient?.dispose()
     this.serverManager.dispose()
     this.eventListeners.clear()
@@ -569,6 +586,7 @@ export class KiloConnectionService {
 
   private handleServerExit(info: ServerExitInfo): void {
     console.warn("[Kilo New] ConnectionService: CLI background process exited:", info)
+    this.clearStable()
     this.resetConnection()
     const exitReason = info.signal ? `signal ${info.signal}` : `code ${info.code ?? "unknown"}`
     const stderr = info.stderr
@@ -578,10 +596,9 @@ export class KiloConnectionService {
       .slice(-8)
       .join("\n")
     const detail = stderr ? `\nLast CLI stderr:\n${stderr}` : ""
-    this.setState(
-      "error",
-      new Error(`CLI background process exited with ${exitReason}. Retry to reconnect.${detail}`),
-    )
+    this.setState("error", new Error(`CLI background process exited with ${exitReason}. Retry to reconnect.${detail}`))
+    if (info.expected || this.disposed) return
+    this.scheduleRecovery(info)
   }
 
   private async doConnect(workspaceDir: string): Promise<void> {
@@ -668,6 +685,67 @@ export class KiloConnectionService {
 
     // Start the independent health poll once we are confirmed connected.
     this.startHealthPoll(config.baseUrl, config.password)
+    this.armStable()
+  }
+
+  private scheduleRecovery(info: ServerExitInfo) {
+    if (this.restartTimer || this.recovery.exhausted || !this.workspaceDir) return
+    if (!this.recovery.failed()) {
+      void MemoryDebug.append({
+        event: "recovery.exhausted",
+        runId: info.runId,
+        data: { failures: this.recovery.failures },
+      })
+      return
+    }
+    void MemoryDebug.append({
+      event: "recovery.scheduled",
+      runId: info.runId,
+      data: { failures: this.recovery.failures, delayMs: RESTART_MS, signal: info.signal, code: info.code },
+    })
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null
+      if (this.disposed || !this.workspaceDir || this.recovery.exhausted) return
+      this.recovering = true
+      void MemoryDebug.append({ event: "recovery.started", data: { failures: this.recovery.failures } })
+      this.connect(this.workspaceDir)
+        .then(() => MemoryDebug.append({ event: "recovery.connected", data: { failures: this.recovery.failures } }))
+        .catch((error) =>
+          MemoryDebug.append({
+            event: "recovery.connect-failed",
+            data: { error: error instanceof Error ? error.message : String(error) },
+          }),
+        )
+        .finally(() => {
+          this.recovering = false
+        })
+    }, RESTART_MS)
+    this.restartTimer.unref?.()
+  }
+
+  private armStable() {
+    this.clearStable()
+    this.stableTimer = setTimeout(() => {
+      this.stableTimer = null
+      if (this.state !== "connected") return
+      if (this.recovery.failures === 0) return
+      this.recovery.stable()
+      void MemoryDebug.append({ event: "recovery.stable" })
+    }, STABLE_MS)
+    this.stableTimer.unref?.()
+  }
+
+  private clearStable() {
+    if (!this.stableTimer) return
+    clearTimeout(this.stableTimer)
+    this.stableTimer = null
+  }
+
+  private stopRecovery() {
+    this.clearStable()
+    if (!this.restartTimer) return
+    clearTimeout(this.restartTimer)
+    this.restartTimer = null
   }
 }
 

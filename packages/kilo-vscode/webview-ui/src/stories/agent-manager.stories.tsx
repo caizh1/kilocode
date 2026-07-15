@@ -5,7 +5,7 @@
  */
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
-import { StoryProviders } from "./StoryProviders"
+import { StoryProviders, mockSessionValue } from "./StoryProviders"
 import { FileTree } from "../../diff-viewer/FileTree"
 import { DiffPanel } from "../../agent-manager/DiffPanel"
 import { FullScreenDiffView } from "../../diff-viewer/FullScreenDiffView"
@@ -16,7 +16,10 @@ import { Icon } from "@kilocode/kilo-ui/icon"
 import { TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
 import { ContextMenu } from "@kilocode/kilo-ui/context-menu"
 import { createSignal, type JSX } from "solid-js"
-import type { WorktreeFileDiff, WorktreeState, WorktreeGitStats, PRStatus } from "../types/messages"
+import type { PermissionRequest, WorktreeFileDiff, WorktreeState, WorktreeGitStats, PRStatus } from "../types/messages"
+import { SessionContext } from "../context/session"
+import { ChatView } from "../components/chat/ChatView"
+import { AgentConsoleSurface } from "../../agent-manager/AgentConsoleSurface"
 import "../../agent-manager/agent-manager.css"
 import "../../agent-manager/agent-manager-review.css"
 
@@ -115,6 +118,71 @@ const meta: Meta = {
 }
 export default meta
 type Story = StoryObj
+
+const CONSOLE_SESSION = "agent-console-story"
+const consolePermission: PermissionRequest = {
+  id: "agent-console-permission",
+  sessionID: CONSOLE_SESSION,
+  toolName: "bash",
+  patterns: ["df -h"],
+  always: ["df *"],
+  args: {
+    command: "df -h",
+    description: "Show disk capacity, used space, available space, and utilization for mounted filesystems.",
+    rules: ["df *"],
+  },
+}
+
+export const AgentConsoleApproval: Story = {
+  name: "Agent Console — visual command approval",
+  parameters: { layout: "fullscreen" },
+  render: () => {
+    const [mode, setMode] = createSignal<"agent" | "shell">("agent")
+    const session = {
+      ...mockSessionValue({ id: CONSOLE_SESSION, status: "busy", permissions: [consolePermission] }),
+      messages: () => [{ id: "console-message" }] as never[],
+    }
+    return (
+      <StoryProviders permissions={[consolePermission]} sessionID={CONSOLE_SESSION} status="busy" noPadding>
+        <SessionContext.Provider value={session as never}>
+          <div style={{ width: "100vw", height: "614px", display: "flex" }}>
+            <AgentConsoleSurface
+              console={() => true}
+              terminalActive={() => false}
+              terminal={
+                <div class="am-terminal-layer am-terminal-layer-active am-terminal-layer-console">
+                  <div class="am-terminal-slot am-terminal-slot-visible">
+                    <div class="am-terminal-host">
+                      <pre
+                        style={{
+                          margin: "0",
+                          color: "var(--vscode-terminal-foreground, #f4f4f4)",
+                          "font-family": "var(--vscode-editor-font-family, monospace)",
+                          "font-size": "17px",
+                          "line-height": "1.45",
+                          "white-space": "pre-wrap",
+                        }}
+                      >
+                        {`admin@workbench:~$ 当前还剩多少磁盘空间\nAgent Console is preparing a safe command preview…`}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              }
+            >
+              <div class="am-chat-wrapper">
+                <ChatView
+                  consoleInput={{ mode, setMode, pending: () => false, onShell: () => undefined }}
+                  promptBoxId="agent-manager:local"
+                />
+              </div>
+            </AgentConsoleSurface>
+          </div>
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
+}
 
 // ---------------------------------------------------------------------------
 // FileTree

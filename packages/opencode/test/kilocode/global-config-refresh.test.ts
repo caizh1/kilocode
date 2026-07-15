@@ -21,7 +21,7 @@ async function update(target: ReturnType<typeof app>, provider: "kilo" | "openro
   return target.request("/global/config", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ indexing: { provider } }),
+    body: JSON.stringify({ indexing: { provider }, model: `${provider}/test` }),
   })
 }
 

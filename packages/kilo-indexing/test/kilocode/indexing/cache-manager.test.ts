@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp } from "fs/promises"
+import { mkdtemp, readdir } from "fs/promises"
 import { tmpdir } from "os"
 import { join } from "path"
 import { CacheManager } from "../../../src/indexing/cache-manager"
@@ -42,5 +42,41 @@ describe("CacheManager checkpoint metadata", () => {
     await changed.initialize()
     changed.setCheckpointMeta(meta({ embeddingDimension: 3072 }))
     expect(changed.getHash(file)).toBeUndefined()
+  })
+
+  test("serializes overlapping flushes without stale temp-file races", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cache-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "cache-dir-"))
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    cache.setCheckpointMeta(meta())
+    cache.updateHash(join(root, "first.c"), "first")
+    const first = cache.flush()
+    cache.updateHash(join(root, "second.c"), "second")
+    const second = cache.flush()
+    await Promise.all([first, second])
+
+    const loaded = new CacheManager(cacheDir, root)
+    await loaded.initialize()
+    expect(loaded.getHash(join(root, "first.c"))).toBe("first")
+    expect(loaded.getHash(join(root, "second.c"))).toBe("second")
+    expect((await readdir(cacheDir)).some((file) => file.endsWith(".tmp"))).toBe(false)
+  })
+
+  test("replays bounded journal checkpoints before cache compaction", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cache-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "cache-dir-"))
+    const file = join(root, "checkpoint.c")
+    const first = new CacheManager(cacheDir, root)
+    await first.initialize()
+    first.setCheckpointMeta(meta())
+    first.updateHash(file, "checkpoint")
+    await first.checkpoint(true)
+
+    const loaded = new CacheManager(cacheDir, root)
+    await loaded.initialize()
+    expect(loaded.getHash(file)).toBe("checkpoint")
+    loaded.setCheckpointMeta(meta())
+    expect(loaded.getHash(file)).toBe("checkpoint")
   })
 })

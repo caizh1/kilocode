@@ -412,7 +412,7 @@ export interface Interface {
   // kilocode_change start
   readonly updateGlobal: (
     config: Info,
-    options?: { dispose?: boolean },
+    options?: { dispose?: boolean; deferred?: boolean },
   ) => Effect.Effect<{ info: Info; changed: boolean }>
   // kilocode_change end
   readonly invalidate: () => Effect.Effect<void>
@@ -1066,7 +1066,10 @@ export const layer = Layer.effect(
     })
 
     // kilocode_change start - add dispose option to skip Instance.disposeAll for permission-only changes
-    const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info, options?: { dispose?: boolean }) {
+    const updateGlobal = Effect.fn("Config.updateGlobal")(function* (
+      config: Info,
+      options?: { dispose?: boolean; deferred?: boolean },
+    ) {
       const dispose = options?.dispose ?? true
       // kilocode_change end
       const file = globalConfigFile()
@@ -1098,7 +1101,7 @@ export const layer = Layer.effect(
             directory: "global",
             payload: {
               type: Event.ConfigUpdated.type,
-              properties: {},
+              properties: options?.deferred ? { deferred: true } : {},
             },
           }),
         ).pipe(Effect.catchCause(() => Effect.void))
@@ -1115,7 +1118,7 @@ export const layer = Layer.effect(
             directory: "global",
             payload: {
               type: Event.ConfigUpdated.type,
-              properties: {},
+              properties: options?.deferred ? { deferred: true } : {},
             },
           }),
         ).pipe(Effect.catchCause(() => Effect.void))

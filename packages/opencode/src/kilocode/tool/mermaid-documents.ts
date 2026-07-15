@@ -15,7 +15,9 @@ const ValidateMermaidParameters = Schema.Struct({
 const SaveMermaidParameters = Schema.Struct({
   source: Schema.String.annotate({ description: "Mermaid diagram source text to save as .mmd." }),
   pngBase64: Schema.optional(Schema.String).annotate({ description: "Optional rendered PNG payload to save." }),
-  pngPath: Schema.optional(Schema.String).annotate({ description: "Optional workspace-relative PNG path to copy into the artifact." }),
+  pngPath: Schema.optional(Schema.String).annotate({
+    description: "Optional workspace-relative PNG path to copy into the artifact.",
+  }),
   title: Schema.optional(Schema.String),
   taskSlug: Schema.optional(Schema.String),
   sourceFile: Schema.optional(Schema.String),
@@ -28,9 +30,15 @@ const RenderMermaidParameters = Schema.Struct({
   taskSlug: Schema.optional(Schema.String),
   sourceFile: Schema.optional(Schema.String),
   pngFile: Schema.optional(Schema.String),
-  remoteEndpoint: Schema.optional(Schema.String).annotate({ description: "Optional external Mermaid renderer endpoint. If omitted, KILO_MERMAID_RENDER_ENDPOINT or external mmdc is used." }),
+  remoteEndpoint: Schema.optional(Schema.String).annotate({
+    description:
+      "Optional external Mermaid renderer endpoint. If omitted, KILO_MERMAID_RENDER_ENDPOINT or external mmdc is used.",
+  }),
   theme: Schema.optional(Schema.String),
   background: Schema.optional(Schema.String),
+  scale: Schema.optional(Schema.Number).annotate({
+    description: "Optional render scale forwarded to the configured Mermaid render service.",
+  }),
   timeoutMs: Schema.optional(Schema.Number),
 })
 
@@ -40,7 +48,9 @@ const InsertMermaidIntoWordParameters = Schema.Struct({
   pngBase64: Schema.optional(Schema.String),
   pngPath: Schema.optional(Schema.String),
   remoteEndpoint: Schema.optional(Schema.String),
-  heading: Schema.optional(Schema.String).annotate({ description: "Optional Word heading after which to insert the rendered PNG." }),
+  heading: Schema.optional(Schema.String).annotate({
+    description: "Optional Word heading after which to insert the rendered PNG.",
+  }),
   caption: Schema.optional(Schema.String),
   outputFile: Schema.optional(Schema.String),
   taskSlug: Schema.optional(Schema.String),
@@ -59,6 +69,12 @@ type MermaidMeta = {
   wordPath?: string
   inserted?: boolean
   rendered?: boolean
+  width?: number
+  height?: number
+  pixelWidth?: number
+  pixelHeight?: number
+  scale?: number
+  issues?: Array<{ severity?: string; code?: string; message?: string }>
   valid?: boolean
   failed?: boolean
   error?: string
@@ -102,7 +118,10 @@ export const ValidateMermaidDiagramTool = Tool.define(
     description:
       "Validate Mermaid source syntax at a bounded, renderer-oriented level. This tool does not decide business flow, exception flow, state roles, or diagram semantics.",
     parameters: ValidateMermaidParameters,
-    execute: (params: Schema.Schema.Type<typeof ValidateMermaidParameters>, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
+    execute: (
+      params: Schema.Schema.Type<typeof ValidateMermaidParameters>,
+      ctx: Tool.Context,
+    ): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
       Effect.gen(function* () {
         yield* ctx.ask({
           permission: "validate_mermaid_diagram",
@@ -129,7 +148,10 @@ export const SaveMermaidArtifactTool = Tool.define(
     description:
       "Save Mermaid .mmd source and optional PNG into a document artifact with diagnostics. This is an artifact operation, not a code or document QA tool.",
     parameters: SaveMermaidParameters,
-    execute: (params: Schema.Schema.Type<typeof SaveMermaidParameters>, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
+    execute: (
+      params: Schema.Schema.Type<typeof SaveMermaidParameters>,
+      ctx: Tool.Context,
+    ): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
       Effect.gen(function* () {
         yield* ctx.ask({
           permission: "save_mermaid_artifact",
@@ -161,15 +183,22 @@ export const RenderMermaidDiagramTool = Tool.define(
   "render_mermaid_diagram",
   Effect.succeed({
     description:
-      "Render Mermaid source into PNG using an external renderer endpoint or externally installed mmdc, then save .mmd, .png, and diagnostics artifacts. It does not infer business semantics.",
+      "Render Mermaid source into PNG using an external renderer endpoint or externally installed mmdc, then return the PNG path, display and pixel dimensions, scale, warnings, and render QA issues. It does not infer business semantics.",
     parameters: RenderMermaidParameters,
-    execute: (params: Schema.Schema.Type<typeof RenderMermaidParameters>, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
+    execute: (
+      params: Schema.Schema.Type<typeof RenderMermaidParameters>,
+      ctx: Tool.Context,
+    ): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
       Effect.gen(function* () {
         yield* ctx.ask({
           permission: "render_mermaid_diagram",
           patterns: [params.title ?? params.sourceFile ?? "mermaid"],
           always: ["*"],
-          metadata: { hasRemoteEndpoint: Boolean(params.remoteEndpoint), timeoutMs: params.timeoutMs },
+          metadata: {
+            hasRemoteEndpoint: Boolean(params.remoteEndpoint),
+            scale: params.scale,
+            timeoutMs: params.timeoutMs,
+          },
         })
         return yield* runMermaidOperation(
           () => renderMermaidDiagram(params),
@@ -182,6 +211,12 @@ export const RenderMermaidDiagramTool = Tool.define(
               sourcePath: result.sourcePath,
               pngPath: result.pngPath,
               diagnosticsPath: result.diagnosticsPath,
+              width: result.width,
+              height: result.height,
+              pixelWidth: result.pixelWidth,
+              pixelHeight: result.pixelHeight,
+              scale: result.scale,
+              issues: result.issues,
             },
             output: JSON.stringify(result, null, 2),
           }),
@@ -198,13 +233,20 @@ export const InsertMermaidIntoWordTool = Tool.define(
     description:
       "Render or save a Mermaid PNG and insert it into a new Word .docx artifact. This does not modify the original docx and does not replace Word or document_search QA.",
     parameters: InsertMermaidIntoWordParameters,
-    execute: (params: Schema.Schema.Type<typeof InsertMermaidIntoWordParameters>, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
+    execute: (
+      params: Schema.Schema.Type<typeof InsertMermaidIntoWordParameters>,
+      ctx: Tool.Context,
+    ): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
       Effect.gen(function* () {
         yield* ctx.ask({
           permission: "insert_mermaid_into_word",
           patterns: [params.wordPath],
           always: ["*"],
-          metadata: { wordPath: params.wordPath, heading: params.heading, hasPng: Boolean(params.pngBase64 || params.pngPath) },
+          metadata: {
+            wordPath: params.wordPath,
+            heading: params.heading,
+            hasPng: Boolean(params.pngBase64 || params.pngPath),
+          },
         })
         return yield* runMermaidOperation(
           () => insertMermaidIntoWord(params),

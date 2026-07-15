@@ -27,3 +27,23 @@ it.effect("clears provider models before disposing instances after auth changes"
     expect(yield* Ref.get(events)).toEqual(["clear:kilo", "dispose"])
   }),
 )
+
+it.effect("keeps the default auth lifecycle intact when deferred disposal is not requested", () =>
+  Effect.gen(function* () {
+    const events = yield* Ref.make<string[]>([])
+
+    yield* invalidateAfterProviderAuthChange("kilo", { dispose: true }).pipe(Effect.provide(layer(events)))
+
+    expect(yield* Ref.get(events)).toEqual(["clear:kilo", "dispose"])
+  }),
+)
+
+it.effect("clears provider models without disposing instances when a custom save defers it", () =>
+  Effect.gen(function* () {
+    const events = yield* Ref.make<string[]>([])
+
+    yield* invalidateAfterProviderAuthChange("kilo", { dispose: false }).pipe(Effect.provide(layer(events)))
+
+    expect(yield* Ref.get(events)).toEqual(["clear:kilo"])
+  }),
+)

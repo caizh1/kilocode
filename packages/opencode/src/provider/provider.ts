@@ -1172,10 +1172,12 @@ const layer: Layer.Layer<
         const plugins = yield* plugin.list()
 
         // now read config providers - includes any modifications from plugin config() hook
-        const offline = isInternalOffline() // kilocode_change
+        // kilocode_change start - internal offline builds expose only configured OpenAI-compatible providers
+        const offline = isInternalOffline()
         const configProviders = Object.entries(cfg.provider ?? {}).filter(
           ([id, item]) => !offline || (item?.npm === "@ai-sdk/openai-compatible" && id !== "kilo" && id !== "apertis"),
-        ) // kilocode_change
+        )
+        // kilocode_change end
         const disabled = new Set(cfg.disabled_providers ?? [])
         const enabled = cfg.enabled_providers ? new Set(cfg.enabled_providers) : null
 
@@ -1368,8 +1370,10 @@ const layer: Layer.Layer<
         // kilocode_change start - resolve env once for patchCustomLoaderResult (azure env fallback)
         const kiloEnv = yield* env.all()
         // kilocode_change end
-        const loaders = offline ? custom(dep) : { ...custom(dep), ...kiloCustomLoaders(dep) } // kilocode_change
+        // kilocode_change start - omit public Kilo loaders from internal offline builds
+        const loaders = offline ? custom(dep) : { ...custom(dep), ...kiloCustomLoaders(dep) }
         for (const [id, fn] of Object.entries(loaders)) {
+          // kilocode_change end
           // kilocode_change
           const providerID = ProviderID.make(id)
           if (disabled.has(providerID)) continue

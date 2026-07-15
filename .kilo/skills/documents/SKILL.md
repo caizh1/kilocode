@@ -73,15 +73,18 @@ Before calling `create_word_document`, decide:
 - source/evidence list when the document is source-backed;
 - whether external render QA is required.
 
-Use object-shaped JSON tool arguments. Do not pass `JSON.stringify(...)`, quoted JSON, Markdown, or prose where the tool expects a `spec` object.
+Use object-shaped JSON tool arguments with top-level `title`, optional document fields, and `sections`. Do not wrap the arguments in `spec`, and do not pass `JSON.stringify(...)`, quoted JSON, Markdown, or prose.
 
 Recommended sequence:
 
 1. Gather only the evidence needed for a useful document.
-2. Build the smallest complete `WordDocSpec` with metadata, sources, sections, and quality notes.
-3. Call `create_word_document`.
-4. If the user requested visual QA or the workflow requires it, call `render_word_document`.
-5. Return the `.docx` artifact path plus important warnings and render status.
+2. Render every planned Mermaid figure and record `diagramId -> targetSection -> pngPath -> QA status`.
+3. Build the smallest complete `create_word_document` arguments. Put every rendered figure in the target `sections[].blocks[]` position as an image block.
+4. Call `create_word_document` once the successful figure renders have corresponding image blocks.
+5. Call `inspect_word_document` and verify that `imageCount` equals the number of successfully rendered figures planned for insertion.
+6. If the counts differ, reuse the existing PNGs and call `insert_mermaid_into_word` only for the missing figures; do not regenerate unrelated content.
+7. Call `render_word_document` when visual QA is requested, configured, or required by the active document workflow.
+8. Return the `.docx` artifact path plus Mermaid render status, inserted image count, important warnings, and Word render QA status.
 
 ## Existing Word Edit Workflow
 
@@ -113,9 +116,26 @@ Recommended sequence:
 
 1. Decide the diagram type and content from user intent and evidence.
 2. Call `validate_mermaid_diagram`.
-3. Call `render_mermaid_diagram` when PNG output is required.
-4. Call `save_mermaid_artifact` to persist `.mmd`, `.png`, and diagnostics.
-5. Call `insert_mermaid_into_word` only after a valid PNG exists and the target Word path is known.
+3. Call `render_mermaid_diagram` when PNG output is required. Pass optional `scale` through to the configured service and retain `pngPath`, `width`, `height`, pixel dimensions, warnings, and QA issues from the result.
+4. Record `diagramId -> targetSection -> pngPath -> QA status` for every planned figure.
+5. Before `create_word_document`, convert each successful render into an image block at its exact position in `sections[].blocks[]`:
+
+```json
+{
+  "type": "image",
+  "path": "<pngPath returned by render_mermaid_diagram>",
+  "contentType": "image/png",
+  "title": "Figure title",
+  "caption": "Figure explanation",
+  "altText": "Accessible description",
+  "width": 480,
+  "height": 280
+}
+```
+
+6. Use the returned display `width` and `height` when suitable; keep `pixelWidth` and `pixelHeight` as high-DPI diagnostics rather than Word display dimensions.
+7. After creation, compare `inspect_word_document.imageCount` with the successful planned figure count.
+8. Use `insert_mermaid_into_word` only as a local repair when a planned image is missing from the created document.
 
 Do not use Mermaid tools to infer business semantics, choose main flows, or classify exception paths. Those decisions belong to the model or the active source-backed design skill.
 

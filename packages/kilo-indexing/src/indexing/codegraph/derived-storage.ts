@@ -6,7 +6,7 @@ import {
   type BoundedJsonPart,
 } from "./bounded-json"
 import { CODE_GRAPH_PARSER_VERSION, CODE_GRAPH_SCHEMA_VERSION } from "./constants"
-import { emptyCodeGraphDerivedIndex } from "./derived-index"
+import { CODEGRAPH_DERIVED_INDEX_FIELDS, emptyCodeGraphDerivedIndex } from "./derived-index"
 import type {
   CodeGraphDerivedIndex,
   CodeGraphDerivedSidecarField,
@@ -15,17 +15,7 @@ import type {
   CodeGraphDerivedSidecarShard,
 } from "./types"
 
-export const CODEGRAPH_DERIVED_SIDECAR_FIELDS: CodeGraphDerivedSidecarField[] = [
-  "functionIdsByName",
-  "callerIdsByCallee",
-  "includeTargetsByFile",
-  "filePathsByInclude",
-  "directoryStats",
-  "symbolsByName",
-  "symbolsByPath",
-  "postingsByTerm",
-  "moduleStats",
-]
+export const CODEGRAPH_DERIVED_SIDECAR_FIELDS: CodeGraphDerivedSidecarField[] = [...CODEGRAPH_DERIVED_INDEX_FIELDS]
 
 export type CodeGraphDerivedSidecarData = {
   manifest: CodeGraphDerivedSidecarManifest

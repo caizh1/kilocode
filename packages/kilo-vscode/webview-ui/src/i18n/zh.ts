@@ -2,7 +2,10 @@ import { dict as en } from "./en"
 
 type Keys = keyof typeof en
 
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   "command.category.suggested": "建议",
   "command.category.view": "视图",
   "command.category.project": "项目",
@@ -240,6 +243,7 @@ export const dict = {
   "prompt.placeholder.summarizeComments": "总结评论…",
   "prompt.placeholder.summarizeComment": "总结该评论…",
   "prompt.mode.shell": "Shell",
+  "prompt.mode.shell.warning": "Shell 模式会立即执行命令，不经过 Agent 权限审批。",
   "prompt.mode.shell.exit": "按 esc 退出",
 
   "prompt.example.1": "修复代码库中的一个 TODO",
@@ -928,8 +932,9 @@ export const dict = {
   "provider.custom.error.baseURL.format": "必须以 http:// 或 https:// 开头",
   "provider.custom.error.required": "必填",
   "provider.custom.error.duplicate": "重复",
-  "settings.openLocalConfig": "本地配置",
-  "settings.openGlobalConfig": "全局配置",
+  "settings.openLocalConfig": "打开项目配置",
+  "settings.openGlobalConfig": "打开全局配置",
+  "settings.close": "关闭设置",
   "settings.config.scope.local": "本地",
   "settings.config.scope.global": "全局",
   "settings.config.status.loaded": "已加载",
@@ -1348,6 +1353,11 @@ export const dict = {
   "settings.agentBehaviour.removeSkill.title": "移除技能",
   "settings.agentBehaviour.removeSkill.confirm": '移除技能 "{{name}}" 吗？这会从磁盘中删除该技能文件。',
   "settings.agentBehaviour.removeSkill.button": "移除",
+  "settings.agentBehaviour.removeSkill.failed": "无法删除该 Skill。",
+  "settings.agentBehaviour.removeSkill.phase.validating": "正在校验删除目标…",
+  "settings.agentBehaviour.removeSkill.phase.removing": "正在删除已安装快照…",
+  "settings.agentBehaviour.removeSkill.phase.refreshing": "正在刷新 Kilo Skills…",
+  "settings.agentBehaviour.removeSkill.phase.reconciling": "正在更新本地导入记录…",
   "settings.agentBehaviour.rules.description":
     "规则是指导代理行为的指令文件。它们会被包含在每次对话的系统提示词中。在下方添加文件路径以包含额外的规则。",
   "settings.agentBehaviour.instructionFiles": "附加指令文件",

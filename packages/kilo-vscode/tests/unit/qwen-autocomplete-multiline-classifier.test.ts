@@ -12,10 +12,10 @@ type Range = { start: Pos; end: Pos }
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "http://secret-qwen.internal/v1/completions",
+  providerID: "qwen",
   model: "qwen-coder-30b0",
-  apiKey: "sk-secret-token-should-never-log",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
@@ -99,6 +99,34 @@ describe("qwen multiline classifier parity", () => {
     expect(result.singleLineComment).toBe("//")
   })
 
+  it("uses Python, Shell, and YAML language metadata", () => {
+    const python = helper("def add(a, b):\n    ", undefined, {
+      path: "/repo/src/add.py",
+      languageId: "python",
+    })
+    const shell = helper("run() {\n  ", undefined, {
+      path: "/repo/scripts/run.sh",
+      languageId: "shellscript",
+    })
+    const yaml = helper("jobs:\n  build:\n    ", undefined, {
+      path: "/repo/.gitea/workflows/build.yml",
+      languageId: "yaml",
+    })
+
+    expect(classifyQwenMultiline({ helper: python, position: new vscode.Position(1, 4) })).toMatchObject({
+      language: "Python",
+      singleLineComment: "#",
+    })
+    expect(classifyQwenMultiline({ helper: shell, position: new vscode.Position(1, 2) })).toMatchObject({
+      language: "Shell",
+      singleLineComment: "#",
+    })
+    expect(classifyQwenMultiline({ helper: yaml, position: new vscode.Position(2, 4) })).toMatchObject({
+      language: "YAML",
+      singleLineComment: "#",
+    })
+  })
+
   it("keeps actual Continue midline behavior instead of enabling the commented-out block", () => {
     const state = helper("int main(void) {\n  return ", new vscode.Position(1, 9), { suffix: "page;\n}" })
     const result = classifyQwenMultiline({ helper: state, position: new vscode.Position(1, 9) })
@@ -145,6 +173,7 @@ describe("qwen multiline classifier parity", () => {
   it("keeps suffix brace scenarios render-safe under source-mapped classification", async () => {
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: { complete: async () => "return page;\n" } as unknown as QwenFimClient,
       log: () => {},
     })
@@ -162,6 +191,7 @@ describe("qwen multiline classifier parity", () => {
   it("emits redacted multiline classifier diagnostics", async () => {
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => ({ ...cfg, trace: true, logLevel: "debug" }),
+      guard: () => false,
       client: {
         complete: async (req: QwenFimCompleteInput) => {
           req.onResponse?.({ status: 200 })
@@ -191,7 +221,6 @@ describe("qwen multiline classifier parity", () => {
     })
     expect(JSON.stringify(logs)).not.toContain("secret_symbol")
     expect(JSON.stringify(logs)).not.toContain("/repo/src/main.c")
-    expect(JSON.stringify(logs)).not.toContain(cfg.apiKey)
     expect(JSON.stringify(logs)).not.toContain("secret-qwen.internal")
   })
 })

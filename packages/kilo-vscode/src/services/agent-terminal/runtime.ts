@@ -1,12 +1,10 @@
 import fs from "fs/promises"
 import type { FileHandle } from "fs/promises"
 import path from "path"
+import { classifyCommand, type CommandRisk } from "../../shared/command-risk"
 
-export type CommandRisk = {
-  level: "safe" | "review" | "danger"
-  reason: string
-  requiresConfirmation: boolean
-}
+export { classifyCommand }
+export type { CommandRisk }
 
 export type PlannedCommand = {
   prompt: string
@@ -22,29 +20,6 @@ export type OutputSummary = {
   head: string[]
   tail: string[]
 }
-
-const DANGEROUS_PATTERNS = [
-  /\brm\s+-[^\n;|&]*r[^\n;|&]*f\b/,
-  /\bsudo\b/,
-  /\bgit\s+reset\s+--hard\b/,
-  /\bgit\s+clean\s+-[^\n;|&]*[fx]/,
-  /\bmkfs\b/,
-  /\bdd\s+.*\bof=/,
-  /:\(\)\s*\{\s*:\|:\s*&\s*\}/,
-  />\s*\/dev\/(sd|disk|nvme)/,
-]
-
-const REVIEW_PATTERNS = [
-  /\bgit\s+push\b/,
-  /\bgit\s+commit\b/,
-  /\bnpm\s+(install|update|audit\s+fix)\b/,
-  /\bbun\s+(install|update)\b/,
-  /\bpnpm\s+(install|update)\b/,
-  /\byarn\s+(install|upgrade)\b/,
-  /\bdocker\s+(rm|rmi|system\s+prune)\b/,
-  /\bchmod\s+-R\b/,
-  /\bchown\s+-R\b/,
-]
 
 const BUILD_CONTEXT_FILES = [
   "Makefile",
@@ -66,18 +41,6 @@ const BUILD_CONTEXT_FILES = [
   "yarn.lock",
 ]
 
-export function classifyCommand(command: string): CommandRisk {
-  const normalized = command.trim()
-  if (!normalized) return { level: "review", reason: "empty command", requiresConfirmation: true }
-  if (DANGEROUS_PATTERNS.some((pattern) => pattern.test(normalized))) {
-    return { level: "danger", reason: "command can delete, overwrite, escalate privileges, or rewrite history", requiresConfirmation: true }
-  }
-  if (REVIEW_PATTERNS.some((pattern) => pattern.test(normalized))) {
-    return { level: "review", reason: "command changes repository, dependencies, containers, or permissions", requiresConfirmation: true }
-  }
-  return { level: "safe", reason: "read-only or local inspection command", requiresConfirmation: false }
-}
-
 export function planNaturalLanguageCommand(prompt: string): PlannedCommand {
   const text = prompt.trim().toLowerCase()
   const command = (() => {
@@ -98,7 +61,9 @@ export function planNaturalLanguageCommand(prompt: string): PlannedCommand {
     risk,
     notes: [
       "Agent Terminal only plans and checks commands; it does not replace Kilo's native shell/tool loop.",
-      risk.requiresConfirmation ? "Review the command before running it." : "This command is classified as safe by local heuristics.",
+      risk.requiresConfirmation
+        ? "Review the command before running it."
+        : "This command is classified as safe by local heuristics.",
     ],
   }
 }
@@ -106,14 +71,25 @@ export function planNaturalLanguageCommand(prompt: string): PlannedCommand {
 export function suggestFailureFix(exitCode: number | undefined, output: string): string[] {
   const text = output.toLowerCase()
   const suggestions: string[] = []
-  if (/command not found|not recognized/.test(text)) suggestions.push("Check whether the executable is installed and available in PATH.")
-  if (/permission denied|eacces/.test(text)) suggestions.push("Check file permissions; avoid sudo unless you explicitly understand the target path.")
-  if (/enoent|no such file or directory/.test(text)) suggestions.push("Verify the current working directory and file path.")
-  if (/typescript|tsc|type error|cannot find module/.test(text)) suggestions.push("Inspect TypeScript/module resolution errors before retrying.")
-  if (/network|econnrefused|etimedout|timeout/.test(text)) suggestions.push("Check network/proxy/service availability and retry with a smaller scoped command.")
-  if (/test failed|failing|assert/.test(text)) suggestions.push("Open the first failing test and fix the root assertion before rerunning the full suite.")
-  if (exitCode && exitCode !== 0) suggestions.push(`Command exited with ${exitCode}; rerun the narrowest failing command after addressing the first error.`)
-  return suggestions.length ? suggestions : ["No specific pattern matched; inspect the first error line and rerun a narrower command."]
+  if (/command not found|not recognized/.test(text))
+    suggestions.push("Check whether the executable is installed and available in PATH.")
+  if (/permission denied|eacces/.test(text))
+    suggestions.push("Check file permissions; avoid sudo unless you explicitly understand the target path.")
+  if (/enoent|no such file or directory/.test(text))
+    suggestions.push("Verify the current working directory and file path.")
+  if (/typescript|tsc|type error|cannot find module/.test(text))
+    suggestions.push("Inspect TypeScript/module resolution errors before retrying.")
+  if (/network|econnrefused|etimedout|timeout/.test(text))
+    suggestions.push("Check network/proxy/service availability and retry with a smaller scoped command.")
+  if (/test failed|failing|assert/.test(text))
+    suggestions.push("Open the first failing test and fix the root assertion before rerunning the full suite.")
+  if (exitCode && exitCode !== 0)
+    suggestions.push(
+      `Command exited with ${exitCode}; rerun the narrowest failing command after addressing the first error.`,
+    )
+  return suggestions.length
+    ? suggestions
+    : ["No specific pattern matched; inspect the first error line and rerun a narrower command."]
 }
 
 export function summarizeOutput(output: string, maxLines = 80): OutputSummary {
@@ -143,7 +119,9 @@ export async function projectContextSummary(workspaceRoot: string): Promise<stri
     `Workspace: ${workspaceRoot}`,
     pkg?.name ? `Package: ${String(pkg.name)}` : undefined,
     pkg?.version ? `Version: ${String(pkg.version)}` : undefined,
-    pkg?.scripts && typeof pkg.scripts === "object" ? `Scripts: ${Object.keys(pkg.scripts).slice(0, 20).join(", ")}` : undefined,
+    pkg?.scripts && typeof pkg.scripts === "object"
+      ? `Scripts: ${Object.keys(pkg.scripts).slice(0, 20).join(", ")}`
+      : undefined,
     "",
     "## README excerpt",
     String(files[1] ?? "(not found)"),
@@ -157,11 +135,19 @@ export async function projectContextSummary(workspaceRoot: string): Promise<stri
   return `${lines.join("\n")}\n`
 }
 
-export async function writeLogArtifact(workspaceRoot: string, sourceFile: string, title = "Agent Terminal Log"): Promise<string> {
+export async function writeLogArtifact(
+  workspaceRoot: string,
+  sourceFile: string,
+  title = "Agent Terminal Log",
+): Promise<string> {
   const absolute = path.resolve(workspaceRoot, sourceFile)
   assertInside(workspaceRoot, absolute)
   const bytes = await fs.readFile(absolute)
-  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "agent-terminal-log"
+  const slug =
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "agent-terminal-log"
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "").replace("T", "-")
   const dir = path.join(workspaceRoot, ".kilo", "artifacts", `${stamp}-${slug}`)
   await fs.mkdir(dir, { recursive: true })
@@ -190,7 +176,8 @@ export async function writeLogArtifact(workspaceRoot: string, sourceFile: string
 
 function assertInside(root: string, target: string): void {
   const relative = path.relative(root, target)
-  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`Path must stay inside workspace: ${target}`)
+  if (relative.startsWith("..") || path.isAbsolute(relative))
+    throw new Error(`Path must stay inside workspace: ${target}`)
 }
 
 async function readTextIfExists(file: string, maxChars: number): Promise<string | undefined> {

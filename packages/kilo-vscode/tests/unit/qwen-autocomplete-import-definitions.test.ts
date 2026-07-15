@@ -4,10 +4,7 @@ import path from "node:path"
 import * as vscode from "vscode"
 import type { QwenAutocompleteCache } from "../../src/services/qwen-autocomplete/autocompleteLruCache"
 import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
-import {
-  buildQwenFimPrompt,
-  getContinueAutocompleteStopTokens,
-} from "../../src/services/qwen-autocomplete/fimTemplates"
+import { buildQwenFimPrompt } from "../../src/services/qwen-autocomplete/fimTemplates"
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
 import {
   fallbackImports,
@@ -15,21 +12,22 @@ import {
   type QwenImportDefinitionsSource,
 } from "../../src/services/qwen-autocomplete/importDefinitions"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
+import { QwenFimClient } from "../../src/services/qwen-autocomplete/QwenFimClient"
 import {
   QwenAutocompleteSnippetType,
   type QwenAutocompleteCodeSnippet,
 } from "../../src/services/qwen-autocomplete/snippets"
-import type { QwenAutocompleteConfig } from "../../src/services/qwen-autocomplete/types"
+import type { QwenAutocompleteConfig, QwenFimCompleteInput } from "../../src/services/qwen-autocomplete/types"
 
 type Pos = { line: number; character: number }
 type Range = { start: Pos; end: Pos }
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "http://unit.test/v1/completions",
+  providerID: "qwen",
   model: "qwen-coder-30b0",
-  apiKey: "secret",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
@@ -66,12 +64,10 @@ const cfg: QwenAutocompleteConfig = {
 }
 
 const originalActive = vscode.window.onDidChangeActiveTextEditor
-const originalFetch = globalThis.fetch
 
 afterEach(() => {
   ;(vscode.window as unknown as { onDidChangeActiveTextEditor: typeof originalActive }).onDidChangeActiveTextEditor =
     originalActive
-  globalThis.fetch = originalFetch
   resetQwenDiagnosticsForTests()
 })
 
@@ -119,9 +115,9 @@ describe("qwen import definitions tracker", () => {
   })
 
   it("uses bounded fallback include/import parsing only as qwen adapter behavior", () => {
-    const imports = fallbackImports('#include "helper_api.h"\nusing foo::Bar;\nint body;\n')
+    const imports = fallbackImports('#include "helper_api.h"\nusing foo::Bar;\nimport python_module\nint body;\n')
 
-    expect(imports.map((item) => item.symbol)).toEqual(["helper_api", "Bar"])
+    expect(imports.map((item) => item.symbol)).toEqual(["helper_api", "Bar", "python_module"])
   })
 
   it("ignores unsupported schemes, sensitive files, guard errors, failed definitions, empty reads, and timeouts", async () => {
@@ -203,7 +199,7 @@ describe("qwen import definitions tracker", () => {
 })
 
 describe("qwen import definitions provider integration", () => {
-  it("keeps prompt and HTTP request body byte-for-byte unchanged in collection-only mode", async () => {
+  it("keeps prompt and CLI request byte-for-byte unchanged in collection-only mode", async () => {
     const output = await runProvider({
       config: { ...cfg, importDefinitionsEnabled: true },
       imports: fakeImports([snippet("/repo/include/helper.h", "int imported_helper(void);")]),
@@ -322,24 +318,33 @@ async function runProvider(input: {
   imports?: QwenImportDefinitionsSource
 }): Promise<{ body: string; expected: string; logs: Array<Record<string, unknown>>; prompt: string; single: string }> {
   let body = ""
-  globalThis.fetch = async (_url, init) => {
-    body = String(init?.body)
-    return new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
-  }
   const document = doc("int main(void) {\n  imported_helper();\n}\n")
   const position = new vscode.Position(1, 2)
   const state = createQwenAutocompleteHelper(document, position, undefined, opts(input.config))
   const single = buildQwenFimPrompt({ prefix: state.prunedPrefix, suffix: state.prunedSuffix })
   const expected = JSON.stringify({
-    model: input.config.model,
+    providerID: input.config.providerID,
+    modelID: input.config.model,
     prompt: single,
-    max_tokens: input.config.maxTokens,
+    maxTokens: input.config.maxTokens,
     temperature: input.config.temperature,
-    stream: false,
-    stop: getContinueAutocompleteStopTokens(input.config.model),
   })
   const provider = new KiloQwenInlineCompletionProvider({
     cache: input.cache,
+    client: {
+      complete: async (request: QwenFimCompleteInput) => {
+        body = JSON.stringify({
+          providerID: request.providerID,
+          modelID: request.modelID,
+          prompt: request.prompt,
+          maxTokens: request.maxTokens,
+          temperature: request.temperature,
+        })
+        request.onResponse?.({ status: 200 })
+        return "return ok;"
+      },
+    } as QwenFimClient,
+    guard: () => false,
     imports: input.imports,
     read: () => input.config,
     log: () => {},

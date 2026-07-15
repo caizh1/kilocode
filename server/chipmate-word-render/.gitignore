@@ -1,0 +1,9 @@
+# Installed runtime dependencies and generated delivery artifacts.
+node_modules/
+out/
+.runtime/
+playwright-report/
+test-results/
+*.docker.tar
+*.docker.tar.gz
+*.docker.tar.gz.sha256

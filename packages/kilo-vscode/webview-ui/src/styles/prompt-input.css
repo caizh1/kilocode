@@ -248,8 +248,11 @@
 }
 
 .image-attachment {
-  position: relative;
-  width: 48px;
+  display: grid;
+  grid-template-columns: 48px 20px;
+  align-items: start;
+  gap: 4px;
+  width: auto;
   height: 48px;
   flex-shrink: 0;
 }
@@ -265,11 +268,9 @@
 }
 
 .image-attachment-remove {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 16px;
-  height: 16px;
+  position: static;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--vscode-badge-background, #4d4d4d);
   color: var(--vscode-badge-foreground, #fff);
@@ -280,7 +281,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.78;
   transition: opacity 0.15s;
   padding: 0;
 
@@ -290,7 +291,8 @@
   }
 }
 
-.image-attachment:hover .image-attachment-remove {
+.image-attachment:hover .image-attachment-remove,
+.image-attachment:focus-within .image-attachment-remove {
   opacity: 1;
 }
 
@@ -700,6 +702,22 @@
 
 .prompt-indexing-button {
   color: var(--icon-base);
+  --prompt-indexing-base: var(--icon-base);
+  --prompt-indexing-tone: var(--vscode-descriptionForeground);
+}
+
+.prompt-indexing-button[data-tone="success"] {
+  --prompt-indexing-base: var(--vscode-testing-iconPassed, #73c991);
+  --prompt-indexing-tone: var(--vscode-testing-iconPassed, #73c991);
+}
+
+.prompt-indexing-button[data-tone="warning"] {
+  --prompt-indexing-tone: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.prompt-indexing-button[data-tone="error"] {
+  --prompt-indexing-base: var(--vscode-errorForeground, #f48771);
+  --prompt-indexing-tone: var(--vscode-errorForeground, #f48771);
 }
 
 .prompt-indexing-codicon-stack {
@@ -719,12 +737,45 @@
   height: 16px;
   font-size: var(--font-size-large);
   line-height: 1;
-  color: currentColor;
+  color: var(--prompt-indexing-base);
 }
 
 .prompt-indexing-codicon--fill {
-  color: var(--vscode-testing-iconPassed, #73c991);
+  color: var(--prompt-indexing-tone);
   transition: clip-path 160ms ease;
+}
+
+.prompt-indexing-status-codicon {
+  grid-area: 1 / 1;
+  align-self: end;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--background-base, var(--vscode-editor-background));
+  box-shadow: 0 0 0 1px var(--background-base, var(--vscode-editor-background));
+  color: var(--prompt-indexing-tone);
+  font-size: var(--kilo-font-size-10);
+  line-height: 10px;
+}
+
+.prompt-indexing-button[data-state="indexing"] .prompt-indexing-status-codicon {
+  animation: prompt-indexing-spin 1s linear infinite;
+}
+
+@keyframes prompt-indexing-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-indexing-button[data-state="indexing"] .prompt-indexing-status-codicon {
+    animation: none;
+  }
 }
 
 .prompt-indexing-tooltip {
@@ -762,32 +813,12 @@
   overflow-wrap: anywhere;
 }
 
-.prompt-auto-approve-button {
-  position: relative;
-}
-
 .prompt-auto-approve-button--active {
   color: var(--vscode-testing-iconPassed, #73c991);
 
   [data-slot="icon-svg"] {
     color: currentColor !important;
   }
-}
-
-.prompt-auto-approve-button--active::after {
-  content: "";
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: var(--vscode-testing-iconPassed, #73c991);
-  box-shadow: 0 0 0 1px var(--surface-base, var(--vscode-editor-background));
-}
-
-.prompt-speech-button {
-  position: relative;
 }
 
 .prompt-speech-button--recording {
@@ -800,18 +831,6 @@
   .prompt-speech-icon {
     animation: prompt-speech-recording-pulse 1.1s ease-in-out infinite;
   }
-}
-
-.prompt-speech-button--recording::after {
-  content: "";
-  position: absolute;
-  right: 4px;
-  top: 4px;
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: currentColor;
-  box-shadow: 0 0 0 2px var(--surface-base, var(--vscode-editor-background));
 }
 
 .prompt-speech-button--error {

@@ -79,8 +79,11 @@ const mockVscode = {
     tabGroups: { all: [] },
     showTextDocument: async () => {},
     showWarningMessage: async () => undefined,
+    showInformationMessage: async () => undefined,
+    showInputBox: async () => undefined,
     showSaveDialog: async () => undefined,
     createTerminal: () => ({ show: noop, sendText: noop, dispose: noop }),
+    registerTerminalProfileProvider: () => ({ dispose: noop }),
     createOutputChannel: () => ({
       name: "",
       append: noop,
@@ -149,11 +152,18 @@ const mockVscode = {
       public command?: unknown,
     ) {}
   },
+  InlineCompletionTriggerKind: {
+    Invoke: 0,
+    Automatic: 1,
+  },
   Disposable: class {
     constructor(private callback: () => void = noop) {}
     dispose() {
       this.callback()
     }
+  },
+  TerminalProfile: class {
+    constructor(public options: unknown) {}
   },
   EventEmitter: class {
     event = noop

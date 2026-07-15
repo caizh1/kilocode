@@ -36,12 +36,12 @@ import type {
   RunStatus,
   PRStatus,
   AgentManagerPRStatusMessage,
+  AgentManagerMode,
   ManagedSessionState,
   SectionState,
   SessionInfo,
   BranchInfo,
 } from "../src/types/messages"
-import { IndexingProvider } from "../src/context/indexing"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -51,19 +51,11 @@ import {
   createSortable,
 } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
-import { ThemeProvider } from "@kilocode/kilo-ui/theme"
-import { DialogProvider, useDialog } from "@kilocode/kilo-ui/context/dialog"
+import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { DropdownMenu } from "@kilocode/kilo-ui/dropdown-menu"
 import { ContextMenu } from "@kilocode/kilo-ui/context-menu"
-import { MarkedProvider } from "@kilocode/kilo-ui/context/marked"
-import { CodeComponentProvider } from "@kilocode/kilo-ui/context/code"
-import { DiffComponentProvider } from "@kilocode/kilo-ui/context/diff"
-import { FileComponentProvider } from "@kilocode/kilo-ui/context/file"
-import { Code } from "@kilocode/kilo-ui/code"
-import { Diff } from "@kilocode/kilo-ui/diff"
-import { File } from "@kilocode/kilo-ui/file"
-import { Toast, showToast } from "@kilocode/kilo-ui/toast"
+import { showToast } from "@kilocode/kilo-ui/toast"
 import { ResizeHandle } from "@kilocode/kilo-ui/resize-handle"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { Button } from "@kilocode/kilo-ui/button"
@@ -71,21 +63,11 @@ import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Spinner } from "@kilocode/kilo-ui/spinner"
 import { Tooltip, TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
 import { Popover } from "@kilocode/kilo-ui/popover"
-import { VSCodeProvider, useVSCode } from "../src/context/vscode"
-import { ServerProvider } from "../src/context/server"
-import { ProviderProvider } from "../src/context/provider"
-import { ConfigProvider } from "../src/context/config"
-import { DisplayProvider } from "../src/context/display"
-import { KiloEmbeddingModelsProvider } from "../src/context/kilo-embedding-models"
-import { NotificationsProvider } from "../src/context/notifications"
-import { FeedbackProvider } from "../src/context/feedback"
-import { SessionProvider, useSession } from "../src/context/session"
-import { WorktreeModeProvider } from "../src/context/worktree-mode"
+import { useVSCode } from "../src/context/vscode"
+import { useSession } from "../src/context/session"
 import { ChatView } from "../src/components/chat"
 import HistoryView from "../src/components/history/HistoryView"
 import { NewWorktreeDialog } from "./NewWorktreeDialog"
-import { DataBridge, MermaidDownloadBridge } from "../src/App"
-import { LanguageBridge } from "../src/context/language-bridge"
 import { useLanguage } from "../src/context/language"
 import { formatRelativeDate } from "../src/utils/date"
 import {
@@ -106,6 +88,8 @@ import { DiffPanel } from "./DiffPanel"
 import { createRevertFile } from "./revert-file"
 import { FullScreenDiffView } from "../diff-viewer/FullScreenDiffView"
 import { ApplyDialog } from "./ApplyDialog"
+import { AgentConsoleSurface } from "./AgentConsoleSurface"
+import { createConsoleController } from "./console-controller"
 import { groupApplyConflicts } from "./apply-conflicts"
 import type { ReviewComment } from "../diff-viewer/review-comments"
 import { clearReviewComposer, createReviewComposer } from "../diff-viewer/review-annotations"
@@ -190,7 +174,7 @@ const defaultBindings: Record<string, string> = {
 
 import { parseBindingTokens } from "./keybind-tokens"
 
-const AgentManagerContent: Component = () => {
+export const AgentManagerContent: Component = () => {
   const { t } = useLanguage()
   const session = useSession()
   const vscode = useVSCode()
@@ -279,6 +263,10 @@ const AgentManagerContent: Component = () => {
   // of the focused terminal tab, if any — takes precedence over
   // session/pending/review when deriving the visible tab.
   const terms = createTerminalState(selection)
+  const [mode, setMode] = createSignal<AgentManagerMode>("manager"),
+    consoleMode = () => mode() === "console"
+  const [consoleInputMode, setConsoleInputMode] = createSignal<"agent" | "shell">("agent"),
+    [shellPending, setShellPending] = createSignal(false)
 
   // Inline delete confirmation: tracks which worktree is awaiting a second click/press
   const [pendingDelete, setPendingDelete] = createSignal<string | null>(null)
@@ -1125,7 +1113,12 @@ const AgentManagerContent: Component = () => {
       onCreated: (contextKey, terminalId) => appendToTabOrder(contextKey, terminalId),
     })
     const unsubTerminals = vscode.onMessage((msg) => {
+      ctl.terminal(msg.type)
       terminalDispatch(msg as unknown as { type: string } & Record<string, unknown>)
+    })
+
+    const unsubMode = vscode.onMessage((msg) => {
+      if (msg.type === "agentManager.openMode") ctl.open(msg.mode)
     })
 
     const unsub = vscode.onMessage((msg) => {
@@ -1424,6 +1417,7 @@ const AgentManagerContent: Component = () => {
       unsubSessions()
       unsubRun()
       unsubTerminals()
+      unsubMode()
       unsub()
     })
   })
@@ -1921,6 +1915,27 @@ const AgentManagerContent: Component = () => {
     getSelection: selection,
     LOCAL,
     REVIEW_TAB_ID,
+  })
+
+  const ctl = createConsoleController({
+    state: terms,
+    pending: shellPending,
+    setPending: setShellPending,
+    setMode,
+    reset: () => {
+      setSelection(LOCAL)
+      setHistory(false)
+      setReviewActive(false)
+      setSidePanel(null)
+    },
+    current: () => localSessions()[0],
+    isPending,
+    select: session.selectSession,
+    selectPending: setActivePendingId,
+    clear: session.clearCurrentSession,
+    post: (message) => vscode.postMessage(message as never),
+    focus: () => window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { restore: true } })),
+    local: LOCAL,
   })
 
   const handleReviewTabMouseDown = (e: MouseEvent) => {
@@ -2973,9 +2988,16 @@ const AgentManagerContent: Component = () => {
             <div
               class={`am-detail-content ${sidePanel() !== null ? "am-detail-split" : ""} ${reviewActive() ? "am-detail-content-hidden" : ""}`}
             >
-              <div class={`am-main-pane ${terms.activeId() ? "am-main-pane-terminal-active" : ""}`}>
+              <AgentConsoleSurface
+                console={consoleMode}
+                terminalActive={() => terms.activeId() !== undefined}
+                terminal={renderTerminalLayer({
+                  state: terms,
+                  console: consoleMode,
+                  focus: () => consoleInputMode() === "shell",
+                })}
+              >
                 {/* Keep terminal tabs mounted so output streams across worktree switches. */}
-                {renderTerminalLayer({ state: terms })}
                 <div class="am-chat-wrapper">
                   <ChatView
                     onSelectSession={(id) => {
@@ -3004,6 +3026,16 @@ const AgentManagerContent: Component = () => {
                     continueInWorktree={selection() === LOCAL}
                     promptBoxId={`agent-manager:${selection() ?? "unassigned"}`}
                     pendingSessionID={selection() === LOCAL ? activePendingId() : undefined}
+                    consoleInput={
+                      consoleMode()
+                        ? {
+                            mode: consoleInputMode,
+                            setMode: setConsoleInputMode,
+                            pending: shellPending,
+                            onShell: ctl.send,
+                          }
+                        : undefined
+                    }
                   />
                   <Show when={readOnly()}>
                     <div class="am-readonly-banner">
@@ -3035,7 +3067,7 @@ const AgentManagerContent: Component = () => {
                     </div>
                   </Show>
                 </div>
-              </div>
+              </AgentConsoleSurface>
               <Show when={sidePanel() !== null}>
                 <div class="am-diff-resize" style={{ width: `${diffWidth()}px` }}>
                   <ResizeHandle
@@ -3121,51 +3153,5 @@ const AgentManagerContent: Component = () => {
         </Show>
       </div>
     </div>
-  )
-}
-
-export const AgentManagerApp: Component = () => {
-  return (
-    <ThemeProvider defaultTheme="kilo-vscode">
-      <DialogProvider>
-        <VSCodeProvider>
-          <MermaidDownloadBridge />
-          <ServerProvider>
-            <LanguageBridge>
-              <MarkedProvider>
-                <DiffComponentProvider component={Diff}>
-                  <CodeComponentProvider component={Code}>
-                    <FileComponentProvider component={File}>
-                      <ProviderProvider>
-                        <ConfigProvider>
-                          <DisplayProvider>
-                            <IndexingProvider>
-                              <KiloEmbeddingModelsProvider>
-                                <NotificationsProvider>
-                                  <SessionProvider>
-                                    <FeedbackProvider>
-                                      <WorktreeModeProvider>
-                                        <DataBridge>
-                                          <AgentManagerContent />
-                                        </DataBridge>
-                                      </WorktreeModeProvider>
-                                    </FeedbackProvider>
-                                  </SessionProvider>
-                                </NotificationsProvider>
-                              </KiloEmbeddingModelsProvider>
-                            </IndexingProvider>
-                          </DisplayProvider>
-                        </ConfigProvider>
-                      </ProviderProvider>
-                    </FileComponentProvider>
-                  </CodeComponentProvider>
-                </DiffComponentProvider>
-              </MarkedProvider>
-            </LanguageBridge>
-          </ServerProvider>
-        </VSCodeProvider>
-        <Toast.Region />
-      </DialogProvider>
-    </ThemeProvider>
   )
 }

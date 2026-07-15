@@ -16,6 +16,9 @@ import { TaskHeader } from "./TaskHeader"
 import { MessageList } from "./MessageList"
 import { PromptInput } from "./PromptInput"
 import { PermissionDock } from "./PermissionDock"
+import { PermissionDialogController } from "./PermissionDialogController"
+import { editPermission, permissionPresentation } from "./permission-presentation"
+import { AgentConsoleInput, type AgentConsoleInputMode } from "./AgentConsoleInput"
 import { StartupErrorBanner } from "./StartupErrorBanner"
 import { useSession } from "../../context/session"
 import { useVSCode } from "../../context/vscode"
@@ -34,6 +37,12 @@ interface ChatViewProps {
   continueInWorktree?: boolean
   promptBoxId?: string
   pendingSessionID?: string
+  consoleInput?: {
+    mode: () => AgentConsoleInputMode
+    setMode: (mode: AgentConsoleInputMode) => void
+    pending: () => boolean
+    onShell: (command: string) => void
+  }
 }
 
 export const ChatView: Component<ChatViewProps> = (props) => {
@@ -126,6 +135,25 @@ export const ChatView: Component<ChatViewProps> = (props) => {
     const perm = permissionRequest()
     if (!perm || session.respondingPermissions().has(perm.id)) return
     session.respondToPermission(perm.id, response, approvedAlways, deniedAlways)
+  }
+
+  const edit = (request: import("../../types/messages").PermissionRequest) => {
+    editPermission(
+      request,
+      session.respondingPermissions().has(request.id),
+      () => session.respondToPermission(request.id, "reject", [], []),
+      (text) => {
+        props.consoleInput?.setMode("agent")
+        window.dispatchEvent(new CustomEvent("prefillPrompt", { detail: { text } }))
+        window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { restore: true } }))
+      },
+    )
+  }
+
+  const highRiskPermission = () => {
+    const request = permissionRequest()
+    if (!request || permissionPresentation(request) !== "high") return undefined
+    return request
   }
 
   const startSession = () => window.dispatchEvent(new CustomEvent("newTaskRequest"))
@@ -319,9 +347,9 @@ export const ChatView: Component<ChatViewProps> = (props) => {
   )
 
   return (
-    <div class="chat-view">
+    <div class="chat-view" data-ui="qa-shell">
       <TaskHeader readonly={props.readonly} />
-      <div class="chat-messages-wrapper">
+      <div class="chat-messages-wrapper" data-ui="qa-conversation">
         <div class="chat-messages">
           <MessageList
             onSelectSession={props.onSelectSession}
@@ -335,16 +363,30 @@ export const ChatView: Component<ChatViewProps> = (props) => {
       </div>
 
       <Show when={dock()}>
-        <div class="chat-input">
+        <div class="chat-input" data-ui="qa-dock">
+          <PermissionDialogController
+            request={highRiskPermission}
+            responding={(permissionId) => session.respondingPermissions().has(permissionId)}
+            onDecide={decide}
+            onEdit={edit}
+          />
           <Show when={server.connectionState() === "error" && server.errorMessage()}>
             <StartupErrorBanner errorMessage={server.errorMessage()!} errorDetails={server.errorDetails()!} />
           </Show>
-          <Show when={permissionRequest()} keyed>
+          <Show
+            when={
+              permissionRequest() && permissionPresentation(permissionRequest()!) === "standard"
+                ? permissionRequest()
+                : undefined
+            }
+            keyed
+          >
             {(perm) => (
               <PermissionDock
                 request={perm}
                 responding={session.respondingPermissions().has(perm.id)}
                 onDecide={decide}
+                onEdit={() => edit(perm)}
               />
             )}
           </Show>
@@ -352,13 +394,35 @@ export const ChatView: Component<ChatViewProps> = (props) => {
             {renderActions(hasMessages())}
           </Show>
           <Show when={!props.readonly}>
-            <PromptInput
-              blocked={blocked}
-              suggesting={suggesting}
-              questioning={questioning}
-              boxId={props.promptBoxId}
-              pendingSessionID={props.pendingSessionID}
-            />
+            <Show
+              when={props.consoleInput}
+              fallback={
+                <PromptInput
+                  blocked={blocked}
+                  suggesting={suggesting}
+                  questioning={questioning}
+                  boxId={props.promptBoxId}
+                  pendingSessionID={props.pendingSessionID}
+                />
+              }
+            >
+              {(input) => (
+                <AgentConsoleInput
+                  mode={input().mode}
+                  setMode={input().setMode}
+                  pending={input().pending}
+                  onShell={input().onShell}
+                >
+                  <PromptInput
+                    blocked={blocked}
+                    suggesting={suggesting}
+                    questioning={questioning}
+                    boxId={props.promptBoxId}
+                    pendingSessionID={props.pendingSessionID}
+                  />
+                </AgentConsoleInput>
+              )}
+            </Show>
           </Show>
         </div>
       </Show>

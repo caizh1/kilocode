@@ -20,7 +20,7 @@ import { TurnOutcome } from "../components/shared/TurnOutcome"
 import { SessionContext } from "../context/session"
 import { ServerContext } from "../context/server"
 import { WorktreeModeProvider } from "../context/worktree-mode"
-import type { Message, Part, QuestionRequest, SuggestionRequest, TodoItem } from "../types/messages"
+import type { Config, Message, Part, QuestionRequest, SuggestionRequest, TodoItem } from "../types/messages"
 
 const SESSION_ID = "story-session-chat-001"
 
@@ -128,6 +128,30 @@ export const ChatViewIdle: Story = {
   ),
 }
 
+export const QAAlignedIdleLight: Story = {
+  name: "QA — aligned idle, light theme",
+  globals: { vscodeTheme: "light-modern" },
+  render: () => (
+    <StoryProviders sessionID={SESSION_ID} status="idle">
+      <div style={{ width: "100%", height: "600px", display: "flex", "flex-direction": "column" }}>
+        <ChatView />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+export const QAAlignedIdleContrast: Story = {
+  name: "QA — aligned idle, high contrast",
+  globals: { vscodeTheme: "hc-black" },
+  render: () => (
+    <StoryProviders sessionID={SESSION_ID} status="idle">
+      <div style={{ width: "100%", height: "600px", display: "flex", "flex-direction": "column" }}>
+        <ChatView />
+      </div>
+    </StoryProviders>
+  ),
+}
+
 /** ChatView with messages — shows the full-width "New task" button above the prompt */
 export const ChatViewWithMessages: Story = {
   name: "ChatView — with messages (shows New Task button)",
@@ -220,7 +244,7 @@ export const QuestionDockSingle: Story = {
   name: "QuestionDock — single question (explicit submit)",
   render: () => (
     <StoryProviders sessionID={SESSION_ID} questions={[singleQuestion]}>
-      <div style={{ width: "100%" }}>
+      <div class="chat-view" data-ui="qa-shell" style={{ width: "100%" }}>
         <QuestionDock request={singleQuestion} />
       </div>
     </StoryProviders>
@@ -231,7 +255,7 @@ export const QuestionDockMulti: Story = {
   name: "QuestionDock — multi-question wizard",
   render: () => (
     <StoryProviders sessionID={SESSION_ID} questions={[multiQuestion]}>
-      <div style={{ width: "100%" }}>
+      <div class="chat-view" data-ui="qa-shell" style={{ width: "100%" }}>
         <QuestionDock request={multiQuestion} />
       </div>
     </StoryProviders>
@@ -263,7 +287,7 @@ export const QuestionDockManyOptions: Story = {
   name: "QuestionDock — many options (scrollable)",
   render: () => (
     <StoryProviders sessionID={SESSION_ID} questions={[manyOptionsQuestion]}>
-      <div style={{ width: "100%" }}>
+      <div class="chat-view" data-ui="qa-shell" style={{ width: "100%" }}>
         <QuestionDock request={manyOptionsQuestion} />
       </div>
     </StoryProviders>
@@ -274,7 +298,7 @@ export const SuggestBarReview: Story = {
   name: "SuggestBar — review suggestion",
   render: () => (
     <StoryProviders sessionID={SESSION_ID} suggestions={[reviewSuggestion]}>
-      <div style={{ width: "100%" }}>
+      <div class="chat-view" data-ui="qa-shell" style={{ width: "100%" }}>
         <SuggestBar request={reviewSuggestion} />
       </div>
     </StoryProviders>
@@ -356,6 +380,13 @@ const spacingParts = {
         time: { start: toolNow - 7000, end: toolNow - 6500 },
       },
     },
+    {
+      id: "part-text-spacing-001",
+      sessionID: SESSION_ID,
+      messageID: toolAssistantID,
+      type: "text",
+      text: "The command completed successfully. The assistant response should stay in the reading flow without an outer card.",
+    },
   ],
   [queuedUserID]: [
     {
@@ -382,6 +413,131 @@ const spacingData = {
   part: spacingParts,
 }
 
+export const QAAlignedConversationSurface: Story = {
+  name: "QA — aligned conversation surface",
+  render: () => {
+    const session = {
+      ...mockSessionValue({
+        id: SESSION_ID,
+        status: "idle",
+        questions: [{ ...singleQuestion, tool: undefined } as QuestionRequest],
+        suggestions: [{ ...reviewSuggestion, tool: undefined } as SuggestionRequest],
+      }),
+      messages: () => spacingMessages,
+      visibleMessages: () => spacingMessages,
+      userMessages: () => spacingMessages.filter((message) => message.role === "user"),
+      getParts: (id: string) => spacingParts[id as keyof typeof spacingParts] ?? [],
+      costBreakdown: () => [{ label: "QA session", cost: 0.0012 }],
+      contextUsage: () => ({ tokens: 4096, percentage: 12 }),
+    }
+    return (
+      <StoryProviders data={spacingData} sessionID={SESSION_ID} status="idle" noPadding>
+        <SessionContext.Provider value={session as any}>
+          <div style={{ height: "720px", display: "flex", "flex-direction": "column" }}>
+            <ChatView />
+          </div>
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
+}
+
+export const QAUserMessageLengths: Story = {
+  name: "QA — user message length states",
+  render: () => {
+    const samples = [
+      { id: "short", text: "能远端渲染吗？" },
+      { id: "medium", text: "当前无法正常进行远端渲染吗？需要检查一下服务状态和配置。" },
+      {
+        id: "long",
+        text: "请帮我全面检查远端 Mermaid 和 Word 渲染是否正常：验证渲染服务健康状态、接口配置（URL、超时、鉴权）、最近的失败日志和错误详情，并确认降级或本地渲染回退是否生效；如有问题请给出根因分析和修复建议。",
+      },
+    ]
+    const now = 1_700_000_200_000
+    const messages = samples.flatMap<Message>((sample, index) => {
+      const time = now + index * 2_000
+      const user = `user-message-${sample.id}`
+      return [
+        {
+          id: user,
+          sessionID: SESSION_ID,
+          role: "user",
+          createdAt: new Date(time).toISOString(),
+          time: { created: time },
+        },
+        {
+          id: `assistant-message-${sample.id}`,
+          sessionID: SESSION_ID,
+          role: "assistant",
+          parentID: user,
+          createdAt: new Date(time + 1_000).toISOString(),
+          time: { created: time + 1_000, completed: time + 1_500 },
+          finish: "stop",
+          modelID: "deepseek-v4-flash",
+          providerID: "myprovider",
+          mode: "default",
+          agent: "code",
+          path: { cwd: "/project", root: "/project" },
+        },
+      ]
+    })
+    const parts = Object.fromEntries(
+      samples.flatMap((sample) => [
+        [
+          `user-message-${sample.id}`,
+          [
+            {
+              id: `user-part-${sample.id}`,
+              sessionID: SESSION_ID,
+              messageID: `user-message-${sample.id}`,
+              type: "text",
+              text: sample.text,
+            },
+          ],
+        ],
+        [
+          `assistant-message-${sample.id}`,
+          [
+            {
+              id: `assistant-part-${sample.id}`,
+              sessionID: SESSION_ID,
+              messageID: `assistant-message-${sample.id}`,
+              type: "text",
+              text: "正在考虑下一步",
+            },
+          ],
+        ],
+      ]),
+    ) as Record<string, Part[]>
+    const data = {
+      ...defaultMockData,
+      message: { [SESSION_ID]: messages },
+      part: parts,
+    }
+    const session = {
+      ...mockSessionValue({ id: SESSION_ID, status: "idle" }),
+      messages: () => messages,
+      visibleMessages: () => messages,
+      userMessages: () => messages.filter((message) => message.role === "user"),
+      getParts: (id: string) => parts[id] ?? [],
+    }
+    return (
+      <StoryProviders data={data} sessionID={SESSION_ID} status="idle" noPadding>
+        <SessionContext.Provider value={session as any}>
+          <div
+            class="chat-view"
+            data-ui="qa-shell"
+            data-story="qa-message-lengths"
+            style={{ height: "720px", display: "flex", "flex-direction": "column" }}
+          >
+            <MessageList onForkMessage={() => undefined} />
+          </div>
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
+}
+
 export const MessageListToolToQueuedUserSpacing: Story = {
   name: "MessageList — queued users stay at bottom",
   render: () => {
@@ -393,7 +549,11 @@ export const MessageListToolToQueuedUserSpacing: Story = {
     return (
       <StoryProviders data={spacingData} sessionID={SESSION_ID} status="busy" noPadding>
         <SessionContext.Provider value={session as any}>
-          <div style={{ height: "420px", display: "flex", "flex-direction": "column" }}>
+          <div
+            class="chat-view"
+            data-ui="qa-shell"
+            style={{ height: "420px", display: "flex", "flex-direction": "column" }}
+          >
             <MessageList />
           </div>
         </SessionContext.Provider>
@@ -497,7 +657,11 @@ export const MessageListSubagentToQueuedUserSpacing: Story = {
     return (
       <StoryProviders data={subagentSpacingData} sessionID={SESSION_ID} status="idle" noPadding>
         <SessionContext.Provider value={session as any}>
-          <div style={{ height: "420px", display: "flex", "flex-direction": "column" }}>
+          <div
+            class="chat-view"
+            data-ui="qa-shell"
+            style={{ height: "420px", display: "flex", "flex-direction": "column" }}
+          >
             <MessageList />
           </div>
         </SessionContext.Provider>
@@ -585,6 +749,19 @@ const headerMessages: Message[] = [
 ]
 const headerParts: Record<string, Part[]> = {
   [headerAssistantID]: [
+    {
+      id: "part-header-skill-001",
+      sessionID: SESSION_ID,
+      messageID: headerAssistantID,
+      type: "tool",
+      tool: "skill",
+      state: {
+        status: "completed",
+        input: { name: "chip-design-doc" },
+        output: "Loaded chip-design-doc guidance.",
+        title: "Skill chip-design-doc",
+      },
+    },
     {
       id: "part-header-read-001",
       sessionID: SESSION_ID,
@@ -698,6 +875,53 @@ const mockTodosAllDone: TodoItem[] = [
   { id: "2", content: "Create a poem about Henk", status: "completed" },
 ]
 
+const headerData = {
+  ...defaultMockData,
+  message: { [SESSION_ID]: headerMessages },
+  part: headerParts,
+}
+
+export const QATitaniumFullConversation: Story = {
+  name: "Titanium Studio — 完整真实对话基准",
+  render: () => {
+    const session = {
+      ...mockSessionValue({ id: SESSION_ID, status: "busy" }),
+      messages: () => headerMessages,
+      visibleMessages: () => headerMessages,
+      userMessages: () => headerMessages.filter((message) => message.role === "user"),
+      currentSession: () => ({
+        id: SESSION_ID,
+        title: "MP CP module detailed design document",
+        createdAt: new Date(headerNow - 12000).toISOString(),
+        updatedAt: new Date(headerNow).toISOString(),
+      }),
+      todos: () => mockTodosInProgress,
+      getParts: (id: string) => headerParts[id] ?? [],
+      contextUsage: () => ({ tokens: 126653, percentage: 63 }),
+      costBreakdown: () =>
+        Array.from({ length: 18 }, (_, index) => ({
+          label: `Turn ${index + 1}`,
+          cost: 0.018 + (index % 5) * 0.006,
+        })),
+    }
+    return (
+      <StoryProviders
+        data={headerData}
+        sessionID={SESSION_ID}
+        status="busy"
+        noPadding
+        config={{ plugin: ["@kilocode/kilo-indexing"] } as Config}
+      >
+        <SessionContext.Provider value={session as any}>
+          <div style={{ width: "100%", height: "980px", display: "flex", "flex-direction": "column" }}>
+            <ChatView />
+          </div>
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
+}
+
 export const TaskHeaderWithTodos: Story = {
   name: "TaskHeader — with todos (in progress)",
   render: () => {
@@ -718,7 +942,7 @@ export const TaskHeaderWithTodos: Story = {
     return (
       <StoryProviders sessionID={SESSION_ID} status="busy" noPadding>
         <SessionContext.Provider value={session as any}>
-          <div style={{ width: "100%" }}>
+          <div class="chat-view" data-ui="qa-shell" style={{ width: "100%" }}>
             <TaskHeader />
           </div>
         </SessionContext.Provider>
@@ -744,7 +968,7 @@ export const TaskHeaderWithTodosAllDone: Story = {
     return (
       <StoryProviders sessionID={SESSION_ID} status="idle" noPadding>
         <SessionContext.Provider value={session as any}>
-          <div style={{ width: "380px" }}>
+          <div class="chat-view" data-ui="qa-shell" style={{ width: "380px" }}>
             <TaskHeader />
           </div>
         </SessionContext.Provider>

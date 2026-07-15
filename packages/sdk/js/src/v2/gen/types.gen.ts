@@ -1104,7 +1104,9 @@ export type DocumentIndexConfig = {
   paths?: Array<string>
   include?: Array<string>
   exclude?: Array<string>
+  maxFiles?: number
   maxFileBytes?: number
+  maxExtractedBytesPerFile?: number
   chunkChars?: number
   chunkOverlapChars?: number
   searchMaxResults?: number
@@ -2809,7 +2811,7 @@ export type EventGlobalConfigUpdated = {
   id: string
   type: "global.config.updated"
   properties: {
-    [key: string]: unknown
+    deferred?: boolean
   }
 }
 
@@ -8517,6 +8519,44 @@ export type KiloFimResponses = {
 }
 
 export type KiloFimResponse = KiloFimResponses[keyof KiloFimResponses]
+
+export type KiloQwenFimData = {
+  body?: {
+    providerID: string
+    modelID: string
+    prefix: string
+    suffix: string
+    maxTokens?: number
+    temperature?: number
+    stop?: Array<string>
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilo/qwen-fim"
+}
+
+export type KiloQwenFimErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type KiloQwenFimError = KiloQwenFimErrors[keyof KiloQwenFimErrors]
+
+export type KiloQwenFimResponses = {
+  /**
+   * Qwen FIM completion
+   */
+  200: {
+    text: string
+  }
+}
+
+export type KiloQwenFimResponse = KiloQwenFimResponses[keyof KiloQwenFimResponses]
 
 export type KiloEditData = {
   body?: {

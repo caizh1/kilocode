@@ -127,6 +127,7 @@ export type CodeGraphFileGraph = {
 export type CodeGraphFileRecord = {
   filePath: string
   graphFile: string
+  graphParts?: CodeGraphShardPartInfo[]
   fileHash?: string
   status: CodeGraphFileRecordStatus
   updatedAt: string
@@ -371,6 +372,7 @@ export type CodePostingsFileRecord = {
   documentLength?: number
   updatedAt: string
   error?: string
+  docParts?: CodeGraphShardPartInfo[]
 }
 
 export type CodePostingsManifest = {

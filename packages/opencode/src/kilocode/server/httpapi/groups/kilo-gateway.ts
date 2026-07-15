@@ -148,6 +148,20 @@ export const FimBody = Schema.Struct({
   temperature: Schema.optional(Schema.Finite),
 })
 
+export const QwenFimBody = Schema.Struct({
+  providerID: Schema.String,
+  modelID: Schema.String,
+  prefix: Schema.String,
+  suffix: Schema.String,
+  maxTokens: Schema.optional(Schema.Finite),
+  temperature: Schema.optional(Schema.Finite),
+  stop: Schema.optional(Schema.Array(Schema.String)),
+})
+
+export const QwenFimResponse = Schema.Struct({
+  text: Schema.String,
+})
+
 // Next Edit (NES) — non-streaming. Clients send structured editor context; the
 // gateway assembles the Mercury sentinel-tagged prompt (contract documented at
 // https://docs.inceptionlabs.ai/capabilities/next-edit) so the prompt format
@@ -242,6 +256,7 @@ export const KiloGatewayPaths = {
   modes: `${root}/modes`,
   profile: `${root}/profile`,
   fim: `${root}/fim`,
+  qwenFim: `${root}/qwen-fim`,
   edit: `${root}/edit`,
   audioTranscriptions: `${root}/audio/transcriptions`,
   notifications: `${root}/notifications`,
@@ -288,6 +303,19 @@ export const KiloGatewayApi = HttpApi.make("kilo")
             identifier: "kilo.fim",
             summary: "FIM completion",
             description: "Proxy a Fill-in-the-Middle completion request to the Kilo Gateway",
+          }),
+        ),
+        HttpApiEndpoint.post("qwenFim", KiloGatewayPaths.qwenFim, {
+          query: WorkspaceRoutingQuery,
+          payload: QwenFimBody,
+          success: described(QwenFimResponse, "Qwen FIM completion"),
+          error: [HttpApiError.BadRequest, HttpApiError.Unauthorized],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "kilo.qwenFim",
+            summary: "Qwen FIM completion",
+            description:
+              "Proxy a configured Qwen Coder FIM request without exposing provider credentials to the extension",
           }),
         ),
         HttpApiEndpoint.post("edit", KiloGatewayPaths.edit, {

@@ -8,11 +8,12 @@ import type {
   IEmbedder,
   IVectorStore,
   IDirectoryScanner,
+  ICacheManager,
   ScanProgressEvent,
   IndexingScanTarget,
 } from "../interfaces"
 import { createHash } from "crypto"
-import pLimit from "p-limit"
+import pLimit, { type LimitFunction } from "p-limit"
 import { Mutex } from "async-mutex"
 import { CacheManager } from "../cache-manager"
 import {
@@ -22,7 +23,6 @@ import {
   INITIAL_RETRY_DELAY_MS,
   PARSING_CONCURRENCY,
   BATCH_PROCESSING_CONCURRENCY,
-  MAX_PENDING_BATCHES,
 } from "../constants"
 import { FileIgnore } from "../../file/ignore"
 import { Log } from "../../util/log"
@@ -36,9 +36,10 @@ import { CodeGraphParserWorkerPool } from "../codegraph/parser/worker-pool"
 import type { RagCheckpointMeta } from "../rag-checkpoint"
 import { fallbackCheckpointMeta, generationForFile, pointForBlock, vectorContext } from "../rag-checkpoint"
 import { discoverScanFiles, type DiscoveryResult } from "./discovery"
+import { constrained, type IndexingPressure } from "../memory"
 
 const log = Log.create({ service: "indexing-scanner" })
-const CODE_GRAPH_WORKER_CONCURRENCY = 8
+const CODE_GRAPH_WORKER_CONCURRENCY = 2
 const CODE_GRAPH_WORKER_MAX = 16
 
 type CodeGraphScanMetrics = {
@@ -76,6 +77,8 @@ export class DirectoryScanner implements IDirectoryScanner {
   private ragMeta: RagCheckpointMeta | undefined
   private readonly writeCache: boolean
   private readonly graphPool = new CodeGraphParserWorkerPool()
+  private pressure: IndexingPressure = "normal"
+  private readonly limiters = new Set<{ limit: LimitFunction; kind: "parse" | "batch" }>()
 
   constructor(
     private readonly embedder: IEmbedder | undefined,
@@ -94,6 +97,20 @@ export class DirectoryScanner implements IDirectoryScanner {
     this.batchSegmentThreshold = batchSegmentThreshold ?? BATCH_SEGMENT_THRESHOLD
     this.maxBatchRetries = maxBatchRetries ?? MAX_BATCH_RETRIES
     this.writeCache = opts.writeCache ?? true
+  }
+
+  private checkpointCache(): Promise<void> {
+    const cache: ICacheManager = this.cacheManager
+    if (cache.checkpoint) return cache.checkpoint()
+    if (cache.flush) return cache.flush()
+    return Promise.resolve()
+  }
+
+  private flushCache(): Promise<void> {
+    const cache: ICacheManager = this.cacheManager
+    if (cache.flush) return cache.flush()
+    if (cache.checkpoint) return cache.checkpoint()
+    return Promise.resolve()
   }
 
   private emitFileCount(mode: IndexingTelemetryMode, discovered: number, candidate: number): void {
@@ -158,6 +175,11 @@ export class DirectoryScanner implements IDirectoryScanner {
    */
   public cancel(): void {
     this._cancelled = true
+    this.graphPool.dispose()
+  }
+
+  public disposeGraphWorkers(): void {
+    this.graphPool.dispose()
   }
 
   public get isCancelled(): boolean {
@@ -200,6 +222,40 @@ export class DirectoryScanner implements IDirectoryScanner {
    */
   public updateBatchSegmentThreshold(newThreshold: number): void {
     this.batchSegmentThreshold = newThreshold
+  }
+
+  public setMemoryPressure(pressure: IndexingPressure): void {
+    this.pressure = pressure
+    for (const item of this.limiters) {
+      item.limit.concurrency = item.kind === "parse" ? this.parseConcurrency("all") : this.batchConcurrency()
+    }
+    if (constrained(pressure)) this.graphPool.dispose()
+  }
+
+  private parseConcurrency(target: IndexingScanTarget): number {
+    if (constrained(this.pressure)) return 1
+    const value = target === "codeGraph" ? codeGraphWorkerConcurrency() : PARSING_CONCURRENCY
+    return Math.max(1, Math.min(4, value))
+  }
+
+  private batchConcurrency(): number {
+    return constrained(this.pressure) ? 1 : Math.max(1, Math.min(2, BATCH_PROCESSING_CONCURRENCY))
+  }
+
+  private pendingBatches(): number {
+    return constrained(this.pressure) ? 1 : 2
+  }
+
+  private segmentThreshold(): number {
+    return Math.max(1, Math.min(this.batchSegmentThreshold, constrained(this.pressure) ? 16 : 60))
+  }
+
+  private windowSize(target: IndexingScanTarget): number {
+    return constrained(this.pressure) ? 1 : this.parseConcurrency(target) * 2
+  }
+
+  private graphWorkers(): number {
+    return constrained(this.pressure) ? 0 : codeGraphWorkerConcurrency()
   }
 
   public async discoverCandidateFiles(directory: string, target: IndexingScanTarget): Promise<DiscoveryResult> {
@@ -257,7 +313,7 @@ export class DirectoryScanner implements IDirectoryScanner {
     const scanWorkspace = directoryPath
     log.info("starting directory scan", { workspacePath: scanWorkspace, target })
     if (graphEnabled) {
-      const health = await this.graphPool.health(codeGraphWorkerConcurrency())
+      const health = await this.graphPool.health(this.graphWorkers())
       log.warn("code graph parser worker health", {
         visible: true,
         workspacePath: scanWorkspace,
@@ -299,8 +355,11 @@ export class DirectoryScanner implements IDirectoryScanner {
     let skippedCount = 0
 
     // Initialize parallel processing tools
-    const parseLimiter = pLimit(PARSING_CONCURRENCY) // Concurrency for file parsing
-    const batchLimiter = pLimit(BATCH_PROCESSING_CONCURRENCY) // Concurrency for batch processing
+    const parseLimiter = pLimit(this.parseConcurrency(target))
+    const batchLimiter = pLimit(this.batchConcurrency())
+    this.limiters.clear()
+    this.limiters.add({ limit: parseLimiter, kind: "parse" })
+    this.limiters.add({ limit: batchLimiter, kind: "batch" })
     const mutex = new Mutex()
 
     // Shared batch accumulators (protected by mutex)
@@ -386,9 +445,10 @@ export class DirectoryScanner implements IDirectoryScanner {
         await store.deleteInactiveFilePoints(job.filePath, job.generation)
         if (this.writeCache) {
           this.cacheManager.updateHash(job.filePath, job.fileHash)
-          await this.cacheManager.flush()
+          await this.checkpointCache()
         }
         job.completed = true
+        jobs.delete(job.filePath)
         onFilesIndexed?.(1)
         onProgress?.({ type: "file", filePath: job.filePath })
       }
@@ -417,7 +477,7 @@ export class DirectoryScanner implements IDirectoryScanner {
         let wait: Promise<void> | null = null
 
         try {
-          if (pendingBatchCount < MAX_PENDING_BATCHES) {
+          if (pendingBatchCount < this.pendingBatches()) {
             pendingBatchCount++
 
             const batchPromise = batchLimiter(async () => {
@@ -472,8 +532,7 @@ export class DirectoryScanner implements IDirectoryScanner {
       }
     }
 
-    // Process all files in parallel with concurrency control
-    const parsePromises = supportedPaths.map((filePath) =>
+    const parseFile = (filePath: string) =>
       parseLimiter(async () => {
         // Early exit if cancellation requested
         if (this._cancelled) {
@@ -537,7 +596,7 @@ export class DirectoryScanner implements IDirectoryScanner {
             onFileParsed?.()
             if (target === "all" && this.writeCache) {
               this.cacheManager.updateHash(filePath, currentFileHash)
-              await this.cacheManager.flush()
+              await this.checkpointCache()
             }
             return
           }
@@ -582,7 +641,7 @@ export class DirectoryScanner implements IDirectoryScanner {
                     buffered.add(filePath)
 
                     // Check if batch threshold is met
-                    if (currentBatchBlocks.length < this.batchSegmentThreshold) {
+                    if (currentBatchBlocks.length < this.segmentThreshold()) {
                       return null
                     }
 
@@ -634,7 +693,7 @@ export class DirectoryScanner implements IDirectoryScanner {
             // Only update hash if not being processed in a batch
             if (this.writeCache) {
               this.cacheManager.updateHash(filePath, currentFileHash)
-              await this.cacheManager.flush()
+              await this.checkpointCache()
             }
           }
         } catch (error) {
@@ -658,11 +717,13 @@ export class DirectoryScanner implements IDirectoryScanner {
             }
           }
         }
-      }),
-    )
+      })
 
-    // Wait for all parsing to complete
-    await Promise.all(parsePromises)
+    for (let index = 0; index < supportedPaths.length; index += this.windowSize(target)) {
+      const window = supportedPaths.slice(index, index + this.windowSize(target))
+      await Promise.all(window.map(parseFile))
+      await Promise.resolve()
+    }
     log.info("finished parsing scan candidates", {
       workspacePath: scanWorkspace,
       processedCount,
@@ -704,6 +765,7 @@ export class DirectoryScanner implements IDirectoryScanner {
 
     // Short-circuit if cancelled before handling deletions
     if (this._cancelled) {
+      this.limiters.clear()
       log.info("directory scan cancelled", {
         workspacePath: scanWorkspace,
         processedCount,
@@ -747,7 +809,7 @@ export class DirectoryScanner implements IDirectoryScanner {
             await this.vectorStore.deletePointsByFilePath(cachedFilePath)
             if (this.writeCache) {
               this.cacheManager.deleteHash(cachedFilePath)
-              await this.cacheManager.flush()
+              await this.checkpointCache()
             }
           } catch (error: any) {
             const errorStatus = error?.status || error?.response?.status || error?.statusCode
@@ -773,6 +835,8 @@ export class DirectoryScanner implements IDirectoryScanner {
       }
     }
 
+    if (this.writeCache) await this.flushCache()
+
     if (graphEnabled) {
       await this.finishGraphScan()
       this.logGraphMetrics(scanWorkspace, target, Date.now() - started, graphMetrics)
@@ -786,6 +850,7 @@ export class DirectoryScanner implements IDirectoryScanner {
       target,
     })
 
+    this.limiters.clear()
     return {
       stats: {
         processed: processedCount,
@@ -860,7 +925,7 @@ export class DirectoryScanner implements IDirectoryScanner {
         fileHash,
       }
       const parseStarted = Date.now()
-      const parsed = await this.graphPool.parse(input, codeGraphWorkerConcurrency())
+      const parsed = await this.graphPool.parse(input, this.graphWorkers())
       const parseMs = Date.now() - parseStarted
       const reason = this.graphPool.takeFallbackReason()
       if (reason) {

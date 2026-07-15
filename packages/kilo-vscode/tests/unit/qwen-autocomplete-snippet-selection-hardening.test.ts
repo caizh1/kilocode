@@ -6,6 +6,7 @@ import type { QwenAutocompleteCache } from "../../src/services/qwen-autocomplete
 import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
+import { QwenFimClient } from "../../src/services/qwen-autocomplete/QwenFimClient"
 import type { QwenImportDefinitionsSource } from "../../src/services/qwen-autocomplete/importDefinitions"
 import type { QwenRecentlyEditedSource } from "../../src/services/qwen-autocomplete/recentlyEdited"
 import type { QwenRecentlyOpenedSource } from "../../src/services/qwen-autocomplete/recentlyOpened"
@@ -16,17 +17,17 @@ import {
   selectQwenSnippets,
   type QwenAutocompleteCodeSnippet,
 } from "../../src/services/qwen-autocomplete/snippets"
-import type { QwenAutocompleteConfig } from "../../src/services/qwen-autocomplete/types"
+import type { QwenAutocompleteConfig, QwenFimCompleteInput } from "../../src/services/qwen-autocomplete/types"
 
 type Pos = { line: number; character: number }
 type Range = { start: Pos; end: Pos }
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "http://unit.test/v1/completions",
+  providerID: "qwen",
   model: "qwen-coder-30b0",
-  apiKey: "secret",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
@@ -62,10 +63,7 @@ const cfg: QwenAutocompleteConfig = {
   logCompletionPreview: true,
 }
 
-const original = globalThis.fetch
-
 afterEach(() => {
-  globalThis.fetch = original
   resetQwenDiagnosticsForTests()
 })
 
@@ -202,7 +200,6 @@ describe("qwen autocomplete snippet selection hardening", () => {
     expect(text).not.toContain("edited_latest")
     expect(text).not.toContain("import_helper")
     expect(text).not.toContain("/repo/shared.h")
-    expect(text).not.toContain(cfg.apiKey)
     expect(text).not.toContain("unit.test")
   })
 
@@ -263,13 +260,23 @@ async function run(input: {
   root?: QwenRootPathSource
 }): Promise<{ body: string; prompt: string }> {
   let body = ""
-  globalThis.fetch = async (_url, init) => {
-    body = String(init?.body)
-    return new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
-  }
   const provider = new KiloQwenInlineCompletionProvider({
     cache: input.cache,
+    client: {
+      complete: async (request: QwenFimCompleteInput) => {
+        body = JSON.stringify({
+          providerID: request.providerID,
+          modelID: request.modelID,
+          prompt: request.prompt,
+          maxTokens: request.maxTokens,
+          temperature: request.temperature,
+        })
+        request.onResponse?.({ status: 200 })
+        return "return ok;"
+      },
+    } as QwenFimClient,
     edited: input.edited,
+    guard: () => false,
     imports: input.imports,
     log: () => {},
     opened: input.opened,

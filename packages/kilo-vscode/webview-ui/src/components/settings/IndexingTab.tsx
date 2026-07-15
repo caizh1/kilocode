@@ -253,6 +253,7 @@ const IndexingTab: Component = () => {
   const fields = createMemo(() => providerFields(selectedProvider()))
 
   const saveProvider = (next: ProviderId | undefined) => {
+    if (next === selectedProvider()) return
     setModelDraft(undefined)
     setDimensionDraft(undefined)
     if (next === "kilo") {
@@ -318,7 +319,7 @@ const IndexingTab: Component = () => {
     setPendingModelCommit(trimmed)
   }
 
-  const modelValue = () => modelDraft() ?? (cfg().model ?? "")
+  const modelValue = () => modelDraft() ?? cfg().model ?? ""
 
   const providerValue = (group: string, key: string) => {
     const draftKey = `${group}.${key}`
@@ -410,7 +411,7 @@ const IndexingTab: Component = () => {
   }
 
   const addDocumentPaths = (paths: string[]) => {
-    const next = [...new Set([...documentPaths(), ...paths])]
+    const next = [...new Set([...(effectiveRawCfg().documents?.paths ?? []), ...paths])]
     updateDocuments({ paths: next })
   }
 
@@ -494,6 +495,7 @@ const IndexingTab: Component = () => {
             current={providers().find((item) => item.value === selectedProvider())}
             value={(item) => item.value}
             label={(item) => item.label}
+            allowDuplicateSelectionEvents={false}
             onSelect={(item) => saveProvider(item?.value as ProviderId | undefined)}
             variant="secondary"
             size="small"

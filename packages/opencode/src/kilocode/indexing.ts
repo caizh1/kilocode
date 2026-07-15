@@ -37,6 +37,8 @@ import { IndexingWorker } from "./indexing-worker-client"
 import { LanceDBRuntime } from "./lancedb" // kilocode_change
 import { indexingWithKiloDefault, resolveKiloIndexingAuth, type KiloIndexingAuth } from "./indexing-auth" // kilocode_change
 import { applyInternalIndexingDefaults } from "./internal-offline" // kilocode_change
+import { MemoryDebug } from "./memory-debug"
+import { memoryExit } from "./indexing-memory"
 
 const log = Log.create({ service: "kilocode-indexing" })
 const auth = makeRuntime(Auth.Service, Auth.defaultLayer)
@@ -95,6 +97,32 @@ function pending(): z.infer<typeof IndexingStatus> {
       codeGraph: inactivePipeline("In Progress", "Code Graph initializing.", "Waiting for indexing worker."),
       rag: inactivePipeline("In Progress", "RAG indexing initializing.", "Waiting for indexing worker."),
       documents: inactivePipeline("In Progress", "Document RAG initializing.", "Waiting for indexing worker."),
+    },
+  }
+}
+
+function recovering(current: z.infer<typeof IndexingStatus>, err: unknown): z.infer<typeof IndexingStatus> {
+  const item = diagnostic("worker", "worker:memory-recovery", err)
+  const message = "Indexing worker is restarting in low-memory mode. Existing committed indexes remain available."
+  const pipelines = current.pipelines ?? pending().pipelines!
+  const pipeline = (value: IndexingPipelineStatus): IndexingPipelineStatus => {
+    if (value.state === "Disabled" || value.state === "Complete") return value
+    return {
+      ...value,
+      state: "In Progress",
+      message,
+      detail: item.message,
+      recentErrors: [item, ...(value.recentErrors ?? [])].slice(0, 5),
+    }
+  }
+  return {
+    ...current,
+    state: "In Progress",
+    message,
+    pipelines: {
+      codeGraph: pipeline(pipelines.codeGraph),
+      rag: pipeline(pipelines.rag),
+      documents: pipeline(pipelines.documents),
     },
   }
 }
@@ -378,6 +406,7 @@ export namespace KiloIndexing {
 
   const boot = async (hit: Cache): Promise<Entry> => {
     const dir = Instance.directory
+    void MemoryDebug.event({ name: "indexing.boot.begin", data: { workspace: MemoryDebug.hash(dir) } })
     const cfg = await AppRuntime.runPromise(Config.Service.use((svc) => svc.get()))
     if (process.env["KILO_DISABLE_CODEBASE_INDEXING"] === "vscode-no-workspace") {
       return track(hit, await inert(() => noWorkspace()))
@@ -400,6 +429,9 @@ export namespace KiloIndexing {
     const current = () => box.status
     let disposed = false
     let refreshTask: Promise<void> | undefined
+    let recoveryTimer: ReturnType<typeof setTimeout> | undefined
+    let recoveryAttempt = 0
+    let forcedLow = false
     let base: Entry
 
     const publish = async () => {
@@ -415,15 +447,40 @@ export namespace KiloIndexing {
     const status = Instance.bind((next: Status) => {
       if (disposed) return
       box.status = next
+      if (next.state === "Complete") recoveryAttempt = 0
       void report()
     })
     const telemetry = Instance.bind((event: IndexingTelemetryEvent) => {
       if (disposed) return
       trackTelemetry(event)
     })
+    const scheduleRecovery = Instance.bind(() => {
+      if (disposed || recoveryTimer) return
+      const delays = [1_000, 2_000, 5_000, 10_000, 30_000]
+      const delay = delays[Math.min(recoveryAttempt, delays.length - 1)]!
+      recoveryAttempt += 1
+      recoveryTimer = setTimeout(() => {
+        recoveryTimer = undefined
+        void refresh()
+      }, delay)
+    })
     const failure = Instance.bind((err: unknown) => {
       if (disposed) return
       base.initialized = false
+      const msg = err instanceof Error ? err.message : String(err)
+      if (memoryExit(null, msg)) {
+        forcedLow = true
+        base.engine = undefined
+        box.status = recovering(box.status, err)
+        log.warn("project indexing worker is recovering from memory pressure", {
+          err,
+          workspacePath: dir,
+          attempt: recoveryAttempt + 1,
+        })
+        void report()
+        scheduleRecovery()
+        return
+      }
       box.status = failed(err, "worker", "worker:failure")
       log.error("project indexing worker failed", { err, workspacePath: dir })
       void report()
@@ -442,7 +499,7 @@ export namespace KiloIndexing {
           const nextRag = new CodeIndexConfigManager(nextInput)
           if (needsVectorRuntime(nextRag)) await LanceDBRuntime.ensure(nextRag.getConfig().vectorStoreProvider)
           if (!base.engine) {
-            const engine = IndexingWorker.create(dir, root, { status, telemetry, failure })
+            const engine = IndexingWorker.create(dir, root, { status, telemetry, failure }, { forcedLow })
             base.engine = engine
             box.status = await engine.init(nextInput)
           } else {
@@ -471,11 +528,15 @@ export namespace KiloIndexing {
       async dispose() {
         if (disposed) return
         disposed = true
+        if (recoveryTimer) clearTimeout(recoveryTimer)
+        recoveryTimer = undefined
+        void MemoryDebug.event({ name: "indexing.dispose.begin", data: { workspace: MemoryDebug.hash(dir) } })
         GlobalBus.off("event", onConfig)
         base.initialized = false
         await base.engine?.dispose().catch((err) => {
           log.warn("failed to dispose project indexing worker", { err, workspacePath: dir })
         })
+        void MemoryDebug.event({ name: "indexing.dispose.end", data: { workspace: MemoryDebug.hash(dir) } })
       },
     }
     GlobalBus.on("event", onConfig)
@@ -490,7 +551,7 @@ export namespace KiloIndexing {
     )
       .then(async () => {
         if (hit.disposed) return
-        const engine = IndexingWorker.create(dir, root, { status, telemetry, failure })
+        const engine = IndexingWorker.create(dir, root, { status, telemetry, failure }, { forcedLow })
         base.engine = engine
         box.status = await engine.init(cfgInput)
         base.initialized = true
@@ -506,11 +567,7 @@ export namespace KiloIndexing {
         log.warn("failed to dispose failed project indexing worker", { err: disposeErr, workspacePath: dir })
       })
       base.engine = undefined
-      box.status = failed(err)
-      log.error("project indexing initialization failed", {
-        err,
-        workspacePath: dir,
-      })
+      failure(err)
       await report()
       return base
     }

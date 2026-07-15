@@ -42,6 +42,11 @@ export default [
     rules: { complexity: ["error", 150], "max-lines": "off" },
   },
   {
+    files: ["src/services/marketplace/generated/**/*.ts"],
+    // Generated from the shared OpenAPI contract; size and branch shape are controlled by the generator.
+    rules: { complexity: "off", "max-lines": "off" },
+  },
+  {
     files: ["webview-ui/agent-manager/AgentManagerApp.tsx"],
     // Raised from 3100 → 3200 for the experimental terminal tabs feature.
     // ~600 lines of terminal logic were extracted to ./terminal/* and

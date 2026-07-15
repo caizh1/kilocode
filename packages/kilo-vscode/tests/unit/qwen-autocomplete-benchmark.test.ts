@@ -134,55 +134,47 @@ describe("qwen autocomplete benchmark execution", () => {
     expect(calls).toBe(0)
   })
 
-  it("uses the configured /v1/completions endpoint and not legacy autocomplete URLs", async () => {
+  it("rejects legacy direct endpoint inputs without network access", async () => {
     const root = await temp()
     await write(root, fixture())
     const urls: string[] = []
 
-    const report = await runBenchmark({
-      mode: "real",
-      fixturesPath: ".",
-      cwd: root,
-      repeat: 1,
-      timeoutMs: 1_000,
-      endpoint: "http://unit.test/v1/completions",
-      model: "qwen-coder-30b0",
-      apiKeyEnv: "QWEN_TEST_KEY",
-      env: { QWEN_TEST_KEY: "secret" },
-      fetcher: (async (input) => {
-        urls.push(String(input))
-        return new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
-      }) as typeof fetch,
-    })
+    await expect(
+      runBenchmark({
+        mode: "real",
+        fixturesPath: ".",
+        cwd: root,
+        repeat: 1,
+        timeoutMs: 1_000,
+        endpoint: "http://unit.test/v1/completions",
+        model: "qwen-coder-30b0",
+        apiKeyEnv: "QWEN_TEST_KEY",
+        env: { QWEN_TEST_KEY: "secret" },
+        fetcher: (async (input) => {
+          urls.push(String(input))
+          return new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
+        }) as typeof fetch,
+      }),
+    ).rejects.toBeInstanceOf(BenchmarkConfigError)
 
-    expect(report.cases[0]!.pass).toBe(true)
-    expect(urls).toEqual(["http://unit.test/v1/completions"])
-    expect(urls.some((url) => url.includes("/kilo/fim"))).toBe(false)
-    expect(urls.some((url) => url.includes("/kilo/edit"))).toBe(false)
-    expect(urls.some((url) => url.includes("/v1/chat/completions"))).toBe(false)
+    expect(urls).toEqual([])
   })
 
-  it("keeps real-mode report prompts and api keys redacted by default", async () => {
+  it("keeps mock-mode report prompts redacted by default", async () => {
     const root = await temp()
     await write(root, fixture())
 
     const report = await runBenchmark({
-      mode: "real",
+      mode: "mock",
       fixturesPath: ".",
       cwd: root,
       repeat: 1,
       timeoutMs: 1_000,
-      endpoint: "http://unit.test/v1/completions",
       model: "qwen-coder-30b0",
-      apiKeyEnv: "QWEN_TEST_KEY",
-      env: { QWEN_TEST_KEY: "secret" },
-      fetcher: (async () => new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }))) as typeof fetch,
     })
 
     expect(report.config.redactedPrompts).toBe(true)
     expect(report.cases[0]!.observed.requestPreview?.prompt).toBe("[redacted prompt]")
-    expect(report.cases[0]!.observed.requestPreview?.apiKey).toBe("[redacted]")
-    expect(JSON.stringify(report)).not.toContain("secret")
     expect(JSON.stringify(report)).not.toContain("<|fim_prefix|>")
   })
 })

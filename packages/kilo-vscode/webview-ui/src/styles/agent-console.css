@@ -1,0 +1,149 @@
+[data-component="agent-console-input"] {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+[data-slot="agent-console-mode-row"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+[data-slot="agent-console-mode"] {
+  display: inline-flex;
+  min-width: 0;
+}
+
+[data-slot="agent-console-mode"] [data-slot="tabs-list"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--border-base) 72%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-raised-base) 72%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text-on-fill) 10%, transparent),
+    0 6px 20px color-mix(in srgb, var(--background-base) 32%, transparent);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+
+[data-slot="agent-console-mode"] [data-slot="tabs-trigger"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-weak);
+  font: inherit;
+  font-size: var(--kilo-font-size-12);
+  cursor: pointer;
+}
+
+[data-slot="agent-console-mode"] [data-slot="tabs-trigger"]:hover {
+  color: var(--text-base);
+  background: color-mix(in srgb, var(--surface-base-hover) 76%, transparent);
+}
+
+[data-slot="agent-console-mode"] [data-slot="tabs-trigger"][aria-selected="true"] {
+  color: var(--text-strong);
+  border-color: color-mix(in srgb, var(--border-strong-base) 54%, transparent);
+  background: color-mix(in srgb, var(--surface-raised-stronger) 82%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text-on-fill) 12%, transparent),
+    0 2px 8px color-mix(in srgb, var(--background-base) 30%, transparent);
+}
+
+[data-slot="agent-console-mode"] [data-component="icon"] {
+  color: currentColor;
+}
+
+[data-slot="agent-console-warning"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-warning, var(--vscode-editorWarning-foreground));
+  font-size: var(--kilo-font-size-11);
+  line-height: 1.35;
+  text-align: right;
+}
+
+[data-slot="agent-console-warning"] [data-component="icon"] {
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+[data-slot="agent-console-shell"] {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border-base) 78%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-raised-base) 72%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text-on-fill) 9%, transparent),
+    0 8px 24px color-mix(in srgb, var(--background-base) 24%, transparent);
+  backdrop-filter: blur(20px) saturate(130%);
+}
+
+[data-slot="agent-console-shell"] [data-component="input"] {
+  flex: 1;
+  min-width: 0;
+}
+
+[data-slot="agent-console-shell"] [data-slot="input-wrapper"] {
+  min-width: 0;
+}
+
+[data-slot="agent-console-shell"] [data-slot="input-input"] {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  max-height: 132px;
+  resize: vertical;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--border-weak-base) 85%, transparent);
+  border-radius: 8px;
+  outline: none;
+  color: var(--vscode-terminal-foreground, var(--text-base));
+  background: color-mix(in srgb, var(--vscode-terminal-background, #1e1e1e) 90%, transparent);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--kilo-font-size-13);
+  line-height: 1.45;
+}
+
+[data-slot="agent-console-shell"] [data-slot="input-input"]:focus {
+  border-color: var(--vscode-focusBorder, var(--border-strong-base));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 60%, transparent);
+}
+
+@media (max-width: 700px) {
+  [data-slot="agent-console-mode-row"] {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  [data-slot="agent-console-warning"] {
+    justify-content: flex-start;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="agent-console-mode"] [data-slot="tabs-trigger"] {
+    transition: none;
+  }
+}

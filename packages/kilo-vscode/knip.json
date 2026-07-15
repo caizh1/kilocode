@@ -15,6 +15,7 @@
     "script/*.ts"
   ],
   "project": ["src/**/*.ts", "webview-ui/**/*.{ts,tsx}"],
+  "ignore": ["src/services/marketplace/generated/market-api.ts"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["dependencies", "devDependencies", "optionalPeerDependencies", "unlisted", "unresolved", "binaries"]
 }

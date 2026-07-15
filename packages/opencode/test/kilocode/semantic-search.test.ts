@@ -33,6 +33,36 @@ const baseCtx = {
   ask: () => Effect.void,
 } satisfies Tool.Context
 
+function stub(state: KiloIndexing.Status["state"] = "Complete") {
+  const pipeline = {
+    state,
+    message: state,
+    processedFiles: 1,
+    totalFiles: 1,
+    percent: state === "Complete" ? 100 : 50,
+    errorCount: state === "Error" ? 1 : 0,
+    staleCount: 0,
+    skippedCount: 0,
+  }
+  const ready = spyOn(KiloIndexing, "ready").mockReturnValue(true)
+  const current = spyOn(KiloIndexing, "current").mockResolvedValue({
+    state,
+    message: state,
+    processedFiles: 1,
+    totalFiles: 1,
+    percent: state === "Complete" ? 100 : 50,
+    pipelines: {
+      codeGraph: pipeline,
+      rag: pipeline,
+      documents: pipeline,
+    },
+  })
+  return () => {
+    ready.mockRestore()
+    current.mockRestore()
+  }
+}
+
 describe("tool.semantic_search", () => {
   test("describes code snippet results", async () => {
     const tool = await initTool()
@@ -53,6 +83,7 @@ describe("tool.semantic_search", () => {
       fn: async () => {
         const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
         const search = spyOn(KiloIndexing, "search").mockResolvedValue([])
+        const restore = stub()
 
         try {
           const tool = await initTool()
@@ -81,6 +112,7 @@ describe("tool.semantic_search", () => {
           expect(search).toHaveBeenCalledWith("authentication middleware", path.normalize("src/tool"))
           expect(result.output).toBe('No relevant code found for "authentication middleware" in src/tool.')
         } finally {
+          restore()
           search.mockRestore()
         }
       },
@@ -93,6 +125,7 @@ describe("tool.semantic_search", () => {
       directory: tmp.path,
       fn: async () => {
         const search = spyOn(KiloIndexing, "search").mockResolvedValue([])
+        const restore = stub()
 
         try {
           const tool = await initTool()
@@ -102,6 +135,7 @@ describe("tool.semantic_search", () => {
           expect(result.output).toBe('No relevant code found for "database connection".')
           expect(result.metadata.results).toEqual([])
         } finally {
+          restore()
           search.mockRestore()
         }
       },
@@ -140,6 +174,7 @@ describe("tool.semantic_search", () => {
             payload: null,
           },
         ] as never)
+        const restore = stub()
 
         try {
           const tool = await initTool()
@@ -158,6 +193,7 @@ describe("tool.semantic_search", () => {
           expect(result.output).toContain("1. src/auth/index.ts:10-18 (score 0.8123)")
           expect(result.output).toContain("export const verify = () => true")
         } finally {
+          restore()
           search.mockRestore()
         }
       },
@@ -178,6 +214,65 @@ describe("tool.semantic_search", () => {
           )
           expect(search).not.toHaveBeenCalled()
         } finally {
+          search.mockRestore()
+        }
+      },
+    })
+  })
+
+  test("returns a short fallback without asking permission when indexing is not ready", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const ready = spyOn(KiloIndexing, "ready").mockReturnValue(false)
+        const search = spyOn(KiloIndexing, "search").mockResolvedValue([])
+        const requests: unknown[] = []
+
+        try {
+          const tool = await initTool()
+          const result = await rt.runPromise(
+            tool.execute(
+              { query: "session recovery" },
+              {
+                ...baseCtx,
+                ask: (req) => {
+                  requests.push(req)
+                  return Effect.void
+                },
+              },
+            ),
+          )
+
+          expect(result.output).toContain("Semantic index is not ready yet")
+          expect(result.output).toContain("do not repeatedly retry semantic_search")
+          expect(result.output.length).toBeLessThan(240)
+          expect(requests).toHaveLength(0)
+          expect(search).not.toHaveBeenCalled()
+        } finally {
+          ready.mockRestore()
+          search.mockRestore()
+        }
+      },
+    })
+  })
+
+  test("marks empty in-progress results as inconclusive", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const search = spyOn(KiloIndexing, "search").mockResolvedValue([])
+        const restore = stub("In Progress")
+
+        try {
+          const tool = await initTool()
+          const result = await rt.runPromise(tool.execute({ query: "startup flow" }, baseCtx))
+
+          expect(result.output).toContain("No conclusive semantic results yet")
+          expect(result.output).not.toContain("No relevant code found")
+        } finally {
+          restore()
           search.mockRestore()
         }
       },

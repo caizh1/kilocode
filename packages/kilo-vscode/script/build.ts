@@ -2,11 +2,22 @@
 import { $ } from "bun"
 import { join } from "node:path"
 import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
-import { copyCodeGraphParserWorker, copyTreeSitterResources } from "../src/services/cli-backend/cli-resources"
+import {
+  copyCodeGraphParserWorker,
+  copyIndexingProcess,
+  copyTreeSitterResources,
+  indexingProcessForBinary,
+} from "../src/services/cli-backend/cli-resources"
 import { ensureFfmpegForTarget } from "./ffmpeg-helper"
 import { ensureRipgrepForTarget } from "./ripgrep-helper"
 import { copyLanceDBRuntime } from "./lancedb-helper"
 import { ensurePopplerForTarget } from "./poppler-helper"
+import {
+  applyPackagedChipmateServer,
+  resolvePackagedChipmateServer,
+  restorePackagedManifest,
+  type PackagedChipmateServerDefaults,
+} from "./chipmate-server-defaults"
 
 type Target = {
   target: string
@@ -22,6 +33,15 @@ const packageJson = await Bun.file(packageJsonPath).json()
 const version = process.env.KILO_VERSION ? process.env.KILO_VERSION : packageJson.version
 const prerelease = process.env.KILO_PRE_RELEASE === "true"
 const internal = process.argv.includes("--internal-offline") || process.env.CHIPMATE_INTERNAL_OFFLINE === "1"
+const targetsArg = process.argv.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length)
+const requested = targetsArg
+  ? new Set(
+      targetsArg
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    )
+  : undefined
 
 console.log(`Building VSCode extension version: ${version}${prerelease ? " (pre-release)" : ""}`)
 if (internal) console.log("Using internal offline baseline build mode")
@@ -35,13 +55,14 @@ const cleanPackageJson = JSON.stringify(packageJson, null, 2) + "\n"
 const render = await localRenderDefaults(rootDir)
 const indexing = await localIndexingDefaults(rootDir)
 const marketplace = await localMarketplaceDefaults(rootDir)
-const hasLocalPackagedDefaults = Boolean(render.word || render.mermaid || indexing.openaiCompatibleBaseUrl || marketplace.baseUrl)
+const chipmate = await localChipmateServerDefaults(rootDir, render, marketplace)
+const hasLocalPackagedDefaults = Boolean(chipmate.baseUrl || indexing.openaiCompatibleBaseUrl)
 if (hasLocalPackagedDefaults) {
-	applyRenderDefaults(packageJson, render)
-	applyIndexingDefaults(packageJson, indexing)
-	applyMarketplaceDefaults(packageJson, marketplace)
-	await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n")
-	console.log("Using local defaults for packaged VSIX manifest.")
+  applyPackagedChipmateServer(packageJson, chipmate)
+  applyIndexingDefaults(packageJson, indexing)
+  applyMarketplaceDefaults(packageJson, { baseUrl: chipmate.marketplace })
+  await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n")
+  console.log("Using local defaults for packaged VSIX manifest.")
 }
 
 const cliDistDir = process.env.CLI_DIST_DIR || join(import.meta.dir, "..", "..", "opencode", "dist")
@@ -63,13 +84,6 @@ const publicTargets: Target[] = [
 ]
 const internalTargets: Target[] = [
   {
-    target: "linux-x64-baseline",
-    cliDir: "@kilocode/cli-linux-x64-baseline",
-    binary: "kilo",
-    vsceTarget: "linux-x64",
-    internal: true,
-  },
-  {
     target: "win32-x64-baseline",
     cliDir: "@kilocode/cli-windows-x64-baseline",
     binary: "kilo.exe",
@@ -77,7 +91,28 @@ const internalTargets: Target[] = [
     internal: true,
   },
 ]
-const targets = internal ? internalTargets : publicTargets
+const extras: Target[] = [
+  {
+    target: "linux-x64",
+    cliDir: "@kilocode/cli-linux-x64",
+    binary: "kilo",
+    internal: true,
+  },
+  {
+    target: "linux-x64-baseline",
+    cliDir: "@kilocode/cli-linux-x64-baseline",
+    binary: "kilo",
+    vsceTarget: "linux-x64",
+    internal: true,
+  },
+]
+const available = internal ? [...internalTargets, ...extras] : publicTargets
+const targets = requested
+  ? available.filter((item) => requested.has(item.target))
+  : internal
+    ? internalTargets
+    : available
+if (requested && targets.length === 0) throw new Error(`No VSIX targets matched --targets=${targetsArg}`)
 
 const binDir = join(import.meta.dir, "..", "bin")
 const distDir = join(import.meta.dir, "..", "dist")
@@ -104,18 +139,20 @@ await $`bun run check-types`
 await $`bun run lint`
 const esbuildArgs = internal ? ["--production", "--internal-offline"] : ["--production"]
 await $`node ${join(import.meta.dir, "..", "esbuild.js")} ${esbuildArgs}`.env({
-	...process.env,
-	...(internal && { CHIPMATE_INTERNAL_OFFLINE: "1" }),
-	...(internal &&
-		indexing.openaiCompatibleBaseUrl && {
-			KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL: indexing.openaiCompatibleBaseUrl,
-		}),
+  ...process.env,
+  ...(internal && { CHIPMATE_INTERNAL_OFFLINE: "1" }),
+  ...(internal &&
+    indexing.openaiCompatibleBaseUrl && {
+      KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL: indexing.openaiCompatibleBaseUrl,
+    }),
 })
 if (internal) removeMaps(distDir)
 
 try {
   for (const config of targets) {
     console.log(`\n🎯 Processing target: ${config.target}`)
+    packageJson.chipmatePackageTarget = config.target
+    await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n")
 
     if (existsSync(binDir)) {
       rmSync(binDir, { recursive: true, force: true })
@@ -139,6 +176,7 @@ try {
     await $`cp ${sourceSnapshot} ${targetSnapshot}`
     await copyTreeSitterResources(sourceBinary, targetBinary)
     await copyCodeGraphParserWorker(sourceBinary, targetBinary)
+    await copyIndexingProcess(sourceBinary, targetBinary)
 
     if (config.binary !== "kilo.exe") {
       chmodSync(targetBinary, 0o755)
@@ -171,6 +209,7 @@ try {
       ...process.env,
       npm_config_ignore_scripts: "true",
     })
+    await verifyPackageTarget(vsixPath, config.target)
     if (config.internal) {
       await verifyInternalVsix(vsixPath, config)
       await verifyInternalModelsSnapshot(vsixPath)
@@ -179,54 +218,82 @@ try {
     console.log(`  ✅ Created ${vsixPath}`)
   }
 } finally {
-	if (hasLocalPackagedDefaults) {
-		await Bun.write(packageJsonPath, cleanPackageJson)
-		console.log("Restored package.json after local default injection.")
-	}
+  await restorePackagedManifest(packageJsonPath, cleanPackageJson)
+  console.log("Restored package.json after packaging.")
 }
 
 console.log("\n✨ All VSIX packages built successfully!")
 
 type RenderDefaults = {
-	word?: string
-	mermaid?: string
+  word?: string
+  mermaid?: string
 }
 
 type IndexingDefaults = {
-	openaiCompatibleBaseUrl?: string
+  openaiCompatibleBaseUrl?: string
 }
 
 type MarketplaceDefaults = {
-	baseUrl?: string
+  baseUrl?: string
 }
 
 async function localRenderDefaults(root: string): Promise<RenderDefaults> {
-	const env = await localEnv(join(root, ".env.local"))
-	const json = await localJson(join(root, ".kilo-render-defaults.local.json"))
-  const base = trim(process.env.CHIPMATE_RENDER_SERVICE_BASE_URL) || trim(env.CHIPMATE_RENDER_SERVICE_BASE_URL) || trim(json.base)
+  const env = await localEnv(join(root, ".env.local"))
+  const json = await localJson(join(root, ".kilo-render-defaults.local.json"))
+  const base =
+    trim(process.env.CHIPMATE_RENDER_SERVICE_BASE_URL) || trim(env.CHIPMATE_RENDER_SERVICE_BASE_URL) || trim(json.base)
   return {
-    word: trim(process.env.KILO_WORD_RENDER_ENDPOINT) || trim(env.KILO_WORD_RENDER_ENDPOINT) || trim(json.word) || route(base, "word"),
-    mermaid: trim(process.env.KILO_MERMAID_RENDER_ENDPOINT) || trim(env.KILO_MERMAID_RENDER_ENDPOINT) || trim(json.mermaid) || route(base, "mermaid"),
-	}
+    word:
+      trim(process.env.KILO_WORD_RENDER_ENDPOINT) ||
+      trim(env.KILO_WORD_RENDER_ENDPOINT) ||
+      trim(json.word) ||
+      route(base, "word"),
+    mermaid:
+      trim(process.env.KILO_MERMAID_RENDER_ENDPOINT) ||
+      trim(env.KILO_MERMAID_RENDER_ENDPOINT) ||
+      trim(json.mermaid) ||
+      route(base, "mermaid"),
+  }
 }
 
 async function localIndexingDefaults(root: string): Promise<IndexingDefaults> {
-	const env = await localEnv(join(root, ".env.local"))
-	const json = await localJson(join(root, ".kilo-render-defaults.local.json"))
-	return {
-		openaiCompatibleBaseUrl:
-			trim(process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL) ||
-			trim(env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL) ||
-			trim(json.indexing?.openaiCompatibleBaseUrl),
-	}
+  const env = await localEnv(join(root, ".env.local"))
+  const json = await localJson(join(root, ".kilo-render-defaults.local.json"))
+  return {
+    openaiCompatibleBaseUrl:
+      trim(process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL) ||
+      trim(env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL) ||
+      trim(json.indexing?.openaiCompatibleBaseUrl),
+  }
 }
 
 async function localMarketplaceDefaults(root: string): Promise<MarketplaceDefaults> {
-	const env = await localEnv(join(root, ".env.local"))
-	const json = await localJson(join(root, ".kilo-render-defaults.local.json"))
-	return {
-		baseUrl: trim(process.env.KILO_MARKETPLACE_BASE_URL) || trim(env.KILO_MARKETPLACE_BASE_URL) || trim(json.marketplace?.baseUrl),
-	}
+  const env = await localEnv(join(root, ".env.local"))
+  const json = await localJson(join(root, ".kilo-render-defaults.local.json"))
+  return {
+    baseUrl:
+      trim(process.env.KILO_MARKETPLACE_BASE_URL) ||
+      trim(env.KILO_MARKETPLACE_BASE_URL) ||
+      trim(json.marketplace?.baseUrl),
+  }
+}
+
+async function localChipmateServerDefaults(
+  root: string,
+  render: RenderDefaults,
+  marketplace: MarketplaceDefaults,
+): Promise<PackagedChipmateServerDefaults> {
+  const env = await localEnv(join(root, ".env.local"))
+  const json = await localJson(join(root, ".kilo-render-defaults.local.json"))
+  return resolvePackagedChipmateServer({
+    baseUrl:
+      trim(process.env.CHIPMATE_SERVER_BASE_URL) ||
+      trim(env.CHIPMATE_SERVER_BASE_URL) ||
+      trim(json.chipmateServer?.baseUrl),
+    marketplace: marketplace.baseUrl,
+    word: render.word,
+    mermaid: render.mermaid,
+  })
 }
 
 async function localEnv(file: string): Promise<Record<string, string>> {
@@ -247,46 +314,51 @@ async function localEnv(file: string): Promise<Record<string, string>> {
   )
 }
 
-async function localJson(file: string): Promise<RenderDefaults & { base?: string; indexing?: IndexingDefaults; marketplace?: MarketplaceDefaults }> {
-	if (!existsSync(file)) return {}
-	const data = await Bun.file(file).json()
-	const legacy = trim(data.wordRender?.remoteEndpoint)
-	return {
-		base: trim(data.renderService?.baseUrl) || trim(data.renderService?.remoteEndpoint) || serviceBase(legacy),
-		word: endpoint(trim(data.wordRender?.endpoint) || legacy, "word"),
-		mermaid: endpoint(trim(data.mermaidRender?.endpoint) || trim(data.mermaidRender?.remoteEndpoint), "mermaid"),
-		indexing: {
-			openaiCompatibleBaseUrl:
-				trim(data.indexing?.openaiCompatible?.baseUrl) || trim(data.indexing?.openaiCompatibleBaseUrl),
-		},
-		marketplace: {
-			baseUrl: trim(data.marketplace?.baseUrl),
-		},
-	}
-}
-
-function applyRenderDefaults(pkg: typeof packageJson, render: RenderDefaults): void {
-	const props = pkg.contributes?.configuration?.properties
-	if (!props) throw new Error("Cannot inject local render defaults: package.json configuration properties are missing.")
-	if (render.word) props["kilo.documents.wordRender.remoteEndpoint"].default = render.word
-	if (render.mermaid) props["kilo.documents.mermaidRender.remoteEndpoint"].default = render.mermaid
+async function localJson(file: string): Promise<
+  RenderDefaults & {
+    base?: string
+    indexing?: IndexingDefaults
+    marketplace?: MarketplaceDefaults
+    chipmateServer?: { baseUrl?: string }
+  }
+> {
+  if (!existsSync(file)) return {}
+  const data = await Bun.file(file).json()
+  const legacy = trim(data.wordRender?.remoteEndpoint)
+  return {
+    base: trim(data.renderService?.baseUrl) || trim(data.renderService?.remoteEndpoint) || serviceBase(legacy),
+    word: endpoint(trim(data.wordRender?.endpoint) || legacy, "word"),
+    mermaid: endpoint(trim(data.mermaidRender?.endpoint) || trim(data.mermaidRender?.remoteEndpoint), "mermaid"),
+    indexing: {
+      openaiCompatibleBaseUrl:
+        trim(data.indexing?.openaiCompatible?.baseUrl) || trim(data.indexing?.openaiCompatibleBaseUrl),
+    },
+    marketplace: {
+      baseUrl: trim(data.marketplace?.baseUrl),
+    },
+    chipmateServer: {
+      baseUrl: trim(data.chipmateServer?.baseUrl),
+    },
+  }
 }
 
 function applyIndexingDefaults(pkg: typeof packageJson, indexing: IndexingDefaults): void {
-	const props = pkg.contributes?.configuration?.properties
-	if (!props) throw new Error("Cannot inject local indexing defaults: package.json configuration properties are missing.")
-	if (indexing.openaiCompatibleBaseUrl) {
-		props["kilo.indexing.openaiCompatible.baseUrl"].default = indexing.openaiCompatibleBaseUrl
-	}
+  const props = pkg.contributes?.configuration?.properties
+  if (!props)
+    throw new Error("Cannot inject local indexing defaults: package.json configuration properties are missing.")
+  if (indexing.openaiCompatibleBaseUrl) {
+    props["kilo.indexing.openaiCompatible.baseUrl"].default = indexing.openaiCompatibleBaseUrl
+  }
 }
 
 function applyMarketplaceDefaults(pkg: typeof packageJson, marketplace: MarketplaceDefaults): void {
-	const props = pkg.contributes?.configuration?.properties
-	if (!props) throw new Error("Cannot inject local marketplace defaults: package.json configuration properties are missing.")
-	if (marketplace.baseUrl) {
-		props["kilo.marketplace.baseUrl"].default = marketplace.baseUrl
-		if (internal) props["kilo.marketplace.skillsOnly"].default = true
-	}
+  const props = pkg.contributes?.configuration?.properties
+  if (!props)
+    throw new Error("Cannot inject local marketplace defaults: package.json configuration properties are missing.")
+  if (marketplace.baseUrl) {
+    props["kilo.marketplace.baseUrl"].default = marketplace.baseUrl
+    if (internal) props["kilo.marketplace.skillsOnly"].default = true
+  }
 }
 
 function route(base: string | undefined, name: "word" | "mermaid"): string | undefined {
@@ -332,6 +404,7 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
   if (!files) return
   const required = [
     `extension/bin/${config.binary}`,
+    `extension/bin/${indexingProcessForBinary(config.binary)}`,
     "extension/bin/models-snapshot.json",
     "extension/bin/codegraph-parser-worker.mjs",
     "extension/bin/tree-sitter/tree-sitter.wasm",
@@ -368,7 +441,9 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
       throw new Error("Internal VSIX missing bundled Poppler data files.")
     }
   }
-  const forbidden = files.filter((file) => file === "extension/bin/ffmpeg" || file === "extension/bin/ffmpeg.exe" || file.endsWith(".map"))
+  const forbidden = files.filter(
+    (file) => file === "extension/bin/ffmpeg" || file === "extension/bin/ffmpeg.exe" || file.endsWith(".map"),
+  )
   if (forbidden.length > 0) {
     throw new Error(`Internal VSIX contains forbidden files:\n${forbidden.join("\n")}`)
   }
@@ -396,7 +471,11 @@ async function verifyInternalMarketplaceManifest(vsix: string): Promise<void> {
   if (!unzip) throw new Error("Cannot verify internal marketplace manifest because unzip is not available.")
   const out = await $`${unzip} -p ${vsix} extension/package.json`.quiet()
   const manifest = JSON.parse(out.text()) as {
-    contributes?: { configuration?: { properties?: Record<string, { default?: unknown }> } | Array<{ properties?: Record<string, { default?: unknown }> }> }
+    contributes?: {
+      configuration?:
+        | { properties?: Record<string, { default?: unknown }> }
+        | Array<{ properties?: Record<string, { default?: unknown }> }>
+    }
   }
   const props = manifestConfigurationProperties(manifest)
   const baseUrl = props["kilo.marketplace.baseUrl"]?.default
@@ -409,8 +488,22 @@ async function verifyInternalMarketplaceManifest(vsix: string): Promise<void> {
   }
 }
 
+async function verifyPackageTarget(vsix: string, target: string): Promise<void> {
+  const unzip = Bun.which("unzip")
+  if (!unzip) throw new Error("Cannot verify VSIX package target because unzip is not available.")
+  const out = await $`${unzip} -p ${vsix} extension/package.json`.quiet()
+  const manifest = JSON.parse(out.text()) as { chipmatePackageTarget?: unknown }
+  if (manifest.chipmatePackageTarget !== target) {
+    throw new Error(`VSIX package target must be ${target}.`)
+  }
+}
+
 function manifestConfigurationProperties(manifest: {
-  contributes?: { configuration?: { properties?: Record<string, { default?: unknown }> } | Array<{ properties?: Record<string, { default?: unknown }> }> }
+  contributes?: {
+    configuration?:
+      | { properties?: Record<string, { default?: unknown }> }
+      | Array<{ properties?: Record<string, { default?: unknown }> }>
+  }
 }): Record<string, { default?: unknown }> {
   const configuration = manifest.contributes?.configuration
   if (!configuration) return {}

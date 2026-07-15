@@ -275,6 +275,7 @@ export const layer: Layer.Layer<
               ...(Flag.KILO_EXPERIMENTAL_LSP_TOOL ? [tool.lsp] : []),
             ],
             kilo,
+            !KiloToolRegistry.internal(),
           ),
           // kilocode_change end
           task: tool.task,
@@ -342,9 +343,10 @@ export const layer: Layer.Layer<
 
         return true
       })
+      const kiloFiltered = yield* KiloToolRegistry.resolve(filtered, config) // kilocode_change
 
       return yield* Effect.forEach(
-        filtered,
+        kiloFiltered, // kilocode_change
         Effect.fnUntraced(function* (tool: Tool.Def) {
           using _ = log.time(tool.id)
           const output = {

@@ -28,9 +28,11 @@ export async function fetchMarketplaceData(
   ctx: MarketplaceActionContext,
   project: string | undefined,
   dir: string | undefined,
+  apiKey?: string,
+  details = true,
 ): Promise<MarketplaceDataResponse> {
-  const skills = dir ? await fetchSkills(ctx, dir) : undefined
-  return ctx.marketplace.fetchData(project, skills)
+  const skills = dir ? await fetchMarketplaceSkills(ctx, dir) : undefined
+  return ctx.marketplace.fetchData(project, skills, apiKey, details)
 }
 
 export async function installMarketplaceItem(
@@ -94,7 +96,7 @@ export async function removeMarketplaceItemFromAllScopes(
   }
 }
 
-async function fetchSkills(ctx: MarketplaceActionContext, dir: string) {
+export async function fetchMarketplaceSkills(ctx: MarketplaceActionContext, dir: string) {
   try {
     const client = await ctx.connection.getClientAsync(dir)
     const { data } = await retry(() => client.app.skills({ directory: dir }, { throwOnError: true }))
@@ -124,6 +126,14 @@ async function invalidate(
   await client.instance.dispose({ directory: dir }).catch((err: unknown) => {
     console.warn("[Kilo New] instance.dispose() after marketplace change failed:", err)
   })
+}
+
+export async function invalidateMarketplaceSkills(
+  ctx: { connection: KiloConnectionService },
+  scope: "project" | "global",
+  dir: string,
+) {
+  await invalidate(ctx, scope, dir)
 }
 
 async function removeLegacyMcp(

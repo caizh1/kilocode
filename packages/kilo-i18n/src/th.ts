@@ -1,4 +1,7 @@
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   // Kilo Gateway provider translations
   "provider.connect.kiloGateway.line1":
     "Kilo Gateway ให้คุณเข้าถึงชุดโมเดลที่คัดสรรมาอย่างดีและเชื่อถือได้สำหรับตัวแทนเขียนโค้ด",
@@ -106,4 +109,6 @@ export const dict = {
   "ui.message.feedback.helpful": "สิ่งนี้มีประโยชน์",
   "ui.message.feedback.notHelpful": "สิ่งนี้ไม่มีประโยชน์",
   "ui.message.feedback.clearRating": "ล้างการให้คะแนน",
+  "marketplace.aligned.unpublish": "ยกเลิกการเผยแพร่ Skill",
+  "marketplace.aligned.unpublished": "ยกเลิกการเผยแพร่แล้ว",
 }

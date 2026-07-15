@@ -1,6 +1,6 @@
 # qwen-direct Phase 3B/3C Offline Validation
 
-This runbook validates the opt-in import definitions and root path autocomplete context sources on an offline VS Code machine that can reach the internal qwen-coder `/v1/completions` endpoint. Do not run Bun or benchmark CLI commands on the offline machine.
+This runbook validates the opt-in import definitions and root path autocomplete context sources on an offline VS Code machine with a connected openai-compatible provider exposing the exact `qwen-coder-30b0` model. Requests use the shared local CLI `/kilo/qwen-fim` route. Do not run Bun or benchmark CLI commands on the offline machine.
 
 ## Scope
 
@@ -20,13 +20,13 @@ Excluded:
 
 ## Required Base Settings
 
+Configure and connect the provider in ChipMate first so its authentication is stored in SecretStorage. Do not put a provider endpoint or API key under `kilo.autocomplete.*`.
+
 ```json
 {
-  "kilo.autocomplete.enabled": true,
-  "kilo.autocomplete.provider": "qwen-direct",
-  "kilo.autocomplete.qwen.endpoint": "http://<internal-host>/v1/completions",
-  "kilo.autocomplete.qwen.model": "qwen-coder-30b0",
-  "kilo.autocomplete.qwen.apiKey": "<redacted>",
+  "kilo-code.new.autocomplete.provider": "<connected-provider-id>",
+  "kilo-code.new.autocomplete.model": "qwen-coder-30b0",
+  "kilo-code.new.autocomplete.enableAutoTrigger": true,
   "kilo.autocomplete.qwen.trace": true,
   "kilo.autocomplete.qwen.logLevel": "debug",
   "kilo.autocomplete.qwen.logPromptPreview": false

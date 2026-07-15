@@ -74,8 +74,8 @@ describe("validAutocompleteSetting", () => {
     expect(validAutocompleteSetting("model", "mercury-edit-2")).toBe(true)
   })
 
-  it("rejects unknown providers and models", () => {
-    expect(validAutocompleteSetting("provider", "openrouter")).toBe(false)
+  it("allows configured provider IDs while rejecting unknown models", () => {
+    expect(validAutocompleteSetting("provider", "openrouter")).toBe(true)
     expect(validAutocompleteSetting("model", "gpt-5")).toBe(false)
   })
 

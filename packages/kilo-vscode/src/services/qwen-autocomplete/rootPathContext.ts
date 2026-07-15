@@ -7,6 +7,7 @@ import { getFullLanguageName, getQueryForFile } from "../autocomplete/continuede
 import { qwenAutocompleteEnabled } from "./config"
 import { isQwenSecurityConcern, shouldGuardQwenContextDocument, type QwenSafetyGuard } from "./guard"
 import type { QwenAutocompleteHelperVars } from "./helperVars"
+import { qwenLanguageId } from "./language"
 import { isQwenSupportedDocument } from "./prefilter"
 import { QwenAutocompleteSnippetType, type QwenAutocompleteCodeSnippet } from "./snippets"
 import type { QwenAutocompleteConfig, QwenRootPathBlockedReason } from "./types"
@@ -200,17 +201,12 @@ function hidden(file: string): boolean {
 function documentFor(uri: vscode.Uri): vscode.TextDocument {
   return {
     uri,
-    languageId: languageId(uri.fsPath || uri.path),
+    languageId: qwenLanguageId(uri.fsPath || uri.path),
     version: 0,
     lineCount: 0,
     getText: () => "",
     lineAt: () => ({ text: "", range: new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0)) }),
   } as unknown as vscode.TextDocument
-}
-
-function languageId(file: string): string {
-  const ext = path.extname(file).toLowerCase()
-  return ext === ".c" || ext === ".h" ? "c" : "cpp"
 }
 
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {

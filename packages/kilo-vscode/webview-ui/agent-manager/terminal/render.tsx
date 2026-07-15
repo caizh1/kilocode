@@ -73,19 +73,33 @@ export function renderTerminalTab(deps: TerminalTabRenderDeps): JSX.Element {
  * exists; that boundary never flips under a live xterm, since removing
  * the last terminal disposes its instance first.
  */
-export function renderTerminalLayer(props: { state: TerminalStateControls }): JSX.Element {
-  const layerActive = () => props.state.activeId() !== undefined
+export function renderTerminalLayer(props: {
+  state: TerminalStateControls
+  console?: () => boolean
+  focus?: () => boolean
+}): JSX.Element {
+  const consoleMode = () => props.console?.() === true
+  const currentId = () => props.state.activeId() ?? props.state.current()[0]?.id
+  const layerActive = () => consoleMode() || props.state.activeId() !== undefined
   const slotVisible = (termId: string, contextKey: string) =>
-    props.state.activeId() === termId && props.state.currentKey() === contextKey
+    currentId() === termId && props.state.currentKey() === contextKey
   return (
     <Show when={props.state.all().length > 0}>
-      <div class={`am-terminal-layer ${layerActive() ? "am-terminal-layer-active" : ""}`}>
+      <div
+        class={`am-terminal-layer ${layerActive() ? "am-terminal-layer-active" : ""} ${consoleMode() ? "am-terminal-layer-console" : ""}`}
+      >
         <For each={props.state.all()}>
           {(term) => {
             const visible = () => slotVisible(term.id, term.contextKey)
             return (
               <div class={`am-terminal-slot ${visible() ? "am-terminal-slot-visible" : ""}`}>
-                <TerminalTab terminalId={term.id} wsUrl={term.wsUrl} active={visible()} />
+                <TerminalTab
+                  terminalId={term.id}
+                  wsUrl={term.wsUrl}
+                  active={visible()}
+                  focus={props.focus?.()}
+                  bind={(writer) => props.state.bind(term.id, writer)}
+                />
               </div>
             )
           }}

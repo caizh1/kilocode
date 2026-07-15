@@ -44,7 +44,7 @@ suite("Extension Test Suite", () => {
     assert.strictEqual(config.get("kilo.agentTerminal.enabled"), false)
     assert.strictEqual(config.get("kilo.autocomplete.enabled"), false)
     assert.strictEqual(config.get("kilo.autocomplete.provider"), "none")
-    assert.ok(config.has("kilo.autocomplete.qwen.endpoint"))
+    assert.ok(!config.has("kilo.autocomplete.qwen.endpoint"))
     assert.ok(config.has("kilo.autocomplete.qwen.model"))
     assert.ok(config.has("kilo.autocomplete.qwen.modelTimeout"))
     assert.ok(config.has("kilo.documents.wordRender.remoteEndpoint"))
@@ -88,7 +88,6 @@ suite("Extension Test Suite", () => {
       "kilo.agentTerminal.enabled",
       "kilo.autocomplete.enabled",
       "kilo.autocomplete.provider",
-      "kilo.autocomplete.qwen.endpoint",
       "kilo.autocomplete.qwen.model",
     ]) {
       assert.ok(Object.prototype.hasOwnProperty.call(properties, key), `${key} must remain contributed`)

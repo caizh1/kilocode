@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { toIndexingConfigInput } from "../../../src/config"
 import { CodeIndexConfigManager, type IndexingConfigInput } from "../../../src/indexing/config-manager"
 
 function createInput(input: Partial<IndexingConfigInput> = {}): IndexingConfigInput {
@@ -12,6 +13,29 @@ function createInput(input: Partial<IndexingConfigInput> = {}): IndexingConfigIn
 }
 
 describe("CodeIndexConfigManager", () => {
+  test("keeps public RAG disabled while defaulting document discovery bounds", () => {
+    const input = toIndexingConfigInput(undefined)
+    const cfg = new CodeIndexConfigManager(input)
+
+    expect(input.enabled).toBe(false)
+    expect(cfg.currentDocuments).toMatchObject({
+      enabled: false,
+      paths: ["."],
+      maxFiles: 5_000,
+      maxFileBytes: 25 * 1024 * 1024,
+      maxExtractedBytesPerFile: 1024 * 1024,
+    })
+  })
+
+  test("preserves explicit RAG and document opt-outs", () => {
+    const input = toIndexingConfigInput({ enabled: false, documents: { enabled: false, paths: [] } })
+    const cfg = new CodeIndexConfigManager(input)
+
+    expect(input.enabled).toBe(false)
+    expect(cfg.currentDocuments.enabled).toBe(false)
+    expect(cfg.currentDocuments.paths).toEqual(["."])
+  })
+
   test("uses default ollama base URL when omitted", () => {
     const cfg = new CodeIndexConfigManager(
       createInput({

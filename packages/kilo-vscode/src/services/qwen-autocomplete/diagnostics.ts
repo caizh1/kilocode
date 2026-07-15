@@ -5,6 +5,8 @@ import { readQwenAutocompleteConfig } from "./config"
 import type { QwenAutocompleteHelperVars } from "./helperVars"
 import { QwenFimRequestError } from "./QwenFimClient"
 import type { QwenAutocompleteConfig, QwenAutocompleteLogLevel } from "./types"
+import { autocompleteConfig, autocompleteScope } from "../autocomplete/settings"
+import { autocompleteResource } from "../autocomplete/workspace"
 
 export type QwenDiagnosticPhase =
   | "provider-enter"
@@ -34,6 +36,7 @@ export type QwenEmptyReason =
   | "empty-after-postprocess"
   | "render-rejected"
   | "selected-completion-invalid"
+  | "multi-cursor"
 
 export type QwenCacheStatus = "disabled" | "miss" | "hit" | "render-rejected"
 
@@ -43,7 +46,13 @@ export type QwenDiagnosticInput = {
   phase: QwenDiagnosticPhase
   document: vscode.TextDocument
   position: vscode.Position
+  requestSource?: "smoke" | "editor"
+  workspaceScope?: "global" | "workspace" | "workspace-folder" | "none"
+  selectionOrigin?: "automatic" | "explicit"
+  endpointSource?: "provider-options" | "model-api" | "missing"
+  serverPhase?: string
   selected?: vscode.SelectedCompletionInfo
+  connectionState?: string
   prefixChars?: number
   suffixChars?: number
   helper?: QwenAutocompleteHelperVars
@@ -220,15 +229,6 @@ export function resetQwenDiagnosticsForTests(): void {
   channel = undefined
 }
 
-export function endpointPath(endpoint: string): string | null {
-  try {
-    return new URL(endpoint).pathname || null
-  } catch {
-    const match = endpoint.match(/\/v\d+\/[^?\s]+/)
-    return match?.[0] ?? null
-  }
-}
-
 export function pathHash(file: string): string {
   return crypto.createHash("sha256").update(file).digest("hex").slice(0, 16)
 }
@@ -266,8 +266,11 @@ function entryFor(input: QwenDiagnosticInput): Record<string, unknown> {
     requestId: input.requestId,
     phase: input.phase,
     provider: "qwen-direct",
+    providerID: input.cfg.providerID,
     model: input.cfg.model,
-    endpointPath: endpointPath(input.cfg.endpoint),
+    transport: "cli-qwen-fim",
+    connectionState: input.connectionState ?? "unknown",
+    ...runtimeInfo(input),
     ...fileInfo(input.document),
     ...posInfo(input.position),
     prefixChars: none(input.prefixChars),
@@ -380,6 +383,16 @@ function entryFor(input: QwenDiagnosticInput): Record<string, unknown> {
   })
 }
 
+function runtimeInfo(input: QwenDiagnosticInput): Record<string, unknown> {
+  return {
+    requestSource: input.requestSource ?? "editor",
+    workspaceScope: input.workspaceScope ?? "none",
+    selectionOrigin: input.selectionOrigin ?? "explicit",
+    endpointSource: input.endpointSource ?? null,
+    serverPhase: input.serverPhase ?? null,
+  }
+}
+
 function multilineInfo(input: QwenDiagnosticInput): Record<string, unknown> {
   return {
     multilineAllowed: none(input.multilineAllowed),
@@ -438,6 +451,7 @@ function none<T>(value: T | null | undefined): T | null {
 }
 
 function exportText(): string {
+  const resource = autocompleteResource()
   const meta = JSON.stringify({
     ts: new Date().toISOString(),
     type: "metadata",
@@ -449,7 +463,10 @@ function exportText(): string {
   const settings = JSON.stringify({
     ts: new Date().toISOString(),
     type: "qwen-settings",
-    settings: settingsSnapshot(readQwenAutocompleteConfig()),
+    settings: {
+      ...settingsSnapshot(readQwenAutocompleteConfig(resource)),
+      workspaceScope: autocompleteScope(autocompleteConfig()),
+    },
   })
   return `${[meta, settings, ...lines].join("\n")}\n`
 }
@@ -458,9 +475,9 @@ function settingsSnapshot(cfg: QwenAutocompleteConfig): Record<string, unknown> 
   return {
     enabled: cfg.enabled,
     provider: cfg.provider,
-    endpointPath: endpointPath(cfg.endpoint),
+    providerID: cfg.providerID,
     model: cfg.model,
-    apiKey: cfg.apiKey ? "[redacted]" : "",
+    transport: "cli-qwen-fim",
     debounceMs: cfg.debounceMs,
     maxTokens: cfg.maxTokens,
     maxPromptTokens: cfg.maxPromptTokens,
@@ -545,7 +562,10 @@ function buffer(line: string): void {
 }
 
 function getChannel(): vscode.OutputChannel {
-  if (!channel) channel = vscode.window.createOutputChannel(QWEN_DIAGNOSTIC_CHANNEL)
+  if (!channel) {
+    channel = vscode.window.createOutputChannel(QWEN_DIAGNOSTIC_CHANNEL)
+    channel.appendLine("[ChipMate] Export diagnostics with: ChipMate: Export qwen-direct Autocomplete Diagnostics")
+  }
   return channel
 }
 

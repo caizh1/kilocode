@@ -3,24 +3,24 @@
 // Content is inlined at compile time via Bun's static import of .md files.
 // Registered before all discovery phases so user skills with the same name override.
 
-import KILO_CONFIG from "./kilo-config.md"
-import DOCUMENTS from "../../../../../.kilo/skills/documents/SKILL.md"
-import SOURCE_BACKED_DETAIL_DESIGN from "../../../../../.kilo/skills/source-backed-detail-design/SKILL.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_01 from "../../../../../.kilo/skills/source-backed-detail-design/references/01-core-principles.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_02 from "../../../../../.kilo/skills/source-backed-detail-design/references/02-input-and-module-scope-rules.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_03 from "../../../../../.kilo/skills/source-backed-detail-design/references/03-source-exploration-rules.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_04 from "../../../../../.kilo/skills/source-backed-detail-design/references/04-control-flow-evidence-schema.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_05 from "../../../../../.kilo/skills/source-backed-detail-design/references/05-submodule-business-flow-rules.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_06 from "../../../../../.kilo/skills/source-backed-detail-design/references/06-state-machine-extraction-rules.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_07 from "../../../../../.kilo/skills/source-backed-detail-design/references/07-diagram-planning-and-splitting-rules.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_08 from "../../../../../.kilo/skills/source-backed-detail-design/references/08-mermaid-png-rendering-rules.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_09 from "../../../../../.kilo/skills/source-backed-detail-design/references/09-parent-module-assembly-rules.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_10 from "../../../../../.kilo/skills/source-backed-detail-design/references/10-detail-design-output-templates.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_11 from "../../../../../.kilo/skills/source-backed-detail-design/references/11-feature-diff-completeness-rules.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_12 from "../../../../../.kilo/skills/source-backed-detail-design/references/12-word-export-rules.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_13 from "../../../../../.kilo/skills/source-backed-detail-design/references/13-quality-gates-and-validator.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_14 from "../../../../../.kilo/skills/source-backed-detail-design/references/14-continuation-checkpoint-protocol.md"
-import SOURCE_BACKED_DETAIL_DESIGN_REF_15 from "../../../../../.kilo/skills/source-backed-detail-design/references/15-business-flow-abstraction-rules.md"
+import KILO_CONFIG from "./kilo-config.md" with { type: "text" }
+import DOCUMENTS from "../../../../../.kilo/skills/documents/SKILL.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN from "../../../../../.kilo/skills/source-backed-detail-design/SKILL.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_01 from "../../../../../.kilo/skills/source-backed-detail-design/references/01-core-principles.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_02 from "../../../../../.kilo/skills/source-backed-detail-design/references/02-input-and-module-scope-rules.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_03 from "../../../../../.kilo/skills/source-backed-detail-design/references/03-source-exploration-rules.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_04 from "../../../../../.kilo/skills/source-backed-detail-design/references/04-control-flow-evidence-schema.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_05 from "../../../../../.kilo/skills/source-backed-detail-design/references/05-submodule-business-flow-rules.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_06 from "../../../../../.kilo/skills/source-backed-detail-design/references/06-state-machine-extraction-rules.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_07 from "../../../../../.kilo/skills/source-backed-detail-design/references/07-diagram-planning-and-splitting-rules.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_08 from "../../../../../.kilo/skills/source-backed-detail-design/references/08-mermaid-png-rendering-rules.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_09 from "../../../../../.kilo/skills/source-backed-detail-design/references/09-parent-module-assembly-rules.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_10 from "../../../../../.kilo/skills/source-backed-detail-design/references/10-detail-design-output-templates.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_11 from "../../../../../.kilo/skills/source-backed-detail-design/references/11-feature-diff-completeness-rules.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_12 from "../../../../../.kilo/skills/source-backed-detail-design/references/12-word-export-rules.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_13 from "../../../../../.kilo/skills/source-backed-detail-design/references/13-quality-gates-and-validator.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_14 from "../../../../../.kilo/skills/source-backed-detail-design/references/14-continuation-checkpoint-protocol.md" with { type: "text" }
+import SOURCE_BACKED_DETAIL_DESIGN_REF_15 from "../../../../../.kilo/skills/source-backed-detail-design/references/15-business-flow-abstraction-rules.md" with { type: "text" }
 
 export interface BuiltinSkill {
   name: string

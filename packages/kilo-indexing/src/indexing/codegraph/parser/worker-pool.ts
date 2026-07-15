@@ -94,6 +94,7 @@ export class CodeGraphParserWorkerPool {
   }
 
   public async parse(input: ParseInput, size = 4): Promise<Result> {
+    if (size <= 0) return this.local(input)
     try {
       this.ensure(size)
       const slot = this.next()
@@ -108,6 +109,14 @@ export class CodeGraphParserWorkerPool {
 
   public async health(size = 4): Promise<CodeGraphParserWorkerHealth> {
     const info = resolveCodeGraphParserWorkerPath(this.opts)
+    if (size <= 0) {
+      return {
+        healthy: true,
+        workers: 0,
+        path: info.path,
+        mode: info.mode,
+      }
+    }
     try {
       this.ensure(size)
       if (this.slots.length === 0) {

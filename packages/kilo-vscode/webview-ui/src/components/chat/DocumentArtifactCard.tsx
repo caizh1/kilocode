@@ -23,9 +23,7 @@ export const DocumentArtifactCard: Component<{ part: ToolPart }> = (props) => {
               {label(item().quality)}
             </span>
           </div>
-          <Show when={item().artifactDir}>
-            {(dir) => <div class="document-artifact-card__path">{dir()}</div>}
-          </Show>
+          <Show when={item().artifactDir}>{(dir) => <div class="document-artifact-card__path">{dir()}</div>}</Show>
           <div class="document-artifact-card__links">
             <For each={item().links}>
               {(link) => (
@@ -43,7 +41,15 @@ export const DocumentArtifactCard: Component<{ part: ToolPart }> = (props) => {
           </div>
           <div class="document-artifact-card__previews">
             <For each={item().links.filter((link) => link.kind === "page-png" && link.webviewUri)}>
-              {(link) => <img class="document-artifact-card__preview" src={link.webviewUri} alt={link.label} title={link.path} loading="lazy" />}
+              {(link) => (
+                <img
+                  class="document-artifact-card__preview"
+                  src={link.webviewUri}
+                  alt={link.label}
+                  title={link.path}
+                  loading="lazy"
+                />
+              )}
             </For>
           </div>
           <Show when={item().warnings.length > 0}>

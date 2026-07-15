@@ -40,7 +40,9 @@ export interface IndexingConfigInput {
   documents?: DocumentIndexConfig
 }
 
-const DEFAULT_DOCUMENT_MAX_FILE_BYTES = 50 * 1024 * 1024
+const DEFAULT_DOCUMENT_MAX_FILES = 5_000
+const DEFAULT_DOCUMENT_MAX_FILE_BYTES = 25 * 1024 * 1024
+const DEFAULT_DOCUMENT_MAX_EXTRACTED_BYTES_PER_FILE = 1024 * 1024
 const DEFAULT_DOCUMENT_CHUNK_CHARS = 1200
 const DEFAULT_DOCUMENT_CHUNK_OVERLAP_CHARS = 200
 const DEFAULT_DOCUMENT_SEARCH_MAX_RESULTS = 8
@@ -78,10 +80,12 @@ export class CodeIndexConfigManager {
   private scannerMaxBatchRetries?: number
   private documents: Required<DocumentIndexConfig> = {
     enabled: false,
-    paths: [],
+    paths: ["."],
     include: [],
     exclude: [],
+    maxFiles: DEFAULT_DOCUMENT_MAX_FILES,
     maxFileBytes: DEFAULT_DOCUMENT_MAX_FILE_BYTES,
+    maxExtractedBytesPerFile: DEFAULT_DOCUMENT_MAX_EXTRACTED_BYTES_PER_FILE,
     chunkChars: DEFAULT_DOCUMENT_CHUNK_CHARS,
     chunkOverlapChars: DEFAULT_DOCUMENT_CHUNK_OVERLAP_CHARS,
     searchMaxResults: DEFAULT_DOCUMENT_SEARCH_MAX_RESULTS,
@@ -303,12 +307,18 @@ export class CodeIndexConfigManager {
   private normalizeDocuments(input?: DocumentIndexConfig): Required<DocumentIndexConfig> {
     const chunkChars = positive(input?.chunkChars, DEFAULT_DOCUMENT_CHUNK_CHARS)
     const overlap = nonnegative(input?.chunkOverlapChars, DEFAULT_DOCUMENT_CHUNK_OVERLAP_CHARS)
+    const paths = cleanList(input?.paths)
     return {
       enabled: input?.enabled === true,
-      paths: cleanList(input?.paths),
+      paths: paths.length > 0 ? paths : ["."],
       include: cleanList(input?.include),
       exclude: cleanList(input?.exclude),
+      maxFiles: positive(input?.maxFiles, DEFAULT_DOCUMENT_MAX_FILES),
       maxFileBytes: positive(input?.maxFileBytes, DEFAULT_DOCUMENT_MAX_FILE_BYTES),
+      maxExtractedBytesPerFile: positive(
+        input?.maxExtractedBytesPerFile,
+        DEFAULT_DOCUMENT_MAX_EXTRACTED_BYTES_PER_FILE,
+      ),
       chunkChars,
       chunkOverlapChars: Math.min(overlap, Math.max(0, chunkChars - 1)),
       searchMaxResults: positive(input?.searchMaxResults, DEFAULT_DOCUMENT_SEARCH_MAX_RESULTS),
@@ -365,7 +375,9 @@ export class CodeIndexConfigManager {
       paths: this.documents.paths.slice(),
       include: this.documents.include.slice(),
       exclude: this.documents.exclude.slice(),
+      maxFiles: this.documents.maxFiles,
       maxFileBytes: this.documents.maxFileBytes,
+      maxExtractedBytesPerFile: this.documents.maxExtractedBytesPerFile,
       chunkChars: this.documents.chunkChars,
       chunkOverlapChars: this.documents.chunkOverlapChars,
       searchMaxResults: this.documents.searchMaxResults,

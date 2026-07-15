@@ -9,7 +9,7 @@ describe("autocomplete model selector", () => {
         id: m.modelID,
         name: m.label,
         providerID: m.providerID,
-        providerName: m.provider,
+        providerName: m.provider === "Kilo Gateway" ? "ChipMate Gateway" : m.provider,
       })),
     )
   })

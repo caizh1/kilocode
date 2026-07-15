@@ -1,8 +1,5 @@
 import * as vscode from "vscode"
-import {
-  languageForFilepath,
-  type AutocompleteLanguageInfo,
-} from "../autocomplete/continuedev/core/autocomplete/constants/AutocompleteLanguageInfo"
+import type { AutocompleteLanguageInfo } from "../autocomplete/continuedev/core/autocomplete/constants/AutocompleteLanguageInfo"
 import { constructInitialPrefixSuffix } from "./constructPrefixSuffix"
 import {
   prunePrefixSuffixWithTokenBudget,
@@ -11,6 +8,7 @@ import {
   type QwenTokenPruningOptions,
   type QwenTokenizerSource,
 } from "./tokenPruning"
+import { qwenLanguage } from "./language"
 
 export type QwenHelperOptions = QwenTokenPruningOptions & {
   modelName?: string
@@ -68,7 +66,7 @@ export function createQwenAutocompleteHelper(
     fullPrefix: parts.prefix,
     fullSuffix: parts.suffix,
     helperParityMode: "continue-helpervars-token-budget",
-    lang: languageForFilepath(filepath),
+    lang: qwenLanguage(filepath),
     languageId: document.languageId,
     pos: { line: position.line, character: position.character },
     prunedPrefix: pruned.prunedPrefix,

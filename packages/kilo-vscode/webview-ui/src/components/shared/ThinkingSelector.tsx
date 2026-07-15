@@ -136,7 +136,7 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
       <PopupSelector
         expanded={false}
         placement={props.placement ?? "top-start"}
-        preferredWidth={180}
+        preferredWidth={184}
         minHeight={100}
         deferDismiss={props.deferDismiss}
         open={open()}
@@ -156,12 +156,10 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
         trigger={
           <>
             <span class="prompt-selector-icon" aria-hidden="true">
-              <span class="codicon codicon-thinking" />
+              <span class="codicon codicon-lightbulb" />
             </span>
             <span class="thinking-selector-trigger-label">{display(props.value)}</span>
-            <svg class="prompt-selector-chevron" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 4l4 5H4l4-5z" />
-            </svg>
+            <span class="codicon codicon-chevron-down prompt-selector-chevron" aria-hidden="true" />
           </>
         }
       >
@@ -184,6 +182,11 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
                   onFocus={() => setFocused(i())}
                 >
                   <span class="thinking-selector-item-name">{display(v)}</span>
+                  <span class="thinking-selector-item-state" aria-hidden="true">
+                    <Show when={props.value === v}>
+                      <span class="codicon codicon-check" />
+                    </Show>
+                  </span>
                 </div>
               )}
             </For>

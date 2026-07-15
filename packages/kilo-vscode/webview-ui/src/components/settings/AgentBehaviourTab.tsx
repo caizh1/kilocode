@@ -5,6 +5,7 @@ import { Card } from "@kilocode/kilo-ui/card"
 import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Dialog } from "@kilocode/kilo-ui/dialog"
+import { Spinner } from "@kilocode/kilo-ui/spinner"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { Switch } from "@kilocode/kilo-ui/switch"
 
@@ -17,6 +18,7 @@ import ModeEditView from "./ModeEditView"
 import ModeCreateView from "./ModeCreateView"
 import McpEditView from "./McpEditView"
 import WorkflowsTab from "./agent-behaviour/WorkflowsTab"
+import SettingsRow from "./SettingsRow"
 import { selectedDefaultAgentValue } from "./agent-behaviour-patches"
 import { parseImport, MAX_IMPORT_SIZE } from "./mode-io"
 import type { ImportError } from "./mode-io"
@@ -41,7 +43,61 @@ interface SelectOption {
   label: string
 }
 
-import SettingsRow from "./SettingsRow"
+const RemoveSkillDialog: Component<{ skill: SkillInfo }> = (props) => {
+  const dialog = useDialog()
+  const language = useLanguage()
+  const session = useSession()
+  const [requestId, setRequestId] = createSignal<string>()
+  const state = () => {
+    const current = session.skillRemoveState()
+    return current?.requestId === requestId() ? current : undefined
+  }
+  const pending = () => Boolean(requestId() && state()?.success === undefined)
+
+  createEffect(() => {
+    if (state()?.success) dialog.close()
+  })
+
+  return (
+    <Dialog title={language.t("settings.agentBehaviour.removeSkill.title")} fit>
+      <div class="dialog-confirm-body">
+        <span>{language.t("settings.agentBehaviour.removeSkill.confirm", { name: props.skill.name })}</span>
+        <Show when={state()?.phase}>
+          {(phase) => (
+            <span role="status" aria-live="polite" style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+              <Spinner style={{ width: "14px", height: "14px" }} />
+              {language.t(`settings.agentBehaviour.removeSkill.phase.${phase()}`)}
+            </span>
+          )}
+        </Show>
+        <Show when={state()?.success === false}>
+          <span role="alert" style={{ color: "var(--vscode-errorForeground)" }}>
+            {state()?.error ?? language.t("settings.agentBehaviour.removeSkill.failed")}
+          </span>
+        </Show>
+        <div class="dialog-confirm-actions">
+          <Button variant="ghost" size="large" disabled={pending()} onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            size="large"
+            disabled={pending()}
+            onClick={() => {
+              const id = session.removeSkill(props.skill)
+              if (id) setRequestId(id)
+            }}
+          >
+            <Show when={pending()}>
+              <Spinner style={{ width: "14px", height: "14px" }} />
+            </Show>
+            {language.t("settings.agentBehaviour.removeSkill.button")}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
 
 // View states for the agents subtab
 type AgentView = "list" | "create" | "edit"
@@ -172,28 +228,7 @@ const AgentBehaviourTab: Component = () => {
   }
 
   const confirmRemoveSkill = (skill: SkillInfo) => {
-    dialog.show(() => (
-      <Dialog title={language.t("settings.agentBehaviour.removeSkill.title")} fit>
-        <div class="dialog-confirm-body">
-          <span>{language.t("settings.agentBehaviour.removeSkill.confirm", { name: skill.name })}</span>
-          <div class="dialog-confirm-actions">
-            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-              {language.t("common.cancel")}
-            </Button>
-            <Button
-              variant="primary"
-              size="large"
-              onClick={() => {
-                session.removeSkill(skill.location)
-                dialog.close()
-              }}
-            >
-              {language.t("settings.agentBehaviour.removeSkill.button")}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-    ))
+    dialog.show(() => <RemoveSkillDialog skill={skill} />)
   }
 
   const removableModes = createMemo(() => session.allAgents().filter((a) => !a.native))
@@ -851,8 +886,14 @@ const AgentBehaviourTab: Component = () => {
                     {skill.location !== "builtin" && <div>{skill.location}</div>}
                   </div>
                 </div>
-                {skill.location !== "builtin" && (
-                  <IconButton size="small" variant="ghost" icon="close" onClick={() => confirmRemoveSkill(skill)} />
+                {skill.removeToken && (
+                  <IconButton
+                    size="small"
+                    variant="ghost"
+                    icon="trash"
+                    aria-label={language.t("settings.agentBehaviour.removeSkill.title")}
+                    onClick={() => confirmRemoveSkill(skill)}
+                  />
                 )}
               </div>
             )}

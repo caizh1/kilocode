@@ -9,13 +9,35 @@ import { Instance } from "@/project/instance"
 
 const execFile = promisify(execFileCallback)
 
+const PAGE_WIDTH_DXA = 12_240
+const PAGE_HEIGHT_DXA = 15_840
+const PAGE_MARGIN_DXA = 1_440
+const HEADER_FOOTER_DXA = 708
+const CONTENT_WIDTH_DXA = 9_360
+const TABLE_INDENT_DXA = 120
+const TABLE_CELL_MARGIN_X_DXA = 120
+const TABLE_CELL_MARGIN_Y_DXA = 80
+const MAX_FIGURE_WIDTH_PX = 624
+const MAX_FIGURE_HEIGHT_PX = 720
+const EMU_PER_CSS_PIXEL = 9_525
+
 export type WordBlock =
   | { type: "heading"; level?: 1 | 2 | 3; text: string }
   | { type: "paragraph"; text: string }
   | { type: "list"; ordered?: boolean; items: string[] }
   | { type: "table"; headers: string[]; rows: string[][]; caption?: string }
   | { type: "code"; language?: string; text: string }
-  | { type: "image"; title?: string; caption?: string; altText?: string; path?: string; base64?: string; contentType?: "image/png" | "image/jpeg"; width?: number; height?: number }
+  | {
+      type: "image"
+      title?: string
+      caption?: string
+      altText?: string
+      path?: string
+      base64?: string
+      contentType?: "image/png" | "image/jpeg"
+      width?: number
+      height?: number
+    }
 
 export type WordSection = {
   id?: string
@@ -221,9 +243,34 @@ export type RenderWordDocumentInput = {
 }
 
 export type WordRenderDiagnostic = {
-  code: "word-render-endpoint-not-configured" | "word-render-remote-failed" | "word-render-local-failed" | "word-render-local-page-renderer-not-configured" | "pdf-missing" | "pdf-invalid" | "png-invalid" | "page-count-zero" | "page-count-exceeds-limit" | "blank-page" | "image-loss-suspected"
+  code:
+    | "word-render-endpoint-not-configured"
+    | "word-render-remote-failed"
+    | "word-render-local-failed"
+    | "word-render-local-page-renderer-not-configured"
+    | "pdf-missing"
+    | "pdf-invalid"
+    | "png-invalid"
+    | "page-count-zero"
+    | "page-count-exceeds-limit"
+    | "page-count-incomplete"
+    | "blank-page"
+    | "image-loss-suspected"
   severity: "warning" | "error"
   message: string
+}
+
+export type WordRenderIssue = {
+  severity?: string
+  code?: string
+  message?: string
+}
+
+export type WordRenderPageQa = {
+  page?: number
+  width?: number
+  height?: number
+  visualSummary?: Record<string, unknown>
 }
 
 export type RenderedWordDocument = {
@@ -235,6 +282,16 @@ export type RenderedWordDocument = {
   pageCount: number
   warnings: string[]
   diagnostics: WordRenderDiagnostic[]
+  issues?: WordRenderIssue[]
+  renderer?: Record<string, unknown>
+  pageQa?: WordRenderPageQa[]
+  visualQaStatus: "completed" | "skipped"
+  visualQaSkipReason?:
+    | "renderer-unavailable"
+    | "render-failed"
+    | "page-images-missing"
+    | "page-count-incomplete"
+    | "invalid-page-image"
 }
 
 export type InsertWordPngImageInput = {
@@ -326,7 +383,11 @@ export async function createWordDocument(spec: CreateWordDocumentSpec): Promise<
     primaryFile: safeDocxName(spec.outputFile ?? spec.title),
     qualityStatus: "unknown",
   })
-  const output = path.join(Instance.directory, artifact.artifactDir, artifact.manifest.primaryFile ?? safeDocxName(spec.title))
+  const output = path.join(
+    Instance.directory,
+    artifact.artifactDir,
+    artifact.manifest.primaryFile ?? safeDocxName(spec.title),
+  )
   assertInside(path.join(Instance.directory, artifact.artifactDir), output, "outputFile")
   await fs.mkdir(path.dirname(output), { recursive: true })
   await fs.writeFile(output, bytes)
@@ -338,7 +399,11 @@ export async function createWordDocument(spec: CreateWordDocumentSpec): Promise<
   }
 }
 
-export async function inspectWordDocument(input: { path: string; maxParagraphs?: number; maxTables?: number }): Promise<WordDocumentInspection> {
+export async function inspectWordDocument(input: {
+  path: string
+  maxParagraphs?: number
+  maxTables?: number
+}): Promise<WordDocumentInspection> {
   const absolute = resolveWorkspacePath(input.path)
   const bytes = await fs.readFile(absolute)
   const zip = new ZipReader(new Uint8ArrayReader(new Uint8Array(bytes)))
@@ -403,7 +468,8 @@ export async function inspectWordDocument(input: { path: string; maxParagraphs?:
 }
 
 export async function applyWordDocumentEdits(input: ApplyWordDocumentEditsInput): Promise<AppliedWordDocumentEdits> {
-  if (!Array.isArray(input.edits) || input.edits.length === 0) throw new Error("apply_word_document_edits edits must not be empty")
+  if (!Array.isArray(input.edits) || input.edits.length === 0)
+    throw new Error("apply_word_document_edits edits must not be empty")
   for (const edit of input.edits) {
     if (edit.op === "patch_ooxml_part") safeOoxmlPart(edit.patch.part)
   }
@@ -417,7 +483,9 @@ export async function applyWordDocumentEdits(input: ApplyWordDocumentEditsInput)
     const byName = new Map(entries.map((entry) => [entry.filename, entry]))
     let documentXml = await readEntryText(byName, "word/document.xml")
     if (!documentXml) throw new Error(`DOCX is missing word/document.xml: ${input.sourcePath}`)
-    let relsXml = (await readEntryText(byName, "word/_rels/document.xml.rels")) ?? documentRelationshipsXml({ images: [], imageMap: new WeakMap() })
+    let relsXml =
+      (await readEntryText(byName, "word/_rels/document.xml.rels")) ??
+      documentRelationshipsXml({ images: [], imageMap: new WeakMap() })
     const textOverrides: Record<string, string> = {}
     const mediaUpdates = new Map<string, Uint8Array>()
     const impacts: WordEditImpact[] = []
@@ -435,7 +503,9 @@ export async function applyWordDocumentEdits(input: ApplyWordDocumentEditsInput)
     if (effectiveDryRun) return { dryRun: true, renderAfterEdit: false, impacts, warnings }
 
     const backupEnabled = input.backup ?? true
-    const backupFile = backupEnabled ? safeDocxName(`${path.basename(input.sourcePath, ".docx")}-source-backup.docx`) : undefined
+    const backupFile = backupEnabled
+      ? safeDocxName(`${path.basename(input.sourcePath, ".docx")}-source-backup.docx`)
+      : undefined
     const artifact = await declareArtifact({
       kind: "word-document",
       title: input.title ?? `Edited ${path.basename(input.sourcePath)}`,
@@ -445,7 +515,11 @@ export async function applyWordDocumentEdits(input: ApplyWordDocumentEditsInput)
       warnings,
       qualityStatus: warnings.length ? "warning" : "unknown",
     })
-    const output = path.join(Instance.directory, artifact.artifactDir, artifact.manifest.primaryFile ?? safeDocxName("edited.docx"))
+    const output = path.join(
+      Instance.directory,
+      artifact.artifactDir,
+      artifact.manifest.primaryFile ?? safeDocxName("edited.docx"),
+    )
     assertInside(path.join(Instance.directory, artifact.artifactDir), output, "outputFile")
     await fs.mkdir(path.dirname(output), { recursive: true })
     const backupPath = backupFile ? path.join(Instance.directory, artifact.artifactDir, backupFile) : undefined
@@ -453,11 +527,15 @@ export async function applyWordDocumentEdits(input: ApplyWordDocumentEditsInput)
       assertInside(path.join(Instance.directory, artifact.artifactDir), backupPath, "backupFile")
       await fs.writeFile(backupPath, bytes)
     }
-    const nextBytes = await rewriteDocx(entries, {
-      "word/document.xml": documentXml,
-      "word/_rels/document.xml.rels": relsXml,
-      ...textOverrides,
-    }, mediaUpdates)
+    const nextBytes = await rewriteDocx(
+      entries,
+      {
+        "word/document.xml": documentXml,
+        "word/_rels/document.xml.rels": relsXml,
+        ...textOverrides,
+      },
+      mediaUpdates,
+    )
     await fs.writeFile(output, nextBytes)
     const outputPath = normalizePortable(path.relative(Instance.directory, output))
     let renderResult: RenderedWordDocument | undefined
@@ -499,9 +577,14 @@ export async function applyWordTemplateStyles(input: ApplyWordTemplateStylesInpu
     const sourceStyles = snapshotText(source, "word/styles.xml")
     const templateStyles = snapshotText(template, "word/styles.xml")
     if (templateStyles) {
-      const conflicts = parseStyles(sourceStyles ?? "").filter((styleId) => parseStyles(templateStyles).includes(styleId))
-      if (conflicts.length) warnings.push(`template styles override source style ids: ${conflicts.slice(0, 20).join(", ")}`)
-      textOverrides["word/styles.xml"] = input.fontFamily ? applyDefaultFontToStyles(templateStyles, input.fontFamily) : templateStyles
+      const conflicts = parseStyles(sourceStyles ?? "").filter((styleId) =>
+        parseStyles(templateStyles).includes(styleId),
+      )
+      if (conflicts.length)
+        warnings.push(`template styles override source style ids: ${conflicts.slice(0, 20).join(", ")}`)
+      textOverrides["word/styles.xml"] = input.fontFamily
+        ? applyDefaultFontToStyles(templateStyles, input.fontFamily)
+        : templateStyles
       appliedParts.push("word/styles.xml")
     } else {
       warnings.push(`template is missing word/styles.xml: ${input.templatePath}`)
@@ -515,23 +598,32 @@ export async function applyWordTemplateStyles(input: ApplyWordTemplateStylesInpu
     if (templateTheme) {
       textOverrides["word/theme/theme1.xml"] = templateTheme
       textOverrides["word/_rels/document.xml.rels"] = ensureRelationship(
-        textOverrides["word/_rels/document.xml.rels"] ?? snapshotText(source, "word/_rels/document.xml.rels") ?? documentRelationshipsXml({ images: [], imageMap: new WeakMap() }),
+        textOverrides["word/_rels/document.xml.rels"] ??
+          snapshotText(source, "word/_rels/document.xml.rels") ??
+          documentRelationshipsXml({ images: [], imageMap: new WeakMap() }),
         "rIdKiloTheme",
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme",
         "theme/theme1.xml",
       )
       textOverrides["[Content_Types].xml"] = ensureContentTypeOverride(
-        textOverrides["[Content_Types].xml"] ?? snapshotText(source, "[Content_Types].xml") ?? contentTypesXml({ images: [], imageMap: new WeakMap() }),
+        textOverrides["[Content_Types].xml"] ??
+          snapshotText(source, "[Content_Types].xml") ??
+          contentTypesXml({ images: [], imageMap: new WeakMap() }),
         "/word/theme/theme1.xml",
         "application/vnd.openxmlformats-officedocument.theme+xml",
       )
       appliedParts.push("word/theme/theme1.xml")
     }
   } else if (input.fontFamily?.trim()) {
-    textOverrides["word/styles.xml"] = applyDefaultFontToStyles(snapshotText(source, "word/styles.xml") ?? stylesXml(), input.fontFamily)
+    textOverrides["word/styles.xml"] = applyDefaultFontToStyles(
+      snapshotText(source, "word/styles.xml") ?? stylesXml(),
+      input.fontFamily,
+    )
     appliedParts.push("word/styles.xml")
   } else {
-    warnings.push("apply_word_template_styles did not receive templatePath or fontFamily; source document is copied unchanged")
+    warnings.push(
+      "apply_word_template_styles did not receive templatePath or fontFamily; source document is copied unchanged",
+    )
   }
   const written = await writeDocxArtifact(source, textOverrides, new Map(), {
     title: input.title ?? `Styled ${path.basename(input.sourcePath)}`,
@@ -547,7 +639,8 @@ export async function materializeWordFields(input: MaterializeWordFieldsInput): 
   const documentXml = requiredSnapshotText(source, "word/document.xml", input.sourcePath)
   const result = materializeFieldsInDocument(documentXml, input.tocMode ?? "preserve")
   const warnings = [...result.warnings]
-  if (!result.summary.seqFields && !result.summary.captions && result.summary.toc === "none") warnings.push("no supported Word field placeholders were found")
+  if (!result.summary.seqFields && !result.summary.captions && result.summary.toc === "none")
+    warnings.push("no supported Word field placeholders were found")
   const written = await writeDocxArtifact(source, { "word/document.xml": result.xml }, new Map(), {
     title: input.title ?? `Fields ${path.basename(input.sourcePath)}`,
     taskSlug: input.taskSlug ?? `${path.basename(input.sourcePath, ".docx")}-fields`,
@@ -558,13 +651,17 @@ export async function materializeWordFields(input: MaterializeWordFieldsInput): 
 }
 
 export async function mergeWordDocuments(input: MergeWordDocumentsInput): Promise<MergedWordDocuments> {
-  if (!Array.isArray(input.sources) || input.sources.length < 2) throw new Error("merge_word_documents requires at least two source documents")
+  if (!Array.isArray(input.sources) || input.sources.length < 2)
+    throw new Error("merge_word_documents requires at least two source documents")
   const snapshots = await Promise.all(input.sources.map(readDocxSnapshot))
   const base = snapshots[0]!
   const baseDocumentXml = requiredSnapshotText(base, "word/document.xml", input.sources[0]!)
   const baseBody = splitDocumentBody(baseDocumentXml)
-  let relsXml = snapshotText(base, "word/_rels/document.xml.rels") ?? documentRelationshipsXml({ images: [], imageMap: new WeakMap() })
-  let contentTypes = snapshotText(base, "[Content_Types].xml") ?? contentTypesXml({ images: [], imageMap: new WeakMap() })
+  let relsXml =
+    snapshotText(base, "word/_rels/document.xml.rels") ??
+    documentRelationshipsXml({ images: [], imageMap: new WeakMap() })
+  let contentTypes =
+    snapshotText(base, "[Content_Types].xml") ?? contentTypesXml({ images: [], imageMap: new WeakMap() })
   const binaryOverrides = new Map<string, Uint8Array>()
   const bodyParts = [baseBody.content]
   const warnings: string[] = []
@@ -589,7 +686,12 @@ export async function mergeWordDocuments(input: MergeWordDocumentsInput): Promis
       const newTarget = `media/merged${index + 1}_${nextImage++}${ext}`
       binaryOverrides.set(`word/${newTarget}`, bytes)
       body = body.split(`r:embed="${rel.relId}"`).join(`r:embed="${newRelId}"`)
-      relsXml = appendRelationship(relsXml, newRelId, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", newTarget)
+      relsXml = appendRelationship(
+        relsXml,
+        newRelId,
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+        newTarget,
+      )
       contentTypes = ensureImageContentType(contentTypes, newTarget)
       copiedImages += 1
     }
@@ -597,24 +699,33 @@ export async function mergeWordDocuments(input: MergeWordDocumentsInput): Promis
     bodyParts.push(body)
   }
   const documentXml = replaceDocumentBody(baseDocumentXml, `${bodyParts.join("")}${baseBody.sectPr}`)
-  const written = await writeDocxArtifact(base, {
-    "word/document.xml": documentXml,
-    "word/_rels/document.xml.rels": relsXml,
-    "[Content_Types].xml": contentTypes,
-  }, binaryOverrides, {
-    title: input.title ?? "Merged Word Document",
-    taskSlug: input.taskSlug ?? "merged-word-document",
-    outputFile: safeDocxName(input.outputFile ?? "merged-word-document.docx"),
-    warnings,
-  })
+  const written = await writeDocxArtifact(
+    base,
+    {
+      "word/document.xml": documentXml,
+      "word/_rels/document.xml.rels": relsXml,
+      "[Content_Types].xml": contentTypes,
+    },
+    binaryOverrides,
+    {
+      title: input.title ?? "Merged Word Document",
+      taskSlug: input.taskSlug ?? "merged-word-document",
+      outputFile: safeDocxName(input.outputFile ?? "merged-word-document.docx"),
+      warnings,
+    },
+  )
   return { ...written, sourceCount: input.sources.length, copiedImages, warnings }
 }
 
 export async function diffWordDocuments(input: DiffWordDocumentsInput): Promise<DiffWordDocumentsResult> {
   const before = await readDocxSnapshot(input.beforePath)
   const after = await readDocxSnapshot(input.afterPath)
-  const beforeParagraphs = parseParagraphs(requiredSnapshotText(before, "word/document.xml", input.beforePath)).map((item) => item.text).filter(Boolean)
-  const afterParagraphs = parseParagraphs(requiredSnapshotText(after, "word/document.xml", input.afterPath)).map((item) => item.text).filter(Boolean)
+  const beforeParagraphs = parseParagraphs(requiredSnapshotText(before, "word/document.xml", input.beforePath))
+    .map((item) => item.text)
+    .filter(Boolean)
+  const afterParagraphs = parseParagraphs(requiredSnapshotText(after, "word/document.xml", input.afterPath))
+    .map((item) => item.text)
+    .filter(Boolean)
   const diagnostics = diffParagraphText(beforeParagraphs, afterParagraphs, clamp(input.maxChanges ?? 80, 1, 500))
   const markdown = diffMarkdown(input.beforePath, input.afterPath, diagnostics)
   const warnings = diagnostics.truncated ? ["diff output truncated to maxChanges"] : []
@@ -648,13 +759,16 @@ export async function diffWordDocuments(input: DiffWordDocumentsInput): Promise<
 }
 
 export function normalizeWordTableSpec(input: NormalizeWordTableSpecInput): NormalizedWordTableSpec {
-  if (!Array.isArray(input.tables) || input.tables.length === 0) throw new Error("normalize_word_table_spec tables must not be empty")
-  const tables = input.tables.map((table, index) => normalizeTableSpec(table, {
-    trimCells: input.trimCells ?? true,
-    fillMissingCells: input.fillMissingCells ?? "",
-    maxColumns: input.maxColumns,
-    label: `tables[${index}]`,
-  }))
+  if (!Array.isArray(input.tables) || input.tables.length === 0)
+    throw new Error("normalize_word_table_spec tables must not be empty")
+  const tables = input.tables.map((table, index) =>
+    normalizeTableSpec(table, {
+      trimCells: input.trimCells ?? true,
+      fillMissingCells: input.fillMissingCells ?? "",
+      maxColumns: input.maxColumns,
+      label: `tables[${index}]`,
+    }),
+  )
   return {
     tables,
     warnings: tables.flatMap((table, index) => table.warnings.map((warning) => `tables[${index}]: ${warning}`)),
@@ -665,39 +779,19 @@ export async function renderWordDocument(input: RenderWordDocumentInput): Promis
   const source = resolveWorkspacePath(input.sourcePath)
   const endpoint = input.remoteEndpoint?.trim() || process.env["KILO_WORD_RENDER_ENDPOINT"]?.trim()
   const diagnostics: WordRenderDiagnostic[] = []
-  const warnings: string[] = []
   const maxPages = clamp(input.maxPages ?? 500, 1, 2_000)
   const diagnosticsFile = "render-diagnostics.json"
+  const timeoutMs = input.timeoutMs ?? 120_000
   if (!endpoint) {
-    const local = await tryLocalWordRenderer(source, input, maxPages, input.timeoutMs ?? 120_000)
+    const local = await tryLocalWordRenderer(source, input, maxPages, timeoutMs)
     if (!local) {
       diagnostics.push({
         code: "word-render-endpoint-not-configured",
         severity: "warning",
-        message: "Word render remote endpoint is not configured and no local soffice executable was found; set remoteEndpoint, KILO_WORD_RENDER_ENDPOINT, KILO_WORD_RENDER_SOFFICE, or put soffice on PATH to render PDF/page PNG artifacts.",
+        message:
+          "Word render remote endpoint is not configured and no local soffice executable was found; set remoteEndpoint, KILO_WORD_RENDER_ENDPOINT, KILO_WORD_RENDER_SOFFICE, or put soffice on PATH to render PDF/page PNG artifacts.",
       })
-      warnings.push(...diagnostics.map((item) => `${item.code}: ${item.message}`))
-      const artifact = await declareArtifact({
-        kind: "word-render",
-        title: input.title ?? `Render ${path.basename(input.sourcePath)}`,
-        taskSlug: input.taskSlug ?? `${path.basename(input.sourcePath, ".docx")}-render`,
-        derivedFiles: [diagnosticsFile],
-        sourceFiles: [normalizePortable(path.relative(Instance.directory, source))],
-        warnings,
-        qualityStatus: "warning",
-      })
-      const artifactDir = path.join(Instance.directory, artifact.artifactDir)
-      const diagnosticsPath = path.join(artifactDir, diagnosticsFile)
-      await fs.writeFile(diagnosticsPath, `${JSON.stringify({ diagnostics, warnings, pageCount: 0, pagePngPaths: [] }, null, 2)}\n`, "utf8")
-      return {
-        artifactDir: artifact.artifactDir,
-        manifestPath: artifact.manifestPath,
-        diagnosticsPath: normalizePortable(path.relative(Instance.directory, diagnosticsPath)),
-        pagePngPaths: [],
-        pageCount: 0,
-        warnings,
-        diagnostics,
-      }
+      return writeSkippedWordRender(input, source, diagnostics, diagnosticsFile, "renderer-unavailable")
     }
     diagnostics.push(...local.diagnostics)
     return writeRenderedWordArtifacts(input, source, local.response, diagnostics, maxPages, diagnosticsFile)
@@ -705,42 +799,80 @@ export async function renderWordDocument(input: RenderWordDocumentInput): Promis
   const docxBytes = new Uint8Array(await fs.readFile(source))
   let response: RemoteWordRenderResponse
   try {
-    response = await callWordRenderer(endpoint, {
-      fileName: path.basename(input.sourcePath),
-      docxBase64: Buffer.from(docxBytes).toString("base64"),
-      output: { pdf: true, pngPages: true },
-      timeoutMs: input.timeoutMs,
-    }, input.timeoutMs ?? 120_000)
+    response = await callWordRenderer(
+      endpoint,
+      {
+        filename: path.basename(input.sourcePath),
+        fileName: path.basename(input.sourcePath),
+        docxBase64: Buffer.from(docxBytes).toString("base64"),
+        output: { pdf: true, pngPages: true },
+        timeoutMs: input.timeoutMs,
+      },
+      timeoutMs,
+    )
   } catch (err) {
-    diagnostics.push({
+    const remote: WordRenderDiagnostic = {
       code: "word-render-remote-failed",
-      severity: "error",
+      severity: "warning",
       message: err instanceof Error ? err.message : String(err),
-    })
-    warnings.push(...diagnostics.map((item) => `${item.code}: ${item.message}`))
-    const artifact = await declareArtifact({
-      kind: "word-render",
-      title: input.title ?? `Render ${path.basename(input.sourcePath)}`,
-      taskSlug: input.taskSlug ?? `${path.basename(input.sourcePath, ".docx")}-render`,
-      derivedFiles: [diagnosticsFile],
-      sourceFiles: [normalizePortable(path.relative(Instance.directory, source))],
-      warnings,
-      qualityStatus: "failed",
-    })
-    const artifactDir = path.join(Instance.directory, artifact.artifactDir)
-    const diagnosticsPath = path.join(artifactDir, diagnosticsFile)
-    await fs.writeFile(diagnosticsPath, `${JSON.stringify({ diagnostics, warnings, pageCount: 0, pagePngPaths: [] }, null, 2)}\n`, "utf8")
-    return {
-      artifactDir: artifact.artifactDir,
-      manifestPath: artifact.manifestPath,
-      diagnosticsPath: normalizePortable(path.relative(Instance.directory, diagnosticsPath)),
-      pagePngPaths: [],
-      pageCount: 0,
-      warnings,
-      diagnostics,
     }
+    const local = await tryLocalWordRenderer(source, input, maxPages, timeoutMs)
+    if (local) {
+      diagnostics.push(remote, ...local.diagnostics)
+      return writeRenderedWordArtifacts(input, source, local.response, diagnostics, maxPages, diagnosticsFile)
+    }
+    diagnostics.push({ ...remote, severity: "error" })
+    return writeSkippedWordRender(input, source, diagnostics, diagnosticsFile, "render-failed")
   }
   return writeRenderedWordArtifacts(input, source, response, diagnostics, maxPages, diagnosticsFile)
+}
+
+async function writeSkippedWordRender(
+  input: RenderWordDocumentInput,
+  source: string,
+  diagnostics: WordRenderDiagnostic[],
+  diagnosticsFile: string,
+  reason: RenderedWordDocument["visualQaSkipReason"],
+): Promise<RenderedWordDocument> {
+  const warnings = diagnostics.map((item) => `${item.code}: ${item.message}`)
+  const artifact = await declareArtifact({
+    kind: "word-render",
+    title: input.title ?? `Render ${path.basename(input.sourcePath)}`,
+    taskSlug: input.taskSlug ?? `${path.basename(input.sourcePath, ".docx")}-render`,
+    derivedFiles: [diagnosticsFile],
+    sourceFiles: [normalizePortable(path.relative(Instance.directory, source))],
+    warnings,
+    qualityStatus: diagnostics.some((item) => item.severity === "error") ? "failed" : "warning",
+  })
+  const artifactDir = path.join(Instance.directory, artifact.artifactDir)
+  const diagnosticsPath = path.join(artifactDir, diagnosticsFile)
+  await fs.writeFile(
+    diagnosticsPath,
+    `${JSON.stringify(
+      {
+        diagnostics,
+        warnings,
+        pageCount: 0,
+        pagePngPaths: [],
+        visualQaStatus: "skipped",
+        visualQaSkipReason: reason,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  )
+  return {
+    artifactDir: artifact.artifactDir,
+    manifestPath: artifact.manifestPath,
+    diagnosticsPath: normalizePortable(path.relative(Instance.directory, diagnosticsPath)),
+    pagePngPaths: [],
+    pageCount: 0,
+    warnings,
+    diagnostics,
+    visualQaStatus: "skipped",
+    visualQaSkipReason: reason,
+  }
 }
 
 async function writeRenderedWordArtifacts(
@@ -753,15 +885,46 @@ async function writeRenderedWordArtifacts(
 ): Promise<RenderedWordDocument> {
   const warnings: string[] = []
   const sourceInspection = await inspectWordDocument({ path: input.sourcePath, maxParagraphs: 1, maxTables: 1 })
+  for (const issue of response.issues ?? []) {
+    diagnostics.push({
+      code: "word-render-remote-failed",
+      severity: issue.severity === "error" ? "error" : "warning",
+      message: `${issue.code ? `${issue.code}: ` : ""}${issue.message ?? "Word renderer reported an issue."}`,
+    })
+  }
   for (const warning of response.warnings ?? []) {
     diagnostics.push({ code: "word-render-remote-failed", severity: "warning", message: warning })
   }
-  const pdfBytes = response.pdfBase64 ? Buffer.from(response.pdfBase64, "base64") : undefined
-  if (!pdfBytes?.length) diagnostics.push({ code: "pdf-missing", severity: "warning", message: "Renderer response did not include pdfBase64." })
-  if (pdfBytes?.length && !isPdf(pdfBytes)) diagnostics.push({ code: "pdf-invalid", severity: "error", message: "Renderer PDF payload is not a valid PDF header." })
+  const pdf = response.pdfBase64?.trim() || response.pdf?.base64?.trim()
+  const pdfBytes = pdf ? Buffer.from(pdf, "base64") : undefined
+  if (!pdfBytes?.length)
+    diagnostics.push({
+      code: "pdf-missing",
+      severity: "warning",
+      message: "Renderer response did not include a PDF payload.",
+    })
+  if (pdfBytes?.length && !isPdf(pdfBytes))
+    diagnostics.push({
+      code: "pdf-invalid",
+      severity: "error",
+      message: "Renderer PDF payload is not a valid PDF header.",
+    })
   const pagePayloads = response.pages ?? []
-  if (pagePayloads.length === 0) diagnostics.push({ code: "page-count-zero", severity: "warning", message: "Renderer returned zero page PNGs." })
-  if (pagePayloads.length > maxPages) diagnostics.push({ code: "page-count-exceeds-limit", severity: "warning", message: `Renderer returned ${pagePayloads.length} pages, exceeding maxPages ${maxPages}.` })
+  const expectedPages = Math.max(0, response.pageCount ?? pagePayloads.length)
+  if (pagePayloads.length === 0)
+    diagnostics.push({ code: "page-count-zero", severity: "warning", message: "Renderer returned zero page PNGs." })
+  if (pagePayloads.length > maxPages || expectedPages > maxPages)
+    diagnostics.push({
+      code: "page-count-exceeds-limit",
+      severity: "warning",
+      message: `Renderer reported ${expectedPages || pagePayloads.length} pages, exceeding maxPages ${maxPages}.`,
+    })
+  if (expectedPages > pagePayloads.length)
+    diagnostics.push({
+      code: "page-count-incomplete",
+      severity: "warning",
+      message: `Renderer reported ${expectedPages} pages but returned ${pagePayloads.length} page payloads.`,
+    })
   if (typeof response.detectedImageCount === "number" && response.detectedImageCount < sourceInspection.images.length) {
     diagnostics.push({
       code: "image-loss-suspected",
@@ -772,13 +935,23 @@ async function writeRenderedWordArtifacts(
   const pdfName = safePdfName(input.outputFile ?? `${path.basename(input.sourcePath, ".docx")}.pdf`)
   const pngEntries: Array<{ name: string; bytes: Buffer }> = []
   for (const [index, page] of pagePayloads.slice(0, maxPages).entries()) {
-    const pageBytes = page.pngBase64 || page.base64 ? Buffer.from(page.pngBase64 ?? page.base64 ?? "", "base64") : undefined
+    const pageBytes =
+      page.pngBase64 || page.base64 ? Buffer.from(page.pngBase64 ?? page.base64 ?? "", "base64") : undefined
     const name = safePngName(page.fileName ?? `rendered/page-${String(index + 1).padStart(3, "0")}.png`, index + 1)
     if (!pageBytes?.length || !isPng(pageBytes)) {
-      diagnostics.push({ code: "png-invalid", severity: "error", message: `Renderer page ${index + 1} is missing or not a valid PNG.` })
+      diagnostics.push({
+        code: "png-invalid",
+        severity: "error",
+        message: `Renderer page ${index + 1} is missing or not a valid PNG.`,
+      })
       continue
     }
-    if (page.blank) diagnostics.push({ code: "blank-page", severity: "warning", message: `Renderer marked page ${index + 1} as blank.` })
+    if (page.blank || page.visualSummary?.inkPixels === 0)
+      diagnostics.push({
+        code: "blank-page",
+        severity: "warning",
+        message: `Renderer marked page ${index + 1} as blank.`,
+      })
     pngEntries.push({ name, bytes: pageBytes })
   }
   warnings.push(...diagnostics.map((item) => `${item.code}: ${item.message}`))
@@ -791,7 +964,11 @@ async function writeRenderedWordArtifacts(
     derivedFiles,
     sourceFiles: [normalizePortable(path.relative(Instance.directory, source))],
     warnings,
-    qualityStatus: diagnostics.some((item) => item.severity === "error") ? "failed" : diagnostics.length ? "warning" : "ok",
+    qualityStatus: diagnostics.some((item) => item.severity === "error")
+      ? "failed"
+      : diagnostics.length
+        ? "warning"
+        : "ok",
   })
   const artifactDir = path.join(Instance.directory, artifact.artifactDir)
   let pdfPath: string | undefined
@@ -810,7 +987,44 @@ async function writeRenderedWordArtifacts(
     pagePngPaths.push(normalizePortable(path.relative(Instance.directory, output)))
   }
   const diagnosticsPath = path.join(artifactDir, diagnosticsFile)
-  await fs.writeFile(diagnosticsPath, `${JSON.stringify({ diagnostics, warnings, pdfPath, pagePngPaths, pageCount: pngEntries.length }, null, 2)}\n`, "utf8")
+  const invalidPages = diagnostics.some((item) => item.code === "png-invalid")
+  const completePages = expectedPages > 0 && pngEntries.length === expectedPages && expectedPages <= maxPages
+  const visualQaStatus: RenderedWordDocument["visualQaStatus"] =
+    completePages && !invalidPages ? "completed" : "skipped"
+  const visualQaSkipReason: RenderedWordDocument["visualQaSkipReason"] | undefined =
+    visualQaStatus === "completed"
+      ? undefined
+      : invalidPages
+        ? "invalid-page-image"
+        : expectedPages === 0
+          ? "page-images-missing"
+          : "page-count-incomplete"
+  await fs.writeFile(
+    diagnosticsPath,
+    `${JSON.stringify(
+      {
+        diagnostics,
+        warnings,
+        issues: response.issues ?? [],
+        renderer: response.renderer,
+        pageQa: pagePayloads.map((page) => ({
+          page: page.page,
+          width: page.width,
+          height: page.height,
+          visualSummary: page.visualSummary,
+        })),
+        pdfPath,
+        pagePngPaths,
+        pageCount: pngEntries.length,
+        expectedPageCount: expectedPages,
+        visualQaStatus,
+        visualQaSkipReason,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  )
   return {
     artifactDir: artifact.artifactDir,
     manifestPath: artifact.manifestPath,
@@ -820,14 +1034,27 @@ async function writeRenderedWordArtifacts(
     pageCount: pngEntries.length,
     warnings,
     diagnostics,
+    issues: response.issues ?? [],
+    renderer: response.renderer,
+    pageQa: pagePayloads.map((page) => ({
+      page: page.page,
+      width: page.width,
+      height: page.height,
+      visualSummary: page.visualSummary,
+    })),
+    visualQaStatus,
+    visualQaSkipReason,
   }
 }
 
 export async function insertWordPngImage(input: InsertWordPngImageInput): Promise<InsertedWordPngImage> {
   const source = await readDocxSnapshot(input.sourcePath)
   const documentXml = requiredSnapshotText(source, "word/document.xml", input.sourcePath)
-  let relsXml = snapshotText(source, "word/_rels/document.xml.rels") ?? documentRelationshipsXml({ images: [], imageMap: new WeakMap() })
-  let contentTypes = snapshotText(source, "[Content_Types].xml") ?? contentTypesXml({ images: [], imageMap: new WeakMap() })
+  let relsXml =
+    snapshotText(source, "word/_rels/document.xml.rels") ??
+    documentRelationshipsXml({ images: [], imageMap: new WeakMap() })
+  let contentTypes =
+    snapshotText(source, "[Content_Types].xml") ?? contentTypesXml({ images: [], imageMap: new WeakMap() })
   const bytes = input.pngBase64?.trim()
     ? Buffer.from(input.pngBase64, "base64")
     : input.pngPath?.trim()
@@ -837,9 +1064,14 @@ export async function insertWordPngImage(input: InsertWordPngImageInput): Promis
   if (!isPng(bytes)) throw new Error("insertWordPngImage payload is not a valid PNG")
   const relId = `rIdInsertedImage${maxRelationshipNumber(relsXml) + 1}`
   const mediaName = `media/inserted-${Date.now()}.png`
-  relsXml = appendRelationship(relsXml, relId, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", mediaName)
+  relsXml = appendRelationship(
+    relsXml,
+    relId,
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+    mediaName,
+  )
   contentTypes = ensureImageContentType(contentTypes, mediaName)
-  const imageXml = `${input.caption ? paragraph(input.caption, "Caption") : ""}${imageXmlFromRel(relId, input.altText ?? input.caption ?? "Inserted image", positive(input.width, 640), positive(input.height, 360))}`
+  const imageXml = `${imageXmlFromRel(relId, input.altText ?? input.caption ?? "Inserted image", positive(input.width, 640), positive(input.height, 360), Boolean(input.caption))}${input.caption ? paragraph(input.caption, "Caption", { keepLines: true }) : ""}`
   const blocks = parseTopLevelBlocks(documentXml)
   let nextDocumentXml: string
   if (input.heading?.trim()) {
@@ -850,16 +1082,21 @@ export async function insertWordPngImage(input: InsertWordPngImageInput): Promis
   }
   const binaryOverrides = new Map<string, Uint8Array>([[`word/${mediaName}`, bytes]])
   const warnings: string[] = []
-  const written = await writeDocxArtifact(source, {
-    "word/document.xml": nextDocumentXml,
-    "word/_rels/document.xml.rels": relsXml,
-    "[Content_Types].xml": contentTypes,
-  }, binaryOverrides, {
-    title: input.title ?? `Image ${path.basename(input.sourcePath)}`,
-    taskSlug: input.taskSlug ?? `${path.basename(input.sourcePath, ".docx")}-image`,
-    outputFile: safeDocxName(input.outputFile ?? `${path.basename(input.sourcePath, ".docx")}-image.docx`),
-    warnings,
-  })
+  const written = await writeDocxArtifact(
+    source,
+    {
+      "word/document.xml": nextDocumentXml,
+      "word/_rels/document.xml.rels": relsXml,
+      "[Content_Types].xml": contentTypes,
+    },
+    binaryOverrides,
+    {
+      title: input.title ?? `Image ${path.basename(input.sourcePath)}`,
+      taskSlug: input.taskSlug ?? `${path.basename(input.sourcePath, ".docx")}-image`,
+      outputFile: safeDocxName(input.outputFile ?? `${path.basename(input.sourcePath, ".docx")}-image.docx`),
+      warnings,
+    },
+  )
   return {
     ...written,
     imageRelId: relId,
@@ -877,6 +1114,9 @@ async function buildDocx(spec: CreateWordDocumentSpec, context: RenderContext): 
   await writer.add("word/_rels/document.xml.rels", new TextReader(documentRelationshipsXml(context)))
   await writer.add("word/styles.xml", new TextReader(stylesXml()))
   await writer.add("word/numbering.xml", new TextReader(numberingXml()))
+  await writer.add("word/header1.xml", new TextReader(headerXml(spec)))
+  await writer.add("word/footer1.xml", new TextReader(footerXml()))
+  await writer.add("word/settings.xml", new TextReader(settingsXml()))
   await writer.add("word/document.xml", new TextReader(documentXml(spec, context)))
   for (const image of context.images) {
     await writer.add(image.mediaPath, new Uint8ArrayReader(image.bytes))
@@ -903,7 +1143,7 @@ async function planAndApplyEdit(
   const warnings: string[] = []
   if (edit.op === "patch_ooxml_part") {
     const part = safeOoxmlPart(edit.patch.part)
-    const current = existingTextOverrides[part] ?? await readEntryText(byName, part)
+    const current = existingTextOverrides[part] ?? (await readEntryText(byName, part))
     if (current === undefined) throw new Error(`OOXML part not found: ${part}`)
     const patched = patchOoxmlPart(current, edit.patch)
     return {
@@ -944,11 +1184,20 @@ async function planAndApplyEdit(
     const target = findHeading(blocks, edit.locator)
     const xml = await renderBlocks(edit.blocks)
     return {
-      documentXml: splice(documentXml, edit.op === "insert_after_heading" ? target.end : target.start, edit.op === "insert_after_heading" ? target.end : target.start, xml),
+      documentXml: splice(
+        documentXml,
+        edit.op === "insert_after_heading" ? target.end : target.start,
+        edit.op === "insert_after_heading" ? target.end : target.start,
+        xml,
+      ),
       relsXml,
       textOverrides: {},
       mediaUpdates,
-      impact: { op: edit.op, target: targetLabel(target), summary: `${edit.op === "insert_after_heading" ? "insert after" : "insert before"} heading "${target.text}"` },
+      impact: {
+        op: edit.op,
+        target: targetLabel(target),
+        summary: `${edit.op === "insert_after_heading" ? "insert after" : "insert before"} heading "${target.text}"`,
+      },
       warnings,
     }
   }
@@ -970,7 +1219,11 @@ async function planAndApplyEdit(
       relsXml,
       textOverrides: {},
       mediaUpdates,
-      impact: { op: edit.op, target: targetLabel(target), summary: `replace paragraph ${target.paragraphIndex} with ${edit.blocks.length} block(s)` },
+      impact: {
+        op: edit.op,
+        target: targetLabel(target),
+        summary: `replace paragraph ${target.paragraphIndex} with ${edit.blocks.length} block(s)`,
+      },
       warnings,
     }
   }
@@ -1010,13 +1263,20 @@ async function planAndApplyEdit(
   if (edit.op === "delete_section" || edit.op === "replace_section") {
     const target = findHeading(blocks, edit.locator)
     const range = sectionRange(documentXml, blocks, target)
-    const replacement = edit.op === "replace_section" ? `${paragraph(edit.title ?? target.text, `Heading${edit.level ?? target.headingLevel ?? 1}`)}${await renderBlocks(edit.blocks)}` : ""
+    const replacement =
+      edit.op === "replace_section"
+        ? `${paragraph(edit.title ?? target.text, `Heading${edit.level ?? target.headingLevel ?? 1}`)}${await renderBlocks(edit.blocks)}`
+        : ""
     return {
       documentXml: splice(documentXml, range.start, range.end, replacement),
       relsXml,
       textOverrides: {},
       mediaUpdates,
-      impact: { op: edit.op, target: targetLabel(target), summary: `${edit.op === "replace_section" ? "replace" : "delete"} section "${target.text}"` },
+      impact: {
+        op: edit.op,
+        target: targetLabel(target),
+        summary: `${edit.op === "replace_section" ? "replace" : "delete"} section "${target.text}"`,
+      },
       warnings,
     }
   }
@@ -1024,7 +1284,9 @@ async function planAndApplyEdit(
     const rel = findImageRelationship(relsXml, edit.locator)
     const existingContentType = contentTypeFor(rel.target)
     if (edit.image.contentType && existingContentType && edit.image.contentType !== existingContentType) {
-      throw new Error(`replace_image contentType ${edit.image.contentType} does not match existing media target ${rel.target}`)
+      throw new Error(
+        `replace_image contentType ${edit.image.contentType} does not match existing media target ${rel.target}`,
+      )
     }
     const bytes = await imageBytes(edit.image)
     mediaUpdates.push({ path: `word/${rel.target}`, bytes })
@@ -1042,7 +1304,9 @@ async function planAndApplyEdit(
 
 async function renderBlocks(blocks: WordBlock[]): Promise<string> {
   if (blocks.some((block) => block.type === "image")) {
-    throw new Error("image blocks inside structural Word edits are not supported in v1; use replace_image for existing images")
+    throw new Error(
+      "image blocks inside structural Word edits are not supported in v1; use replace_image for existing images",
+    )
   }
   const context = await buildContext({ title: "blocks", sections: [{ title: "blocks", blocks }] })
   return blocks.map((block) => blockXml(block, context)).join("")
@@ -1056,6 +1320,7 @@ async function buildContext(spec: CreateWordDocumentSpec): Promise<RenderContext
     const index = images.length + 1
     const contentType = block.contentType ?? "image/png"
     const extension = contentType === "image/jpeg" ? "jpg" : "png"
+    const size = figureSize(positive(block.width, 480), positive(block.height, 280))
     const item: ImagePart = {
       relId: `rIdImage${index}`,
       mediaPath: `word/media/image${index}.${extension}`,
@@ -1063,8 +1328,8 @@ async function buildContext(spec: CreateWordDocumentSpec): Promise<RenderContext
       contentType,
       extension,
       bytes: await imageBytes(block),
-      width: positive(block.width, 480),
-      height: positive(block.height, 280),
+      width: size.width,
+      height: size.height,
       altText: block.altText ?? block.title ?? block.caption ?? `Image ${index}`,
     }
     images.push(item)
@@ -1075,8 +1340,8 @@ async function buildContext(spec: CreateWordDocumentSpec): Promise<RenderContext
 
 function documentXml(spec: CreateWordDocumentSpec, context: RenderContext): string {
   const body: string[] = []
-  body.push(paragraph(spec.documentType ?? "Document", "Subtitle"))
   body.push(paragraph(spec.title, "Title"))
+  body.push(paragraph(spec.documentType ?? "Detailed Design", "Subtitle"))
   if (spec.author) body.push(paragraph(`Author: ${spec.author}`, "Normal"))
   for (const item of spec.summary ?? []) body.push(paragraph(item, "Normal"))
   for (const section of spec.sections) {
@@ -1088,7 +1353,9 @@ function documentXml(spec: CreateWordDocumentSpec, context: RenderContext): stri
     for (const image of section.images ?? []) body.push(imageXml(image, context))
     for (const block of section.blocks ?? []) body.push(blockXml(block, context))
   }
-  body.push("<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\"/></w:sectPr>")
+  body.push(
+    `<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/><w:pgSz w:w="${PAGE_WIDTH_DXA}" w:h="${PAGE_HEIGHT_DXA}"/><w:pgMar w:top="${PAGE_MARGIN_DXA}" w:right="${PAGE_MARGIN_DXA}" w:bottom="${PAGE_MARGIN_DXA}" w:left="${PAGE_MARGIN_DXA}" w:header="${HEADER_FOOTER_DXA}" w:footer="${HEADER_FOOTER_DXA}" w:gutter="0"/><w:cols w:space="720"/></w:sectPr>`,
+  )
   return xml(
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body.join("")}</w:body></w:document>`,
   )
@@ -1105,29 +1372,91 @@ function blockXml(block: WordBlock, context: RenderContext): string {
     case "table":
       return tableXml(block.headers, block.rows, block.caption)
     case "code":
-      return paragraph(block.text, "Code")
+      return codeParagraph(block.text)
     case "image":
       return imageXml(block, context)
   }
 }
 
-function paragraph(text: string, style = "Normal"): string {
-  const styleXml = style === "Normal" ? "" : `<w:pPr><w:pStyle w:val="${escapeAttr(style)}"/></w:pPr>`
-  return `<w:p>${styleXml}<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
+function paragraph(
+  text: string,
+  style = "Normal",
+  options: { align?: "left" | "center" | "right"; keepNext?: boolean; keepLines?: boolean } = {},
+): string {
+  const properties = [
+    style === "Normal" ? "" : `<w:pStyle w:val="${escapeAttr(style)}"/>`,
+    options.align ? `<w:jc w:val="${options.align}"/>` : "",
+    options.keepNext ? "<w:keepNext/>" : "",
+    options.keepLines ? "<w:keepLines/>" : "",
+  ].join("")
+  return `<w:p>${properties ? `<w:pPr>${properties}</w:pPr>` : ""}<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
+}
+
+function codeParagraph(text: string): string {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n")
+  const runs = lines
+    .map(
+      (line, index) =>
+        `${index ? "<w:r><w:br/></w:r>" : ""}<w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r>`,
+    )
+    .join("")
+  return `<w:p><w:pPr><w:pStyle w:val="Code"/><w:keepLines/></w:pPr>${runs}</w:p>`
 }
 
 function list(items: string[], ordered: boolean): string[] {
-  return items.map((item) => `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${ordered ? 2 : 1}"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(item)}</w:t></w:r></w:p>`)
+  return items.map(
+    (item) =>
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${ordered ? 2 : 1}"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(item)}</w:t></w:r></w:p>`,
+  )
 }
 
 function tableXml(headers: string[], rows: string[][], caption?: string): string {
   const table = normalizeTableSpec({ headers, rows, caption }, { trimCells: false, fillMissingCells: "" })
+  const widths = tableWidths(table.headers, table.rows)
   const rowXml = [table.headers, ...table.rows]
-    .map((row, rowIndex) =>
-      `<w:tr>${Array.from({ length: table.columnCount }, (_, index) => `<w:tc><w:tcPr><w:tcW w:w="${Math.floor(9000 / table.columnCount)}" w:type="dxa"/></w:tcPr>${paragraph(row[index] ?? "", rowIndex === 0 ? "TableHeader" : "Normal")}</w:tc>`).join("")}</w:tr>`,
+    .map(
+      (row, rowIndex) =>
+        `<w:tr><w:trPr>${rowIndex === 0 ? "<w:tblHeader/>" : ""}<w:cantSplit/></w:trPr>${Array.from({ length: table.columnCount }, (_, index) => tableCellXml(row[index] ?? "", widths[index]!, rowIndex === 0, tableColumnAlignment(index, table.headers, table.rows))).join("")}</w:tr>`,
     )
     .join("")
-  return `${table.caption ? paragraph(table.caption, "Caption") : ""}<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr>${rowXml}</w:tbl>`
+  const properties = [
+    `<w:tblW w:w="${CONTENT_WIDTH_DXA}" w:type="dxa"/>`,
+    `<w:tblInd w:w="${TABLE_INDENT_DXA}" w:type="dxa"/>`,
+    '<w:tblLayout w:type="fixed"/>',
+    '<w:tblBorders><w:top w:val="single" w:sz="4" w:color="D0D7DE"/><w:left w:val="single" w:sz="4" w:color="D0D7DE"/><w:bottom w:val="single" w:sz="4" w:color="D0D7DE"/><w:right w:val="single" w:sz="4" w:color="D0D7DE"/><w:insideH w:val="single" w:sz="4" w:color="D0D7DE"/><w:insideV w:val="single" w:sz="4" w:color="D0D7DE"/></w:tblBorders>',
+    `<w:tblCellMar><w:top w:w="${TABLE_CELL_MARGIN_Y_DXA}" w:type="dxa"/><w:start w:w="${TABLE_CELL_MARGIN_X_DXA}" w:type="dxa"/><w:bottom w:w="${TABLE_CELL_MARGIN_Y_DXA}" w:type="dxa"/><w:end w:w="${TABLE_CELL_MARGIN_X_DXA}" w:type="dxa"/></w:tblCellMar>`,
+  ].join("")
+  return `${table.caption ? paragraph(table.caption, "Caption", { keepNext: true, keepLines: true }) : ""}<w:tbl><w:tblPr>${properties}</w:tblPr><w:tblGrid>${widths.map((width) => `<w:gridCol w:w="${width}"/>`).join("")}</w:tblGrid>${rowXml}</w:tbl>`
+}
+
+function tableCellXml(text: string, width: number, header: boolean, align: "left" | "center"): string {
+  const properties = [
+    `<w:tcW w:w="${width}" w:type="dxa"/>`,
+    '<w:vAlign w:val="center"/>',
+    header ? '<w:shd w:val="clear" w:color="auto" w:fill="F2F4F7"/>' : "",
+  ].join("")
+  return `<w:tc><w:tcPr>${properties}</w:tcPr>${paragraph(text, header ? "TableHeader" : "Normal", { align, keepLines: true })}</w:tc>`
+}
+
+function tableWidths(headers: string[], rows: string[][]): number[] {
+  const weights = headers.map((header, index) =>
+    Math.max(1, ...[header, ...rows.map((row) => row[index] ?? "")].map((cell) => Math.min(80, textWeight(cell)))),
+  )
+  const floor = Math.min(1_200, Math.floor(CONTENT_WIDTH_DXA / Math.max(2, headers.length * 2)))
+  const remaining = CONTENT_WIDTH_DXA - floor * headers.length
+  const total = weights.reduce((sum, weight) => sum + weight, 0)
+  const widths = weights.map((weight) => floor + Math.floor((remaining * weight) / total))
+  widths[widths.length - 1] = (widths.at(-1) ?? 0) + CONTENT_WIDTH_DXA - widths.reduce((sum, width) => sum + width, 0)
+  return widths
+}
+
+function textWeight(text: string): number {
+  return [...text].reduce((total, char) => total + (/[^\u0000-\u00ff]/.test(char) ? 2 : 1), 0)
+}
+
+function tableColumnAlignment(index: number, headers: string[], rows: string[][]): "left" | "center" {
+  const values = [headers[index] ?? "", ...rows.map((row) => row[index] ?? "")]
+  return values.every((value) => !value.includes("\n") && textWeight(value) <= 18) ? "center" : "left"
 }
 
 function normalizeTableSpec(
@@ -1139,7 +1468,7 @@ function normalizeTableSpec(
   const fill = options.fillMissingCells ?? ""
   const rawHeaders = Array.isArray(table.headers) ? table.headers : []
   const rawRows = Array.isArray(table.rows) ? table.rows : []
-  const sourceWidth = Math.max(rawHeaders.length, ...rawRows.map((row) => Array.isArray(row) ? row.length : 0), 1)
+  const sourceWidth = Math.max(rawHeaders.length, ...rawRows.map((row) => (Array.isArray(row) ? row.length : 0)), 1)
   const maxColumns = options.maxColumns && options.maxColumns > 0 ? Math.floor(options.maxColumns) : sourceWidth
   const columnCount = Math.max(1, Math.min(sourceWidth, maxColumns))
   if (sourceWidth > columnCount) warnings.push(`table width truncated from ${sourceWidth} to ${columnCount} columns`)
@@ -1171,50 +1500,102 @@ function normalizeTableSpec(
 function imageXml(block: Extract<WordBlock, { type: "image" }>, context: RenderContext): string {
   const image = context.imageMap.get(block)
   if (!image) return paragraph(`[Missing image: ${block.title ?? block.caption ?? "image"}]`, "Normal")
-  const cx = Math.round(image.width * 9525)
-  const cy = Math.round(image.height * 9525)
-  const drawing = `<w:p><w:r><w:drawing><wp:inline><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${context.images.indexOf(image) + 1}" name="${escapeAttr(image.altText)}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="${escapeAttr(image.altText)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${image.relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
-  return `${block.title ? paragraph(block.title, "Caption") : ""}${drawing}${block.caption ? paragraph(block.caption, "Caption") : ""}`
+  const drawing = drawingParagraph(
+    image.relId,
+    image.altText,
+    image.width,
+    image.height,
+    context.images.indexOf(image) + 1,
+    Boolean(block.caption),
+  )
+  return `${block.title ? paragraph(block.title, "Caption", { keepNext: true, keepLines: true }) : ""}${drawing}${block.caption ? paragraph(block.caption, "Caption", { keepLines: true }) : ""}`
 }
 
-function imageXmlFromRel(relId: string, altText: string, width: number, height: number): string {
-  const cx = Math.round(width * 9525)
-  const cy = Math.round(height * 9525)
+function imageXmlFromRel(relId: string, altText: string, width: number, height: number, keepNext = false): string {
+  const size = figureSize(width, height)
+  return drawingParagraph(relId, altText, size.width, size.height, Date.now() % 100_000, keepNext)
+}
+
+function drawingParagraph(
+  relId: string,
+  altText: string,
+  width: number,
+  height: number,
+  id: number,
+  keepNext: boolean,
+): string {
+  const cx = Math.round(width * EMU_PER_CSS_PIXEL)
+  const cy = Math.round(height * EMU_PER_CSS_PIXEL)
   const alt = escapeAttr(altText)
-  return `<w:p><w:r><w:drawing><wp:inline><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${Date.now() % 100000}" name="${alt}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="${alt}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${escapeAttr(relId)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
+  const properties = `<w:pPr><w:jc w:val="center"/><w:keepLines/>${keepNext ? "<w:keepNext/>" : ""}</w:pPr>`
+  const drawing = `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="${alt}" descr="${alt}" title="${alt}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="${alt}" descr="${alt}"/><pic:cNvPicPr><a:picLocks noChangeAspect="1"/></pic:cNvPicPr></pic:nvPicPr><pic:blipFill><a:blip r:embed="${escapeAttr(relId)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`
+  return `<w:p>${properties}<w:r>${drawing}</w:r></w:p>`
+}
+
+function figureSize(width: number, height: number): { width: number; height: number } {
+  const scale = Math.min(1, MAX_FIGURE_WIDTH_PX / width, MAX_FIGURE_HEIGHT_PX / height)
+  return { width: Math.max(1, width * scale), height: Math.max(1, height * scale) }
 }
 
 function contentTypesXml(context: RenderContext): string {
   const imageDefaults = new Set(context.images.map((image) => image.extension))
   return xml(
-    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults.has("png") ? '<Default Extension="png" ContentType="image/png"/>' : ""}${imageDefaults.has("jpg") ? '<Default Extension="jpg" ContentType="image/jpeg"/>' : ""}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`,
+    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults.has("png") ? '<Default Extension="png" ContentType="image/png"/>' : ""}${imageDefaults.has("jpg") ? '<Default Extension="jpg" ContentType="image/jpeg"/>' : ""}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`,
   )
 }
 
 function packageRelationshipsXml(): string {
-  return xml('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>')
+  return xml(
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>',
+  )
 }
 
 function documentRelationshipsXml(context: RenderContext): string {
   return xml(
-    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rIdNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>${context.images.map((image) => `<Relationship Id="${image.relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${escapeAttr(image.target)}"/>`).join("")}</Relationships>`,
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rIdNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>${context.images.map((image) => `<Relationship Id="${image.relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${escapeAttr(image.target)}"/>`).join("")}</Relationships>`,
   )
 }
 
 function stylesXml(): string {
-  return xml('<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="40"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:rPr><w:color w:val="666666"/><w:sz w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="2"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="Caption"/><w:basedOn w:val="Normal"/><w:rPr><w:i/><w:color w:val="555555"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TableHeader"><w:name w:val="Table Header"/><w:basedOn w:val="Normal"/><w:rPr><w:b/></w:rPr></w:style></w:styles>')
+  return xml(
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:color w:val="24292F"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Subtitle"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="160"/><w:keepNext/></w:pPr><w:rPr><w:b/><w:color w:val="17324D"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="180"/><w:keepNext/></w:pPr><w:rPr><w:color w:val="3A6EA5"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="320" w:after="160"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="160" w:after="80"/><w:outlineLvl w:val="2"/></w:pPr><w:rPr><w:b/><w:color w:val="1F4D78"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="Caption"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="60" w:after="80"/><w:keepLines/></w:pPr><w:rPr><w:i/><w:color w:val="667085"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="80" w:after="80" w:line="240" w:lineRule="auto"/><w:shd w:val="clear" w:color="auto" w:fill="F3F4F6"/><w:keepLines/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="Courier New"/><w:color w:val="1F2937"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TableHeader"><w:name w:val="Table Header"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:b/><w:color w:val="24292F"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style></w:styles>',
+  )
 }
 
 function numberingXml(): string {
-  return xml('<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="2"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="2"/></w:num></w:numbering>')
+  return xml(
+    '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/><w:lvlJc w:val="left"/><w:pPr><w:tabs><w:tab w:val="num" w:pos="720"/></w:tabs><w:ind w:left="720" w:hanging="360"/><w:spacing w:after="160" w:line="280" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="2"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:tabs><w:tab w:val="num" w:pos="720"/></w:tabs><w:ind w:left="720" w:hanging="360"/><w:spacing w:after="160" w:line="280" w:lineRule="auto"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="2"/></w:num></w:numbering>',
+  )
+}
+
+function headerXml(spec: CreateWordDocumentSpec): string {
+  return xml(
+    `<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="4" w:space="4" w:color="D0D7DE"/></w:pBdr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:color w:val="667085"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">${escapeXml(spec.title)}</w:t></w:r></w:p></w:hdr>`,
+  )
+}
+
+function footerXml(): string {
+  return xml(
+    '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="right"/><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:color w:val="667085"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">Page </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>',
+  )
+}
+
+function settingsXml(): string {
+  return xml(
+    '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:updateFields w:val="true"/><w:defaultTabStop w:val="720"/><w:compat/></w:settings>',
+  )
 }
 
 function coreXml(spec: CreateWordDocumentSpec): string {
-  return xml(`<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${escapeXml(spec.title)}</dc:title><dc:creator>${escapeXml(spec.author ?? "Kilo")}</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:created></cp:coreProperties>`)
+  return xml(
+    `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${escapeXml(spec.title)}</dc:title><dc:creator>${escapeXml(spec.author ?? "Kilo")}</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:created></cp:coreProperties>`,
+  )
 }
 
 function appXml(): string {
-  return xml('<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Kilo</Application></Properties>')
+  return xml(
+    '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Kilo</Application></Properties>',
+  )
 }
 
 function parseParagraphs(documentXml: string): Array<{ index: number; text: string; styleId?: string }> {
@@ -1227,12 +1608,17 @@ function parseParagraphs(documentXml: string): Array<{ index: number; text: stri
 
 function parseTables(documentXml: string): string[][][] {
   return matchAll(documentXml, /<w:tbl\b[\s\S]*?<\/w:tbl>/g).map((table) =>
-    matchAll(table, /<w:tr\b[\s\S]*?<\/w:tr>/g).map((row) => matchAll(row, /<w:tc\b[\s\S]*?<\/w:tc>/g).map(textFromXml)),
+    matchAll(table, /<w:tr\b[\s\S]*?<\/w:tr>/g).map((row) =>
+      matchAll(row, /<w:tc\b[\s\S]*?<\/w:tc>/g).map(textFromXml),
+    ),
   )
 }
 
 function parseImages(relsXml: string, byName: Map<string, { filename: string }>): WordDocumentInspection["images"] {
-  return matchAll(relsXml, /<Relationship\b[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image"[^>]*>/g).map((relationship, index) => {
+  return matchAll(
+    relsXml,
+    /<Relationship\b[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image"[^>]*>/g,
+  ).map((relationship, index) => {
     const target = attr(relationship, /\bTarget="([^"]+)"/) ?? ""
     return {
       index: index + 1,
@@ -1256,7 +1642,8 @@ function headingLevelFromStyle(styleId?: string): 1 | 2 | 3 | undefined {
 
 function validateCreateSpec(spec: CreateWordDocumentSpec): void {
   if (!spec.title?.trim()) throw new Error("create_word_document spec.title is required")
-  if (!Array.isArray(spec.sections) || spec.sections.length === 0) throw new Error("create_word_document spec.sections must not be empty")
+  if (!Array.isArray(spec.sections) || spec.sections.length === 0)
+    throw new Error("create_word_document spec.sections must not be empty")
   for (const [index, section] of spec.sections.entries()) {
     if (!section.title?.trim()) throw new Error(`create_word_document sections[${index}].title is required`)
   }
@@ -1273,34 +1660,37 @@ function allBlocks(spec: CreateWordDocumentSpec): WordBlock[] {
 }
 
 function safeDocxName(input: string): string {
-  const base = input
-    .replace(/\.docx$/i, "")
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 96) || "document"
+  const base =
+    input
+      .replace(/\.docx$/i, "")
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 96) || "document"
   return `${base}.docx`
 }
 
 function safePdfName(input: string): string {
-  const base = input
-    .replace(/\.pdf$/i, "")
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 96) || "document"
+  const base =
+    input
+      .replace(/\.pdf$/i, "")
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 96) || "document"
   return `${base}.pdf`
 }
 
 function safePngName(input: string, fallbackIndex: number): string {
   const normalized = normalizePortable(input).replace(/^\/+/, "")
   const parts = normalized.split("/").filter(Boolean)
-  const file = (parts.pop() ?? `page-${String(fallbackIndex).padStart(3, "0")}.png`)
-    .replace(/\.png$/i, "")
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 96) || `page-${String(fallbackIndex).padStart(3, "0")}`
+  const file =
+    (parts.pop() ?? `page-${String(fallbackIndex).padStart(3, "0")}.png`)
+      .replace(/\.png$/i, "")
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 96) || `page-${String(fallbackIndex).padStart(3, "0")}`
   const folder = parts.length ? parts.map((part) => part.replace(/[\\/:*?"<>|]+/g, "-")).join("/") : "rendered"
   return `${folder}/${file}.png`
 }
@@ -1320,7 +1710,10 @@ function assertInside(base: string, target: string, label: string): void {
   }
 }
 
-async function readEntryText(byName: Map<string, { getData?: (writer: TextWriter) => Promise<string> }>, name: string): Promise<string | undefined> {
+async function readEntryText(
+  byName: Map<string, { getData?: (writer: TextWriter) => Promise<string> }>,
+  name: string,
+): Promise<string | undefined> {
   return await byName.get(name)?.getData?.(new TextWriter())
 }
 
@@ -1329,7 +1722,9 @@ function matchAll(input: string, regex: RegExp, group = 0): string[] {
 }
 
 function textFromXml(input: string): string {
-  return matchAll(input, /<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g, 1).map(unescapeXml).join("")
+  return matchAll(input, /<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g, 1)
+    .map(unescapeXml)
+    .join("")
 }
 
 function attr(input: string, regex: RegExp): string | undefined {
@@ -1348,15 +1743,17 @@ function isPdf(bytes: Uint8Array): boolean {
 }
 
 function isPng(bytes: Uint8Array): boolean {
-  return bytes.length >= 8
-    && bytes[0] === 0x89
-    && bytes[1] === 0x50
-    && bytes[2] === 0x4e
-    && bytes[3] === 0x47
-    && bytes[4] === 0x0d
-    && bytes[5] === 0x0a
-    && bytes[6] === 0x1a
-    && bytes[7] === 0x0a
+  return (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  )
 }
 
 function escapeXml(input: string): string {
@@ -1368,7 +1765,11 @@ function escapeAttr(input: string): string {
 }
 
 function unescapeXml(input: string): string {
-  return input.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&")
+  return input
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
 }
 
 function normalizePortable(input: string): string {
@@ -1419,15 +1820,28 @@ type DocxSnapshot = {
 }
 
 type RemoteWordRenderResponse = {
+  ok?: boolean
+  pageCount?: number
   pdfBase64?: string
+  pdf?: {
+    contentType?: string
+    base64?: string
+  }
   pages?: Array<{
+    page?: number
     fileName?: string
     pngBase64?: string
     base64?: string
+    contentType?: string
+    width?: number
+    height?: number
+    visualSummary?: Record<string, unknown>
     blank?: boolean
   }>
   detectedImageCount?: number
   warnings?: string[]
+  issues?: WordRenderIssue[]
+  renderer?: Record<string, unknown>
 }
 
 function parseTopLevelBlocks(documentXml: string): TopLevelBlock[] {
@@ -1478,7 +1892,9 @@ function findHeading(blocks: TopLevelBlock[], locator: WordEditLocator): TopLeve
   const heading = locator.heading?.trim()
   if (!heading) throw new Error("heading locator is required")
   const exact = blocks.filter((block) => block.headingLevel && normalizeText(block.text) === normalizeText(heading))
-  const candidates = exact.length ? exact : blocks.filter((block) => block.headingLevel && normalizeText(block.text).includes(normalizeText(heading)))
+  const candidates = exact.length
+    ? exact
+    : blocks.filter((block) => block.headingLevel && normalizeText(block.text).includes(normalizeText(heading)))
   return pickUnique(candidates, locator.occurrence, `heading "${heading}"`)
 }
 
@@ -1491,7 +1907,9 @@ function findParagraph(blocks: TopLevelBlock[], locator: WordEditLocator): TopLe
   if (locator.paragraphText?.trim()) {
     const needle = normalizeText(locator.paragraphText)
     const exact = blocks.filter((block) => block.kind === "paragraph" && normalizeText(block.text) === needle)
-    const candidates = exact.length ? exact : blocks.filter((block) => block.kind === "paragraph" && normalizeText(block.text).includes(needle))
+    const candidates = exact.length
+      ? exact
+      : blocks.filter((block) => block.kind === "paragraph" && normalizeText(block.text).includes(needle))
     return pickUnique(candidates, locator.occurrence, `paragraphText "${locator.paragraphText}"`)
   }
   if (locator.heading?.trim()) return findHeading(blocks, locator)
@@ -1511,7 +1929,8 @@ function findContentControl(blocks: ContentControlBlock[], locator: WordEditLoca
   if (locator.contentControlTitle?.trim()) {
     candidates = candidates.filter((block) => block.title === locator.contentControlTitle)
   }
-  if (candidates === blocks) throw new Error("content control locator requires contentControlIndex, contentControlTag, or contentControlTitle")
+  if (candidates === blocks)
+    throw new Error("content control locator requires contentControlIndex, contentControlTag, or contentControlTitle")
   if (candidates.length === 0) throw new Error("No matching content control")
   if (locator.occurrence !== undefined) {
     const found = candidates[locator.occurrence - 1]
@@ -1540,7 +1959,11 @@ function pickUnique(candidates: TopLevelBlock[], occurrence: number | undefined,
   return candidates[0]!
 }
 
-function sectionRange(documentXml: string, blocks: TopLevelBlock[], heading: TopLevelBlock): { start: number; end: number } {
+function sectionRange(
+  documentXml: string,
+  blocks: TopLevelBlock[],
+  heading: TopLevelBlock,
+): { start: number; end: number } {
   const level = heading.headingLevel ?? 1
   const next = blocks.find((block) => block.start > heading.start && block.headingLevel && block.headingLevel <= level)
   if (next) return { start: heading.start, end: next.start }
@@ -1551,7 +1974,10 @@ function sectionRange(documentXml: string, blocks: TopLevelBlock[], heading: Top
 }
 
 function findImageRelationship(relsXml: string, locator: WordEditLocator): { relId: string; target: string } {
-  const rels = matchAll(relsXml, /<Relationship\b[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image"[^>]*>/g).map((relationship, index) => ({
+  const rels = matchAll(
+    relsXml,
+    /<Relationship\b[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image"[^>]*>/g,
+  ).map((relationship, index) => ({
     index: index + 1,
     relId: attr(relationship, /\bId="([^"]+)"/) ?? `rIdImage${index + 1}`,
     target: attr(relationship, /\bTarget="([^"]+)"/) ?? "",
@@ -1564,7 +1990,11 @@ function findImageRelationship(relsXml: string, locator: WordEditLocator): { rel
   const imageIndex = locator.imageIndex ?? 1
   const found = rels.find((item) => item.index === imageIndex)
   if (!found) throw new Error(`imageIndex not found: ${imageIndex}`)
-  if (!found.target || found.target.includes("\\") || found.target.split("/").some((segment) => segment === ".." || segment === "." || !segment)) {
+  if (
+    !found.target ||
+    found.target.includes("\\") ||
+    found.target.split("/").some((segment) => segment === ".." || segment === "." || !segment)
+  ) {
     throw new Error(`unsafe image target in document relationships: ${found.target}`)
   }
   return found
@@ -1606,7 +2036,10 @@ async function tryLocalWordRenderer(
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-word-render-"))
   try {
     try {
-      await execFile(soffice, ["--headless", "--convert-to", "pdf", "--outdir", temp, source], { timeout: timeoutMs })
+      await execFile(soffice, ["--headless", "--convert-to", "pdf", "--outdir", temp, source], {
+        timeout: timeoutMs,
+        windowsHide: true,
+      })
     } catch (err) {
       diagnostics.push({
         code: "word-render-local-failed",
@@ -1635,12 +2068,16 @@ async function tryLocalWordRenderer(
       diagnostics.push({
         code: "word-render-local-page-renderer-not-configured",
         severity: "warning",
-        message: "Local PDF renderer succeeded, but pdftoppm was not found; set KILO_WORD_RENDER_PDFTOPPM or put pdftoppm on PATH to render page PNG artifacts.",
+        message:
+          "Local PDF renderer succeeded, but pdftoppm was not found; set KILO_WORD_RENDER_PDFTOPPM or put pdftoppm on PATH to render page PNG artifacts.",
       })
     } else {
       const prefix = path.join(temp, "page")
       try {
-        await execFile(pdftoppm, ["-png", "-f", "1", "-l", String(maxPages), pdfPath, prefix], { timeout: timeoutMs })
+        await execFile(pdftoppm, ["-png", "-f", "1", "-l", String(maxPages), pdfPath, prefix], {
+          timeout: timeoutMs,
+          windowsHide: true,
+        })
         const entries = await fs.readdir(temp)
         const pageFiles = entries
           .filter((entry) => /^page-\d+\.png$/.test(entry))
@@ -1666,6 +2103,7 @@ async function tryLocalWordRenderer(
       response: {
         pdfBase64: pdfBytes.toString("base64"),
         pages,
+        pageCount: pages.length,
       },
       diagnostics,
     }
@@ -1698,7 +2136,11 @@ function pageNumber(file: string): number {
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
 }
 
-async function callWordRenderer(endpoint: string, payload: unknown, timeoutMs: number): Promise<RemoteWordRenderResponse> {
+async function callWordRenderer(
+  endpoint: string,
+  payload: unknown,
+  timeoutMs: number,
+): Promise<RemoteWordRenderResponse> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -1708,9 +2150,10 @@ async function callWordRenderer(endpoint: string, payload: unknown, timeoutMs: n
       body: JSON.stringify(payload),
       signal: controller.signal,
     })
-    if (!response.ok) throw new Error(`renderer returned HTTP ${response.status}`)
-    const body = await response.json() as RemoteWordRenderResponse
+    const body = (await response.json()) as RemoteWordRenderResponse
     if (!body || typeof body !== "object") throw new Error("renderer returned an invalid JSON body")
+    if (!response.ok && body.ok !== false && !body.issues?.length)
+      throw new Error(`renderer returned HTTP ${response.status}`)
     return body
   } finally {
     clearTimeout(timer)
@@ -1742,7 +2185,11 @@ async function writeDocxArtifact(
     warnings: input.warnings,
     qualityStatus: input.warnings.length ? "warning" : "unknown",
   })
-  const output = path.join(Instance.directory, artifact.artifactDir, artifact.manifest.primaryFile ?? safeDocxName(input.outputFile))
+  const output = path.join(
+    Instance.directory,
+    artifact.artifactDir,
+    artifact.manifest.primaryFile ?? safeDocxName(input.outputFile),
+  )
   assertInside(path.join(Instance.directory, artifact.artifactDir), output, "outputFile")
   await fs.mkdir(path.dirname(output), { recursive: true })
   const nextBytes = await rewriteDocx(source.entries, textOverrides, binaryOverrides)
@@ -1757,7 +2204,8 @@ async function writeDocxArtifact(
 function fillContentControlXml(controlXml: string, text: string): string {
   const open = controlXml.match(/<w:sdtContent\b[^>]*>/)
   const close = controlXml.lastIndexOf("</w:sdtContent>")
-  if (!open || open.index === undefined || close < open.index) throw new Error("content control is missing w:sdtContent")
+  if (!open || open.index === undefined || close < open.index)
+    throw new Error("content control is missing w:sdtContent")
   return splice(controlXml, open.index + open[0].length, close, paragraph(text, "Normal"))
 }
 
@@ -1778,7 +2226,10 @@ function appendRelationship(relsXml: string, id: string, type: string, target: s
   const relationship = `<Relationship Id="${escapeAttr(id)}" Type="${escapeAttr(type)}" Target="${escapeAttr(target)}"/>`
   return relsXml.includes("</Relationships>")
     ? relsXml.replace("</Relationships>", `${relationship}</Relationships>`)
-    : documentRelationshipsXml({ images: [], imageMap: new WeakMap() }).replace("</Relationships>", `${relationship}</Relationships>`)
+    : documentRelationshipsXml({ images: [], imageMap: new WeakMap() }).replace(
+        "</Relationships>",
+        `${relationship}</Relationships>`,
+      )
 }
 
 function ensureContentTypeOverride(contentTypes: string, partName: string, contentType: string): string {
@@ -1793,10 +2244,15 @@ function ensureImageContentType(contentTypes: string, target: string): string {
   const ext = path.extname(target).replace(".", "").toLowerCase()
   const contentType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "png" ? "image/png" : undefined
   if (!contentType || contentTypes.includes(`Extension="${ext}"`)) return contentTypes
-  return contentTypes.includes("</Types>") ? contentTypes.replace("</Types>", `<Default Extension="${escapeAttr(ext)}" ContentType="${contentType}"/></Types>`) : contentTypesXml({ images: [], imageMap: new WeakMap() })
+  return contentTypes.includes("</Types>")
+    ? contentTypes.replace("</Types>", `<Default Extension="${escapeAttr(ext)}" ContentType="${contentType}"/></Types>`)
+    : contentTypesXml({ images: [], imageMap: new WeakMap() })
 }
 
-function materializeFieldsInDocument(documentXml: string, tocMode: "preserve" | "materialize" | "remove"): {
+function materializeFieldsInDocument(
+  documentXml: string,
+  tocMode: "preserve" | "materialize" | "remove",
+): {
   xml: string
   summary: MaterializedWordFields["summary"]
   warnings: string[]
@@ -1830,7 +2286,9 @@ function materializeFieldsInDocument(documentXml: string, tocMode: "preserve" | 
       xml = xml.replace(/<w:p\b[\s\S]*?\{\{TOC\}\}[\s\S]*?<\/w:p>/g, "")
     } else {
       toc = "materialized"
-      const replacement = tocLines.length ? tocLines.map((line) => paragraph(line, "Normal")).join("") : paragraph("No headings found", "Normal")
+      const replacement = tocLines.length
+        ? tocLines.map((line) => paragraph(line, "Normal")).join("")
+        : paragraph("No headings found", "Normal")
       xml = xml.replace(/<w:p\b[\s\S]*?\{\{TOC\}\}[\s\S]*?<\/w:p>/g, replacement)
     }
   }
@@ -1850,25 +2308,54 @@ function replaceDocumentBody(documentXml: string, body: string): string {
 }
 
 function parseImageRelationships(relsXml: string): Array<{ relId: string; target: string }> {
-  return matchAll(relsXml, /<Relationship\b[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image"[^>]*>/g).map((relationship, index) => ({
-    relId: attr(relationship, /\bId="([^"]+)"/) ?? `rIdImage${index + 1}`,
-    target: attr(relationship, /\bTarget="([^"]+)"/) ?? "",
-  })).filter((item) => item.target && !item.target.includes("\\") && !item.target.split("/").some((segment) => segment === ".." || segment === "." || !segment))
+  return matchAll(
+    relsXml,
+    /<Relationship\b[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image"[^>]*>/g,
+  )
+    .map((relationship, index) => ({
+      relId: attr(relationship, /\bId="([^"]+)"/) ?? `rIdImage${index + 1}`,
+      target: attr(relationship, /\bTarget="([^"]+)"/) ?? "",
+    }))
+    .filter(
+      (item) =>
+        item.target &&
+        !item.target.includes("\\") &&
+        !item.target.split("/").some((segment) => segment === ".." || segment === "." || !segment),
+    )
 }
 
 function maxRelationshipNumber(relsXml: string): number {
-  return Math.max(0, ...matchAll(relsXml, /\bId="rId(?:MergedImage)?(\d+)"/g, 1).map((item) => Number(item)).filter(Number.isFinite))
+  return Math.max(
+    0,
+    ...matchAll(relsXml, /\bId="rId(?:(?:Merged|Inserted)Image)?(\d+)"/g, 1)
+      .map((item) => Number(item))
+      .filter(Number.isFinite),
+  )
 }
 
 function maxMediaImageNumber(bytes: Map<string, Uint8Array>): number {
-  return Math.max(0, ...[...bytes.keys()].map((name) => name.match(/word\/media\/(?:merged\d+_)?image?(\d+)/i)?.[1]).filter((item): item is string => Boolean(item)).map((item) => Number(item)).filter(Number.isFinite))
+  return Math.max(
+    0,
+    ...[...bytes.keys()]
+      .map((name) => name.match(/word\/media\/(?:merged\d+_)?image?(\d+)/i)?.[1])
+      .filter((item): item is string => Boolean(item))
+      .map((item) => Number(item))
+      .filter(Number.isFinite),
+  )
 }
 
 function remapBookmarkIds(body: string, offset: number): string {
-  return body.replace(/(<w:bookmark(?:Start|End)\b[^>]*\bw:id=")(\d+)(")/g, (_match, prefix: string, id: string, suffix: string) => `${prefix}${Number(id) + offset}${suffix}`)
+  return body.replace(
+    /(<w:bookmark(?:Start|End)\b[^>]*\bw:id=")(\d+)(")/g,
+    (_match, prefix: string, id: string, suffix: string) => `${prefix}${Number(id) + offset}${suffix}`,
+  )
 }
 
-function diffParagraphText(before: string[], after: string[], maxChanges: number): DiffWordDocumentsResult["diagnostics"] {
+function diffParagraphText(
+  before: string[],
+  after: string[],
+  maxChanges: number,
+): DiffWordDocumentsResult["diagnostics"] {
   const beforeCounts = countText(before)
   const afterCounts = countText(after)
   const added: string[] = []
@@ -1881,7 +2368,11 @@ function diffParagraphText(before: string[], after: string[], maxChanges: number
     const delta = count - (afterCounts.get(text) ?? 0)
     for (let index = 0; index < delta; index += 1) removed.push(text)
   }
-  const changed = before.slice(0, Math.min(before.length, after.length)).flatMap((text, index) => (text !== after[index] ? [{ index: index + 1, before: text, after: after[index] ?? "" }] : []))
+  const changed = before
+    .slice(0, Math.min(before.length, after.length))
+    .flatMap((text, index) =>
+      text !== after[index] ? [{ index: index + 1, before: text, after: after[index] ?? "" }] : [],
+    )
   const truncated = added.length > maxChanges || removed.length > maxChanges || changed.length > maxChanges
   return {
     beforeParagraphs: before.length,
@@ -1899,7 +2390,11 @@ function countText(items: string[]): Map<string, number> {
   return counts
 }
 
-function diffMarkdown(beforePath: string, afterPath: string, diagnostics: DiffWordDocumentsResult["diagnostics"]): string {
+function diffMarkdown(
+  beforePath: string,
+  afterPath: string,
+  diagnostics: DiffWordDocumentsResult["diagnostics"],
+): string {
   const lines = [
     "# Word Diff Summary",
     "",
@@ -1927,12 +2422,13 @@ function diffMarkdown(beforePath: string, afterPath: string, diagnostics: DiffWo
 }
 
 function safeMarkdownName(input: string): string {
-  const base = input
-    .replace(/\.md$/i, "")
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 96) || "word-diff"
+  const base =
+    input
+      .replace(/\.md$/i, "")
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 96) || "word-diff"
   return `${base}.md`
 }
 
@@ -1940,10 +2436,12 @@ function safeOoxmlPart(input: string): string {
   const part = input.trim()
   if (!part) throw new Error("patch_ooxml_part patch.part is required")
   if (!part.endsWith(".xml") && !part.endsWith(".rels")) throw new Error(`OOXML patch only supports XML parts: ${part}`)
-  if (part.startsWith("/") || part.includes("\\") || part.includes("://") || part.includes("\0")) throw new Error(`unsafe OOXML part path: ${part}`)
+  if (part.startsWith("/") || part.includes("\\") || part.includes("://") || part.includes("\0"))
+    throw new Error(`unsafe OOXML part path: ${part}`)
   if (!/^[A-Za-z0-9_[\]./-]+$/.test(part)) throw new Error(`unsafe OOXML part path: ${part}`)
   const segments = part.split("/")
-  if (segments.some((segment) => !segment || segment === "." || segment === "..")) throw new Error(`unsafe OOXML part path: ${part}`)
+  if (segments.some((segment) => !segment || segment === "." || segment === ".."))
+    throw new Error(`unsafe OOXML part path: ${part}`)
   return part
 }
 

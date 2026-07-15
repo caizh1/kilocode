@@ -12,6 +12,7 @@
 @import "./session-actions.css";
 @import "./welcome.css";
 @import "./prompt-input.css";
+@import "./agent-console.css";
 @import "./prompt-dropdowns.css";
 @import "./model-selector.css";
 @import "./permission-dock.css";
@@ -25,3 +26,5 @@
 @import "./document-artifacts.css";
 @import "./settings.css";
 @import "./high-contrast.css";
+@import "./qa-liquid-glass.css";
+@import "./titanium-studio.css";

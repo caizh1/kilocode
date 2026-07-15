@@ -5,7 +5,9 @@ export type DocumentIndexConfig = {
   paths?: string[]
   include?: string[]
   exclude?: string[]
+  maxFiles?: number
   maxFileBytes?: number
+  maxExtractedBytesPerFile?: number
   chunkChars?: number
   chunkOverlapChars?: number
   searchMaxResults?: number

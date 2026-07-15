@@ -1,4 +1,7 @@
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   "command.category.suggested": "おすすめ",
   "command.category.view": "表示",
   "command.category.project": "プロジェクト",
@@ -240,6 +243,7 @@ export const dict = {
   "prompt.placeholder.summarizeComments": "コメントを要約…",
   "prompt.placeholder.summarizeComment": "コメントを要約…",
   "prompt.mode.shell": "Shell",
+  "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "escで終了",
 
   "prompt.example.1": "コードベースのTODOを修正",
@@ -948,6 +952,7 @@ export const dict = {
   "provider.custom.error.duplicate": "重複",
   "settings.openLocalConfig": "ローカル設定",
   "settings.openGlobalConfig": "グローバル設定",
+  "settings.close": "設定を閉じる",
   "settings.config.scope.local": "ローカル",
   "settings.config.scope.global": "グローバル",
   "settings.config.status.loaded": "読み込み済み",

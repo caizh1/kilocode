@@ -37,6 +37,6 @@ describe("language default", () => {
     expect(provider).toContain('.update("language", message.locale, vscode.ConfigurationTarget.Global)')
     expect(server).toContain('if ("languageOverride" in message)')
     expect(server).toContain("setLanguageOverride(message.locale)")
-    expect(language).toContain("if (override !== undefined) setUserOverride(override ? normalizeLocale(override) : \"\")")
+    expect(language).toContain('if (override !== undefined) setUserOverride(override ? normalizeLocale(override) : "")')
   })
 })

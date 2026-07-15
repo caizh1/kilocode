@@ -91,7 +91,9 @@ export interface IndexingConfig {
     paths?: string[]
     include?: string[]
     exclude?: string[]
+    maxFiles?: number
     maxFileBytes?: number
+    maxExtractedBytesPerFile?: number
     chunkChars?: number
     chunkOverlapChars?: number
     searchMaxResults?: number

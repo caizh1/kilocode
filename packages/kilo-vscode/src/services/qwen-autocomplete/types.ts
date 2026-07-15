@@ -27,10 +27,10 @@ export type QwenSnippetInjectionBlockedReason =
 
 export type QwenAutocompleteConfig = {
   enabled: boolean
+  autoTrigger: boolean
   provider: QwenAutocompleteProvider
-  endpoint: string
+  providerID: string
   model: string
-  apiKey: string
   debounceMs: number
   maxTokens: number
   maxPromptTokens: number
@@ -72,14 +72,19 @@ export type QwenFimParts = {
 }
 
 export type QwenFimCompleteInput = {
-  endpoint: string
-  model: string
-  apiKey: string
+  providerID: string
+  modelID: string
   prompt: string
+  directory?: string
   maxTokens: number
   temperature: number
+  stop: string[]
   signal?: AbortSignal
-  onResponse?: (info: { status: number }) => void
+  onResponse?: (info: {
+    status: number
+    endpointSource?: "provider-options" | "model-api" | "missing"
+    serverPhase?: string
+  }) => void
 }
 
 export type QwenRequestInfo = {

@@ -8,17 +8,23 @@ import { read, utils, type CellObject, type WorkBook } from "xlsx"
 import type { DocumentSection } from "./types"
 
 const sheetRows = 50_000
+const archiveFloor = 64 * 1024 * 1024
+const archiveCeiling = 256 * 1024 * 1024
 
-export async function extractDocument(filePath: string): Promise<DocumentSection[]> {
+export async function extractDocument(
+  filePath: string,
+  maxBytes = Number.MAX_SAFE_INTEGER,
+): Promise<DocumentSection[]> {
   const ext = path.extname(filePath).toLowerCase()
-  if (ext === ".pdf") return pdf(filePath)
-  if (ext === ".docx") return docx(filePath)
-  if (ext === ".xlsx" || ext === ".ods") return sheet(filePath)
-  return text(filePath)
+  const max = Math.max(1, Math.floor(maxBytes))
+  if (ext === ".pdf") return pdf(filePath, max)
+  if (ext === ".docx") return docx(filePath, max)
+  if (ext === ".xlsx" || ext === ".ods") return sheet(filePath, max)
+  return text(filePath, max)
 }
 
-async function text(filePath: string): Promise<DocumentSection[]> {
-  const raw = await readFile(filePath, "utf8")
+async function text(filePath: string, max: number): Promise<DocumentSection[]> {
+  const raw = limit(await readFile(filePath, "utf8"), max)
   return [
     {
       filePath,
@@ -30,12 +36,14 @@ async function text(filePath: string): Promise<DocumentSection[]> {
   ]
 }
 
-async function docx(filePath: string): Promise<DocumentSection[]> {
-  const result = await mammoth.extractRawText({ path: filePath })
+async function docx(filePath: string, max: number): Promise<DocumentSection[]> {
+  const bytes = await readFile(filePath)
+  guardArchive(bytes, max)
+  const result = await mammoth.extractRawText({ buffer: bytes })
   const messages: Array<{ type?: string; message?: string }> = result.messages ?? []
   const warnings = messages.filter((item) => item.type === "warning").map((item) => item.message ?? "")
   const note = warnings.length > 0 ? `\n\nDOCX extraction warnings: ${warnings.join("; ")}` : ""
-  const value = `${result.value}${note}`
+  const value = limit(`${result.value}${note}`, max)
   return [
     {
       filePath,
@@ -47,8 +55,8 @@ async function docx(filePath: string): Promise<DocumentSection[]> {
   ]
 }
 
-async function pdf(filePath: string): Promise<DocumentSection[]> {
-  const raw = await pdftotext(filePath)
+async function pdf(filePath: string, max: number): Promise<DocumentSection[]> {
+  const raw = await pdftotext(filePath, max)
   return raw.split("\f").flatMap((text, index) => {
     const value = text.trim()
     if (!value) return []
@@ -65,7 +73,7 @@ async function pdf(filePath: string): Promise<DocumentSection[]> {
   })
 }
 
-function pdftotext(filePath: string): Promise<string> {
+function pdftotext(filePath: string, max: number): Promise<string> {
   const exe = pdftotextPath()
   return new Promise((resolve, reject) => {
     const child = spawn(exe, ["-layout", filePath, "-"], {
@@ -74,18 +82,43 @@ function pdftotext(filePath: string): Promise<string> {
     })
     const out: Buffer[] = []
     const err: Buffer[] = []
-    child.stdout.on("data", (chunk: Buffer) => out.push(chunk))
-    child.stderr.on("data", (chunk: Buffer) => err.push(chunk))
+    let size = 0
+    let stderr = 0
+    let capped = false
+    let settled = false
+    const finish = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      fn()
+    }
+    child.stdout.on("data", (chunk: Buffer) => {
+      const left = Math.max(0, max - size)
+      if (left > 0) {
+        const part = chunk.subarray(0, left)
+        out.push(part)
+        size += part.length
+      }
+      if (chunk.length <= left) return
+      capped = true
+      child.kill()
+    })
+    child.stderr.on("data", (chunk: Buffer) => {
+      const left = Math.max(0, 64 * 1024 - stderr)
+      if (left === 0) return
+      const part = chunk.subarray(0, left)
+      err.push(part)
+      stderr += part.length
+    })
     child.on("error", (cause) => {
-      reject(new Error(`PDF extraction requires pdftotext. Tried ${exe}: ${cause.message}`, { cause }))
+      finish(() => reject(new Error(`PDF extraction requires pdftotext. Tried ${exe}: ${cause.message}`, { cause })))
     })
     child.on("close", (code) => {
-      if (code === 0) {
-        resolve(Buffer.concat(out).toString("utf8"))
+      if (code === 0 || capped) {
+        finish(() => resolve(Buffer.concat(out).toString("utf8")))
         return
       }
       const msg = Buffer.concat(err).toString("utf8").trim()
-      reject(new Error(msg || `pdftotext failed with code ${code}`))
+      finish(() => reject(new Error(msg || `pdftotext failed with code ${code}`)))
     })
   })
 }
@@ -103,40 +136,77 @@ export function pdftotextPath(
   return candidates.find((file) => existsSync(file)) ?? `pdftotext${ext}`
 }
 
-async function sheet(filePath: string): Promise<DocumentSection[]> {
-  const bytes = new Uint8Array(await readFile(filePath))
-  const book = read(bytes, { type: "array", cellDates: true })
-  return sheets(filePath, book)
+async function sheet(filePath: string, max: number): Promise<DocumentSection[]> {
+  const bytes = await readFile(filePath)
+  guardArchive(bytes, max)
+  const book = read(bytes, { type: "buffer", cellDates: true, sheetRows })
+  return sheets(filePath, book, max)
 }
 
-function sheets(filePath: string, book: WorkBook): DocumentSection[] {
-  return book.SheetNames.flatMap((name: string, index: number) => {
+function guardArchive(bytes: Buffer, max: number): void {
+  const limit = Math.max(archiveFloor, Math.min(archiveCeiling, max * 64))
+  let expanded = 0
+  for (let offset = 0; offset <= bytes.length - 46; offset += 1) {
+    if (bytes.readUInt32LE(offset) !== 0x02014b50) continue
+    const size = bytes.readUInt32LE(offset + 24)
+    const names = bytes.readUInt16LE(offset + 28)
+    const extra = bytes.readUInt16LE(offset + 30)
+    const comment = bytes.readUInt16LE(offset + 32)
+    const end = offset + 46 + names + extra + comment
+    if (end > bytes.length) throw new Error("Office archive has an invalid central directory.")
+    const name = bytes
+      .subarray(offset + 46, offset + 46 + names)
+      .toString("utf8")
+      .toLowerCase()
+    if (size === 0xffffffff) throw new Error("Office archive uses an unbounded ZIP64 entry.")
+    if (name.endsWith(".xml") || name.endsWith(".rels")) expanded += size
+    if (expanded > limit) {
+      throw new Error(`Office archive expands to more than the ${limit}-byte extraction safety limit.`)
+    }
+    offset = end - 1
+  }
+}
+
+function sheets(filePath: string, book: WorkBook, max: number): DocumentSection[] {
+  const out: DocumentSection[] = []
+  let remaining = max
+  for (const [index, name] of book.SheetNames.entries()) {
+    if (remaining <= 0) break
     const meta = book.Workbook?.Sheets?.[index]
-    if (meta?.Hidden === 1 || meta?.Hidden === 2) return []
+    if (meta?.Hidden === 1 || meta?.Hidden === 2) continue
     const ws = book.Sheets[name]
-    if (!ws?.["!ref"]) return []
+    if (!ws?.["!ref"]) continue
     const range = utils.decode_range(ws["!ref"])
     const end = Math.min(range.e.r, sheetRows - 1)
-    const rows: string[] = []
+    const rows = [`--- Sheet: ${name} ---`]
+    let used = Buffer.byteLength(rows[0] ?? "")
+    let last = range.s.r
     for (let row = range.s.r; row <= end; row++) {
       const values: string[] = []
       for (let col = range.s.c; col <= range.e.c; col++) {
         values.push(cell(ws[utils.encode_cell({ r: row, c: col })]))
       }
-      if (values.some((item) => item.trim())) rows.push(values.join("\t"))
+      if (!values.some((item) => item.trim())) continue
+      const line = limit(values.join("\t"), Math.max(0, remaining - used - 1))
+      if (!line) break
+      rows.push(line)
+      used += Buffer.byteLength(line) + 1
+      last = row
+      if (used >= remaining) break
     }
-    if (rows.length === 0) return []
-    return [
-      {
-        filePath,
-        text: [`--- Sheet: ${name} ---`, ...rows].join("\n"),
-        kind: "spreadsheet" as const,
-        sheet: name,
-        startLine: range.s.r + 1,
-        endLine: end + 1,
-      },
-    ]
-  })
+    if (rows.length === 1) continue
+    const value = rows.join("\n")
+    remaining -= Buffer.byteLength(value)
+    out.push({
+      filePath,
+      text: value,
+      kind: "spreadsheet",
+      sheet: name,
+      startLine: range.s.r + 1,
+      endLine: last + 1,
+    })
+  }
+  return out
 }
 
 function cell(value: CellObject | undefined): string {
@@ -151,4 +221,11 @@ function cell(value: CellObject | undefined): string {
   if (value.t === "d") return value.v instanceof Date ? value.v.toISOString().slice(0, 10) : String(value.v)
   if (value.l?.Target) return `${value.w ?? String(value.v)} (${value.l.Target})`
   return value.w ?? String(value.v)
+}
+
+function limit(value: string, max: number): string {
+  if (max <= 0) return ""
+  const bytes = Buffer.from(value)
+  if (bytes.length <= max) return value
+  return bytes.subarray(0, max).toString("utf8")
 }

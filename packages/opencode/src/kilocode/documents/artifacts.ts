@@ -64,7 +64,9 @@ export async function declareArtifact(input: {
   const root = artifactRootAbsolute()
   await fs.mkdir(root, { recursive: true })
 
-  const absoluteDir = input.artifactDir ? resolveArtifactDir(input.artifactDir) : path.join(root, `${stamp()}-${slug(input.taskSlug ?? input.title ?? input.kind)}`)
+  const absoluteDir = input.artifactDir
+    ? resolveArtifactDir(input.artifactDir)
+    : path.join(root, `${stamp()}-${slug(input.taskSlug ?? input.title ?? input.kind)}`)
   assertInside(root, absoluteDir, "artifactDir")
   await fs.mkdir(absoluteDir, { recursive: true })
 
@@ -125,7 +127,10 @@ export async function listArtifacts(): Promise<ListedArtifact[]> {
   return artifacts
 }
 
-export async function resolveOpenArtifact(input: { path: string; target?: "path" | "folder" }): Promise<OpenArtifactResult> {
+export async function resolveOpenArtifact(input: {
+  path: string
+  target?: "path" | "folder"
+}): Promise<OpenArtifactResult> {
   const absolute = resolveWorkspaceRelative(input.path)
   const stat = await statOrThrow(absolute)
   const openPath = input.target === "folder" && !stat.isDirectory() ? path.dirname(absolute) : absolute
@@ -214,9 +219,15 @@ async function readManifest(input: string): Promise<ArtifactManifest | null> {
       createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : new Date().toISOString(),
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
       ...(typeof parsed.primaryFile === "string" ? { primaryFile: parsed.primaryFile } : {}),
-      derivedFiles: Array.isArray(parsed.derivedFiles) ? parsed.derivedFiles.filter((item): item is string => typeof item === "string") : [],
-      sourceFiles: Array.isArray(parsed.sourceFiles) ? parsed.sourceFiles.filter((item): item is string => typeof item === "string") : [],
-      warnings: Array.isArray(parsed.warnings) ? parsed.warnings.filter((item): item is string => typeof item === "string") : [],
+      derivedFiles: Array.isArray(parsed.derivedFiles)
+        ? parsed.derivedFiles.filter((item): item is string => typeof item === "string")
+        : [],
+      sourceFiles: Array.isArray(parsed.sourceFiles)
+        ? parsed.sourceFiles.filter((item): item is string => typeof item === "string")
+        : [],
+      warnings: Array.isArray(parsed.warnings)
+        ? parsed.warnings.filter((item): item is string => typeof item === "string")
+        : [],
       quality: {
         status: qualityStatus(parsed.quality?.status),
       },

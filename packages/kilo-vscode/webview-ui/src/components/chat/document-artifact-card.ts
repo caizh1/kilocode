@@ -77,7 +77,11 @@ function titleFor(tool: string, fallback?: string): string {
   return "Word document artifact"
 }
 
-function link(kind: DocumentArtifactLinkKind, label: string, path: string | undefined): DocumentArtifactLink | undefined {
+function link(
+  kind: DocumentArtifactLinkKind,
+  label: string,
+  path: string | undefined,
+): DocumentArtifactLink | undefined {
   if (!path?.trim()) return undefined
   return { kind, label, path }
 }
@@ -114,7 +118,9 @@ function value(input: unknown): string | undefined {
 }
 
 function stringArray(input: unknown): string[] {
-  return Array.isArray(input) ? input.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : []
+  return Array.isArray(input)
+    ? input.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : []
 }
 
 function qualityFrom(input: unknown, warnings: string[]): DocumentArtifactCardModel["quality"] {

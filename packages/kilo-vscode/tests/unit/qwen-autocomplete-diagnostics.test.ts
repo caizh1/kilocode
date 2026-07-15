@@ -16,10 +16,10 @@ type Range = { start: Pos; end: Pos }
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "http://secret-qwen.internal/v1/completions",
+  providerID: "qwen",
   model: "qwen-coder-30b0",
-  apiKey: "sk-secret-token-should-never-log",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
@@ -84,8 +84,13 @@ describe("qwen autocomplete diagnostics", () => {
     expect(logs.map((line) => line.phase)).toContain("provider-enter")
     expect(logs.map((line) => line.phase)).toContain("return-items")
     expect(logs.at(-1)).toMatchObject({
-      endpointPath: "/v1/completions",
       pathHash: expect.any(String),
+      providerID: "qwen",
+      transport: "cli-qwen-fim",
+      connectionState: "connected",
+      requestSource: "editor",
+      workspaceScope: "none",
+      selectionOrigin: "explicit",
       emptyReason: "none",
       itemCount: 1,
       maxPromptTokens: 1024,
@@ -123,11 +128,14 @@ describe("qwen autocomplete diagnostics", () => {
       nonStreamingFilterAdapterMode: "non-streaming-full-text",
     })
     expect(JSON.stringify(logs)).not.toContain("secret-qwen.internal")
-    expect(JSON.stringify(logs)).not.toContain(cfg.apiKey)
     expect(JSON.stringify(logs)).not.toContain("Authorization")
     expect(JSON.stringify(logs)).not.toContain("/repo/backend/hal/main.c")
     expect(JSON.stringify(logs)).not.toContain("<|fim_prefix|>")
     expect(logs.every((line) => line.promptPreview === null)).toBe(true)
+    expect(logs.find((line) => line.phase === "response")).toMatchObject({
+      endpointSource: "provider-options",
+      serverPhase: "success",
+    })
   })
 
   it("records non-streaming filter reasons without logging filtered source text", async () => {
@@ -181,7 +189,6 @@ describe("qwen autocomplete diagnostics", () => {
     expect(logs.every((line) => line.promptPreview === null)).toBe(true)
     expect(text).not.toContain("secret_prompt_symbol")
     expect(text).not.toContain("<|fim_prefix|>")
-    expect(text).not.toContain(cfg.apiKey)
     expect(text).not.toContain("secret-qwen.internal")
     expect(text).not.toContain("Authorization")
   })
@@ -230,9 +237,7 @@ describe("qwen autocomplete diagnostics", () => {
     expect(await exportQwenAutocompleteDiagnostics()).toBe(true)
     expect(written).toContain('"type":"metadata"')
     expect(written).toContain('"type":"qwen-settings"')
-    expect(written).toContain('"apiKey":"[redacted]"')
-    expect(written).not.toContain(cfg.apiKey)
-    expect(written).not.toContain("secret-qwen.internal")
+    expect(written).not.toContain('"apiKey"')
     expect(written).not.toContain("Authorization")
     expect(written).not.toContain("<|fim_prefix|>")
   })
@@ -245,11 +250,28 @@ describe("qwen autocomplete diagnostics", () => {
     }
 
     const { registerQwenAutocompleteProvider } = await import("../../src/services/qwen-autocomplete")
-    registerQwenAutocompleteProvider({ subscriptions: [] } as unknown as vscode.ExtensionContext)
+    registerQwenAutocompleteProvider({ subscriptions: [] } as unknown as vscode.ExtensionContext, connection())
 
     expect(calls).toContain("kilo-code.new.qwenAutocomplete.showLogs")
     expect(calls).toContain("kilo-code.new.qwenAutocomplete.exportDiagnostics")
+    expect(calls).toContain("kilo-code.new.qwenAutocomplete.smokeDiagnostics")
     const root = path.join(__dirname, "../..")
+    const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as {
+      contributes: {
+        commands: Array<{ command: string; title: string }>
+        menus?: { commandPalette?: Array<{ command: string; when?: string }> }
+      }
+    }
+    expect(
+      manifest.contributes.commands.find(
+        (command) => command.command === "kilo-code.new.qwenAutocomplete.smokeDiagnostics",
+      )?.title,
+    ).toBe("ChipMate: Test qwen-direct Transport")
+    expect(
+      manifest.contributes.menus?.commandPalette?.find(
+        (item) => item.command === "kilo-code.new.qwenAutocomplete.exportDiagnostics",
+      )?.when,
+    ).toBeUndefined()
     const source = readFileSync(path.join(root, "src/services/qwen-autocomplete/diagnostics.ts"), "utf8")
     expect(source).not.toContain("benchmark")
     expect(source).not.toContain("/kilo/fim")
@@ -270,9 +292,11 @@ async function runProvider(
   const position = input.position ?? new vscode.Position(1, 2)
   const provider = new KiloQwenInlineCompletionProvider({
     read: () => config,
+    guard: () => false,
+    state: () => "connected",
     client: {
       complete: async (req: QwenFimCompleteInput) => {
-        req.onResponse?.({ status: 200 })
+        req.onResponse?.({ status: 200, endpointSource: "provider-options", serverPhase: "success" })
         const completion = input.completion ?? "return ok;"
         if (!completion) throw new Error("empty")
         return completion
@@ -333,15 +357,22 @@ function stubConfig(values: QwenAutocompleteConfig): void {
   ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (
     section?: string,
   ) => {
+    if (section === "kilo-code.new.autocomplete") {
+      return {
+        get: (key: string, fallback?: unknown) =>
+          ({
+            provider: values.providerID,
+            model: values.model,
+            enableAutoTrigger: values.autoTrigger,
+          })[key] ?? fallback,
+        update: async () => {},
+      } as unknown as ReturnType<typeof originalConfig>
+    }
     if (section !== "kilo.autocomplete") return originalConfig(section)
     return {
       get: (key: string, fallback?: unknown) => {
         const map: Record<string, unknown> = {
-          enabled: values.enabled,
-          provider: values.provider,
-          "qwen.endpoint": values.endpoint,
           "qwen.model": values.model,
-          "qwen.apiKey": values.apiKey,
           "qwen.debounceMs": values.debounceMs,
           "qwen.maxTokens": values.maxTokens,
           "qwen.maxPromptTokens": values.maxPromptTokens,
@@ -381,4 +412,10 @@ function stubConfig(values: QwenAutocompleteConfig): void {
       update: async () => {},
     } as unknown as ReturnType<typeof originalConfig>
   }
+}
+
+function connection() {
+  return {
+    getConnectionState: () => "connected",
+  } as never
 }

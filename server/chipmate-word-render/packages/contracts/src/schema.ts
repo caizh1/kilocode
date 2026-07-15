@@ -1,0 +1,358 @@
+import { Type, type Static, type TSchema } from "@sinclair/typebox"
+
+const dt = Type.String({ format: "date-time" })
+const sha = Type.String({ pattern: "^[a-f0-9]{64}$" })
+const id = Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z0-9][a-z0-9._-]*$" })
+const path = Type.String({ minLength: 1, maxLength: 1024 })
+
+export const PUBLICATION_STATUSES = [
+  "VALIDATING",
+  "NEEDS_AUTHOR_FIX",
+  "NEEDS_AI_CONFIRMATION",
+  "SECURITY_REJECTED",
+  "PUBLISHING",
+  "PUBLISHED",
+  "UNPUBLISHED",
+  "UNCHANGED",
+  "FAILED",
+] as const
+
+export const PUBLICATION_LABELS = {
+  VALIDATING: "草稿校验中",
+  NEEDS_AUTHOR_FIX: "需要作者修复",
+  NEEDS_AI_CONFIRMATION: "等待 AI 补丁确认",
+  SECURITY_REJECTED: "安全扫描失败",
+  PUBLISHING: "正在发布",
+  PUBLISHED: "已发布",
+  UNPUBLISHED: "已下架",
+  UNCHANGED: "版本无变化",
+  CAPABILITY_UNSUPPORTED: "服务器能力不支持",
+} as const
+
+export const MARKET_ERROR_CODES = [
+  "CAPABILITY_UNSUPPORTED",
+  "AUTH_REQUIRED",
+  "AUTH_INVALID",
+  "SESSION_EXPIRED",
+  "CSRF_INVALID",
+  "ORIGIN_INVALID",
+  "NOT_FOUND",
+  "CONFLICT",
+  "VALIDATION_FAILED",
+  "SECURITY_REJECTED",
+  "OWNERSHIP_REQUIRED",
+  "IDEMPOTENCY_CONFLICT",
+  "INTENT_EXPIRED",
+  "INTENT_REPLAYED",
+  "HASH_MISMATCH",
+  "ARCHIVE_UNSAFE",
+  "RATE_LIMITED",
+  "MARKET_UNAVAILABLE",
+  "INTERNAL_ERROR",
+] as const
+
+function literals<const T extends readonly string[]>(values: T) {
+  return Type.Union(values.map((value) => Type.Literal(value)))
+}
+
+export const PublicationStatusSchema = literals(PUBLICATION_STATUSES)
+export type PublicationStatus = Static<typeof PublicationStatusSchema>
+
+export const MarketErrorCodeSchema = literals(MARKET_ERROR_CODES)
+export type MarketErrorCode = Static<typeof MarketErrorCodeSchema>
+
+export const ValidationIssueSchema = Type.Object(
+  {
+    code: Type.String({ minLength: 1 }),
+    severity: literals(["info", "warning", "error"] as const),
+    file: Type.Optional(path),
+    line: Type.Optional(Type.Integer({ minimum: 1 })),
+    field: Type.Optional(Type.String({ minLength: 1 })),
+    message: Type.String({ minLength: 1 }),
+    expected: Type.Optional(Type.String()),
+    actual: Type.Optional(Type.String()),
+    fixable: Type.Boolean(),
+    repairKind: literals(["none", "deterministic", "ai"] as const),
+  },
+  { $id: "ValidationIssue", additionalProperties: false },
+)
+export type ValidationIssue = Static<typeof ValidationIssueSchema>
+
+export const ValidationReportSchema = Type.Object(
+  {
+    valid: Type.Boolean(),
+    stage: literals(["format", "deterministic", "security", "semantic", "complete"] as const),
+    issues: Type.Array(Type.Ref(ValidationIssueSchema)),
+    sourceSha256: sha,
+    snapshotSha256: sha,
+    changed: Type.Boolean(),
+  },
+  { $id: "ValidationReport", additionalProperties: false },
+)
+export type ValidationReport = Static<typeof ValidationReportSchema>
+
+export const MarketCapabilitiesSchema = Type.Object(
+  {
+    mode: literals(["aligned-v1", "legacy"] as const),
+    apiVersion: Type.String({ minLength: 1 }),
+    catalogVersion: Type.String({ minLength: 1 }),
+    skillSpecVersion: Type.Optional(Type.String({ minLength: 1 })),
+    features: Type.Object(
+      {
+        versions: Type.Boolean(),
+        favorites: Type.Boolean(),
+        installations: Type.Boolean(),
+        publications: Type.Boolean(),
+        repairs: Type.Boolean(),
+        analytics: Type.Boolean(),
+        events: Type.Boolean(),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { $id: "MarketCapabilities", additionalProperties: false },
+)
+export type MarketCapabilities = Static<typeof MarketCapabilitiesSchema>
+
+export const MarketUserSchema = Type.Object(
+  {
+    id: Type.String({ minLength: 16, maxLength: 128 }),
+    displayName: Type.String({ minLength: 1, maxLength: 128 }),
+    firstSeenAt: dt,
+    lastSeenAt: dt,
+  },
+  { $id: "MarketUser", additionalProperties: false },
+)
+export type MarketUser = Static<typeof MarketUserSchema>
+
+export const FavoriteStateSchema = Type.Object(
+  {
+    skillId: id,
+    favorite: Type.Boolean(),
+    changedAt: dt,
+  },
+  { $id: "FavoriteState", additionalProperties: false },
+)
+export type FavoriteState = Static<typeof FavoriteStateSchema>
+
+export const InstallationStateSchema = Type.Object(
+  {
+    skillId: id,
+    revision: Type.Integer({ minimum: 1 }),
+    sha256: sha,
+    scope: literals(["global", "project"] as const),
+    status: literals(["installed", "updating", "removed", "local-unmanaged"] as const),
+    clientId: Type.String({ minLength: 16, maxLength: 128 }),
+    workspaceId: Type.Optional(Type.String({ minLength: 16, maxLength: 128 })),
+    changedAt: dt,
+  },
+  { $id: "InstallationState", additionalProperties: false },
+)
+export type InstallationState = Static<typeof InstallationStateSchema>
+
+export const SkillArtworkSchema = Type.Object(
+  {
+    type: literals(["icon", "cover", "screenshot"] as const),
+    url: Type.String({ minLength: 1 }),
+    mime: Type.String({ minLength: 1 }),
+    width: Type.Integer({ minimum: 1 }),
+    height: Type.Integer({ minimum: 1 }),
+    sha256: sha,
+  },
+  { $id: "SkillArtwork", additionalProperties: false },
+)
+export type SkillArtwork = Static<typeof SkillArtworkSchema>
+
+export const SkillReleaseSchema = Type.Object(
+  {
+    skillId: id,
+    revision: Type.Integer({ minimum: 1 }),
+    semver: Type.Optional(
+      Type.String({
+        pattern: "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      }),
+    ),
+    sha256: sha,
+    archiveUrl: Type.String({ minLength: 1 }),
+    notes: Type.Optional(Type.String({ maxLength: 4096 })),
+    report: Type.Ref(ValidationReportSchema),
+    publishedAt: dt,
+  },
+  { $id: "SkillRelease", additionalProperties: false },
+)
+export type SkillRelease = Static<typeof SkillReleaseSchema>
+
+export const SkillFileSchema = Type.Object(
+  {
+    path,
+    type: literals(["text", "image", "binary"] as const),
+    mime: Type.String({ minLength: 1 }),
+    size: Type.Integer({ minimum: 0 }),
+    sha256: sha,
+    previewable: Type.Boolean(),
+  },
+  { $id: "SkillFile", additionalProperties: false },
+)
+export type SkillFile = Static<typeof SkillFileSchema>
+
+export const SkillSummarySchema = Type.Object(
+  {
+    id,
+    name: Type.String({ minLength: 1, maxLength: 128 }),
+    description: Type.String({ minLength: 1, maxLength: 2048 }),
+    category: Type.String({ minLength: 1, maxLength: 128 }),
+    tags: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { maxItems: 32 }),
+    author: Type.Object(
+      {
+        id: Type.String({ minLength: 16, maxLength: 128 }),
+        displayName: Type.String({ minLength: 1, maxLength: 128 }),
+      },
+      { additionalProperties: false },
+    ),
+    latestRevision: Type.Integer({ minimum: 1 }),
+    semver: Type.Optional(Type.String()),
+    sha256: sha,
+    updatedAt: dt,
+    downloads: Type.Integer({ minimum: 0 }),
+    favorites: Type.Integer({ minimum: 0 }),
+    favorite: Type.Optional(Type.Boolean()),
+    installation: Type.Optional(Type.Ref(InstallationStateSchema)),
+    artwork: Type.Optional(Type.Ref(SkillArtworkSchema)),
+  },
+  { $id: "SkillSummary", additionalProperties: false },
+)
+export type SkillSummary = Static<typeof SkillSummarySchema>
+
+export const SkillDetailSchema = Type.Intersect(
+  [
+    Type.Ref(SkillSummarySchema),
+    Type.Object({
+      markdown: Type.String(),
+      releases: Type.Array(Type.Ref(SkillReleaseSchema)),
+      files: Type.Array(Type.Ref(SkillFileSchema)),
+      gallery: Type.Array(Type.Ref(SkillArtworkSchema)),
+      related: Type.Array(Type.Ref(SkillSummarySchema)),
+    }),
+  ],
+  { $id: "SkillDetail" },
+)
+export type SkillDetail = Static<typeof SkillDetailSchema>
+
+export const RepairPatchSchema = Type.Object(
+  {
+    id: Type.String({ minLength: 1 }),
+    runId: Type.String({ minLength: 1 }),
+    kind: literals(["deterministic", "ai"] as const),
+    files: Type.Array(
+      Type.Object(
+        {
+          path,
+          beforeSha256: sha,
+          afterSha256: sha,
+          patch: Type.String(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    requiresConfirmation: Type.Boolean(),
+    expiresAt: dt,
+  },
+  { $id: "RepairPatch", additionalProperties: false },
+)
+export type RepairPatch = Static<typeof RepairPatchSchema>
+
+export const PublicationRunSchema = Type.Object(
+  {
+    id: Type.String({ minLength: 1 }),
+    skillId: Type.Optional(id),
+    ownerId: Type.String({ minLength: 16, maxLength: 128 }),
+    status: PublicationStatusSchema,
+    stage: literals(["uploaded", "format", "deterministic", "security", "semantic", "publishing", "complete"] as const),
+    report: Type.Optional(Type.Ref(ValidationReportSchema)),
+    patches: Type.Array(Type.Ref(RepairPatchSchema)),
+    release: Type.Optional(Type.Ref(SkillReleaseSchema)),
+    createdAt: dt,
+    updatedAt: dt,
+  },
+  { $id: "PublicationRun", additionalProperties: false },
+)
+export type PublicationRun = Static<typeof PublicationRunSchema>
+
+export const AnalyticsEventSchema = Type.Object(
+  {
+    name: literals([
+      "market_impression",
+      "market_search",
+      "market_filter",
+      "skill_open",
+      "skill_file_preview",
+      "skill_favorite",
+      "skill_install_intent",
+      "skill_install",
+      "skill_update",
+      "skill_remove",
+      "publication_start",
+      "publication_validation_failed",
+      "publication_ai_repair",
+      "publication_success",
+    ] as const),
+    surface: literals(["web", "vscode"] as const),
+    userId: Type.String({ minLength: 16, maxLength: 128 }),
+    clientId: Type.String({ minLength: 16, maxLength: 128 }),
+    skillId: Type.Optional(id),
+    revision: Type.Optional(Type.Integer({ minimum: 1 })),
+    occurredAt: dt,
+    context: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean()]))),
+  },
+  { $id: "AnalyticsEvent", additionalProperties: false },
+)
+export type AnalyticsEvent = Static<typeof AnalyticsEventSchema>
+
+export const AnalyticsSeriesSchema = Type.Object(
+  {
+    metric: Type.String({ minLength: 1 }),
+    scope: literals(["global", "author", "skill"] as const),
+    points: Type.Array(
+      Type.Object(
+        {
+          date: Type.String({ format: "date" }),
+          value: Type.Number({ minimum: 0 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { $id: "AnalyticsSeries", additionalProperties: false },
+)
+export type AnalyticsSeries = Static<typeof AnalyticsSeriesSchema>
+
+export const ApiErrorSchema = Type.Object(
+  {
+    ok: Type.Literal(false),
+    code: MarketErrorCodeSchema,
+    message: Type.String({ minLength: 1 }),
+    issues: Type.Optional(Type.Array(Type.Ref(ValidationIssueSchema))),
+  },
+  { $id: "ApiError", additionalProperties: false },
+)
+export type ApiError = Static<typeof ApiErrorSchema>
+
+export const SCHEMAS = {
+  AnalyticsEvent: AnalyticsEventSchema,
+  AnalyticsSeries: AnalyticsSeriesSchema,
+  ApiError: ApiErrorSchema,
+  FavoriteState: FavoriteStateSchema,
+  InstallationState: InstallationStateSchema,
+  MarketCapabilities: MarketCapabilitiesSchema,
+  MarketUser: MarketUserSchema,
+  PublicationRun: PublicationRunSchema,
+  PublicationStatus: PublicationStatusSchema,
+  RepairPatch: RepairPatchSchema,
+  SkillArtwork: SkillArtworkSchema,
+  SkillDetail: SkillDetailSchema,
+  SkillFile: SkillFileSchema,
+  SkillRelease: SkillReleaseSchema,
+  SkillSummary: SkillSummarySchema,
+  ValidationIssue: ValidationIssueSchema,
+  ValidationReport: ValidationReportSchema,
+} satisfies Record<string, TSchema>

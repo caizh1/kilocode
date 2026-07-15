@@ -9,10 +9,15 @@ describe("qwen-direct autocomplete smoke boundary", () => {
   test("keeps qwen-direct autocomplete settings and provider registration available", async () => {
     const pkg = JSON.parse(await fs.readFile(packagePath, "utf8"))
     const extension = await fs.readFile(extensionPath, "utf8")
+    const coordinator = await fs.readFile(
+      path.resolve(import.meta.dir, "../../src/services/autocomplete/index.ts"),
+      "utf8",
+    )
     const properties = pkg.contributes?.configuration?.properties ?? {}
 
     expect(properties["kilo.autocomplete.provider"]?.enum).toContain("qwen-direct")
     expect(properties["kilo.autocomplete.qwen.model"]?.description).toContain("Qwen Coder")
-    expect(extension).toContain("registerQwenAutocompleteProvider(context)")
+    expect(extension).toContain("registerAutocompleteProvider(context, connectionService)")
+    expect(coordinator).toContain("registerQwenAutocompleteProvider(context, connection)")
   })
 })

@@ -26,6 +26,10 @@ export function getContinueAutocompleteStopTokens(_model: string): string[] {
 
 export const QWEN_FIM_STOP = getContinueAutocompleteStopTokens("qwen-coder-30b0")
 
+export function normalizeQwenFimSuffix(value: string): string {
+  return value === "" ? "\n" : value
+}
+
 export function buildQwenFimPrompt(parts: QwenFimParts): string {
-  return `<|fim_prefix|>${parts.prefix}<|fim_suffix|>${parts.suffix}<|fim_middle|>`
+  return `<|fim_prefix|>${parts.prefix}<|fim_suffix|>${normalizeQwenFimSuffix(parts.suffix)}<|fim_middle|>`
 }

@@ -126,6 +126,8 @@ import type {
   KiloOrganizationSetResponses,
   KiloProfileErrors,
   KiloProfileResponses,
+  KiloQwenFimErrors,
+  KiloQwenFimResponses,
   LspStatusResponses,
   McpAddErrors,
   McpAddResponses,
@@ -6489,6 +6491,55 @@ export class Kilo extends HeyApiClient {
     )
     return (options?.client ?? this.client).sse.post<KiloFimResponses, KiloFimErrors, ThrowOnError>({
       url: "/kilo/fim",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Qwen FIM completion
+   *
+   * Proxy a configured Qwen Coder FIM request without exposing provider credentials to the extension
+   */
+  public qwenFim<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      providerID?: string
+      modelID?: string
+      prefix?: string
+      suffix?: string
+      maxTokens?: number
+      temperature?: number
+      stop?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "providerID" },
+            { in: "body", key: "modelID" },
+            { in: "body", key: "prefix" },
+            { in: "body", key: "suffix" },
+            { in: "body", key: "maxTokens" },
+            { in: "body", key: "temperature" },
+            { in: "body", key: "stop" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<KiloQwenFimResponses, KiloQwenFimErrors, ThrowOnError>({
+      url: "/kilo/qwen-fim",
       ...options,
       ...params,
       headers: {

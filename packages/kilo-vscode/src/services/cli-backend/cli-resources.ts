@@ -52,6 +52,24 @@ export function hasCodeGraphParserWorker(file: string): boolean {
   return fs.existsSync(codeGraphParserWorkerForBinary(file))
 }
 
+export function indexingProcessForBinary(file: string): string {
+  const p = paths(file)
+  const name = p.extname(file).toLowerCase() === ".exe" ? "kilo-indexer.exe" : "kilo-indexer"
+  return p.join(p.dirname(file), name)
+}
+
+export function hasIndexingProcess(file: string): boolean {
+  return fs.existsSync(indexingProcessForBinary(file))
+}
+
+export async function copyIndexingProcess(source: string, target: string): Promise<void> {
+  const from = indexingProcessForBinary(source)
+  const to = indexingProcessForBinary(target)
+  if (!fs.existsSync(from)) throw new Error(`CLI indexing process not found at ${from}`)
+  await fs.promises.copyFile(from, to)
+  if (path.extname(to).toLowerCase() !== ".exe") await fs.promises.chmod(to, 0o755)
+}
+
 export async function copyCodeGraphParserWorker(source: string, target: string): Promise<void> {
   const from = codeGraphParserWorkerForBinary(source)
   if (!fs.existsSync(from)) {

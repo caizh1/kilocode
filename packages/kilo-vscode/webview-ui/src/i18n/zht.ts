@@ -2,7 +2,10 @@ import { dict as en } from "./en"
 
 type Keys = keyof typeof en
 
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   "command.category.suggested": "建議",
   "command.category.view": "檢視",
   "command.category.project": "專案",
@@ -241,6 +244,7 @@ export const dict = {
   "prompt.placeholder.summarizeComments": "摘要評論…",
   "prompt.placeholder.summarizeComment": "摘要這則評論…",
   "prompt.mode.shell": "Shell",
+  "prompt.mode.shell.warning": "Shell 模式會立即執行命令，不經過 Agent 權限審批。",
   "prompt.mode.shell.exit": "按 esc 離開",
 
   "prompt.example.1": "修復程式碼庫中的一個 TODO",
@@ -899,6 +903,7 @@ export const dict = {
   "provider.custom.error.duplicate": "重複",
   "settings.openLocalConfig": "本機設定",
   "settings.openGlobalConfig": "全域設定",
+  "settings.close": "關閉設定",
   "settings.config.scope.local": "本地",
   "settings.config.scope.global": "全域",
   "settings.config.status.loaded": "已載入",

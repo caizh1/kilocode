@@ -251,6 +251,20 @@ const bashPermission: PermissionRequest = {
   tool: { messageID: ASST_MSG_ID, callID: "call-bash-001" },
 }
 
+const dangerousBashPermission: PermissionRequest = {
+  id: "perm-bash-danger-001",
+  sessionID: SESSION_ID,
+  toolName: "bash",
+  patterns: ["sudo rm -rf /tmp/example"],
+  always: [],
+  args: {
+    command: "sudo rm -rf /tmp/example",
+    description: "This command can escalate privileges and permanently delete files.",
+    rules: ["sudo *", "rm *"],
+  },
+  tool: { messageID: ASST_MSG_ID, callID: "call-bash-danger-001" },
+}
+
 const dockPermission: PermissionRequest = {
   id: "perm-dock-001",
   sessionID: SESSION_ID,
@@ -520,6 +534,26 @@ export const BashWithPermission: Story = {
       <StoryProviders permissions={perms} sessionID={SESSION_ID} status="busy" noPadding>
         <SessionContext.Provider value={session as any}>
           <div style={{ width: "100%", height: "300px", display: "flex", "flex-direction": "column" }}>
+            <ChatView />
+          </div>
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
+}
+
+export const DangerousBashPermission: Story = {
+  name: "Permission Dialog — high-risk bash command",
+  render: () => {
+    const perms = [dangerousBashPermission]
+    const session = {
+      ...mockSessionValue({ id: SESSION_ID, status: "busy", permissions: perms }),
+      messages: () => [{ id: "msg-001" }] as any[],
+    }
+    return (
+      <StoryProviders permissions={perms} sessionID={SESSION_ID} status="busy" noPadding>
+        <SessionContext.Provider value={session as any}>
+          <div style={{ width: "100%", height: "520px", display: "flex", "flex-direction": "column" }}>
             <ChatView />
           </div>
         </SessionContext.Provider>

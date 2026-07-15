@@ -8,6 +8,9 @@ import type {
   VectorStoreSearchResult,
 } from "@kilocode/kilo-indexing/engine"
 import type { IndexingStatus } from "@kilocode/kilo-indexing/status"
+import type { IndexingResource } from "./indexing-memory"
+
+export const INDEXING_PROCESS_PREFIX = "@kilo-indexing:"
 
 export type InitInput = {
   directory: string
@@ -54,5 +57,44 @@ export type Result =
 export type Event =
   | { type: "event"; event: "status"; data: IndexingStatus }
   | { type: "event"; event: "telemetry"; data: IndexingTelemetryEvent }
+  | { type: "event"; event: "resource"; data: IndexingResource }
 
 export type Message = Result | Event
+
+const methods = new Set<string>([
+  "init",
+  "updateConfig",
+  "search",
+  "documentSearch",
+  "rebuildDocuments",
+  "queryEvidence",
+  "codeGraphStatus",
+  "dispose",
+])
+
+export function isIndexingRequest(value: unknown): value is Request {
+  return (
+    record(value) &&
+    value.type === "request" &&
+    typeof value.id === "number" &&
+    typeof value.method === "string" &&
+    methods.has(value.method)
+  )
+}
+
+export function isIndexingMessage(value: unknown): value is Message {
+  if (!record(value)) return false
+  if (value.type === "event") {
+    return value.event === "status" || value.event === "telemetry" || value.event === "resource"
+  }
+  return (
+    value.type === "result" &&
+    typeof value.id === "number" &&
+    typeof value.method === "string" &&
+    typeof value.ok === "boolean"
+  )
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}

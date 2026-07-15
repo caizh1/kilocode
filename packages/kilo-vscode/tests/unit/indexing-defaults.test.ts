@@ -13,6 +13,8 @@ describe("applyInternalIndexingDefaults", () => {
 
   it("defaults internal indexing to qwen3 embedding over openai-compatible", () => {
     expect(applyInternalIndexingDefaults({}, true)).toEqual({
+      enabled: true,
+      documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
       dimension: 2048,
@@ -32,6 +34,8 @@ describe("applyInternalIndexingDefaults", () => {
         true,
       ),
     ).toEqual({
+      enabled: true,
+      documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "custom-embedding",
       dimension: 4096,
@@ -40,7 +44,27 @@ describe("applyInternalIndexingDefaults", () => {
   })
 
   it("does not force qwen defaults onto other explicit providers", () => {
-    expect(applyInternalIndexingDefaults({ provider: "openai" }, true)).toEqual({ provider: "openai" })
+    expect(applyInternalIndexingDefaults({ provider: "openai" }, true)).toEqual({
+      enabled: true,
+      documents: { enabled: true, paths: ["."] },
+      provider: "openai",
+    })
+  })
+
+  it("preserves explicit internal RAG opt-outs and document paths", () => {
+    expect(
+      applyInternalIndexingDefaults(
+        { enabled: false, documents: { enabled: false, paths: ["manuals"] } },
+        true,
+      ),
+    ).toEqual({
+      enabled: false,
+      documents: { enabled: false, paths: ["manuals"] },
+      provider: "openai-compatible",
+      model: "qwen3-embedding-8b",
+      dimension: 2048,
+      vectorStore: "lancedb",
+    })
   })
 
   it("preserves explicit openai-compatible provider options while applying internal defaults", () => {
@@ -54,6 +78,8 @@ describe("applyInternalIndexingDefaults", () => {
         true,
       ),
     ).toEqual({
+      enabled: true,
+      documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
       dimension: 2048,

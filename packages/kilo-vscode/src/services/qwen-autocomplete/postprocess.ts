@@ -36,10 +36,6 @@ export function postprocessQwenCompletion(input: QwenPostprocessInput): string |
   return removeBackticks(completion)
 }
 
-export function firstLogLine(text: string): string {
-  return text.split(/\r?\n/, 1)[0]!.replace(/\s+/g, " ").slice(0, 160)
-}
-
 function processCodestral(completion: string, input: QwenPostprocessInput): string {
   let text = completion
   if (text[0] === " " && text[1] !== " ") {

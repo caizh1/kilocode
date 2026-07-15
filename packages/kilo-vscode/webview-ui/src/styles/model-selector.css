@@ -343,7 +343,13 @@
 }
 
 .model-selector-group-chevron {
-  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  font-size: var(--kilo-font-size-14);
   transition: transform 0.12s ease;
 }
 

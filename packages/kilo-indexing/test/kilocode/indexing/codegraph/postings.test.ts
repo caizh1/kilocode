@@ -9,7 +9,7 @@ import {
   CODE_POSTINGS_TOKENIZER_VERSION,
   type CodePostingsManifest,
 } from "../../../../src/indexing/codegraph"
-import type { CodePostingsTermPartData } from "../../../../src/indexing/codegraph/types"
+import type { CodePostingsTermDocument } from "../../../../src/indexing/codegraph/types"
 import { parseCodeGraphFile } from "../../../../src/indexing/codegraph/parser"
 import { buildPostingsDocument } from "../../../../src/indexing/codegraph/postings/builder"
 import { CodePostingsJsonStorage } from "../../../../src/indexing/codegraph/storage"
@@ -145,6 +145,45 @@ static void __attribute__((__constructor__)) prototype_tokens(void) {}
     const doc = await ctx.storage.getFilePostings(ctx.filePath)
     expect(JSON.stringify(doc)).not.toContain(source)
     expect((await walk(postingsDir(ctx.cacheDirectory))).some((item) => item.includes("/terms/"))).toBe(true)
+  })
+
+  test("resumes checkpointed posting documents in a replacement storage instance", async () => {
+    const workspacePath = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const storage = new CodePostingsJsonStorage({ workspacePath, cacheDirectory })
+    await storage.beginFullScan()
+    for (let index = 0; index < 64; index += 1) {
+      const file = `drivers/ufs/unit-${index}.c`
+      const content = `int unit_${index}(void) { return ${index}; }\n`
+      const parsed = graph(workspacePath, file, content)
+      await storage.upsertFilePostings(path.join(workspacePath, file), parsed.fileHash, parsed, { content })
+    }
+
+    const resumed = new CodePostingsJsonStorage({ workspacePath, cacheDirectory })
+    await resumed.beginFullScan()
+    expect(await resumed.getFilePostings(path.join(workspacePath, "drivers/ufs/unit-63.c"))).toMatchObject({
+      filePath: "drivers/ufs/unit-63.c",
+    })
+  })
+
+  test("persists each document during a full scan before publishing term buckets", async () => {
+    const workspacePath = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const filePath = "drivers/ufs/streamed.c"
+    const parsed = graph(workspacePath, filePath, source)
+    const storage = new CodePostingsJsonStorage({ workspacePath, cacheDirectory })
+
+    await storage.beginFullScan()
+    await storage.upsertFilePostings(path.join(workspacePath, filePath), parsed.fileHash, parsed, { content: source })
+
+    const docs = await walk(path.join(postingsDir(cacheDirectory), "docs"))
+    expect(docs).toHaveLength(1)
+    expect(docs[0]).toEndWith(".jsonl")
+    expect(await storage.getFilePostings(filePath)).toMatchObject({ filePath, fileHash: parsed.fileHash })
+    expect(await exists(path.join(postingsDir(cacheDirectory), "terms"))).toBe(false)
+
+    await storage.markFullScanComplete()
+    expect((await storage.search("UART0_CTRL_REG"))[0]?.filePath).toBe(filePath)
   })
 
   test("updates modified files and removes deleted postings", async () => {
@@ -338,7 +377,7 @@ static void __attribute__((__constructor__)) prototype_tokens(void) {}
 
     expect(await exists(active)).toBe(true)
     expect(await exists(settings)).toBe(true)
-    expect(await exists(stage)).toBe(false)
+    expect(await exists(stage)).toBe(true)
     expect(await exists(staleDoc)).toBe(false)
     expect(await exists(staleTerm)).toBe(false)
     expect(await exists(extra)).toBe(false)
@@ -384,15 +423,19 @@ static void __attribute__((__constructor__)) prototype_tokens(void) {}
   test("omits bm25 hits without line ranges and reports diagnostics", async () => {
     const ctx = await fixture()
     const term = (await walk(path.join(postingsDir(ctx.cacheDirectory), "terms"))).find((item) =>
-      item.endsWith(".json"),
+      item.endsWith(".jsonl"),
     )
     expect(term).toBeDefined()
-    const part = JSON.parse(await readFile(term!, "utf-8")) as CodePostingsTermPartData
-    const [match, docs] = Object.entries(part.terms)[0]!
-    for (const doc of docs) {
-      doc.ranges = [{ ...doc.ranges[0]!, startLine: undefined as unknown as number }]
+    const lines = (await readFile(term!, "utf-8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { term: string; document: CodePostingsTermDocument })
+    const match = lines[0]!.term
+    for (const line of lines) {
+      if (line.term !== match) continue
+      line.document.ranges = [{ ...line.document.ranges[0]!, startLine: undefined as unknown as number }]
     }
-    await writeFile(term!, JSON.stringify(part), "utf-8")
+    await writeFile(term!, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8")
 
     const storage = new CodePostingsJsonStorage({
       workspacePath: ctx.workspacePath,

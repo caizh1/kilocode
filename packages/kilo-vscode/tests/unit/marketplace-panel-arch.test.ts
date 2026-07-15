@@ -9,6 +9,14 @@ const remove = fs.readFileSync(path.join(root, "src/kilo-provider/remove-config-
 const card = fs.readFileSync(path.join(root, "webview-ui/src/components/marketplace/ItemCard.tsx"), "utf-8")
 const list = fs.readFileSync(path.join(root, "webview-ui/src/components/marketplace/MarketplaceListView.tsx"), "utf-8")
 const view = fs.readFileSync(path.join(root, "webview-ui/src/components/marketplace/MarketplaceView.tsx"), "utf-8")
+const importer = fs.readFileSync(
+  path.join(root, "webview-ui/src/components/marketplace/LocalSkillImportDialog.tsx"),
+  "utf-8",
+)
+const aligned = fs.readFileSync(
+  path.join(root, "webview-ui/src/components/marketplace/AlignedSkillMarket.tsx"),
+  "utf-8",
+)
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8")) as {
   contributes: { commands: Array<{ command: string; title: string }> }
 }
@@ -23,6 +31,10 @@ describe("standalone Marketplace architecture", () => {
       "removeInstalledMarketplaceItem",
       "uploadMarketplaceSkill",
       "starMarketplaceSkill",
+      "unpublishMarketplaceSkill",
+      "pickLocalSkills",
+      "installLocalSkills",
+      "cancelLocalSkillImport",
       "dismissAgentMigrationBanner",
     ]) {
       expect(kilo).not.toContain(`case \"${type}\"`)
@@ -43,7 +55,7 @@ describe("standalone Marketplace architecture", () => {
     expect(panel).toContain('"ChipMate 市场"')
     expect(panel).toContain("正在验证市场用户...")
     expect(panel).toContain("市场用户验证失败：")
-    expect(list).toContain("市场用户：")
+    expect(list).toContain('t("marketplace.aligned.user")')
     expect(commandTitle("kilo-code.new.marketplaceButtonClicked")).toBe("市场")
     expect(commandTitle("kilo-code.new.sidebarTitle.marketplaceButtonClicked")).toBe("市场")
   })
@@ -55,22 +67,41 @@ describe("standalone Marketplace architecture", () => {
     expect(view).toContain("<RemoveDialog")
   })
 
-  it("uploads only current local-only Skill cards that are absent from the Marketplace", () => {
+  it("publishes installed Skill snapshots from their cards and uses native local source pickers", () => {
     expect(panel).toContain("client.app.skills")
     expect(panel).toContain("uploadableSkillIds")
     expect(panel).toContain("isListedUploadableSkill")
     expect(panel).toContain('location === "builtin"')
     expect(panel).toContain("buildMarketplaceBuiltinSkillUploadPayload")
     expect(panel).not.toContain("showQuickPick")
-    expect(panel).not.toContain("showOpenDialog")
+    expect(panel).toContain("showOpenDialog")
+    expect(view).toContain("LocalSkillImportDialog")
+    expect(importer).toContain('type: "pickLocalSkills"')
+    expect(importer).toContain('type: "installLocalSkills"')
     expect(list).not.toContain("marketplace-primary-action")
     expect(card).toContain('icon="cloud-upload"')
-    expect(card).toContain("本地 Skill")
+    expect(card).toContain('t("marketplace.aligned.localSkill")')
   })
 
   it("uses a dedicated Marketplace webview bundle", () => {
     expect(panel).toContain('"dist", "marketplace.js"')
     expect(panel).not.toContain('"dist", "webview.js"')
+  })
+
+  it("gates aligned Skill views by capabilities while retaining legacy and Agent/MCP surfaces", () => {
+    expect(view).toContain('protocol() === "aligned-v1"')
+    expect(view).toContain("marketplaceSkillsOnly() === false")
+    expect(view).toContain("<AlignedSkillMarket")
+    expect(view).toContain('<Tabs.Trigger value="agent"')
+    expect(view).toContain('<Tabs.Trigger value="mcp"')
+    expect(aligned).toContain('"home" | "favorites" | "installed" | "publications" | "analytics" | "diagnostics"')
+    expect(aligned).toContain("@kilocode/kilo-ui/markdown")
+    expect(aligned).not.toContain("react")
+    expect(aligned).not.toContain("position: absolute")
+    expect(aligned).toContain("codicon codicon-archive")
+    expect(aligned).toContain("props.onUnpublish")
+    expect(panel).toContain("showWarningMessage(")
+    expect(panel).toContain('confirm !== "确认下架"')
   })
 
   it("keeps sidebar removal behind a narrow adapter", () => {

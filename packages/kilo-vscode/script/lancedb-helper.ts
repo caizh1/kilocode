@@ -3,13 +3,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statS
 
 const root = join(import.meta.dir, "..", "..", "..")
 const store = join(root, "node_modules", ".bun", "node_modules")
-const baseModules = [
-  "@lancedb/lancedb",
-  "apache-arrow",
-  "flatbuffers",
-  "reflect-metadata",
-  "tslib",
-] as const
+const baseModules = ["@lancedb/lancedb", "apache-arrow", "flatbuffers", "reflect-metadata", "tslib"] as const
 
 const nativeModules: Record<string, { module: string; binary: string }> = {
   "win32-x64": {

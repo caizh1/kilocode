@@ -8,7 +8,13 @@ import { parseModelString } from "../../../../src/shared/provider-model"
 import { ModelSelectorBase } from "../shared/ModelSelector"
 import { ThinkingSelectorBase } from "../shared/ThinkingSelector"
 import SettingsRow from "./SettingsRow"
-import { AUTOCOMPLETE_SELECTOR_MODELS, getAutocompleteSelection } from "./autocomplete-model-selector"
+import {
+  AUTOCOMPLETE_SELECTOR_MODELS,
+  autocompleteAutomaticLabel,
+  autocompleteSelectionLabel,
+  getAutocompleteSelection,
+  qwenAutocompleteModels,
+} from "./autocomplete-model-selector"
 
 const ModelsTab: Component = () => {
   const { config, settings, updateConfig, updateSetting } = useConfig()
@@ -24,6 +30,14 @@ const ModelsTab: Component = () => {
     const v = settings()["autocomplete.model"]
     return typeof v === "string" ? v : undefined
   }
+  const autocompleteAutomatic = () => settings()["autocomplete.automatic"] === true
+  const autocompleteScope = () => {
+    const value = settings()["autocomplete.scope"]
+    return typeof value === "string" ? value : "none"
+  }
+  const automaticLabel = () => autocompleteAutomaticLabel(autocompleteAutomatic(), autocompleteModel())
+  const selectionLabel = () => autocompleteSelectionLabel(autocompleteAutomatic(), autocompleteModel())
+  const autocompleteModels = () => [...qwenAutocompleteModels(provider.models()), ...AUTOCOMPLETE_SELECTOR_MODELS]
 
   function handleModelSelect(configKey: "model" | "small_model") {
     return (providerID: string, modelID: string) => {
@@ -148,15 +162,17 @@ const ModelsTab: Component = () => {
           last
         >
           <ModelSelectorBase
-            value={getAutocompleteSelection(autocompleteProvider(), autocompleteModel())}
+            value={
+              autocompleteAutomatic() ? null : getAutocompleteSelection(autocompleteProvider(), autocompleteModel())
+            }
             onSelect={handleAutocompleteModelSelect}
             placement="bottom-start"
-            models={AUTOCOMPLETE_SELECTOR_MODELS}
+            models={autocompleteModels()}
             favorites={false}
             allowClear
-            clearLabel={language.t("settings.providers.notSet")}
+            clearLabel={automaticLabel()}
             label={language.t("settings.autocomplete.model.title")}
-            description={language.t("settings.autocomplete.model.description")}
+            description={`${language.t("settings.autocomplete.model.description")} Uses a connected qwen-coder-30b0 Provider. Public builds may use Codestral only when its authentication is available. Selection: ${selectionLabel()}. Configuration source: ${autocompleteScope()}.`}
           />
         </SettingsRow>
       </Card>

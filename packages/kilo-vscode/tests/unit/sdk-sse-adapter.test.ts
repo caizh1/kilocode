@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { KiloClient } from "@kilocode/sdk/v2/client"
+import type * as vscode from "vscode"
 import { KiloConnectionService } from "../../src/services/cli-backend/connection-service"
 import { SdkSSEAdapter } from "../../src/services/cli-backend/sdk-sse-adapter"
 
@@ -142,14 +143,21 @@ describe("SdkSSEAdapter", () => {
 
 describe("KiloConnectionService backend crash", () => {
   it("invalidates the stale SDK client and reports a retryable error", () => {
-    const service = new KiloConnectionService({} as any)
+    const service = new KiloConnectionService(context())
     const states: Array<{ state: string; error?: string }> = []
     ;(service as any).client = {}
     ;(service as any).config = { baseUrl: "http://127.0.0.1:52512", password: "secret" }
     ;(service as any).info = { port: 52512 }
     ;(service as any).state = "connected"
     service.onStateChange((state, error) => states.push({ state, error: error?.message }))
-    ;(service as any).handleServerExit(9)
+    ;(service as any).handleServerExit({
+      code: 9,
+      signal: null,
+      stderr: [],
+      cliPath: "/tmp/kilo",
+      runId: "test-run",
+      expected: true,
+    })
 
     expect(service.getConnectionState()).toBe("error")
     expect(service.getConnectionError()?.message).toContain("CLI background process exited with code 9")
@@ -163,7 +171,7 @@ describe("KiloConnectionService backend crash", () => {
   })
 
   it("does not expose an SDK client while a replacement server is connecting", () => {
-    const service = new KiloConnectionService({} as any)
+    const service = new KiloConnectionService(context())
     ;(service as any).client = {}
     ;(service as any).state = "connecting"
 
@@ -191,7 +199,7 @@ describe("KiloConnectionService SSE startup", () => {
         },
       )) as typeof fetch
 
-    const service = new KiloConnectionService({} as any)
+    const service = new KiloConnectionService(context())
     ;(service as any).serverManager.getServer = async () => ({ port: 52512, password: "secret", process: {} })
     const events: string[] = []
     const dirs: Array<string | undefined> = []
@@ -232,7 +240,7 @@ describe("KiloConnectionService SSE startup", () => {
       )
     }) as typeof fetch
 
-    const service = new KiloConnectionService({} as any)
+    const service = new KiloConnectionService(context())
     ;(service as any).serverManager.getServer = async () => ({ port: 52512, password: "secret", process: {} })
 
     try {
@@ -245,3 +253,10 @@ describe("KiloConnectionService SSE startup", () => {
     }
   })
 })
+
+function context(): vscode.ExtensionContext {
+  return {
+    subscriptions: [],
+    globalStorageUri: { fsPath: "/tmp/kilo-vscode-sdk-sse-test" },
+  } as unknown as vscode.ExtensionContext
+}

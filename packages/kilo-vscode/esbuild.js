@@ -11,10 +11,19 @@ const internalOffline =
   process.env.KILO_INTERNAL_OFFLINE === "1"
 
 const define = {
-	__CHIPMATE_INTERNAL_OFFLINE__: JSON.stringify(internalOffline),
-	__CHIPMATE_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL__: JSON.stringify(
-		process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL || "",
-	),
+  __CHIPMATE_INTERNAL_OFFLINE__: JSON.stringify(internalOffline),
+  __CHIPMATE_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL__: JSON.stringify(
+    process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL || "",
+  ),
+}
+
+// VS Code 1.101+ runs Node 22 extension hosts where navigator is a global.
+// Keep the Node extension bundle on the pre-Node-22 server-side semantics while
+// leaving browser webviews free to use the real navigator object.
+const node = {
+  ...define,
+  navigator: "undefined",
+  "globalThis.navigator": "undefined",
 }
 
 /**
@@ -257,7 +266,7 @@ async function main() {
     outfile: "dist/extension.js",
     external: ["vscode"],
     logLevel: "silent",
-    define,
+    define: node,
     plugins: [esbuildProblemMatcherPlugin],
   })
 

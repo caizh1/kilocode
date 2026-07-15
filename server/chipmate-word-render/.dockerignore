@@ -1,0 +1,7 @@
+apps/web/dist
+packages/*/dist
+node_modules
+out
+*.docker.tar
+*.docker.tar.gz
+*.docker.tar.gz.sha256

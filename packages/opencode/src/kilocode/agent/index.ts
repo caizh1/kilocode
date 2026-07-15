@@ -14,6 +14,7 @@ import PROMPT_DEBUG from "../../agent/prompt/debug.txt"
 import PROMPT_ORCHESTRATOR from "../../agent/prompt/orchestrator.txt"
 import PROMPT_ASK from "../../agent/prompt/ask.txt"
 import PROMPT_EXPLORE from "../../agent/prompt/explore.txt"
+import { applyInternalIndexingDefaults, isInternalOffline } from "../internal-offline"
 
 export const bash: Record<string, "allow" | "ask" | "deny"> = {
   "*": "ask",
@@ -150,6 +151,7 @@ function askGuard(mcp: Record<string, "allow" | "ask" | "deny"> = {}) {
     codebase_search: "allow",
     codebase_analysis: "allow",
     semantic_search: "allow",
+    ...(isInternalOffline() ? { document_search: "allow" as const } : {}),
     external_directory: {
       [Truncate.GLOB]: "allow",
     },
@@ -205,6 +207,7 @@ function planGuard(worktree: string, mcp: Record<string, "allow" | "ask" | "deny
     codebase_search: "allow",
     codebase_analysis: "allow",
     semantic_search: "allow",
+    ...(isInternalOffline() ? { document_search: "allow" as const } : {}),
     external_directory: {
       [Truncate.GLOB]: "allow",
       [path.join(Global.Path.data, "plans", "*")]: "allow",
@@ -312,17 +315,21 @@ export function patchAgents(
   worktree: string,
   whitelistedDirs: string[],
 ) {
+  const internal = isInternalOffline()
+
   // Rename "build" → "code" for backward compatibility
   if (agents.build) {
+    const retrieval = Permission.fromConfig({
+      codebase_analysis: "allow",
+      semantic_search: "allow",
+      ...(internal ? { document_search: "allow" as const } : {}),
+    })
     agents.code = {
       ...agents.build,
       name: "code",
-      permission: Permission.merge(
-        defaults,
-        agents.build.permission,
-        user,
-        Permission.fromConfig({ codebase_analysis: "allow", semantic_search: "allow" }),
-      ),
+      permission: internal
+        ? Permission.merge(defaults, agents.build.permission, retrieval, user)
+        : Permission.merge(defaults, agents.build.permission, user, retrieval),
     }
     delete agents.build
   }
@@ -344,6 +351,24 @@ export function patchAgents(
 
   // Patch explore with codebase_search and conditional prompt
   if (agents.explore) {
+    const prompt = cfg.experimental?.codebase_search
+      ? `Prefer using the codebase_search tool for codebase searches — it performs intelligent multi-step code search and returns the most relevant code spans.\n\n${PROMPT_EXPLORE}`
+      : PROMPT_EXPLORE
+    const indexing = applyInternalIndexingDefaults(cfg.indexing, internal)
+    const retrieval = [
+      "Use the retrieval route that best matches the question before broad manual exploration:",
+      "- Use codebase_analysis first for C/C++ symbols, call chains, state machines, registers, MMIO, or impact analysis.",
+      indexing?.enabled === true
+        ? "- Use semantic_search first for unfamiliar concepts when you do not know the exact identifier."
+        : undefined,
+      indexing?.documents?.enabled === true
+        ? "- Use document_search first for questions grounded in indexed workspace documents."
+        : undefined,
+      "- Use Grep for exact identifiers or text, Glob for filenames, and Read to verify evidence.",
+      "- If an index is not ready, fall back to Grep, Glob, and Read for this request; do not repeatedly retry the retrieval tool.",
+    ]
+      .filter((item): item is string => item !== undefined)
+      .join("\n")
     agents.explore = {
       ...agents.explore,
       permission: Permission.merge(
@@ -361,6 +386,7 @@ export function patchAgents(
           codebase_search: "allow",
           codebase_analysis: "allow",
           semantic_search: "allow",
+          ...(internal ? { document_search: "allow" as const } : {}),
           read: "allow",
           external_directory: {
             // Mirror upstream explore's shape: the outer "*": "deny" above wins
@@ -374,9 +400,7 @@ export function patchAgents(
         }),
         user,
       ),
-      prompt: cfg.experimental?.codebase_search
-        ? `Prefer using the codebase_search tool for codebase searches — it performs intelligent multi-step code search and returns the most relevant code spans.\n\n${PROMPT_EXPLORE}`
-        : PROMPT_EXPLORE,
+      prompt: internal ? `${retrieval}\n\n${prompt}` : prompt,
     }
   }
 
@@ -394,6 +418,7 @@ export function patchAgents(
         plan_enter: "allow",
         codebase_analysis: "allow",
         semantic_search: "allow",
+        ...(internal ? { document_search: "allow" as const } : {}),
       }),
       user,
     ),

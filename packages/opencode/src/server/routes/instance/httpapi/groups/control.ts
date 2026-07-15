@@ -35,6 +35,7 @@ export const ControlPaths = {
 export const ControlApi = HttpApi.make("control").add(
   HttpApiGroup.make("control")
     .add(
+      // kilocode_change start - custom provider editing needs to read existing auth without exposing it to the webview
       HttpApiEndpoint.get("authGet", ControlPaths.auth, {
         params: AuthParams,
         success: described(Schema.NullOr(Auth.Info), "Authentication credentials for provider"),
@@ -46,6 +47,7 @@ export const ControlApi = HttpApi.make("control").add(
           description: "Get authentication credentials for a provider.",
         }),
       ),
+      // kilocode_change end
       HttpApiEndpoint.put("authSet", ControlPaths.auth, {
         params: AuthParams,
         payload: Auth.Info,

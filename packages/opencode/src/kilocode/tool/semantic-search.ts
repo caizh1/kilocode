@@ -42,6 +42,12 @@ export const SemanticSearchTool = Tool.define(
           throw new Error("query is required")
         }
 
+        const prefix = normalizeSearchPath(params.path)
+        if (!KiloIndexing.ready()) return unavailable()
+        const status = yield* Effect.promise(() => KiloIndexing.current())
+        const state = status.pipelines?.rag.state
+        if (state === "Disabled" || state === "Error") return unavailable(state)
+
         yield* ctx.ask({
           permission: "semantic_search",
           patterns: [params.query],
@@ -52,7 +58,6 @@ export const SemanticSearchTool = Tool.define(
           },
         })
 
-        const prefix = normalizeSearchPath(params.path)
         const matches = yield* Effect.promise(() => KiloIndexing.search(params.query, prefix))
 
         const results = matches.flatMap<SearchResult>((item) => {
@@ -79,6 +84,15 @@ export const SemanticSearchTool = Tool.define(
         })
 
         if (results.length === 0) {
+          if (state === "In Progress" || state === "Standby") {
+            return {
+              title: "Codebase Search",
+              metadata: {
+                results,
+              },
+              output: `No conclusive semantic results yet because the index is ${state.toLowerCase()}. Use Grep, Glob, and Read for this request; do not repeatedly retry semantic_search.`,
+            }
+          }
           return {
             title: "Codebase Search",
             metadata: {
@@ -98,6 +112,9 @@ export const SemanticSearchTool = Tool.define(
               "",
             ]
           }),
+          ...(state === "In Progress" || state === "Standby"
+            ? ["", `[Semantic index state: ${state}; results may be incomplete.]`]
+            : []),
         ]
 
         return {
@@ -110,6 +127,15 @@ export const SemanticSearchTool = Tool.define(
       }).pipe(Effect.orDie),
   }),
 )
+
+function unavailable(state?: "Disabled" | "Error"): Tool.ExecuteResult<Meta> {
+  const reason = state ? ` unavailable (${state})` : " not ready yet"
+  return {
+    title: "Codebase Search",
+    metadata: { results: [] },
+    output: `Semantic index is${reason}. Use Grep, Glob, and Read for this request; do not repeatedly retry semantic_search until indexing status changes.`,
+  }
+}
 
 function normalizeSearchPath(input?: string): string | undefined {
   if (!input) return undefined

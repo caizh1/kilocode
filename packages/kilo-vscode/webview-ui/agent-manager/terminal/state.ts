@@ -30,6 +30,9 @@ export interface TerminalTabStateWithContext extends TerminalTabState {
   contextKey: string
 }
 
+export type TerminalWriter = (data: string) => boolean
+export type TerminalWriteResult = "sent" | "queued" | "missing"
+
 export interface TerminalCreatedEvent {
   worktreeId: string | null
   terminalId: string
@@ -57,6 +60,10 @@ export interface TerminalStateControls {
   /** Active terminal id signal + setter. */
   activeId: Accessor<string | undefined>
   setActiveId: (id: string | undefined) => void
+  /** Bind the live PTY WebSocket writer owned by a mounted terminal tab. */
+  bind(terminalId: string, writer: TerminalWriter): () => void
+  /** Send a command to the active terminal, queueing until its WebSocket opens. */
+  send(command: string): TerminalWriteResult
   /** True when the given remembered tab id points to a live terminal for the given selection. */
   hasRemembered(selection: string | null, remembered: string | undefined): boolean
   /**
@@ -92,6 +99,8 @@ export interface TerminalStateControls {
 export function createTerminalState(selection: Accessor<string | null>): TerminalStateControls {
   const [terminalsByContext, setTerminalsByContext] = createSignal<Record<string, TerminalTabStateWithContext[]>>({})
   const [activeId, setActiveId] = createSignal<string | undefined>()
+  const writers = new Map<string, TerminalWriter>()
+  const queues = new Map<string, string[]>()
 
   const currentKey = createMemo((): string | undefined => {
     const sel = selection()
@@ -142,6 +151,7 @@ export function createTerminalState(selection: Accessor<string | null>): Termina
   const remove = (terminalId: string): string | undefined => {
     const key = contextFor(terminalId)
     if (!key) return undefined
+    writers.delete(terminalId)
     setTerminalsByContext((prev) => {
       const list = (prev[key] ?? []).filter((t) => t.id !== terminalId)
       const next = { ...prev }
@@ -155,6 +165,32 @@ export function createTerminalState(selection: Accessor<string | null>): Termina
   const hasRemembered = (sel: string | null, remembered: string | undefined): boolean => {
     if (!remembered || !isTerminalTabId(remembered)) return false
     return forSelection(sel).some((t) => t.id === remembered)
+  }
+
+  const bind = (terminalId: string, writer: TerminalWriter) => {
+    writers.set(terminalId, writer)
+    const key = contextFor(terminalId)
+    const queued = key ? (queues.get(key) ?? []) : []
+    if (key && queued.length > 0) {
+      const pending = queued.filter((data) => !writer(data))
+      if (pending.length > 0) queues.set(key, pending)
+      else queues.delete(key)
+    }
+    return () => {
+      if (writers.get(terminalId) === writer) writers.delete(terminalId)
+    }
+  }
+
+  const send = (command: string): TerminalWriteResult => {
+    const key = currentKey()
+    if (!key) return "missing"
+    const currentTerms = forSelection(selection())
+    const active = currentTerms.find((term) => term.id === activeId()) ?? currentTerms[0]
+    const data = `${command}\r`
+    const writer = active ? writers.get(active.id) : undefined
+    if (writer?.(data)) return "sent"
+    queues.set(key, [...(queues.get(key) ?? []), data])
+    return active ? "queued" : "missing"
   }
 
   const reorder = (key: string, orderedIds: string[]) => {
@@ -211,6 +247,8 @@ export function createTerminalState(selection: Accessor<string | null>): Termina
     currentKey,
     activeId,
     setActiveId,
+    bind,
+    send,
     hasRemembered,
     reorder,
     reorderDrag,

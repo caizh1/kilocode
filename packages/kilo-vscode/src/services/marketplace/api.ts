@@ -7,7 +7,15 @@ import type {
   RawSkill,
   MarketplaceUploadPayload,
   MarketplaceUser,
+  MarketCapabilities,
+  MarketStatus,
+  InstallationState,
+  AnalyticsSeries,
+  PublicationPatch,
+  PublicationRun,
+  SkillDetail,
 } from "./types"
+import type { MarketEvent } from "./analytics"
 
 const BASE_URL = "https://api.kilo.ai/api/marketplace"
 const CACHE_TTL = 300_000
@@ -17,9 +25,28 @@ const TIMEOUT = 10_000
 type FetchText = (url: string) => Promise<string>
 
 export interface MarketplaceApiClientOptions {
-	baseUrl?: string
-	skillsOnly?: boolean
-	fetchText?: FetchText
+  baseUrl?: string
+  skillsOnly?: boolean
+  fetchText?: FetchText
+  disabledReason?: string
+}
+
+export interface InstallIntent {
+  skillId: string
+  revision: number
+  sha256: string
+  downloadUrl: string
+}
+
+export interface InstallationSync {
+  skillId: string
+  revision: number
+  sha256: string
+  scope: "global" | "project"
+  status: "installed" | "updating" | "removed" | "local-unmanaged"
+  clientId: string
+  workspaceId?: string
+  changedAt: string
 }
 
 interface CacheEntry {
@@ -64,28 +91,28 @@ function transformSkill(raw: RawSkill): SkillMarketplaceItem {
 }
 
 async function fetchWithRetry(url: string, fetchText: FetchText = defaultFetchText, attempt = 0): Promise<string> {
-	try {
-		return await fetchText(url)
-	} catch (err) {
-		if (attempt >= MAX_RETRIES - 1) throw err
-		const delay = 1000 * Math.pow(2, attempt)
-		await new Promise((resolve) => setTimeout(resolve, delay))
-		return fetchWithRetry(url, fetchText, attempt + 1)
-	}
+  try {
+    return await fetchText(url)
+  } catch (err) {
+    if (attempt >= MAX_RETRIES - 1) throw err
+    const delay = 1000 * Math.pow(2, attempt)
+    await new Promise((resolve) => setTimeout(resolve, delay))
+    return fetchWithRetry(url, fetchText, attempt + 1)
+  }
 }
 
 async function defaultFetchText(url: string): Promise<string> {
-	const controller = new AbortController()
-	const timer = setTimeout(() => controller.abort(), TIMEOUT)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT)
 
-	try {
+  try {
     const response = await fetch(url, { signal: controller.signal })
-		clearTimeout(timer)
-		if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-		return await response.text()
-	} finally {
-		clearTimeout(timer)
-	}
+    clearTimeout(timer)
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    return await response.text()
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function fetchErrorMessage(err: unknown): string {
@@ -96,16 +123,19 @@ function fetchErrorMessage(err: unknown): string {
 }
 
 export class MarketplaceApiClient {
-	private cache = new Map<string, CacheEntry>()
-	private readonly baseUrl: string
-	private readonly skillsOnly: boolean
+  private cache = new Map<string, CacheEntry>()
+  private capability: MarketCapabilities | null | undefined
+  private readonly baseUrl: string
+  private readonly skillsOnly: boolean
   private readonly fetchText: FetchText
+  private readonly disabledReason?: string
 
   constructor(options: MarketplaceApiClientOptions = {}) {
-		this.baseUrl = normalizeBaseUrl(options.baseUrl) || BASE_URL
-		this.skillsOnly = options.skillsOnly ?? false
-		this.fetchText = options.fetchText ?? defaultFetchText
-	}
+    this.baseUrl = options.disabledReason ? "" : normalizeBaseUrl(options.baseUrl) || BASE_URL
+    this.skillsOnly = options.skillsOnly ?? false
+    this.fetchText = options.fetchText ?? defaultFetchText
+    this.disabledReason = options.disabledReason
+  }
 
   private getCached(key: string): unknown | undefined {
     const entry = this.cache.get(key)
@@ -141,7 +171,7 @@ export class MarketplaceApiClient {
     const cached = this.getCached("mcps")
     if (cached) return cached as McpMarketplaceItem[]
 
-		const text = await fetchWithRetry(`${this.baseUrl}/mcps`, this.fetchText)
+    const text = await fetchWithRetry(`${this.baseUrl}/mcps`, this.fetchText)
     const parsed = parseResponse(text) as { items?: unknown[] }
     const items = (parsed.items ?? []) as Array<Record<string, unknown>>
     const result = items.map((item) => ({ ...item, type: "mcp" as const }) as McpMarketplaceItem)
@@ -153,7 +183,7 @@ export class MarketplaceApiClient {
     const cached = this.getCached("agents")
     if (cached) return cached as AgentMarketplaceItem[]
 
-		const text = await fetchWithRetry(`${this.baseUrl}/agents`, this.fetchText)
+    const text = await fetchWithRetry(`${this.baseUrl}/agents`, this.fetchText)
     const parsed = parseResponse(text) as { items?: unknown[] }
     const items = (parsed.items ?? []) as Array<Record<string, unknown>>
     const result = items.map((item) => ({ ...item, type: "agent" as const }) as AgentMarketplaceItem)
@@ -161,11 +191,36 @@ export class MarketplaceApiClient {
     return result
   }
 
-  private async fetchSkills(): Promise<SkillMarketplaceItem[]> {
+  private async fetchSkills(apiKey?: string): Promise<SkillMarketplaceItem[]> {
     const cached = this.getCached("skills")
-    if (cached) return cached as SkillMarketplaceItem[]
+    const items = cached ? (cached as SkillMarketplaceItem[]) : await this.loadSkills()
+    if (!apiKey || !(await this.isAligned())) return items
+    const favorites = await requestJson(`${this.serverBaseUrl()}/api/v1/me/favorites`, { apiKey }).catch(() => [])
+    const ids = new Set(
+      Array.isArray(favorites)
+        ? favorites.flatMap((item) => (isObject(item) && typeof item.id === "string" ? [item.id] : []))
+        : [],
+    )
+    return items.map((item) => ({ ...item, favorite: ids.has(item.id) }))
+  }
 
-		const text = await fetchWithRetry(`${this.baseUrl}/skills`, this.fetchText)
+  private async loadSkills(): Promise<SkillMarketplaceItem[]> {
+    if (await this.isAligned()) {
+      const items: SkillMarketplaceItem[] = []
+      const state = { cursor: "" }
+      do {
+        const query = new URLSearchParams({ limit: "100", ...(state.cursor ? { cursor: state.cursor } : {}) })
+        const text = await fetchWithRetry(`${this.serverBaseUrl()}/api/v1/skills?${query}`, this.fetchText)
+        const parsed = parseResponse(text)
+        if (!isObject(parsed) || !Array.isArray(parsed.items)) throw new Error("aligned-market-invalid-catalog")
+        items.push(...parsed.items.flatMap((item) => this.alignedSkill(item)))
+        state.cursor = typeof parsed.nextCursor === "string" ? parsed.nextCursor : ""
+      } while (state.cursor)
+      this.setCache("skills", items)
+      return items
+    }
+
+    const text = await fetchWithRetry(`${this.baseUrl}/skills`, this.fetchText)
     const parsed = parseResponse(text) as { items?: unknown[] }
     const items = (parsed.items ?? []) as RawSkill[]
     const result = items.map(transformSkill)
@@ -173,21 +228,63 @@ export class MarketplaceApiClient {
     return result
   }
 
-  async fetchAll(): Promise<{ items: MarketplaceItem[]; errors: string[]; skillsFetched: boolean }> {
-		const errors: string[] = []
+  private alignedSkill(value: unknown): SkillMarketplaceItem[] {
+    if (!isObject(value) || typeof value.id !== "string" || typeof value.name !== "string") return []
+    const category = typeof value.category === "string" ? value.category : "general"
+    const revision = typeof value.latestRevision === "number" ? value.latestRevision : 1
+    const author =
+      isObject(value.author) && typeof value.author.displayName === "string" ? value.author.displayName : undefined
+    return [
+      {
+        type: "skill",
+        id: value.id,
+        name: value.name,
+        displayName: value.name,
+        description: typeof value.description === "string" ? value.description : "",
+        category,
+        displayCategory: kebabToTitleCase(category),
+        content: `${this.serverBaseUrl()}/api/v1/skills/${encodeURIComponent(value.id)}/releases/${revision}/archive`,
+        revision,
+        ...(typeof value.sha256 === "string" ? { sha256: value.sha256 } : {}),
+        ...(author ? { author, uploadedBy: author } : {}),
+        ...(typeof value.updatedAt === "string" ? { updatedAt: value.updatedAt } : {}),
+        ...(typeof value.downloads === "number" ? { downloadCount: value.downloads } : {}),
+        ...(typeof value.favorites === "number" ? { stars: value.favorites } : {}),
+        ...(Array.isArray(value.tags)
+          ? { tags: value.tags.filter((tag): tag is string => typeof tag === "string") }
+          : {}),
+      },
+    ]
+  }
 
-		if (this.skillsOnly) {
-			const skills = await this.fetchSkills().then(
+  private async isAligned(): Promise<boolean> {
+    if (this.disabledReason) return false
+    if (this.capability !== undefined) return this.capability !== null
+    this.capability = await this.fetchText(`${this.serverBaseUrl()}/api/v1/capabilities`).then(
+      (text) => marketCapabilities(parseResponse(text)),
+      () => null,
+    )
+    return this.capability !== null
+  }
+
+  async fetchAll(apiKey?: string): Promise<{ items: MarketplaceItem[]; errors: string[]; skillsFetched: boolean }> {
+    if (this.disabledReason) {
+      return { items: [], errors: [`ChipMate Server 配置无效：${this.disabledReason}`], skillsFetched: false }
+    }
+    const errors: string[] = []
+
+    if (this.skillsOnly) {
+      const skills = await this.fetchSkills(apiKey).then(
         (items) => ({ items, ok: true }),
         (err: unknown) => {
-				  errors.push(`获取技能市场失败：${fetchErrorMessage(err)}`)
+          errors.push(`获取技能市场失败：${fetchErrorMessage(err)}`)
           return { items: [] as SkillMarketplaceItem[], ok: false }
         },
       )
-			return { items: skills.items, errors, skillsFetched: skills.ok }
-		}
+      return { items: skills.items, errors, skillsFetched: skills.ok }
+    }
 
-    const skills = this.fetchSkills().then(
+    const skills = this.fetchSkills(apiKey).then(
       (items) => ({ items, ok: true }),
       (err: unknown) => {
         errors.push(`获取技能市场失败：${fetchErrorMessage(err)}`)
@@ -228,6 +325,16 @@ export class MarketplaceApiClient {
   }
 
   async starSkill(id: string, apiKey: string): Promise<{ stars?: number }> {
+    if (await this.isAligned()) {
+      const items = await this.fetchSkills(apiKey)
+      const item = items.find((entry) => entry.id === id)
+      await requestJson(`${this.serverBaseUrl()}/api/v1/favorites/${encodeURIComponent(id)}`, {
+        method: item?.favorite ? "DELETE" : "PUT",
+        apiKey,
+      })
+      this.cache.delete("skills")
+      return { stars: item?.stars }
+    }
     const response = await postJson(`${this.baseUrl}/skills/${encodeURIComponent(id)}/stars`, undefined, apiKey)
     this.cache.delete("skills")
     if (!isObject(response)) return {}
@@ -239,6 +346,175 @@ export class MarketplaceApiClient {
     this.cache.delete("skills")
   }
 
+  alignedMode() {
+    return this.isAligned()
+  }
+
+  async capabilities() {
+    await this.isAligned()
+    return this.capability ?? undefined
+  }
+
+  async skill(id: string): Promise<SkillDetail> {
+    return skillDetail(await requestJson(`${this.serverBaseUrl()}/api/v1/skills/${encodeURIComponent(id)}`))
+  }
+
+  async installations(apiKey: string): Promise<InstallationState[]> {
+    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/me/installations`, { apiKey })
+    return Array.isArray(value) ? value.filter(installationState) : []
+  }
+
+  async publications(apiKey: string): Promise<PublicationRun[]> {
+    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/me/publications`, { apiKey })
+    return Array.isArray(value) ? value.map(publication) : []
+  }
+
+  async unpublishSkill(id: string, apiKey: string): Promise<PublicationRun> {
+    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/skills/${encodeURIComponent(id)}/unpublish`, {
+      method: "POST",
+      apiKey,
+    })
+    this.cache.delete("skills")
+    return publication(value)
+  }
+
+  async status(): Promise<MarketStatus> {
+    return marketStatus(await requestJson(`${this.serverBaseUrl()}/api/v1/status`))
+  }
+
+  async analytics(apiKey: string): Promise<AnalyticsSeries[]> {
+    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/analytics/overview`, { apiKey })
+    return Array.isArray(value) ? value.filter(analyticsSeries) : []
+  }
+
+  async events(items: MarketEvent[], apiKey: string): Promise<void> {
+    await requestJson(`${this.serverBaseUrl()}/api/v1/events/batch`, { method: "POST", apiKey, body: items })
+  }
+
+  async publishArchive(archive: Buffer, apiKey: string, idempotencyKey: string): Promise<PublicationRun> {
+    const value = await requestBinary(`${this.serverBaseUrl()}/api/v1/publications`, archive, apiKey, idempotencyKey)
+    return publication(value)
+  }
+
+  async getPublication(id: string, apiKey: string): Promise<PublicationRun> {
+    return publication(
+      await requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(id)}`, { apiKey }),
+    )
+  }
+
+  async putPublicationPatches(id: string, patches: PublicationPatch[], apiKey: string): Promise<PublicationRun> {
+    return publication(
+      await requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(id)}/patches`, {
+        method: "POST",
+        apiKey,
+        body: patches,
+      }),
+    )
+  }
+
+  async applyPublicationPatches(id: string, patchIds: string[], apiKey: string): Promise<PublicationRun> {
+    return publication(
+      await requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(id)}/apply`, {
+        method: "POST",
+        apiKey,
+        body: { patchIds },
+      }),
+    )
+  }
+
+  async consumeInstallIntent(token: string, apiKey: string): Promise<InstallIntent> {
+    const value = await requestJson(
+      `${this.serverBaseUrl()}/api/v1/install-intents/${encodeURIComponent(token)}/consume`,
+      {
+        method: "POST",
+        apiKey,
+      },
+    )
+    if (
+      !isObject(value) ||
+      typeof value.skillId !== "string" ||
+      typeof value.revision !== "number" ||
+      typeof value.sha256 !== "string" ||
+      typeof value.downloadUrl !== "string"
+    ) {
+      throw new Error("Invalid install intent response")
+    }
+    return { skillId: value.skillId, revision: value.revision, sha256: value.sha256, downloadUrl: value.downloadUrl }
+  }
+
+  async syncInstallation(
+    id: string,
+    state: Omit<InstallationSync, "changedAt">,
+    apiKey: string,
+  ): Promise<InstallationSync> {
+    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/installations/${encodeURIComponent(id)}`, {
+      method: state.status === "removed" ? "DELETE" : "PUT",
+      apiKey,
+      body: state,
+    })
+    if (!isObject(value) || typeof value.changedAt !== "string") throw new Error("Invalid installation response")
+    return value as unknown as InstallationSync
+  }
+
+  subscribe(change: (name: string) => void): () => void {
+    if (this.disabledReason) return () => undefined
+    const abort = new AbortController()
+    void this.stream(change, abort.signal)
+    return () => abort.abort()
+  }
+
+  private async stream(change: (name: string) => void, signal: AbortSignal) {
+    const state = { id: "", version: this.capability?.catalogVersion ?? "", retry: 500 }
+    while (!signal.aborted) {
+      try {
+        const query = state.version ? `?catalogVersion=${encodeURIComponent(state.version)}` : ""
+        const response = await fetch(`${this.serverBaseUrl()}/api/v1/market/stream${query}`, {
+          signal,
+          headers: { accept: "text/event-stream", ...(state.id ? { "last-event-id": state.id } : {}) },
+        })
+        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
+        state.retry = 500
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        const buffer = { text: "" }
+        while (!signal.aborted) {
+          const chunk = await reader.read()
+          if (chunk.done) break
+          buffer.text += decoder.decode(chunk.value, { stream: true })
+          const frames = buffer.text.split("\n\n")
+          buffer.text = frames.pop() ?? ""
+          for (const frame of frames) this.frame(frame, state, change)
+        }
+      } catch (err) {
+        if (signal.aborted) return
+        console.warn("[Kilo New] Marketplace event stream ended; reconnecting:", err)
+      }
+      await pause(state.retry, signal)
+      state.retry = Math.min(10_000, state.retry * 2)
+    }
+  }
+
+  private frame(frame: string, state: { id: string; version: string }, change: (name: string) => void) {
+    const name = frame.match(/^event: (.+)$/m)?.[1]
+    const id = frame.match(/^id: (.+)$/m)?.[1]
+    if (id) state.id = id
+    if (
+      !name ||
+      !/^(?:favorite|installation|publication)\.changed$|^skill\.(?:published|unpublished)$|^(?:catalog\.invalidated|analytics\.updated)$/.test(
+        name,
+      )
+    )
+      return
+    if (name === "catalog.invalidated") {
+      const data = frame.match(/^data: (.+)$/m)?.[1]
+      const value = data ? (JSON.parse(data) as { catalogVersion?: unknown }) : {}
+      if (typeof value.catalogVersion === "string") state.version = value.catalogVersion
+      this.cache.delete("skills")
+    }
+    if (name.startsWith("skill.") || name === "favorite.changed") this.cache.delete("skills")
+    change(name)
+  }
+
   clearCache(): void {
     this.cache.clear()
   }
@@ -246,6 +522,146 @@ export class MarketplaceApiClient {
   dispose(): void {
     this.cache.clear()
   }
+}
+
+async function requestJson(
+  url: string,
+  opts: { method?: "GET" | "POST" | "PUT" | "DELETE"; apiKey?: string; body?: unknown } = {},
+): Promise<unknown> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT)
+  try {
+    const response = await fetch(url, {
+      method: opts.method ?? "GET",
+      signal: controller.signal,
+      headers: {
+        accept: "application/json",
+        ...(opts.body === undefined ? {} : { "content-type": "application/json" }),
+        ...(opts.apiKey ? { authorization: `Bearer ${opts.apiKey}` } : {}),
+      },
+      ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+    })
+    const text = await response.text()
+    const parsed = text ? JSON.parse(text) : {}
+    if (!response.ok) {
+      const code = isObject(parsed) && typeof parsed.code === "string" ? parsed.code : `HTTP ${response.status}`
+      throw new Error(code)
+    }
+    return parsed
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function pause(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+      { once: true },
+    )
+  })
+}
+
+async function requestBinary(url: string, body: Buffer, apiKey: string, idempotencyKey: string) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT)
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/gzip",
+        "idempotency-key": idempotencyKey,
+      },
+      body: Uint8Array.from(body),
+    })
+    const value = (await response.json()) as unknown
+    if (!response.ok) {
+      const code = isObject(value) && typeof value.code === "string" ? value.code : `HTTP ${response.status}`
+      throw new Error(code)
+    }
+    return value
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function publication(value: unknown): PublicationRun {
+  if (
+    !isObject(value) ||
+    typeof value.id !== "string" ||
+    typeof value.status !== "string" ||
+    !Array.isArray(value.patches)
+  ) {
+    throw new Error("Invalid publication response")
+  }
+  return value as unknown as PublicationRun
+}
+
+function marketCapabilities(value: unknown): MarketCapabilities | null {
+  if (
+    !isObject(value) ||
+    value.mode !== "aligned-v1" ||
+    typeof value.apiVersion !== "string" ||
+    typeof value.catalogVersion !== "string"
+  )
+    return null
+  if (value.skillSpecVersion !== undefined && typeof value.skillSpecVersion !== "string") return null
+  const features = value.features
+  if (!isObject(features)) return null
+  const names = ["versions", "favorites", "installations", "publications", "repairs", "analytics", "events"] as const
+  if (names.some((name) => typeof features[name] !== "boolean")) return null
+  return value as unknown as MarketCapabilities
+}
+
+function skillDetail(value: unknown): SkillDetail {
+  if (
+    !isObject(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    !Array.isArray(value.releases) ||
+    !Array.isArray(value.files)
+  ) {
+    throw new Error("Invalid Skill detail response")
+  }
+  return value as unknown as SkillDetail
+}
+
+function installationState(value: unknown): value is InstallationState {
+  return (
+    isObject(value) &&
+    typeof value.skillId === "string" &&
+    typeof value.revision === "number" &&
+    typeof value.status === "string"
+  )
+}
+
+function marketStatus(value: unknown): MarketStatus {
+  if (
+    !isObject(value) ||
+    typeof value.ok !== "boolean" ||
+    typeof value.transport !== "string" ||
+    typeof value.market !== "string"
+  ) {
+    throw new Error("Invalid Marketplace status response")
+  }
+  return value as unknown as MarketStatus
+}
+
+function analyticsSeries(value: unknown): value is AnalyticsSeries {
+  return (
+    isObject(value) &&
+    typeof value.metric === "string" &&
+    typeof value.scope === "string" &&
+    Array.isArray(value.points)
+  )
 }
 
 async function postJson(url: string, body?: unknown, apiKey?: string): Promise<unknown> {

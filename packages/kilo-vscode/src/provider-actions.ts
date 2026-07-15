@@ -11,6 +11,7 @@ import {
 } from "./shared/custom-provider"
 import { CUSTOM_PROVIDER_PACKAGE, KILO_AUTO, parseModelString } from "./shared/provider-model"
 import { configFeatures } from "./features"
+import * as MemoryDebug from "./services/memory-debug"
 
 /**
  * Compute the default model selection from CLI config, VS Code settings, or hardcoded fallback.
@@ -36,7 +37,10 @@ function customProvider(config: unknown) {
   return record(config) && config.npm === CUSTOM_PROVIDER_PACKAGE
 }
 
-function normalizeCustomProviderModelIDs<T extends { models: Record<string, unknown> }>(providerID: string, config: T): T {
+function normalizeCustomProviderModelIDs<T extends { models: Record<string, unknown> }>(
+  providerID: string,
+  config: T,
+): T {
   const prefix = `${providerID}/`
   const models = Object.fromEntries(
     Object.entries(config.models).map(([modelID, model]) => [
@@ -121,17 +125,20 @@ export function buildActionContext(
   errFn: (err: unknown) => string,
   dir: string,
   refresh: () => Promise<void>,
+  operationId?: string,
 ): ActionContext {
   return {
     client,
     postMessage: post,
     getErrorMessage: errFn,
     workspaceDir: dir,
+    operationId,
     disposeGlobal: async (reason: string) => {
       // Wait for the server to finish disposing before refreshing providers.
       // Shared State.dispose() now has a hard per-disposer timeout, so this
       // wait is bounded without needing a client-side timeout here.
-      await client.global.dispose().catch((error: unknown) => {
+      const opts = operationId ? { headers: MemoryDebug.header(operationId) } : undefined
+      await client.global.dispose(opts).catch((error: unknown) => {
         console.warn(`[Kilo New] KiloProvider: global.dispose() after ${reason} failed:`, error)
       })
     },
@@ -196,6 +203,7 @@ interface ActionContext {
   postMessage: PostMessage
   getErrorMessage: GetErrorMessage
   workspaceDir: string
+  operationId?: string
   disposeGlobal: (reason: string) => Promise<void>
   fetchAndSendProviders: () => Promise<void>
 }
@@ -421,6 +429,7 @@ export async function disconnectProvider(
     await ctx.disposeGlobal(`provider disconnect (${id})`)
     await ctx.fetchAndSendProviders()
     ctx.postMessage({ type: "providerDisconnected", requestId, providerID: id })
+    return true
   } catch (error) {
     postError(ctx, requestId, providerID, "disconnect", ctx.getErrorMessage(error) || "Failed to disconnect provider")
   }
@@ -445,10 +454,12 @@ export async function saveCustomProvider(
     return
   }
 
-  const refresh = async () => {
-    await ctx.disposeGlobal(`custom provider save (${id})`)
-    await ctx.fetchAndSendProviders()
-  }
+  const operation = ctx.operationId ?? MemoryDebug.operation("custom-provider", requestId)
+  void MemoryDebug.append({
+    event: "provider.custom.save.begin",
+    operationId: operation,
+    data: { provider: MemoryDebug.hash(id), apiKeyChanged, configKeys: Object.keys(provider) },
+  })
 
   try {
     const globalConfig = (await ctx.client.global.config.get({ throwOnError: true })).data ?? {}
@@ -464,33 +475,68 @@ export async function saveCustomProvider(
           disabled_providers: nextDisabled,
         },
       },
-      { throwOnError: true },
+      { throwOnError: true, headers: MemoryDebug.deferredHeader(operation) },
     )
 
-    const merged = await ctx.client.config.get({ directory: ctx.workspaceDir }, { throwOnError: true })
-    const config = merged.data ?? updated
-    const msg = { type: "configLoaded", config, globalConfig: updated, features: configFeatures(config) }
-    setCachedConfig(msg)
-    ctx.postMessage({ type: "configUpdated", config, globalConfig: updated, features: configFeatures(config) })
+    const refresh = async () => {
+      void MemoryDebug.append({
+        event: "provider.custom.finalize.begin",
+        operationId: operation,
+        data: { provider: MemoryDebug.hash(id) },
+      })
+      await ctx.disposeGlobal(`custom provider save (${id})`)
+      const merged = await ctx.client.config.get({ directory: ctx.workspaceDir }, { throwOnError: true })
+      const config = merged.data ?? updated
+      const msg = { type: "configLoaded", config, globalConfig: updated, features: configFeatures(config) }
+      setCachedConfig(msg)
+      ctx.postMessage({ type: "configUpdated", config, globalConfig: updated, features: configFeatures(config) })
+      await ctx.fetchAndSendProviders()
+      void MemoryDebug.append({
+        event: "provider.custom.finalize.end",
+        operationId: operation,
+        data: { provider: MemoryDebug.hash(id) },
+      })
+    }
 
     const auth = resolveCustomProviderAuth(apiKey, apiKeyChanged)
 
     try {
       if (auth.mode === "set") {
-        await ctx.client.auth.set({ providerID: id, auth: { type: "api", key: auth.key } }, { throwOnError: true })
+        await ctx.client.auth.set(
+          { providerID: id, auth: { type: "api", key: auth.key } },
+          { throwOnError: true, headers: MemoryDebug.deferredHeader(operation) },
+        )
       }
       if (auth.mode === "clear") {
-        await ctx.client.auth.remove({ providerID: id }, { throwOnError: true })
+        await ctx.client.auth.remove(
+          { providerID: id },
+          { throwOnError: true, headers: MemoryDebug.deferredHeader(operation) },
+        )
       }
     } catch (error) {
       await refresh()
+      void MemoryDebug.append({
+        event: "provider.custom.auth.failed",
+        operationId: operation,
+        data: { provider: MemoryDebug.hash(id), error: ctx.getErrorMessage(error) },
+      })
       postError(ctx, requestId, providerID, "connect", ctx.getErrorMessage(error) || "Failed to save custom provider")
       return
     }
 
     await refresh()
+    void MemoryDebug.append({
+      event: "provider.custom.save.end",
+      operationId: operation,
+      data: { provider: MemoryDebug.hash(id) },
+    })
     ctx.postMessage({ type: "providerConnected", requestId, providerID: id })
   } catch (error) {
+    void MemoryDebug.append({
+      event: "provider.custom.save.failed",
+      operationId: operation,
+      data: { provider: MemoryDebug.hash(id), error: ctx.getErrorMessage(error) },
+    })
     postError(ctx, requestId, providerID, "connect", ctx.getErrorMessage(error) || "Failed to save custom provider")
   }
 }

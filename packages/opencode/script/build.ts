@@ -54,7 +54,9 @@ const singleFlag = process.argv.includes("--single")
 const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
-const targetsArg = process.argv.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length) ?? process.env.KILO_BUILD_TARGETS
+// kilocode_change start - allow internal packaging to build an explicit target subset
+const targetsArg =
+  process.argv.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length) ?? process.env.KILO_BUILD_TARGETS
 const requestedTargets = targetsArg
   ? new Set(
       targetsArg
@@ -63,6 +65,7 @@ const requestedTargets = targetsArg
         .filter(Boolean),
     )
   : undefined
+// kilocode_change end
 const plugin = createSolidTransformPlugin()
 // kilocode_change - packages/app was removed; the web UI embed step is no longer applicable
 
@@ -253,9 +256,10 @@ const allTargets: {
     os: "win32",
     arch: "x64",
     avx2: false,
-  },
-]
+  }, // kilocode_change
+] // kilocode_change
 
+// kilocode_change start - reuse target names for explicit internal package selection
 function packageNameForTarget(item: (typeof allTargets)[number]) {
   return [
     pkg.name,
@@ -302,6 +306,7 @@ const targets = requestedTargets
 if (requestedTargets && targets.length === 0) {
   throw new Error(`No build targets matched --targets=${Array.from(requestedTargets).join(",")}`)
 }
+// kilocode_change end
 
 // kilocode_change start - prepare one validated models snapshot before any target compile
 const snapshot = await prepareModelsSnapshot()
@@ -314,23 +319,24 @@ await $`rm -rf dist`
 const kiloConsoleDist = await buildKiloConsole() // kilocode_change
 
 const binaries: Record<string, string> = {}
-if (!skipInstall) {
+if (!skipInstall) { // kilocode_change
   await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
 }
 for (const item of targets) {
-  const name = packageNameForTarget(item)
+  const name = packageNameForTarget(item) // kilocode_change
 
   console.log(`building ${name}`)
   await $`mkdir -p dist/${name}/bin`
 
   const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
-  const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
+  const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js") // kilocode_change
   const parserWorker = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
   const workerPath = "./src/cli/cmd/tui/worker.ts"
   const sessionExportWorkerPath = "./src/kilocode/session-export/worker.ts" // kilocode_change
-  const indexingWorkerPath = "./src/kilocode/indexing-worker.ts" // kilocode_change
+  const indexingProcessName = item.os === "win32" ? "kilo-indexer.exe" : "kilo-indexer" // kilocode_change
   const codeGraphParserWorkerPath = "codegraph-parser-worker.mjs" // kilocode_change
+  const compileTarget = name.replace(pkg.name, "bun") as any // kilocode_change
 
   // Use platform-specific bunfs root path based on target OS // kilocode_change
   const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
@@ -360,28 +366,56 @@ for (const item of targets) {
       autoloadDotenv: false,
       autoloadTsconfig: true,
       autoloadPackageJson: true,
-      target: name.replace(pkg.name, "bun") as any,
+      target: compileTarget,
       outfile: `dist/${name}/bin/kilo`, // kilocode_change
       execArgv: [`--user-agent=kilo/${Script.version}`, "--use-system-ca", "--"], // kilocode_change
       windows: {},
     },
     // kilocode_change start - packages/app was removed; no embedded web UI
     files: {},
-    entrypoints: ["./src/index.ts", parserWorker, workerPath, sessionExportWorkerPath, indexingWorkerPath],
+    entrypoints: ["./src/index.ts", parserWorker, workerPath, sessionExportWorkerPath],
     // kilocode_change end
     define: {
-      KILO_VERSION: `'${Script.version}'`,
+      KILO_VERSION: `'${Script.version}'`, // kilocode_change
       KILO_MIGRATIONS: JSON.stringify(migrations),
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
       KILO_WORKER_PATH: workerPath,
       KILO_SESSION_EXPORT_WORKER_PATH: sessionExportWorkerPath, // kilocode_change
-      KILO_INDEXING_WORKER_PATH: indexingWorkerPath, // kilocode_change
+      KILO_INDEXING_PROCESS_PATH: `'${indexingProcessName}'`, // kilocode_change
       KILO_CODEGRAPH_WORKER_PATH: codeGraphParserWorkerPath, // kilocode_change
       KILO_CHANNEL: `'${Script.channel}'`,
-      KILO_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
+      KILO_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "", // kilocode_change
       KILO_BUILD_KIND: Script.release ? `'release'` : `'source'`, // kilocode_change
     },
   })
+
+  // kilocode_change start - isolate indexing native allocations from the main CLI process
+  await Bun.build({
+    conditions: ["browser"],
+    tsconfig: "./tsconfig.json",
+    plugins: [plugin],
+    sourcemap: Script.release ? "none" : "external",
+    external: ["node-gyp", ...LanceDBRuntime.external],
+    format: "esm",
+    minify: true,
+    splitting: false,
+    compile: {
+      autoloadBunfig: false,
+      autoloadDotenv: false,
+      autoloadTsconfig: true,
+      autoloadPackageJson: true,
+      target: compileTarget,
+      outfile: `dist/${name}/bin/${indexingProcessName}`,
+      execArgv: [`--user-agent=kilo/${Script.version}`, "--use-system-ca", "--"],
+      windows: {},
+    },
+    entrypoints: ["./src/kilocode/indexing-process.ts"],
+    define: {
+      KILO_CODEGRAPH_WORKER_PATH: `'${codeGraphParserWorkerPath}'`,
+      KILO_BUILD_KIND: Script.release ? `'release'` : `'source'`,
+    },
+  })
+  // kilocode_change end
 
   await fs.promises.copyFile(snapshot.path, path.resolve(dir, `dist/${name}/bin/models-snapshot.json`)) // kilocode_change
   await buildCodeGraphParserWorker(path.resolve(dir, `dist/${name}/bin`)) // kilocode_change

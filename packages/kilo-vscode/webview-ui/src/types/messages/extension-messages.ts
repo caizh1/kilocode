@@ -1,8 +1,22 @@
 import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@kilocode/sdk/v2/client"
 import type { DiffSourceCapabilities, DiffSourceDescriptor } from "../../../../src/diff/sources/types"
 import type { PartBatch, PartRemove, PartUpdate } from "../../../../src/shared/stream-messages"
+import type { ChipmateServerState, ChipmateServerTestResult } from "../../../../src/shared/chipmate-server"
 import type { SessionMode } from "../../context/worktree-mode"
-import type { MarketplaceItem, MarketplaceInstalledMetadata, MarketplaceUser } from "../marketplace"
+import type {
+  InstallationState,
+  AnalyticsSeries,
+  SkillImportPreview,
+  LocalSkillImportProgress,
+  SkillImportResult,
+  MarketCapabilities,
+  MarketplaceItem,
+  MarketplaceInstalledMetadata,
+  MarketplaceUser,
+  MarketStatus,
+  PublicationRun,
+  SkillDetail,
+} from "../marketplace"
 import type { ConnectionState, ServerInfo, SessionStatus } from "./connection"
 import type { FileAttachment, Part } from "./parts"
 import type { CloudSessionInfo, Message, MessageLoadMode, SessionCloseReason, SessionInfo } from "./sessions"
@@ -330,6 +344,21 @@ export interface SkillsLoadedMessage {
   skills: SkillInfo[]
 }
 
+export interface SkillRemoveProgressMessage {
+  type: "skillRemoveProgress"
+  requestId: string
+  phase: "validating" | "removing" | "refreshing" | "reconciling"
+}
+
+export interface SkillRemoveResultMessage {
+  type: "skillRemoveResult"
+  requestId: string
+  skillId: string
+  scope: "global" | "project"
+  success: boolean
+  error?: string
+}
+
 export interface CommandsLoadedMessage {
   type: "commandsLoaded"
   commands: SlashCommandInfo[]
@@ -345,6 +374,8 @@ export interface AutocompleteSettingsLoadedMessage {
     provider: string | null
     /** `null` means "no explicit setting — use the resolved default." */
     model: string | null
+    automatic: boolean
+    scope: "global" | "workspace" | "workspace-folder" | "none"
   }
 }
 
@@ -478,6 +509,32 @@ export interface ConfigUpdateFailedMessage {
   requestId?: string
 }
 
+export interface SettingUpdatedMessage {
+  type: "settingUpdated"
+  key: string
+  value: unknown
+  requestId: string
+}
+
+export interface SettingUpdateFailedMessage {
+  type: "settingUpdateFailed"
+  key: string
+  message: string
+  requestId: string
+}
+
+export interface ChipmateServerSettingsLoadedMessage {
+  type: "chipmateServerSettingsLoaded"
+  state: ChipmateServerState
+  autoInstall: boolean
+}
+
+export interface ChipmateServerTestResultMessage {
+  type: "chipmateServerTestResult"
+  requestId: string
+  result: ChipmateServerTestResult
+}
+
 export interface GlobalConfigLoadedMessage {
   type: "globalConfigLoaded"
   config: Config
@@ -567,6 +624,13 @@ export interface AgentManagerStateMessage {
   runStatuses?: RunStatus[]
   runScriptConfigured?: boolean
   runScriptPath?: string
+}
+
+export type AgentManagerMode = "manager" | "console"
+
+export interface AgentManagerOpenModeMessage {
+  type: "agentManager.openMode"
+  mode: AgentManagerMode
 }
 
 // ---------------------------------------------------------------------------
@@ -856,8 +920,28 @@ export interface MarketplaceDataMessage {
   marketplaceBaseUrl?: string
   marketplaceSkillsOnly?: boolean
   marketplaceMode?: "skills-only" | "full"
+  marketplaceProtocol?: "aligned-v1" | "legacy"
+  marketplaceCapabilities?: MarketCapabilities
+  marketplaceInstallations?: InstallationState[]
+  marketplacePublications?: PublicationRun[]
+  marketplaceStatus?: MarketStatus
+  marketplaceAnalytics?: AnalyticsSeries[]
   errors?: string[]
   showAgentMigrationBanner?: boolean
+}
+
+export interface MarketplaceSyncMessage {
+  type: "marketplaceSync"
+  marketplaceInstallations?: InstallationState[]
+  marketplacePublications?: PublicationRun[]
+  marketplaceAnalytics?: AnalyticsSeries[]
+}
+
+export interface MarketplaceCatalogMessage {
+  type: "marketplaceCatalog"
+  marketplaceItems: MarketplaceItem[]
+  marketplaceInstalledMetadata: MarketplaceInstalledMetadata
+  errors?: string[]
 }
 
 export interface MarketplaceInstallResultMessage {
@@ -872,6 +956,38 @@ export interface MarketplaceRemoveResultMessage {
   success: boolean
   slug: string
   error?: string
+}
+
+export interface MarketplacePublicationResultMessage {
+  type: "marketplacePublicationResult"
+  run: PublicationRun
+}
+
+export interface MarketplaceSkillDetailMessage {
+  type: "marketplaceSkillDetail"
+  id: string
+  detail?: SkillDetail
+  error?: string
+}
+
+export interface LocalSkillImportPreviewMessage {
+  type: "localSkillImportPreview"
+  preview: SkillImportPreview
+}
+
+export interface LocalSkillImportResultMessage {
+  type: "localSkillImportResult"
+  result: SkillImportResult
+}
+
+export interface LocalSkillImportProgressMessage {
+  type: "localSkillImportProgress"
+  progress: LocalSkillImportProgress
+}
+
+export interface LocalSkillImportErrorMessage {
+  type: "localSkillImportError"
+  error: string
 }
 
 export interface ProviderOAuthReadyMessage {
@@ -974,6 +1090,8 @@ export type ExtensionMessage =
   | ProvidersLoadedMessage
   | AgentsLoadedMessage
   | SkillsLoadedMessage
+  | SkillRemoveProgressMessage
+  | SkillRemoveResultMessage
   | CommandsLoadedMessage
   | AutocompleteSettingsLoadedMessage
   | ChatCompletionResultMessage
@@ -997,6 +1115,10 @@ export type ExtensionMessage =
   | ConfigLoadedMessage
   | ConfigUpdatedMessage
   | ConfigUpdateFailedMessage
+  | SettingUpdatedMessage
+  | SettingUpdateFailedMessage
+  | ChipmateServerSettingsLoadedMessage
+  | ChipmateServerTestResultMessage
   | GlobalConfigLoadedMessage
   | NotificationSettingsLoadedMessage
   | TimelineSettingLoadedMessage
@@ -1007,6 +1129,7 @@ export type ExtensionMessage =
   | AgentManagerSessionAddedMessage
   | AgentManagerSessionForkedMessage
   | AgentManagerStateMessage
+  | AgentManagerOpenModeMessage
   | AgentManagerRunStatusMessage
   | AgentManagerKeybindingsMessage
   | AutoApproveStateMessage
@@ -1058,8 +1181,16 @@ export type ExtensionMessage =
   | DiffViewerNoticeMessage
   | DiffViewerBranchesLoadedMessage
   | MarketplaceDataMessage
+  | MarketplaceSyncMessage
+  | MarketplaceCatalogMessage
   | MarketplaceInstallResultMessage
+  | MarketplacePublicationResultMessage
+  | MarketplaceSkillDetailMessage
   | MarketplaceRemoveResultMessage
+  | LocalSkillImportPreviewMessage
+  | LocalSkillImportProgressMessage
+  | LocalSkillImportResultMessage
+  | LocalSkillImportErrorMessage
   | ProviderOAuthReadyMessage
   | ProviderConnectedMessage
   | ProviderDisconnectedMessage

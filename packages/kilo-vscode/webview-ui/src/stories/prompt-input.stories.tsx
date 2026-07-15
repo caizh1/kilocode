@@ -12,11 +12,12 @@
  */
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
-import { type ParentComponent } from "solid-js"
+import { createSignal, onMount, type ParentComponent } from "solid-js"
 import { StoryProviders, mockSessionValue } from "./StoryProviders"
 import { SessionContext } from "../context/session"
+import { ServerContext } from "../context/server"
 import { PromptInput } from "../components/chat/PromptInput"
-import type { Config } from "../types/messages"
+import type { Config, IndexingStatus } from "../types/messages"
 
 const agents = [
   { name: "code", description: "Write, edit and review code", mode: "primary" as const },
@@ -25,6 +26,67 @@ const agents = [
 ]
 
 const noop = () => {}
+
+type Pipeline = NonNullable<IndexingStatus["pipelines"]>["rag"]
+
+const pipeline = (state: Pipeline["state"], percent: number, opts: Partial<Pipeline> = {}): Pipeline => ({
+  state,
+  message: `${state} fixture`,
+  processedFiles: Math.round(percent),
+  totalFiles: 100,
+  percent,
+  errorCount: 0,
+  staleCount: 0,
+  skippedCount: 0,
+  ...opts,
+})
+
+const mixed: IndexingStatus = {
+  state: "In Progress",
+  message: "Mixed pipeline states",
+  processedFiles: 63,
+  totalFiles: 100,
+  percent: 63,
+  pipelines: {
+    codeGraph: pipeline("Complete", 100, { processedFiles: 384, totalFiles: 384 }),
+    rag: pipeline("In Progress", 63, { processedFiles: 630, totalFiles: 1000 }),
+    documents: pipeline("Error", 28, { errorCount: 2, detail: "Document indexing failed." }),
+  },
+}
+
+const warning: IndexingStatus = {
+  state: "Complete",
+  message: "Completed with pipeline issues",
+  processedFiles: 100,
+  totalFiles: 100,
+  percent: 100,
+  pipelines: {
+    codeGraph: pipeline("Complete", 94, { staleCount: 2 }),
+    rag: pipeline("Complete", 100, { errorCount: 1 }),
+    documents: pipeline("Complete", 100),
+  },
+}
+
+const standby: IndexingStatus = {
+  state: "Standby",
+  message: "Waiting to index",
+  processedFiles: 0,
+  totalFiles: 0,
+  percent: 0,
+  pipelines: {
+    codeGraph: pipeline("Standby", 0, { totalFiles: 0 }),
+    rag: pipeline("Standby", 0, { totalFiles: 0 }),
+    documents: pipeline("Disabled", 0, { totalFiles: 0 }),
+  },
+}
+
+const IndexFixture: ParentComponent<{ status?: IndexingStatus }> = (props) => {
+  onMount(() => {
+    if (!props.status) return
+    window.dispatchEvent(new MessageEvent("message", { data: { type: "indexingStatusLoaded", status: props.status } }))
+  })
+  return props.children
+}
 
 const indexingConfig = {
   plugin: ["@kilocode/kilo-indexing"],
@@ -40,13 +102,35 @@ const longSelection = {
   modelID: "deepseek/deepseek-v4-flash-preview-ultra-long-model-name",
 }
 
+const speechServer = {
+  connectionState: () => "connected" as const,
+  serverInfo: () => undefined,
+  extensionVersion: () => "1.0.0",
+  errorMessage: () => undefined,
+  errorDetails: () => undefined,
+  isConnected: () => true,
+  profileData: () => ({ profile: { email: "qa@chipmate.local" } }),
+  deviceAuth: () => ({ status: "idle" as const }),
+  startLogin: noop,
+  goToLogin: noop,
+  vscodeLanguage: () => "en",
+  languageOverride: () => undefined,
+  workspaceDirectory: () => "/project",
+  gitInstalled: () => true,
+}
+
 const PromptProviders: ParentComponent<{
   variants?: boolean
   modelOverride?: boolean
   indexing?: boolean
   longModel?: boolean
+  speech?: boolean
+  busy?: boolean
+  index?: IndexingStatus
+  variant?: string
 }> = (props) => {
-  const base = mockSessionValue({ status: "idle" })
+  const base = mockSessionValue({ status: props.busy ? "busy" : "idle" })
+  const [variant, setVariant] = createSignal(props.variant ?? "medium")
   const selected = () =>
     props.longModel ? longSelection : { providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" }
   const session = {
@@ -56,19 +140,36 @@ const PromptProviders: ParentComponent<{
     selected,
     getSessionModel: selected,
     variantList: () => (props.variants ? ["low", "medium", "high"] : []),
-    currentVariant: () => (props.variants ? ("medium" as string | undefined) : undefined),
+    currentVariant: () => (props.variants ? variant() : undefined),
+    selectVariant: (value: string) => setVariant(value),
     hasModelOverride: () => props.modelOverride ?? false,
     clearModelOverride: noop,
   }
-
   return (
     <StoryProviders noPadding config={props.indexing ? indexingConfig : undefined}>
-      {/* overflow:hidden prevents margin-collapse so top/bottom borders are captured in screenshots */}
-      <div style={{ overflow: "hidden" }}>
-        <SessionContext.Provider value={session as any}>{props.children}</SessionContext.Provider>
-      </div>
+      <IndexFixture status={props.index}>
+        {/* overflow:hidden prevents margin-collapse so top/bottom borders are captured in screenshots */}
+        <div class="chat-view" data-ui="qa-shell" style={{ overflow: "hidden" }}>
+          <div class="chat-input" data-ui="qa-dock">
+            {props.speech ? (
+              <ServerContext.Provider value={speechServer as any}>
+                <SessionContext.Provider value={session as any}>{props.children}</SessionContext.Provider>
+              </ServerContext.Provider>
+            ) : (
+              <SessionContext.Provider value={session as any}>{props.children}</SessionContext.Provider>
+            )}
+          </div>
+        </div>
+      </IndexFixture>
     </StoryProviders>
   )
+}
+
+const OpenVariant: ParentComponent = (props) => {
+  onMount(() => {
+    requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("openVariantPicker")))
+  })
+  return props.children
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +288,55 @@ export const DenseLongModel200: Story = {
   name: "Dense long model — 200px",
   render: () => (
     <PromptProviders variants modelOverride indexing longModel>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const QAAllControlsSend: Story = {
+  name: "QA all controls — send",
+  render: () => (
+    <PromptProviders variants modelOverride indexing longModel speech index={mixed}>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const QAAllControlsStop: Story = {
+  name: "QA all controls — busy stop",
+  render: () => (
+    <PromptProviders variants modelOverride indexing longModel speech busy index={mixed}>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const QAThinkingOpen: Story = {
+  name: "QA thinking — selected menu open",
+  render: () => (
+    <PromptProviders variants variant="low">
+      <div style={{ display: "grid", height: "360px", "align-items": "end" }}>
+        <OpenVariant>
+          <PromptInput />
+        </OpenVariant>
+      </div>
+    </PromptProviders>
+  ),
+}
+
+export const QAIndexingStandby: Story = {
+  name: "QA indexing — standby",
+  render: () => (
+    <PromptProviders indexing index={standby}>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const QAIndexingWarning: Story = {
+  name: "QA indexing — completed with issues",
+  render: () => (
+    <PromptProviders indexing index={warning}>
       <PromptInput />
     </PromptProviders>
   ),

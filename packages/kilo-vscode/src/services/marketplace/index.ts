@@ -1,10 +1,13 @@
 import * as vscode from "vscode"
+import { randomUUID } from "crypto"
 import { MarketplaceApiClient } from "./api"
 import { MarketplacePaths } from "./paths"
 import { InstallationDetector, type CliSkill } from "./detection"
 import { MarketplaceInstaller } from "./installer"
 import { mergeMarketplaceSkills } from "./skills"
 import { isInternalOfflineBuild } from "../../shared/internal-offline"
+import { createSkillArchive } from "./archive"
+import type { MarketEvent } from "./analytics"
 import type {
   MarketplaceItem,
   InstallMarketplaceItemOptions,
@@ -13,7 +16,9 @@ import type {
   RemoveResult,
   MarketplaceUploadPayload,
   MarketplaceUser,
+  PublicationPatch,
 } from "./types"
+import { chipmateServerEndpoints, legacyChipmateServerEndpoints } from "../chipmate-server"
 
 export class MarketplaceService {
   private api: MarketplaceApiClient
@@ -28,9 +33,25 @@ export class MarketplaceService {
     this.installer = new MarketplaceInstaller(this.paths)
   }
 
-  async fetchData(workspace?: string, skills?: CliSkill[]): Promise<MarketplaceDataResponse> {
-    const [fetched, metadata] = await Promise.all([this.api.fetchAll(), this.detector.detect(workspace, skills)])
+  async fetchData(
+    workspace?: string,
+    skills?: CliSkill[],
+    apiKey?: string,
+    details = true,
+  ): Promise<MarketplaceDataResponse> {
+    const [fetched, metadata] = await Promise.all([this.api.fetchAll(apiKey), this.detector.detect(workspace, skills)])
     const merged = mergeMarketplaceSkills(fetched.items, skills, metadata, fetched.skillsFetched)
+    const aligned = await this.api.alignedMode()
+    const state =
+      aligned && details
+        ? await Promise.all([
+            this.api.capabilities(),
+            this.api.status().catch(() => undefined),
+            apiKey ? this.api.installations(apiKey).catch(() => []) : Promise.resolve([]),
+            apiKey ? this.api.publications(apiKey).catch(() => []) : Promise.resolve([]),
+            apiKey ? this.api.analytics(apiKey).catch(() => []) : Promise.resolve([]),
+          ])
+        : []
 
     return {
       marketplaceItems: merged.marketplaceItems,
@@ -39,6 +60,16 @@ export class MarketplaceService {
       marketplaceBaseUrl: this.api.marketplaceBaseUrl(),
       marketplaceSkillsOnly: this.api.isSkillsOnly(),
       marketplaceMode: this.api.marketplaceMode(),
+      marketplaceProtocol: aligned ? "aligned-v1" : "legacy",
+      ...(state[0] ? { marketplaceCapabilities: state[0] } : {}),
+      ...(state[1] ? { marketplaceStatus: state[1] } : {}),
+      ...(aligned && details
+        ? {
+            marketplaceInstallations: state[2] ?? [],
+            marketplacePublications: state[3] ?? [],
+            marketplaceAnalytics: state[4] ?? [],
+          }
+        : {}),
     }
   }
 
@@ -66,8 +97,25 @@ export class MarketplaceService {
     return this.api.starSkill(id, apiKey)
   }
 
-  uploadSkill(payload: MarketplaceUploadPayload, apiKey: string): Promise<void> {
-    return this.api.uploadSkill(payload, apiKey)
+  async uploadSkill(payload: MarketplaceUploadPayload, apiKey: string) {
+    if (!(await this.api.alignedMode())) return this.api.uploadSkill(payload, apiKey)
+    return this.api.publishArchive(createSkillArchive(payload.id, payload.files), apiKey, `kilo-${randomUUID()}`)
+  }
+
+  getPublication(id: string, apiKey: string) {
+    return this.api.getPublication(id, apiKey)
+  }
+
+  skill(id: string) {
+    return this.api.skill(id)
+  }
+
+  putPublicationPatches(id: string, patches: PublicationPatch[], apiKey: string) {
+    return this.api.putPublicationPatches(id, patches, apiKey)
+  }
+
+  applyPublicationPatches(id: string, patchIds: string[], apiKey: string) {
+    return this.api.applyPublicationPatches(id, patchIds, apiKey)
   }
 
   async install(
@@ -75,13 +123,65 @@ export class MarketplaceService {
     options: InstallMarketplaceItemOptions,
     workspace?: string,
   ): Promise<InstallResult> {
-    const result = await this.installer.install(item, options, workspace)
+    const scope = options.target ?? "project"
+    const verified = item.type === "skill" && item.revision && item.sha256
+    const result = verified
+      ? await this.installer.installVerifiedSkill(
+          { id: item.id, revision: item.revision!, sha256: item.sha256!, url: item.content },
+          scope,
+          workspace,
+        )
+      : await this.installer.install(item, options, workspace)
 
     if (result.success) {
       vscode.window.showInformationMessage(`Successfully installed ${item.name}`)
     }
 
     return result
+  }
+
+  isSkillInstalled(id: string, scope: "project" | "global", workspace?: string): Promise<boolean> {
+    return this.installer.isSkillInstalled(id, scope, workspace)
+  }
+
+  installVerifiedSkill(
+    item: { id: string; revision: number; sha256: string; url: string },
+    scope: "project" | "global",
+    workspace?: string,
+  ): Promise<InstallResult> {
+    return this.installer.installVerifiedSkill(item, scope, workspace)
+  }
+
+  consumeInstallIntent(token: string, apiKey: string) {
+    return this.api.consumeInstallIntent(token, apiKey)
+  }
+
+  syncInstallation(id: string, state: Parameters<MarketplaceApiClient["syncInstallation"]>[1], apiKey: string) {
+    return this.api.syncInstallation(id, state, apiKey)
+  }
+
+  events(items: MarketEvent[], apiKey: string) {
+    return this.api.events(items, apiKey)
+  }
+
+  installations(apiKey: string) {
+    return this.api.installations(apiKey)
+  }
+
+  publications(apiKey: string) {
+    return this.api.publications(apiKey)
+  }
+
+  unpublishSkill(id: string, apiKey: string) {
+    return this.api.unpublishSkill(id, apiKey)
+  }
+
+  analytics(apiKey: string) {
+    return this.api.analytics(apiKey)
+  }
+
+  subscribe(change: (name: string) => void) {
+    return this.api.subscribe(change)
   }
 
   async remove(item: MarketplaceItem, scope: "project" | "global", workspace?: string): Promise<RemoveResult> {
@@ -108,15 +208,27 @@ export type {
   RemoveResult,
   MarketplaceUploadPayload,
   MarketplaceUser,
+  PublicationRun,
+  PublicationPatch,
+  SkillDetail,
+  MarketCapabilities,
+  MarketStatus,
+  InstallationState,
+  AnalyticsSeries,
 } from "./types"
 
-function marketplaceApiOptions() {
+export function marketplaceApiOptions() {
   const config = vscode.workspace.getConfiguration("kilo.marketplace")
-  const baseUrl = config.get<string>("baseUrl", "").trim()
+  const unified = chipmateServerEndpoints()
+  const legacy = legacyChipmateServerEndpoints()
+  const baseUrl = unified.endpoints?.marketplace ?? (unified.state.source === "conflict" ? legacy.market : "")
   const configuredSkillsOnly = config.get<boolean>("skillsOnly", false)
   const skillsOnly = configuredSkillsOnly || (isInternalOfflineBuild() && Boolean(baseUrl))
   return {
     ...(baseUrl ? { baseUrl } : {}),
     skillsOnly,
+    ...(unified.state.source === "invalid"
+      ? { disabledReason: unified.state.error ?? "The ChipMate Server address is invalid." }
+      : {}),
   }
 }

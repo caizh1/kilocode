@@ -12,18 +12,19 @@ import { SubAgentViewerProvider } from "./SubAgentViewerProvider"
 import { EXTENSION_DISPLAY_NAME } from "./constants"
 import { KiloConnectionService } from "./services/cli-backend"
 import { registerAutocompleteProvider } from "./services/autocomplete"
-import { registerQwenAutocompleteProvider } from "./services/qwen-autocomplete"
 import { BrowserAutomationService } from "./services/browser-automation"
 import { TelemetryEventName, TelemetryProxy } from "./services/telemetry"
 import { registerCommitMessageService } from "./services/commit-message"
 import { registerCodeActions, registerTerminalActions, KiloCodeActionProvider } from "./services/code-actions"
 import { registerToggleAutoApprove } from "./commands/toggle-auto-approve"
 import { registerHeapSnapshot } from "./commands/heap-snapshot"
+import { registerMemoryDebug } from "./commands/memory-debug"
 import { RemoteStatusService } from "./services/RemoteStatusService"
 import { markWorkspace } from "./util/spotlight"
 import { registerUpdateCheck } from "./services/update-check"
 import { registerDocumentArtifactCommands } from "./services/document-artifacts"
 import { registerAgentTerminal } from "./services/agent-terminal"
+import { migrateChipmateServer } from "./services/chipmate-server"
 
 let agentManager: AgentManagerProvider | undefined
 let shuttingDown = false
@@ -40,11 +41,13 @@ const panelTitleHandler = (panel: vscode.WebviewPanel) => (title: string) => {
 
 // Activated via "onStartupFinished" (package.json) so that commands, code actions, keybindings,
 // autocomplete, commit-message generation, and URI deep links all work immediately — without
-// requiring the user to open a Kilo sidebar or panel first. The CLI backend is NOT spawned here;
-// it starts lazily when a webview connects.
+// requiring the user to open a Kilo sidebar or panel first. The CLI backend normally starts lazily;
+// configured autocomplete may prewarm the shared connection so ghost text works before a webview opens.
 export function activate(context: vscode.ExtensionContext) {
   console.log("ChipMate extension is now active")
   shuttingDown = false
+
+  void migrateChipmateServer().catch((err) => console.warn("[Kilo New] ChipMate Server migration failed:", err))
 
   const telemetry = TelemetryProxy.getInstance()
 
@@ -347,7 +350,7 @@ export function activate(context: vscode.ExtensionContext) {
       else provider.postMessage({ type: "action", action: "plusButtonClicked" })
     }),
     vscode.commands.registerCommand("kilo-code.new.agentManagerOpen", () => {
-      agentManagerProvider.openPanel()
+      agentManagerProvider.openPanel({ mode: "manager" })
     }),
     vscode.commands.registerCommand("kilo-code.new.marketplaceButtonClicked", (directory?: string | null) => {
       marketplacePanelProvider.openPanel(directory)
@@ -474,10 +477,18 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   )
 
-  // Register URI handler for session imports (vscode://chipmate.chipmate/kilocode/s/{sessionId})
+  // Register URI handler for session imports and one-time Marketplace install intents.
   context.subscriptions.push(
     vscode.window.registerUriHandler({
       async handleUri(uri: vscode.Uri) {
+        if (uri.path === "/marketplace/install") {
+          await marketplacePanelProvider.handleInstallUri(uri)
+          return
+        }
+        if (uri.path === "/marketplace/repair") {
+          await marketplacePanelProvider.handleRepairUri(uri)
+          return
+        }
         const match = uri.path.match(/^\/kilocode\/s\/([a-zA-Z0-9_-]+)$/)
         if (!match) return
         const sessionId = match[1]
@@ -489,11 +500,11 @@ export function activate(context: vscode.ExtensionContext) {
     }),
   )
 
-  // Register autocomplete command shims and the isolated qwen-direct provider.
-  registerAutocompleteProvider(context)
-  registerQwenAutocompleteProvider(context)
+  // Register the unified builtin and configured-Qwen autocomplete coordinator.
+  registerAutocompleteProvider(context, connectionService)
+  registerMemoryDebug(context)
   registerDocumentArtifactCommands(context)
-  registerAgentTerminal(context)
+  registerAgentTerminal(context, () => agentManagerProvider.openPanel({ mode: "console" }))
 
   // Register commit message generation
   registerCommitMessageService(context, connectionService)

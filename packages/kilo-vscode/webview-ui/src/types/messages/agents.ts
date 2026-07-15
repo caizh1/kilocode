@@ -5,6 +5,8 @@ export interface SkillInfo {
   name: string
   description: string
   location: string
+  removeToken?: string
+  scope?: "global" | "project"
 }
 
 // Slash command info from CLI backend

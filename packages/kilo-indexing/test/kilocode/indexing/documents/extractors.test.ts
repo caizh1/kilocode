@@ -32,6 +32,16 @@ describe("Document extractors", () => {
     expect(sections[0]?.endLine).toBe(3)
   })
 
+  test("bounds extracted document text by bytes", async () => {
+    const dir = await temp()
+    const file = path.join(dir, "large.txt")
+    await writeFile(file, "0123456789".repeat(100))
+
+    const sections = await extractDocument(file, 64)
+
+    expect(Buffer.byteLength(sections[0]?.text ?? "")).toBeLessThanOrEqual(64)
+  })
+
   test("extracts XLSX and ODS sheets with row ranges", async () => {
     const dir = await temp()
     const book = utils.book_new()
@@ -58,6 +68,20 @@ describe("Document extractors", () => {
     expect(odsSections[0]?.text).toContain("alpha\t42")
   })
 
+  test("rejects Office archives with unsafe declared expansion", async () => {
+    const dir = await temp()
+    const file = path.join(dir, "bomb.xlsx")
+    const name = Buffer.from("xl/sharedStrings.xml")
+    const bytes = Buffer.alloc(46 + name.length)
+    bytes.writeUInt32LE(0x02014b50, 0)
+    bytes.writeUInt32LE(128 * 1024 * 1024, 24)
+    bytes.writeUInt16LE(name.length, 28)
+    name.copy(bytes, 46)
+    await writeFile(file, bytes)
+
+    expect(extractDocument(file, 1024 * 1024)).rejects.toThrow("extraction safety limit")
+  })
+
   test("prefers bundled pdftotext beside the compiled CLI", async () => {
     const dir = await temp()
     const poppler = path.join(dir, "bin", "poppler")
@@ -69,8 +93,8 @@ describe("Document extractors", () => {
   })
 
   test("uses explicit pdftotext override before bundled paths", () => {
-    expect(
-      pdftotextPath({ KILO_PDFTOTEXT_PATH: "C:\\tools\\pdftotext.exe" }, "/extension/bin/kilo.exe", "win32"),
-    ).toBe("C:\\tools\\pdftotext.exe")
+    expect(pdftotextPath({ KILO_PDFTOTEXT_PATH: "C:\\tools\\pdftotext.exe" }, "/extension/bin/kilo.exe", "win32")).toBe(
+      "C:\\tools\\pdftotext.exe",
+    )
   })
 })

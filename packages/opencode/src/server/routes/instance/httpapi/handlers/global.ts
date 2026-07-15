@@ -3,7 +3,9 @@ import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { Bus } from "@/bus"
 import { Installation } from "@/installation"
+import * as ProviderSave from "@/kilocode/server/provider-save-lifecycle" // kilocode_change
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import { MemoryDebug } from "@/kilocode/memory-debug" // kilocode_change
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import * as Log from "@opencode-ai/core/util/log"
 import { Effect, Queue, Schema } from "effect"
@@ -31,7 +33,7 @@ function parseBody(body: string) {
   } catch {
     return undefined
   }
-}
+} // kilocode_change
 
 // kilocode_change start - indexing settings hot-reload without disposing all instances
 function isIndexingOnlyConfig(input: unknown): boolean {
@@ -92,25 +94,84 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       return yield* config.getGlobal()
     })
 
+    // kilocode_change start - Kilo configuration saves own disposal and memory diagnostics
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
+      // kilocode_change start - correlate provider/settings saves without persisting request metadata
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const operation = MemoryDebug.operation(request.headers)
+      const defer = ProviderSave.deferred(request.headers) // kilocode_change
+      const keys = Object.keys(ctx.payload)
+      const began = Date.now()
+      yield* Effect.promise(() =>
+        MemoryDebug.event({ name: "global.config.update.begin", operationId: operation, data: { keys } }),
+      )
+      // kilocode_change end
       // kilocode_change start - indexing settings are consumed by the indexing hot-reload path
       const hot = isIndexingOnlyConfig(ctx.payload)
-      const result = yield* config.updateGlobal(ctx.payload, hot ? { dispose: false } : undefined)
+      const result = yield* config.updateGlobal(ctx.payload, ProviderSave.options(hot, defer))
       // kilocode_change end
       // kilocode_change start
-      if (result.changed && !hot) {
+      if (result.changed && defer) {
+        yield* Effect.promise(() =>
+          MemoryDebug.event({
+            name: "global.dispose.deferred",
+            operationId: operation,
+            data: { reason: "custom-provider-save" },
+          }),
+        )
+      }
+      if (result.changed && !hot && !defer) {
+        yield* Effect.promise(() =>
+          MemoryDebug.event({
+            name: "global.dispose.begin",
+            operationId: operation,
+            data: { reason: "config-update" },
+          }),
+        )
         yield* bridge.run(
           disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }).pipe(Effect.catchCause(() => Effect.void)),
         )
+        yield* Effect.promise(() =>
+          MemoryDebug.event({
+            name: "global.dispose.end",
+            operationId: operation,
+            data: { durationMs: Date.now() - began },
+          }),
+        )
       }
       // kilocode_change end
+      // kilocode_change - result only records changed/hot flags, never config values
+      yield* Effect.promise(() =>
+        MemoryDebug.event({
+          name: "global.config.update.end",
+          operationId: operation,
+          data: { changed: result.changed, hot, deferred: defer, durationMs: Date.now() - began },
+        }),
+      )
       return result.info
     })
 
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {
+      // kilocode_change start - explicit post-auth/provider disposal
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const operation = MemoryDebug.operation(request.headers)
+      const began = Date.now()
+      yield* Effect.promise(() =>
+        MemoryDebug.event({ name: "global.dispose.begin", operationId: operation, data: { reason: "explicit" } }),
+      )
+      // kilocode_change end
       yield* disposeAllInstancesAndEmitGlobalDisposed()
+      // kilocode_change
+      yield* Effect.promise(() =>
+        MemoryDebug.event({
+          name: "global.dispose.end",
+          operationId: operation,
+          data: { durationMs: Date.now() - began },
+        }),
+      )
       return true
     })
+    // kilocode_change end
 
     const upgrade = Effect.fn("GlobalHttpApi.upgrade")(function* (ctx: { payload: typeof GlobalUpgradeInput.Type }) {
       const method = yield* installation.method()

@@ -1,136 +1,929 @@
-/* Settings save bar */
-.settings-save-bar-wrap {
+.settings-shell {
+  --settings-shell-bg: color-mix(in srgb, var(--background-base) 68%, #122b43 32%);
+  --settings-glass-fill: color-mix(in srgb, var(--surface-raised-base) 70%, #20354b 30%);
+  --settings-glass-fill-strong: color-mix(in srgb, var(--surface-raised-base) 62%, #273d54 38%);
+  --settings-glass-border: color-mix(in srgb, var(--surface-raised-base) 42%, var(--vscode-foreground) 58%);
+  --settings-glass-highlight: color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+  --settings-glass-shadow: color-mix(in srgb, var(--vscode-widget-shadow, #000) 34%, transparent);
+  --settings-active-fill: color-mix(in srgb, var(--vscode-focusBorder) 17%, var(--settings-glass-fill-strong));
+  --settings-active-border: color-mix(in srgb, var(--vscode-focusBorder) 72%, var(--vscode-foreground) 28%);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border-weak-base);
-}
-
-.settings-save-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 8px 16px;
-}
-
-.settings-save-bar-label {
-  font-size: var(--font-size-small);
-  color: var(--foreground-secondary);
-  margin-right: auto;
-}
-
-/* Save error — mirrors the startup-error-banner style */
-.settings-save-bar-error {
-  border: 1px solid var(--vscode-inputValidation-errorBorder, #f14c4c);
-  border-radius: 4px;
-  background: var(--vscode-inputValidation-errorBackground, rgba(241, 76, 76, 0.1));
-  margin: 8px 16px 0 16px;
-  font-size: var(--font-size-small);
-}
-
-.settings-save-bar-error-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  cursor: pointer;
-  user-select: none;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
   min-width: 0;
-}
-
-.settings-save-bar-error-title {
-  flex: 1;
-  font-weight: 600;
-  white-space: nowrap;
+  min-height: 480px;
+  padding: 16px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--vscode-foreground, var(--text-base));
+  background: var(--settings-shell-bg);
+  border-radius: 16px;
+}
+
+.settings-shell *,
+.settings-shell *::before,
+.settings-shell *::after {
+  box-sizing: border-box;
+}
+
+.settings-shell .settings-header,
+.settings-shell .settings-brand,
+.settings-shell .settings-header-actions,
+.settings-shell .settings-main,
+.settings-shell .settings-nav-icon,
+.settings-shell .settings-save-bar,
+.settings-shell .settings-save-bar-error-header,
+.settings-shell .chipmate-server-label-row,
+.settings-shell .chipmate-server-label-copy,
+.settings-shell .chipmate-server-status,
+.settings-shell .chipmate-server-reload {
+  display: flex;
   min-width: 0;
 }
 
-.settings-save-bar-error-firstline {
-  font-weight: 400;
-}
-
-.settings-save-bar-error-chevron {
-  display: flex;
+.settings-shell .settings-header {
+  flex: 0 0 auto;
+  min-height: 66px;
   align-items: center;
-  flex-shrink: 0;
-  transition: transform 150ms;
-}
-
-.settings-save-bar-error-chevron-expanded {
-  transform: rotate(90deg);
-}
-
-.settings-save-bar-error-details {
-  margin: 0;
-  padding: 8px 10px;
-  border-top: 1px solid var(--vscode-inputValidation-errorBorder, #f14c4c);
-  background: var(--vscode-editor-background);
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: var(--font-size-small);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-[data-slot="settings-row"] {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-
-  [data-slot="settings-row-label"] {
-    flex: 1 1 0%;
-    min-width: 150px;
-
-    [data-slot="settings-row-label-title"] {
-      font-size: var(--font-size-base);
-      font-weight: 500;
-      min-height: var(--kilo-font-size-16);
-      margin-bottom: 4px;
-    }
-
-    [data-slot="settings-row-label-subtitle"] {
-      font-size: var(--font-size-small);
-      min-height: var(--kilo-font-size-14);
-      color: var(--text-weak-base, var(--vscode-descriptionForeground));
-    }
-  }
-
-  [data-slot="settings-row-input"] {
-    flex: 0 0 auto;
-    max-width: 160px;
-
-    & > * {
-      max-width: 100%;
-    }
-  }
+  padding: 0 12px;
 }
 
-/* Wider inputs inside cards with data-variant="wide-input" (e.g. edit mode config) */
-[data-variant="wide-input"] [data-slot="settings-row-input"] {
+.settings-shell .settings-brand {
+  align-items: center;
+  gap: 16px;
+}
+
+.settings-shell .settings-brand-icon {
+  display: flex;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    0 8px 22px color-mix(in srgb, var(--vscode-widget-shadow, #000) 32%, transparent);
+}
+
+.settings-shell .settings-brand-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.settings-shell .settings-brand h2 {
+  margin: 0;
+  font-family: var(--font-family-sans, var(--vscode-font-family));
+  font-size: calc(var(--kilo-font-size-13) * 2);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--vscode-foreground, var(--text-strong));
+}
+
+.settings-shell .settings-header-actions {
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-shell .settings-header-actions [data-component="button"] {
+  min-height: 34px;
+  padding-inline: 13px;
+  border: 1px solid var(--settings-glass-border);
+  border-radius: 10px;
+  color: var(--vscode-foreground, var(--text-base));
+  background: var(--settings-glass-fill);
+  box-shadow: inset 0 1px 0 var(--settings-glass-highlight);
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+  backdrop-filter: blur(14px) saturate(1.12);
+}
+
+.settings-shell .settings-header-actions [data-component="button"]:hover:not(:disabled) {
+  background: var(--settings-glass-fill-strong);
+  border-color: var(--settings-active-border);
+}
+
+.settings-shell .settings-close-button[data-component="button"] {
+  flex: 0 0 36px;
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+  font-size: var(--kilo-font-size-22);
+}
+
+.settings-shell .settings-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-shell .settings-tabs[data-component="tabs"] {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
+  flex: 0 0 296px;
+  width: 296px;
+  min-width: 296px;
+  padding: 16px 12px;
+  gap: 2px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  background: var(--settings-glass-fill);
+  border: 1px solid var(--settings-glass-border);
+  border-radius: 16px;
+  box-shadow:
+    inset 0 1px 0 var(--settings-glass-highlight),
+    0 16px 38px var(--settings-glass-shadow);
+  backdrop-filter: blur(22px) saturate(1.14);
+}
+
+.settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"] {
+  flex: 0 0 54px;
+  width: 100%;
+  height: 54px;
+  padding: 0;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  box-shadow: none;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"] {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0 14px;
+  color: inherit;
+  font-family: var(--font-family-sans, var(--vscode-font-family));
+  font-size: var(--kilo-font-size-20);
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: left;
+  border: 0;
+}
+
+.settings-shell .settings-nav-icon {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  font-size: calc(var(--kilo-font-size-24) * 1.0833);
+  line-height: 1;
+}
+
+.settings-shell .settings-nav-icon .codicon {
+  color: currentColor;
+  font-size: inherit;
+}
+
+.settings-shell .settings-tabs [data-slot="tabs-trigger"] .label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:hover:not(:disabled),
+.settings-shell[data-preview-nav="providers"]
+  .settings-tabs[data-variant="settings"]
+  [data-slot="tabs-trigger-wrapper"][data-value="providers"] {
+  color: var(--vscode-foreground, var(--text-strong));
+  background: color-mix(in srgb, var(--settings-glass-fill-strong) 88%, var(--vscode-focusBorder) 12%);
+  border-color: var(--settings-glass-border);
+}
+
+.settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:has([data-selected]) {
+  color: var(--vscode-foreground, var(--text-strong));
+  background: var(--settings-active-fill);
+  border-color: var(--settings-active-border);
+  box-shadow:
+    inset 3px 0 0 var(--vscode-focusBorder),
+    inset 0 1px 0 var(--settings-glass-highlight),
+    0 7px 20px color-mix(in srgb, var(--vscode-focusBorder) 13%, transparent);
+}
+
+.settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:has([data-selected]):hover {
+  background: var(--settings-active-fill);
+}
+
+.settings-shell
+  .settings-tabs[data-variant="settings"]
+  [data-slot="tabs-trigger-wrapper"]:has([data-slot="tabs-trigger"]:focus-visible),
+.settings-shell .settings-header-actions [data-component="button"]:focus-visible,
+.settings-shell .chipmate-server-test:focus-visible,
+.settings-shell .settings-save-bar [data-component="button"]:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 56px 60px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--settings-glass-fill);
+  border: 1px solid var(--settings-glass-border);
+  border-radius: 16px;
+  box-shadow:
+    inset 0 1px 0 var(--settings-glass-highlight),
+    0 16px 42px var(--settings-glass-shadow);
+  backdrop-filter: blur(22px) saturate(1.14);
+}
+
+.settings-shell .settings-page-header {
+  margin: 0 0 24px;
+}
+
+.settings-shell .settings-page-header h3 {
+  margin: 0;
+  color: var(--vscode-foreground, var(--text-strong));
+  font-family: var(--font-family-sans, var(--vscode-font-family));
+  font-size: clamp(calc(var(--kilo-font-size-14) * 2), 2.2vw, calc(var(--kilo-font-size-16) * 2));
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.settings-shell .settings-page-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.settings-shell
+  .settings-tabs[data-variant="settings"]
+  [data-slot="tabs-content"]
+  .settings-page-groups
+  [data-component="card"] {
+  padding: 20px 22px;
+  border: 1px solid var(--settings-glass-border);
+  border-radius: 14px;
+  background: var(--settings-glass-fill-strong);
+  box-shadow:
+    inset 0 1px 0 var(--settings-glass-highlight),
+    0 12px 30px color-mix(in srgb, var(--settings-glass-shadow) 75%, transparent);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.settings-shell [data-slot="settings-row"] {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--settings-glass-border) 62%, transparent);
+}
+
+.settings-shell [data-slot="settings-row"]:last-child {
+  border-bottom: 0;
+}
+
+.settings-shell [data-slot="settings-row-label"] {
+  flex: 1 1 0%;
+  min-width: 150px;
+}
+
+.settings-shell [data-slot="settings-row-label-title"] {
+  min-height: var(--kilo-font-size-16);
+  margin-bottom: 4px;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+}
+
+.settings-shell [data-slot="settings-row-label-subtitle"] {
+  min-height: var(--kilo-font-size-14);
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--font-size-small);
+}
+
+.settings-shell [data-slot="settings-row-input"] {
+  flex: 0 0 auto;
+  max-width: 160px;
+}
+
+.settings-shell [data-slot="settings-row-input"] > * {
+  max-width: 100%;
+}
+
+.settings-shell [data-variant="wide-input"] [data-slot="settings-row-input"] {
   flex: 1 1 0%;
   max-width: none;
 }
 
-.settings-font-size-control {
+.settings-shell .settings-font-size-control {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 160px;
+}
 
-  input {
-    flex: 1;
-    min-width: 0;
+.settings-shell .settings-font-size-control input {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-shell .settings-font-size-control span {
+  min-width: 34px;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--font-size-small);
+  text-align: right;
+}
+
+.settings-shell input,
+.settings-shell textarea,
+.settings-shell [data-component="text-field"],
+.settings-shell [data-slot="select-select-trigger"] {
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  background: color-mix(in srgb, var(--vscode-input-background, var(--background-base)) 82%, transparent);
+  border-color: color-mix(in srgb, var(--settings-glass-border) 88%, var(--vscode-input-border) 12%);
+  border-radius: 11px;
+  box-shadow:
+    inset 0 1px 1px color-mix(in srgb, var(--vscode-widget-shadow, #000) 26%, transparent),
+    inset 0 -1px 0 var(--settings-glass-highlight);
+}
+
+.settings-shell input:focus,
+.settings-shell textarea:focus,
+.settings-shell [data-component="text-field"]:focus-within,
+.settings-shell [data-slot="select-select-trigger"]:focus-visible {
+  border-color: var(--vscode-focusBorder);
+  outline: 0;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--vscode-focusBorder) 26%, transparent),
+    inset 0 1px 1px color-mix(in srgb, var(--vscode-widget-shadow, #000) 22%, transparent);
+}
+
+.settings-shell input::placeholder,
+.settings-shell textarea::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+  opacity: 1;
+}
+
+.settings-shell [data-component="button"]:disabled,
+.settings-shell input:disabled,
+.settings-shell textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  border-color: color-mix(in srgb, var(--settings-glass-border) 58%, transparent);
+}
+
+.settings-shell .chipmate-server-page {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  min-width: 0;
+}
+
+.settings-shell .chipmate-server-intro {
+  margin: -6px 0 12px;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--kilo-font-size-18);
+  line-height: 1.55;
+}
+
+.settings-shell
+  .settings-tabs[data-variant="settings"]
+  [data-slot="tabs-content"]
+  .chipmate-server-card[data-component="card"] {
+  margin-inline: -25px;
+  width: calc(100% + 50px);
+  min-height: 174px;
+  padding: 36px 32px;
+  border-radius: 16px;
+}
+
+.settings-shell .chipmate-server-label-row {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+
+.settings-shell .chipmate-server-label-copy {
+  flex-direction: column;
+  gap: 5px;
+}
+
+.settings-shell .chipmate-server-label-copy label {
+  color: var(--vscode-foreground, var(--text-base));
+  font-size: var(--kilo-font-size-18);
+  font-weight: 600;
+}
+
+.settings-shell .chipmate-server-control {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 132px 230px;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+}
+
+.settings-shell .chipmate-server-input {
+  min-width: 0;
+}
+
+.settings-shell .chipmate-server-input [data-component="text-field"] {
+  width: 100%;
+  min-height: 58px;
+}
+
+.settings-shell .chipmate-server-input [data-component="input"],
+.settings-shell .chipmate-server-input [data-slot="input-wrapper"],
+.settings-shell .chipmate-server-input [data-slot="input-input"] {
+  width: 100%;
+  min-height: 58px;
+}
+
+.settings-shell .chipmate-server-input [data-slot="input-wrapper"] {
+  background: color-mix(in srgb, var(--vscode-input-background, var(--background-base)) 52%, #30445b 48%);
+  border: 1px solid var(--settings-glass-border);
+  border-radius: 11px;
+  box-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--vscode-widget-shadow, #000) 25%, transparent),
+    inset 0 -1px 0 var(--settings-glass-highlight);
+}
+
+.settings-shell .chipmate-server-input [data-slot="input-input"] {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.settings-shell .chipmate-server-input [data-component="input"]:focus-within [data-slot="input-wrapper"] {
+  border-color: var(--vscode-focusBorder);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--vscode-focusBorder) 26%, transparent),
+    inset 0 1px 2px color-mix(in srgb, var(--vscode-widget-shadow, #000) 20%, transparent);
+}
+
+.settings-shell .chipmate-server-input [data-slot="input-input"] {
+  padding-inline: 16px;
+  font-size: var(--kilo-font-size-16);
+}
+
+.settings-shell .chipmate-server-control-error .chipmate-server-input [data-slot="input-wrapper"] {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.settings-shell .chipmate-server-test[data-component="button"] {
+  min-width: 132px;
+  min-height: 58px;
+  justify-content: center;
+  padding-inline: 18px;
+  color: var(--vscode-foreground, var(--text-base));
+  font-size: var(--kilo-font-size-16);
+  font-weight: 500;
+  background: color-mix(in srgb, var(--settings-active-fill) 78%, transparent);
+  border: 1px solid var(--settings-active-border);
+  border-radius: 11px;
+  box-shadow: inset 0 1px 0 var(--settings-glass-highlight);
+}
+
+.settings-shell .chipmate-server-test[data-component="button"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--settings-active-fill) 88%, var(--vscode-focusBorder) 12%);
+}
+
+.settings-shell .chipmate-server-status-slot {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 58px;
+}
+
+.settings-shell .chipmate-server-status-spacer {
+  display: block;
+  width: 100%;
+  min-height: 1px;
+}
+
+.settings-shell .chipmate-server-status,
+.settings-shell .chipmate-server-reload {
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--kilo-font-size-16);
+  line-height: 1.45;
+}
+
+.settings-shell .chipmate-server-status {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.settings-shell .chipmate-server-status .codicon,
+.settings-shell .chipmate-server-reload .codicon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  font-size: var(--kilo-font-size-18);
+}
+
+.settings-shell .chipmate-server-status-success {
+  color: var(--vscode-testing-iconPassed, var(--text-success-base, #73c991));
+}
+
+.settings-shell .chipmate-server-status-warning,
+.settings-shell .chipmate-server-status-testing {
+  color: var(--vscode-editorWarning-foreground, var(--text-warning-base, #cca700));
+}
+
+.settings-shell .chipmate-server-status-error {
+  color: var(--vscode-errorForeground, var(--text-critical-base, #f14c4c));
+}
+
+.settings-shell .chipmate-server-reload {
+  padding: 0;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+}
+
+.settings-shell .settings-save-bar-wrap {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--settings-glass-fill-strong);
+  border: 1px solid var(--settings-glass-border);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 var(--settings-glass-highlight),
+    0 12px 32px var(--settings-glass-shadow);
+  backdrop-filter: blur(20px) saturate(1.14);
+}
+
+.settings-shell .settings-save-bar {
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 72px;
+  padding: 10px 20px;
+}
+
+.settings-shell .settings-save-bar-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: auto;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--kilo-font-size-14);
+  line-height: 1.4;
+}
+
+.settings-shell .settings-save-bar [data-component="button"] {
+  min-width: 126px;
+  min-height: 42px;
+  justify-content: center;
+  border-radius: 11px;
+  font-size: var(--kilo-font-size-15);
+  font-weight: 500;
+}
+
+.settings-shell .settings-discard-button[data-component="button"] {
+  color: var(--vscode-foreground, var(--text-base));
+  background: var(--settings-glass-fill);
+  border: 1px solid var(--settings-glass-border);
+  box-shadow: inset 0 1px 0 var(--settings-glass-highlight);
+}
+
+.settings-shell .settings-save-button[data-component="button"] {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border: 1px solid color-mix(in srgb, var(--vscode-button-background) 72%, var(--vscode-foreground) 28%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 8px 20px color-mix(in srgb, var(--vscode-button-background) 30%, transparent);
+}
+
+.settings-shell .settings-save-button[data-component="button"]:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.settings-shell .settings-save-bar-error {
+  margin: 10px 12px 0;
+  overflow: hidden;
+  color: var(--vscode-errorForeground, var(--text-critical-base));
+  background: color-mix(in srgb, var(--vscode-inputValidation-errorBackground, transparent) 82%, transparent);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+  border-radius: 10px;
+  font-size: var(--font-size-small);
+}
+
+.settings-shell .settings-save-bar-error-header {
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px 11px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-shell .settings-save-bar-error-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings-shell .settings-save-bar-error-firstline {
+  font-weight: 400;
+}
+
+.settings-shell .settings-save-bar-error-chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  transition: transform 150ms ease;
+}
+
+.settings-shell .settings-save-bar-error-chevron-expanded {
+  transform: rotate(90deg);
+}
+
+.settings-shell .settings-save-bar-error-details {
+  max-height: 200px;
+  margin: 0;
+  padding: 9px 11px;
+  overflow-y: auto;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--font-size-small);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--vscode-editor-background);
+  border-top: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+body.vscode-light .settings-shell,
+body.vscode-high-contrast-light .settings-shell {
+  --settings-shell-bg: color-mix(in srgb, var(--background-base) 94%, #dce9f6 6%);
+  --settings-glass-fill: color-mix(in srgb, var(--surface-raised-base) 89%, transparent);
+  --settings-glass-fill-strong: color-mix(in srgb, var(--surface-raised-base) 94%, #dce9f6 6%);
+  --settings-glass-border: color-mix(in srgb, var(--surface-raised-base) 46%, var(--vscode-foreground) 54%);
+  --settings-glass-highlight: color-mix(in srgb, white 66%, transparent);
+  --settings-glass-shadow: color-mix(in srgb, var(--vscode-widget-shadow, #667) 18%, transparent);
+}
+
+body.vscode-light .settings-shell .chipmate-server-input [data-slot="input-wrapper"],
+body.vscode-high-contrast-light .settings-shell .chipmate-server-input [data-slot="input-wrapper"] {
+  background: color-mix(in srgb, var(--vscode-input-background, white) 90%, #dce9f6 10%);
+}
+
+body.vscode-high-contrast .settings-shell,
+body.vscode-high-contrast-light .settings-shell {
+  --settings-shell-bg: var(--vscode-editor-background);
+  --settings-glass-fill: var(--vscode-editor-background);
+  --settings-glass-fill-strong: var(--vscode-editor-background);
+  --settings-glass-border: var(--vscode-contrastBorder, var(--vscode-foreground));
+  --settings-glass-highlight: transparent;
+  --settings-glass-shadow: transparent;
+  --settings-active-fill: var(--vscode-list-activeSelectionBackground);
+  --settings-active-border: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+}
+
+body.vscode-high-contrast .settings-shell [data-ui],
+body.vscode-high-contrast-light .settings-shell [data-ui] {
+  backdrop-filter: none;
+}
+
+body.vscode-high-contrast .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
+body.vscode-high-contrast-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
+body.vscode-high-contrast .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+body.vscode-high-contrast-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+body.vscode-high-contrast
+  .settings-shell
+  .settings-tabs[data-variant="settings"]
+  [data-slot="tabs-content"]
+  .settings-page-groups
+  [data-component="card"],
+body.vscode-high-contrast-light
+  .settings-shell
+  .settings-tabs[data-variant="settings"]
+  [data-slot="tabs-content"]
+  .settings-page-groups
+  [data-component="card"],
+body.vscode-high-contrast .settings-shell .settings-save-bar-wrap,
+body.vscode-high-contrast-light .settings-shell .settings-save-bar-wrap,
+body.vscode-high-contrast .settings-shell .settings-header-actions [data-component="button"],
+body.vscode-high-contrast-light .settings-shell .settings-header-actions [data-component="button"] {
+  backdrop-filter: none;
+}
+
+body.vscode-high-contrast .settings-shell .chipmate-server-input [data-slot="input-wrapper"],
+body.vscode-high-contrast-light .settings-shell .chipmate-server-input [data-slot="input-wrapper"] {
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  border-color: var(--vscode-contrastBorder, var(--vscode-foreground));
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .settings-shell [data-ui] {
+    backdrop-filter: none;
   }
 
-  span {
-    min-width: 34px;
-    color: var(--text-weak-base, var(--vscode-descriptionForeground));
-    font-size: var(--font-size-small);
-    text-align: right;
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+  .settings-shell .settings-save-bar-wrap,
+  .settings-shell .settings-page-groups [data-component="card"] {
+    background: var(--settings-glass-fill-strong);
+  }
+}
+
+@media (max-width: 1199px) {
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
+    flex-basis: 200px;
+    width: 200px;
+    min-width: 200px;
+  }
+
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+    padding: 30px 28px;
+  }
+
+  .settings-shell .chipmate-server-control {
+    grid-template-columns: minmax(220px, 1fr) auto;
+  }
+
+  .settings-shell .chipmate-server-status-slot {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 719px) {
+  .settings-shell {
+    gap: 8px;
+    padding: 8px;
+    border-radius: 12px;
+  }
+
+  .settings-shell .settings-header {
+    min-height: 58px;
+    padding: 0 6px;
+  }
+
+  .settings-shell .settings-brand {
+    gap: 10px;
+  }
+
+  .settings-shell .settings-brand-icon {
+    flex-basis: 38px;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .settings-shell .settings-brand h2 {
+    font-size: var(--kilo-font-size-20);
+  }
+
+  .settings-shell .settings-tabs[data-component="tabs"] {
+    gap: 8px;
+  }
+
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
+    flex-basis: 56px;
+    width: 56px;
+    min-width: 56px;
+    padding: 8px 4px;
+    border-radius: 13px;
+  }
+
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"] {
+    height: 48px;
+    flex-basis: 48px;
+    border-radius: 10px;
+  }
+
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"] {
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  .settings-shell .settings-tabs [data-slot="tabs-trigger"] .label {
+    display: none;
+  }
+
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+    padding: 24px 20px;
+    border-radius: 13px;
+  }
+
+  .settings-shell .settings-page-header h3 {
+    font-size: calc(var(--kilo-font-size-20) * 1.25);
+  }
+
+  .settings-shell
+    .settings-tabs[data-variant="settings"]
+    [data-slot="tabs-content"]
+    .chipmate-server-card[data-component="card"] {
+    margin-inline: 0;
+    width: 100%;
+    min-height: 0;
+    padding: 20px;
+    border-radius: 13px;
+  }
+
+  .settings-shell .chipmate-server-control {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-shell .chipmate-server-input,
+  .settings-shell .chipmate-server-test[data-component="button"],
+  .settings-shell .chipmate-server-status-slot {
+    width: 100%;
+  }
+
+  .settings-shell .chipmate-server-reload {
+    padding: 0 4px;
+  }
+
+  .settings-shell .settings-save-bar {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .settings-shell .settings-save-bar-label {
+    flex-basis: 100%;
+  }
+
+  .settings-shell .settings-save-bar [data-component="button"] {
+    flex: 1 1 120px;
+  }
+}
+
+@media (max-width: 559px) {
+  .settings-shell .settings-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-block: 8px;
+  }
+
+  .settings-shell .settings-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .settings-shell .settings-header-actions [data-component="button"]:not(.settings-close-button) {
+    flex: 1 1 150px;
+  }
+
+  .settings-shell .settings-close-button[data-component="button"] {
+    flex: 0 0 36px;
+  }
+
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+    padding: 20px 14px;
+  }
+
+  .settings-shell .chipmate-server-intro {
+    font-size: var(--kilo-font-size-14);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-shell *,
+  .settings-shell *::before,
+  .settings-shell *::after {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
   }
 }

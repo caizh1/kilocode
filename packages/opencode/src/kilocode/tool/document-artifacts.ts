@@ -16,14 +16,28 @@ const QualityStatus = Schema.Union([
 ])
 
 const DeclareParameters = Schema.Struct({
-  kind: Schema.String.annotate({ description: "Artifact kind, for example word-document, mermaid-diagram, design-doc, or terminal-report." }),
+  kind: Schema.String.annotate({
+    description: "Artifact kind, for example word-document, mermaid-diagram, design-doc, or terminal-report.",
+  }),
   title: Schema.optional(Schema.String).annotate({ description: "Human-readable artifact title." }),
-  taskSlug: Schema.optional(Schema.String).annotate({ description: "Optional slug used when creating a new artifact directory." }),
-  artifactDir: Schema.optional(Schema.String).annotate({ description: "Existing artifact directory relative to the workspace, under .kilo/artifacts." }),
-  primaryFile: Schema.optional(Schema.String).annotate({ description: "Primary artifact file path relative to the artifact directory." }),
-  derivedFiles: Schema.optional(Schema.Array(Schema.String)).annotate({ description: "Derived artifact file paths relative to the artifact directory." }),
-  sourceFiles: Schema.optional(Schema.Array(Schema.String)).annotate({ description: "Source file paths relative to the artifact directory." }),
-  warnings: Schema.optional(Schema.Array(Schema.String)).annotate({ description: "Artifact warnings to persist in the manifest." }),
+  taskSlug: Schema.optional(Schema.String).annotate({
+    description: "Optional slug used when creating a new artifact directory.",
+  }),
+  artifactDir: Schema.optional(Schema.String).annotate({
+    description: "Existing artifact directory relative to the workspace, under .kilo/artifacts.",
+  }),
+  primaryFile: Schema.optional(Schema.String).annotate({
+    description: "Primary artifact file path relative to the artifact directory.",
+  }),
+  derivedFiles: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Derived artifact file paths relative to the artifact directory.",
+  }),
+  sourceFiles: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Source file paths relative to the artifact directory.",
+  }),
+  warnings: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Artifact warnings to persist in the manifest.",
+  }),
   qualityStatus: Schema.optional(QualityStatus).annotate({ description: "Artifact quality status." }),
 })
 
@@ -97,7 +111,10 @@ export const DeclareArtifactTool = Tool.define(
     description:
       "Declare or update a generated document artifact manifest. Use only when a deliverable file artifact is created or updated; do not use for ordinary QA.",
     parameters: DeclareParameters,
-    execute: (params: Schema.Schema.Type<typeof DeclareParameters>, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult<ArtifactMeta>> =>
+    execute: (
+      params: Schema.Schema.Type<typeof DeclareParameters>,
+      ctx: Tool.Context,
+    ): Effect.Effect<Tool.ExecuteResult<ArtifactMeta>> =>
       Effect.gen(function* () {
         yield* ctx.ask({
           permission: "declare_artifact",
@@ -108,10 +125,12 @@ export const DeclareArtifactTool = Tool.define(
 
         return yield* runArtifactOperation(
           () =>
-            declareArtifact(mutable({
-              ...params,
-              qualityStatus: params.qualityStatus as ArtifactQualityStatus | undefined,
-            })),
+            declareArtifact(
+              mutable({
+                ...params,
+                qualityStatus: params.qualityStatus as ArtifactQualityStatus | undefined,
+              }),
+            ),
           (result) => ({
             title: "Artifact Declared",
             metadata: {
@@ -203,7 +222,10 @@ export const ExportArtifactDiagnosticsTool = Tool.define(
     description:
       "Export document artifact diagnostics for support or migration review. Use only when the user asks to diagnose or review generated artifacts.",
     parameters: ExportParameters,
-    execute: (_params: Schema.Schema.Type<typeof ExportParameters>, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult<ArtifactMeta>> =>
+    execute: (
+      _params: Schema.Schema.Type<typeof ExportParameters>,
+      ctx: Tool.Context,
+    ): Effect.Effect<Tool.ExecuteResult<ArtifactMeta>> =>
       Effect.gen(function* () {
         yield* ctx.ask({
           permission: "export_artifact_diagnostics",
@@ -220,7 +242,10 @@ export const ExportArtifactDiagnosticsTool = Tool.define(
               path: result.path,
               count: result.diagnostics.artifacts.length,
             },
-            output: [`Exported artifact diagnostics: ${result.path}`, `Artifacts: ${result.diagnostics.artifacts.length}`].join("\n"),
+            output: [
+              `Exported artifact diagnostics: ${result.path}`,
+              `Artifacts: ${result.diagnostics.artifacts.length}`,
+            ].join("\n"),
           }),
           "Artifact Diagnostics Export Failed",
         )

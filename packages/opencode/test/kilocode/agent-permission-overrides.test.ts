@@ -9,6 +9,17 @@ function load<A>(dir: string, fn: (svc: Agent.Interface) => Effect.Effect<A>) {
   return Effect.runPromise(provideInstance(dir)(Agent.Service.use(fn)).pipe(Effect.provide(Agent.defaultLayer)))
 }
 
+async function offline(fn: () => Promise<void>) {
+  const prev = process.env.KILO_INTERNAL_OFFLINE
+  process.env.KILO_INTERNAL_OFFLINE = "1"
+  try {
+    await fn()
+  } finally {
+    if (prev === undefined) delete process.env.KILO_INTERNAL_OFFLINE
+    if (prev !== undefined) process.env.KILO_INTERNAL_OFFLINE = prev
+  }
+}
+
 afterEach(async () => {
   await disposeAllInstances()
 })
@@ -73,4 +84,87 @@ test("plan agent still hard-denies non-plan edits after user edit allow", async 
       expect(Permission.evaluate("edit", ".plans/fix.md", plan!.permission).action).toBe("allow")
     },
   })
+})
+
+test.serial("internal code, explore, debug, and ask agents expose retrieval tools", () =>
+  offline(async () => {
+    await using tmp = await tmpdir({})
+
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        for (const name of ["code", "explore", "debug", "ask"]) {
+          const agent = await load(tmp.path, (svc) => svc.get(name))
+          const disabled = Permission.disabled(
+            ["codebase_analysis", "semantic_search", "document_search"],
+            agent!.permission,
+          )
+          expect({ name, disabled }).toEqual({ name, disabled: new Set() })
+        }
+      },
+    })
+  }),
+)
+
+test.serial("explicit user denies override internal retrieval defaults for code and explore", () =>
+  offline(async () => {
+    await using tmp = await tmpdir({
+      config: {
+        permission: {
+          codebase_analysis: "deny",
+          semantic_search: "deny",
+          document_search: "deny",
+        },
+      },
+    })
+
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        for (const name of ["code", "explore"]) {
+          const agent = await load(tmp.path, (svc) => svc.get(name))
+          const disabled = Permission.disabled(
+            ["codebase_analysis", "semantic_search", "document_search"],
+            agent!.permission,
+          )
+          expect({ name, disabled }).toEqual({
+            name,
+            disabled: new Set(["codebase_analysis", "semantic_search", "document_search"]),
+          })
+        }
+      },
+    })
+  }),
+)
+
+test.serial("internal explore prompt routes retrieval without changing the public prompt", async () => {
+  const prev = process.env.KILO_INTERNAL_OFFLINE
+
+  try {
+    await using publicDir = await tmpdir({})
+    await WithInstance.provide({
+      directory: publicDir.path,
+      fn: async () => {
+        delete process.env.KILO_INTERNAL_OFFLINE
+        const agent = await load(publicDir.path, (svc) => svc.get("explore"))
+        expect(agent!.prompt).not.toContain("Use the retrieval route that best matches the question")
+      },
+    })
+    await disposeAllInstances()
+
+    await using internalDir = await tmpdir({})
+    await WithInstance.provide({
+      directory: internalDir.path,
+      fn: async () => {
+        process.env.KILO_INTERNAL_OFFLINE = "1"
+        const agent = await load(internalDir.path, (svc) => svc.get("explore"))
+        expect(agent!.prompt).toContain("Use the retrieval route that best matches the question")
+        expect(agent!.prompt).toContain("Use codebase_analysis first")
+        expect(agent!.prompt).toContain("do not repeatedly retry the retrieval tool")
+      },
+    })
+  } finally {
+    if (prev === undefined) delete process.env.KILO_INTERNAL_OFFLINE
+    if (prev !== undefined) process.env.KILO_INTERNAL_OFFLINE = prev
+  }
 })

@@ -22,10 +22,10 @@ type Manual = {
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "http://unit.test/v1/completions",
+  providerID: "qwen",
   model: "qwen-coder-30b0",
-  apiKey: "",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
@@ -126,6 +126,7 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
     const api = client(() => "return ok;")
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => ({ ...cfg, cacheEnabled: false }),
+      guard: () => false,
       client: api.client,
       log: () => {},
     })
@@ -142,6 +143,7 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
     const api = client(() => "return ok;")
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: api.client,
       cache,
       log: () => {},
@@ -161,6 +163,7 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
     const api = client(() => "status;")
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: api.client,
       log: () => {},
     })
@@ -177,6 +180,7 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
     const api = client(() => values.shift() ?? "unexpected;")
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: api.client,
       log: () => {},
     })
@@ -258,6 +262,7 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
     const errors = new QwenAutocompleteLruCache()
     const errorProvider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: client(() => {
         throw new Error("boom")
       }).client,
@@ -271,6 +276,7 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
     const empty = new QwenAutocompleteLruCache()
     const emptyProvider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: client(() => "").client,
       cache: empty,
       log: () => {},
@@ -283,6 +289,7 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
     const versioned = doc("int main() {\n  \n}") as vscode.TextDocument & { version: number }
     const staleProvider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: client(() => {
         versioned.version = 2
         return "return ok;"
@@ -315,6 +322,7 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
     }
     const renderProvider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
       client: api.client,
       cache: render,
       log: () => {},
@@ -326,17 +334,17 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
     expect(items[0]!.insertText).toBe("fresh;")
   })
 
-  it("cache diagnostics remain redacted and use path-only endpoint metadata", async () => {
+  it("cache diagnostics remain redacted and report the CLI transport", async () => {
     const logs: string[] = []
     resetQwenDiagnosticsForTests()
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => ({
         ...cfg,
-        endpoint: "http://secret-host.internal/v1/completions",
-        apiKey: "secret-token-abcdefghijklmnopqrstuvwxyz",
         trace: true,
         logLevel: "debug",
       }),
+      guard: () => false,
+      state: () => "connected",
       client: client(() => "return ok;").client,
       log: () => {},
     })
@@ -363,9 +371,9 @@ describe("KiloQwenInlineCompletionProvider cache integration", () => {
     expect(text).toContain('"cacheEnabled":true')
     expect(text).toContain('"cacheStatus":"miss"')
     expect(text).toContain('"cacheHit":false')
-    expect(text).toContain('"endpointPath":"/v1/completions"')
-    expect(text).not.toContain("secret-token")
-    expect(text).not.toContain("secret-host")
+    expect(text).toContain('"providerID":"qwen"')
+    expect(text).toContain('"transport":"cli-qwen-fim"')
+    expect(text).toContain('"connectionState":"connected"')
     expect(text).not.toContain("<|fim_prefix|>")
     expect(text).not.toContain("int main")
   })

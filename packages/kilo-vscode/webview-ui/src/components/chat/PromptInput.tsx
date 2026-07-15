@@ -14,7 +14,7 @@ import { showToast } from "@kilocode/kilo-ui/toast"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useServer } from "../../context/server"
-import { indexingPipelineDescription, useIndexing } from "../../context/indexing"
+import { indexingPipelineDescription, indexingPipelineTone, useIndexing } from "../../context/indexing"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
 import { useWorktreeMode } from "../../context/worktree-mode"
@@ -36,7 +36,6 @@ import { useSpeechToText } from "../speech-to-text/useSpeechToText"
 import { useImageAttachments, type ImageAttachment } from "../../hooks/useImageAttachments"
 import { convertToMentionPath } from "../../utils/path-mentions"
 import { usePromptHistory } from "../../hooks/usePromptHistory"
-import { WandSparkles } from "@kilocode/kilo-ui/lucide"
 import {
   fileName,
   dirName,
@@ -57,21 +56,38 @@ const imageDrafts = new Map<string, ImageAttachment[]>()
 
 const IndexingProgressButton: Component<{
   title: string
+  label: string
   icon: "graph" | "database" | "book"
   fillAxis: "horizontal" | "vertical"
   status: () => IndexingPipelineStatus
   onClick: () => void
 }> = (props) => {
+  const tone = () => indexingPipelineTone(props.status())
+  const progress = () => Math.min(100, Math.max(0, props.status().percent))
   const fill = () => {
     const status = props.status()
     if (status.state === "Disabled" || status.state === "Error") return 0
-    if (status.state === "Complete") return 100
-    return Math.min(100, Math.max(0, status.percent))
+    if (status.state === "Complete" && tone() === "success") return 100
+    return progress()
   }
   const clip = () => {
     const inset = 100 - fill()
     if (props.fillAxis === "horizontal") return `inset(0 ${inset}% 0 0)`
     return `inset(${inset}% 0 0 0)`
+  }
+  const state = () => (props.status().state === "In Progress" ? "indexing" : props.status().state.toLowerCase())
+  const mark = () => {
+    if (props.status().state === "Error") return "error"
+    if (props.status().state === "In Progress") return "sync"
+    if (tone() === "success") return "check"
+    if (tone() === "warning") return "warning"
+    return "circle-outline"
+  }
+  const label = () => {
+    const status = props.status()
+    const issues =
+      status.errorCount > 0 || status.staleCount > 0 ? `, ${status.errorCount} errors, ${status.staleCount} stale` : ""
+    return `${props.title}: ${status.state}, ${progress()}%${issues}`
   }
 
   return (
@@ -80,7 +96,11 @@ const IndexingProgressButton: Component<{
         variant="ghost"
         size="small"
         onClick={props.onClick}
-        aria-label={props.title}
+        aria-label={label()}
+        aria-busy={props.status().state === "In Progress"}
+        data-state={state()}
+        data-tone={tone()}
+        data-progress={progress()}
         class="prompt-indexing-button"
       >
         <span class="prompt-indexing-codicon-stack" aria-hidden="true">
@@ -89,6 +109,10 @@ const IndexingProgressButton: Component<{
             class={`codicon codicon-${props.icon} prompt-indexing-codicon prompt-indexing-codicon--fill`}
             style={`clip-path: ${clip()};`}
           />
+          <span class={`codicon codicon-${mark()} prompt-indexing-status-codicon`} />
+        </span>
+        <span class="prompt-indexing-label" aria-hidden="true">
+          {props.label}
         </span>
       </Button>
     </Tooltip>
@@ -368,6 +392,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   window.addEventListener("focusPrompt", onFocusPrompt)
   onCleanup(() => window.removeEventListener("focusPrompt", onFocusPrompt))
+
+  const onPrefillPrompt = (event: Event) => {
+    if (!(event instanceof CustomEvent) || typeof event.detail?.text !== "string") return
+    const next = event.detail.text
+    setText(next)
+    mention.seedFromText(next)
+    if (!textareaRef) return
+    textareaRef.value = next
+    textareaRef.setSelectionRange(next.length, next.length)
+    adjustHeight()
+    requestAnimationFrame(() => textareaRef?.focus())
+  }
+  window.addEventListener("prefillPrompt", onPrefillPrompt)
+  onCleanup(() => window.removeEventListener("prefillPrompt", onPrefillPrompt))
 
   // Start a new task, carrying over the current prompt text (without auto-sending it)
   const onNewTaskRequest = () => {
@@ -923,6 +961,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   return (
     <div
       class="prompt-input-container"
+      data-ui="qa-composer"
       classList={{ "prompt-input-container--dragging": imageAttach.dragging() }}
       onDragOver={imageAttach.handleDragOver}
       onDragLeave={imageAttach.handleDragLeave}
@@ -944,15 +983,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 <div class="prompt-review-chip">
                   <button type="button" class="prompt-review-chip-body" onClick={() => showReviewCommentDialog(item)}>
                     <span class="prompt-review-chip-icon">
-                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <path
-                          d="M3.2 11.8l-.6 2.5 2.3-1.2h6.1A2.8 2.8 0 0013.8 10V5A2.8 2.8 0 0011 2.2H5A2.8 2.8 0 002.2 5v5a2.8 2.8 0 001 2.2z"
-                          stroke="currentColor"
-                          stroke-width="1.4"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        />
-                      </svg>
+                      <span class="codicon codicon-comment-discussion" aria-hidden="true" />
                     </span>
                     <span class="prompt-review-chip-copy">
                       <span class="prompt-review-chip-main">
@@ -970,7 +1001,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     onClick={() => removeReviewComment(item.id)}
                     aria-label={language.t("common.delete")}
                   >
-                    ×
+                    <Icon name="close-small" size="small" />
                   </button>
                 </div>
               )}
@@ -1105,14 +1136,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   onClick={() => imageAttach.remove(img.id)}
                   aria-label="Remove image"
                 >
-                  ×
+                  <Icon name="close-small" size="small" />
                 </button>
               </div>
             )}
           </For>
         </div>
       </Show>
-      <div class="prompt-input-wrapper">
+      <div class="prompt-input-wrapper" data-ui="qa-composer-input">
         <div class="prompt-input-ghost-wrapper">
           <div class="prompt-input-highlight-overlay" ref={highlightRef} aria-hidden="true">
             <Index each={buildHighlightSegments(text(), highlightMentions())}>
@@ -1166,8 +1197,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           />
         </div>
       </div>
-      <div class="prompt-input-hint">
-        <div class="prompt-input-hint-selectors">
+      <div class="prompt-input-hint" data-ui="qa-composer-footer">
+        <div class="prompt-input-hint-selectors" data-ui="qa-composer-selectors">
           <ModeSwitcher sessionID={sid} />
           <ModelSelector sessionID={sid} />
           <ThinkingSelector sessionID={sid} />
@@ -1180,105 +1211,111 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 aria-label={language.t("prompt.action.resetModel")}
                 class="prompt-selector-reset"
               >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" />
-                </svg>
+                <span class="codicon codicon-close" aria-hidden="true" />
               </Button>
             </Tooltip>
           </Show>
         </div>
-        <div class="prompt-input-hint-actions">
+        <div class="prompt-input-hint-actions" data-ui="qa-composer-actions">
           <Show when={features().indexing}>
-            <IndexingProgressButton
-              title="CodeGraph index"
-              icon="graph"
-              fillAxis="horizontal"
-              status={() => indexing.pipelines().codeGraph}
-              onClick={handleOpenIndexingSettings}
-            />
-            <IndexingProgressButton
-              title="RAG index"
-              icon="database"
-              fillAxis="vertical"
-              status={() => indexing.pipelines().rag}
-              onClick={handleOpenIndexingSettings}
-            />
-            <IndexingProgressButton
-              title="Documents index"
-              icon="book"
-              fillAxis="horizontal"
-              status={() => indexing.pipelines().documents}
-              onClick={handleOpenIndexingSettings}
-            />
+            <div class="prompt-input-indexing-actions" data-ui="qa-indexing-actions">
+              <IndexingProgressButton
+                title="CodeGraph index"
+                label="CodeGraph"
+                icon="graph"
+                fillAxis="horizontal"
+                status={() => indexing.pipelines().codeGraph}
+                onClick={handleOpenIndexingSettings}
+              />
+              <IndexingProgressButton
+                title="RAG index"
+                label="RAG"
+                icon="database"
+                fillAxis="vertical"
+                status={() => indexing.pipelines().rag}
+                onClick={handleOpenIndexingSettings}
+              />
+              <IndexingProgressButton
+                title="Documents index"
+                label="Documents"
+                icon="book"
+                fillAxis="horizontal"
+                status={() => indexing.pipelines().documents}
+                onClick={handleOpenIndexingSettings}
+              />
+            </div>
           </Show>
-          <Tooltip
-            value={
-              autoApprove()
-                ? language.t("prompt.action.autoApprove.enabled")
-                : language.t("prompt.action.autoApprove.disabled")
-            }
-            placement="top"
-          >
-            <Button
-              variant="ghost"
-              size="small"
-              onClick={() => vscode.postMessage({ type: "toggleAutoApprove" })}
-              aria-label={
+          <div class="prompt-input-utility-actions" data-ui="qa-utility-actions">
+            <Tooltip
+              value={
                 autoApprove()
-                  ? language.t("prompt.action.autoApprove.disable")
-                  : language.t("prompt.action.autoApprove.enable")
+                  ? language.t("prompt.action.autoApprove.enabled")
+                  : language.t("prompt.action.autoApprove.disabled")
               }
-              aria-pressed={autoApprove()}
-              class={`prompt-auto-approve-button ${autoApprove() ? "prompt-auto-approve-button--active" : ""}`}
+              placement="top"
             >
-              <Icon name="shield" size="small" />
-            </Button>
-          </Tooltip>
-          <Tooltip value={language.t("prompt.action.enhance")} placement="top">
-            <Button
-              variant="ghost"
-              size="small"
-              onClick={handleEnhance}
-              disabled={!canEnhance()}
-              aria-label={language.t("prompt.action.enhance")}
-            >
-              <WandSparkles size={16} class={enhancing() ? "enhance-spinner" : ""} />
-            </Button>
-          </Tooltip>
-          <Show when={canUseSpeech()}>
-            <SpeechToTextButton speech={speech} disabled={isDisabled()} start={startSpeech} label={language.t} />
-          </Show>
-          <Show
-            when={showStop()}
-            fallback={
-              <Tooltip value={sendLabel()} placement="top">
-                <Button
-                  variant="ghost"
-                  size="small"
-                  onClick={handleSendClick}
-                  aria-disabled={!canSend()}
-                  aria-label={sendLabel()}
-                >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M1.5 1.5L14.5 8L1.5 14.5V9L10 8L1.5 7V1.5Z" />
-                  </svg>
-                </Button>
-              </Tooltip>
-            }
-          >
-            <Tooltip value={language.t("prompt.action.stop")} placement="top">
               <Button
                 variant="ghost"
                 size="small"
-                onClick={() => session.abort()}
-                aria-label={language.t("prompt.action.stop")}
+                onClick={() => vscode.postMessage({ type: "toggleAutoApprove" })}
+                aria-label={
+                  autoApprove()
+                    ? language.t("prompt.action.autoApprove.disable")
+                    : language.t("prompt.action.autoApprove.enable")
+                }
+                aria-pressed={autoApprove()}
+                class={`prompt-auto-approve-button ${autoApprove() ? "prompt-auto-approve-button--active" : ""}`}
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <rect x="3" y="3" width="10" height="10" rx="1" />
-                </svg>
+                <span class="codicon codicon-shield prompt-action-codicon" aria-hidden="true" />
               </Button>
             </Tooltip>
-          </Show>
+            <Tooltip value={language.t("prompt.action.enhance")} placement="top">
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={handleEnhance}
+                disabled={!canEnhance()}
+                aria-label={language.t("prompt.action.enhance")}
+              >
+                <span
+                  class={`codicon codicon-sparkle prompt-action-codicon ${enhancing() ? "enhance-spinner" : ""}`}
+                  aria-hidden="true"
+                />
+              </Button>
+            </Tooltip>
+            <Show when={canUseSpeech()}>
+              <SpeechToTextButton speech={speech} disabled={isDisabled()} start={startSpeech} label={language.t} />
+            </Show>
+            <Show
+              when={showStop()}
+              fallback={
+                <Tooltip value={sendLabel()} placement="top">
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={handleSendClick}
+                    aria-disabled={!canSend()}
+                    aria-label={sendLabel()}
+                    class="prompt-send-button"
+                  >
+                    <span class="codicon codicon-send prompt-action-codicon" aria-hidden="true" />
+                  </Button>
+                </Tooltip>
+              }
+            >
+              <Tooltip value={language.t("prompt.action.stop")} placement="top">
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={() => session.abort()}
+                  aria-label={language.t("prompt.action.stop")}
+                  class="prompt-stop-button"
+                >
+                  <span class="codicon codicon-debug-stop prompt-action-codicon" aria-hidden="true" />
+                </Button>
+              </Tooltip>
+            </Show>
+          </div>
         </div>
       </div>
     </div>

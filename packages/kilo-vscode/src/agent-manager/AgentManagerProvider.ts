@@ -39,7 +39,7 @@ import { buildKeybindingMap } from "./format-keybinding"
 import { resolveVersionModels, buildInitialMessages, type CreatedVersion } from "./multi-version"
 import { Semaphore } from "./semaphore"
 import { PLATFORM } from "./constants"
-import type { AgentManagerOutMessage, AgentManagerInMessage } from "./types"
+import type { AgentManagerInMessage, AgentManagerMode, AgentManagerOpenOptions, AgentManagerOutMessage } from "./types"
 import type { Host, PanelContext, OutputHandle, Disposable } from "./host"
 
 /**
@@ -73,6 +73,7 @@ export class AgentManagerProvider implements Disposable {
   private unsubTool: (() => void) | undefined
   private closing: Promise<void> | undefined
   private onVisibilityChange: ((visible: boolean) => void) | undefined
+  private mode: AgentManagerMode = "manager"
 
   /** Session ID most recently loaded via a `loadMessages` message from the webview.
    *  Updated synchronously — unlike the session provider's currentSession which depends on
@@ -170,10 +171,13 @@ export class AgentManagerProvider implements Disposable {
     this.outputChannel.appendLine(`${new Date().toISOString()} ${msg}`)
   }
 
-  public openPanel(preserveFocus?: boolean): void {
+  public openPanel(options: AgentManagerOpenOptions = { mode: "manager" }): void {
+    const preserveFocus = options.preserveFocus
+    this.mode = options.mode
     if (this.panel) {
       this.log("Panel already open, revealing")
       this.panel.reveal(preserveFocus)
+      this.postToWebview({ type: "agentManager.openMode", mode: this.mode })
       if (!preserveFocus) this.postToWebview({ type: "action", action: "focusInput" })
       return
     }
@@ -643,9 +647,11 @@ export class AgentManagerProvider implements Disposable {
         // case, so re-send the empty/non-git state explicitly.
         if (!this.state) {
           this.pushEmptyState()
+          this.postToWebview({ type: "agentManager.openMode", mode: this.mode })
           return
         }
         this.pushState()
+        this.postToWebview({ type: "agentManager.openMode", mode: this.mode })
         // Re-send cached stats so the webview gets them even if the poller
         // already emitted before the webview was ready to receive messages.
         if (this.cachedWorktreeStats) this.postToWebview(this.cachedWorktreeStats)
@@ -664,9 +670,11 @@ export class AgentManagerProvider implements Disposable {
         this.log("initializeState failed, pushing partial state:", err)
         if (!this.state) {
           this.pushEmptyState()
+          this.postToWebview({ type: "agentManager.openMode", mode: this.mode })
           return
         }
         this.pushState()
+        this.postToWebview({ type: "agentManager.openMode", mode: this.mode })
       })
   }
 
@@ -907,7 +915,7 @@ export class AgentManagerProvider implements Disposable {
         getRoot: () => this.getRoot(),
         getState: () => this.getStateManager(),
         getPanel: () => this.panel,
-        openPanel: (preserveFocus) => this.openPanel(preserveFocus),
+        openPanel: (preserveFocus) => this.openPanel({ mode: "manager", preserveFocus }),
         waitReady: (context) => this.waitForStateReady(context),
         createWorktree: (opts) => this.createWorktreeOnDisk(opts),
         cleanupWorktree: async (wid, dir) => {

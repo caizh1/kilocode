@@ -1,4 +1,7 @@
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   // ChipMate Gateway provider translations
   "provider.connect.kiloGateway.line1": "ChipMate Gateway 為您提供一組精選的可靠優化模型，專為編碼代理設計。",
   "provider.connect.kiloGateway.line2": "只需一個 API 金鑰，您就可以使用 Claude、GPT、Gemini、GLM 等模型。",
@@ -101,4 +104,6 @@ export const dict = {
   "ui.message.feedback.helpful": "這有幫助",
   "ui.message.feedback.notHelpful": "這沒有幫助",
   "ui.message.feedback.clearRating": "清除評分",
+  "marketplace.aligned.unpublish": "下架 Skill",
+  "marketplace.aligned.unpublished": "已下架",
 }

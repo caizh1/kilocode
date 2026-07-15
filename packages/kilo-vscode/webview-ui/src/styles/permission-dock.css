@@ -7,18 +7,25 @@
   margin: 12px;
   border: 1px solid
     color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 40%, var(--vscode-panel-border, transparent));
-  border-radius: 0.25rem;
+  border-radius: 14px;
   overflow: clip;
+  background: color-mix(in srgb, var(--surface-raised-base) 78%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text-on-fill) 9%, transparent),
+    0 14px 38px color-mix(in srgb, var(--background-base) 34%, transparent);
+  backdrop-filter: blur(24px) saturate(132%);
 
   [data-dock-surface="shell"] {
     border-radius: 0;
     box-shadow: none;
+    background: color-mix(in srgb, var(--surface-raised-stronger) 70%, transparent);
   }
 
   [data-dock-surface="tray"] {
     border: none;
     border-radius: 0;
     margin-top: 0;
+    background: color-mix(in srgb, var(--surface-raised-base) 66%, transparent);
   }
 
   [data-slot="permission-row"] {
@@ -44,10 +51,13 @@
   }
 
   [data-slot="permission-command"] {
-    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 24px;
+    align-items: start;
+    gap: 4px;
     min-width: 0;
     margin: 4px 0;
-    padding: 8px 34px 8px 10px;
+    padding: 8px 8px 8px 10px;
     border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
     border-radius: 4px;
     background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
@@ -77,9 +87,6 @@
 
   [data-slot="permission-command-copy"] {
     all: unset;
-    position: absolute;
-    top: 6px;
-    right: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -391,6 +398,55 @@
   [data-slot="permission-actions"] > [data-component="button"][data-variant="ghost"] {
     border: none;
     box-shadow: none;
+  }
+
+  [data-slot="permission-actions"] > [data-component="button"][data-variant="secondary"] {
+    border-color: color-mix(in srgb, var(--border-strong-base) 64%, transparent);
+    background: color-mix(in srgb, var(--surface-raised-stronger) 72%, transparent);
+  }
+}
+
+[data-component="permission-shortcuts"][data-presentation="dock"] [data-component="dock-prompt"] {
+  border-color: color-mix(in srgb, var(--vscode-focusBorder, #007fd4) 58%, var(--vscode-panel-border, transparent));
+}
+
+[data-component="permission-shortcuts"][data-presentation="dialog"] [data-component="dock-prompt"] {
+  margin: 0;
+  border-color: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 58%, var(--border-base));
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+[data-slot="dialog-content"].permission-risk-dialog {
+  border: 1px solid color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 38%, var(--border-base));
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 90%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text-on-fill) 10%, transparent),
+    0 28px 80px color-mix(in srgb, var(--background-base) 60%, transparent);
+  backdrop-filter: blur(28px) saturate(136%);
+}
+
+[data-slot="permission-risk-badge"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border: 1px solid color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 48%, transparent);
+  border-radius: 9px;
+  color: var(--vscode-errorForeground, #f14c4c);
+  background: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 12%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-on-fill) 10%, transparent);
+}
+
+[data-slot="permission-risk-badge"] [data-component="icon"] {
+  color: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="dock-prompt"][data-kind="permission"] {
+    animation: none;
   }
 }
 

@@ -2,12 +2,13 @@ import { expect, test, type Page } from "@playwright/test"
 
 const GLOBALS = "colorScheme:dark;theme:kilo-vscode;vscodeTheme:dark-modern"
 
-function story(id: string) {
-  return `/iframe.html?id=${id}&viewMode=story&globals=${GLOBALS}`
+function story(id: string, theme = "dark-modern") {
+  const globals = theme === "dark-modern" ? GLOBALS : `colorScheme:dark;theme:kilo-vscode;vscodeTheme:${theme}`
+  return `/iframe.html?id=${id}&viewMode=story&globals=${globals}`
 }
 
-async function load(page: Page, id: string) {
-  await page.goto(story(id), { waitUntil: "load" })
+async function load(page: Page, id: string, theme?: string) {
+  await page.goto(story(id, theme), { waitUntil: "load" })
   await page.waitForSelector("#storybook-root *", { state: "attached" })
 }
 
@@ -148,4 +149,47 @@ test("chat picker Escape returns focus to the prompt", async ({ page }) => {
   await combobox.press("Escape")
 
   await expect(page.locator("textarea.prompt-input")).toBeFocused()
+})
+
+test("thinking selector uses a checked Titanium selection without the native focus rectangle", async ({ page }) => {
+  await load(page, "prompt-input--qa-thinking-open")
+
+  const list = page.getByRole("listbox")
+  const low = page.getByRole("option", { name: "Low" })
+  const medium = page.getByRole("option", { name: "Medium" })
+  await expect(list).toBeVisible()
+  await expect(low).toHaveAttribute("aria-selected", "true")
+  await expect(low.locator(".codicon-check")).toBeVisible()
+  await expect(low).toBeFocused()
+
+  const selected = await low.evaluate((item) => {
+    const style = getComputedStyle(item)
+    return {
+      border: style.borderTopWidth,
+      outline: style.outlineWidth,
+      background: style.backgroundColor,
+    }
+  })
+  expect(selected.border).toBe("0px")
+  expect(selected.outline).toBe("0px")
+  expect(selected.background).not.toBe("rgba(0, 0, 0, 0)")
+
+  await page.keyboard.press("ArrowDown")
+  await expect(medium).toBeFocused()
+  await expect.poll(() => medium.evaluate((item) => getComputedStyle(item).boxShadow)).not.toBe("none")
+  await page.keyboard.press("Enter")
+  await expect(list).toBeHidden()
+  await expect(page.getByRole("button", { name: "Reasoning effort: Medium" })).toBeVisible()
+  await expect(page.locator("textarea.prompt-input")).toBeFocused()
+
+  await page.getByRole("button", { name: "Reasoning effort: Medium" }).click()
+  await expect(page.getByRole("listbox")).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("listbox")).toBeHidden()
+  await expect(page.locator("textarea.prompt-input")).toBeFocused()
+
+  await load(page, "prompt-input--qa-thinking-open", "hc-black")
+  const contrast = page.getByRole("option", { name: "Low" })
+  await expect(contrast).toBeFocused()
+  await expect.poll(() => contrast.evaluate((item) => getComputedStyle(item).outlineWidth)).toBe("2px")
 })

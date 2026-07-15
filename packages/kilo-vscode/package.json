@@ -2,7 +2,7 @@
   "name": "chipmate",
   "displayName": "ChipMate: AI Coding Agent, Copilot, and Autocomplete",
   "description": "Open Source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
-  "version": "0.0.39",
+  "version": "0.0.61",
   "icon": "assets/icons/logo-outline-black.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -97,7 +97,7 @@
       "profiles": [
         {
           "id": "kilo.agentTerminal",
-          "title": "Kilo Agent Terminal"
+          "title": "Kilo Agent Terminal (Legacy)"
         }
       ]
     },
@@ -222,7 +222,7 @@
       },
       {
         "command": "kilo-code.new.qwenAutocomplete.smokeDiagnostics",
-        "title": "ChipMate: Enable qwen-direct Autocomplete Diagnostics and Smoke",
+        "title": "ChipMate: Test qwen-direct Transport",
         "category": "ChipMate"
       },
       {
@@ -242,7 +242,7 @@
       },
       {
         "command": "kilo-code.new.agentTerminal.open",
-        "title": "ChipMate: Open Agent Terminal",
+        "title": "ChipMate: Open Agent Console",
         "category": "ChipMate",
         "icon": "$(terminal)"
       },
@@ -442,6 +442,11 @@
       {
         "command": "kilo-code.new.takeHeapSnapshot",
         "title": "Take Heap Snapshot",
+        "category": "ChipMate"
+      },
+      {
+        "command": "kilo-code.new.openMemoryDebug",
+        "title": "Open Memory Debug Log",
         "category": "ChipMate"
       },
       {
@@ -881,17 +886,24 @@
         "kilo.updateCheck.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable ChipMate update checks from an internal VSIX file service."
+          "description": "Enable ChipMate plugin update checks from the unified ChipMate Server."
+        },
+        "kilo.updateCheck.autoInstall": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically download and install compatible ChipMate plugin updates. A window reload is still required to finish the update."
         },
         "kilo.updateCheck.baseUrl": {
           "type": "string",
-          "default": "http://10.10.5.22/vscode-plugins/chipmate/",
-          "description": "Base URL for the internal ChipMate VSIX file service."
+          "default": "",
+          "description": "Deprecated. Update checks use kilo-code.new.chipmateServer.baseUrl.",
+          "deprecationMessage": "Use kilo-code.new.chipmateServer.baseUrl to configure the unified ChipMate Server."
         },
         "kilo.updateCheck.manifestFile": {
           "type": "string",
           "default": "latest.json",
-          "description": "Relative manifest path for ChipMate update checks."
+          "description": "Deprecated. Update checks use /packages/manifest.json on the unified ChipMate Server.",
+          "deprecationMessage": "Use kilo-code.new.chipmateServer.baseUrl to configure the unified ChipMate Server."
         },
         "kilo.updateCheck.checkOnStartup": {
           "type": "boolean",
@@ -928,13 +940,15 @@
         },
         "kilo.documents.wordRender.remoteEndpoint": {
           "type": "string",
-          "default": "http://10.10.5.21:6001/render/word",
-          "description": "Optional remote renderer endpoint for explicit Word/PDF/PNG artifact verification integrations. The opencode render tool can also be driven by its remoteEndpoint parameter or KILO_WORD_RENDER_ENDPOINT."
+          "default": "",
+          "description": "Deprecated compatibility setting for the Word renderer endpoint. Configure ChipMate Server in the extension settings instead.",
+          "deprecationMessage": "Use kilo-code.new.chipmateServer.baseUrl to configure the unified ChipMate Server."
         },
         "kilo.documents.mermaidRender.remoteEndpoint": {
           "type": "string",
-          "default": "http://10.10.5.21:6001/render/mermaid",
-          "description": "Optional remote renderer endpoint for explicit Mermaid PNG artifact integrations. The opencode Mermaid tool can also be driven by its remoteEndpoint parameter or KILO_MERMAID_RENDER_ENDPOINT."
+          "default": "",
+          "description": "Deprecated compatibility setting for the Mermaid renderer endpoint. Configure ChipMate Server in the extension settings instead.",
+          "deprecationMessage": "Use kilo-code.new.chipmateServer.baseUrl to configure the unified ChipMate Server."
         },
         "kilo.documents.wordRender.autoVerify": {
           "type": "boolean",
@@ -948,8 +962,9 @@
         },
         "kilo.marketplace.baseUrl": {
           "type": "string",
-          "default": "http://10.10.5.21:6001/marketplace",
-          "description": "Optional marketplace API base URL. Internal/offline packages may set this to an internal skill market; public builds default to the official Kilo marketplace."
+          "default": "",
+          "description": "Deprecated compatibility setting for the marketplace API base URL. Configure ChipMate Server in the extension settings instead.",
+          "deprecationMessage": "Use kilo-code.new.chipmateServer.baseUrl to configure the unified ChipMate Server."
         },
         "kilo.marketplace.skillsOnly": {
           "type": "boolean",
@@ -969,7 +984,7 @@
         "kilo.agentTerminal.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Enable the optional Agent Terminal profile and command helper. Disabled by default so native Kilo terminal and shell tooling remain unchanged."
+          "description": "Enable the optional legacy Agent Terminal profile and shell helper. The Agent Console command remains available through Agent Manager."
         },
         "kilo-code.new.model.providerID": {
           "type": "string",
@@ -981,9 +996,15 @@
           "default": "kilo-auto/free",
           "description": "Default model ID for new sessions"
         },
+        "kilo-code.new.chipmateServer.baseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:6001",
+          "description": "Unified remote ChipMate Server address used by the skill market and document rendering services. Configure this profile-wide value from the extension settings."
+        },
         "kilo-code.new.autocomplete.model": {
           "type": "string",
           "enum": [
+            "qwen-coder-30b0",
             "mistralai/codestral-2508",
             "inception/mercury-edit-2",
             "inception/mercury-next-edit",
@@ -992,6 +1013,7 @@
             "mercury-next-edit"
           ],
           "enumDescriptions": [
+            "Qwen Coder through a connected OpenAI-compatible provider",
             "Codestral via ChipMate Gateway",
             "Mercury Edit 2 (FIM) via ChipMate Gateway",
             "Mercury Edit 2 (Next Edit), multi-line edit predictions with jump-to-edit UX, via ChipMate Gateway",
@@ -1003,17 +1025,13 @@
         },
         "kilo-code.new.autocomplete.provider": {
           "type": "string",
-          "enum": [
+          "examples": [
             "kilo",
             "mistral",
-            "inception"
+            "inception",
+            "your-connected-provider-id"
           ],
-          "enumDescriptions": [
-            "Use autocomplete models through ChipMate Gateway",
-            "Use autocomplete models through your connected Mistral provider API key",
-            "Use autocomplete models through your connected Inception provider API key"
-          ],
-          "description": "Provider to use for inline autocomplete suggestions. If unset, ChipMate Gateway is used."
+          "description": "Connected provider ID to use for inline autocomplete suggestions. If unset, the runtime selects an eligible provider or the recommended fallback."
         },
         "kilo-code.new.autocomplete.enableAutoTrigger": {
           "type": "boolean",
@@ -1044,20 +1062,10 @@
           "default": "none",
           "description": "Autocomplete provider."
         },
-        "kilo.autocomplete.qwen.endpoint": {
-          "type": "string",
-          "default": "http://company-qwen-coder.example.com/v1/completions",
-          "description": "Company internal Qwen Coder FIM completion endpoint."
-        },
         "kilo.autocomplete.qwen.model": {
           "type": "string",
           "default": "qwen-coder-30b0",
           "description": "Qwen Coder autocomplete model name."
-        },
-        "kilo.autocomplete.qwen.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "Optional API key. Prefer SecretStorage for production."
         },
         "kilo.autocomplete.qwen.debounceMs": {
           "type": "number",
@@ -1091,7 +1099,7 @@
         },
         "kilo.autocomplete.qwen.temperature": {
           "type": "number",
-          "default": 0.1,
+          "default": 0.01,
           "description": "Sampling temperature for autocomplete."
         },
         "kilo.autocomplete.qwen.cache.enabled": {
@@ -1389,6 +1397,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@chipmate/skill-spec": "workspace:*",
     "fuzzysort": "3.1.0",
     "@kilocode/kilo-gateway": "workspace:*",
     "@kilocode/kilo-i18n": "workspace:*",

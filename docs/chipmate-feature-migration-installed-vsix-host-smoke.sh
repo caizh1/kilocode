@@ -29,6 +29,7 @@ Environment:
   CODE_EXE            Existing VS Code executable path.
   NODE_MODULES_DIR    Node modules containing vscode-test.
   SHORT_ROOT          Short temp root for user-data and extensions dirs.
+  SKIP_SIDECAR_SMOKE  Set to 1 when validating only installation, activation, and contributions.
 
 Notes:
   - This smoke installs the VSIX into an isolated short-path extensions-dir.
@@ -150,7 +151,9 @@ suite("Installed ChipMate VSIX smoke", () => {
       "kilo-code.new.documents.openArtifact",
       "kilo-code.new.documents.exportDiagnostics",
       "kilo-code.new.agentTerminal.open",
+      "kilo-code.new.qwenAutocomplete.showLogs",
       "kilo-code.new.qwenAutocomplete.exportDiagnostics",
+      "kilo-code.new.qwenAutocomplete.smokeDiagnostics",
       "kilo-code.new.autocomplete.generateSuggestions",
       "kilo-code.new.terminalFixCommand",
     ]) {
@@ -163,15 +166,20 @@ suite("Installed ChipMate VSIX smoke", () => {
     assert.strictEqual(config.get("kilo.agentTerminal.enabled"), false)
     assert.strictEqual(config.get("kilo.autocomplete.enabled"), false)
     assert.strictEqual(config.get("kilo.autocomplete.provider"), "none")
-    assert.ok(config.has("kilo.autocomplete.qwen.endpoint"))
     assert.ok(config.has("kilo.autocomplete.qwen.model"))
+    assert.strictEqual(config.get("kilo.autocomplete.qwen.model"), "qwen-coder-30b0")
+    assert.strictEqual(config.has("kilo.autocomplete.qwen.endpoint"), false)
+    assert.strictEqual(config.has("kilo.autocomplete.qwen.apiKey"), false)
+    assert.ok(config.has("kilo-code.new.autocomplete.provider"))
+    assert.ok(config.has("kilo-code.new.autocomplete.model"))
 
     const contributes = extension.packageJSON.contributes
     assert.ok((contributes.terminal?.profiles ?? []).some((profile) => profile.id === "kilo.agentTerminal"))
     assert.ok((contributes.views?.["kilo-code-ActivityBar"] ?? []).some((view) => view.id === "kilo-code.SidebarProvider"))
   })
 
-  test("executes safe installed sidecar commands without replacing native commands", async function () {
+  const sidecar = process.env.SKIP_SIDECAR_SMOKE === "1" ? test.skip : test
+  sidecar("executes safe installed sidecar commands without replacing native commands", async function () {
     this.timeout(30000)
 
     const fs = require("fs/promises")

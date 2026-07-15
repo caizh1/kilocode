@@ -1,16 +1,13 @@
 {
   "name": "embedded-c-module-detail-design",
   "prompt": "为当前嵌入式 C 模块生成源码驱动详细设计文档，包含业务流程、代码流程、状态机、Mermaid PNG 和 Word 输出。",
-  "expectedNativeEvidenceTools": [
-    "codebase_analysis",
-    "semantic_search",
-    "document_search"
-  ],
+  "expectedNativeEvidenceTools": ["codebase_analysis", "semantic_search", "document_search"],
   "expectedArtifactTools": [
     "declare_artifact",
     "render_mermaid_diagram",
     "save_mermaid_artifact",
     "create_word_document",
+    "inspect_word_document",
     "render_word_document"
   ],
   "expectedOutputs": [
@@ -22,9 +19,57 @@
     "Word docx",
     "quality gate report"
   ],
-  "forbiddenRuntimeMarkers": [
-    "DesignDocAgentFlow",
-    "chipmate_run_skill_script",
-    "chipmate_read_skill_resource"
-  ]
+  "expectedCapabilityGroups": [
+    "input-and-scope",
+    "source-evidence",
+    "control-flow-evidence",
+    "business-flow-abstraction-and-diagrams",
+    "enhanced-detail-design",
+    "diff-and-feature-report",
+    "review-and-word-export"
+  ],
+  "expectedOutline": [
+    "1. Reading path",
+    "2. Terminology, scope, and evidence baseline",
+    "3. Parent-system positioning and target-module role",
+    "4. Target-module responsibilities, boundaries, and architecture",
+    "5. Business capability overview",
+    "6. Detailed main business flows",
+    "7. Internal architecture and submodule decomposition",
+    "8. Target-module implementation details",
+    "9. One continuous detailed-design chapter per important submodule",
+    "10. Cross-module collaboration and end-to-end paths",
+    "11. Global object, interface, state, configuration, and build index",
+    "12. Cross-module algorithms, concurrency, resources, and performance",
+    "13. Debugging, observability, and source-reading guide",
+    "14. Function, feature, diagram, and evidence coverage",
+    "15. Existing-document differences and feature evolution when an earlier document exists",
+    "16. Assumptions, limitations, risks, and owner-review items"
+  ],
+  "expectedUnitTopics": [
+    "1. Introduction and business positioning",
+    "2. Responsibilities, non-responsibilities, and boundaries",
+    "3. Triggers, preconditions, inputs, and outputs",
+    "4. Internal architecture, upstream/downstream context, and dependencies",
+    "5. Business capabilities and complete business flow",
+    "6. Core structures, variables, queues, caches, ownership, and lifecycle",
+    "7. Function/feature coverage, key functions, and code execution flow",
+    "8. States, events, dispatch, guards, actions, and state-machine behavior",
+    "9. External, internal, cross-module, asynchronous, callback, queue, and hardware interfaces",
+    "10. Error, wait, retry, timeout, cancellation, recovery, rollback, and cleanup paths",
+    "11. Algorithms, strategies, configuration, concurrency, resources, and performance",
+    "12. Build targets, module registration, initialization order, feature flags, and platform differences",
+    "13. Logs, counters, assertions, diagnostics, failure symptoms, and source-reading entry points",
+    "14. Source evidence, confidence, gaps, and owner-review items"
+  ],
+  "forbiddenRuntimeMarkers": ["DesignDocAgentFlow", "chipmate_run_skill_script", "chipmate_read_skill_resource"],
+  "forbiddenContractMarkers": [
+    "recipe.json",
+    "knowledgeManifest",
+    "sectionPlan",
+    "submodule-detail-depth",
+    "artifactContractCheckpointPrompt",
+    "_chipmateArtifactContract"
+  ],
+  "forbiddenSampleMarkers": ["MP CP", "ftl/mp/", "wcl/wcl_main", "MP_BLOCK_CRIT_TH", "ftl_mp_flush"]
 }

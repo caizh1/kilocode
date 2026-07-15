@@ -269,9 +269,10 @@
     },
     "packages/kilo-vscode": {
       "name": "chipmate",
-      "version": "0.0.38",
+      "version": "0.0.60",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.39.0",
+        "@chipmate/skill-spec": "workspace:*",
         "@kilocode/kilo-gateway": "workspace:*",
         "@kilocode/kilo-i18n": "workspace:*",
         "@kilocode/kilo-indexing": "workspace:*",
@@ -673,6 +674,13 @@
         "vite": "catalog:",
         "vite-plugin-icons-spritesheet": "3.0.1",
         "vite-plugin-solid": "catalog:",
+      },
+    },
+    "server/chipmate-word-render/packages/skill-spec": {
+      "name": "@chipmate/skill-spec",
+      "version": "0.1.0",
+      "dependencies": {
+        "yaml": "2.8.3",
       },
     },
   },
@@ -1086,6 +1094,8 @@
     "@changesets/write": ["@changesets/write@0.4.0", "", { "dependencies": { "@changesets/types": "^6.1.0", "fs-extra": "^7.0.1", "human-id": "^4.1.1", "prettier": "^2.7.1" } }, "sha512-CdTLvIOPiCNuH71pyDu3rA+Q0n65cmAbXnwWH84rKGiFumFzkmHNT8KHTMEchcxN+Kl8I54xGUhJ7l3E7X396Q=="],
 
     "@chevrotain/types": ["@chevrotain/types@11.1.2", "", {}, "sha512-U+HFai5+zmJCkK86QsaJtoITlboZHBqrVketcO2ROv865xfCMSFpELQoz1GkX5GzME8pTa+3kbKrZHQtI0gdbw=="],
+
+    "@chipmate/skill-spec": ["@chipmate/skill-spec@workspace:server/chipmate-word-render/packages/skill-spec"],
 
     "@clack/core": ["@clack/core@1.0.0-alpha.1", "", { "dependencies": { "picocolors": "^1.0.0", "sisteransi": "^1.0.5" } }, "sha512-rFbCU83JnN7l3W1nfgCqqme4ZZvTTgsiKQ6FM0l+r0P+o2eJpExcocBUWUIwnDzL76Aca9VhUdWmB2MbUv+Qyg=="],
 

@@ -55,20 +55,13 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
-  filter:
-    saturate(1.18)
-    brightness(1.12)
-    drop-shadow(0 10px 22px rgba(43, 171, 255, 0.26))
+  filter: saturate(1.18) brightness(1.12) drop-shadow(0 10px 22px rgba(43, 171, 255, 0.26))
     drop-shadow(0 1px 0 rgba(255, 255, 255, 0.18));
 }
 
 .vscode-light .migration-wizard__logo img,
 .vscode-high-contrast-light .migration-wizard__logo img {
-  filter:
-    saturate(1.5)
-    contrast(1.28)
-    brightness(0.92)
-    drop-shadow(0 10px 22px rgba(0, 117, 188, 0.2))
+  filter: saturate(1.5) contrast(1.28) brightness(0.92) drop-shadow(0 10px 22px rgba(0, 117, 188, 0.2))
     drop-shadow(0 1px 0 rgba(255, 255, 255, 0.3));
 }
 

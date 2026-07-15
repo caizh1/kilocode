@@ -637,7 +637,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         trigger={
           <>
             <span class="prompt-selector-icon" aria-hidden="true">
-              <span class="codicon codicon-beaker" />
+              <span class="codicon codicon-package" />
             </span>
             <span class="model-selector-trigger-label">{triggerLabel()}</span>
             <Show when={activeCollectsData()}>
@@ -647,15 +647,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                 </span>
               </Tooltip>
             </Show>
-            <svg
-              class="model-selector-trigger-chevron prompt-selector-chevron"
-              width="10"
-              height="10"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-            >
-              <path d="M8 4l4 5H4l4-5z" />
-            </svg>
+            <span
+              class="codicon codicon-chevron-down model-selector-trigger-chevron prompt-selector-chevron"
+              aria-hidden="true"
+            />
           </>
         }
         class={`model-selector-popover${expanded() ? " model-selector-popover--expanded" : ""}`}
@@ -764,16 +759,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => toggleGroup(group.key)}
                         >
-                          <svg
-                            class={`model-selector-group-chevron${shown() ? "" : " model-selector-group-chevron--collapsed"}`}
-                            width="10"
-                            height="10"
-                            viewBox="0 0 16 16"
-                            fill="currentColor"
+                          <span
+                            class={`codicon codicon-chevron-down model-selector-group-chevron${shown() ? "" : " model-selector-group-chevron--collapsed"}`}
                             aria-hidden="true"
-                          >
-                            <path d="M4 6l4 5 4-5H4z" />
-                          </svg>
+                          />
                           <span>{group.label}</span>
                           <Show when={!shown() && !!debouncedSearch()}>
                             <span class="model-selector-group-match-dot" aria-hidden="true" />

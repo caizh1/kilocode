@@ -13,11 +13,20 @@ import type {
   SkillMarketplaceItem,
   MarketplaceInstalledMetadata,
   MarketplaceUser,
+  MarketCapabilities,
+  MarketStatus,
+  InstallationState,
+  AnalyticsSeries,
+  PublicationRun,
+  SkillDetail,
 } from "../../types/marketplace"
+import type { ExtensionMessage } from "../../types/messages"
 import { TelemetryEventName } from "../../../../src/services/telemetry/types"
 import { MarketplaceListView } from "./MarketplaceListView"
 import { InstallModal } from "./InstallModal"
 import { RemoveDialog } from "./RemoveDialog"
+import { AlignedSkillMarket } from "./AlignedSkillMarket"
+import { LocalSkillImportDialog } from "./LocalSkillImportDialog"
 import "./marketplace.css"
 
 const EMPTY_METADATA: MarketplaceInstalledMetadata = { project: {}, global: {} }
@@ -34,11 +43,26 @@ export const MarketplaceView = () => {
   const [errors, setErrors] = createSignal<string[]>([])
   const [tab, setTab] = createSignal("agent")
   const [pending, setPending] = createSignal<{ item: MarketplaceItem; scope: "project" | "global" } | null>(null)
+  const [localRemove, setLocalRemove] = createSignal<{
+    requestId: string
+    phase?: "validating" | "removing" | "refreshing" | "reconciling"
+    error?: string
+  }>()
   const [showMigrationBanner, setShowMigrationBanner] = createSignal(false)
   const [marketplaceUser, setMarketplaceUser] = createSignal<MarketplaceUser | undefined>()
   const [marketplaceBaseUrl, setMarketplaceBaseUrl] = createSignal<string | undefined>()
   const [marketplaceSkillsOnly, setMarketplaceSkillsOnly] = createSignal<boolean | undefined>()
   const [marketplaceMode, setMarketplaceMode] = createSignal<"skills-only" | "full" | undefined>()
+  const [publication, setPublication] = createSignal<PublicationRun | undefined>()
+  const [protocol, setProtocol] = createSignal<"aligned-v1" | "legacy">("legacy")
+  const [capabilities, setCapabilities] = createSignal<MarketCapabilities>()
+  const [installations, setInstallations] = createSignal<InstallationState[]>([])
+  const [publications, setPublications] = createSignal<PublicationRun[]>([])
+  const [status, setStatus] = createSignal<MarketStatus>()
+  const [analytics, setAnalytics] = createSignal<AnalyticsSeries[]>([])
+  const [detailId, setDetailId] = createSignal<string>()
+  const [detail, setDetail] = createSignal<SkillDetail>()
+  const [detailError, setDetailError] = createSignal<string>()
 
   const skills = createMemo(() => items().filter((i): i is SkillMarketplaceItem => i.type === "skill"))
   const mcps = createMemo(() => items().filter((i): i is McpMarketplaceItem => i.type === "mcp"))
@@ -49,9 +73,26 @@ export const MarketplaceView = () => {
     vscode.postMessage({ type: "fetchMarketplaceData" })
   }
 
+  const handleLocalRemoveMessage = (msg: ExtensionMessage) => {
+    if (msg.type === "skillRemoveProgress") {
+      if (localRemove()?.requestId !== msg.requestId) return
+      setLocalRemove({ requestId: msg.requestId, phase: msg.phase })
+      return
+    }
+    if (msg.type !== "skillRemoveResult" || localRemove()?.requestId !== msg.requestId) return
+    if (msg.success) {
+      setLocalRemove(undefined)
+      dialog.close()
+      fetchData()
+      return
+    }
+    setLocalRemove({ requestId: msg.requestId, error: msg.error ?? t("settings.agentBehaviour.removeSkill.failed") })
+  }
+
   // Listen for messages
   createEffect(() => {
     const unsub = vscode.onMessage((msg) => {
+      handleLocalRemoveMessage(msg)
       if (msg.type === "marketplaceData") {
         setItems(msg.marketplaceItems ?? [])
         setMetadata(msg.marketplaceInstalledMetadata ?? EMPTY_METADATA)
@@ -62,6 +103,29 @@ export const MarketplaceView = () => {
         setMarketplaceBaseUrl(msg.marketplaceBaseUrl)
         setMarketplaceSkillsOnly(msg.marketplaceSkillsOnly)
         setMarketplaceMode(msg.marketplaceMode)
+        setProtocol(msg.marketplaceProtocol ?? "legacy")
+        setCapabilities(msg.marketplaceCapabilities)
+        setInstallations(msg.marketplaceInstallations ?? [])
+        setPublications(msg.marketplacePublications ?? [])
+        setStatus(msg.marketplaceStatus)
+        setAnalytics(msg.marketplaceAnalytics ?? [])
+        if (msg.marketplaceSkillsOnly) setTab("skill")
+      }
+      if (msg.type === "marketplacePublicationResult") {
+        setPublication(msg.run)
+        setPublications((items) => [msg.run, ...items.filter((item) => item.id !== msg.run.id)])
+      }
+      if (msg.type === "marketplaceSync") {
+        applySync(msg, setInstallations, setPublications, setAnalytics)
+      }
+      if (msg.type === "marketplaceCatalog") {
+        setItems(msg.marketplaceItems)
+        setMetadata(msg.marketplaceInstalledMetadata)
+        setErrors(msg.errors ?? [])
+      }
+      if (msg.type === "marketplaceSkillDetail" && msg.id === detailId()) {
+        setDetail(msg.detail)
+        setDetailError(msg.error)
       }
       if (msg.type === "marketplaceRemoveResult") {
         const removed = pending()
@@ -127,6 +191,31 @@ export const MarketplaceView = () => {
   }
 
   const handleRemove = (item: MarketplaceItem, scope: "project" | "global") => {
+    if (item.type === "skill" && item.removeToken && item.localScope === scope) {
+      const requestId = crypto.randomUUID()
+      setLocalRemove(undefined)
+      dialog.show(() => (
+        <RemoveDialog
+          item={item}
+          scope={scope}
+          pending={localRemove()?.requestId === requestId && !localRemove()?.error}
+          phase={localRemove()?.requestId === requestId ? localRemove()?.phase : undefined}
+          error={localRemove()?.requestId === requestId ? localRemove()?.error : undefined}
+          onClose={() => dialog.close()}
+          onConfirm={() => {
+            setLocalRemove({ requestId, phase: "validating" })
+            vscode.postMessage({
+              type: "removeLocalSkill",
+              requestId,
+              targetToken: item.removeToken!,
+              skillId: item.id,
+              scope,
+            })
+          }}
+        />
+      ))
+      return
+    }
     dialog.show(() => (
       <RemoveDialog
         item={item}
@@ -163,8 +252,75 @@ export const MarketplaceView = () => {
     vscode.postMessage({ type: "starMarketplaceSkill", mpSkillId: item.id })
   }
 
+  const unpublishMarketplaceSkill = (id: string) => {
+    vscode.postMessage({ type: "unpublishMarketplaceSkill", mpSkillId: id })
+  }
+
+  const openSkill = (item: SkillMarketplaceItem) => {
+    setDetailId(item.id)
+    setDetail(undefined)
+    setDetailError(undefined)
+    vscode.postMessage({ type: "fetchMarketplaceSkillDetail", mpSkillId: item.id })
+  }
+
+  const closeSkill = () => {
+    setDetailId(undefined)
+    setDetail(undefined)
+    setDetailError(undefined)
+  }
+
+  const openLocalImport = () => {
+    dialog.show(() => <LocalSkillImportDialog onClose={() => dialog.close()} />)
+  }
+
   return (
     <div class="marketplace-view">
+      <header class="marketplace-local-header">
+        <div class="marketplace-local-header__copy">
+          <span class="marketplace-local-header__orb" aria-hidden="true">
+            <span class="codicon codicon-sparkle" />
+          </span>
+          <div>
+            <strong>{t("marketplace.local.header")}</strong>
+            <span>{t("marketplace.local.headerDescription")}</span>
+          </div>
+        </div>
+        <Button variant="primary" onClick={openLocalImport}>
+          <span class="codicon codicon-cloud-upload" aria-hidden="true" />
+          {t("marketplace.local.open")}
+        </Button>
+      </header>
+      <Show when={publication()}>
+        {(run) => (
+          <Card class="marketplace-publication-result">
+            <div>
+              <strong>{t("marketplace.aligned.publicationValidation", { status: run().status })}</strong>
+              <span>{run().stage}</span>
+            </div>
+            <Show when={run().release}>
+              <p>
+                {t("marketplace.aligned.immutableRelease", {
+                  revision: run().release!.revision,
+                  sha: run().release!.sha256.slice(0, 16),
+                })}
+              </p>
+            </Show>
+            <Show when={run().report?.changed}>
+              <p>{t("marketplace.aligned.snapshotOnly")}</p>
+            </Show>
+            <div class="marketplace-publication-issues">
+              {(run().report?.issues ?? []).map((issue) => (
+                <p>
+                  <strong>{issue.code}</strong> · {issue.file ?? issue.field ?? "归档"} · {issue.message}
+                </p>
+              ))}
+            </div>
+            <Button variant="ghost" size="small" onClick={() => setPublication(undefined)}>
+              {t("marketplace.aligned.closeReport")}
+            </Button>
+          </Card>
+        )}
+      </Show>
       <Show when={errors().length > 0}>
         {errors().map((err, idx) => (
           <Card variant="error" class="marketplace-error-banner">
@@ -177,11 +333,13 @@ export const MarketplaceView = () => {
       </Show>
 
       <Tabs value={tab()} onChange={setTab} class="marketplace-tabs-root">
-        <Tabs.List>
-          <Tabs.Trigger value="agent">{t("marketplace.tab.agents")}</Tabs.Trigger>
-          <Tabs.Trigger value="mcp">{t("marketplace.tab.mcp")}</Tabs.Trigger>
-          <Tabs.Trigger value="skill">{t("marketplace.tab.skills")}</Tabs.Trigger>
-        </Tabs.List>
+        <Show when={marketplaceSkillsOnly() === false}>
+          <Tabs.List>
+            <Tabs.Trigger value="agent">{t("marketplace.tab.agents")}</Tabs.Trigger>
+            <Tabs.Trigger value="mcp">{t("marketplace.tab.mcp")}</Tabs.Trigger>
+            <Tabs.Trigger value="skill">{t("marketplace.tab.skills")}</Tabs.Trigger>
+          </Tabs.List>
+        </Show>
 
         <div class="marketplace-content">
           <Tabs.Content value="agent">
@@ -219,25 +377,72 @@ export const MarketplaceView = () => {
           </Tabs.Content>
 
           <Tabs.Content value="skill">
-            <MarketplaceListView
-              items={skills()}
-              metadata={metadata()}
-              fetching={fetching()}
-              type="skill"
-              searchPlaceholder={t("marketplace.search")}
-              emptyMessage={t("marketplace.empty")}
-              onInstall={handleInstall}
-              onRemove={handleRemove}
-              marketplaceUser={marketplaceUser()}
-              marketplaceBaseUrl={marketplaceBaseUrl()}
-              marketplaceSkillsOnly={marketplaceSkillsOnly()}
-              marketplaceMode={marketplaceMode()}
-              onUploadMarketplaceSkill={uploadMarketplaceSkill}
-              onStarMarketplaceSkill={starMarketplaceSkill}
-            />
+            <Show
+              when={protocol() === "aligned-v1"}
+              fallback={
+                <>
+                  <Card variant="info" class="marketplace-legacy-notice">
+                    {t("marketplace.aligned.legacy")}
+                  </Card>
+                  <MarketplaceListView
+                    items={skills()}
+                    metadata={metadata()}
+                    fetching={fetching()}
+                    type="skill"
+                    searchPlaceholder={t("marketplace.search")}
+                    emptyMessage={t("marketplace.empty")}
+                    onInstall={handleInstall}
+                    onRemove={handleRemove}
+                    marketplaceUser={marketplaceUser()}
+                    marketplaceBaseUrl={marketplaceBaseUrl()}
+                    marketplaceSkillsOnly={marketplaceSkillsOnly()}
+                    marketplaceMode={marketplaceMode()}
+                    onStarMarketplaceSkill={starMarketplaceSkill}
+                  />
+                </>
+              }
+            >
+              <AlignedSkillMarket
+                items={skills()}
+                metadata={metadata()}
+                fetching={fetching()}
+                user={marketplaceUser()}
+                baseUrl={marketplaceBaseUrl()}
+                capabilities={capabilities()}
+                installations={installations()}
+                publications={publications()}
+                status={status()}
+                analytics={analytics()}
+                detail={detail()}
+                detailId={detailId()}
+                detailError={detailError()}
+                onOpen={openSkill}
+                onCloseDetail={closeSkill}
+                onInstall={handleInstall}
+                onRemove={handleRemove}
+                onStar={starMarketplaceSkill}
+                onUpload={capabilities()?.features.publications ? uploadMarketplaceSkill : undefined}
+                onUnpublish={unpublishMarketplaceSkill}
+              />
+            </Show>
           </Tabs.Content>
         </div>
       </Tabs>
     </div>
   )
+}
+
+function applySync(
+  msg: {
+    marketplaceInstallations?: InstallationState[]
+    marketplacePublications?: PublicationRun[]
+    marketplaceAnalytics?: AnalyticsSeries[]
+  },
+  installations: (items: InstallationState[]) => void,
+  publications: (items: PublicationRun[]) => void,
+  analytics: (items: AnalyticsSeries[]) => void,
+) {
+  if (msg.marketplaceInstallations) installations(msg.marketplaceInstallations)
+  if (msg.marketplacePublications) publications(msg.marketplacePublications)
+  if (msg.marketplaceAnalytics) analytics(msg.marketplaceAnalytics)
 }

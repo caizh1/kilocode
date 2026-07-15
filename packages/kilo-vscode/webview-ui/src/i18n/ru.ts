@@ -1,4 +1,7 @@
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   "command.category.suggested": "Предложено",
   "command.category.view": "Просмотр",
   "command.category.project": "Проект",
@@ -240,6 +243,7 @@ export const dict = {
   "prompt.placeholder.summarizeComments": "Суммировать комментарии…",
   "prompt.placeholder.summarizeComment": "Суммировать комментарий…",
   "prompt.mode.shell": "Оболочка",
+  "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "esc для выхода",
 
   "prompt.example.1": "Исправить TODO в коде",
@@ -957,6 +961,7 @@ export const dict = {
   "provider.custom.error.duplicate": "Дубликат",
   "settings.openLocalConfig": "Локальный конфиг",
   "settings.openGlobalConfig": "Глобальный конфиг",
+  "settings.close": "Закрыть настройки",
   "settings.config.scope.local": "Локальный",
   "settings.config.scope.global": "Глобальный",
   "settings.config.status.loaded": "загружено",

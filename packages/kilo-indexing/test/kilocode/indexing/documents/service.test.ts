@@ -6,7 +6,11 @@ import path from "path"
 import { CodeIndexConfigManager } from "../../../../src/indexing/config-manager"
 import { DocumentIndexService } from "../../../../src/indexing/documents"
 import type { IEmbedder } from "../../../../src/indexing/interfaces/embedder"
-import type { IVectorStore, PointStruct, VectorStoreSearchResult } from "../../../../src/indexing/interfaces/vector-store"
+import type {
+  IVectorStore,
+  PointStruct,
+  VectorStoreSearchResult,
+} from "../../../../src/indexing/interfaces/vector-store"
 
 const embedder = {
   embedderInfo: { name: "openai" },
@@ -30,6 +34,83 @@ const store = {
 } satisfies IVectorStore
 
 describe("DocumentIndexService", () => {
+  test("discovers documents across the workspace without configured paths", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    try {
+      await writeFile(path.join(root, "notes.md"), "workspace document")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, store, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus()).toMatchObject({
+        state: "Complete",
+        validFileCount: 1,
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("pauses before indexing when automatic discovery exceeds the document limit", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    try {
+      await writeFile(path.join(root, "one.md"), "one")
+      await writeFile(path.join(root, "two.md"), "two")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true, maxFiles: 1 },
+      })
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, store, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus().state).toBe("Standby")
+      expect(service.getStatus().message).toContain("more than 1 documents")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("writes document vectors one embedding batch at a time", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const batches: number[] = []
+    try {
+      await writeFile(
+        path.join(root, "notes.md"),
+        Array.from({ length: 24 }, (_, index) => `bounded document line ${index}`).join("\n"),
+      )
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        embeddingBatchSize: 5,
+        documents: { enabled: true, chunkChars: 20, chunkOverlapChars: 0 },
+      })
+      const bounded = {
+        ...store,
+        upsertPoints: async (points: PointStruct[]) => {
+          batches.push(points.length)
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, bounded, ignore())
+
+      await service.start("manual")
+
+      expect(batches.length).toBeGreaterThan(1)
+      expect(Math.max(...batches)).toBeLessThanOrEqual(5)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("rejects configured paths outside the workspace", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
     try {

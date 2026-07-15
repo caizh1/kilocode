@@ -48,6 +48,18 @@ export const DocumentSearchTool = Tool.define(
           throw new Error("query is required")
         }
 
+        const prefix = normalizeSearchPath(params.path)
+        const maxResults = clamp(params.maxResults ?? 8, 1, MAX_RESULTS)
+        const maxPackChars = clamp(
+          params.maxPackChars ?? DEFAULT_MAX_PACK_CHARS,
+          MIN_MAX_PACK_CHARS,
+          MAX_MAX_PACK_CHARS,
+        )
+        if (!KiloIndexing.documentReady()) return unavailable(maxPackChars)
+        const status = yield* Effect.promise(() => KiloIndexing.current())
+        const state = status.pipelines?.documents.state
+        if (state === "Disabled" || state === "Error") return unavailable(maxPackChars, state)
+
         yield* ctx.ask({
           permission: "document_search",
           patterns: [params.query],
@@ -59,13 +71,6 @@ export const DocumentSearchTool = Tool.define(
           },
         })
 
-        const prefix = normalizeSearchPath(params.path)
-        const maxResults = clamp(params.maxResults ?? 8, 1, MAX_RESULTS)
-        const maxPackChars = clamp(
-          params.maxPackChars ?? DEFAULT_MAX_PACK_CHARS,
-          MIN_MAX_PACK_CHARS,
-          MAX_MAX_PACK_CHARS,
-        )
         const results = yield* Effect.promise(() =>
           KiloIndexing.searchDocuments(params.query, {
             ...(prefix ? { directoryPrefix: prefix } : {}),
@@ -74,6 +79,17 @@ export const DocumentSearchTool = Tool.define(
         )
 
         if (results.length === 0) {
+          if (state === "In Progress" || state === "Standby") {
+            return {
+              title: "Document Search",
+              metadata: {
+                results,
+                truncated: false,
+                maxPackChars,
+              },
+              output: `No conclusive document results yet because the index is ${state.toLowerCase()}. Use Grep, Glob, and Read for this request; do not repeatedly retry document_search.`,
+            }
+          }
           return {
             title: "Document Search",
             metadata: {
@@ -85,7 +101,14 @@ export const DocumentSearchTool = Tool.define(
           }
         }
 
-        const pack = format(params.query, prefix, results, maxPackChars)
+        const partial = state === "In Progress" || state === "Standby"
+        const pack = format(
+          params.query,
+          prefix,
+          results,
+          maxPackChars,
+          partial ? `[Document index state: ${state}; results may be incomplete.]` : undefined,
+        )
         return {
           title: "Document Search",
           metadata: {
@@ -99,7 +122,26 @@ export const DocumentSearchTool = Tool.define(
   }),
 )
 
-function format(query: string, prefix: string | undefined, results: DocumentSearchResult[], max: number) {
+function unavailable(maxPackChars: number, state?: "Disabled" | "Error"): Tool.ExecuteResult<Meta> {
+  const reason = state ? ` unavailable (${state})` : " not ready yet"
+  return {
+    title: "Document Search",
+    metadata: {
+      results: [],
+      truncated: false,
+      maxPackChars,
+    },
+    output: `Document index is${reason}. Use Grep, Glob, and Read for this request; do not repeatedly retry document_search until indexing status changes.`,
+  }
+}
+
+function format(
+  query: string,
+  prefix: string | undefined,
+  results: DocumentSearchResult[],
+  max: number,
+  note?: string,
+) {
   const head = `Found ${results.length} document result${results.length === 1 ? "" : "s"} for "${query}"${prefix ? ` in ${normalizePath(prefix)}` : ""}.`
   const lines = [
     head,
@@ -109,6 +151,7 @@ function format(query: string, prefix: string | undefined, results: DocumentSear
       item.content.trim(),
       "",
     ]),
+    ...(note ? [note] : []),
   ]
   return fit(lines.join("\n").trim(), max)
 }

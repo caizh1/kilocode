@@ -1,12 +1,12 @@
 # qwen-direct Phase 2 Offline Validation
 
-This runbook validates a Phase 2 release-candidate VSIX on an offline machine that can reach the internal qwen-coder `/v1/completions` endpoint. Do not run the benchmark CLI on the offline machine, and do not install Bun there.
+This runbook validates a Phase 2 release-candidate VSIX on an offline machine with a connected openai-compatible provider that exposes the exact `qwen-coder-30b0` model. The extension sends autocomplete through the bundled CLI `/kilo/qwen-fim` route; do not run the benchmark CLI on the offline machine, and do not install Bun there.
 
 ## Phase 2 Scope
 
 Included:
 
-- qwen-direct `/v1/completions` autocomplete path.
+- qwen-direct autocomplete through the shared local CLI connection.
 - Continue-style HelperVars, tokenizer, and prompt token budget behavior.
 - Continue AutocompleteLruCache-style in-memory autocomplete reuse.
 - Redacted qwen-direct autocomplete diagnostics.
@@ -49,23 +49,24 @@ Do not uninstall the previous extension first unless explicitly requested; use u
 
 ## Required qwen Settings
 
+First configure and connect an openai-compatible provider in ChipMate. Store its authentication through ChipMate SecretStorage and ensure its model list contains the exact ID `qwen-coder-30b0`. Then select that provider through the unified autocomplete settings:
+
 Configure these in the VS Code Settings UI or `settings.json`:
 
 ```json
 {
-  "kilo.autocomplete.enabled": true,
-  "kilo.autocomplete.provider": "qwen-direct",
-  "kilo.autocomplete.qwen.endpoint": "http://<internal-host>/v1/completions",
-  "kilo.autocomplete.qwen.model": "qwen-coder-30b0",
-  "kilo.autocomplete.qwen.apiKey": "<redacted>"
+  "kilo-code.new.autocomplete.provider": "<connected-provider-id>",
+  "kilo-code.new.autocomplete.model": "qwen-coder-30b0",
+  "kilo-code.new.autocomplete.enableAutoTrigger": true
 }
 ```
 
 Requirements:
 
-- `kilo.autocomplete.qwen.endpoint` must be the full `/v1/completions` URL.
-- Do not use a base URL.
-- Do not use `/v1/chat/completions`.
+- The selected provider must be connected and use `@ai-sdk/openai-compatible`.
+- The provider must expose the exact model ID `qwen-coder-30b0`.
+- The provider base URL must support the non-streaming `/completions` operation used by the CLI.
+- Do not put an endpoint or API key under `kilo.autocomplete.*`.
 - Do not share API keys in logs, screenshots, chat, or issue comments.
 
 ## Diagnostics
@@ -106,7 +107,10 @@ Expected safe fields include:
 
 - `requestId`
 - `phase`
-- `endpointPath`
+- `providerID`
+- `transport=cli-qwen-fim`
+- `connectionState`
+- `httpStatus`
 - `pathHash`
 - `fullPrefixChars`, `prunedPrefixChars`, `estimatedPromptTokens`
 - `snippetTotalCount`, `selectedSnippetCount`
@@ -124,8 +128,6 @@ Expected safe fields include:
 
 ```json
 {
-  "kilo.autocomplete.enabled": true,
-  "kilo.autocomplete.provider": "qwen-direct",
   "kilo.autocomplete.qwen.context.recentlyEdited.enabled": false,
   "kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": false,
   "kilo.autocomplete.qwen.context.recentlyOpened.enabled": false,
@@ -147,8 +149,6 @@ Expected:
 
 ```json
 {
-  "kilo.autocomplete.enabled": true,
-  "kilo.autocomplete.provider": "qwen-direct",
   "kilo.autocomplete.qwen.context.recentlyEdited.enabled": true,
   "kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": false,
   "kilo.autocomplete.qwen.context.recentlyOpened.enabled": false,
@@ -169,8 +169,6 @@ Expected:
 
 ```json
 {
-  "kilo.autocomplete.enabled": true,
-  "kilo.autocomplete.provider": "qwen-direct",
   "kilo.autocomplete.qwen.context.recentlyEdited.enabled": true,
   "kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": true,
   "kilo.autocomplete.qwen.context.recentlyOpened.enabled": false,
@@ -191,8 +189,6 @@ Use only after confirming the real qwen-coder context length.
 
 ```json
 {
-  "kilo.autocomplete.enabled": true,
-  "kilo.autocomplete.provider": "qwen-direct",
   "kilo.autocomplete.qwen.context.recentlyEdited.enabled": true,
   "kilo.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": true,
   "kilo.autocomplete.qwen.context.recentlyOpened.enabled": false,
@@ -213,8 +209,6 @@ Expected:
 
 ```json
 {
-  "kilo.autocomplete.enabled": true,
-  "kilo.autocomplete.provider": "qwen-direct",
   "kilo.autocomplete.qwen.context.recentlyOpened.enabled": true,
   "kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": false,
   "kilo.autocomplete.qwen.context.recentlyOpened.maxFiles": 20,
@@ -238,8 +232,6 @@ Use only after confirming the real qwen-coder context length.
 
 ```json
 {
-  "kilo.autocomplete.enabled": true,
-  "kilo.autocomplete.provider": "qwen-direct",
   "kilo.autocomplete.qwen.context.recentlyOpened.enabled": true,
   "kilo.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": true,
   "kilo.autocomplete.qwen.contextLength": 32768
@@ -271,8 +263,8 @@ For every scenario, capture:
 
 | Case | Setup | Mode | Action | Expected ghost text | Expected diagnostics | Failure signs |
 |---|---|---|---|---|---|---|
-| 1. Basic return expression | Open a small C/C++ function with a blank return line. | A | Place cursor after indentation and pause. | A short return expression or no suggestion. | `promptRendererMode=disabled`, `snippetsInjectedIntoPrompt=false`, `promptPreview=null`. | Request hits non-completions endpoint, prompt preview appears, or no lifecycle logs when trace is enabled. |
-| 2. If condition completion | Start an `if (` statement in a C/C++ function. | A | Pause after partial condition. | Condition-oriented ghost text may appear. | `multilineAllowed` reflects classifier result, endpoint path is `/v1/completions`. | Markdown fences, special token leakage, or stale response replacing unrelated text. |
+| 1. Basic return expression | Open a small C/C++ function with a blank return line. | A | Place cursor after indentation and pause. | A short return expression or no suggestion. | `promptRendererMode=disabled`, `snippetsInjectedIntoPrompt=false`, `promptPreview=null`. | Transport is not `cli-qwen-fim`, prompt preview appears, or no lifecycle logs when trace is enabled. |
+| 2. If condition completion | Start an `if (` statement in a C/C++ function. | A | Pause after partial condition. | Condition-oriented ghost text may appear. | `multilineAllowed` reflects classifier result and transport is `cli-qwen-fim`. | Markdown fences, special token leakage, or stale response replacing unrelated text. |
 | 3. Struct pointer/member completion | Define or reference a struct pointer near cursor. | A | Type `ptr->` and pause. | Member-like suggestion may appear. | `pathHash` present, full path absent. | Full file path or source text appears in diagnostics. |
 | 4. Function name partial completion | Type a known function prefix in current file. | A | Pause after partial identifier. | Ghost text completes the remaining suffix without duplicating typed prefix. | `rangePreview` present, `insertFirstLinePreview` may show completion preview only. | Prefix echo or wide range replacement. |
 | 5. Comment-to-code generation | Add a short local comment describing a next statement. | A | Pause below the comment. | Code-like suggestion may appear. | `promptPreview=null`, prompt chars/token counts present. | Prompt/source text appears in logs. |
@@ -305,16 +297,17 @@ Default behavior should be unchanged:
 - `promptPreview=null`.
 - Default path uses `buildQwenFimPrompt`.
 - Default FIM prompt and HTTP request body remain byte-for-byte unchanged.
-- qwen requests use only the configured `/v1/completions` endpoint.
+- qwen requests use the shared CLI `/kilo/qwen-fim` route.
 
 Injection requires all gates:
 
-- `kilo.autocomplete.enabled=true`.
-- `kilo.autocomplete.provider=qwen-direct`.
+- `kilo-code.new.autocomplete.enableAutoTrigger=true`.
+- `kilo-code.new.autocomplete.provider` identifies a connected provider.
+- `kilo-code.new.autocomplete.model=qwen-coder-30b0`.
 - At least one source-specific collection and injection pair is enabled:
   `recentlyEdited.enabled=true` with `recentlyEdited.injectIntoPrompt=true`,
   or `recentlyOpened.enabled=true` with `recentlyOpened.injectIntoPrompt=true`.
-- Model name includes `qwen` and `coder`.
+- Model ID is exactly `qwen-coder-30b0`.
 - `kilo.autocomplete.qwen.contextLength > 0`.
 - `availablePromptTokens >= maxPromptTokens`.
 - Selected injectable snippets exist.
@@ -339,14 +332,13 @@ To disable qwen-direct autocomplete entirely:
 
 ```json
 {
-  "kilo.autocomplete.enabled": false,
-  "kilo.autocomplete.provider": "none"
+  "kilo-code.new.autocomplete.enableAutoTrigger": false
 }
 ```
 
 ## Known Limitations
 
-- This VSIX does not validate real endpoint quality automatically.
+- The real smoke diagnostics validates one request, but repeated ghost-text quality still requires target-machine testing.
 - Snippet injection is opt-in and recently-edited-only.
 - Opened files, imports, root path snippets, clipboard, static context, and recently visited ranges are not included.
 - Streaming, CompletionStreamer, and GeneratorReuseManager are not included.

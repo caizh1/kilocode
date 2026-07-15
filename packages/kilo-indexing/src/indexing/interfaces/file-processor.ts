@@ -1,6 +1,7 @@
 import type { PointStruct } from "./vector-store"
 import type { Disposable, Emitter } from "../runtime"
 import type { IndexingTelemetryMode } from "./telemetry"
+import type { IndexingPressure } from "../memory"
 
 export type IndexingScanTarget = "all" | "codeGraph" | "rag"
 
@@ -57,6 +58,7 @@ export interface IDirectoryScanner {
   }>
 
   updateBatchSegmentThreshold(newThreshold: number): void
+  setMemoryPressure?(pressure: IndexingPressure): void
 }
 
 export interface IFileWatcher extends Disposable {
@@ -65,6 +67,8 @@ export interface IFileWatcher extends Disposable {
   setCollecting(collecting: boolean): void
   enqueueSyntheticEvents?(events: WatcherSyntheticEvent[]): void
   getPendingEventCount?(): number
+  takeReconciliationRequest?(): boolean
+  setMemoryPressure?(pressure: IndexingPressure): void
   setRunContext?(runId: string, meta: import("../rag-checkpoint").RagCheckpointMeta): void
 
   readonly onDidStartBatchProcessing: Emitter<string[]>

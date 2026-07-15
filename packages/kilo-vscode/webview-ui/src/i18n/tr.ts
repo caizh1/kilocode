@@ -1,4 +1,7 @@
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   "command.category.suggested": "Önerilen",
   "command.category.view": "Görünüm",
   "command.category.project": "Proje",
@@ -241,6 +244,7 @@ export const dict = {
   "prompt.placeholder.summarizeComments": "Yorumları özetle…",
   "prompt.placeholder.summarizeComment": "Yorumu özetle…",
   "prompt.mode.shell": "Kabuk",
+  "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "çıkmak için esc",
 
   "prompt.example.1": "Kod tabanındaki bir TODO'yu düzelt",
@@ -915,6 +919,7 @@ export const dict = {
   "provider.custom.error.duplicate": "Tekrar",
   "settings.openLocalConfig": "Yerel Config",
   "settings.openGlobalConfig": "Global Config",
+  "settings.close": "Ayarları kapat",
   "settings.config.scope.local": "Yerel",
   "settings.config.scope.global": "Küresel",
   "settings.config.status.loaded": "yüklendi",

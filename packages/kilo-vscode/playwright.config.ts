@@ -12,7 +12,7 @@ export default defineConfig({
     : undefined,
   reporter: [["html", { open: "never" }], ["list"]],
   use: {
-    baseURL: "http://localhost:6007",
+    baseURL: "http://127.0.0.1:6007",
     // VS Code sidebar is typically 350-450px wide
     viewport: { width: 420, height: 720 },
     reducedMotion: "reduce",
@@ -25,8 +25,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bunx storybook build -o ./storybook-static && bunx http-server ./storybook-static -p 6007 --silent",
-    url: "http://localhost:6007",
+    command:
+      "bunx storybook build -o ./storybook-static && bunx http-server ./storybook-static -a 127.0.0.1 -p 6007 --silent",
+    url: "http://127.0.0.1:6007",
     reuseExistingServer: !process.env["CI"],
     timeout: 300_000,
   },

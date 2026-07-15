@@ -2,7 +2,8 @@ import type { MarketplaceInstalledMetadata, MarketplaceItem, SkillMarketplaceIte
 import { isInstalled } from "./utils"
 
 export function marketplaceTags(item: MarketplaceItem): string[] {
-  const tags = item.type === "skill" ? [(item as SkillMarketplaceItem).displayCategory, ...(item.tags ?? [])] : item.tags ?? []
+  const tags =
+    item.type === "skill" ? [(item as SkillMarketplaceItem).displayCategory, ...(item.tags ?? [])] : (item.tags ?? [])
   return Array.from(new Set(tags.filter(Boolean)))
 }
 

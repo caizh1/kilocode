@@ -1,12 +1,4 @@
 import { test, expect, type Page } from "@playwright/test"
-import { platform } from "node:os"
-
-const IS_DARWIN = platform() === "darwin"
-
-if (IS_DARWIN) {
-  console.warn("Visual regression tests must be run on CI, skipping on local macOS.")
-  test.skip()
-}
 
 const GLOBALS = "colorScheme:dark;theme:kilo-vscode;vscodeTheme:dark-modern"
 const STORY_ID = "settings--indexing-provider-blur-race"
@@ -17,7 +9,7 @@ type Saved = {
   provider?: string
   model?: string | null
   dimension?: number | null
-  openai?: { apiKey?: string }
+  "openai-compatible"?: { apiKey?: string }
   gemini?: { apiKey?: string }
 }
 
@@ -41,6 +33,49 @@ async function disableAnimations(page: Page) {
 function field(page: Page, title: string) {
   return page.locator('[data-slot="settings-row"]', { hasText: title }).locator("input")
 }
+
+async function saved(page: Page) {
+  const text = ((await page.getByTestId("indexing-provider-save").textContent()) ?? "{}").trim()
+  return JSON.parse(text) as Saved
+}
+
+test("custom embedding settings survive blur and same-provider refreshes", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 720 })
+  await page.goto(storyUrl(), { waitUntil: "load" })
+  await disableAnimations(page)
+  await page.waitForSelector("#storybook-root *", { state: "attached" })
+
+  const model = field(page, "Embedding model").first()
+  const dimension = field(page, "Vector dimension").first()
+
+  await expect(model).toHaveValue("qwen3-embedding-8b")
+  await expect(dimension).toHaveValue("2048")
+
+  await model.fill("custom-click-model")
+  await dimension.click()
+  await expect(model).toHaveValue("custom-click-model")
+  await expect(dimension).toHaveValue("2048")
+  await expect.poll(async () => (await saved(page)).model).toBe("custom-click-model")
+  await expect.poll(async () => (await saved(page)).dimension).toBe(2048)
+  await expect.poll(async () => (await saved(page)).provider).toBe("openai-compatible")
+
+  await model.fill("custom-tab-model")
+  await model.press("Tab")
+  await expect(model).toHaveValue("custom-tab-model")
+  await expect.poll(async () => (await saved(page)).model).toBe("custom-tab-model")
+
+  await model.fill("custom-blank-model")
+  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await expect(model).toHaveValue("custom-blank-model")
+  await expect.poll(async () => (await saved(page)).model).toBe("custom-blank-model")
+
+  await dimension.fill("1536")
+  await model.click()
+  await expect(model).toHaveValue("custom-blank-model")
+  await expect(dimension).toHaveValue("1536")
+  await expect.poll(async () => (await saved(page)).model).toBe("custom-blank-model")
+  await expect.poll(async () => (await saved(page)).dimension).toBe(1536)
+})
 
 test("provider switch writes to selected provider bucket", async ({ page }) => {
   await page.setViewportSize({ width: 420, height: 720 })
@@ -68,7 +103,7 @@ test("provider switch writes to selected provider bucket", async ({ page }) => {
   expect(cfg.provider).toBe("gemini")
   expect(cfg.model).toBeNull()
   expect(cfg.dimension).toBeNull()
-  expect(cfg.openai?.apiKey ?? "").toBe("")
+  expect(cfg["openai-compatible"]?.apiKey ?? "").toBe("")
   expect(cfg.gemini?.apiKey ?? "").toBe("")
 
   const model = field(page, "Embedding model").first()
@@ -82,7 +117,7 @@ test("Kilo exposes only supported embedding model presets", async ({ page }) => 
   await disableAnimations(page)
   await page.waitForSelector("#storybook-root *", { state: "attached" })
 
-  await expect(page.getByText("Kilo model preset", { exact: true })).toBeVisible()
+  await expect(page.locator('[data-slot="settings-row"]', { hasText: /model preset/i })).toBeVisible()
   await expect(page.getByText("Embedding model", { exact: true })).toHaveCount(0)
   await expect(page.getByText("Vector dimension", { exact: true })).toBeVisible()
 

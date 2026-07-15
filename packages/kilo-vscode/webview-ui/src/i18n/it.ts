@@ -1,4 +1,7 @@
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   "command.category.suggested": "Suggeriti",
   "command.category.view": "Vista",
   "command.category.project": "Progetto",
@@ -213,6 +216,7 @@ export const dict = {
   "prompt.placeholder.summarizeComments": "Riassumi commenti...",
   "prompt.placeholder.summarizeComment": "Riassumi commento...",
   "prompt.mode.shell": "Shell",
+  "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "esc per uscire",
   "prompt.example.1": "Correggi un TODO nel codebase",
   "prompt.example.2": "Qual è lo stack tecnico di questo progetto?",
@@ -777,6 +781,7 @@ export const dict = {
   "provider.custom.error.duplicate": "Duplicato",
   "settings.openLocalConfig": "Config locale",
   "settings.openGlobalConfig": "Config globale",
+  "settings.close": "Chiudi impostazioni",
   "settings.config.scope.local": "Locale",
   "settings.config.scope.global": "Globale",
   "settings.config.status.loaded": "caricata",

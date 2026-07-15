@@ -1,8 +1,6 @@
 import { isInternalOfflineBuild } from "../../../src/shared/internal-offline"
 
-export type GatewayTarget =
-  | { view: "profile"; tab?: undefined }
-  | { view: "settings"; tab: "providers" }
+export type GatewayTarget = { view: "profile"; tab?: undefined } | { view: "settings"; tab: "providers" }
 
 export function canUseGatewayUi(internal = isInternalOfflineBuild()) {
   return !internal

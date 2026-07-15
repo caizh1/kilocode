@@ -14,6 +14,8 @@ import { useVSCode } from "./vscode"
 import type { Config, ExtensionMessage, FeatureFlags } from "../types/messages"
 import { deepEqual, deepMerge, stripNulls, resolveConfig } from "../utils/config-utils"
 import { splitConfigByScope } from "../utils/config-scope"
+import { CHIPMATE_SERVER_KEY, normalizeChipmateServerBaseUrl } from "../../../src/shared/chipmate-server"
+import { buildAutocompleteSettingMessages } from "./autocomplete-settings"
 
 function has(value: Record<string, unknown>) {
   return Object.keys(value).length > 0
@@ -38,6 +40,7 @@ interface ConfigContextValue {
   loading: Accessor<boolean>
   isDirty: Accessor<boolean>
   saving: Accessor<boolean>
+  canSave: Accessor<boolean>
   saveError: Accessor<SaveError | null>
   updateConfig: (partial: Partial<Config>) => void
   updateGlobalConfig: (partial: Partial<Config>) => void
@@ -63,6 +66,18 @@ export const ConfigProvider: ParentComponent = (props) => {
     () =>
       has(draft() as Record<string, unknown>) || has(globalDraft() as Record<string, unknown>) || has(settingsDraft()),
   )
+  const canSave = createMemo(() => {
+    const value = settingsDraft()[CHIPMATE_SERVER_KEY]
+    if (value === undefined) return true
+    if (typeof value !== "string") return false
+    try {
+      normalizeChipmateServerBaseUrl(value)
+      return true
+    } catch (err) {
+      if (err instanceof Error) return false
+      throw err
+    }
+  })
   // Last config received from the server — used to revert on discard
   const [saved, setSaved] = createSignal<Config>({})
   const [savedGlobal, setSavedGlobal] = createSignal<Config>({})
@@ -71,13 +86,17 @@ export const ConfigProvider: ParentComponent = (props) => {
   // and to guard against stale configLoaded messages overwriting optimistic state.
   const [saving, setSaving] = createSignal(false)
   const [request, setRequest] = createSignal<string>()
+  const [pendingSettings, setPendingSettings] = createSignal(new Set<string>())
+  const [pendingConfig, setPendingConfig] = createSignal(false)
   // Error from the most recent saveConfig() attempt, or null if no error.
   // Cleared when the user edits the draft again or starts a new save.
   const [saveError, setSaveError] = createSignal<SaveError | null>(null)
 
-  // Register handler immediately (not in onMount) so we never miss
-  // a configLoaded message that arrives before the DOM mount.
-  const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
+  function handleSettingMessage(message: ExtensionMessage) {
+    if (message.type === "chipmateServerSettingsLoaded") {
+      mergeSettings({ [CHIPMATE_SERVER_KEY]: message.state.baseUrl, "updateCheck.autoInstall": message.autoInstall })
+      return true
+    }
     if (message.type === "autocompleteSettingsLoaded") {
       mergeSettings({
         "autocomplete.enableAutoTrigger": message.settings.enableAutoTrigger,
@@ -85,9 +104,41 @@ export const ConfigProvider: ParentComponent = (props) => {
         "autocomplete.enableChatAutocomplete": message.settings.enableChatAutocomplete,
         "autocomplete.provider": message.settings.provider,
         "autocomplete.model": message.settings.model,
+        "autocomplete.automatic": message.settings.automatic,
+        "autocomplete.scope": message.settings.scope,
       })
-      return
+      return true
     }
+    if (message.type === "settingUpdated") {
+      if (!saving() || message.requestId !== request()) return true
+      if (!pendingSettings().has(message.key)) return true
+      setSavedSettings((prev) => ({ ...prev, [message.key]: message.value }))
+      setSettings((prev) => ({ ...prev, [message.key]: message.value }))
+      setSettingsDraft((prev) => {
+        const next = { ...prev }
+        delete next[message.key]
+        return next
+      })
+      const next = new Set(pendingSettings())
+      next.delete(message.key)
+      setPendingSettings(next)
+      finish(next, pendingConfig())
+      return true
+    }
+    if (message.type !== "settingUpdateFailed") return false
+    if (!saving() || message.requestId !== request()) return true
+    setSaving(false)
+    setRequest(undefined)
+    setPendingConfig(false)
+    setPendingSettings(new Set<string>())
+    setSaveError({ message: message.message })
+    return true
+  }
+
+  // Register handler immediately (not in onMount) so we never miss
+  // a configLoaded message that arrives before the DOM mount.
+  const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
+    if (handleSettingMessage(message)) return
     if (message.type === "configLoaded") {
       // Skip if a save is in-flight — a stale configLoaded must not overwrite
       // the optimistically-updated state while the write is being confirmed.
@@ -121,17 +172,16 @@ export const ConfigProvider: ParentComponent = (props) => {
         confirmedConfig = acknowledged
         // This configUpdated is the confirmation of our saveConfig() write.
         // Clear the draft now that the server has confirmed the write.
-        setSaving(false)
-        setRequest(undefined)
         setDraft({})
         setGlobalDraft({})
-        setSaveError(null)
         setConfig(acknowledged)
         if (acknowledgedGlobal !== undefined) {
           setGlobalConfig(acknowledgedGlobal)
           setSavedGlobal(acknowledgedGlobal)
         }
         setFeatures(message.features)
+        setPendingConfig(false)
+        finish(pendingSettings(), false)
       } else {
         // configUpdated from a different source (e.g. PermissionDock save).
         // Re-apply the draft on top so pending settings changes are preserved.
@@ -152,6 +202,8 @@ export const ConfigProvider: ParentComponent = (props) => {
       // and keep the draft + isDirty so the user can correct and retry.
       setSaving(false)
       setRequest(undefined)
+      setPendingConfig(false)
+      setPendingSettings(new Set<string>())
       setSaveError({ message: message.message, details: message.details })
       return
     }
@@ -164,9 +216,17 @@ export const ConfigProvider: ParentComponent = (props) => {
     setSettings((prev) => ({ ...prev, ...patch, ...settingsDraft() }))
   }
 
+  function finish(keys: Set<string>, configPending: boolean) {
+    if (configPending || keys.size > 0) return
+    setSaving(false)
+    setRequest(undefined)
+    setSaveError(null)
+  }
+
   const requestInitialData = () => {
     vscode.postMessage({ type: "requestConfig" })
     vscode.postMessage({ type: "requestAutocompleteSettings" })
+    vscode.postMessage({ type: "requestChipmateServerSettings" })
   }
 
   // Request config immediately; if the extension's httpClient is not yet ready,
@@ -221,8 +281,16 @@ export const ConfigProvider: ParentComponent = (props) => {
     setSaveError(null)
   }
 
+  function saveSettings(pending: Record<string, unknown>, id: string) {
+    for (const message of buildAutocompleteSettingMessages(pending, settings(), id)) vscode.postMessage(message)
+  }
+
   function saveConfig() {
     if (saving()) return
+    if (!canSave()) {
+      setSaveError({ message: "Enter a valid ChipMate Server address before saving." })
+      return
+    }
     const changes = draft()
     const globals = globalDraft()
     const pending = settingsDraft()
@@ -230,20 +298,29 @@ export const ConfigProvider: ParentComponent = (props) => {
     const globalDirty = has(globals as Record<string, unknown>)
     const settingsDirty = has(pending)
     if (!configDirty && !globalDirty && !settingsDirty) return
+    const id = createRequestId()
+    vscode.postMessage({
+      type: "memoryDebug",
+      event: "settings.save.requested",
+      requestId: id,
+      data: {
+        draftKeys: Object.keys(changes),
+        globalDraftKeys: Object.keys(globals),
+        settingsDraftKeys: Object.keys(pending),
+        configDirty,
+        globalDirty,
+        settingsDirty,
+      },
+    })
     // Don't clear draft/isDirty yet — wait for configUpdated confirmation.
     // If the write fails, the save bar stays visible so the user can retry.
     setSaving(true)
+    setRequest(id)
+    setPendingSettings(new Set(Object.keys(pending)))
+    setPendingConfig(configDirty || globalDirty)
     setSaveError(null)
-    if (settingsDirty) {
-      for (const [key, value] of Object.entries(pending)) {
-        vscode.postMessage({ type: "updateSetting", key, value })
-      }
-      setSavedSettings((prev) => ({ ...prev, ...pending }))
-      setSettingsDraft({})
-    }
+    if (settingsDirty) saveSettings(pending, id)
     if (!configDirty && !globalDirty) {
-      setSaving(false)
-      setRequest(undefined)
       return
     }
     // Split so per-project settings (e.g. commit_message.prompt) land in the
@@ -251,8 +328,6 @@ export const ConfigProvider: ParentComponent = (props) => {
     // extension confirms only after both scopes are saved.
     const split = splitConfigByScope(changes)
     const next = deepMerge(split.global as Config, globals)
-    const id = createRequestId()
-    setRequest(id)
     vscode.postMessage({ type: "updateConfig", requestId: id, config: next, projectConfig: split.project })
   }
 
@@ -262,6 +337,8 @@ export const ConfigProvider: ParentComponent = (props) => {
     setDraft({})
     setGlobalDraft({})
     setRequest(undefined)
+    setPendingConfig(false)
+    setPendingSettings(new Set<string>())
     setSettings(savedSettings())
     setSettingsDraft({})
     setSaveError(null)
@@ -275,6 +352,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     loading,
     isDirty,
     saving,
+    canSave,
     saveError,
     updateConfig,
     updateGlobalConfig,

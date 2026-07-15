@@ -20,6 +20,7 @@ import "@xterm/xterm/css/xterm.css"
 import { useVSCode } from "../../src/context/vscode"
 import { useLanguage } from "../../src/context/language"
 import { formatReviewCommentsMarkdown } from "../../src/utils/review-comment-markdown"
+import type { TerminalWriter } from "./state"
 
 interface Props {
   terminalId: string
@@ -34,6 +35,8 @@ interface Props {
    *  an xterm re-paint when the slot transitions back to visible after
    *  sitting behind an occluding layer. */
   active: boolean
+  focus?: boolean
+  bind?: (writer: TerminalWriter) => () => void
 }
 
 /** How long the ResizeObserver waits after the last size change before
@@ -187,6 +190,14 @@ export const TerminalTab: Component<Props> = (props) => {
     const ws = new WebSocket(props.wsUrl)
     ws.binaryType = "arraybuffer"
     let closed = false
+    let unbind: (() => void) | undefined
+    ws.onopen = () => {
+      unbind = props.bind?.((data) => {
+        if (ws.readyState !== WebSocket.OPEN) return false
+        ws.send(data)
+        return true
+      })
+    }
     const disposeData = term.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(data)
     })
@@ -273,7 +284,7 @@ export const TerminalTab: Component<Props> = (props) => {
         log("repaint fit() threw", err)
       }
       term.refresh(0, Math.max(0, term.rows - 1))
-      if (document.hasFocus()) term.focus()
+      if (document.hasFocus() && props.focus !== false) term.focus()
     }
     const scheduleRepaint = () => {
       if (pendingFrame !== null) return
@@ -298,10 +309,13 @@ export const TerminalTab: Component<Props> = (props) => {
     })
 
     let wasActive = props.active
+    let wasFocused = props.focus !== false
     createEffect(() => {
       const now = props.active
-      if (now && !wasActive) scheduleRepaint()
+      const focused = props.focus !== false
+      if (now && (!wasActive || (focused && !wasFocused))) scheduleRepaint()
       wasActive = now
+      wasFocused = focused
     })
 
     // Also recover when the user returns from an external window or the
@@ -340,6 +354,7 @@ export const TerminalTab: Component<Props> = (props) => {
       window.removeEventListener("focus", onWindowFocus)
       fontSub()
       themeObserver.disconnect()
+      unbind?.()
       clearTimeout(resizeTimer)
       ro.disconnect()
       disposeData.dispose()

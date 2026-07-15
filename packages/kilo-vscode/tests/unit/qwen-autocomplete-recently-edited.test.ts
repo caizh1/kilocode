@@ -2,12 +2,10 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import * as vscode from "vscode"
-import {
-  buildQwenFimPrompt,
-  getContinueAutocompleteStopTokens,
-} from "../../src/services/qwen-autocomplete/fimTemplates"
+import { buildQwenFimPrompt } from "../../src/services/qwen-autocomplete/fimTemplates"
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
+import { QwenFimClient } from "../../src/services/qwen-autocomplete/QwenFimClient"
 import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
 import {
   QwenRecentlyEditedTracker,
@@ -17,7 +15,7 @@ import {
   QwenAutocompleteSnippetType,
   recentlyEditedRangesToQwenSnippets,
 } from "../../src/services/qwen-autocomplete/snippets"
-import type { QwenAutocompleteConfig } from "../../src/services/qwen-autocomplete/types"
+import type { QwenAutocompleteConfig, QwenFimCompleteInput } from "../../src/services/qwen-autocomplete/types"
 
 type Pos = { line: number; character: number }
 type Range = { start: Pos; end: Pos }
@@ -28,10 +26,10 @@ type Change = {
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "http://unit.test/v1/completions",
+  providerID: "qwen",
   model: "qwen-coder-30b0",
-  apiKey: "secret",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
@@ -72,7 +70,6 @@ const originalConfig = vscode.workspace.getConfiguration
 const originalChange = vscode.workspace.onDidChangeConfiguration
 const originalInline = vscode.languages.registerInlineCompletionItemProvider
 const originalCommand = vscode.commands.registerCommand
-const originalFetch = globalThis.fetch
 
 afterEach(() => {
   ;(vscode.workspace as unknown as { onDidChangeTextDocument: typeof originalText }).onDidChangeTextDocument =
@@ -84,7 +81,6 @@ afterEach(() => {
     vscode.languages as unknown as { registerInlineCompletionItemProvider: typeof originalInline }
   ).registerInlineCompletionItemProvider = originalInline
   ;(vscode.commands as unknown as { registerCommand: typeof originalCommand }).registerCommand = originalCommand
-  globalThis.fetch = originalFetch
   resetQwenDiagnosticsForTests()
 })
 
@@ -146,7 +142,7 @@ describe("qwen recently edited tracker", () => {
     }
 
     text.fire({
-      document: doc("secret", { path: "/repo/src/main.py", languageId: "python", lineAt: fail }),
+      document: doc("secret", { path: "/repo/src/readme.md", languageId: "markdown", lineAt: fail }),
       contentChanges: [change()],
     })
     text.fire({ document: doc("secret", { scheme: "untitled", lineAt: fail }), contentChanges: [change()] })
@@ -156,6 +152,25 @@ describe("qwen recently edited tracker", () => {
 
     expect(guarded).toBe(1)
     expect(tracker.count()).toBe(0)
+  })
+
+  it("records edits from newly supported script files", async () => {
+    const text = listeners()
+    const tracker = new QwenRecentlyEditedTracker({
+      read: () => ({ ...cfg, recentlyEditedEnabled: true }),
+      guard: () => false,
+    })
+
+    text.fire({
+      document: doc("def add(a, b):\n    return a + b", {
+        path: "/repo/src/add.py",
+        languageId: "python",
+      }),
+      contentChanges: [change(1, 4, "return a + b")],
+    })
+    await tracker.flush()
+
+    expect(tracker.count()).toBe(1)
   })
 
   it("fails closed on guard errors before storing edited text", async () => {
@@ -222,14 +237,17 @@ describe("qwen recently edited tracker", () => {
 })
 
 describe("qwen recently edited provider integration", () => {
-  it("does not register recently edited listener unless qwen-direct autocomplete and recently edited are enabled", async () => {
+  it("keeps recently edited tracking available for manual Qwen invocation", async () => {
     let values = { ...cfg, enabled: true, provider: "qwen-direct" as const, recentlyEditedEnabled: false }
     const text = listeners()
     const config = configEvents(() => values)
     const inline = inlineRegistrations()
 
     const { registerQwenAutocompleteProvider } = await import("../../src/services/qwen-autocomplete")
-    const reg = registerQwenAutocompleteProvider({ subscriptions: [] } as unknown as vscode.ExtensionContext)
+    const reg = registerQwenAutocompleteProvider(
+      { subscriptions: [] } as unknown as vscode.ExtensionContext,
+      connection(),
+    )
 
     expect(inline.registered()).toBe(1)
     expect(text.registered()).toBe(0)
@@ -243,24 +261,24 @@ describe("qwen recently edited provider integration", () => {
     expect(inline.registered()).toBe(2)
     expect(text.registered()).toBe(1)
 
-    values = { ...values, provider: "none" }
+    values = { ...values, autoTrigger: false }
+    config.fire()
+    expect(text.disposed()).toBe(0)
+
+    values = { ...values, providerID: "" }
     config.fire()
     expect(text.disposed()).toBe(1)
 
-    values = { ...values, enabled: false, provider: "qwen-direct", recentlyEditedEnabled: true }
+    values = { ...values, providerID: "qwen", autoTrigger: true, recentlyEditedEnabled: true }
     config.fire()
-    expect(text.registered()).toBe(1)
+    expect(text.registered()).toBe(2)
 
     reg.dispose()
     expect(config.disposed()).toBe(1)
   })
 
-  it("keeps FIM prompt and HTTP request body byte-for-byte unchanged even with selected recently edited snippets", async () => {
-    let body = ""
-    globalThis.fetch = async (_url, init) => {
-      body = String(init?.body)
-      return new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
-    }
+  it("keeps the CLI FIM request unchanged even with selected recently edited snippets", async () => {
+    let request: QwenFimCompleteInput | undefined
     const document = doc("int main(void) {\n  \n}\n")
     const position = new vscode.Position(1, 2)
     const helper = createQwenAutocompleteHelper(document, position, undefined, {
@@ -273,16 +291,23 @@ describe("qwen recently edited provider integration", () => {
       prefix: helper.prunedPrefix,
       suffix: helper.prunedSuffix,
     })
-    const expected = JSON.stringify({
-      model: cfg.model,
+    const expected = {
+      providerID: cfg.providerID,
+      modelID: cfg.model,
       prompt,
-      max_tokens: cfg.maxTokens,
+      maxTokens: cfg.maxTokens,
       temperature: cfg.temperature,
-      stream: false,
-      stop: getContinueAutocompleteStopTokens(cfg.model),
-    })
+    }
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => ({ ...cfg, recentlyEditedEnabled: true, trace: true, logLevel: "debug" }),
+      guard: () => false,
+      client: {
+        complete: async (input: QwenFimCompleteInput) => {
+          request = input
+          input.onResponse?.({ status: 200 })
+          return "return ok;"
+        },
+      } as QwenFimClient,
       edited: fakeEdited("int helper(void) {\n  return 1;\n}"),
       log: () => {},
     })
@@ -295,8 +320,8 @@ describe("qwen recently edited provider integration", () => {
     )
 
     expect(items).toHaveLength(1)
-    expect(body).toBe(expected)
-    expect(JSON.parse(body).prompt).toBe(prompt)
+    expect(request).toMatchObject(expected)
+    expect(request?.signal).toBeInstanceOf(AbortSignal)
     const logs = qwenDiagnosticsForTests().map((line) => JSON.parse(line) as Record<string, unknown>)
     const last = logs.at(-1)!
     expect(last.recentlyEditedEnabled).toBe(true)
@@ -306,7 +331,6 @@ describe("qwen recently edited provider integration", () => {
     expect(last.recentlyEditedSelectedTokens).toEqual(expect.any(Number))
     expect(last.snippetsInjectedIntoPrompt).toBe(false)
     expect(JSON.stringify(logs)).not.toContain("int helper")
-    expect(JSON.stringify(logs)).not.toContain(cfg.apiKey)
     provider.dispose()
   })
 
@@ -363,6 +387,17 @@ function configEvents(read: () => QwenAutocompleteConfig) {
   ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (
     section?: string,
   ) => {
+    if (section === "kilo-code.new.autocomplete") {
+      return {
+        get: (key: string, fallback?: unknown) =>
+          ({
+            provider: read().providerID,
+            model: read().model,
+            enableAutoTrigger: read().autoTrigger,
+          })[key] ?? fallback,
+        update: async () => {},
+      } as unknown as ReturnType<typeof originalConfig>
+    }
     if (section !== "kilo.autocomplete") return originalConfig(section)
     return {
       get: (key: string, fallback?: unknown) => setting(read(), key) ?? fallback,
@@ -384,7 +419,7 @@ function configEvents(read: () => QwenAutocompleteConfig) {
   })
   return {
     disposed: () => disposed,
-    fire: () => callback?.({ affectsConfiguration: (section) => section === "kilo.autocomplete" }),
+    fire: (target = "kilo.autocomplete") => callback?.({ affectsConfiguration: (section) => section === target }),
   }
 }
 
@@ -401,13 +436,15 @@ function inlineRegistrations() {
   }
 }
 
+function connection() {
+  return {
+    getConnectionState: () => "connected",
+  } as never
+}
+
 function setting(values: QwenAutocompleteConfig, key: string): unknown {
   const map: Record<string, unknown> = {
-    enabled: values.enabled,
-    provider: values.provider,
-    "qwen.endpoint": values.endpoint,
     "qwen.model": values.model,
-    "qwen.apiKey": values.apiKey,
     "qwen.debounceMs": values.debounceMs,
     "qwen.maxTokens": values.maxTokens,
     "qwen.maxPromptTokens": values.maxPromptTokens,

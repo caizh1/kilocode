@@ -16,7 +16,7 @@ import { ServerProvider } from "../context/server"
 import { FeedbackProvider } from "../context/feedback"
 import { ProviderContext } from "../context/provider"
 import { flattenModels, findModel as _findModel } from "../context/provider-utils"
-import { ConfigProvider, ConfigContext } from "../context/config"
+import { ConfigProvider, ConfigContext, type SaveError } from "../context/config"
 import { DisplayProvider } from "../context/display"
 import { DataProvider } from "@kilocode/kilo-ui/context/data"
 import { DiffComponentProvider } from "@kilocode/kilo-ui/context/diff"
@@ -34,9 +34,13 @@ import { LanguageContext } from "../context/language"
 import { IndexingProvider } from "../context/indexing"
 import { KiloEmbeddingModelsProvider } from "../context/kilo-embedding-models"
 import { dict as uiEn } from "@kilocode/kilo-ui/i18n/en"
+import { dict as uiZh } from "@kilocode/kilo-ui/i18n/zh"
 import { dict as appEn } from "../i18n/en"
+import { dict as appZh } from "../i18n/zh"
 import { dict as amEn } from "../../agent-manager/i18n/en"
+import { dict as amZh } from "../../agent-manager/i18n/zh"
 import { dict as kiloEn } from "@kilocode/kilo-i18n/en"
+import { dict as kiloZh } from "@kilocode/kilo-i18n/zh"
 import { hasIndexingPlugin } from "@kilocode/kilo-indexing/detect"
 import { resolveTemplate } from "../context/language-utils"
 import type {
@@ -51,11 +55,11 @@ import type {
 
 type PluginSpec = string | [string, Record<string, unknown>]
 
-// Merged English dictionary (same merge order as the real LanguageProvider)
-const dict: Record<string, string> = { ...appEn, ...amEn, ...uiEn, ...kiloEn }
+type Locale = "en" | "zh"
 
-function t(key: string, params?: Record<string, string | number | boolean | undefined>) {
-  return resolveTemplate(dict[key] ?? key, params)
+const dicts: Record<Locale, Record<string, string>> = {
+  en: { ...appEn, ...amEn, ...uiEn, ...kiloEn },
+  zh: { ...appZh, ...amZh, ...uiZh, ...kiloZh },
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +278,12 @@ interface StoryProvidersProps {
   sessionID?: string
   /** When provided, injects a mock ConfigContext with this config instead of the real ConfigProvider. */
   config?: Config
+  settings?: Record<string, unknown>
+  locale?: Locale
+  dirty?: boolean
+  saving?: boolean
+  canSave?: boolean
+  saveError?: SaveError | null
   onConfigChange?: (config: Config) => void
   kiloAuth?: boolean
   /** When true, renders children without the default 12px padding wrapper */
@@ -281,11 +291,19 @@ interface StoryProvidersProps {
 }
 
 /** Wraps children with either a mock ConfigContext (when config prop is given) or the real ConfigProvider. */
-const ConfigWrapper: ParentComponent<{ config?: Config; onConfigChange?: (config: Config) => void }> = (props) => {
+const ConfigWrapper: ParentComponent<{
+  config?: Config
+  settings?: Record<string, unknown>
+  dirty?: boolean
+  saving?: boolean
+  canSave?: boolean
+  saveError?: SaveError | null
+  onConfigChange?: (config: Config) => void
+}> = (props) => {
   if (props.config) {
     const [cfg, setCfg] = createSignal(props.config)
-    const [settings, setSettings] = createSignal<Record<string, unknown>>({})
-    const [dirty, setDirty] = createSignal(false)
+    const [settings, setSettings] = createSignal<Record<string, unknown>>(props.settings ?? {})
+    const [dirty, setDirty] = createSignal(props.dirty ?? false)
     const features = createMemo(() => {
       const config = cfg() as Config & {
         plugin?: readonly PluginSpec[] | null
@@ -303,8 +321,9 @@ const ConfigWrapper: ParentComponent<{ config?: Config; onConfigChange?: (config
       features,
       loading: () => false,
       isDirty: dirty,
-      saving: () => false,
-      saveError: () => null,
+      saving: () => props.saving ?? false,
+      canSave: () => props.canSave ?? true,
+      saveError: () => props.saveError ?? null,
       updateConfig: (partial: Partial<Config>) => {
         setCfg((prev) => {
           const next = merge(prev as Record<string, unknown>, partial as Record<string, unknown>) as Config
@@ -343,13 +362,23 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
     status: props.status,
   })
   const notifications = mockNotificationsValue(props.notifications)
-  const [locale] = createSignal<"en">("en")
+  const locale = () => props.locale ?? "en"
+  const t = (key: string, params?: Record<string, string | number | boolean | undefined>) =>
+    resolveTemplate(dicts[locale()][key] ?? dicts.en[key] ?? key, params)
 
   return (
     <VSCodeProvider>
       <ServerProvider>
         <FeedbackProvider>
-          <ConfigWrapper config={props.config} onConfigChange={props.onConfigChange}>
+          <ConfigWrapper
+            config={props.config}
+            settings={props.settings}
+            dirty={props.dirty}
+            saving={props.saving}
+            canSave={props.canSave}
+            saveError={props.saveError}
+            onConfigChange={props.onConfigChange}
+          >
             <DisplayProvider>
               <MockProviderProvider kiloAuth={props.kiloAuth}>
                 <DialogProvider>
@@ -361,7 +390,7 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
                       t,
                     }}
                   >
-                    <I18nProvider value={{ locale: () => "en", t }}>
+                    <I18nProvider value={{ locale, t }}>
                       <NotificationsContext.Provider value={notifications}>
                         <SessionContext.Provider value={session as any}>
                           <IndexingProvider>

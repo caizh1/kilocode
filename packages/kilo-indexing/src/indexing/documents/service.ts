@@ -1,19 +1,24 @@
 import { createHash } from "crypto"
 import { readFile, stat } from "fs/promises"
 import path from "path"
-import { glob } from "glob"
+import { globIterate } from "glob"
 import { minimatch } from "minimatch"
 import type { Ignore } from "ignore"
 import { v5 as uuidv5 } from "uuid"
 import type { CodeIndexConfigManager } from "../config-manager"
 import type { IEmbedder } from "../interfaces/embedder"
 import type { IVectorStore, PointStruct, VectorStoreSearchResult } from "../interfaces/vector-store"
-import type { IndexingTelemetryEvent, IndexingTelemetryReporter, IndexingTelemetryTrigger } from "../interfaces/telemetry"
+import type {
+  IndexingTelemetryEvent,
+  IndexingTelemetryReporter,
+  IndexingTelemetryTrigger,
+} from "../interfaces/telemetry"
 import { DOCUMENT_CHUNK_NAMESPACE } from "../constants"
 import { FileIgnore } from "../../file/ignore"
 import { Log } from "../../util/log"
 import { generateRelativeIgnorePath } from "../shared/get-relative-path"
 import { checkpointMetaHash, normalizedRoot, workspaceId } from "../rag-checkpoint"
+import { constrained, type IndexingPressure } from "../memory"
 import { DocumentIndexCache } from "./cache"
 import { chunkDocument } from "./chunker"
 import { extractDocument } from "./extractors"
@@ -30,6 +35,7 @@ const log = Log.create({ service: "document-index" })
 const schema = 1
 const extractor = 1
 const chunker = 1
+const patterns = [...DOCUMENT_EXTENSIONS, ...UNSUPPORTED_DOCUMENT_EXTENSIONS].map((ext) => `**/*${ext}`)
 type Telemetry = IndexingTelemetryEvent extends infer Event
   ? Event extends unknown
     ? Omit<Event, "provider" | "vectorStore" | "modelId">
@@ -41,6 +47,7 @@ export class DocumentIndexService {
   private task: Promise<void> | undefined
   private disposed = false
   private status: DocumentIndexStatus = disabled("Document RAG disabled.")
+  private pressure: IndexingPressure = "normal"
 
   constructor(
     private readonly workspace: string,
@@ -65,6 +72,10 @@ export class DocumentIndexService {
 
   dispose(): void {
     this.disposed = true
+  }
+
+  setMemoryPressure(pressure: IndexingPressure): void {
+    this.pressure = pressure
   }
 
   async rebuild(trigger: IndexingTelemetryTrigger = "manual"): Promise<void> {
@@ -135,15 +146,25 @@ export class DocumentIndexService {
 
     try {
       this.setStatus(progress("Discovering document files...", 0, 0))
+      const discovery = await this.discover()
+      if (discovery.limited) {
+        const message = `Document RAG paused after finding more than ${cfg.maxFiles} documents. Narrow document paths or excludes before rebuilding.`
+        this.setStatus(standby(message))
+        log.warn("document indexing file limit reached", {
+          workspacePath: this.workspace,
+          maxFiles: cfg.maxFiles,
+        })
+        return
+      }
       const created = await this.store.initialize()
       if (created || force) await this.cache.clear()
       await this.store.markIndexingIncomplete()
 
-      const discovery = await this.discover()
       const files = discovery.files
       skipped += discovery.skipped
       this.setStatus(progress("Starting Document RAG indexing...", 0, files.length))
       const seen = new Set(files.map((file) => path.normalize(path.relative(this.workspace, file))))
+      let checkpoint = Date.now()
 
       for (const [index, file] of files.entries()) {
         if (this.disposed) return
@@ -163,12 +184,16 @@ export class DocumentIndexService {
             this.report(index + 1, files.length, `Document unchanged: ${path.basename(file)}`, skipped, errors)
             continue
           }
-          const sections = await extractDocument(file)
+          const sections = await extractDocument(file, cfg.maxExtractedBytesPerFile)
           const items = sections.flatMap((section) =>
             chunkDocument(section, this.workspace, cfg.chunkChars, cfg.chunkOverlapChars),
           )
           await this.upsert(file, hash, items, meta)
           this.cache.set(rel, hash)
+          if ((index + 1) % 8 === 0 || Date.now() - checkpoint >= 2_000) {
+            await this.cache.flush()
+            checkpoint = Date.now()
+          }
           indexed += 1
           chunks += items.length
           this.report(index + 1, files.length, `Indexed document: ${path.basename(file)}`, skipped, errors)
@@ -234,10 +259,30 @@ export class DocumentIndexService {
     }
   }
 
-  private async discover(): Promise<{ files: string[]; skipped: number }> {
+  private async discover(): Promise<{ files: string[]; skipped: number; limited: boolean }> {
     const cfg = this.config.currentDocuments
     const out = new Set<string>()
     let skipped = 0
+
+    const add = (file: string) => {
+      const relative = generateRelativeIgnorePath(file, this.workspace)
+      if (!relative) return false
+      if (FileIgnore.match(relative)) return false
+      if (this.ignore.ignores(relative)) return false
+      if (!included(relative, cfg.include)) return false
+      if (excluded(relative, cfg.exclude)) return false
+      const ext = path.extname(file).toLowerCase()
+      const doc = DOCUMENT_EXTENSIONS.includes(ext as never)
+      const unsupported = UNSUPPORTED_DOCUMENT_EXTENSIONS.includes(ext as never)
+      if (!doc && !unsupported) return false
+      if (unsupported) {
+        skipped += 1
+        return false
+      }
+      out.add(file)
+      return out.size > cfg.maxFiles
+    }
+
     for (const item of cfg.paths) {
       const root = path.resolve(this.workspace, item)
       const rel = path.relative(this.workspace, root)
@@ -246,28 +291,22 @@ export class DocumentIndexService {
       }
       const info = await stat(root).catch(() => undefined)
       if (!info) continue
-      const files = info.isDirectory()
-        ? await glob("**/*", { cwd: root, absolute: true, nodir: true, dot: false, ignore: FileIgnore.PATTERNS })
-        : [root]
-      for (const file of files) {
-        const relative = generateRelativeIgnorePath(file, this.workspace)
-        if (!relative) continue
-        if (FileIgnore.match(relative)) continue
-        if (this.ignore.ignores(relative)) continue
-        if (!included(relative, cfg.include)) continue
-        if (excluded(relative, cfg.exclude)) continue
-        const ext = path.extname(file).toLowerCase()
-        const doc = DOCUMENT_EXTENSIONS.includes(ext as never)
-        const unsupported = UNSUPPORTED_DOCUMENT_EXTENSIONS.includes(ext as never)
-        if (!doc && !unsupported) continue
-        if (unsupported) {
-          skipped += 1
-          continue
-        }
-        out.add(file)
+      if (!info.isDirectory()) {
+        if (add(root)) return { files: [...out].sort(), skipped, limited: true }
+        continue
+      }
+      for await (const file of globIterate(patterns, {
+        cwd: root,
+        absolute: true,
+        nodir: true,
+        dot: false,
+        nocase: true,
+        ignore: FileIgnore.PATTERNS,
+      })) {
+        if (add(file)) return { files: [...out].sort(), skipped, limited: true }
       }
     }
-    return { files: [...out].sort(), skipped }
+    return { files: [...out].sort(), skipped, limited: false }
   }
 
   private async upsert(file: string, hash: string, chunks: DocumentChunk[], meta: string): Promise<void> {
@@ -279,18 +318,20 @@ export class DocumentIndexService {
       await this.store.deletePointsByFilePath(rel)
       return
     }
-    const points: PointStruct[] = []
-    const batch = this.config.currentEmbeddingBatchSize ?? 60
+    const batch = Math.max(
+      1,
+      Math.min(this.config.currentEmbeddingBatchSize ?? 60, constrained(this.pressure) ? 16 : 60),
+    )
     for (let index = 0; index < texts.length; index += batch) {
       const slice = texts.slice(index, index + batch)
       const { embeddings } = await this.embedder.createEmbeddings(slice)
-      for (const [offset, vector] of embeddings.entries()) {
+      const points = embeddings.flatMap<PointStruct>((vector, offset) => {
         const chunk = chunks[index + offset]
-        if (!chunk) continue
-        points.push(point(chunk, vector, this.workspace, meta, generation))
-      }
+        if (!chunk) return []
+        return [point(chunk, vector, this.workspace, meta, generation)]
+      })
+      await this.store.upsertPoints(points)
     }
-    await this.store.upsertPoints(points)
     await this.store.activateFileGeneration?.(rel, generation, "documents")
     await this.store.deleteInactiveFilePoints?.(rel, generation)
   }

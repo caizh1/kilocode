@@ -1,7 +1,7 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 import * as os from "os"
-import { randomUUID } from "crypto"
+import { createHash, randomUUID } from "crypto"
 import * as yaml from "yaml"
 import { exec } from "../../util/process"
 import type {
@@ -249,6 +249,79 @@ export class MarketplaceInstaller {
     }
   }
 
+  async isSkillInstalled(id: string, scope: "project" | "global", workspace?: string): Promise<boolean> {
+    if (!isSafeId(id)) return false
+    return exists(path.join(this.paths.skillsDir(scope, workspace), id))
+  }
+
+  async installVerifiedSkill(
+    item: { id: string; revision: number; sha256: string; url: string },
+    scope: "project" | "global",
+    workspace?: string,
+  ): Promise<InstallResult> {
+    if (scope === "project" && !workspace) {
+      return { success: false, slug: item.id, error: "No workspace directory for project-scope install" }
+    }
+    if (
+      !isSafeId(item.id) ||
+      !/^[a-f0-9]{64}$/.test(item.sha256) ||
+      !Number.isSafeInteger(item.revision) ||
+      item.revision < 1
+    ) {
+      return { success: false, slug: item.id, error: "Invalid verified skill metadata" }
+    }
+
+    const base = this.paths.skillsDir(scope, workspace)
+    const dir = path.join(base, item.id)
+    if (!contains(base, dir)) return { success: false, slug: item.id, error: "Invalid skill id" }
+    await fs.mkdir(base, { recursive: true })
+    const staging = await fs.mkdtemp(path.join(base, `.staging-${item.id}-`))
+    const backup = path.join(base, `.backup-${item.id}-${randomUUID()}`)
+    const tarball = path.join(os.tmpdir(), `kilo-skill-${item.id}-${randomUUID()}.tar.gz`)
+    const state = { backedUp: false, installed: false }
+
+    try {
+      const buffer = await download(item.url, 50 * 1024 * 1024)
+      const actual = createHash("sha256").update(buffer).digest("hex")
+      if (actual !== item.sha256) return { success: false, slug: item.id, error: "Skill archive SHA-256 mismatch" }
+      await fs.writeFile(tarball, buffer)
+      const listing = await exec("tar", ["-tzf", tarball])
+      const entries = listing.stdout.split(/\r?\n/).filter(Boolean)
+      if (!safeArchive(entries, item.id))
+        return { success: false, slug: item.id, error: "Skill archive contains unsafe paths or an unexpected root" }
+      await exec("tar", ["-xzf", tarball, "--strip-components=1", "-C", staging])
+      const escaped = await findEscapedPaths(staging)
+      if (escaped.length > 0) return { success: false, slug: item.id, error: "Skill archive contains unsafe links" }
+      if (!(await exists(path.join(staging, "SKILL.md")))) {
+        return { success: false, slug: item.id, error: "Extracted archive missing SKILL.md" }
+      }
+      if (await exists(dir)) {
+        await fs.rename(dir, backup)
+        state.backedUp = true
+      }
+      await fs.rename(staging, dir)
+      state.installed = true
+      if (state.backedUp) await fs.rm(backup, { recursive: true, force: true })
+      return { success: true, slug: item.id, filePath: path.join(dir, "SKILL.md"), line: 1 }
+    } catch (err) {
+      if (state.backedUp && !state.installed && !(await exists(dir))) await fs.rename(backup, dir)
+      console.warn(`Failed to install verified skill ${item.id}:`, err)
+      return { success: false, slug: item.id, error: String(err) }
+    } finally {
+      await Promise.all([
+        fs
+          .rm(staging, { recursive: true, force: true })
+          .catch((err) => console.warn(`Failed to clean ${staging}:`, err)),
+        fs.rm(tarball, { force: true }).catch((err) => console.warn(`Failed to clean ${tarball}:`, err)),
+        state.installed
+          ? fs
+              .rm(backup, { recursive: true, force: true })
+              .catch((err) => console.warn(`Failed to clean ${backup}:`, err))
+          : Promise.resolve(),
+      ])
+    }
+  }
+
   // ── Remove ──────────────────────────────────────────────────────────
 
   async remove(item: MarketplaceItemRef, scope: "project" | "global", workspace?: string): Promise<RemoveResult> {
@@ -298,7 +371,11 @@ export class MarketplaceInstaller {
     }
     try {
       await fs.access(dir)
-      await fs.rm(dir, { recursive: true })
+      const tomb = path.join(base, `.removing-${item.id}-${randomUUID()}`)
+      await fs.rename(dir, tomb)
+      await fs.rm(tomb, { recursive: true, force: true }).catch((err) => {
+        console.warn(`Failed to clean removed skill tombstone ${tomb}:`, err)
+      })
       return { success: true, slug: item.id }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
@@ -432,11 +509,8 @@ async function findEscapedPaths(dir: string): Promise<string[]> {
         continue
       }
       if (entry.isSymbolicLink()) {
-        const target = await fs.realpath(full)
-        if (!target.startsWith(resolved + path.sep) && target !== resolved) {
-          escaped.push(full)
-          continue
-        }
+        escaped.push(full)
+        continue
       }
       if (entry.isDirectory()) {
         await walk(full)
@@ -446,4 +520,40 @@ async function findEscapedPaths(dir: string): Promise<string[]> {
 
   await walk(dir)
   return escaped
+}
+
+async function download(url: string, limit: number): Promise<Buffer> {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Download failed: ${response.status}`)
+  const length = Number(response.headers.get("content-length"))
+  if (Number.isFinite(length) && length > limit) throw new Error("Skill archive exceeds the response size limit")
+  if (!response.body) throw new Error("Skill archive response has no body")
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  const size = { value: 0 }
+  while (true) {
+    const chunk = await reader.read()
+    if (chunk.done) break
+    size.value += chunk.value.byteLength
+    if (size.value > limit) {
+      await reader.cancel()
+      throw new Error("Skill archive exceeds the response size limit")
+    }
+    chunks.push(chunk.value)
+  }
+  return Buffer.concat(
+    chunks.map((chunk) => Buffer.from(chunk)),
+    size.value,
+  )
+}
+
+function safeArchive(entries: string[], id: string): boolean {
+  if (entries.length === 0 || entries.length > 2000) return false
+  return entries.every((entry) => {
+    const normalized = entry.replace(/\/+$/, "")
+    if (!normalized || normalized.startsWith("/") || normalized.includes("\\")) return false
+    const parts = normalized.split("/")
+    if (parts[0] !== id || parts.some((part) => !part || part === "." || part === "..")) return false
+    return Buffer.byteLength(normalized) <= 1024
+  })
 }

@@ -48,12 +48,15 @@ manual testing, treat root path as blocked for that request only.
 
 ## Settings Modes
 
+Configure a connected openai-compatible provider with the exact `qwen-coder-30b0` model, then select it through the unified autocomplete settings. Provider authentication remains in ChipMate SecretStorage.
+
 ### Default unchanged
 
 ```json
 {
-  "kilo.autocomplete.enabled": true,
-  "kilo.autocomplete.provider": "qwen-direct",
+  "kilo-code.new.autocomplete.provider": "<connected-provider-id>",
+  "kilo-code.new.autocomplete.model": "qwen-coder-30b0",
+  "kilo-code.new.autocomplete.enableAutoTrigger": true,
   "kilo.autocomplete.qwen.context.recentlyEdited.enabled": false,
   "kilo.autocomplete.qwen.context.recentlyOpened.enabled": false,
   "kilo.autocomplete.qwen.context.importDefinitions.enabled": false,

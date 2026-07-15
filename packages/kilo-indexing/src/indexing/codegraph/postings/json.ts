@@ -1,11 +1,10 @@
-import { existsSync, readFileSync } from "node:fs"
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { createReadStream, createWriteStream, existsSync, readFileSync } from "node:fs"
+import { mkdir, rename, rm, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { once } from "node:events"
 import path from "node:path"
-import {
-  encodeBoundedJson,
-  splitArrayRecordIntoBoundedJsonParts,
-  splitRecordIntoBoundedJsonParts,
-} from "../bounded-json"
+import { createInterface } from "node:readline"
+import { encodeBoundedJson } from "../bounded-json"
 import { cleanupRoot, emptyCleanupStats, list, rel as relpath, removeSafe } from "../../cleanup"
 import {
   CODE_GRAPH_PARSER_VERSION,
@@ -22,7 +21,6 @@ import type {
   CodeGraphLineRange,
   CodeGraphShardPartInfo,
   CodePostingsDocument,
-  CodePostingsDocumentPartData,
   CodePostingsFileRecord,
   CodePostingsFileRecordStatus,
   CodePostingsManifest,
@@ -31,7 +29,6 @@ import type {
   CodePostingsStatusInput,
   CodePostingsStorageStatus,
   CodePostingsTermDocument,
-  CodePostingsTermPartData,
   ICodePostingsStorage,
 } from "../types"
 import { copy, dict, own } from "../dict"
@@ -40,23 +37,34 @@ import { tokenizeQuery } from "./tokenizer"
 
 const k1 = 1.2
 const b = 0.75
-const writeConcurrency = 4
+const bucketCount = 64
+const rangeChunk = 512
+const cacheLimit = 64 * 1024 * 1024
 const log = Log.create({ service: "codepostings-storage" })
+
+type TermLine = {
+  term: string
+  document: CodePostingsTermDocument
+}
+
+type DocHeader = Omit<CodePostingsDocument, "terms">
 
 export class CodePostingsJsonStorage implements ICodePostingsStorage {
   private manifest?: CodePostingsManifest
   private stage?: CodePostingsManifest
   private old?: CodePostingsManifest
   private seen?: Set<string>
-  private pending = new Map<string, CodePostingsDocument>()
-  private docsCache?: { generation?: string; docs: Record<string, CodePostingsDocument> }
-  private termsCache?: { generation?: string; terms: Record<string, CodePostingsTermDocument[]> }
+  private readonly cache = new Map<string, { doc: CodePostingsDocument; bytes: number }>()
+  private readonly loads = new Map<string, Promise<CodePostingsDocument | undefined>>()
+  private cacheBytes = 0
   private schemaMismatch = false
   private tokenizerMismatch = false
   private graphSchemaMismatch = false
   private parserMismatch = false
   private rebuilding = false
   private queue: Promise<void> = Promise.resolve()
+  private checkpointFiles = 0
+  private checkpointAt = 0
 
   constructor(
     private readonly opts: {
@@ -77,11 +85,12 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       const rel = this.relative(filePath)
       const manifest = this.active()
       const existing = own(manifest.records, rel)
-      if (existing?.status === "ok" && existing.fileHash === fileHash && (await this.doc(manifest, rel))) {
+      if (existing?.status === "ok" && existing.fileHash === fileHash && (await this.doc(existing))) {
         this.markSeen(rel)
         return
       }
 
+      if (!this.rebuilding) manifest.dataGeneration = globalThis.crypto.randomUUID()
       const updatedAt = this.now()
       const doc = buildPostingsDocument({
         workspacePath: this.opts.workspacePath,
@@ -89,7 +98,7 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
         content: input.content,
         updatedAt,
       })
-      manifest.records[rel] = {
+      const record: CodePostingsFileRecord = {
         filePath: rel,
         docFile: this.docName(rel, manifest.dataGeneration),
         fileHash,
@@ -97,10 +106,13 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
         documentLength: doc.documentLength,
         updatedAt,
       }
-      this.pending.set(rel, doc)
+      record.docParts = [await this.writeDoc(record.docFile, doc)]
+      manifest.records[rel] = record
+      this.remember(record, doc)
       this.markSeen(rel)
       this.refresh(manifest, updatedAt)
-      if (!this.rebuilding) await this.commitActive(manifest)
+      if (this.rebuilding) await this.checkpoint(manifest)
+      else await this.commitActive(manifest, doc)
     })
   }
 
@@ -129,20 +141,20 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       if (hash) record.fileHash = hash
       if (input.error) record.error = input.error.slice(0, 500)
       manifest.records[rel] = record
-      this.pending.delete(rel)
+      this.forget(existing)
       if (status !== "stale") this.markSeen(rel)
       this.refresh(manifest, updatedAt)
-      if (!this.rebuilding) await this.commitActive(manifest)
+      if (this.rebuilding) await this.checkpoint(manifest)
+      else await this.commitActive(manifest)
     })
   }
 
   public async getFilePostings(filePath: string): Promise<CodePostingsDocument | undefined> {
     const rel = this.relative(filePath)
     const staged = this.rebuilding ? this.stage : undefined
-    const pending = this.pending.get(rel)
-    if (pending) return pending
-    if (staged) return this.doc(staged, rel)
-    return this.doc(this.load(), rel)
+    const record = staged ? own(staged.records, rel) : own(this.load().records, rel)
+    if (!record || record.status !== "ok") return undefined
+    return this.doc(record)
   }
 
   public async listFiles(): Promise<string[]> {
@@ -166,7 +178,7 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
     const count = scoped.length
     if (count === 0) return []
 
-    const terms = await this.terms(manifest)
+    const terms = await this.terms(manifest, queryTerms)
     const avg = scoped.reduce((sum, record) => sum + (record.documentLength ?? 1), 0) / count || 1
     const scored = new Map<
       string,
@@ -240,14 +252,12 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
 
   public async clear(): Promise<void> {
     await this.enqueue(async () => {
-      await rm(this.root, { recursive: true, force: true })
+      await rm(path.join(this.opts.cacheDirectory, CODE_POSTINGS_STORAGE_DIR), { recursive: true, force: true })
       this.manifest = this.empty()
       this.stage = undefined
       this.old = undefined
       this.seen = undefined
-      this.pending.clear()
-      this.docsCache = undefined
-      this.termsCache = undefined
+      this.clearCache()
       this.schemaMismatch = false
       this.tokenizerMismatch = false
       this.graphSchemaMismatch = false
@@ -268,13 +278,11 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
         reason: decision.reason,
       })
       if (decision.action === "reuse") return decision
-      await rm(this.root, { recursive: true, force: true })
+      await rm(path.join(this.opts.cacheDirectory, CODE_POSTINGS_STORAGE_DIR), { recursive: true, force: true })
       this.manifest = this.empty()
       this.stage = undefined
       this.old = undefined
-      this.pending.clear()
-      this.docsCache = undefined
-      this.termsCache = undefined
+      this.clearCache()
       this.schemaMismatch = false
       this.tokenizerMismatch = false
       this.graphSchemaMismatch = false
@@ -319,9 +327,13 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
   public async beginFullScan(): Promise<void> {
     await this.enqueue(async () => {
       const current = this.load()
-      this.stage = this.needsRebuild() ? this.empty(globalThis.crypto.randomUUID()) : this.scanBase(current)
+      this.stage =
+        this.loadStage() ?? (this.needsRebuild() ? this.empty(globalThis.crypto.randomUUID()) : this.scanBase(current))
+      this.stage.dataGeneration ??= globalThis.crypto.randomUUID()
       this.seen = new Set()
-      this.pending.clear()
+      this.checkpointFiles = 0
+      this.checkpointAt = Date.now()
+      this.clearCache()
       this.schemaMismatch = false
       this.tokenizerMismatch = false
       this.graphSchemaMismatch = false
@@ -344,7 +356,7 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       this.manifest = manifest
       this.stage = undefined
       this.seen = undefined
-      this.pending.clear()
+      this.clearCache()
       this.rebuilding = false
       await this.cleanupOldGenerations()
     })
@@ -357,21 +369,24 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       if (!root) return stats
 
       const manifest = this.readManifestFile(this.manifestPath)
+      const stage = this.readManifestFile(this.stageManifestPath)
       if (manifest?.workspacePath && manifest.workspacePath !== this.opts.workspacePath) {
         stats.skipped.push("codepostings: active manifest workspace mismatch")
         return stats
       }
+      if (stage?.workspacePath && stage.workspacePath !== this.opts.workspacePath) {
+        stats.skipped.push("codepostings: rebuild manifest workspace mismatch")
+        return stats
+      }
 
-      await removeSafe(this.stageManifestPath, root, stats, "codepostings: rebuild manifest")
-      this.stage = undefined
-      if (!manifest) return stats
+      if (!manifest && !stage) return stats
 
       const keep = new Set([
-        ...(manifest.docParts ?? []).map((part) => normalize(part.path)),
-        ...(manifest.termParts ?? []).map((part) => normalize(part.path)),
+        ...[manifest, stage].flatMap((item) => (item?.docParts ?? []).map((part) => normalize(part.path))),
+        ...[manifest, stage].flatMap((item) => (item?.termParts ?? []).map((part) => normalize(part.path))),
       ])
-      await this.cleanupDir(this.docs, root, keep, manifest.dataGeneration, stats, "docs")
-      await this.cleanupDir(this.termsDir, root, keep, manifest.dataGeneration, stats, "terms")
+      await this.cleanupDir(this.docs, root, keep, undefined, stats, "docs")
+      await this.cleanupDir(this.termsDir, root, keep, undefined, stats, "terms")
       return stats
     })
   }
@@ -385,141 +400,180 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
     return next
   }
 
-  private async doc(manifest: CodePostingsManifest, rel: string): Promise<CodePostingsDocument | undefined> {
-    const record = own(manifest.records, rel)
-    if (!record || record.status !== "ok") return undefined
-    const pending = this.pending.get(rel)
-    if (pending) return pending
-    const doc = (await this.docsFor(manifest))[rel]
-    if (!doc) return undefined
-    if (doc.postingsSchemaVersion !== CODE_POSTINGS_SCHEMA_VERSION) return undefined
-    if (doc.tokenizerVersion !== CODE_POSTINGS_TOKENIZER_VERSION) return undefined
-    if (doc.graphSchemaVersion !== CODE_GRAPH_SCHEMA_VERSION) return undefined
-    if (doc.parserVersion !== CODE_GRAPH_PARSER_VERSION) return undefined
-    if (doc.fileHash !== record.fileHash) return undefined
+  private async doc(record: CodePostingsFileRecord): Promise<CodePostingsDocument | undefined> {
+    if (record.status !== "ok" || !record.docParts?.length) return undefined
+    const key = record.docParts.map((part) => part.path).join("\0")
+    const cached = this.cache.get(key)
+    if (cached) {
+      this.cache.delete(key)
+      this.cache.set(key, cached)
+      return cached.doc
+    }
+    const active = this.loads.get(key)
+    if (active) return active
+    const load = this.readDoc(record).finally(() => this.loads.delete(key))
+    this.loads.set(key, load)
+    return load
+  }
+
+  private async readDoc(record: CodePostingsFileRecord): Promise<CodePostingsDocument | undefined> {
+    const part = record.docParts?.[0]
+    if (!part) return undefined
+    const lines = createInterface({ input: createReadStream(path.join(this.root, part.path)), crlfDelay: Infinity })
+    let header: DocHeader | undefined
+    const terms = dict<CodePostingsTermDocument>()
+    for await (const line of lines) {
+      if (!line) continue
+      const value = JSON.parse(line) as { header?: DocHeader } | TermLine
+      if ("header" in value) {
+        header = value.header
+        continue
+      }
+      const entry = value as TermLine
+      const item = normalizeTerm(entry.document)
+      const current = terms[entry.term]
+      terms[entry.term] = current ? { ...current, ranges: [...current.ranges, ...item.ranges] } : item
+    }
+    if (!header || header.fileHash !== record.fileHash) return undefined
+    if (
+      header.postingsSchemaVersion !== CODE_POSTINGS_SCHEMA_VERSION ||
+      header.tokenizerVersion !== CODE_POSTINGS_TOKENIZER_VERSION ||
+      header.graphSchemaVersion !== CODE_GRAPH_SCHEMA_VERSION ||
+      header.parserVersion !== CODE_GRAPH_PARSER_VERSION
+    ) {
+      return undefined
+    }
+    const doc = normalizeDoc({ ...header, terms })
+    this.remember(record, doc)
     return doc
   }
 
-  private async docsFor(manifest: CodePostingsManifest): Promise<Record<string, CodePostingsDocument>> {
-    if (!manifest.docParts?.length) return dict()
-    const cached = this.docsCache
-    if (cached && cached.generation === manifest.dataGeneration) return cached.docs
-    const docs = dict<CodePostingsDocument>()
-    for (const part of manifest.docParts) {
-      const payload = await this.readJson<CodePostingsDocumentPartData>(part.path)
-      this.assertPart(payload, part.key)
-      for (const [file, doc] of Object.entries(payload.documents)) docs[file] = normalizeDoc(doc)
-    }
-    this.docsCache = { generation: manifest.dataGeneration, docs }
-    return docs
-  }
-
-  private async terms(manifest: CodePostingsManifest): Promise<Record<string, CodePostingsTermDocument[]>> {
-    if (!manifest.termParts?.length) return dict()
-    const cached = this.termsCache
-    if (cached && cached.generation === manifest.dataGeneration) return cached.terms
+  private async terms(
+    manifest: CodePostingsManifest,
+    query: string[],
+  ): Promise<Record<string, CodePostingsTermDocument[]>> {
+    const wanted = new Set(query)
+    const keys = new Set(query.map(bucket))
     const terms = dict<CodePostingsTermDocument[]>()
-    for (const part of manifest.termParts) {
-      const payload = await this.readJson<CodePostingsTermPartData>(part.path)
-      this.assertPart(payload, part.key)
-      for (const [term, docs] of Object.entries(payload.terms)) {
-        terms[term] = [...(terms[term] ?? []), ...docs.map(normalizeTerm)]
+    const merged = new Map<string, CodePostingsTermDocument>()
+    for (const part of manifest.termParts ?? []) {
+      if (!keys.has(part.key)) continue
+      const lines = createInterface({ input: createReadStream(path.join(this.root, part.path)), crlfDelay: Infinity })
+      for await (const line of lines) {
+        if (!line) continue
+        const value = JSON.parse(line) as TermLine
+        if (!wanted.has(value.term)) continue
+        const item = normalizeTerm(value.document)
+        const active = manifest.records[item.filePath]
+        if (active?.status !== "ok" || active.fileHash !== item.fileHash) continue
+        const key = `${value.term}\0${item.filePath}`
+        const current = merged.get(key)
+        merged.set(key, current ? { ...current, ranges: [...current.ranges, ...item.ranges] } : item)
       }
     }
-    this.termsCache = { generation: manifest.dataGeneration, terms }
+    for (const [key, doc] of merged) {
+      const term = key.slice(0, key.indexOf("\0"))
+      const docs = terms[term] ?? []
+      docs.push(doc)
+      terms[term] = docs
+    }
     return terms
   }
 
-  private assertPart(
-    payload: Pick<
-      CodePostingsDocumentPartData,
-      "postingsSchemaVersion" | "tokenizerVersion" | "graphSchemaVersion" | "parserVersion" | "key"
-    >,
-    key: string,
-  ): void {
-    if (
-      payload.key !== key ||
-      payload.postingsSchemaVersion !== CODE_POSTINGS_SCHEMA_VERSION ||
-      payload.tokenizerVersion !== CODE_POSTINGS_TOKENIZER_VERSION ||
-      payload.graphSchemaVersion !== CODE_GRAPH_SCHEMA_VERSION ||
-      payload.parserVersion !== CODE_GRAPH_PARSER_VERSION
-    ) {
-      throw new Error(`Code postings sidecar part ${key} does not match the current storage version.`)
+  private async commitActive(manifest: CodePostingsManifest, doc?: CodePostingsDocument): Promise<void> {
+    if (doc) {
+      manifest.termParts = [
+        ...(manifest.termParts ?? []),
+        ...(await this.writeTermDeltas(doc, manifest.dataGeneration!)),
+      ]
     }
-  }
-
-  private async commitActive(manifest: CodePostingsManifest): Promise<void> {
-    await this.commit(manifest, this.manifestPath)
+    manifest.docParts = Object.values(manifest.records).flatMap((record) => record.docParts ?? [])
+    await this.atomicJson(this.manifestPath, manifest)
     this.manifest = manifest
-    this.pending.clear()
     await this.cleanupOldGenerations()
   }
 
+  private async checkpoint(manifest: CodePostingsManifest): Promise<void> {
+    this.checkpointFiles += 1
+    const now = Date.now()
+    if (this.checkpointFiles < 64 && now - this.checkpointAt < 2_000) return
+    manifest.docParts = Object.values(manifest.records).flatMap((record) => record.docParts ?? [])
+    await this.writeStageManifest()
+    this.checkpointFiles = 0
+    this.checkpointAt = now
+  }
+
+  private async writeTermDeltas(doc: CodePostingsDocument, generation: string): Promise<CodeGraphShardPartInfo[]> {
+    const dir = path.join(this.termsDir, generation)
+    await mkdir(dir, { recursive: true })
+    const streams = new Map<string, ReturnType<typeof createWriteStream>>()
+    const stats = new Map<string, { entries: number; bytes: number }>()
+    for (const [term, item] of Object.entries(doc.terms)) {
+      for (const chunk of chunks(item.ranges)) {
+        const value: TermLine = { term, document: { ...item, ranges: chunk } }
+        const line = `${JSON.stringify(value)}\n`
+        const key = bucket(term)
+        const stream = streams.get(key) ?? createWriteStream(path.join(dir, `${key}.jsonl`), { encoding: "utf-8" })
+        streams.set(key, stream)
+        await append(stream, line)
+        const current = stats.get(key) ?? { entries: 0, bytes: 0 }
+        current.entries += 1
+        current.bytes += Buffer.byteLength(line)
+        stats.set(key, current)
+      }
+    }
+    await Promise.all([...streams.values()].map(finish))
+    return [...stats].map(([key, value]) => ({
+      key,
+      path: `terms/${generation}/${key}.jsonl`,
+      entries: value.entries,
+      estimatedBytes: value.bytes,
+    }))
+  }
+
   private async commit(manifest: CodePostingsManifest, file: string): Promise<void> {
-    const baseDocs = await this.docsFor(manifest)
     const generation = globalThis.crypto.randomUUID()
     manifest.dataGeneration = generation
-    const docs = dict<CodePostingsDocument>()
+    const dir = path.join(this.termsDir, generation)
+    await mkdir(dir, { recursive: true })
+    const streams = new Map<string, ReturnType<typeof createWriteStream>>()
+    const stats = new Map<string, { entries: number; bytes: number }>()
     for (const [rel, record] of Object.entries(manifest.records)) {
       if (record.status !== "ok") continue
-      const doc = this.pending.get(rel) ?? baseDocs[rel]
+      const doc = await this.doc(record)
       if (!doc) {
         delete manifest.records[rel]
         continue
       }
-      docs[rel] = doc
-      record.docFile = this.docName(rel, generation)
       record.fileHash = doc.fileHash
       record.documentLength = doc.documentLength
-    }
-    const docParts = splitRecordIntoBoundedJsonParts<CodePostingsDocument, CodePostingsDocumentPartData>({
-      record: docs,
-      label: "postings docs",
-      pathForPart: (_index, key) => `docs/${generation}/${key}.json`,
-      createPayload: (documents, key) => ({
-        postingsSchemaVersion: CODE_POSTINGS_SCHEMA_VERSION,
-        tokenizerVersion: CODE_POSTINGS_TOKENIZER_VERSION,
-        graphSchemaVersion: CODE_GRAPH_SCHEMA_VERSION,
-        parserVersion: CODE_GRAPH_PARSER_VERSION,
-        key,
-        documents,
-      }),
-    })
-    const termRecord = this.termRecord(docs)
-    const termParts = splitArrayRecordIntoBoundedJsonParts<CodePostingsTermDocument, CodePostingsTermPartData>({
-      record: termRecord,
-      label: "postings terms",
-      pathForPart: (_index, key) => `terms/${generation}/${key}.json`,
-      createPayload: (terms, key) => ({
-        postingsSchemaVersion: CODE_POSTINGS_SCHEMA_VERSION,
-        tokenizerVersion: CODE_POSTINGS_TOKENIZER_VERSION,
-        graphSchemaVersion: CODE_GRAPH_SCHEMA_VERSION,
-        parserVersion: CODE_GRAPH_PARSER_VERSION,
-        key,
-        terms,
-      }),
-    })
-    await writeParts([...docParts, ...termParts], async (part) => {
-      await this.atomicJson(path.join(this.root, part.path), part.payload)
-    })
-    manifest.docParts = info(docParts)
-    manifest.termParts = info(termParts)
-    this.refresh(manifest, manifest.updatedAt)
-    await this.atomicJson(file, manifest)
-    this.docsCache = { generation, docs }
-    this.termsCache = { generation, terms: termRecord }
-  }
-
-  private termRecord(docs: Record<string, CodePostingsDocument>): Record<string, CodePostingsTermDocument[]> {
-    const terms = dict<CodePostingsTermDocument[]>()
-    for (const doc of Object.values(docs)) {
       for (const [term, item] of Object.entries(doc.terms)) {
-        const list = terms[term] ?? []
-        list.push(normalizeTerm(item))
-        terms[term] = list
+        for (const chunk of chunks(item.ranges)) {
+          const value: TermLine = { term, document: { ...item, ranges: chunk } }
+          const line = `${JSON.stringify(value)}\n`
+          const key = bucket(term)
+          const stream = streams.get(key) ?? createWriteStream(path.join(dir, `${key}.jsonl`), { encoding: "utf-8" })
+          streams.set(key, stream)
+          await append(stream, line)
+          const current = stats.get(key) ?? { entries: 0, bytes: 0 }
+          current.entries += 1
+          current.bytes += Buffer.byteLength(line)
+          stats.set(key, current)
+        }
       }
     }
-    return terms
+    await Promise.all([...streams.values()].map(finish))
+    manifest.docParts = Object.values(manifest.records).flatMap((record) => record.docParts ?? [])
+    manifest.termParts = [...stats]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => ({
+        key,
+        path: `terms/${generation}/${key}.jsonl`,
+        entries: value.entries,
+        estimatedBytes: value.bytes,
+      }))
+    this.refresh(manifest, manifest.updatedAt)
+    await this.atomicJson(file, manifest)
   }
 
   private get root() {
@@ -559,8 +613,8 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
     if (!this.rebuilding || !this.seen) return
     for (const rel of Object.keys(manifest.records)) {
       if (this.seen.has(rel)) continue
+      this.forget(manifest.records[rel])
       delete manifest.records[rel]
-      this.pending.delete(rel)
     }
   }
 
@@ -672,6 +726,12 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
     if (!Array.isArray(manifest.docParts) || !Array.isArray(manifest.termParts)) {
       return { action: "rebuild", reason: "storage layout changed" }
     }
+    for (const record of Object.values(manifest.records)) {
+      if (record.status !== "ok") continue
+      if (!Array.isArray(record.docParts) || record.docParts.length === 0) {
+        return { action: "rebuild", reason: "storage layout changed" }
+      }
+    }
     for (const part of [...manifest.docParts, ...manifest.termParts]) {
       if (!existsSync(path.join(this.root, part.path))) return { action: "rebuild", reason: "missing postings sidecar" }
     }
@@ -740,8 +800,9 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
     return rel.split(path.sep).join("/")
   }
 
-  private docName(_filePath: string, generation = "active"): string {
-    return `docs/${generation}`
+  private docName(filePath: string, generation = "active"): string {
+    const key = createHash("sha256").update(filePath).digest("hex")
+    return `docs/${generation}/${key}.jsonl`
   }
 
   private now(): string {
@@ -756,8 +817,63 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
     await this.atomicJson(this.stageManifestPath, this.active())
   }
 
-  private async readJson<T>(relative: string): Promise<T> {
-    return JSON.parse(await readFile(path.join(this.root, relative), "utf-8")) as T
+  private async writeDoc(relative: string, doc: CodePostingsDocument): Promise<CodeGraphShardPartInfo> {
+    const file = path.join(this.root, relative)
+    await mkdir(path.dirname(file), { recursive: true })
+    const tmp = `${file}.${globalThis.crypto.randomUUID()}.tmp`
+    const stream = createWriteStream(tmp, { encoding: "utf-8" })
+    const { terms, ...header } = doc
+    let entries = 1
+    let bytes = 0
+    const first = `${JSON.stringify({ header })}\n`
+    await append(stream, first)
+    bytes += Buffer.byteLength(first)
+    for (const [term, item] of Object.entries(terms)) {
+      for (const chunk of chunks(item.ranges)) {
+        const line = `${JSON.stringify({ term, document: { ...item, ranges: chunk } } satisfies TermLine)}\n`
+        await append(stream, line)
+        entries += 1
+        bytes += Buffer.byteLength(line)
+      }
+    }
+    await finish(stream)
+    await rename(tmp, file)
+    return { key: path.basename(relative, ".jsonl"), path: relative, entries, estimatedBytes: bytes }
+  }
+
+  private remember(record: CodePostingsFileRecord, doc: CodePostingsDocument): void {
+    const key = record.docParts?.map((part) => part.path).join("\0")
+    if (!key) return
+    const bytes = record.docParts?.reduce((sum, part) => sum + part.estimatedBytes, 0) ?? 0
+    if (bytes > cacheLimit) return
+    const old = this.cache.get(key)
+    if (old) this.cacheBytes -= old.bytes
+    this.cache.delete(key)
+    this.cache.set(key, { doc, bytes })
+    this.cacheBytes += bytes
+    while (this.cacheBytes > cacheLimit && this.cache.size > 1) {
+      const first = this.cache.entries().next().value as
+        | [string, { doc: CodePostingsDocument; bytes: number }]
+        | undefined
+      if (!first) break
+      this.cache.delete(first[0])
+      this.cacheBytes -= first[1].bytes
+    }
+  }
+
+  private forget(record?: CodePostingsFileRecord): void {
+    const key = record?.docParts?.map((part) => part.path).join("\0")
+    if (!key) return
+    const cached = this.cache.get(key)
+    if (!cached) return
+    this.cache.delete(key)
+    this.cacheBytes -= cached.bytes
+  }
+
+  private clearCache(): void {
+    this.cache.clear()
+    this.loads.clear()
+    this.cacheBytes = 0
   }
 
   private async atomicJson(file: string, value: unknown): Promise<void> {
@@ -771,17 +887,16 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
     dir: string,
     root: string,
     keep: Set<string>,
-    generation: string | undefined,
+    _generation: string | undefined,
     stats: IndexingCleanupStats,
     label: "docs" | "terms",
   ): Promise<void> {
     for (const item of await list(dir)) {
       if (!item.directory) continue
-      if (generation && item.name === generation) {
-        await this.cleanupTree(item.path, root, keep, stats, label)
-        continue
+      await this.cleanupTree(item.path, root, keep, stats, label)
+      if ((await list(item.path)).length === 0) {
+        await removeSafe(item.path, root, stats, `codepostings: empty ${label} generation ${item.name}`)
       }
-      await removeSafe(item.path, root, stats, `codepostings: orphan ${label} generation ${item.name}`)
     }
   }
 
@@ -819,27 +934,26 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
   }
 }
 
-function info<T>(
-  parts: Array<{ key: string; path: string; entries: number; estimatedBytes: number; payload: T }>,
-): CodeGraphShardPartInfo[] {
-  return parts.map((part) => ({
-    key: part.key,
-    path: part.path,
-    entries: part.entries,
-    estimatedBytes: part.estimatedBytes,
-  }))
+function bucket(term: string): string {
+  const value = createHash("sha256").update(term).digest()[0]! % bucketCount
+  return value.toString(16).padStart(2, "0")
 }
 
-async function writeParts<T>(parts: T[], write: (part: T) => Promise<void>): Promise<void> {
-  let next = 0
-  const workers = Array.from({ length: Math.max(1, Math.min(writeConcurrency, parts.length)) }, async () => {
-    while (next < parts.length) {
-      const part = parts[next]!
-      next += 1
-      await write(part)
-    }
-  })
-  await Promise.all(workers)
+function chunks<T>(items: T[]): T[][] {
+  if (items.length === 0) return [[]]
+  const out: T[][] = []
+  for (let index = 0; index < items.length; index += rangeChunk) out.push(items.slice(index, index + rangeChunk))
+  return out
+}
+
+async function append(stream: ReturnType<typeof createWriteStream>, line: string): Promise<void> {
+  if (stream.write(line)) return
+  await once(stream, "drain")
+}
+
+async function finish(stream: ReturnType<typeof createWriteStream>): Promise<void> {
+  stream.end()
+  await once(stream, "finish")
 }
 
 function normalizePrefix(input?: string) {

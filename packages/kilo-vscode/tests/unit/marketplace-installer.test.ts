@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "bun:test"
 import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
+import { createHash } from "crypto"
 import { MarketplaceInstaller } from "../../src/services/marketplace/installer"
 import { MarketplacePaths } from "../../src/services/marketplace/paths"
 import { exec } from "../../src/util/process"
@@ -32,14 +33,14 @@ function skill(content: string, id = "test-skill") {
   }
 }
 
-async function archive(): Promise<Buffer> {
+async function archive(name = "skill", content = "# Test Skill\n"): Promise<Buffer> {
   const root = path.join(tmpDir, "archive")
   const source = path.join(root, "source")
-  const dir = path.join(source, "skill")
+  const dir = path.join(source, name)
   const tarball = path.join(root, "skill.tar.gz")
   await fs.mkdir(dir, { recursive: true })
-  await fs.writeFile(path.join(dir, "SKILL.md"), "# Test Skill\n")
-  await exec("tar", ["-czf", tarball, "-C", source, "skill"])
+  await fs.writeFile(path.join(dir, "SKILL.md"), content)
+  await exec("tar", ["-czf", tarball, "-C", source, name])
   return fs.readFile(tarball)
 }
 
@@ -241,5 +242,41 @@ describe("MarketplaceInstaller skills", () => {
     } finally {
       globalThis.fetch = original
     }
+  })
+
+  it("verifies hash and archive root before atomically installing and updating a skill", async () => {
+    const first = await archive("test-skill", "# First\n")
+    const paths = new TestPaths()
+    const installer = new MarketplaceInstaller(paths)
+    const payload = (buffer: Buffer, revision: number, sha256 = createHash("sha256").update(buffer).digest("hex")) => ({
+      id: "test-skill",
+      revision,
+      sha256,
+      url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+    })
+
+    expect((await installer.installVerifiedSkill(payload(first, 1), "project", tmpDir)).success).toBe(true)
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toBe(
+      "# First\n",
+    )
+
+    const second = await archive("test-skill", "# Second\n")
+    expect((await installer.installVerifiedSkill(payload(second, 2), "project", tmpDir)).success).toBe(true)
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toBe(
+      "# Second\n",
+    )
+
+    const rejected = await installer.installVerifiedSkill(payload(second, 3, "0".repeat(64)), "project", tmpDir)
+    expect(rejected.error).toBe("Skill archive SHA-256 mismatch")
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toBe(
+      "# Second\n",
+    )
+
+    const wrong = await archive("unexpected-root", "# Unsafe\n")
+    const unsafe = await installer.installVerifiedSkill(payload(wrong, 3), "project", tmpDir)
+    expect(unsafe.error).toContain("unexpected root")
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toBe(
+      "# Second\n",
+    )
   })
 })

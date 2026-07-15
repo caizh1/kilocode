@@ -12,7 +12,8 @@ import {
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
 import { QwenImportDefinitionsTracker } from "../../src/services/qwen-autocomplete/importDefinitions"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
-import { decideQwenPrefilter } from "../../src/services/qwen-autocomplete/prefilter"
+import { qwenLanguageId } from "../../src/services/qwen-autocomplete/language"
+import { decideQwenPrefilter, QWEN_DOCUMENT_SELECTOR } from "../../src/services/qwen-autocomplete/prefilter"
 import { QwenRecentlyOpenedTracker } from "../../src/services/qwen-autocomplete/recentlyOpened"
 import { QwenRootPathTracker } from "../../src/services/qwen-autocomplete/rootPathContext"
 import type { QwenAutocompleteConfig } from "../../src/services/qwen-autocomplete/types"
@@ -23,10 +24,10 @@ type Range = { start: Pos; end: Pos }
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "http://unit.test/v1/completions",
+  providerID: "qwen",
   model: "qwen-coder-30b0",
-  apiKey: "secret",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
@@ -92,6 +93,45 @@ describe("qwen security and prefilter decisions", () => {
     expect(empty.reason).toBe("empty-document")
   })
 
+  it("sends Qwen FIM requests for Python, Shell, and Gitea Workflow files only", async () => {
+    expect(QWEN_DOCUMENT_SELECTOR).toContainEqual({ scheme: "file", pattern: "**/*.py" })
+    expect(QWEN_DOCUMENT_SELECTOR).toContainEqual({ scheme: "file", pattern: "**/*.sh" })
+    expect(QWEN_DOCUMENT_SELECTOR).toContainEqual({
+      scheme: "file",
+      pattern: "**/.gitea/workflows/*.yaml",
+    })
+
+    const supported = [
+      doc("def add(a, b):\n    ", { languageId: "python", path: "/repo/src/add.py" }),
+      doc("#!/bin/sh\nrun() {\n  ", { languageId: "shellscript", path: "/repo/scripts/run.sh" }),
+      doc("name: build\njobs:\n  build:\n    ", {
+        languageId: "yaml",
+        path: "/repo/.gitea/workflows/build.yaml",
+      }),
+      doc("name: nested\njobs:\n  test:\n    ", {
+        languageId: "yaml",
+        path: "/repo/.gitea/workflows/release/test.yml",
+      }),
+    ]
+
+    for (const document of supported) {
+      expect(decideQwenPrefilter(document).reason).toBe("none")
+      expect(await run({ config: cfg, document })).toMatchObject({ calls: 1, items: 1 })
+    }
+
+    const yaml = doc("name: ordinary", { languageId: "yaml", path: "/repo/config/build.yaml" })
+    expect(decideQwenPrefilter(yaml).reason).toBe("workflow-outside-gitea")
+    expect(await run({ config: cfg, document: yaml })).toMatchObject({ calls: 0, items: 0 })
+  })
+
+  it("maps supported files to their VS Code language identifiers", () => {
+    expect(qwenLanguageId("/repo/src/main.c")).toBe("c")
+    expect(qwenLanguageId("/repo/src/main.cpp")).toBe("cpp")
+    expect(qwenLanguageId("/repo/src/main.py")).toBe("python")
+    expect(qwenLanguageId("/repo/scripts/run.sh")).toBe("shellscript")
+    expect(qwenLanguageId("/repo/.gitea/workflows/build.yml")).toBe("yaml")
+  })
+
   it("prefilters only the exact Continue config path through the config rule", async () => {
     const root = await temp()
     process.env.CONTINUE_GLOBAL_DIR = root
@@ -125,6 +165,16 @@ describe("qwen security and prefilter decisions", () => {
       "security-concern",
     )
     expect((await decideQwenGuard(doc("x", { path: path.join(root, "blocked.c") }))).reason).toBe("ignored")
+    expect(
+      (
+        await decideQwenGuard(
+          doc("name: build", {
+            languageId: "yaml",
+            path: path.join(root, ".gitea/workflows/build.yml"),
+          }),
+        )
+      ).reason,
+    ).toBe("none")
   })
 
   it("guard exception fail-closes current-file requests and logs guard reason separately", async () => {
@@ -228,19 +278,20 @@ describe("qwen context-read guard decisions", () => {
   })
 })
 
-async function calls(config: QwenAutocompleteConfig): Promise<number> {
-  return (await run({ config })).calls
+async function calls(config: QwenAutocompleteConfig, document?: vscode.TextDocument): Promise<number> {
+  return (await run({ config, document })).calls
 }
 
 async function run(input: {
   config: QwenAutocompleteConfig
+  document?: vscode.TextDocument
   guard?: () => boolean | Promise<boolean>
   opened?: {
     count(): number
     dispose(): void
     snippets(cfg: QwenAutocompleteConfig, current: vscode.TextDocument): Promise<{ skippedCount: number; snippets: [] }>
   }
-}): Promise<{ calls: number }> {
+}): Promise<{ calls: number; items: number }> {
   let count = 0
   const provider = new KiloQwenInlineCompletionProvider({
     client: {
@@ -259,9 +310,16 @@ async function run(input: {
     isCancellationRequested: false,
     onCancellationRequested: () => ({ dispose: () => {} }),
   } as unknown as vscode.CancellationToken
-  await provider.provideInlineCompletionItems(doc("int main(void) {\n  "), new vscode.Position(1, 2), {}, token)
+  const document = input.document ?? doc("int main(void) {\n  ")
+  const line = document.lineCount - 1
+  const items = await provider.provideInlineCompletionItems(
+    document,
+    new vscode.Position(line, document.lineAt(line).text.length),
+    {},
+    token,
+  )
   provider.dispose()
-  return { calls: count }
+  return { calls: count, items: items.length }
 }
 
 async function temp(): Promise<string> {

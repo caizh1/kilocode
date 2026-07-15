@@ -1,4 +1,9 @@
-import type { InstallMarketplaceItemOptions, MarketplaceFilters, MarketplaceItem } from "../marketplace"
+import type {
+  InstallMarketplaceItemOptions,
+  SkillImportSelection,
+  MarketplaceFilters,
+  MarketplaceItem,
+} from "../marketplace"
 import type { FileAttachment } from "./parts"
 import type { MessageLoadMode } from "./sessions"
 import type { PermissionFileDiff } from "./permissions"
@@ -172,6 +177,10 @@ export interface OpenSettingsPanelRequest {
   tab?: string
 }
 
+export interface ClosePanelRequest {
+  type: "closePanel"
+}
+
 export interface OpenVSCodeSettingsRequest {
   type: "openVSCodeSettings"
   query: string
@@ -244,9 +253,12 @@ export interface SendCommandRequest {
   contextDirectory?: string
 }
 
-export interface RemoveSkillMessage {
-  type: "removeSkill"
-  location: string
+export interface RemoveLocalSkillMessage {
+  type: "removeLocalSkill"
+  requestId: string
+  targetToken: string
+  skillId: string
+  scope: "global" | "project"
 }
 
 export interface RemoveModeMessage {
@@ -329,6 +341,14 @@ export interface RequestAutocompleteSettingsMessage {
   type: "requestAutocompleteSettings"
 }
 
+export interface UpdateAutocompleteSelectionRequest {
+  type: "updateAutocompleteSelection"
+  providerID: string | null
+  modelID: string | null
+  automatic: boolean
+  requestId: string
+}
+
 export interface RequestChatCompletionMessage {
   type: "requestChatCompletion"
   text: string
@@ -380,6 +400,17 @@ export interface UpdateSettingRequest {
   type: "updateSetting"
   key: string
   value: unknown
+  requestId?: string
+}
+
+export interface RequestChipmateServerSettingsMessage {
+  type: "requestChipmateServerSettings"
+}
+
+export interface TestChipmateServerMessage {
+  type: "testChipmateServer"
+  baseUrl: string
+  requestId: string
 }
 
 export interface RequestTimelineSettingMessage {
@@ -436,6 +467,14 @@ export interface UpdateConfigMessage {
   config: Partial<Config>
   /** Project config patch written to the workspace's .kilo/kilo.json or existing project config. */
   projectConfig?: Partial<Config>
+}
+
+/** Redacted diagnostic metadata for a save attempt; values must never be sent. */
+export interface MemoryDebugMessage {
+  type: "memoryDebug"
+  event: string
+  requestId?: string
+  data: Record<string, string[] | boolean>
 }
 
 export interface RequestNotificationSettingsMessage {
@@ -1059,6 +1098,26 @@ export interface FetchMarketplaceDataMessage {
   type: "fetchMarketplaceData"
 }
 
+export interface FetchMarketplaceSkillDetailMessage {
+  type: "fetchMarketplaceSkillDetail"
+  mpSkillId: string
+}
+
+export interface PickLocalSkillsMessage {
+  type: "pickLocalSkills"
+  localSkillSourceKind: "file" | "folder"
+}
+
+export interface InstallLocalSkillsMessage {
+  type: "installLocalSkills"
+  localSkillSelection: SkillImportSelection
+}
+
+export interface CancelLocalSkillImportMessage {
+  type: "cancelLocalSkillImport"
+  importToken: string
+}
+
 export interface FilterMarketplaceItemsMessage {
   type: "filterMarketplaceItems"
   filters: MarketplaceFilters
@@ -1086,6 +1145,11 @@ export interface StarMarketplaceSkillMessage {
   mpSkillId: string
 }
 
+export interface UnpublishMarketplaceSkillMessage {
+  type: "unpublishMarketplaceSkill"
+  mpSkillId: string
+}
+
 export interface DismissAgentMigrationBannerMessage {
   type: "dismissAgentMigrationBanner"
 }
@@ -1107,6 +1171,7 @@ export type WebviewMessage =
   | RefreshProfileRequest
   | OpenExternalRequest
   | OpenSettingsPanelRequest
+  | ClosePanelRequest
   | OpenVSCodeSettingsRequest
   | OpenConfigFileRequest
   | OpenMarketplacePanelRequest
@@ -1123,7 +1188,7 @@ export type WebviewMessage =
   | RequestSkillsMessage
   | RequestCommandsMessage
   | SendCommandRequest
-  | RemoveSkillMessage
+  | RemoveLocalSkillMessage
   | RemoveModeMessage
   | RemoveMcpMessage
   | RequestMcpStatusMessage
@@ -1139,6 +1204,7 @@ export type WebviewMessage =
   | RenameSessionRequest
   | ExportSessionTranscriptRequest
   | RequestAutocompleteSettingsMessage
+  | UpdateAutocompleteSelectionRequest
   | RequestChatCompletionMessage
   | SpeechToTextStartMessage
   | SpeechToTextStopMessage
@@ -1148,6 +1214,8 @@ export type WebviewMessage =
   | RequestGitChangesContextMessage
   | ChatCompletionAcceptedMessage
   | UpdateSettingRequest
+  | RequestChipmateServerSettingsMessage
+  | TestChipmateServerMessage
   | RequestTimelineSettingMessage
   | StreamSessionVisibleMessage
   | RequestBrowserSettingsMessage
@@ -1159,6 +1227,7 @@ export type WebviewMessage =
   | RebuildDocumentRagMessage
   | RequestKiloEmbeddingModelsMessage
   | UpdateConfigMessage
+  | MemoryDebugMessage
   | OpenSettingsTabRequest
   | RequestNotificationSettingsMessage
   | ResetAllSettingsRequest
@@ -1245,11 +1314,16 @@ export type WebviewMessage =
   | RequestAutoApproveStateMessage
   | ToggleAutoApproveMessage
   | FetchMarketplaceDataMessage
+  | FetchMarketplaceSkillDetailMessage
+  | PickLocalSkillsMessage
+  | InstallLocalSkillsMessage
+  | CancelLocalSkillImportMessage
   | FilterMarketplaceItemsMessage
   | InstallMarketplaceItemMessage
   | RemoveInstalledMarketplaceItemMessage
   | UploadMarketplaceSkillMessage
   | StarMarketplaceSkillMessage
+  | UnpublishMarketplaceSkillMessage
   | DismissAgentMigrationBannerMessage
   | ConnectProviderMessage
   | AuthorizeProviderOAuthMessage

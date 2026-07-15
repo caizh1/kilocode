@@ -2,12 +2,10 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import * as vscode from "vscode"
-import {
-  buildQwenFimPrompt,
-  getContinueAutocompleteStopTokens,
-} from "../../src/services/qwen-autocomplete/fimTemplates"
+import { buildQwenFimPrompt } from "../../src/services/qwen-autocomplete/fimTemplates"
 import { createQwenAutocompleteHelper } from "../../src/services/qwen-autocomplete/helperVars"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
+import { QwenFimClient } from "../../src/services/qwen-autocomplete/QwenFimClient"
 import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
 import {
   emptyQwenSnippetPayload,
@@ -15,17 +13,17 @@ import {
   selectQwenSnippets,
 } from "../../src/services/qwen-autocomplete/snippets"
 import { countTokens } from "../../src/services/qwen-autocomplete/tokenPruning"
-import type { QwenAutocompleteConfig } from "../../src/services/qwen-autocomplete/types"
+import type { QwenAutocompleteConfig, QwenFimCompleteInput } from "../../src/services/qwen-autocomplete/types"
 
 type Pos = { line: number; character: number }
 type Range = { start: Pos; end: Pos }
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "http://unit.test/v1/completions",
+  providerID: "qwen",
   model: "qwen-coder-30b0",
-  apiKey: "secret",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
@@ -61,10 +59,7 @@ const cfg: QwenAutocompleteConfig = {
   logCompletionPreview: true,
 }
 
-const original = globalThis.fetch
-
 afterEach(() => {
-  globalThis.fetch = original
   resetQwenDiagnosticsForTests()
 })
 
@@ -198,12 +193,22 @@ describe("qwen autocomplete snippet scaffold", () => {
 
   it("keeps FIM prompt and request body byte-for-byte unchanged with empty snippets", async () => {
     let body = ""
-    globalThis.fetch = async (_url, init) => {
-      body = String(init?.body)
-      return new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
-    }
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
+      client: {
+        complete: async (request: QwenFimCompleteInput) => {
+          body = JSON.stringify({
+            providerID: request.providerID,
+            modelID: request.modelID,
+            prompt: request.prompt,
+            maxTokens: request.maxTokens,
+            temperature: request.temperature,
+          })
+          request.onResponse?.({ status: 200 })
+          return "return ok;"
+        },
+      } as QwenFimClient,
       log: () => {},
     })
     const document = doc("int main(void) {\n  \n}\n")
@@ -219,12 +224,11 @@ describe("qwen autocomplete snippet scaffold", () => {
       suffix: helper.prunedSuffix,
     })
     const expected = JSON.stringify({
-      model: cfg.model,
+      providerID: cfg.providerID,
+      modelID: cfg.model,
       prompt,
-      max_tokens: cfg.maxTokens,
+      maxTokens: cfg.maxTokens,
       temperature: cfg.temperature,
-      stream: false,
-      stop: getContinueAutocompleteStopTokens(cfg.model),
     })
 
     const items = await provider.provideInlineCompletionItems(
@@ -240,9 +244,15 @@ describe("qwen autocomplete snippet scaffold", () => {
   })
 
   it("emits only redacted snippet count diagnostics", async () => {
-    globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => ({ ...cfg, trace: true, logLevel: "debug" }),
+      guard: () => false,
+      client: {
+        complete: async (request: QwenFimCompleteInput) => {
+          request.onResponse?.({ status: 200 })
+          return "return ok;"
+        },
+      } as QwenFimClient,
       log: () => {},
     })
 
@@ -261,7 +271,6 @@ describe("qwen autocomplete snippet scaffold", () => {
     expect(last.snippetTokenBudget).toEqual(expect.any(Number))
     expect(last.selectedSnippetTokens).toBe(0)
     expect(JSON.stringify(logs)).not.toContain("clipboard content")
-    expect(JSON.stringify(logs)).not.toContain(cfg.apiKey)
     expect(JSON.stringify(logs)).not.toContain("Authorization")
   })
 

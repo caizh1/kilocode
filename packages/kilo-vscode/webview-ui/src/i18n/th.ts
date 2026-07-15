@@ -1,4 +1,7 @@
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   "command.category.suggested": "แนะนำ",
   "command.category.view": "มุมมอง",
   "command.category.project": "โปรเจกต์",
@@ -241,6 +244,7 @@ export const dict = {
   "prompt.placeholder.summarizeComments": "สรุปความคิดเห็น…",
   "prompt.placeholder.summarizeComment": "สรุปความคิดเห็น…",
   "prompt.mode.shell": "เชลล์",
+  "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "กด esc เพื่อออก",
 
   "prompt.example.1": "แก้ไข TODO ในโค้ดเบส",
@@ -945,6 +949,7 @@ export const dict = {
   "provider.custom.error.duplicate": "ซ้ำ",
   "settings.openLocalConfig": "คอนฟิก Local",
   "settings.openGlobalConfig": "คอนฟิก Global",
+  "settings.close": "ปิดการตั้งค่า",
   "settings.config.scope.local": "ภายใน",
   "settings.config.scope.global": "ทั่วโลก",
   "settings.config.status.loaded": "โหลดแล้ว",

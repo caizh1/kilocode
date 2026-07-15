@@ -13,6 +13,14 @@ const STORIES = [
   { id: "settings--providers-configure", name: "Settings / providers empty state" },
   { id: "marketplace--skills-tab-empty", name: "Marketplace / skills empty state" },
   { id: "marketplace--agents-tab-empty", name: "Marketplace / agents empty state" },
+  { id: "marketplace--aligned-skills-home", name: "Marketplace / aligned Skill home" },
+  { id: "marketplace--aligned-skill-detail", name: "Marketplace / aligned Skill detail" },
+  { id: "chat--chat-view-idle", name: "QA / aligned empty state" },
+  { id: "prompt-input--qa-all-controls-send", name: "QA / all controls send state" },
+  { id: "prompt-input--qa-all-controls-stop", name: "QA / all controls busy stop state" },
+  { id: "prompt-input--qa-indexing-standby", name: "QA / indexing standby state" },
+  { id: "prompt-input--qa-indexing-warning", name: "QA / indexing warning state" },
+  { id: "prompt-input--qa-thinking-open", name: "QA / thinking selector open state" },
 ]
 
 function url(id: string) {
@@ -51,7 +59,7 @@ test.describe("webview accessibility ratchet", () => {
   test("Profile login exposes a keyboard-operable named control", async ({ page }) => {
     await open(page, "profile--not-logged-in")
 
-    const login = page.getByRole("button", { name: "Login with Kilo Code" })
+    const login = page.getByRole("button", { name: /Login with (?:ChipMate|Kilo Code)/ })
     await reach(page, login)
     await expect(login).toBeFocused()
 
@@ -60,5 +68,16 @@ test.describe("webview accessibility ratchet", () => {
     })
     await page.keyboard.press("Enter")
     await expect(login).toHaveAttribute("data-keyboard-activated", "true")
+  })
+
+  test("Aligned Marketplace sections remain keyboard-addressable and accessible", async ({ page }) => {
+    await open(page, "marketplace--aligned-skills-home")
+    for (const name of ["Favorites", "Installed", "My publications", "Analytics", "Diagnostics"]) {
+      const button = page.getByRole("button", { name })
+      await button.focus()
+      await expect(button).toBeFocused()
+      await page.keyboard.press("Enter")
+      await scan(page)
+    }
   })
 })

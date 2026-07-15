@@ -1,5 +1,4 @@
-import { Component, createSignal, createEffect, on, Show } from "solid-js"
-import { Icon } from "@kilocode/kilo-ui/icon"
+import { Component, For, ParentComponent, createSignal, createEffect, on, Show } from "solid-js"
 import { Tabs } from "@kilocode/kilo-ui/tabs"
 import { Button } from "@kilocode/kilo-ui/button"
 import { showToast } from "@kilocode/kilo-ui/toast"
@@ -9,6 +8,7 @@ import { useConfig } from "../../context/config"
 import { useSession } from "../../context/session"
 import ModelsTab from "./ModelsTab"
 import ProvidersTab from "./ProvidersTab"
+import ChipmateServerTab, { type ChipmateServerTabProps } from "./ChipmateServerTab"
 import AgentBehaviourTab from "./AgentBehaviourTab"
 import AutoApproveTab from "./AutoApproveTab"
 import BrowserTab from "./BrowserTab"
@@ -25,22 +25,71 @@ import AboutKiloCodeTab from "./AboutKiloCodeTab"
 import IndexingTab from "./IndexingTab"
 import { useServer } from "../../context/server"
 import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
+import { ChipMateLogo } from "../shared/ChipMateLogo"
 
 export interface SettingsProps {
   tab?: string
   onTabChange?: (tab: string) => void
+  onClose?: () => void
   onMigrateClick?: () => void // legacy-migration
+  chipmatePreview?: ChipmateServerTabProps["preview"]
+  navPreview?: string
 }
+
+type Item = {
+  id: string
+  key: string
+  icon: string
+  show?: "public" | "indexing"
+}
+
+const tabs: readonly Item[] = [
+  { id: "models", key: "settings.models.title", icon: "package" },
+  { id: "providers", key: "settings.providers.title", icon: "plug" },
+  { id: "chipmateServer", key: "settings.chipmateServer.title", icon: "server" },
+  { id: "agentBehaviour", key: "settings.agentBehaviour.title", icon: "hubot" },
+  { id: "autoApprove", key: "settings.autoApprove.title", icon: "shield" },
+  { id: "browser", key: "settings.browser.title", icon: "globe" },
+  { id: "checkpoints", key: "settings.checkpoints.title", icon: "bookmark" },
+  { id: "display", key: "settings.display.title", icon: "device-desktop" },
+  { id: "autocomplete", key: "settings.autocomplete.title", icon: "code" },
+  { id: "notifications", key: "settings.notifications.title", icon: "bell", show: "public" },
+  { id: "context", key: "settings.context.title", icon: "notebook" },
+  { id: "commitMessage", key: "settings.commitMessage.title", icon: "comment" },
+  { id: "indexing", key: "settings.indexing.title", icon: "database", show: "indexing" },
+  { id: "experimental", key: "settings.experimental.title", icon: "beaker" },
+  { id: "language", key: "settings.language.title", icon: "symbol-text" },
+  { id: "aboutKiloCode", key: "settings.aboutKiloCode.title", icon: "info" },
+]
+
+const Codicon: Component<{ name: string }> = (props) => <i class={`codicon codicon-${props.name}`} aria-hidden="true" />
+
+const Panel: ParentComponent<{ title: string }> = (props) => (
+  <>
+    <div class="settings-page-header" data-ui="settings-page-title">
+      <h3>{props.title}</h3>
+    </div>
+    <div class="settings-page-groups" data-ui="settings-groups">
+      {props.children}
+    </div>
+  </>
+)
 
 const Settings: Component<SettingsProps> = (props) => {
   const server = useServer()
   const language = useLanguage()
   const vscode = useVSCode()
-  const { isDirty, saving, saveError, saveConfig, discardConfig, features } = useConfig()
+  const { isDirty, saving, canSave, saveError, saveConfig, discardConfig, features } = useConfig()
   const session = useSession()
   const [active, setActive] = createSignal(props.tab ?? "models")
   const [errorExpanded, setErrorExpanded] = createSignal(false)
   const internal = isInternalOfflineBuild()
+  const visible = () =>
+    tabs.filter((item) => {
+      if (item.show === "public") return !internal
+      if (item.show === "indexing") return features().indexing
+      return true
+    })
 
   const busyCount = () => Object.values(session.allStatusMap()).filter((s) => s.type === "busy").length
 
@@ -120,218 +169,203 @@ const Settings: Component<SettingsProps> = (props) => {
   }
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", height: "100%", "min-height": 0 }}>
-      {/* Header */}
-      <div
-        style={{
-          padding: "12px 16px",
-          "border-bottom": "1px solid var(--border-weak-base)",
-          display: "flex",
-          "align-items": "center",
-          "flex-wrap": "wrap",
-          gap: "8px",
-        }}
-      >
-        <h2 style={{ "font-size": "var(--kilo-font-size-16)", "font-weight": "600", margin: 0, flex: 1 }}>
-          {language.t("sidebar.settings")}
-        </h2>
-        <Button variant="secondary" size="small" icon="edit" onClick={() => open("local")}>
-          {language.t("settings.openLocalConfig")}
-        </Button>
-        <Button variant="secondary" size="small" icon="edit" onClick={() => open("global")}>
-          {language.t("settings.openGlobalConfig")}
-        </Button>
-      </div>
-
-      {/* Settings tabs */}
-      <Tabs
-        orientation="vertical"
-        variant="settings"
-        value={active()}
-        onChange={onTabChange}
-        style={{ flex: 1, overflow: "hidden" }}
-      >
-        <Tabs.List>
-          <Tabs.Trigger value="models">
-            <Icon name="models" />
-            <span class="label">{language.t("settings.models.title")}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="providers">
-            <Icon name="providers" />
-            <span class="label">{language.t("settings.providers.title")}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="agentBehaviour">
-            <Icon name="brain" />
-            <span class="label">{language.t("settings.agentBehaviour.title")}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="autoApprove">
-            <Icon name="checklist" />
-            <span class="label">{language.t("settings.autoApprove.title")}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="browser">
-            <Icon name="window-cursor" />
-            <span class="label">{language.t("settings.browser.title")}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="checkpoints">
-            <Icon name="branch" />
-            <span class="label">{language.t("settings.checkpoints.title")}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="display">
-            <Icon name="eye" />
-            <span class="label">{language.t("settings.display.title")}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="autocomplete">
-            <Icon name="code-lines" />
-            <span class="label">{language.t("settings.autocomplete.title")}</span>
-          </Tabs.Trigger>
-          <Show when={!internal}>
-            <Tabs.Trigger value="notifications">
-              <Icon name="circle-check" />
-              <span class="label">{language.t("settings.notifications.title")}</span>
-            </Tabs.Trigger>
-          </Show>
-          <Tabs.Trigger value="context">
-            <Icon name="server" />
-            <span class="label">{language.t("settings.context.title")}</span>
-          </Tabs.Trigger>
-
-          <Tabs.Trigger value="commitMessage">
-            <Icon name="edit" />
-            <span class="label">{language.t("settings.commitMessage.title")}</span>
-          </Tabs.Trigger>
-          <Show when={features().indexing}>
-            <Tabs.Trigger value="indexing">
-              <Icon name="server" />
-              <span class="label">{language.t("settings.indexing.title")}</span>
-            </Tabs.Trigger>
-          </Show>
-          <Tabs.Trigger value="experimental">
-            <Icon name="settings-gear" />
-            <span class="label">{language.t("settings.experimental.title")}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="language">
-            <Icon name="speech-bubble" />
-            <span class="label">{language.t("settings.language.title")}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="aboutKiloCode">
-            <Icon name="help" />
-            <span class="label">{language.t("settings.aboutKiloCode.title")}</span>
-          </Tabs.Trigger>
-        </Tabs.List>
-
-        <Tabs.Content value="models">
-          <h3>{language.t("settings.models.title")}</h3>
-          <ModelsTab />
-        </Tabs.Content>
-        <Tabs.Content value="providers">
-          <h3>{language.t("settings.providers.title")}</h3>
-          <ProvidersTab />
-        </Tabs.Content>
-        <Tabs.Content value="agentBehaviour">
-          <h3>{language.t("settings.agentBehaviour.title")}</h3>
-          <AgentBehaviourTab />
-        </Tabs.Content>
-        <Tabs.Content value="autoApprove">
-          <h3>{language.t("settings.autoApprove.title")}</h3>
-          <AutoApproveTab />
-        </Tabs.Content>
-        <Tabs.Content value="browser">
-          <h3>{language.t("settings.browser.title")}</h3>
-          <BrowserTab />
-        </Tabs.Content>
-        <Tabs.Content value="checkpoints">
-          <h3>{language.t("settings.checkpoints.title")}</h3>
-          <CheckpointsTab />
-        </Tabs.Content>
-        <Tabs.Content value="display">
-          <h3>{language.t("settings.display.title")}</h3>
-          <DisplayTab />
-        </Tabs.Content>
-        <Tabs.Content value="autocomplete">
-          <h3>{language.t("settings.autocomplete.title")}</h3>
-          <AutocompleteTab onNavigateToModels={() => onTabChange("models")} />
-        </Tabs.Content>
-        <Show when={!internal}>
-          <Tabs.Content value="notifications">
-            <h3>{language.t("settings.notifications.title")}</h3>
-            <NotificationsTab />
-          </Tabs.Content>
-        </Show>
-        <Tabs.Content value="context">
-          <h3>{language.t("settings.context.title")}</h3>
-          <ContextTab />
-        </Tabs.Content>
-
-        <Tabs.Content value="commitMessage">
-          <h3>{language.t("settings.commitMessage.title")}</h3>
-          <CommitMessageTab />
-        </Tabs.Content>
-        <Show when={features().indexing}>
-          <Tabs.Content value="indexing">
-            <h3>{language.t("settings.indexing.title")}</h3>
-            <IndexingTab />
-          </Tabs.Content>
-        </Show>
-        <Tabs.Content value="experimental">
-          <h3>{language.t("settings.experimental.title")}</h3>
-          <ExperimentalTab />
-        </Tabs.Content>
-        <Tabs.Content value="language">
-          <h3>{language.t("settings.language.title")}</h3>
-          <LanguageTab />
-        </Tabs.Content>
-        <Tabs.Content value="aboutKiloCode">
-          <h3>{language.t("settings.aboutKiloCode.title")}</h3>
-          <AboutKiloCodeTab
-            port={server.serverInfo()?.port ?? null}
-            connectionState={server.connectionState()}
-            extensionVersion={server.extensionVersion()}
-            onMigrateClick={props.onMigrateClick}
-          />
-        </Tabs.Content>
-      </Tabs>
-
-      {/* Save bar — slides in when there are unsaved config changes */}
-      <Show when={isDirty()}>
-        <div class="settings-save-bar-wrap">
-          <Show when={saveError()}>
-            {(err) => (
-              <div class="settings-save-bar-error">
-                <div
-                  class="settings-save-bar-error-header"
-                  onClick={() => setErrorExpanded((v) => !v)}
-                  role="button"
-                  aria-expanded={errorExpanded()}
-                >
-                  <span
-                    class={`settings-save-bar-error-chevron${
-                      errorExpanded() ? " settings-save-bar-error-chevron-expanded" : ""
-                    }`}
-                  >
-                    <Icon name="chevron-right" size="small" />
-                  </span>
-                  <span class="settings-save-bar-error-title">
-                    {language.t("settings.saveBar.saveFailed")}:{" "}
-                    <span class="settings-save-bar-error-firstline">{err().message}</span>
-                  </span>
-                </div>
-                <Show when={errorExpanded()}>
-                  <pre class="settings-save-bar-error-details">{err().details ?? err().message}</pre>
-                </Show>
-              </div>
-            )}
-          </Show>
-          <div class="settings-save-bar">
-            <span class="settings-save-bar-label">{language.t("settings.saveBar.unsavedChanges")}</span>
-            <Button variant="ghost" size="small" onClick={discardConfig} disabled={saving()}>
-              {language.t("settings.saveBar.discard")}
+    <div class="settings-frame" data-ui="settings-frame">
+      <div class="settings-shell" data-ui="settings-shell" data-preview-nav={props.navPreview}>
+        <header class="settings-header" data-ui="settings-header">
+          <div class="settings-brand">
+            <ChipMateLogo class="settings-brand-icon" welcome />
+            <h2>{language.t("sidebar.settings")}</h2>
+          </div>
+          <div class="settings-header-actions">
+            <Button variant="secondary" size="small" onClick={() => open("local")}>
+              {language.t("settings.openLocalConfig")}
             </Button>
-            <Button variant="primary" size="small" onClick={handleSave} disabled={saving()}>
-              {saving() ? language.t("settings.saveBar.saving") : language.t("settings.saveBar.save")}
+            <Button variant="secondary" size="small" onClick={() => open("global")}>
+              {language.t("settings.openGlobalConfig")}
+            </Button>
+            <Button
+              variant="secondary"
+              size="small"
+              class="settings-close-button"
+              onClick={() => props.onClose?.()}
+              aria-label={language.t("settings.close")}
+              title={language.t("settings.close")}
+            >
+              <Codicon name="close" />
             </Button>
           </div>
+        </header>
+
+        <div class="settings-main" data-ui="settings-main">
+          <Tabs
+            orientation="vertical"
+            variant="settings"
+            value={active()}
+            onChange={onTabChange}
+            class="settings-tabs"
+            data-ui="settings-layout"
+          >
+            <Tabs.List data-ui="settings-navigation" aria-label={language.t("sidebar.settings")}>
+              <For each={visible()}>
+                {(item) => {
+                  const label = () => language.t(item.key)
+                  return (
+                    <Tabs.Trigger value={item.id} title={label()} aria-label={label()} data-ui="settings-nav-item">
+                      <span class="settings-nav-icon" data-ui="settings-nav-icon">
+                        <Codicon name={item.icon} />
+                      </span>
+                      <span class="label">{label()}</span>
+                    </Tabs.Trigger>
+                  )
+                }}
+              </For>
+            </Tabs.List>
+
+            <Tabs.Content value="models" data-ui="settings-content">
+              <Panel title={language.t("settings.models.title")}>
+                <ModelsTab />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="providers" data-ui="settings-content">
+              <Panel title={language.t("settings.providers.title")}>
+                <ProvidersTab />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="chipmateServer" data-ui="settings-content">
+              <Panel title={language.t("settings.chipmateServer.title")}>
+                <ChipmateServerTab preview={props.chipmatePreview} />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="agentBehaviour" data-ui="settings-content">
+              <Panel title={language.t("settings.agentBehaviour.title")}>
+                <AgentBehaviourTab />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="autoApprove" data-ui="settings-content">
+              <Panel title={language.t("settings.autoApprove.title")}>
+                <AutoApproveTab />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="browser" data-ui="settings-content">
+              <Panel title={language.t("settings.browser.title")}>
+                <BrowserTab />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="checkpoints" data-ui="settings-content">
+              <Panel title={language.t("settings.checkpoints.title")}>
+                <CheckpointsTab />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="display" data-ui="settings-content">
+              <Panel title={language.t("settings.display.title")}>
+                <DisplayTab />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="autocomplete" data-ui="settings-content">
+              <Panel title={language.t("settings.autocomplete.title")}>
+                <AutocompleteTab onNavigateToModels={() => onTabChange("models")} />
+              </Panel>
+            </Tabs.Content>
+            <Show when={!internal}>
+              <Tabs.Content value="notifications" data-ui="settings-content">
+                <Panel title={language.t("settings.notifications.title")}>
+                  <NotificationsTab />
+                </Panel>
+              </Tabs.Content>
+            </Show>
+            <Tabs.Content value="context" data-ui="settings-content">
+              <Panel title={language.t("settings.context.title")}>
+                <ContextTab />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="commitMessage" data-ui="settings-content">
+              <Panel title={language.t("settings.commitMessage.title")}>
+                <CommitMessageTab />
+              </Panel>
+            </Tabs.Content>
+            <Show when={features().indexing}>
+              <Tabs.Content value="indexing" data-ui="settings-content">
+                <Panel title={language.t("settings.indexing.title")}>
+                  <IndexingTab />
+                </Panel>
+              </Tabs.Content>
+            </Show>
+            <Tabs.Content value="experimental" data-ui="settings-content">
+              <Panel title={language.t("settings.experimental.title")}>
+                <ExperimentalTab />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="language" data-ui="settings-content">
+              <Panel title={language.t("settings.language.title")}>
+                <LanguageTab />
+              </Panel>
+            </Tabs.Content>
+            <Tabs.Content value="aboutKiloCode" data-ui="settings-content">
+              <Panel title={language.t("settings.aboutKiloCode.title")}>
+                <AboutKiloCodeTab
+                  port={server.serverInfo()?.port ?? null}
+                  connectionState={server.connectionState()}
+                  extensionVersion={server.extensionVersion()}
+                  onMigrateClick={props.onMigrateClick}
+                />
+              </Panel>
+            </Tabs.Content>
+          </Tabs>
         </div>
-      </Show>
+
+        <Show when={isDirty()}>
+          <div class="settings-save-bar-wrap" data-ui="settings-save-bar">
+            <Show when={saveError()}>
+              {(err) => (
+                <div class="settings-save-bar-error">
+                  <div
+                    class="settings-save-bar-error-header"
+                    onClick={() => setErrorExpanded((v) => !v)}
+                    role="button"
+                    aria-expanded={errorExpanded()}
+                  >
+                    <span
+                      class={`settings-save-bar-error-chevron${
+                        errorExpanded() ? " settings-save-bar-error-chevron-expanded" : ""
+                      }`}
+                    >
+                      <Codicon name="chevron-right" />
+                    </span>
+                    <span class="settings-save-bar-error-title">
+                      {language.t("settings.saveBar.saveFailed")}:{" "}
+                      <span class="settings-save-bar-error-firstline">{err().message}</span>
+                    </span>
+                  </div>
+                  <Show when={errorExpanded()}>
+                    <pre class="settings-save-bar-error-details">{err().details ?? err().message}</pre>
+                  </Show>
+                </div>
+              )}
+            </Show>
+            <div class="settings-save-bar">
+              <span class="settings-save-bar-label">{language.t("settings.saveBar.unsavedChanges")}</span>
+              <Button
+                class="settings-discard-button"
+                variant="secondary"
+                size="small"
+                onClick={discardConfig}
+                disabled={saving()}
+              >
+                {language.t("settings.saveBar.discard")}
+              </Button>
+              <Button
+                class="settings-save-button"
+                variant="primary"
+                size="small"
+                onClick={handleSave}
+                disabled={saving() || !canSave()}
+              >
+                {saving() ? language.t("settings.saveBar.saving") : language.t("settings.saveBar.save")}
+              </Button>
+            </div>
+          </div>
+        </Show>
+      </div>
     </div>
   )
 }

@@ -25,6 +25,7 @@ import { Log } from "../util/log"
 import { loadIgnoreWithFingerprint } from "./shared/load-ignore"
 import { sanitizeErrorMessage } from "./shared/validation-helpers"
 import type { IndexingDiagnostic, IndexingPipelineRecentErrors } from "../status"
+import type { IndexingPressure } from "./memory"
 
 const log = Log.create({ service: "indexing-manager" })
 const MAX_RECENT_ERRORS = 5
@@ -45,6 +46,8 @@ export class CodeIndexManager {
   private _orchestrator: CodeIndexOrchestrator | undefined
   private _searchService: CodeIndexSearchService | undefined
   private _documentService: DocumentIndexService | undefined
+  private _documentToken = 0
+  private _pressure: IndexingPressure = "normal"
   private readonly _analysisService: CodeIndexAnalysisService
   private readonly _graphStorage: CodeGraphJsonStorage
   private readonly _postingsStorage: CodePostingsJsonStorage
@@ -311,6 +314,12 @@ export class CodeIndexManager {
     }
   }
 
+  public setMemoryPressure(pressure: IndexingPressure): void {
+    this._pressure = pressure
+    this._orchestrator?.setMemoryPressure(pressure)
+    this._documentService?.setMemoryPressure(pressure)
+  }
+
   private async ensureCache(): Promise<CacheManager | undefined> {
     if (this._cacheManager) return this._cacheManager
     log.info("initializing indexing cache", { cacheDirectory: this.cacheDirectory })
@@ -367,8 +376,8 @@ export class CodeIndexManager {
       }
       this._codeGraph.start("code-graph-default-enabled")
       this._stateManager.setSystemState("Standby", msg)
-      this._orchestrator?.startIndexing("background")
-      await this.configureDocuments("background")
+      const scan = this._orchestrator?.startIndexing("background") ?? Promise.resolve()
+      await this.configureDocuments("background", { after: scan })
       return { requiresRestart }
     }
 
@@ -413,7 +422,9 @@ export class CodeIndexManager {
       })
       this.emitStart("background")
       // Fire and forget — indexing is a long-running background process
-      this._orchestrator?.startIndexing("background")
+      const scan = this._orchestrator?.startIndexing("background") ?? Promise.resolve()
+      await this.configureDocuments("background", { after: scan })
+      return { requiresRestart }
     }
 
     await this.configureDocuments("background")
@@ -497,11 +508,16 @@ export class CodeIndexManager {
     this._telemetry.dispose()
   }
 
+  public checkpoint(): Promise<void> {
+    return this._cacheManager?.checkpoint(true) ?? Promise.resolve()
+  }
+
   public async clearIndexData(): Promise<void> {
     if (!this._orchestrator || !this._cacheManager) return
     await this._orchestrator!.clearIndexData()
     await this._cacheManager!.clearCacheFile()
     await this._graphStorage.clear()
+    await this._postingsStorage.clear()
     await this._documentService?.rebuild("manual")
   }
 
@@ -608,6 +624,7 @@ export class CodeIndexManager {
       ragMeta,
       (event) => this.handleTelemetry(event),
     )
+    this._orchestrator.setMemoryPressure(this._pressure)
     this._stateManager.setSystemState("Standby", "")
     log.info("code graph services are ready", { workspacePath: this.workspacePath, reason })
   }
@@ -675,6 +692,7 @@ export class CodeIndexManager {
       ragMeta,
       (event) => this.handleTelemetry(event),
     )
+    this._orchestrator.setMemoryPressure(this._pressure)
 
     this._searchService = new CodeIndexSearchService(this._configManager!, this._stateManager, embedder, vectorStore)
 
@@ -684,8 +702,9 @@ export class CodeIndexManager {
 
   private async configureDocuments(
     trigger: IndexingTelemetryTrigger,
-    opts: { start?: boolean; force?: boolean } = {},
+    opts: { start?: boolean; force?: boolean; after?: Promise<unknown> } = {},
   ): Promise<void> {
+    const token = ++this._documentToken
     if (!this._configManager) return
     const cfg = this._configManager.currentDocuments
     if (!cfg.enabled) {
@@ -719,12 +738,18 @@ export class CodeIndexManager {
     if (!this._serviceFactory) this._serviceFactory = factory
 
     const next = factory.createDocumentService(loaded.ignore, () => this._stateManager.notify())
+    next.setMemoryPressure(this._pressure)
     this._documentService?.dispose()
     this._documentService = next
     this._stateManager.notify()
 
     if (opts.start === false) return
-    void next.start(trigger, opts.force === true).catch((err) => {
+    const start = async () => {
+      if (this._disposed || token !== this._documentToken) return
+      await next.start(trigger, opts.force === true)
+    }
+    const task = opts.after ? opts.after.then(start) : start()
+    void task.catch((err) => {
       log.error("failed to start document indexing", { err })
       this.emitError("documents:start", err, trigger, "documents")
       this._stateManager.notify()
@@ -754,8 +779,8 @@ export class CodeIndexManager {
           ? "RAG indexing is not configured. Code Graph is available."
           : "RAG indexing is disabled. Code Graph is available.",
       )
-      this._orchestrator?.startIndexing("background")
-      await this.configureDocuments("background")
+      const scan = this._orchestrator?.startIndexing("background") ?? Promise.resolve()
+      await this.configureDocuments("background", { after: scan })
       return
     }
 
@@ -774,11 +799,12 @@ export class CodeIndexManager {
         if (this._disposed) return
         this._codeGraph.start("rag-settings-updated")
         this.emitStart("background")
-        void this._orchestrator?.startRagIndexing("background", "settings-change").catch((err) => {
-          log.error("failed to start RAG-only indexing after settings change", { err })
-          this.emitError("manager:handleSettingsChange", err, "background")
-        })
-        await this.configureDocuments("background", { force: true })
+        const scan =
+          this._orchestrator?.startRagIndexing("background", "settings-change").catch((err) => {
+            log.error("failed to start RAG-only indexing after settings change", { err })
+            this.emitError("manager:handleSettingsChange", err, "background")
+          }) ?? Promise.resolve()
+        await this.configureDocuments("background", { force: true, after: scan })
       } catch (err) {
         log.error("failed to recreate services on settings change", { err })
         throw err

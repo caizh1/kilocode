@@ -1,9 +1,17 @@
 import * as vscode from "vscode"
 import { AutocompleteDebouncer } from "./AutocompleteDebouncer"
-import { emitQwenDiagnostic, errorReason, type QwenCacheStatus, type QwenEmptyReason } from "./diagnostics"
+import {
+  emitQwenDiagnostic,
+  errorKind,
+  errorReason,
+  pathHash,
+  type QwenCacheStatus,
+  type QwenEmptyReason,
+} from "./diagnostics"
 import { QwenAutocompleteLruCache, type QwenAutocompleteCache } from "./autocompleteLruCache"
 import { getContinueAutocompleteStopTokens } from "./fimTemplates"
 import { QwenFimClient } from "./QwenFimClient"
+import type { KiloConnectionService } from "../cli-backend"
 import { readQwenAutocompleteConfig, qwenAutocompleteEnabled } from "./config"
 import {
   decideQwenGuard,
@@ -15,7 +23,7 @@ import {
 import { createQwenAutocompleteHelper, type QwenAutocompleteHelperVars } from "./helperVars"
 import type { QwenImportDefinitionsSource } from "./importDefinitions"
 import { classifyQwenMultiline, type QwenMultilineClassifierResult } from "./multiline"
-import { firstLogLine, postprocessQwenCompletion } from "./postprocess"
+import { postprocessQwenCompletion } from "./postprocess"
 import { decideQwenPrefilter, type QwenPrefilterDecision } from "./prefilter"
 import { buildQwenPromptPlan, type QwenPromptPlan } from "./qwenMultifileFimRenderer"
 import { renderQwenInlineCompletionItem } from "./range"
@@ -32,13 +40,17 @@ import {
 import { filterQwenCompletionDetailed, type QwenNonStreamingFilterResult } from "./streamFilters"
 import { countTokens } from "./tokenPruning"
 import type { QwenAutocompleteConfig, QwenRequestInfo } from "./types"
+import { autocompleteDirectory } from "../autocomplete/workspace"
+import { autocompleteScope } from "../autocomplete/settings"
 
 export { QWEN_DOCUMENT_SELECTOR, isQwenSupportedDocument } from "./prefilter"
 
 type Deps = {
+  connection?: KiloConnectionService
   client?: QwenFimClient
+  state?: () => string
   debouncer?: AutocompleteDebouncer
-  read?: () => QwenAutocompleteConfig
+  read?: (resource?: vscode.Uri) => QwenAutocompleteConfig
   guard?: QwenSafetyGuard
   cache?: QwenAutocompleteCache
   edited?: QwenRecentlyEditedSource
@@ -46,6 +58,8 @@ type Deps = {
   imports?: QwenImportDefinitionsSource
   root?: QwenRootPathSource
   log?: (message: string) => void
+  source?: "smoke" | "editor"
+  origin?: () => "automatic" | "explicit"
 }
 
 type Pending = QwenRequestInfo & {
@@ -93,8 +107,9 @@ type InjectionState = {
 
 export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletionItemProvider, vscode.Disposable {
   private readonly client: QwenFimClient
+  private readonly state: () => string
   private readonly debouncer: AutocompleteDebouncer
-  private readonly read: () => QwenAutocompleteConfig
+  private readonly read: (resource?: vscode.Uri) => QwenAutocompleteConfig
   private readonly guard: QwenSafetyGuard
   private readonly cache: QwenAutocompleteCache
   private readonly edited?: QwenRecentlyEditedSource
@@ -103,11 +118,14 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
   private readonly root?: QwenRootPathSource
   private readonly log: (message: string) => void
   private readonly customGuard: boolean
+  private readonly source: "smoke" | "editor"
+  private readonly origin: () => "automatic" | "explicit"
   private current: Pending | null = null
   private seq = 0
 
   constructor(deps: Deps = {}) {
-    this.client = deps.client ?? new QwenFimClient()
+    this.client = deps.client ?? new QwenFimClient(deps.connection!)
+    this.state = deps.state ?? (() => "unknown")
     this.debouncer = deps.debouncer ?? new AutocompleteDebouncer()
     this.read = deps.read ?? readQwenAutocompleteConfig
     this.guard = deps.guard ?? shouldGuardQwenDocument
@@ -117,6 +135,8 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
     this.imports = deps.imports
     this.root = deps.root
     this.log = deps.log ?? ((message) => console.info(message))
+    this.source = deps.source ?? "editor"
+    this.origin = deps.origin ?? (() => "explicit")
     this.customGuard = Boolean(deps.guard)
   }
 
@@ -138,11 +158,12 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
   ): Promise<vscode.InlineCompletionItem[]> {
     const id = this.nextId()
     const lifecycleStarted = Date.now()
-    const cfg = this.read()
+    const cfg = this.read(document.uri)
     const selected = context.selectedCompletionInfo
+    const manual = context.triggerKind === vscode.InlineCompletionTriggerKind.Invoke
     this.emit(cfg, { requestId: id, phase: "provider-enter", document, position, selected })
     this.emit(cfg, { requestId: id, phase: "config-read", document, position, selected })
-    const gate = await this.gate(cfg, id, document, position, selected, token, lifecycleStarted)
+    const gate = await this.gate(cfg, id, document, position, selected, manual, token, lifecycleStarted)
     if (gate.items) return gate.items
 
     const req = this.start(id, document, position)
@@ -195,6 +216,8 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
     if (cached.items) return cached.items
 
     let httpStatus: number | null = null
+    let endpointSource: "provider-options" | "model-api" | "missing" | undefined
+    let serverPhase: string | undefined
     try {
       this.emit(cfg, {
         requestId: id,
@@ -210,15 +233,18 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
         ...this.multilineFields(multi),
       })
       const raw = await this.client.complete({
-        endpoint: cfg.endpoint,
-        model: cfg.model,
-        apiKey: cfg.apiKey,
+        directory: autocompleteDirectory(document),
+        providerID: cfg.providerID,
+        modelID: cfg.model,
         prompt: prompt.prompt,
         maxTokens: cfg.maxTokens,
         temperature: cfg.temperature,
+        stop: getContinueAutocompleteStopTokens(cfg.model),
         signal: req.abort.signal,
         onResponse: (info) => {
           httpStatus = info.status
+          endpointSource = info.endpointSource
+          serverPhase = info.serverPhase
         },
       })
       this.emit(cfg, {
@@ -233,6 +259,8 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
         ...this.cacheFields(cfg, cached.status, cached.hit, helper, cached.returned),
         ...this.snippetFields(cfg, snippets, prompt),
         httpStatus,
+        endpointSource,
+        serverPhase,
         latencyMs: Date.now() - started,
         rawTextLength: raw.length,
         ...this.multilineFields(multi),
@@ -423,6 +451,8 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
         ...this.cacheFields(cfg, cached.status, cached.hit, helper, cached.returned),
         ...this.snippetFields(cfg, snippets, prompt),
         httpStatus,
+        endpointSource,
+        serverPhase,
         latencyMs: Date.now() - started,
         emptyReason: reason,
         error: err,
@@ -973,6 +1003,7 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
     document: vscode.TextDocument,
     position: vscode.Position,
     selected: vscode.SelectedCompletionInfo | undefined,
+    manual: boolean,
     token: vscode.CancellationToken,
     started: number,
   ): Promise<Gate> {
@@ -994,6 +1025,19 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
             prefilterProviderEnabled: false,
           },
         ),
+      }
+    }
+    if (!cfg.autoTrigger && !manual) {
+      return {
+        selected,
+        items: this.empty(cfg, requestId, document, position, selected, started, "disabled"),
+      }
+    }
+    const editor = vscode.window.activeTextEditor
+    if (editor?.document === document && editor.selections.length > 1) {
+      return {
+        selected,
+        items: this.empty(cfg, requestId, document, position, selected, started, "multi-cursor"),
       }
     }
     const prefilter = decideQwenPrefilter(document)
@@ -1061,14 +1105,14 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
     if (token.isCancellationRequested) {
       return { selected, items: this.cancelled(cfg, requestId, document, position, selected, started) }
     }
-    const debounced = await this.debouncer.delayAndShouldDebounce(cfg.debounceMs)
+    const debounced = manual ? false : await this.debouncer.delayAndShouldDebounce(cfg.debounceMs)
     this.emit(cfg, {
       requestId,
       phase: "debounce",
       document,
       position,
       selected,
-      debounceMs: cfg.debounceMs,
+      debounceMs: manual ? 0 : cfg.debounceMs,
       cancelled: debounced,
       emptyReason: debounced ? "cancelled" : "none",
     })
@@ -1136,7 +1180,15 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
 
   private emit(cfg: QwenAutocompleteConfig, input: Omit<Parameters<typeof emitQwenDiagnostic>[0], "cfg">): void {
     try {
-      emitQwenDiagnostic({ ...input, cfg })
+      const config = vscode.workspace.getConfiguration("kilo-code.new.autocomplete", input.document.uri)
+      emitQwenDiagnostic({
+        ...input,
+        cfg,
+        connectionState: this.state(),
+        requestSource: this.source,
+        workspaceScope: autocompleteScope(config),
+        selectionOrigin: this.origin(),
+      })
     } catch (err) {
       void err
       // Diagnostics must never affect autocomplete behavior.
@@ -1161,17 +1213,17 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
 
   private logDone(req: Pending, started: number, prefix: number, suffix: number, text: string): void {
     this.log(
-      `[Kilo New] qwen-autocomplete requestId=${req.id} path=${quote(req.path)} line=${req.line + 1} character=${
+      `[Kilo New] qwen-autocomplete requestId=${req.id} pathHash=${pathHash(req.path)} line=${req.line + 1} character=${
         req.character + 1
-      } latency=${Date.now() - started} prefixChars=${prefix} suffixChars=${suffix} firstLine=${quote(firstLogLine(text))}`,
+      } latency=${Date.now() - started} prefixChars=${prefix} suffixChars=${suffix} outputChars=${text.length}`,
     )
   }
 
   private logError(req: Pending, started: number, prefix: number, suffix: number, err: unknown): void {
     this.log(
-      `[Kilo New] qwen-autocomplete requestId=${req.id} path=${quote(req.path)} line=${req.line + 1} character=${
+      `[Kilo New] qwen-autocomplete requestId=${req.id} pathHash=${pathHash(req.path)} line=${req.line + 1} character=${
         req.character + 1
-      } latency=${Date.now() - started} prefixChars=${prefix} suffixChars=${suffix} error=${quote(summary(err))}`,
+      } latency=${Date.now() - started} prefixChars=${prefix} suffixChars=${suffix} errorKind=${errorKind(err) ?? "unknown"}`,
     )
   }
 }
@@ -1181,12 +1233,4 @@ function validSelectedCompletionInfo(document: vscode.TextDocument, selected: vs
   const typed = selected.range.end.character - selected.range.start.character
   if (typed < 4) return false
   return selected.text.startsWith(text)
-}
-
-function quote(value: string): string {
-  return JSON.stringify(value.slice(0, 180))
-}
-
-function summary(err: unknown): string {
-  return err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300)
 }

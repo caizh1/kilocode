@@ -4,9 +4,12 @@ import { join, relative, dirname, basename } from "node:path"
 import { chmodSync, statSync, rmSync, readdirSync, existsSync } from "node:fs"
 import {
   copyCodeGraphParserWorker,
+  copyIndexingProcess,
   copyTreeSitterResources,
   hasCodeGraphParserWorker,
+  hasIndexingProcess,
   hasTreeSitterResources,
+  indexingProcessForBinary,
 } from "../src/services/cli-backend/cli-resources"
 import { currentFfmpegTarget, ensureFfmpegForTarget } from "./ffmpeg-helper"
 import { ensureRipgrepForTarget } from "./ripgrep-helper"
@@ -115,6 +118,7 @@ async function findKiloBinaryInOpencodeDist(): Promise<string | null> {
     statSync(preferred)
     if (!hasTreeSitterResources(preferred)) return null
     if (!hasCodeGraphParserWorker(preferred)) return null
+    if (!hasIndexingProcess(preferred)) return null
     if (!existsSync(snapshotForBinary(preferred))) return null
     return preferred
   } catch {
@@ -143,6 +147,7 @@ async function findKiloBinaryInOpencodeDist(): Promise<string | null> {
       if (e.isFile() && (e.name === "kilo" || e.name === "kilo.exe") && basename(dirname(p)) === "bin") {
         if (!hasTreeSitterResources(p)) continue
         if (!hasCodeGraphParserWorker(p)) continue
+        if (!hasIndexingProcess(p)) continue
         if (!existsSync(snapshotForBinary(p))) continue
         return p
       }
@@ -204,7 +209,19 @@ async function writeSourceWrapper() {
       "",
     ].join("\n"),
   )
+  const indexing = indexingProcessForBinary(targetBinPath)
+  await Bun.write(
+    indexing,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      `cd ${JSON.stringify(opencodeDir)}`,
+      `exec ${JSON.stringify(bun)} --conditions=browser src/kilocode/indexing-process.ts "$@"`,
+      "",
+    ].join("\n"),
+  )
   chmodSync(targetBinPath, 0o755)
+  chmodSync(indexing, 0o755)
   if (existsSync(devSnapshotPath)) await $`cp ${devSnapshotPath} ${targetSnapshotPath}`
   await ensureFfmpegForTarget(currentFfmpegTarget(), targetBinDir)
   await ensureRipgrepForTarget(vscodeTarget(), targetBinDir)
@@ -220,10 +237,11 @@ async function main() {
   const targetFile = Bun.file(targetBinPath)
   const exists = await targetFile.exists()
   const snapshotExists = await Bun.file(targetSnapshotPath).exists()
-  const ready = exists && snapshotExists
+  const processExists = hasIndexingProcess(targetBinPath)
+  const ready = exists && snapshotExists && processExists
 
   const stale = ready && !forceRebuild && (await isStale())
-  const rebuild = forceRebuild || stale || (exists && !snapshotExists)
+  const rebuild = forceRebuild || stale || (exists && (!snapshotExists || !processExists))
 
   if (ready && !rebuild) {
     const st = statSync(targetBinPath)
@@ -242,6 +260,7 @@ async function main() {
   if (exists && rebuild) {
     log(stale ? `CLI source has changed — rebuilding.` : `Refreshing existing CLI resources.`)
     rmSync(targetBinPath)
+    rmSync(indexingProcessForBinary(targetBinPath), { force: true })
     if (existsSync(targetSnapshotPath)) rmSync(targetSnapshotPath)
     if (forceRebuild || stale) {
       removeDist()
@@ -265,6 +284,7 @@ async function main() {
   await $`cp ${sourceBinPath} ${targetBinPath}`
   await copyTreeSitterResources(sourceBinPath, targetBinPath)
   await copyCodeGraphParserWorker(sourceBinPath, targetBinPath)
+  await copyIndexingProcess(sourceBinPath, targetBinPath)
   chmodSync(targetBinPath, 0o755)
   await ensureFfmpegForTarget(currentFfmpegTarget(), targetBinDir)
   await ensureRipgrepForTarget(vscodeTarget(), targetBinDir)

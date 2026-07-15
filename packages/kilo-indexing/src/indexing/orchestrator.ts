@@ -22,6 +22,7 @@ import { sanitizeErrorMessage } from "./shared/validation-helpers"
 import type { RagCheckpointMeta } from "./rag-checkpoint"
 import { IndexingRunLock } from "./run-lock"
 import type { IndexingCleanupSummary } from "./interfaces/cleanup"
+import type { IndexingPressure } from "./memory"
 
 const log = Log.create({ service: "indexing-orchestrator" })
 const LOCKED_MESSAGE = "Another indexing run is already active for this workspace."
@@ -105,6 +106,11 @@ export class CodeIndexOrchestrator {
     this.fileWatcher.updateBatchSegmentThreshold(newThreshold)
   }
 
+  public setMemoryPressure(pressure: IndexingPressure): void {
+    this.scanner.setMemoryPressure(pressure)
+    this.fileWatcher.setMemoryPressure?.(pressure)
+  }
+
   private installWatcherSubscriptions(): void {
     if (this._fileWatcherSubscriptions.length > 0) return
 
@@ -140,6 +146,9 @@ export class CodeIndexOrchestrator {
         if (summary.batchError) {
           log.error("batch processing failed", { err: summary.batchError })
         }
+        if (!this.fileWatcher.takeReconciliationRequest?.()) return
+        this._followUpScanRequested = true
+        if (!this._isProcessing) this.scheduleFollowUpScan("background")
       }),
     ]
   }
@@ -620,18 +629,20 @@ export class CodeIndexOrchestrator {
       reportGraphProgress(event.filePath)
     }
 
-    const result = await this.scanner.scanDirectory(
-      this.workspacePath,
-      (batchError: Error) => {
-        log.error(`error during ${mode} scan batch`, { err: batchError })
-        batchErrors.push(batchError)
-      },
-      handleFilesIndexed,
-      handleFileParsed,
-      mode,
-      handleScanProgress,
-      target,
-    )
+    const result = await this.scanner
+      .scanDirectory(
+        this.workspacePath,
+        (batchError: Error) => {
+          log.error(`error during ${mode} scan batch`, { err: batchError })
+          batchErrors.push(batchError)
+        },
+        handleFilesIndexed,
+        handleFileParsed,
+        mode,
+        handleScanProgress,
+        target,
+      )
+      .finally(() => this.scanner.disposeGraphWorkers?.())
 
     log.info("workspace scan completed", {
       workspacePath: this.workspacePath,

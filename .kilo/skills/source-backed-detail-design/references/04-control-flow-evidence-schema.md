@@ -84,10 +84,10 @@ business_capability_id,capability_name,capability_description,business_value,sco
 要求：
 
 - `capability_name` 只写能力名称，不得把说明塞进名称；
-- `capability_description` 必须用适中篇幅说明该能力具体做什么，建议 60-160 个中文字符；
+- `capability_description` 必须完整说明该能力处理的对象、触发、动作、结果和边界；不使用固定字数作为质量门槛；
 - `business_value` 说明该能力对模块业务结果的价值，例如接入校验、状态推进、数据落盘、资源回收、异常收敛；
 - `scope_boundary` 说明该能力负责什么、不负责什么；
-- `key_steps` 用业务语言概括 2-5 个关键步骤；
+- `key_steps` 用业务语言概括全部关键阶段，不遗漏源码确认的决策、等待、失败或终止阶段；
 - `source_functions` 和 `evidence_ids` 不能为空；
 - 低置信或源码未确认的能力不得写入确定性能力纵览，只能进入待确认事项。
 

@@ -3,7 +3,7 @@ import { Permission } from "../../src/permission"
 import { readOnlyBash } from "../../src/kilocode/agent"
 
 /** Build the Ask agent ruleset without MCP servers */
-function askRuleset() {
+function askRuleset(internal = false) {
   return Permission.fromConfig({
     "*": "deny",
     bash: readOnlyBash,
@@ -22,6 +22,8 @@ function askRuleset() {
     codesearch: "allow",
     codebase_search: "allow",
     codebase_analysis: "allow",
+    semantic_search: "allow",
+    ...(internal ? { document_search: "allow" as const } : {}),
   })
 }
 
@@ -52,6 +54,7 @@ function askRulesetWithMcp(servers: string[], user: Permission.Ruleset = []) {
       codesearch: "allow",
       codebase_search: "allow",
       codebase_analysis: "allow",
+      semantic_search: "allow",
       ...mcpRules,
     }),
     user,
@@ -210,7 +213,7 @@ describe("Ask agent bash permissions", () => {
 })
 
 describe("Ask agent tool disabled checks", () => {
-  const ruleset = askRuleset()
+  const ruleset = askRuleset(true)
 
   test("bash tool is NOT disabled (has specific allow rules after deny)", () => {
     const result = Permission.disabled(["bash"], ruleset)
@@ -229,6 +232,8 @@ describe("Ask agent tool disabled checks", () => {
       "codesearch",
       "codebase_search",
       "codebase_analysis",
+      "semantic_search",
+      "document_search",
     ]
     const result = Permission.disabled(tools, ruleset)
     for (const tool of tools) {

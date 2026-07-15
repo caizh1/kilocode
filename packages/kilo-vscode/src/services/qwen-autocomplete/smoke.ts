@@ -1,8 +1,9 @@
 import * as vscode from "vscode"
+import type { KiloConnectionService } from "../cli-backend"
 import { readQwenAutocompleteConfig } from "./config"
-import { showQwenAutocompleteLogs } from "./diagnostics"
+import { exportQwenAutocompleteDiagnostics, qwenDiagnosticsForTests, showQwenAutocompleteLogs } from "./diagnostics"
 import { KiloQwenInlineCompletionProvider } from "./KiloQwenInlineCompletionProvider"
-import type { QwenFimCompleteInput } from "./types"
+import { autocompleteResource } from "../autocomplete/workspace"
 
 const SMOKE_TEXT = "int main(void) {\n  \n}\n"
 
@@ -10,13 +11,10 @@ export async function enableDiagnostics(): Promise<void> {
   const qwenCfg = vscode.workspace.getConfiguration("kilo.autocomplete")
   const updates: Array<{ key: string; value: unknown }> = []
 
-  if (qwenCfg.get("enabled") !== true || qwenCfg.get("provider") !== "qwen-direct") {
-    updates.push({ key: "enabled", value: true }, { key: "provider", value: "qwen-direct" })
-  }
   if (qwenCfg.get("qwen.trace") !== true) {
     updates.push({ key: "qwen.trace", value: true })
   }
-  if (qwenCfg.get("qwen.logLevel") === "off") {
+  if (qwenCfg.get("qwen.logLevel") !== "debug" && qwenCfg.get("qwen.logLevel") !== "info") {
     updates.push({ key: "qwen.logLevel", value: "debug" })
   }
   for (const { key, value } of updates) {
@@ -24,42 +22,73 @@ export async function enableDiagnostics(): Promise<void> {
   }
 }
 
-export async function qwenDiagnosticSmoke(): Promise<void> {
+export async function qwenDiagnosticSmoke(connection: KiloConnectionService): Promise<void> {
   await enableDiagnostics()
   showQwenAutocompleteLogs()
 
   const cfg = {
-    ...readQwenAutocompleteConfig(),
+    ...readQwenAutocompleteConfig(autocompleteResource()),
     debounceMs: 0,
   }
   const document = makeDocument()
   const position = new vscode.Position(1, 2)
 
   const provider = new KiloQwenInlineCompletionProvider({
+    connection,
+    guard: () => false,
+    state: () => connection.getConnectionState(),
     read: () => cfg,
-    client: createMockClient(),
+    source: "smoke",
     log: (msg) => console.info(`[Kilo New] qwen-autocomplete smoke: ${msg}`),
   })
 
   try {
-    await provider.provideInlineCompletionItems(
+    const items = await provider.provideInlineCompletionItems(
       document,
       position,
       {} as vscode.InlineCompletionContext,
-      { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => {} }) },
+      {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => {} }),
+      },
     )
+    console.info(`[Kilo New] qwen-autocomplete smoke returned ${items.length} item(s)`)
+    if (items.length === 0) throw new Error("Qwen autocomplete smoke returned no inline completion items.")
+    const result = smokeResult()
+    const action = await vscode.window.showInformationMessage?.(
+      `Qwen transport test succeeded: provider=${cfg.providerID}, model=${cfg.model}, status=${result.status ?? 200}, items=${items.length}. This tests transport only; it does not prove the editor inline provider is registered.`,
+      "Export Diagnostics",
+    )
+    if (action === "Export Diagnostics") await exportQwenAutocompleteDiagnostics()
+  } catch (err) {
+    const result = smokeResult()
+    const action = await vscode.window.showErrorMessage?.(
+      `Qwen transport test failed: status=${result.status ?? 0}, phase=${result.phase ?? "unknown"}. This tests transport only; inspect the editor diagnostics separately for registration.`,
+      "Export Diagnostics",
+    )
+    if (action === "Export Diagnostics") await exportQwenAutocompleteDiagnostics()
+    console.warn("[Kilo New] qwen-autocomplete smoke failed", err)
   } finally {
     provider.dispose()
   }
 }
 
-function createMockClient() {
+function smokeResult(): { status?: number; phase?: string } {
+  const entries = qwenDiagnosticsForTests()
+    .map((line) => {
+      try {
+        return JSON.parse(line) as Record<string, unknown>
+      } catch (err) {
+        console.warn("[Kilo New] qwen-autocomplete ignored an invalid diagnostic line", err)
+        return undefined
+      }
+    })
+    .filter((entry): entry is Record<string, unknown> => entry?.requestSource === "smoke")
+  const result = [...entries].reverse().find((entry) => entry.phase === "response" || entry.phase === "error")
   return {
-    complete: async (input: QwenFimCompleteInput) => {
-      input.onResponse?.({ status: 200 })
-      return "return ok;"
-    },
-  } as unknown as import("./QwenFimClient").QwenFimClient
+    status: typeof result?.httpStatus === "number" ? result.httpStatus : undefined,
+    phase: typeof result?.serverPhase === "string" ? result.serverPhase : undefined,
+  }
 }
 
 function makeDocument(): vscode.TextDocument {
@@ -79,7 +108,8 @@ function makeDocument(): vscode.TextDocument {
     },
     getText: (range?: vscode.Range) => {
       if (!range) return SMOKE_TEXT
-      const startOffset = lines.slice(0, range.start.line).reduce((sum, l) => sum + l.length + 1, 0) + range.start.character
+      const startOffset =
+        lines.slice(0, range.start.line).reduce((sum, l) => sum + l.length + 1, 0) + range.start.character
       const endOffset = lines.slice(0, range.end.line).reduce((sum, l) => sum + l.length + 1, 0) + range.end.character
       return SMOKE_TEXT.slice(startOffset, endOffset)
     },

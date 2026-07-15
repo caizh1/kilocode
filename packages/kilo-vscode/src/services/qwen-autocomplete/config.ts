@@ -1,11 +1,9 @@
 import * as vscode from "vscode"
+import { QWEN_FIM_MODEL_ID, isQwenFimTarget } from "../../shared/qwen-autocomplete"
 import { QWEN_AUTOCOMPLETE_CACHE_DEFAULT_MAX_ENTRIES, clampMaxEntries } from "./autocompleteLruCache"
-import type { QwenAutocompleteConfig, QwenAutocompleteLogLevel, QwenAutocompleteProvider } from "./types"
+import type { QwenAutocompleteConfig, QwenAutocompleteLogLevel } from "./types"
 
 export const QWEN_CONFIG_SECTION = "kilo.autocomplete"
-
-const DEFAULT_ENDPOINT = "http://company-qwen-coder.example.com/v1/completions"
-const DEFAULT_MODEL = "qwen-coder-30b0"
 
 function str(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback
@@ -20,32 +18,29 @@ function num(value: unknown, fallback: number, min: number, max: number): number
   return Math.max(min, Math.min(max, value))
 }
 
-function provider(value: unknown): QwenAutocompleteProvider {
-  if (value === "qwen-direct" || value === "none") return value
-  return "none"
-}
-
 function logLevel(value: unknown): QwenAutocompleteLogLevel {
   if (value === "info" || value === "debug") return value
   return "off"
 }
 
-export function readQwenAutocompleteConfig(): QwenAutocompleteConfig {
-  const cfg = vscode.workspace.getConfiguration(QWEN_CONFIG_SECTION)
+export function readQwenAutocompleteConfig(resource?: vscode.Uri): QwenAutocompleteConfig {
+  const cfg = vscode.workspace.getConfiguration(QWEN_CONFIG_SECTION, resource)
+  const autocomplete = vscode.workspace.getConfiguration("kilo-code.new.autocomplete", resource)
+  const providerID = str(autocomplete.get("provider"), "")
+  const selected = isQwenFimTarget(providerID, autocomplete.get<string>("model"))
   return {
-    enabled: bool(cfg.get("enabled"), false),
-    provider: provider(cfg.get("provider")),
-    endpoint: str(cfg.get("qwen.endpoint"), DEFAULT_ENDPOINT).trim(),
-    model: str(cfg.get("qwen.model"), DEFAULT_MODEL).trim() || DEFAULT_MODEL,
-    // TODO: move qwen autocomplete API keys to VS Code SecretStorage after Phase 1.
-    apiKey: str(cfg.get("qwen.apiKey"), ""),
+    enabled: selected,
+    autoTrigger: bool(autocomplete.get("enableAutoTrigger"), true),
+    provider: selected ? "qwen-direct" : "none",
+    providerID,
+    model: QWEN_FIM_MODEL_ID,
     debounceMs: num(cfg.get("qwen.debounceMs"), 350, 0, 5_000),
     maxTokens: num(cfg.get("qwen.maxTokens"), 128, 1, 2_048),
     maxPromptTokens: num(cfg.get("qwen.maxPromptTokens"), 1024, 1, 200_000),
     modelTimeout: num(cfg.get("qwen.modelTimeout"), 150, 1, 600_000),
     maxSuffixPercentage: num(cfg.get("qwen.maxSuffixPercentage"), 0.2, 0, 1),
     prefixPercentage: num(cfg.get("qwen.prefixPercentage"), 0.3, 0, 1),
-    temperature: num(cfg.get("qwen.temperature"), 0.1, 0, 2),
+    temperature: num(cfg.get("qwen.temperature"), 0.01, 0, 2),
     cacheEnabled: bool(cfg.get("qwen.cache.enabled"), true),
     cacheMaxEntries: clampMaxEntries(cfg.get("qwen.cache.maxEntries") ?? QWEN_AUTOCOMPLETE_CACHE_DEFAULT_MAX_ENTRIES),
     prefixChars: num(cfg.get("qwen.prefixChars"), 12_000, 0, 200_000),
@@ -76,5 +71,5 @@ export function readQwenAutocompleteConfig(): QwenAutocompleteConfig {
 }
 
 export function qwenAutocompleteEnabled(cfg: QwenAutocompleteConfig): boolean {
-  return cfg.enabled && cfg.provider === "qwen-direct"
+  return cfg.enabled && cfg.provider === "qwen-direct" && cfg.providerID.length > 0 && cfg.model === QWEN_FIM_MODEL_ID
 }

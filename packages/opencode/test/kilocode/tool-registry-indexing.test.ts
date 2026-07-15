@@ -6,6 +6,7 @@ import { KiloIndexing } from "../../src/kilocode/indexing"
 import { KilocodeBootstrap } from "../../src/kilocode/bootstrap"
 import { KiloSessions } from "../../src/kilo-sessions/kilo-sessions"
 import { KiloToolRegistry } from "../../src/kilocode/tool/registry"
+import { Config } from "../../src/config/config"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { ToolRegistry } from "../../src/tool/registry"
 import type * as Tool from "../../src/tool/tool"
@@ -44,6 +45,10 @@ describe("kilocode tool registry indexing", () => {
             expect(ids).toContain("question")
             expect(ids).toContain("read")
             expect(ids).toContain("suggest")
+            expect(ids).toContain("validate_mermaid_diagram")
+            expect(ids).toContain("render_mermaid_diagram")
+            expect(ids).toContain("save_mermaid_artifact")
+            expect(ids).toContain("insert_mermaid_into_word")
             expect(avail).not.toHaveBeenCalled()
           } finally {
             avail.mockRestore()
@@ -379,6 +384,114 @@ describe("kilocode tool registry indexing", () => {
       if (prev === undefined) delete process.env["KILO_CLIENT"]
       if (prev !== undefined) process.env["KILO_CLIENT"] = prev
     }
+  })
+
+  test("preloads internal retrieval tools without consulting runtime readiness", async () => {
+    const info = (id: string): Tool.Info => ({
+      id,
+      init: () =>
+        Effect.succeed({
+          description: id,
+          parameters: Schema.String,
+          execute: () => Effect.succeed({ title: id, output: id, metadata: {} }),
+        }),
+    })
+    const defs = {
+      codebase: info("codebase_search"),
+      recall: info("recall"),
+      manager: info("agent_manager"),
+      process: info("background_process"),
+    }
+    const deps = {
+      agent: {} as Agent.Interface,
+      truncate: {} as import("../../src/tool/truncate").Interface,
+      internal: true,
+    }
+    const calls: string[] = []
+
+    const result = await Effect.runPromise(
+      KiloToolRegistry.build(defs, deps, {
+        indexing: async () => {
+          calls.push("indexing")
+          return new Promise<never>(() => {})
+        },
+        analysis: async () => ({ CodebaseAnalysisTool: Effect.succeed(info("codebase_analysis")) }) as never,
+        semantic: async () => ({ SemanticSearchTool: Effect.succeed(info("semantic_search")) }) as never,
+        document: async () => ({ DocumentSearchTool: Effect.succeed(info("document_search")) }) as never,
+      }),
+    )
+
+    expect(calls).toEqual([])
+    expect(result.analysis?.id).toBe("codebase_analysis")
+    expect(result.semantic?.id).toBe("semantic_search")
+    expect(result.document?.id).toBe("document_search")
+  })
+
+  test("resolves internal retrieval visibility from fresh effective config on each model step", async () => {
+    const def = (id: string): Tool.Def => ({
+      id,
+      description: id,
+      parameters: Schema.String,
+      execute: () => Effect.succeed({ title: id, output: id, metadata: {} }),
+    })
+    const tools = [
+      def("glob"),
+      def("grep"),
+      def("read"),
+      def("codebase_analysis"),
+      def("semantic_search"),
+      def("document_search"),
+    ]
+    const state = {
+      cfg: {
+        plugin: ["@kilocode/kilo-indexing"],
+      } as Config.Info,
+      reads: 0,
+    }
+    const source = {
+      get: () =>
+        Effect.sync(() => {
+          state.reads++
+          return state.cfg
+        }),
+      getGlobal: () =>
+        Effect.sync(() => {
+          state.reads++
+          return {} as Config.Info
+        }),
+    }
+
+    const publicTools = await Effect.runPromise(KiloToolRegistry.resolve(tools, source, false))
+    expect(publicTools).toBe(tools)
+    expect(state.reads).toBe(0)
+
+    const enabled = await Effect.runPromise(KiloToolRegistry.resolve(tools, source, true))
+    expect(enabled.map((tool) => tool.id)).toEqual([
+      "glob",
+      "grep",
+      "read",
+      "codebase_analysis",
+      "semantic_search",
+      "document_search",
+    ])
+    expect(enabled.find((tool) => tool.id === "glob")?.description).toContain("use `codebase_analysis` first")
+    expect(enabled.find((tool) => tool.id === "grep")?.description).toContain("do not repeatedly retry")
+
+    state.cfg = {
+      plugin: ["@kilocode/kilo-indexing"],
+      indexing: {
+        enabled: false,
+        documents: { enabled: false },
+      },
+    } as Config.Info
+    const disabled = await Effect.runPromise(KiloToolRegistry.resolve(tools, source, true))
+    expect(disabled.map((tool) => tool.id)).toEqual(["glob", "grep", "read", "codebase_analysis"])
+    expect(disabled.find((tool) => tool.id === "glob")?.description).not.toContain("semantic_search")
+    expect(disabled.find((tool) => tool.id === "glob")?.description).not.toContain("document_search")
+
+    state.cfg = { indexing: { enabled: true, documents: { enabled: true } } } as Config.Info
+    const missing = await Effect.runPromise(KiloToolRegistry.resolve(tools, source, true))
+    expect(missing.map((tool) => tool.id)).toEqual(["glob", "grep", "read", "semantic_search", "document_search"])
   })
 
   test("logs indexing bootstrap failures without blocking session bootstrap", async () => {

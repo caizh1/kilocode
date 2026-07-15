@@ -4,7 +4,7 @@ import * as vscode from "vscode"
 import { AutocompleteDebouncer } from "./AutocompleteDebouncer"
 import { KiloQwenInlineCompletionProvider } from "./KiloQwenInlineCompletionProvider"
 import { QwenFimClient } from "./QwenFimClient"
-import { shouldGuardQwenDocument } from "./guard"
+import { shouldGuardQwenDocumentInRoot } from "./guard"
 import type { QwenAutocompleteConfig, QwenFimCompleteInput } from "./types"
 
 export type BenchmarkMode = "mock" | "real"
@@ -179,17 +179,17 @@ const EMPTY_LATENCIES = { min: 0, max: 0, avg: 0, p50: 0, p95: 0 }
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "",
+  providerID: "benchmark",
   model: DEFAULT_MODEL,
-  apiKey: "",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
   modelTimeout: 150,
   maxSuffixPercentage: 0.2,
   prefixPercentage: 0.3,
-  temperature: 0.1,
+  temperature: 0.01,
   cacheEnabled: false,
   cacheMaxEntries: 1000,
   prefixChars: 12_000,
@@ -259,7 +259,6 @@ export async function runBenchmark(input: Partial<BenchmarkRunOptions> = {}): Pr
   const opts = defaultBenchmarkOptions(input)
   validateOptions(opts)
   const root = opts.cwd ?? process.cwd()
-  setWorkspaceRoot(root)
   const dir = path.resolve(root, opts.fixturesPath)
   const loaded = await loadBenchmarkFixtures(dir)
   const runs: Run[] = []
@@ -455,7 +454,7 @@ async function executeCase(
     read: () => configFor(opts),
     debouncer: new AutocompleteDebouncer(),
     guard: async (document) => {
-      const blocked = await shouldGuardQwenDocument(document)
+      const blocked = await shouldGuardQwenDocumentInRoot(document, root)
       state.guard = blocked
       return blocked
     },
@@ -529,34 +528,22 @@ function clientFor(
         state.raw = raw
         return raw
       }
-      const client = new QwenFimClient(opts.fetcher ?? fetch)
-      const raw = await client.complete(input)
-      state.raw = raw
-      return raw
+      throw new Error("Real Qwen benchmarks require an extension-host CLI connection.")
     },
   } as QwenFimClient
 }
 
 function configFor(opts: BenchmarkRunOptions): QwenAutocompleteConfig {
-  const env = opts.env ?? process.env
-  const key = opts.apiKeyEnv ? (env[opts.apiKeyEnv] ?? "") : ""
   return {
     ...cfg,
-    endpoint: opts.endpoint ?? "http://mock-qwen.invalid/v1/completions",
     model: opts.model ?? DEFAULT_MODEL,
-    apiKey: key,
     cacheEnabled: opts.cache ?? false,
   }
 }
 
 function validateOptions(opts: BenchmarkRunOptions): void {
   if (opts.mode === "mock") return
-  const env = opts.env ?? process.env
-  const key = opts.apiKeyEnv ? env[opts.apiKeyEnv] : undefined
-  if (!opts.endpoint) throw new BenchmarkConfigError("Real mode requires --endpoint.")
-  if (!opts.model) throw new BenchmarkConfigError("Real mode requires --model.")
-  if (!opts.apiKeyEnv) throw new BenchmarkConfigError("Real mode requires --api-key-env.")
-  if (!key) throw new BenchmarkConfigError(`Real mode requires a nonempty ${opts.apiKeyEnv}.`)
+  throw new BenchmarkConfigError("Real mode requires an extension-host CLI connection.")
 }
 
 async function itemsWithTimeout(
@@ -763,9 +750,8 @@ function markdownReport(report: BenchmarkReport): string {
 
 function requestPreview(input: QwenFimCompleteInput, redact: boolean): Record<string, unknown> {
   return {
-    endpoint: input.endpoint,
-    model: input.model,
-    apiKey: input.apiKey ? API_KEY_REDACTION : "",
+    providerID: input.providerID,
+    modelID: input.modelID,
     prompt: redact ? PROMPT_REDACTION : input.prompt,
     maxTokens: input.maxTokens,
     temperature: input.temperature,
@@ -806,12 +792,6 @@ function createDocument(text: string, fixture: BenchmarkFixture, root: string): 
       return text.slice(offsetAt(lines, range.start), offsetAt(lines, range.end))
     },
   } as unknown as vscode.TextDocument
-}
-
-function setWorkspaceRoot(root: string): void {
-  ;(vscode.workspace as unknown as { workspaceFolders?: Array<{ uri: { fsPath: string } }> }).workspaceFolders = [
-    { uri: { fsPath: root } },
-  ]
 }
 
 function cancellationToken(): Token {

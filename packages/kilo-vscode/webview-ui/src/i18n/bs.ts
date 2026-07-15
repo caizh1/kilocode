@@ -1,4 +1,7 @@
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   "command.category.suggested": "Predloženo",
   "command.category.view": "Prikaz",
   "command.category.project": "Projekat",
@@ -242,6 +245,7 @@ export const dict = {
   "prompt.placeholder.summarizeComments": "Sažmi komentare…",
   "prompt.placeholder.summarizeComment": "Sažmi komentar…",
   "prompt.mode.shell": "Shell",
+  "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "esc za izlaz",
 
   "prompt.example.1": "Popravi TODO u bazi koda",
@@ -961,6 +965,7 @@ export const dict = {
   "provider.custom.error.duplicate": "Duplikat",
   "settings.openLocalConfig": "Lokalna konfig.",
   "settings.openGlobalConfig": "Globalna konfig.",
+  "settings.close": "Zatvori postavke",
   "settings.config.scope.local": "Lokalno",
   "settings.config.scope.global": "Globalno",
   "settings.config.status.loaded": "učitano",

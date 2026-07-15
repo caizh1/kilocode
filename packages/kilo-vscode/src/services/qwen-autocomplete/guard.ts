@@ -31,6 +31,10 @@ export async function shouldGuardQwenDocument(document: vscode.TextDocument): Pr
   return (await decideQwenGuard(document, "current-file")).blocked
 }
 
+export async function shouldGuardQwenDocumentInRoot(document: vscode.TextDocument, root: string): Promise<boolean> {
+  return (await guardUnchecked(document, "current-file", [{ uri: { fsPath: root } }])).blocked
+}
+
 export async function shouldGuardQwenContextDocument(document: vscode.TextDocument): Promise<boolean> {
   return (await decideQwenGuard(document, "context-read")).blocked
 }
@@ -78,9 +82,12 @@ async function controllerFor(root: string): Promise<FileIgnoreController> {
   return guard
 }
 
-function workspaceRootFor(document: vscode.TextDocument): string | undefined {
+function workspaceRootFor(
+  document: vscode.TextDocument,
+  folders: ReadonlyArray<{ uri: { fsPath: string } }> | undefined = vscode.workspace.workspaceFolders,
+): string | undefined {
   const file = path.resolve(document.uri.fsPath)
-  const roots = vscode.workspace.workspaceFolders
+  const roots = folders
     ?.map((folder) => path.resolve(folder.uri.fsPath))
     .filter((root) => contains(root, file))
     .sort((a, b) => b.length - a.length)
@@ -88,7 +95,11 @@ function workspaceRootFor(document: vscode.TextDocument): string | undefined {
   return roots?.[0]
 }
 
-async function guardUnchecked(document: vscode.TextDocument, source: QwenGuardSource): Promise<QwenGuardDecision> {
+async function guardUnchecked(
+  document: vscode.TextDocument,
+  source: QwenGuardSource,
+  folders?: ReadonlyArray<{ uri: { fsPath: string } }>,
+): Promise<QwenGuardDecision> {
   const schemeAllowed = document.uri.scheme === "file"
   if (!schemeAllowed) {
     return decision(source, "non-file-scheme", {
@@ -114,7 +125,7 @@ async function guardUnchecked(document: vscode.TextDocument, source: QwenGuardSo
     })
   }
 
-  const root = workspaceRootFor(document)
+  const root = workspaceRootFor(document, folders)
   if (!root) {
     return decision(source, "outside-workspace", {
       blocked: true,

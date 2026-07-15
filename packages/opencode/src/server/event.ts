@@ -5,6 +5,6 @@ export const Event = {
   Connected: BusEvent.define("server.connected", Schema.Struct({})),
   Disposed: BusEvent.define("global.disposed", Schema.Struct({})),
   // kilocode_change start — emitted when config is updated without a full dispose
-  ConfigUpdated: BusEvent.define("global.config.updated", Schema.Struct({})),
+  ConfigUpdated: BusEvent.define("global.config.updated", Schema.Struct({ deferred: Schema.optional(Schema.Boolean) })),
   // kilocode_change end
 }

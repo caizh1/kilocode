@@ -35,16 +35,19 @@ import { Identifier } from "@/id/id"
 import { Instance } from "@/project/instance"
 import { InstanceStore } from "@/project/instance-store"
 import { ModelCache } from "@/provider/model-cache"
+import { Provider } from "@/provider/provider"
 import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
 import { MessageTable, PartTable, SessionTable } from "@/session/session.sql"
 import { Session } from "@/session/session"
 import { Database } from "@/storage/db"
 import { Storage } from "@/storage/storage"
-import { AudioTranscriptionsBody, ClawStatus, EditBody, FimBody } from "../groups/kilo-gateway"
+import { AudioTranscriptionsBody, ClawStatus, EditBody, FimBody, QwenFimBody } from "../groups/kilo-gateway"
 import { baseKey } from "../../../session-portability/cumulative-diff"
 import { extractSessionDiffs, restoreSessionDiffs } from "../../../session-portability/session-diff-restore"
 
 const FIM_TIMEOUT_MS = 30_000
+const QWEN_FIM_MODEL = "qwen-coder-30b0"
+const OPENAI_COMPATIBLE = "@ai-sdk/openai-compatible"
 const log = Log.create({ service: "kilo-gateway" })
 
 function jsonError(error: string, status: number) {
@@ -55,11 +58,36 @@ function logError(route: string, err: unknown) {
   log.error("unhandled error", { route, err })
 }
 
+function completionURL(url: string): string | undefined {
+  const value = url.trim().replace(/\/+$/, "")
+  if (!value) return undefined
+  if (value.endsWith("/completions")) return value
+  return `${value}/completions`
+}
+
+function configHeaders(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).filter((item): item is [string, string] => typeof item[1] === "string"),
+  )
+}
+
+function completionText(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const choices = (value as { choices?: unknown }).choices
+  if (!Array.isArray(choices)) return undefined
+  const first = choices[0]
+  if (!first || typeof first !== "object") return undefined
+  const text = (first as { text?: unknown }).text
+  return typeof text === "string" && text ? text : undefined
+}
+
 export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo", (handlers) =>
   Effect.gen(function* () {
     const auth = yield* Auth.Service
     const store = yield* InstanceStore.Service
     const cache = yield* ModelCache.Service
+    const providers = yield* Provider.Service
 
     const profile = Effect.fn("KiloGatewayHttpApi.profile")(function* () {
       const info = yield* auth.get("kilo").pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
@@ -164,6 +192,147 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
           headers: {
             "Cache-Control": "no-cache",
             Connection: "keep-alive",
+          },
+        },
+      )
+    })
+
+    const qwenFim = Effect.fn("KiloGatewayHttpApi.qwenFim")(function* (ctx: { payload: typeof QwenFimBody.Type }) {
+      const started = Date.now()
+      const report = (
+        phase: string,
+        status: number,
+        source: "provider-options" | "model-api" | "missing" = "missing",
+      ) =>
+        log.info("qwen fim", {
+          providerID: ctx.payload.providerID,
+          modelID: ctx.payload.modelID,
+          phase,
+          status,
+          latency: Date.now() - started,
+          endpointSource: source,
+        })
+      const reject = (
+        phase: string,
+        status: 400 | 401,
+        source: "provider-options" | "model-api" | "missing" = "missing",
+      ) => {
+        report(phase, status, source)
+        return HttpServerResponse.jsonUnsafe(
+          { _tag: status === 401 ? "Unauthorized" : "BadRequest" },
+          {
+            status,
+            headers: {
+              "X-ChipMate-Qwen-Fim-Phase": phase,
+              "X-ChipMate-Qwen-Endpoint-Source": source,
+            },
+          },
+        )
+      }
+      if (ctx.payload.modelID !== QWEN_FIM_MODEL) {
+        return reject("model-id-rejected", 400)
+      }
+
+      const all = yield* providers.list()
+      const provider = Object.values(all).find((item) => item.id === ctx.payload.providerID)
+      if (!provider) {
+        return reject("provider-not-found", 400)
+      }
+      const model = provider && Object.values(provider.models).find((item) => item.id === ctx.payload.modelID)
+      if (!model || model.api.npm !== OPENAI_COMPATIBLE) {
+        return reject("provider-type-rejected", 400)
+      }
+
+      const option = typeof provider.options.baseURL === "string" ? completionURL(provider.options.baseURL) : undefined
+      const fallback = completionURL(model.api.url)
+      const url = option ?? fallback
+      const source = option ? "provider-options" : fallback ? "model-api" : "missing"
+      if (!url) {
+        return reject("base-url-missing", 400)
+      }
+
+      const headers: Record<string, string> = {
+        ...configHeaders(provider.options.headers),
+        ...model.headers,
+        "Content-Type": "application/json",
+      }
+      const authorized = Object.keys(headers).some((key) => key.toLowerCase() === "authorization")
+      const item = authorized
+        ? undefined
+        : yield* auth.get(ctx.payload.providerID).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (!authorized && (!item || item.type !== "api" || !item.key)) {
+        return reject("auth-missing", 401, source)
+      }
+      if (!authorized && item?.type === "api") headers.Authorization = `Bearer ${item.key}`
+
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const signal =
+        request.source instanceof Request
+          ? AbortSignal.any([request.source.signal, AbortSignal.timeout(FIM_TIMEOUT_MS)])
+          : AbortSignal.timeout(FIM_TIMEOUT_MS)
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          fetch(url, {
+            method: "POST",
+            headers,
+            signal,
+            body: JSON.stringify({
+              model: model.api.id,
+              // The rendered Qwen prompt already contains <|fim_suffix|>. OpenAI-compatible
+              // legacy completion endpoints may reject even an empty top-level suffix field.
+              prompt: ctx.payload.prefix,
+              max_tokens: ctx.payload.maxTokens ?? 128,
+              temperature: ctx.payload.temperature ?? 0.01,
+              stop: ctx.payload.stop,
+              stream: false,
+            }),
+          }),
+        catch: (err) => err,
+      }).pipe(
+        Effect.match({
+          onFailure: () => ({ ok: false as const }),
+          onSuccess: (response) => ({ ok: true as const, response }),
+        }),
+      )
+      if (!result.ok) return reject("upstream-network", 400, source)
+      const response = result.response
+      if (!response.ok) {
+        report("upstream-status", response.status, source)
+        return HttpServerResponse.jsonUnsafe(
+          { _tag: "BadRequest" },
+          {
+            status: 400,
+            headers: {
+              "X-ChipMate-Qwen-Fim-Phase": "upstream-status",
+              "X-ChipMate-Qwen-Endpoint-Source": source,
+              "X-ChipMate-Qwen-Upstream-Status": String(response.status),
+            },
+          },
+        )
+      }
+
+      const parsed = yield* Effect.tryPromise({
+        try: () => response.json(),
+        catch: (err) => err,
+      }).pipe(
+        Effect.match({
+          onFailure: () => ({ ok: false as const }),
+          onSuccess: (body) => ({ ok: true as const, body }),
+        }),
+      )
+      if (!parsed.ok) return reject("response-json-invalid", 400, source)
+      const text = completionText(parsed.body)
+      if (!text) {
+        return reject("response-text-missing", 400, source)
+      }
+      report("success", 200, source)
+      return HttpServerResponse.jsonUnsafe(
+        { text },
+        {
+          status: 200,
+          headers: {
+            "X-ChipMate-Qwen-Fim-Phase": "success",
+            "X-ChipMate-Qwen-Endpoint-Source": source,
           },
         },
       )
@@ -503,6 +672,7 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
       .handle("profile", profile)
       .handle("modes", modes)
       .handle("fim", fim)
+      .handle("qwenFim", qwenFim)
       .handle("edit", edit)
       .handle("audioTranscriptions", audioTranscriptions)
       .handle("notifications", notifications)

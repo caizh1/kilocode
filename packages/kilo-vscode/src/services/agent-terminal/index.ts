@@ -6,8 +6,8 @@ import { projectContextSummary } from "./runtime"
 const CONFIG_ENABLED = "kilo.agentTerminal.enabled"
 const PROFILE_ID = "kilo.agentTerminal"
 
-export function registerAgentTerminal(context: vscode.ExtensionContext): void {
-  const service = new AgentTerminalService()
+export function registerAgentTerminal(context: vscode.ExtensionContext, openConsole: () => void): void {
+  const service = new AgentTerminalService(openConsole)
   context.subscriptions.push(
     vscode.commands.registerCommand("kilo-code.new.agentTerminal.open", async () => service.openFromCommand()),
     vscode.window.registerTerminalProfileProvider(PROFILE_ID, {
@@ -17,21 +17,10 @@ export function registerAgentTerminal(context: vscode.ExtensionContext): void {
 }
 
 class AgentTerminalService {
+  constructor(private readonly openConsole: () => void) {}
+
   async openFromCommand(): Promise<void> {
-    if (!(await ensureEnabled())) return
-    const workspace = workspaceRoot()
-    const helper = await ensureHelperFiles(workspace)
-    const terminal = vscode.window.createTerminal({
-      name: "Kilo Agent Terminal",
-      cwd: workspace,
-      env: {
-        KILO_AGENT_TERMINAL: "1",
-        KILO_AGENT_TERMINAL_HELPER: helper.shell,
-        KILO_AGENT_TERMINAL_CONTEXT: helper.context,
-      },
-    })
-    terminal.show(false)
-    terminal.sendText(startupCommand(helper.shell, helper.context))
+    this.openConsole()
   }
 
   async profile(): Promise<vscode.TerminalProfile | undefined> {
@@ -39,7 +28,7 @@ class AgentTerminalService {
     const workspace = workspaceRoot()
     const helper = await ensureHelperFiles(workspace)
     return new vscode.TerminalProfile({
-      name: "Kilo Agent Terminal",
+      name: "Kilo Agent Terminal (Legacy)",
       cwd: workspace,
       env: {
         KILO_AGENT_TERMINAL: "1",

@@ -2,7 +2,10 @@ import { dict as en } from "./en"
 
 type Keys = keyof typeof en
 
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   "command.category.suggested": "추천",
   "command.category.view": "보기",
   "command.category.project": "프로젝트",
@@ -243,6 +246,7 @@ export const dict = {
   "prompt.placeholder.summarizeComments": "댓글 요약…",
   "prompt.placeholder.summarizeComment": "댓글 요약…",
   "prompt.mode.shell": "셸",
+  "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "종료하려면 esc",
 
   "prompt.example.1": "코드베이스의 TODO 수정",
@@ -910,6 +914,7 @@ export const dict = {
   "provider.custom.error.duplicate": "중복",
   "settings.openLocalConfig": "로컬 설정",
   "settings.openGlobalConfig": "전역 설정",
+  "settings.close": "설정 닫기",
   "settings.config.scope.local": "로컬",
   "settings.config.scope.global": "글로벌",
   "settings.config.status.loaded": "로드됨",

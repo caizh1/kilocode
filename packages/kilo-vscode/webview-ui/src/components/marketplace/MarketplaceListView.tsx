@@ -35,6 +35,8 @@ interface Props {
   marketplaceMode?: "skills-only" | "full"
   onUploadMarketplaceSkill?: (item: SkillMarketplaceItem) => void
   onStarMarketplaceSkill?: (item: MarketplaceItem) => void
+  onOpenSkill?: (item: SkillMarketplaceItem) => void
+  showIdentity?: boolean
 }
 
 export const MarketplaceListView = (props: Props) => {
@@ -76,23 +78,32 @@ export const MarketplaceListView = (props: Props) => {
 
   return (
     <div class="marketplace-list">
-      <Show when={props.type === "skill"}>
+      <Show when={props.type === "skill" && props.showIdentity !== false}>
         <div class="marketplace-identity-bar">
           <div class="marketplace-identity-copy">
-            <span class="marketplace-identity-label">市场用户：</span>
-            <span class="marketplace-identity-value">{props.marketplaceUser?.name ?? "未验证"}</span>
+            <span class="marketplace-identity-label">{t("marketplace.aligned.user")}:</span>
+            <span class="marketplace-identity-value">
+              {props.marketplaceUser?.name ?? t("marketplace.aligned.unverified")}
+            </span>
             <Show when={props.marketplaceBaseUrl}>
               <span class="marketplace-identity-url">{props.marketplaceBaseUrl}</span>
             </Show>
             <span class="marketplace-identity-url">
-              市场模式：{props.marketplaceMode === "skills-only" || props.marketplaceSkillsOnly ? "仅技能" : "完整市场"}
+              {t("marketplace.aligned.mode")}:{" "}
+              {props.marketplaceMode === "skills-only" || props.marketplaceSkillsOnly
+                ? t("marketplace.aligned.skillsOnlyMode")
+                : t("marketplace.aligned.fullMode")}
             </span>
           </div>
         </div>
       </Show>
       <div class="marketplace-filters">
         <div class="marketplace-search-field">
-          <TextField placeholder={props.searchPlaceholder} value={search()} onInput={(event) => setSearch(event.currentTarget.value)} />
+          <TextField
+            placeholder={props.searchPlaceholder}
+            value={search()}
+            onInput={(event) => setSearch(event.currentTarget.value)}
+          />
         </div>
         <Select
           options={options()}
@@ -149,6 +160,7 @@ export const MarketplaceListView = (props: Props) => {
                     onRemove={props.onRemove}
                     onStar={props.onStarMarketplaceSkill}
                     onUpload={props.onUploadMarketplaceSkill}
+                    onOpen={props.onOpenSkill}
                     footer={<For each={marketplaceTags(item)}>{(tag) => <Tag>{tag}</Tag>}</For>}
                   />
                 )

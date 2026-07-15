@@ -258,7 +258,8 @@ const AppContent: Component = () => {
       }
       if (message?.type === "navigate" && message.view && VALID_VIEWS.has(message.view)) {
         console.log("[Kilo New] App: 🧭 navigate:", message.view, message.tab ? `tab=${message.tab}` : "")
-        const target = message.view === "profile" ? gatewayTarget() : { view: message.view as ViewType, tab: message.tab }
+        const target =
+          message.view === "profile" ? gatewayTarget() : { view: message.view as ViewType, tab: message.tab }
         if (target.tab) setSettingsTab(target.tab)
         setCurrentView(target.view)
         vscode.postMessage({ type: "settingsTabChanged", tab: target.tab })
@@ -330,6 +331,7 @@ const AppContent: Component = () => {
               <Settings
                 tab={settingsTab()}
                 onTabChange={setSettingsTab}
+                onClose={() => vscode.postMessage({ type: "closePanel" })}
                 onMigrateClick={() => {
                   setMigrationNeeded(true)
                   vscode.postMessage({ type: "requestLegacyMigrationData" })

@@ -11,8 +11,10 @@ export const disposeAllInstancesAfterProviderAuthCallback = Effect.fn(
 
 export const invalidateAfterProviderAuthChange = Effect.fn("KiloServer.invalidateAfterProviderAuthChange")(function* (
   providerID: string,
+  options?: { dispose?: boolean },
 ) {
   const cache = yield* ModelCache.Service
   yield* cache.clear(providerID)
+  if (options?.dispose === false) return
   yield* disposeAllInstancesAfterProviderAuthCallback()
 })

@@ -1,6 +1,9 @@
 // Kilo-specific translations and overrides
 // Keys here will override any matching keys from upstream translations
+import { dict as fallback } from "./en"
+
 export const dict = {
+  ...fallback,
   // Kilo Gateway provider translations
   "provider.connect.kiloGateway.line1":
     "Kilo Gateway geeft je toegang tot een gecureerde set van betrouwbare, geoptimaliseerde modellen voor coding agents.",
@@ -108,4 +111,6 @@ export const dict = {
   "ui.message.feedback.helpful": "Dit was nuttig",
   "ui.message.feedback.notHelpful": "Dit was niet nuttig",
   "ui.message.feedback.clearRating": "Beoordeling wissen",
+  "marketplace.aligned.unpublish": "Skill-publicatie intrekken",
+  "marketplace.aligned.unpublished": "Niet gepubliceerd",
 }

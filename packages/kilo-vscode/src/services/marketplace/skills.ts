@@ -49,7 +49,11 @@ export function mergeMarketplaceSkills(
   const aliases = new Map<string, string>()
   for (const [key] of local) {
     const id = index.get(key)
-    if (id) aliases.set(key, id)
+    if (!id) continue
+    aliases.set(key, id)
+    const item = remote.find((skill) => skill.id === id)
+    const source = local.get(key)
+    if (item && source) item.uploadable = skillsFetched && isUploadableSkill(source)
   }
 
   const installed = {

@@ -5,7 +5,7 @@
 import { render } from "solid-js/web"
 import "@kilocode/kilo-ui/styles"
 import "../src/styles/chat.css"
-import { AgentManagerApp } from "./AgentManagerApp"
+import { AgentManagerApp } from "./AgentManagerProviders"
 
 const root = document.getElementById("root")
 if (root) {

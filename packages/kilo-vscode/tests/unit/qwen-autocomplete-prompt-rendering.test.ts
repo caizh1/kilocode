@@ -4,39 +4,37 @@ import path from "node:path"
 import * as vscode from "vscode"
 import type { QwenAutocompleteCache } from "../../src/services/qwen-autocomplete/autocompleteLruCache"
 import { qwenDiagnosticsForTests, resetQwenDiagnosticsForTests } from "../../src/services/qwen-autocomplete/diagnostics"
-import {
-  buildQwenFimPrompt,
-  getContinueAutocompleteStopTokens,
-} from "../../src/services/qwen-autocomplete/fimTemplates"
+import { buildQwenFimPrompt } from "../../src/services/qwen-autocomplete/fimTemplates"
 import {
   createQwenAutocompleteHelper,
   type QwenAutocompleteHelperVars,
 } from "../../src/services/qwen-autocomplete/helperVars"
 import { KiloQwenInlineCompletionProvider } from "../../src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider"
+import { QwenFimClient } from "../../src/services/qwen-autocomplete/QwenFimClient"
 import {
   buildQwenPromptPlan,
   renderQwenMultifileFimPromptWithTokenLimit,
 } from "../../src/services/qwen-autocomplete/qwenMultifileFimRenderer"
 import type { QwenRecentlyEditedSource } from "../../src/services/qwen-autocomplete/recentlyEdited"
 import { QwenAutocompleteSnippetType } from "../../src/services/qwen-autocomplete/snippets"
-import type { QwenAutocompleteConfig } from "../../src/services/qwen-autocomplete/types"
+import type { QwenAutocompleteConfig, QwenFimCompleteInput } from "../../src/services/qwen-autocomplete/types"
 
 type Pos = { line: number; character: number }
 type Range = { start: Pos; end: Pos }
 
 const cfg: QwenAutocompleteConfig = {
   enabled: true,
+  autoTrigger: true,
   provider: "qwen-direct",
-  endpoint: "http://unit.test/v1/completions",
+  providerID: "qwen",
   model: "qwen-coder-30b0",
-  apiKey: "",
   debounceMs: 0,
   maxTokens: 128,
   maxPromptTokens: 1024,
   modelTimeout: 150,
   maxSuffixPercentage: 0.2,
   prefixPercentage: 0.3,
-  temperature: 0.1,
+  temperature: 0.01,
   cacheEnabled: false,
   cacheMaxEntries: 1000,
   prefixChars: 12_000,
@@ -65,18 +63,29 @@ const cfg: QwenAutocompleteConfig = {
   logCompletionPreview: true,
 }
 
-const originalFetch = globalThis.fetch
 const originalFile = vscode.Uri.file
 const originalFolders = vscode.workspace.workspaceFolders
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
   ;(vscode.Uri as unknown as { file: typeof originalFile }).file = originalFile
   ;(vscode.workspace as unknown as { workspaceFolders: typeof originalFolders }).workspaceFolders = originalFolders
   resetQwenDiagnosticsForTests()
 })
 
 describe("qwen prompt rendering", () => {
+  it("normalizes an empty EOF suffix in single, blocked, and multifile prompts", () => {
+    const helper = { ...state(doc("int main(void) {")), prunedSuffix: "" }
+    const single = buildQwenPromptPlan({ cfg, helper, snippets: [] })
+    const blocked = buildQwenPromptPlan({ cfg: { ...active(), contextLength: 0 }, helper, snippets: recent() })
+    const multifile = buildQwenPromptPlan({ cfg: active(), helper, snippets: recent() })
+
+    for (const prompt of [single, blocked, multifile]) {
+      expect(prompt.prompt).toContain("<|fim_suffix|>\n<|fim_middle|>")
+      expect(prompt.renderedSuffix).toBe("\n")
+      expect(prompt.renderedSuffixChars).toBe(1)
+    }
+  })
+
   it("keeps the default FIM prompt byte-for-byte unchanged", () => {
     const document = doc("int main(void) {\n  ret\n}\n")
     const helper = state(document)
@@ -88,26 +97,25 @@ describe("qwen prompt rendering", () => {
     expect(prompt.promptRendererMode).toBe("disabled")
   })
 
-  it("keeps the default HTTP request body byte-for-byte unchanged", async () => {
+  it("keeps the default CLI request byte-for-byte unchanged", async () => {
     let body = ""
-    globalThis.fetch = async (_url, init) => {
-      body = String(init?.body)
-      return new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
-    }
     const document = doc("int main(void) {\n  \n}\n")
     const position = new vscode.Position(1, 2)
     const helper = createQwenAutocompleteHelper(document, position, undefined, opts(cfg))
     const prompt = buildQwenFimPrompt({ prefix: helper.prunedPrefix, suffix: helper.prunedSuffix })
     const expected = JSON.stringify({
-      model: cfg.model,
+      providerID: cfg.providerID,
+      modelID: cfg.model,
       prompt,
-      max_tokens: cfg.maxTokens,
+      maxTokens: cfg.maxTokens,
       temperature: cfg.temperature,
-      stream: false,
-      stop: getContinueAutocompleteStopTokens(cfg.model),
     })
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,
+      guard: () => false,
+      client: client((request) => {
+        body = request
+      }),
       edited: fakeEdited("int hidden;"),
       log: () => {},
     })
@@ -288,10 +296,10 @@ describe("qwen prompt rendering", () => {
 
   it("reports redacted prompt renderer diagnostics", async () => {
     patchUri()
-    globalThis.fetch = async (_url, _init) =>
-      new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => ({ ...active(), trace: true, logLevel: "debug", logPromptPreview: true }),
+      guard: () => false,
+      client: client(),
       edited: fakeEdited("int helper(void) {\n  return 1;\n}"),
       log: () => {},
     })
@@ -377,12 +385,12 @@ class RecordingCache implements QwenAutocompleteCache {
 }
 
 async function runWithCache(config: QwenAutocompleteConfig, cache: RecordingCache): Promise<void> {
-  globalThis.fetch = async (_url, _init) =>
-    new Response(JSON.stringify({ choices: [{ text: "return ok;" }] }), { status: 200 })
   const provider = new KiloQwenInlineCompletionProvider({
     read: () => ({ ...config, cacheEnabled: true }),
     cache,
+    client: client(),
     edited: fakeEdited("int helper(void) {\n  return 1;\n}"),
+    guard: () => false,
     log: () => {},
   })
   await provider.provideInlineCompletionItems(
@@ -392,6 +400,24 @@ async function runWithCache(config: QwenAutocompleteConfig, cache: RecordingCach
     token() as vscode.CancellationToken,
   )
   provider.dispose()
+}
+
+function client(record?: (body: string) => void): QwenFimClient {
+  return {
+    complete: async (request: QwenFimCompleteInput) => {
+      record?.(
+        JSON.stringify({
+          providerID: request.providerID,
+          modelID: request.modelID,
+          prompt: request.prompt,
+          maxTokens: request.maxTokens,
+          temperature: request.temperature,
+        }),
+      )
+      request.onResponse?.({ status: 200 })
+      return "return ok;"
+    },
+  } as QwenFimClient
 }
 
 function active(): QwenAutocompleteConfig {

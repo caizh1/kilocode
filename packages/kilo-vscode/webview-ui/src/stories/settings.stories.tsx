@@ -16,6 +16,9 @@ import ModeEditView from "../components/settings/ModeEditView"
 import McpEditView from "../components/settings/McpEditView"
 import type { AgentConfig, CommandConfig, Config } from "../types/messages"
 import IndexingTab from "../components/settings/IndexingTab"
+import ChipmateServerTab, { type ChipmateServerTabProps } from "../components/settings/ChipmateServerTab"
+import { CHIPMATE_SERVER_KEY } from "../../../src/shared/chipmate-server"
+import { ChatView } from "../components/chat/ChatView"
 
 const meta: Meta = {
   title: "Settings",
@@ -47,6 +50,271 @@ export const SettingsPanel: Story = {
       </div>
     </StoryProviders>
   ),
+}
+
+function ChipmateServerStory(props: ChipmateServerTabProps & { width?: string }) {
+  return (
+    <StoryProviders config={{} as Config}>
+      <div style={{ width: props.width ?? "760px", "max-width": "100%", padding: "20px" }}>
+        <h3 style={{ margin: "0 0 14px" }}>ChipMate Server</h3>
+        <ChipmateServerTab preview={props.preview} />
+      </div>
+    </StoryProviders>
+  )
+}
+
+export const ChipmateServerDefault: Story = {
+  name: "ChipMate Server — default",
+  render: () => <ChipmateServerStory />,
+}
+
+export const ChipmateServerSettingsPanel: Story = {
+  name: "ChipMate Server — settings panel",
+  render: () => (
+    <StoryProviders>
+      <div style={{ height: "820px", display: "flex", "flex-direction": "column" }}>
+        <Settings tab="chipmateServer" />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+export const ChipmateServerEditing: Story = {
+  name: "ChipMate Server — editing",
+  render: () => <ChipmateServerStory preview={{ value: "https://chipmate.internal:7443" }} />,
+}
+
+export const ChipmateServerTesting: Story = {
+  name: "ChipMate Server — testing",
+  render: () => <ChipmateServerStory preview={{ testing: true }} />,
+}
+
+export const ChipmateServerSuccess: Story = {
+  name: "ChipMate Server — success",
+  render: () => <ChipmateServerStory preview={{ result: { status: "success", code: "ok", skillsCount: 12 } }} />,
+}
+
+export const ChipmateServerWarning: Story = {
+  name: "ChipMate Server — warning",
+  render: () => (
+    <ChipmateServerStory
+      preview={{ result: { status: "warning", code: "degraded", missing: ["soffice"], warnings: [] } }}
+    />
+  ),
+}
+
+export const ChipmateServerFailure: Story = {
+  name: "ChipMate Server — failure",
+  render: () => (
+    <ChipmateServerStory preview={{ result: { status: "error", code: "network", message: "unreachable" } }} />
+  ),
+}
+
+export const ChipmateServerNarrow: Story = {
+  name: "ChipMate Server — narrow",
+  render: () => <ChipmateServerStory width="360px" />,
+}
+
+const aligned = {
+  plugin: ["@kilocode/kilo-indexing"],
+} as Config
+
+function AlignedSettings(props: {
+  tab?: string
+  preview?: ChipmateServerTabProps["preview"]
+  dirty?: boolean
+  saving?: boolean
+  canSave?: boolean
+  error?: { message: string; details?: string }
+  focus?: boolean
+  hover?: boolean
+  width?: string
+  height?: string
+  onClose?: () => void
+}) {
+  let ref: HTMLDivElement | undefined
+  onMount(() => {
+    if (!props.focus) return
+    requestAnimationFrame(() => {
+      ref
+        ?.querySelector<HTMLButtonElement>(
+          `[data-ui="settings-nav-item"][data-value="${props.tab ?? "chipmateServer"}"]`,
+        )
+        ?.focus()
+    })
+  })
+  return (
+    <div ref={ref} style={{ width: props.width ?? "100vw", height: props.height ?? "100vh", overflow: "hidden" }}>
+      <StoryProviders
+        noPadding
+        locale="zh"
+        config={aligned}
+        settings={{ [CHIPMATE_SERVER_KEY]: "http://127.0.0.1:6001" }}
+        dirty={props.dirty}
+        saving={props.saving}
+        canSave={props.canSave}
+        saveError={props.error ?? null}
+      >
+        <Settings
+          tab={props.tab ?? "chipmateServer"}
+          onClose={props.onClose ?? noop}
+          chipmatePreview={props.preview}
+          navPreview={props.hover ? "providers" : undefined}
+        />
+      </StoryProviders>
+    </div>
+  )
+}
+
+export const SettingsAlignedDesktop: Story = {
+  name: "Settings 对齐 — 桌面深色成功并待保存",
+  render: () => (
+    <AlignedSettings
+      width="1450px"
+      height="1086px"
+      dirty
+      preview={{ result: { status: "success", code: "ok", skillsCount: 12 } }}
+    />
+  ),
+}
+
+export const SettingsTitaniumModels: Story = {
+  name: "Titanium Studio — 模型设置基准",
+  render: () => <AlignedSettings tab="models" width="1200px" height="900px" />,
+}
+
+export const SettingsTitaniumResponsive: Story = {
+  name: "Titanium Studio — 设置响应式基准",
+  render: () => <AlignedSettings tab="models" width="100vw" height="100vh" />,
+}
+
+function SettingsCloseStory() {
+  const [count, setCount] = createSignal(0)
+  return (
+    <div style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
+      <AlignedSettings tab="models" onClose={() => setCount((value) => value + 1)} />
+      <output data-ui="settings-close-result" hidden>
+        {count()}
+      </output>
+    </div>
+  )
+}
+
+export const SettingsCloseInteraction: Story = {
+  name: "Titanium Studio — 设置关闭交互",
+  render: () => <SettingsCloseStory />,
+}
+
+export const TitaniumStudioReview: Story = {
+  name: "Titanium Studio — QA 与设置并排审查",
+  render: () => (
+    <StoryProviders noPadding locale="zh" config={aligned}>
+      <div
+        style={{
+          display: "grid",
+          "grid-template-columns": "minmax(360px, 0.84fr) minmax(720px, 1.6fr)",
+          width: "1450px",
+          height: "900px",
+          overflow: "hidden",
+          background: "#0d141b",
+        }}
+      >
+        <div style={{ display: "flex", "min-width": "0", "border-right": "1px solid #344754" }}>
+          <ChatView />
+        </div>
+        <Settings tab="models" onClose={noop} />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+export const SettingsAlignedHover: Story = {
+  name: "Settings 对齐 — 导航 Hover",
+  render: () => <AlignedSettings dirty hover />,
+}
+
+export const SettingsAlignedFocus: Story = {
+  name: "Settings 对齐 — 导航 Focus",
+  render: () => <AlignedSettings dirty focus />,
+}
+
+export const SettingsAlignedTesting: Story = {
+  name: "Settings 对齐 — 连接测试中",
+  render: () => <AlignedSettings dirty preview={{ testing: true }} />,
+}
+
+export const SettingsAlignedWarning: Story = {
+  name: "Settings 对齐 — 能力警告",
+  render: () => (
+    <AlignedSettings
+      dirty
+      preview={{ result: { status: "warning", code: "degraded", missing: ["soffice"], warnings: [] } }}
+    />
+  ),
+}
+
+export const SettingsAlignedError: Story = {
+  name: "Settings 对齐 — 连接失败",
+  render: () => (
+    <AlignedSettings dirty preview={{ result: { status: "error", code: "network", message: "unreachable" } }} />
+  ),
+}
+
+export const SettingsAlignedSaveFailed: Story = {
+  name: "Settings 对齐 — 保存失败",
+  render: () => (
+    <AlignedSettings dirty error={{ message: "无法保存设置", details: "当前配置文件不可写，请检查文件权限后重试。" }} />
+  ),
+}
+
+export const SettingsAlignedSaving: Story = {
+  name: "Settings 对齐 — 保存中",
+  render: () => <AlignedSettings dirty saving preview={{ result: { status: "success", code: "ok" } }} />,
+}
+
+export const SettingsAlignedMid: Story = {
+  name: "Settings 对齐 — 900 × 800",
+  render: () => (
+    <AlignedSettings width="900px" height="800px" dirty preview={{ result: { status: "success", code: "ok" } }} />
+  ),
+}
+
+export const SettingsAlignedNarrow: Story = {
+  name: "Settings 对齐 — 480 × 900",
+  render: () => (
+    <AlignedSettings width="480px" height="900px" dirty preview={{ result: { status: "success", code: "ok" } }} />
+  ),
+}
+
+export const SettingsAlignedLight: Story = {
+  name: "Settings 对齐 — 浅色",
+  globals: { vscodeTheme: "light-modern" },
+  render: () => (
+    <AlignedSettings width="1450px" height="1086px" dirty preview={{ result: { status: "success", code: "ok" } }} />
+  ),
+}
+
+export const SettingsAlignedContrast: Story = {
+  name: "Settings 对齐 — 高对比度",
+  globals: { vscodeTheme: "hc-black" },
+  render: () => (
+    <AlignedSettings width="1450px" height="1086px" dirty preview={{ result: { status: "success", code: "ok" } }} />
+  ),
+}
+
+export const SettingsAlignedZoom80: Story = {
+  name: "Settings 对齐 — 缩放 80%",
+  render: () => <AlignedSettings width="1813px" height="1358px" dirty />,
+}
+
+export const SettingsAlignedZoom125: Story = {
+  name: "Settings 对齐 — 缩放 125%",
+  render: () => <AlignedSettings width="1160px" height="869px" dirty />,
+}
+
+export const SettingsAlignedZoom150: Story = {
+  name: "Settings 对齐 — 缩放 150%",
+  render: () => <AlignedSettings width="967px" height="724px" dirty />,
 }
 
 export const ProvidersConfigure: Story = {
@@ -420,10 +688,10 @@ export const IndexingProviderBlurRace: Story = {
     const [saved, setSaved] = createSignal<Record<string, unknown>>({})
     const cfg: Config = {
       indexing: {
-        provider: "openai",
-        model: "text-embedding-3-large",
-        dimension: 3072,
-        openai: { apiKey: "" },
+        provider: "openai-compatible",
+        model: "qwen3-embedding-8b",
+        dimension: 2048,
+        "openai-compatible": { apiKey: "" },
         gemini: { apiKey: "" },
       },
     }

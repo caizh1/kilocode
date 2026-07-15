@@ -85,6 +85,13 @@ interface MessagePageState {
   lastMutation?: MessageMutation
 }
 
+interface SkillRemoveState {
+  requestId: string
+  phase?: "validating" | "removing" | "refreshing" | "reconciling"
+  success?: boolean
+  error?: string
+}
+
 const emptyPageState: MessagePageState = {
   initialLoaded: false,
   loadingInitial: false,
@@ -193,7 +200,8 @@ interface SessionContextValue {
   // Skills loaded from the CLI backend
   skills: Accessor<SkillInfo[]>
   refreshSkills: () => void
-  removeSkill: (location: string) => void
+  skillRemoveState: Accessor<SkillRemoveState | undefined>
+  removeSkill: (skill: SkillInfo) => string | undefined
 
   // Agent/mode selection (per-session)
   agents: Accessor<AgentInfo[]>
@@ -359,6 +367,7 @@ export const SessionProvider: ParentComponent = (props) => {
 
   // Skills loaded from the CLI backend
   const [skills, setSkills] = createSignal<SkillInfo[]>([])
+  const [skillRemoveState, setSkillRemoveState] = createSignal<SkillRemoveState>()
 
   const removeAgent = (name: string) => {
     setAgents((prev) => prev.filter((a) => a.name !== name))
@@ -666,6 +675,14 @@ export const SessionProvider: ParentComponent = (props) => {
   const unsubSkills = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type === "skillsLoaded") {
       setSkills(message.skills)
+      return
+    }
+    if (message.type === "skillRemoveProgress") {
+      setSkillRemoveState({ requestId: message.requestId, phase: message.phase })
+      return
+    }
+    if (message.type === "skillRemoveResult") {
+      setSkillRemoveState({ requestId: message.requestId, success: message.success, error: message.error })
     }
   })
 
@@ -673,9 +690,22 @@ export const SessionProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "requestSkills" })
   }
 
-  const removeSkill = (location: string) => {
-    setSkills((prev) => prev.filter((s) => s.location !== location))
-    vscode.postMessage({ type: "removeSkill", location })
+  const removeSkill = (skill: SkillInfo) => {
+    if (!skill.removeToken || !skill.scope) return undefined
+    const requestId = crypto.randomUUID()
+    setSkillRemoveState({ requestId, phase: "validating" })
+    vscode.postMessage({
+      type: "removeLocalSkill",
+      requestId,
+      targetToken: skill.removeToken,
+      skillId: skill.name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, "-")
+        .replace(/^-+|-+$/g, ""),
+      scope: skill.scope,
+    })
+    return requestId
   }
 
   // Handle permission events immediately (not in onMount) so we never miss
@@ -2558,6 +2588,7 @@ export const SessionProvider: ParentComponent = (props) => {
     allAgents,
     skills,
     refreshSkills,
+    skillRemoveState,
     removeSkill,
     removeAgent,
     removeMcp,

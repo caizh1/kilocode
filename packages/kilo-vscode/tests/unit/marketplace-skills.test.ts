@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test"
-import { isListedUploadableSkill, mergeMarketplaceSkills, normalizeSkillKey } from "../../src/services/marketplace/skills"
+import {
+  isListedUploadableSkill,
+  mergeMarketplaceSkills,
+  normalizeSkillKey,
+} from "../../src/services/marketplace/skills"
 import type { MarketplaceItem } from "../../src/services/marketplace/types"
 
 const remote: MarketplaceItem = {
@@ -42,6 +46,7 @@ describe("Marketplace Skill merge", () => {
 
     expect(result.marketplaceItems.filter((item) => item.type === "skill")).toHaveLength(2)
     expect(result.marketplaceItems.find((item) => item.id === "code-review")?.localOnly).toBeUndefined()
+    expect(result.marketplaceItems.find((item) => item.id === "code-review")?.uploadable).toBe(true)
     expect(result.marketplaceInstalledMetadata.project["code-review"]).toEqual({ type: "skill" })
     expect(result.marketplaceInstalledMetadata.global["local-guide"]).toEqual({ type: "skill" })
     expect(result.marketplaceItems.find((item) => item.id === "local-guide")).toMatchObject({
@@ -90,7 +95,7 @@ describe("Marketplace Skill merge", () => {
     expect(result.marketplaceItems[0]).toMatchObject({ id: "metadata-only", localOnly: true, uploadable: false })
   })
 
-  it("accepts upload requests only for the current local-only card ids", () => {
+  it("accepts upload requests only for currently verified uploadable card ids", () => {
     const ids = new Set(["local-guide"])
 
     expect(isListedUploadableSkill("Local Guide", ids)).toBe(true)

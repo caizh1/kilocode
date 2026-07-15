@@ -84,6 +84,22 @@ describe("CodeGraphJsonStorage", () => {
     expect((await walk(dir)).some((item) => item.endsWith(".tmp"))).toBe(false)
   })
 
+  test("resumes a checkpointed full scan in a replacement storage instance", async () => {
+    const workspacePath = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const storage = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
+    await storage.beginFullScan()
+    for (let index = 0; index < 64; index += 1) {
+      const file = path.join(workspacePath, `src/unit-${index}.c`)
+      const graph = sample(workspacePath, file, `int unit_${index}(void) { return ${index}; }\n`)
+      await storage.upsertFileGraph(file, graph.fileHash, graph)
+    }
+
+    const resumed = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
+    await resumed.beginFullScan()
+    expect((await resumed.getFileGraph(path.join(workspacePath, "src/unit-63.c")))?.functions[0]?.name).toBe("unit_63")
+  })
+
   test("keeps same-hash upsert idempotent and updates changed files", async () => {
     const workspacePath = await root()
     const cacheDirectory = path.join(workspacePath, ".cache")
@@ -352,7 +368,7 @@ describe("CodeGraphJsonStorage", () => {
     expect(await exists(active)).toBe(true)
     expect(await exists(activeDerived)).toBe(true)
     expect(await exists(settings)).toBe(true)
-    expect(await exists(stage)).toBe(false)
+    expect(await exists(stage)).toBe(true)
     expect(await exists(stale)).toBe(false)
     expect(await exists(staleDerived)).toBe(false)
     expect(await exists(extra)).toBe(false)

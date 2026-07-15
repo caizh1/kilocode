@@ -7,9 +7,13 @@
  */
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
+import { onMount } from "solid-js"
+import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { StoryProviders } from "./StoryProviders"
 import { MarketplaceListView } from "../components/marketplace/MarketplaceListView"
 import { ItemCard } from "../components/marketplace/ItemCard"
+import { AlignedSkillMarket } from "../components/marketplace/AlignedSkillMarket"
+import { LocalSkillImportDialog } from "../components/marketplace/LocalSkillImportDialog"
 import type {
   SkillMarketplaceItem,
   McpMarketplaceItem,
@@ -567,6 +571,285 @@ export const InstalledAgentCard: Story = {
     <StoryProviders>
       <div style={{ width: "420px", padding: "12px" }}>
         <ItemCard item={MOCK_AGENTS[0]} metadata={PARTIAL_INSTALLED_AGENTS} onInstall={noop} onRemove={noop} />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+export const AlignedSkillsHome: Story = {
+  name: "Aligned Skill Market — home",
+  render: () => (
+    <StoryProviders>
+      <div style={{ width: "1100px", height: "760px", overflow: "auto", padding: "12px" }}>
+        <AlignedSkillMarket
+          items={MOCK_SKILLS.map((item, index) => ({
+            ...item,
+            revision: index + 1,
+            sha256: String(index).repeat(64),
+            favorite: index === 0,
+          }))}
+          metadata={PARTIAL_INSTALLED_SKILLS}
+          fetching={false}
+          user={{ name: "Alice" }}
+          baseUrl="http://market.test/marketplace"
+          capabilities={{
+            mode: "aligned-v1",
+            apiVersion: "1.0.0",
+            catalogVersion: "v1",
+            skillSpecVersion: "agent-skills-1",
+            features: {
+              versions: true,
+              favorites: true,
+              installations: true,
+              publications: true,
+              repairs: true,
+              analytics: true,
+              events: true,
+            },
+          }}
+          installations={[
+            {
+              skillId: "nextjs-developer",
+              revision: 1,
+              sha256: "a".repeat(64),
+              scope: "project",
+              status: "installed",
+              clientId: "client-1",
+              changedAt: "2026-07-12T00:00:00.000Z",
+            },
+          ]}
+          publications={[
+            {
+              id: "run-1",
+              skillId: "nextjs-developer",
+              ownerId: "user-1",
+              status: "PUBLISHED",
+              stage: "complete",
+              patches: [],
+              release: {
+                skillId: "nextjs-developer",
+                revision: 1,
+                sha256: "a".repeat(64),
+                archiveUrl: "/archive",
+                publishedAt: "2026-07-12T00:00:00.000Z",
+              },
+              createdAt: "2026-07-12T00:00:00.000Z",
+              updatedAt: "2026-07-12T00:00:00.000Z",
+            },
+          ]}
+          status={{
+            ok: true,
+            transport: "trusted-http",
+            render: "ready",
+            market: "ready",
+            packages: "ready",
+            warnings: ["Trusted intranet HTTP"],
+          }}
+          analytics={[{ metric: "skill_open", scope: "global", points: [{ date: "2026-07-12", value: 12 }] }]}
+          onOpen={noop}
+          onCloseDetail={noop}
+          onInstall={noop}
+          onRemove={noop}
+          onStar={noop}
+          onUpload={noop}
+          onUnpublish={noop}
+        />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+export const AlignedSkillDetail: Story = {
+  name: "Aligned Skill Market — detail",
+  render: () => (
+    <StoryProviders>
+      <div style={{ width: "1100px", height: "760px", overflow: "auto", padding: "12px" }}>
+        <AlignedSkillMarket
+          items={[{ ...MOCK_SKILLS[0], revision: 2, sha256: "a".repeat(64), favorite: true }]}
+          metadata={EMPTY_METADATA}
+          fetching={false}
+          user={{ name: "Alice" }}
+          baseUrl="http://market.test/marketplace"
+          capabilities={{
+            mode: "aligned-v1",
+            apiVersion: "1.0.0",
+            catalogVersion: "v2",
+            skillSpecVersion: "agent-skills-1",
+            features: {
+              versions: true,
+              favorites: true,
+              installations: true,
+              publications: true,
+              repairs: true,
+              analytics: true,
+              events: true,
+            },
+          }}
+          installations={[]}
+          publications={[]}
+          status={{
+            ok: true,
+            transport: "trusted-http",
+            render: "ready",
+            market: "ready",
+            packages: "ready",
+            warnings: [],
+          }}
+          analytics={[]}
+          detailId="nextjs-developer"
+          detail={{
+            id: "nextjs-developer",
+            name: "Next.js Developer",
+            description: MOCK_SKILLS[0].description,
+            category: "web-development",
+            tags: ["react", "server-components"],
+            author: { id: "user-1", displayName: "DataTeam" },
+            latestRevision: 2,
+            semver: "1.1.0",
+            sha256: "a".repeat(64),
+            updatedAt: "2026-07-12T00:00:00.000Z",
+            downloads: 12,
+            favorites: 4,
+            markdown:
+              "# Next.js Developer\n\nUse source-backed evidence and explain routing decisions.\n\n- Inspect the current App Router\n- Preserve server boundaries\n- Report limitations",
+            releases: [
+              {
+                skillId: "nextjs-developer",
+                revision: 2,
+                semver: "1.1.0",
+                sha256: "a".repeat(64),
+                size: 2048,
+                report: {},
+                archiveUrl: "/r2",
+                publishedAt: "2026-07-12T00:00:00.000Z",
+              },
+              {
+                skillId: "nextjs-developer",
+                revision: 1,
+                semver: "1.0.0",
+                sha256: "b".repeat(64),
+                size: 1800,
+                report: {},
+                archiveUrl: "/r1",
+                publishedAt: "2026-07-11T00:00:00.000Z",
+              },
+            ],
+            files: [
+              {
+                path: "SKILL.md",
+                type: "text",
+                mime: "text/markdown",
+                size: 640,
+                sha256: "c".repeat(64),
+                previewable: true,
+              },
+              {
+                path: "references/router.md",
+                type: "text",
+                mime: "text/markdown",
+                size: 1200,
+                sha256: "d".repeat(64),
+                previewable: true,
+              },
+            ],
+          }}
+          onOpen={noop}
+          onCloseDetail={noop}
+          onInstall={noop}
+          onRemove={noop}
+          onStar={noop}
+          onUpload={noop}
+          onUnpublish={noop}
+        />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+const LocalImportPreview = () => {
+  const dialog = useDialog()
+
+  onMount(() => {
+    dialog.show(() => <LocalSkillImportDialog onClose={() => dialog.close()} />)
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "localSkillImportPreview",
+            preview: {
+              token: "storybook-import-token",
+              expiresAt: "2026-07-15T00:10:00.000Z",
+              projectAvailable: true,
+              candidates: [
+                {
+                  key: "0:.",
+                  id: "codex-review",
+                  name: "codex-review",
+                  description: "Review a code change with portable, source-backed evidence.",
+                  sourceKind: "zip",
+                  sourceLabel: "portable-skills.zip",
+                  hints: ["agent-skills", "codex"],
+                  fileCount: 9,
+                  totalBytes: 48312,
+                  valid: true,
+                  snapshotSha256: "a".repeat(64),
+                  repairs: [
+                    { field: "name", before: "Codex Review", after: "codex-review" },
+                    {
+                      field: "description",
+                      after: "Review a code change with portable, source-backed evidence.",
+                    },
+                  ],
+                  issues: [
+                    {
+                      code: "scripts-present",
+                      severity: "warning",
+                      file: "scripts/check.sh",
+                      message: "The package contains scripts; the service will never execute them.",
+                      fixable: false,
+                      repairKind: "none",
+                    },
+                  ],
+                  conflicts: [
+                    { scope: "project", state: "managed", installedSha256: "b".repeat(64) },
+                    { scope: "global", state: "none" },
+                  ],
+                },
+                {
+                  key: "1:docs",
+                  id: "document-brief",
+                  name: "document-brief",
+                  description: "Build a concise document brief with templates and examples.",
+                  sourceKind: "zip",
+                  sourceLabel: "portable-skills.zip",
+                  hints: ["agent-skills", "claude"],
+                  fileCount: 14,
+                  totalBytes: 92804,
+                  valid: true,
+                  snapshotSha256: "c".repeat(64),
+                  repairs: [],
+                  issues: [],
+                  conflicts: [
+                    { scope: "project", state: "none" },
+                    { scope: "global", state: "same", installedSha256: "c".repeat(64) },
+                  ],
+                },
+              ],
+            },
+          },
+        }),
+      )
+    })
+  })
+  return <div class="marketplace-view" style={{ width: "100%", height: "100%" }} />
+}
+
+export const LocalImportGlass: Story = {
+  name: "Local Skill import — Liquid Glass review",
+  render: () => (
+    <StoryProviders locale="zh" noPadding>
+      <div style={{ width: "100vw", height: "100vh" }}>
+        <LocalImportPreview />
       </div>
     </StoryProviders>
   ),

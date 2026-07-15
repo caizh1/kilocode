@@ -23,7 +23,14 @@ const DocumentConfig = z
     paths: z.array(z.string()).optional().describe("Workspace-relative document folders or files to index"),
     include: z.array(z.string()).optional().describe("Optional glob patterns to include inside document paths"),
     exclude: z.array(z.string()).optional().describe("Optional glob patterns to exclude from document indexing"),
-    maxFileBytes: z.number().int().positive().optional().describe("Maximum document size in bytes (default: 50 MiB)"),
+    maxFiles: z.number().int().positive().optional().describe("Maximum documents per workspace (default: 5000)"),
+    maxFileBytes: z.number().int().positive().optional().describe("Maximum document size in bytes (default: 25 MiB)"),
+    maxExtractedBytesPerFile: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Maximum extracted text bytes per document (default: 1 MiB)"),
     chunkChars: z.number().int().positive().optional().describe("Target document chunk size in characters"),
     chunkOverlapChars: z.number().int().nonnegative().optional().describe("Document chunk overlap in characters"),
     searchMaxResults: z.number().int().positive().optional().describe("Maximum document search results"),
@@ -163,8 +170,14 @@ const DocumentSchema = Schema.Struct({
   exclude: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Optional glob patterns to exclude from document indexing",
   }),
+  maxFiles: Schema.optional(PositiveInt).annotate({
+    description: "Maximum documents per workspace (default: 5000)",
+  }),
   maxFileBytes: Schema.optional(PositiveInt).annotate({
-    description: "Maximum document size in bytes (default: 50 MiB)",
+    description: "Maximum document size in bytes (default: 25 MiB)",
+  }),
+  maxExtractedBytesPerFile: Schema.optional(PositiveInt).annotate({
+    description: "Maximum extracted text bytes per document (default: 1 MiB)",
   }),
   chunkChars: Schema.optional(PositiveInt).annotate({
     description: "Target document chunk size in characters",

@@ -77,6 +77,8 @@ class RetryStore implements IVectorStore {
 
 class RecordStore extends RetryStore {
   public points = 0
+  public batches: number[] = []
+  public activations = 0
 
   constructor() {
     super(0)
@@ -84,6 +86,11 @@ class RecordStore extends RetryStore {
 
   override async upsertPoints(points: PointStruct[]): Promise<void> {
     this.points += points.length
+    this.batches.push(points.length)
+  }
+
+  override async activateFileGeneration(): Promise<void> {
+    this.activations += 1
   }
 }
 
@@ -182,6 +189,49 @@ describe("FileWatcher", () => {
       expect(point.payload.active).toBe(false)
       expect(typeof point.payload.generation).toBe("string")
     })
+  })
+
+  test("streams watcher embeddings in bounded batches before activating the file", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "file-watcher-stream-"))
+    const cacheDir = path.join(root, ".cache")
+    const file = path.join(root, "large.md")
+    await mkdir(cacheDir, { recursive: true })
+    await writeFile(file, "x".repeat(8_000))
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const store = new RecordStore()
+    const watcher = new FileWatcher(root, cache, createEmbedder(), store, undefined, 2, 1)
+    const data = watcher as unknown as {
+      processBatch(events: Map<string, { path: string; type: "create" | "change" | "delete" }>): Promise<void>
+    }
+
+    await data.processBatch(new Map([[file, { path: file, type: "create" }]]))
+
+    expect(store.points).toBeGreaterThan(2)
+    expect(Math.max(...store.batches)).toBeLessThanOrEqual(2)
+    expect(store.activations).toBe(1)
+    expect(cache.getHash(file)).toBeDefined()
+  })
+
+  test("caps pending watcher events and requests reconciliation", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "file-watcher-cap-"))
+    const cacheDir = path.join(root, ".cache")
+    await mkdir(cacheDir, { recursive: true })
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const watcher = new FileWatcher(root, cache)
+    watcher.setCollecting(false)
+    watcher.enqueueSyntheticEvents(
+      Array.from({ length: 1_100 }, (_, index) => ({
+        path: path.join(root, `file-${index}.ts`),
+        type: "change" as const,
+      })),
+    )
+
+    expect(watcher.getPendingEventCount()).toBe(1_000)
+    expect(watcher.takeReconciliationRequest()).toBe(true)
+    expect(watcher.takeReconciliationRequest()).toBe(false)
+    watcher.dispose()
   })
 
   test("emits retry telemetry for watcher upsert retries", async () => {

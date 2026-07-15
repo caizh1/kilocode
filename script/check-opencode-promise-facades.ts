@@ -37,6 +37,7 @@ const testAllow: Record<string, { count: number; reason: string }> = {
   "effect/app-runtime-logger.test.ts": { count: 6, reason: "tests AppRuntime behavior" },
   "kilocode/config-resilience.test.ts": { count: 4, reason: "existing runtime integration test" },
   "kilocode/config-validation.test.ts": { count: 2, reason: "existing runtime integration test" },
+  "kilocode/internal-offline-provider.test.ts": { count: 2, reason: "provider filter integration test" },
   "kilocode/plan-followup.test.ts": { count: 4, reason: "existing runtime integration test" },
   "kilocode/server/config-overlay.test.ts": { count: 3, reason: "server config cache integration test" },
   "kilocode/session/platform-attribution.test.ts": { count: 5, reason: "existing runtime integration test" },

@@ -29,7 +29,9 @@ let rulesExpandedPreference = false
 export const PermissionDock: Component<{
   request: PermissionRequest
   responding: boolean
+  presentation?: "dock" | "dialog"
   onDecide: (response: "once" | "reject", approvedAlways: string[], deniedAlways: string[]) => void
+  onEdit?: () => void
 }> = (props) => {
   const session = useSession()
   const language = useLanguage()
@@ -189,7 +191,12 @@ export const PermissionDock: Component<{
   })
 
   return (
-    <div ref={root} data-component="permission-shortcuts" onKeyDown={onRoot}>
+    <div
+      ref={root}
+      data-component="permission-shortcuts"
+      data-presentation={props.presentation ?? "dock"}
+      onKeyDown={onRoot}
+    >
       <DockPrompt
         kind="permission"
         header={
@@ -299,6 +306,11 @@ export const PermissionDock: Component<{
           >
             {language.t("ui.permission.run")}
           </Button>
+          <Show when={command() && props.onEdit}>
+            <Button variant="secondary" size="small" onClick={() => props.onEdit?.()} disabled={props.responding}>
+              {language.t("common.edit")}
+            </Button>
+          </Show>
           <Button
             variant="ghost"
             size="small"

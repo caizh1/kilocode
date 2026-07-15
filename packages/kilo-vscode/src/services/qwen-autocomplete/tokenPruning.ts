@@ -52,10 +52,6 @@ export const QWEN_CONTINUE_TOKEN_PRUNING_DEFAULTS: QwenTokenPruningOptions = {
   maxSuffixPercentage: 0.2,
 }
 
-export type QwenApproximateTokenPruningOptions = QwenTokenPruningOptions
-
-export const QWEN_APPROXIMATE_TOKEN_PRUNING_DEFAULTS = QWEN_CONTINUE_TOKEN_PRUNING_DEFAULTS
-
 const TEMPLATE_RULES: Array<{ type: Template; matches: (model: string) => boolean }> = [
   { type: "llama3", matches: (model) => model.includes("llama3") || model.includes("llama-3") },
   { type: "llava", matches: (model) => model.includes("llava") },

@@ -30,21 +30,25 @@
 
 兼容旧命名时，可将以下层级视为代码图层级：L0 parent-module-master-flow，L1 entry-to-main-flow，L2 submodule-business-flow，L3 function-detail-flow，L4 fsm-state-overview，L5 fsm-transition-conditions，L6 error-retry-timeout-flow，L7 dependency-data-flow。
 
-## 3. 拆图阈值
+## 3. 拆图判定
 
-节点 >35、边 >45、subgraph >6、状态 >8 且展开 handler、嵌套分支 >2 层、混合模块架构和函数内部时必须拆图。
+不使用节点数、边数或 subgraph 数量作为机械质量指标。出现以下任一情况时拆图：在 Word 正文宽度下标签不可读；主路径和异常/重试/异步分支互相遮挡；架构边界与函数内部控制流混在一张图；状态转换 guard/action 无法完整标注；数据生命周期与业务动作难以同时追踪。
 
-high-level 业务总图如果超过 45 个节点，应拆为：business-parent-main-flow、business-parent-error-retry-flow、business-parent-async-wait-flow、business-parent-data-state-flow。
+拆图后保留一张 source-backed overview，并按语义补充 business-parent-main-flow、business-parent-error-retry-flow、business-parent-async-wait-flow、business-parent-data-state-flow 或对应的子模块详图。不得通过删掉异常路径或无限缩小图片维持单图。
 
-## 4. 有效业务流程图
+## 4. 模块与子模块五视图
 
-必须包含至少 5 项：decision node、branch label、switch/case label、loop condition、condition 下调用、state read/write、data read/write、return condition、error path、wait/retry path、complete path、evidence mapping。
+父级/目标模块和每个重要子模块都必须规划 architecture、business flow、code flow、state machine、data/lifecycle 五类视图。只有源码中不存在 state、phase、event、dispatch、handler、lifecycle 或 transition 证据时，状态机才可标记为 `N/A`，并在计划中写出证据和理由。
 
-本条主要适用于代码级详细业务/逻辑图。high-level 业务流程图的有效性以第 5 节为准。
+## 5. 有效代码级流程图
 
-## 5. high-level 业务流程图有效性
+代码级流程图必须覆盖源码中实际存在的 decision、branch label、switch/case、loop、condition 下调用、state/data read/write、return、error、wait/retry、complete 和 evidence mapping。不存在的结构记录为不适用，不通过虚构分支或节点满足数量要求。
 
-high-level 业务流程图必须包含至少 6 项：
+本条适用于代码级详细业务/逻辑图。high-level 业务流程图的有效性以第 6 节为准。
+
+## 6. high-level 业务流程图有效性
+
+high-level 业务流程图必须覆盖真实存在且适用的以下语义：
 
 - 外部业务触发；
 - 业务输入对象；

@@ -4,25 +4,27 @@ import * as path from "node:path"
 import { createHash } from "node:crypto"
 import type { ExecFileOptionsWithStringEncoding } from "node:child_process"
 import { exec as run } from "../../util/process"
+import { chipmateServerEndpoints } from "../chipmate-server"
 
 export const LAST_AUTO_KEY = "kilo.updateCheck.lastAutoCheckMs"
 export const LAST_MANUAL_KEY = "kilo.updateCheck.lastManualCheckMs"
 export const LAST_WARNING_KEY = "kilo.updateCheck.lastWarningMs"
 
-const DEFAULT_BASE = "http://10.10.5.22/vscode-plugins/chipmate/"
-const DEFAULT_MANIFEST = "latest.json"
 const DEFAULT_INTERVAL = 24
 const DEFAULT_TIMEOUT = 10_000
 const DEFAULT_CODE = "code"
 const DEFAULT_MAX = 209_715_200
 const INSTALL = "Install Update"
 const RELOAD = "Reload Window"
+const TARGETS = ["win32-x64-baseline", "linux-x64-baseline", "darwin-x64", "darwin-arm64"] as const
 
 type Mode = "auto" | "manual"
+type Target = (typeof TARGETS)[number]
 type Kind =
   | "manifest"
-  | "manifest-url"
+  | "server"
   | "identity"
+  | "target"
   | "version"
   | "vsix-url"
   | "download"
@@ -30,20 +32,24 @@ type Kind =
   | "sha256"
   | "install"
 
-type Manifest = {
+type Package = {
+  extensionId: string
   publisher: string
   name: string
   version: string
-  vsix: string
-  sha256?: string
-  releaseNotes?: string
-  mandatory?: boolean
+  target: Target
+  url: string
+  sha256: string
+  sizeBytes: number
+}
+
+type Manifest = {
+  latestByTarget: Partial<Record<Target, Package>>
 }
 
 type Config = {
   enabled: boolean
-  baseUrl: string
-  manifestFile: string
+  autoInstall: boolean
   checkOnStartup: boolean
   intervalHours: number
   timeoutMs: number
@@ -67,6 +73,7 @@ type Deps = {
   fetch: typeof fetch
   exec: Exec
   now: () => number
+  updates: () => string
   log: Pick<Console, "log" | "warn" | "error">
 }
 
@@ -93,11 +100,17 @@ export class UpdateCheckService implements vscode.Disposable {
       fetch: deps.fetch ?? fetch,
       exec: deps.exec ?? run,
       now: deps.now ?? Date.now,
+      updates: deps.updates ?? updateManifestUrl,
       log: deps.log ?? console,
     }
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("kilo.updateCheck")) this.schedule()
+        if (
+          event.affectsConfiguration("kilo.updateCheck") ||
+          event.affectsConfiguration("kilo-code.new.chipmateServer")
+        ) {
+          this.schedule()
+        }
       }),
     )
   }
@@ -152,32 +165,53 @@ export class UpdateCheckService implements vscode.Disposable {
 
   private async check(cfg: Config, mode: Mode): Promise<void> {
     const id = this.identity()
-    const manifest = await this.fetchManifest(cfg)
-    if (manifest.publisher !== id.publisher || manifest.name !== id.name) {
-      this.deps.log.log(
-        `[Kilo New] Update check ignored: manifest identity ${manifest.publisher}.${manifest.name} does not match ${id.publisher}.${id.name}`,
-      )
+    const target = this.target()
+    if (!target) {
+      const text = "This ChipMate installation does not have a supported internal update target."
+      this.deps.log.warn(`[Kilo New] Update check skipped: ${text}`)
+      if (mode === "manual") await vscode.window.showWarningMessage(text)
       return
     }
-    const newer = compareVersions(manifest.version, id.version) > 0
-    if (!newer) {
+    const url = this.manifestUrl()
+    const manifest = await this.fetchManifest(cfg, url)
+    const item = manifest.latestByTarget[target]
+    if (!item) {
+      const text = `No compatible ChipMate update package is available for ${target}.`
+      this.deps.log.log(`[Kilo New] Update check: ${text}`)
+      if (mode === "manual") await vscode.window.showInformationMessage(text)
+      return
+    }
+    if (item.publisher !== id.publisher || item.name !== id.name) {
+      throw new UpdateError(
+        "identity",
+        `Update package identity ${item.publisher}.${item.name} does not match ${id.publisher}.${id.name}.`,
+      )
+    }
+    if (item.target !== target) {
+      throw new UpdateError("target", `Update package target ${item.target} does not match ${target}.`)
+    }
+    if (item.sizeBytes > cfg.maxDownloadBytes) {
+      throw new UpdateError("download-size", `VSIX download is larger than ${cfg.maxDownloadBytes} bytes.`)
+    }
+    if (compareVersions(item.version, id.version) <= 0) {
       if (mode === "manual") await vscode.window.showInformationMessage("ChipMate is already up to date.")
       return
     }
-    const url = resolveRelativeUrl(cfg.baseUrl, manifest.vsix, "vsix-url")
-    const detail = manifest.releaseNotes ? String(manifest.releaseNotes) : undefined
-    const text = manifest.mandatory
-      ? `A required ChipMate update ${manifest.version} is available. Current version: ${id.version}.`
-      : `ChipMate update ${manifest.version} is available. Current version: ${id.version}.`
-    const choice = await vscode.window.showInformationMessage(
-      text,
-      { modal: manifest.mandatory === true, detail },
-      INSTALL,
-    )
-    if (choice !== INSTALL) return
+    if (!cfg.autoInstall) {
+      const choice = await vscode.window.showInformationMessage(
+        `ChipMate update ${item.version} is available. Current version: ${id.version}.`,
+        INSTALL,
+      )
+      if (choice !== INSTALL) return
+    }
 
-    const file = await this.download(cfg, manifest, url)
-    await this.install(cfg, file)
+    const file = await this.download(cfg, item, resolvePackageUrl(url, item.url))
+    try {
+      await this.install(cfg, file)
+    } catch (err) {
+      await fs.rm(file, { force: true })
+      throw err
+    }
     const reload = await vscode.window.showInformationMessage(
       "ChipMate update installed. Reload Window to finish.",
       RELOAD,
@@ -185,25 +219,32 @@ export class UpdateCheckService implements vscode.Disposable {
     if (reload === RELOAD) await vscode.commands.executeCommand("workbench.action.reloadWindow")
   }
 
-  private async fetchManifest(cfg: Config): Promise<Manifest> {
-    const url = resolveRelativeUrl(cfg.baseUrl, cfg.manifestFile, "manifest-url")
+  private manifestUrl(): URL {
+    try {
+      return new URL(this.deps.updates())
+    } catch (err) {
+      throw new UpdateError("server", `ChipMate Server update address is invalid: ${message(err)}`)
+    }
+  }
+
+  private async fetchManifest(cfg: Config, url: URL): Promise<Manifest> {
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), cfg.timeoutMs)
     try {
       const res = await this.deps.fetch(url.toString(), { signal: ctrl.signal })
-      if (!res.ok) throw new UpdateError("manifest", `Failed to read latest.json: HTTP ${res.status}`)
+      if (!res.ok) throw new UpdateError("manifest", `Failed to read update manifest: HTTP ${res.status}`)
       return parseManifest(await res.json())
     } catch (err) {
       if (err instanceof UpdateError) throw err
-      throw new UpdateError("manifest", `Failed to read latest.json: ${message(err)}`)
+      throw new UpdateError("manifest", `Failed to read update manifest: ${message(err)}`)
     } finally {
       clearTimeout(timer)
     }
   }
 
-  private async download(cfg: Config, manifest: Manifest, url: URL): Promise<string> {
+  private async download(cfg: Config, item: Package, url: URL): Promise<string> {
     const dir = path.join(this.context.globalStorageUri.fsPath, "update-check")
-    const name = `${safe(manifest.publisher)}.${safe(manifest.name)}-${safe(manifest.version)}.vsix`
+    const name = `${safe(item.publisher)}.${safe(item.name)}-${safe(item.version)}.vsix`
     const file = path.join(dir, name)
     const tmp = `${file}.tmp`
     await fs.mkdir(dir, { recursive: true })
@@ -219,7 +260,7 @@ export class UpdateCheckService implements vscode.Disposable {
         throw new UpdateError("download-size", `VSIX download is larger than ${cfg.maxDownloadBytes} bytes.`)
       }
       const digest = await writeResponse(res, tmp, cfg.maxDownloadBytes)
-      if (manifest.sha256 && digest.toLowerCase() !== manifest.sha256.toLowerCase()) {
+      if (digest.toLowerCase() !== item.sha256.toLowerCase()) {
         throw new UpdateError("sha256", "VSIX sha256 verification failed.")
       }
       await fs.rename(tmp, file)
@@ -295,8 +336,7 @@ export class UpdateCheckService implements vscode.Disposable {
     const cfg = vscode.workspace.getConfiguration("kilo.updateCheck")
     return {
       enabled: cfg.get("enabled", true),
-      baseUrl: cfg.get("baseUrl", DEFAULT_BASE),
-      manifestFile: cfg.get("manifestFile", DEFAULT_MANIFEST),
+      autoInstall: cfg.get("autoInstall", true),
       checkOnStartup: cfg.get("checkOnStartup", true),
       intervalHours: positive(cfg.get("intervalHours", DEFAULT_INTERVAL), DEFAULT_INTERVAL),
       timeoutMs: positive(cfg.get("timeoutMs", DEFAULT_TIMEOUT), DEFAULT_TIMEOUT),
@@ -313,6 +353,13 @@ export class UpdateCheckService implements vscode.Disposable {
       version: String(raw.version ?? "0.0.0"),
     }
   }
+
+  private target(): Target | undefined {
+    const raw = this.context.extension.packageJSON as Record<string, unknown>
+    const value = target(raw.chipmatePackageTarget)
+    if (value) return value
+    return hostTarget()
+  }
 }
 
 export function registerUpdateCheck(context: vscode.ExtensionContext): UpdateCheckService {
@@ -324,33 +371,90 @@ export function registerUpdateCheck(context: vscode.ExtensionContext): UpdateChe
   return service
 }
 
-export function resolveRelativeUrl(base: string, value: string, kind: "manifest-url" | "vsix-url"): URL {
+export function resolvePackageUrl(base: URL, value: string): URL {
   const text = value.trim()
-  if (!text) throw new UpdateError(kind, "Update manifest path is empty.")
-  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(text) || text.startsWith("//")) {
-    throw new UpdateError(kind, "Update manifest path must be relative.")
+  if (!text) throw new UpdateError("vsix-url", "Update package URL is empty.")
+  if (
+    /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(text) ||
+    text.startsWith("//") ||
+    text.includes("\\") ||
+    text.includes("?") ||
+    text.includes("#")
+  ) {
+    throw new UpdateError("vsix-url", "Update package URL must be a same-origin package path.")
   }
-  if (text.startsWith("/") || text.includes("\\") || text.includes("?") || text.includes("#")) {
-    throw new UpdateError(kind, "Update manifest path must be a plain relative path.")
+  const path = text.startsWith("/") ? text.slice(1) : text
+  const parts = path.split("/")
+  if (!path.startsWith("packages/") || parts.some((part) => part === "" || part === "." || part === "..")) {
+    throw new UpdateError("vsix-url", "Update package URL must stay under /packages/.")
   }
-  const parts = text.split("/")
-  if (parts.some((part) => part === "" || part === "." || part === "..")) {
-    throw new UpdateError(kind, "Update manifest path must not escape the update base URL.")
-  }
-  return new URL(text, ensureSlash(base))
+  return new URL(`/${path}`, base.origin)
 }
 
 export function compareVersions(a: string, b: string): number {
   const left = parseVersion(a)
   const right = parseVersion(b)
   if (!left || !right) return 0
-  for (const i of [0, 1, 2] as const) {
-    if (left.main[i] !== right.main[i]) return left.main[i] > right.main[i] ? 1 : -1
+  for (const index of [0, 1, 2] as const) {
+    if (left.main[index] !== right.main[index]) return left.main[index] > right.main[index] ? 1 : -1
   }
   if (left.pre === right.pre) return 0
   if (!left.pre) return 1
   if (!right.pre) return -1
   return left.pre > right.pre ? 1 : left.pre < right.pre ? -1 : 0
+}
+
+function updateManifestUrl(): string {
+  const result = chipmateServerEndpoints()
+  if (!result.endpoints)
+    throw new UpdateError("server", result.state.error ?? result.state.warning ?? "ChipMate Server is unavailable.")
+  return result.endpoints.updates
+}
+
+function parseManifest(raw: unknown): Manifest {
+  if (!record(raw)) throw new UpdateError("manifest", "Update manifest must be a JSON object.")
+  if (raw.schemaVersion !== 2) throw new UpdateError("manifest", "Update manifest schemaVersion must be 2.")
+  if (!record(raw.latestByTarget)) throw new UpdateError("manifest", "Update manifest latestByTarget is missing.")
+  const latestByTarget: Partial<Record<Target, Package>> = {}
+  for (const [key, item] of Object.entries(raw.latestByTarget)) {
+    const kind = target(key)
+    if (!kind) continue
+    latestByTarget[kind] = parsePackage(item, kind)
+  }
+  return { latestByTarget }
+}
+
+function parsePackage(value: unknown, expected: Target): Package {
+  if (!record(value)) throw new UpdateError("manifest", `Update package for ${expected} must be an object.`)
+  const extensionId = string(value.extensionId)
+  const publisher = string(value.publisher)
+  const name = string(value.name)
+  const version = string(value.version)
+  const targetValue = target(value.target)
+  const url = string(value.url)
+  const sha256 = string(value.sha256)
+  const sizeBytes = number(value.sizeBytes)
+  if (!extensionId || !publisher || !name || !version || !targetValue || !url || !sha256 || !sizeBytes) {
+    throw new UpdateError("manifest", `Update package for ${expected} is incomplete.`)
+  }
+  if (extensionId !== `${publisher}.${name}`)
+    throw new UpdateError("manifest", "Update package extension identity is invalid.")
+  if (targetValue !== expected) throw new UpdateError("manifest", `Update package target does not match ${expected}.`)
+  if (!parseVersion(version)) throw new UpdateError("version", `Update package version is invalid: ${version}.`)
+  if (!/^[a-fA-F0-9]{64}$/.test(sha256)) throw new UpdateError("manifest", "Update package sha256 is invalid.")
+  return { extensionId, publisher, name, version, target: targetValue, url, sha256, sizeBytes }
+}
+
+function hostTarget(): Target | undefined {
+  if (process.platform === "win32" && process.arch === "x64") return "win32-x64-baseline"
+  if (process.platform === "linux" && process.arch === "x64") return "linux-x64-baseline"
+  if (process.platform === "darwin" && process.arch === "x64") return "darwin-x64"
+  if (process.platform === "darwin" && process.arch === "arm64") return "darwin-arm64"
+  return undefined
+}
+
+function target(value: unknown): Target | undefined {
+  return typeof value === "string" && (TARGETS as readonly string[]).includes(value) ? (value as Target) : undefined
 }
 
 async function writeResponse(res: Response, file: string, max: number): Promise<string> {
@@ -374,28 +478,6 @@ async function writeResponse(res: Response, file: string, max: number): Promise<
   return hash.digest("hex")
 }
 
-function parseManifest(value: unknown): Manifest {
-  if (!record(value)) throw new UpdateError("manifest", "latest.json must be a JSON object.")
-  const publisher = string(value.publisher)
-  const name = string(value.name)
-  const version = string(value.version)
-  const vsix = string(value.vsix)
-  if (!publisher || !name || !version || !vsix) {
-    throw new UpdateError("manifest", "latest.json is missing publisher, name, version, or vsix.")
-  }
-  const sha = string(value.sha256)
-  if (sha && !/^[a-fA-F0-9]{64}$/.test(sha)) throw new UpdateError("manifest", "latest.json sha256 is invalid.")
-  return {
-    publisher,
-    name,
-    version,
-    vsix,
-    sha256: sha || undefined,
-    releaseNotes: string(value.releaseNotes) || undefined,
-    mandatory: value.mandatory === true,
-  }
-}
-
 function parseVersion(value: string): { main: [number, number, number]; pre: string } | undefined {
   const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(value)
   if (!match) return undefined
@@ -403,10 +485,6 @@ function parseVersion(value: string): { main: [number, number, number]; pre: str
     main: [Number(match[1]), Number(match[2]), Number(match[3])],
     pre: match[4] ?? "",
   }
-}
-
-function ensureSlash(value: string): string {
-  return value.endsWith("/") ? value : `${value}/`
 }
 
 function intervalMs(cfg: Config): number {
@@ -425,20 +503,22 @@ function positive(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
-
 function string(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
 }
 
-function message(err: unknown): string {
-  if (err instanceof Error) return err.message
-  return String(err)
+function number(value: unknown): number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : 0
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function message(value: unknown): string {
+  return value instanceof Error ? value.message : String(value)
 }
 
 function quote(value: string): string {
-  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value
-  return `'${value.replace(/'/g, "'\\''")}'`
+  return process.platform === "win32" ? `"${value.replace(/"/g, '\\"')}"` : `'${value.replace(/'/g, "'\\''")}'`
 }

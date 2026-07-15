@@ -109,7 +109,7 @@ export class SettingsEditorProvider implements vscode.Disposable {
     }
     provider.resolveWebviewPanel(panel)
 
-    // Listen for closePanel from the webview (back button in panel mode)
+    // Close the editor tab when the Settings header close button requests it.
     const closePanelDisposable = panel.webview.onDidReceiveMessage((msg) => {
       if (msg.type === "closePanel") {
         panel.dispose()
