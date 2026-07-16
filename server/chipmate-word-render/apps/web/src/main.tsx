@@ -195,8 +195,12 @@ function App() {
   const extensionId = extension && !["publish", "me", "analytics"].includes(extension[1] ?? "") ? extension[1] : undefined
   const enabled = capabilities.data?.features.extensions === true
   const extensionPage = url.pathname.startsWith("/extensions")
-  const plugin = !enabled ? (
-    capabilities.loading ? <Skeleton label="正在检查插件市场能力" /> : <ExtensionUnavailable navigate={navigate} />
+  const plugin = capabilities.loading ? (
+    <Skeleton label="正在检查插件市场能力" />
+  ) : capabilities.error ? (
+    <section className="page-width"><InlineError message={`无法读取插件市场能力：${capabilities.error}`} /></section>
+  ) : !enabled ? (
+    <ExtensionUnavailable navigate={navigate} />
   ) : url.pathname === "/extensions" ? (
     <ExtensionHome navigate={navigate} />
   ) : url.pathname === "/extensions/publish" ? (

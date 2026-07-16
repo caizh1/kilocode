@@ -426,4 +426,12 @@ historical result: passed — superseded by the 2026-07-13 fullscreen review bel
 
 No P0 crash or unusable-page failure is visible. No open P1/P2 remains in the final desktop evidence.
 
+### Extension Batch Upload and Capability Cache — G9
+
+- Installed macOS Google Chrome captured the review, active batch progress and idle states at `1484×1060`, `1440×1024` and `1050×1024`.
+- Evidence: `/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/08-extension-upload-review-1484x1060.png`, `/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/09-extension-upload-progress-1484x1060.png`, `/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/extension-upload-idle-1440x1024.png` and `/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/extension-upload-idle-1050x1024.png`.
+- The upload page keeps the approved Liquid Glass hierarchy, an immediately visible batch progress surface, normal-flow icons and controls, readable review rows, and no root overflow or obscured actions at the accepted desktop widths.
+- The visual capture test passed in installed Chrome. Targeted batch-network and axe coverage passed after removing the nested complementary landmark. `npm run check` passed all 64 package tests and `npm run build` passed.
+- No P0, P1 or P2 is open for G9. Mobile and legacy browsers remain out of scope; archive inputs are browser-local and only selected VSIX bytes cross the publication boundary.
+
 final result: passed

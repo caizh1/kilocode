@@ -1,7 +1,6 @@
 import {
   ArrowRight,
   ChartLineUp,
-  Check,
   CheckCircle,
   Clock,
   Code,
@@ -32,6 +31,17 @@ import type {
 import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react"
 import { bytes, compact, date, InlineError, mutate, Skeleton, useApi } from "../shared"
 import { uuid } from "../id"
+import {
+  BATCH_BYTES,
+  BATCH_LIMIT,
+  dropInputs,
+  listInputs,
+  materialize,
+  scanInputs,
+  type BatchInput,
+  type BatchItem,
+  type BatchScan,
+} from "../extension-batch"
 
 interface Catalog {
   items: ExtensionSummary[]
@@ -321,108 +331,190 @@ export function ExtensionDetail(props: Shared & { id: string }) {
   )
 }
 
+type UploadState = "READY" | "EXTRACTING" | ExtensionPublicationRun["status"]
+type UploadItem = BatchItem & { selected: boolean; status: UploadState; loaded: number; error: string | undefined; runId: string | undefined }
+
 export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestLogin">) {
-  const [file, setFile] = useState<File>()
-  const [run, setRun] = useState<ExtensionPublicationRun>()
-  const [progress, setProgress] = useState({ loaded: 0, total: 0, percent: 0, speed: 0, eta: 0 })
+  const [scan, setScan] = useState<BatchScan>()
+  const [items, setItems] = useState<UploadItem[]>([])
+  const [status, setStatus] = useState<"idle" | "scanning" | "ready" | "uploading" | "complete">("idle")
+  const [progress, setProgress] = useState({ path: "", loaded: 0, total: 0, percent: 0, speed: 0, eta: 0 })
   const [error, setError] = useState("")
   const [drag, setDrag] = useState(false)
   const request = useRef<XMLHttpRequest | undefined>(undefined)
-  const runId = useRef("")
-  const choose = (value?: File) => {
-    setError("")
-    if (!value) return setFile(undefined)
-    if (!value.name.toLocaleLowerCase().endsWith(".vsix")) return setError("仅支持 .vsix 文件。")
-    if (value.size > 512 * 1024 * 1024) return setError("VSIX 不能超过 512 MiB。")
-    setFile(value)
-    setRun(undefined)
-    setProgress({ loaded: 0, total: value.size, percent: 0, speed: 0, eta: 0 })
-  }
+  const runs = useRef(new Map<string, string>())
+  const cancelled = useRef(false)
+  const selected = items.filter((item) => item.selected)
+  const total = selected.reduce((sum, item) => sum + item.size, 0)
+  const blocked = selected.length > BATCH_LIMIT || total > BATCH_BYTES
+  const active = status === "uploading"
+  const terminal = new Set<UploadState>(["PUBLISHED", "DUPLICATE", "FAILED", "CANCELLED"])
+  const completed = items.filter((item) => item.selected && terminal.has(item.status))
+  const counts = (value: UploadState) => items.filter((item) => item.selected && item.status === value).length
+
   useEffect(() => {
     const stream = new EventSource("/api/v1/market/stream")
     const update = (event: Event) => {
       const data = JSON.parse((event as MessageEvent<string>).data) as ExtensionPublicationRun & { runId?: string }
-      if (data.runId !== runId.current) return
-      setRun((current) => ({ ...(current ?? data), ...data, id: data.runId ?? current?.id ?? runId.current } as ExtensionPublicationRun))
+      const id = data.runId ? runs.current.get(data.runId) : undefined
+      if (!id) return
+      setItems((current) => current.map((item) => item.id === id ? { ...item, status: data.status as UploadState, error: data.error } : item))
     }
     stream.addEventListener("extension.publication.changed", update)
-    return () => stream.close()
+    return () => {
+      stream.close()
+      request.current?.abort()
+    }
   }, [])
-  const upload = () => {
-    if (!props.user) return props.requestLogin()
-    if (!file) return
-    const id = uuid()
-    const key = uuid()
-    runId.current = id
-    const xhr = new XMLHttpRequest()
-    request.current = xhr
-    const clock = { time: performance.now(), loaded: 0, speed: 0 }
+
+  const prepare = async (inputs: BatchInput[]) => {
     setError("")
-    setRun({ id, ownerId: props.user.id, status: "UPLOADING", stage: "uploading", filename: file.name, totalBytes: file.size, idempotencyKey: key, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
-    xhr.open("POST", "/api/v1/extension-publications")
-    xhr.setRequestHeader("content-type", "application/vnd.microsoft.vscode.vsix")
-    xhr.setRequestHeader("x-csrf-token", props.csrf)
-    xhr.setRequestHeader("x-publication-run-id", id)
-    xhr.setRequestHeader("idempotency-key", key)
-    xhr.setRequestHeader("x-vsix-filename", encodeURIComponent(file.name))
-    xhr.upload.onprogress = (event) => {
-      const time = performance.now()
-      const seconds = Math.max(0.001, (time - clock.time) / 1_000)
-      const instant = (event.loaded - clock.loaded) / seconds
-      clock.speed = clock.speed ? clock.speed * 0.7 + instant * 0.3 : instant
-      clock.time = time
-      clock.loaded = event.loaded
-      const total = event.lengthComputable ? event.total : file.size
-      setProgress({ loaded: event.loaded, total, percent: total ? Math.round((event.loaded / total) * 100) : 0, speed: clock.speed, eta: clock.speed ? Math.max(0, (total - event.loaded) / clock.speed) : 0 })
+    setScan(undefined)
+    setItems([])
+    setStatus("scanning")
+    setProgress({ path: "", loaded: 0, total: 0, percent: 0, speed: 0, eta: 0 })
+    try {
+      const result = await scanInputs(inputs, (path, loaded, size) => {
+        setProgress({ path, loaded, total: size, percent: size ? Math.min(100, Math.round((loaded / size) * 100)) : 0, speed: 0, eta: 0 })
+      })
+      setScan(result)
+      setItems(result.items.map((item) => ({ ...item, selected: true, status: "READY", loaded: 0, error: undefined, runId: undefined })))
+      setStatus("ready")
+      if (!result.items.length) setError("所选内容中没有可上传的 VSIX。")
+    } catch (reason) {
+      setStatus("ready")
+      setError(reason instanceof Error ? reason.message : String(reason))
     }
-    xhr.onload = () => {
-      const payload = parseRun(xhr.responseText)
-      if (xhr.status < 200 || xhr.status >= 300) return setError(payload.message ?? `上传失败（HTTP ${xhr.status}）`)
-      setRun(payload)
-      request.current = undefined
-    }
-    xhr.onerror = () => {
-      request.current = undefined
-      setError("上传连接中断，请检查网络后重试。")
-    }
-    xhr.onabort = () => {
-      request.current = undefined
-      setRun((current) => current ? { ...current, status: "CANCELLED", stage: "complete" } : current)
-    }
-    xhr.send(file)
   }
-  const active = run && ["UPLOADING", "VALIDATING", "PUBLISHING"].includes(run.status)
-  const drop = (event: DragEvent) => { event.preventDefault(); setDrag(false); choose(event.dataTransfer.files[0]) }
+
+  const uploadOne = (item: UploadItem, blob: Blob, clock: { time: number; loaded: number; speed: number }, batch: number) =>
+    new Promise<void>((resolve) => {
+      if (!props.user || cancelled.current) {
+        setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "CANCELLED" } : entry))
+        resolve()
+        return
+      }
+      const id = uuid()
+      const key = uuid()
+      const xhr = new XMLHttpRequest()
+      const local = { loaded: 0 }
+      runs.current.set(id, item.id)
+      request.current = xhr
+      setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "UPLOADING", loaded: 0, runId: id, error: undefined } : entry))
+      xhr.open("POST", "/api/v1/extension-publications")
+      xhr.setRequestHeader("content-type", "application/vnd.microsoft.vscode.vsix")
+      xhr.setRequestHeader("x-csrf-token", props.csrf)
+      xhr.setRequestHeader("x-publication-run-id", id)
+      xhr.setRequestHeader("idempotency-key", key)
+      xhr.setRequestHeader("x-vsix-filename", encodeURIComponent(item.name))
+      xhr.upload.onprogress = (event) => {
+        const time = performance.now()
+        const seconds = Math.max(0.001, (time - clock.time) / 1_000)
+        const delta = Math.max(0, event.loaded - local.loaded)
+        const speed = delta / seconds
+        clock.speed = clock.speed ? clock.speed * 0.7 + speed * 0.3 : speed
+        clock.time = time
+        clock.loaded += delta
+        local.loaded = event.loaded
+        const percent = batch ? Math.min(100, Math.round((clock.loaded / batch) * 100)) : 0
+        setProgress({ path: item.path, loaded: clock.loaded, total: batch, percent, speed: clock.speed, eta: clock.speed ? Math.max(0, (batch - clock.loaded) / clock.speed) : 0 })
+        setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, loaded: event.loaded } : entry))
+      }
+      const finish = (next: UploadState, issue?: string) => {
+        request.current = undefined
+        runs.current.delete(id)
+        setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: next, loaded: next === "CANCELLED" ? entry.loaded : item.size, error: issue } : entry))
+        resolve()
+      }
+      xhr.onload = () => {
+        const payload = parseRun(xhr.responseText)
+        if (xhr.status < 200 || xhr.status >= 300) {
+          finish("FAILED", payload.message ?? `上传失败（HTTP ${xhr.status}）`)
+          return
+        }
+        finish(payload.status)
+      }
+      xhr.onerror = () => finish("FAILED", "上传连接中断，请检查网络后重试。")
+      xhr.onabort = () => finish("CANCELLED", "上传已取消")
+      xhr.send(blob)
+    })
+
+  const upload = async (only?: UploadItem[]) => {
+    if (!props.user) return props.requestLogin()
+    if (!scan) return
+    const queue = only ?? selected
+    if (!queue.length || (!only && blocked)) return
+    cancelled.current = false
+    setError("")
+    setStatus("uploading")
+    setItems((current) => current.map((item) => queue.some((entry) => entry.id === item.id) ? { ...item, status: "READY", loaded: 0, error: undefined } : item))
+    const clock = { time: performance.now(), loaded: 0, speed: 0 }
+    const size = queue.reduce((sum, item) => sum + item.size, 0)
+    setProgress({ path: "", loaded: 0, total: size, percent: 0, speed: 0, eta: 0 })
+    await materialize(
+      scan,
+      queue,
+      async (entry, blob) => {
+        const item = queue.find((value) => value.id === entry.id)
+        if (item) await uploadOne(item, blob, clock, size)
+      },
+      (entry, issue) => setItems((current) => current.map((item) => item.id === entry.id ? { ...item, status: "FAILED", error: issue } : item)),
+      (path) => setItems((current) => current.map((item) => item.selected && item.path.startsWith(path) && item.status === "READY" ? { ...item, status: "EXTRACTING" } : item)),
+      () => cancelled.current,
+    )
+    setStatus("complete")
+    setProgress((current) => ({ ...current, percent: cancelled.current ? current.percent : 100, loaded: cancelled.current ? current.loaded : current.total, eta: 0 }))
+  }
+
+  const cancel = () => {
+    cancelled.current = true
+    request.current?.abort()
+    setItems((current) => current.map((item) => item.selected && ["READY", "EXTRACTING"].includes(item.status) ? { ...item, status: "CANCELLED", error: "批次已取消" } : item))
+  }
+
+  const drop = async (event: DragEvent) => {
+    event.preventDefault()
+    setDrag(false)
+    await prepare(await dropInputs(event.dataTransfer))
+  }
+
   return (
     <section className="extension-publish page-width">
-      <div className="page-heading"><span className="eyebrow">VS CODE 插件发布</span><h1>上传 VS Code 插件</h1><p>将 VSIX 上传到 ChipMate 插件市场，结构校验通过后立即发布。</p></div>
-      {!active && !run && <div className="extension-upload-grid">
-        <div className={`glass-panel extension-drop ${drag ? "dragging" : ""}`} onDragOver={(event) => { event.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={drop}>
-          <span className="upload-glass-icon"><FileArrowUp /></span><h2>将 VSIX 文件拖拽到此处</h2><p>或点击下方按钮选择文件</p>
-          <label className="primary-button extension-file-button"><UploadSimple /> 选择 VSIX<input type="file" accept=".vsix" onChange={(event) => choose(event.target.files?.[0])} /></label>
-          {file && <div className="selected-vsix"><Package /><span><strong>{file.name}</strong><small>{bytes(file.size)}</small></span><button aria-label="移除文件" onClick={() => choose()}><X /></button></div>}
-          <small><ShieldWarning /> 仅支持 .vsix，最大 512 MiB</small>{error && <InlineError message={error} />}
-          <button className="primary-button publish-vsix" disabled={!file} onClick={upload}>开始上传并发布</button>
+      <div className="page-heading"><span className="eyebrow">VS CODE 插件发布</span><h1>上传 VS Code 插件</h1><p>可批量选择 VSIX、文件夹、ZIP 或 TAR.GZ；浏览器只上传筛选出的 VSIX。</p></div>
+      {(active || status === "complete") && <div className="glass-panel extension-progress-card extension-batch-progress">
+        <div className="extension-progress-heading"><span className="upload-file-mark"><Code weight="duotone" /></span><div><h2>{active ? "正在批量发布" : "批量发布完成"}</h2><p>{completed.length} / {selected.length} 个已处理 · {bytes(total)}</p></div></div>
+        <div className="prominent-progress"><div style={{ width: `${progress.percent}%` }}><strong>{progress.percent}%</strong></div></div>
+        <div className="progress-metrics"><span><Package /> {bytes(progress.loaded)} / {bytes(progress.total || total)}</span><span><ChartLineUp /> {progress.speed ? `${bytes(progress.speed)}/s` : "等待数据"}</span><span><Clock /> {progress.eta ? `预计剩余 ${Math.ceil(progress.eta)} 秒` : active ? stateLabel(items.find((item) => ["EXTRACTING", "UPLOADING", "VALIDATING", "PUBLISHING"].includes(item.status))?.status ?? "READY") : "处理完成"}</span></div>
+        {active && <div className="progress-footer"><p><Warning /> 当前文件取消后，尚未开始的项目也会停止。</p><button className="danger-outline" onClick={cancel}>取消整批</button></div>}
+        {status === "complete" && <div className="batch-result"><span className="publication-success"><CheckCircle weight="fill" /><strong>{counts("PUBLISHED")} 个发布成功</strong></span><span>{counts("DUPLICATE")} 个已存在</span><span>{counts("FAILED")} 个失败</span><span>{counts("CANCELLED")} 个取消</span><span>{scan?.ignored ?? 0} 个忽略</span></div>}
+      </div>}
+      <div className="extension-upload-grid">
+        <div className={`glass-panel extension-drop ${drag ? "dragging" : ""}`} onDragOver={(event) => { event.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={(event) => void drop(event)}>
+          <span className="upload-glass-icon"><FileArrowUp /></span><h2>拖入 VSIX、归档或文件夹</h2><p>无关内容只在本地忽略，不会发送到服务器</p>
+          <div className="extension-picker-actions">
+            <label className="primary-button extension-file-button"><UploadSimple /> 选择文件<input type="file" multiple accept=".vsix,.zip,.tar.gz,.tgz" onChange={(event) => void prepare(listInputs(event.target.files ?? []))} /></label>
+            <label className="secondary-button extension-file-button"><Package /> 选择文件夹<input type="file" multiple {...{ webkitdirectory: "" }} onChange={(event) => void prepare(listInputs(event.target.files ?? []))} /></label>
+          </div>
+          <small><ShieldWarning /> 每批最多 20 个 VSIX、合计 10 GiB；单个最大 512 MiB</small>
+          {status === "scanning" && <div className="extension-scan-progress"><strong>正在本地扫描</strong><span>{progress.path || "正在读取所选内容"}</span><div><i style={{ width: `${progress.percent}%` }} /></div></div>}
+          {error && <InlineError message={error} />}
+          {scan && status !== "scanning" && <div className="extension-batch-review">
+            <div className="batch-summary"><span><strong>{selected.length}</strong> 个待上传</span><span><strong>{bytes(total)}</strong> 合计</span><span><strong>{scan.ignored}</strong> 个已忽略</span><span><strong>{scan.errors.length}</strong> 个扫描错误</span></div>
+            {blocked && <p className="batch-limit-warning"><Warning /> 已超过 20 个或 10 GiB，请取消选择部分 VSIX。</p>}
+            <div className="extension-batch-list">{items.map((item) => <div key={item.id} className={`batch-item ${item.status.toLocaleLowerCase()}`}><input type="checkbox" aria-label={`选择 ${item.name}`} checked={item.selected} disabled={active} onChange={(event) => setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, selected: event.target.checked } : entry))} /><span><strong>{item.name}</strong><small>{item.path}</small><small>{bytes(item.size)} · {sourceLabel(item.kind)}</small>{item.error && <em>{item.error}</em>}</span><b>{stateLabel(item.status)}</b>{item.status === "FAILED" && item.selected && !active && <button type="button" onClick={() => void upload([item])}>重试</button>}</div>)}</div>
+            {(scan.notes.length > 0 || scan.errors.length > 0) && <details className="batch-notes"><summary>查看忽略与扫描明细</summary>{[...scan.errors, ...scan.notes].map((item, index) => <p key={`${item.path}-${index}`}><strong>{item.path}</strong><span>{item.reason}</span></p>)}</details>}
+            {!active && status !== "complete" && <button className="primary-button publish-vsix" disabled={!selected.length || blocked} onClick={() => void upload()}>开始批量上传</button>}
+          </div>}
         </div>
-        <aside className="glass-panel extension-upload-rules"><h2>上传说明</h2><Rule icon={<Package />} title="自动读取元数据">名称、版本、说明、平台和依赖均来自 VSIX。</Rule><Rule icon={<CheckCircle />} title="结构校验后立即上架">不执行扩展代码，不进行代码或病毒审计。</Rule><Rule icon={<UserCircle />} title="上传者公开可见">你的市场身份会显示为该构建的上传者。</Rule><Rule icon={<Clock />} title="每小时最多 10 次">单个文件最大 512 MiB。</Rule></aside>
-      </div>}
-      {(active || run) && <div className="glass-panel extension-progress-card">
-        <div className="extension-progress-heading"><span className="upload-file-mark"><Code weight="duotone" /></span><div><h2>{file?.name ?? run?.filename}</h2><p>{bytes(progress.total || run?.totalBytes || 0)} · VSIX 包</p></div></div>
-        <div className="extension-stage" aria-label="发布阶段"><Stage active={run?.status === "UPLOADING"} done={run?.status !== "UPLOADING"} label="上传中" icon={<UploadSimple />} /><span /><Stage active={run?.status === "VALIDATING"} done={["PUBLISHING", "PUBLISHED", "DUPLICATE"].includes(run?.status ?? "")} label="校验 VSIX" icon={<MagnifyingGlass />} /><span /><Stage active={run?.status === "PUBLISHING"} done={["PUBLISHED", "DUPLICATE"].includes(run?.status ?? "")} label="发布中" icon={<ArrowRight />} /></div>
-        <div className="prominent-progress"><div style={{ width: `${run?.status === "UPLOADING" ? progress.percent : active ? 100 : 100}%` }}><strong>{run?.status === "UPLOADING" ? progress.percent : 100}%</strong></div></div>
-        <div className="progress-metrics"><span><Package /> {bytes(progress.loaded)} / {bytes(progress.total || run?.totalBytes || 0)}</span><span><ChartLineUp /> {progress.speed ? `${bytes(progress.speed)}/s` : "等待数据"}</span><span><Clock /> {progress.eta ? `预计剩余 ${Math.ceil(progress.eta)} 秒` : phase(run?.status)}</span></div>
-        {active && <div className="progress-footer"><p><Warning /> 离开此页面将中断上传，请耐心等待上传完成。</p><button className="danger-outline" onClick={() => request.current?.abort()}>取消上传</button></div>}
-        {run?.status === "PUBLISHED" && <div className="publication-success"><CheckCircle weight="fill" /><div><strong>插件发布成功</strong><p>你的插件已成功发布到 ChipMate 插件市场。</p></div></div>}
-        {run?.status === "DUPLICATE" && <div className="publication-duplicate"><Warning /><div><strong>已存在相同构建</strong><p>市场返回了已有产物，没有新增上传者。</p></div></div>}
-        {run?.status === "FAILED" && <InlineError message={run.error ?? error} />}
-      </div>}
+        <div className="glass-panel extension-upload-rules"><h2>上传说明</h2><Rule icon={<Package />} title="仅上传 VSIX">文件夹和归档只在浏览器本地扫描，其他内容不会进入网络请求。</Rule><Rule icon={<CheckCircle />} title="逐项校验并上架">单项失败不阻断后续文件，不执行扩展代码或病毒审计。</Rule><Rule icon={<UserCircle />} title="上传者公开可见">你的市场身份会显示为每个新构建的上传者。</Rule><Rule icon={<Clock />} title="每小时最多 100 次">批次最多 20 个，单个 VSIX 最大 512 MiB。</Rule></div>
+      </div>
     </section>
   )
 }
 
 function Rule(props: { icon: ReactNode; title: string; children: ReactNode }) { return <div className="upload-rule"><span>{props.icon}</span><div><strong>{props.title}</strong><p>{props.children}</p></div></div> }
-function Stage(props: { active: boolean; done: boolean; label: string; icon: ReactNode }) { return <div className={`${props.active ? "active" : ""} ${props.done ? "done" : ""}`}><span>{props.done ? <Check /> : props.icon}</span><strong>{props.label}</strong></div> }
-function phase(value?: string) { return value === "VALIDATING" ? "正在校验 VSIX" : value === "PUBLISHING" ? "正在发布" : value === "PUBLISHED" ? "发布完成" : value === "DUPLICATE" ? "已存在" : "等待上传" }
+function sourceLabel(value: BatchItem["kind"]) { return value === "folder" ? "文件夹" : value === "zip" ? "ZIP" : value === "tar" ? "TAR.GZ" : "本地文件" }
+function stateLabel(value: UploadState) { return value === "READY" ? "等待上传" : value === "EXTRACTING" ? "正在提取" : value === "UPLOADING" ? "上传中" : value === "VALIDATING" ? "校验中" : value === "PUBLISHING" ? "发布中" : value === "PUBLISHED" ? "已发布" : value === "DUPLICATE" ? "已存在" : value === "CANCELLED" ? "已取消" : "失败" }
 function parseRun(value: string): ExtensionPublicationRun & { message?: string } {
   try {
     return JSON.parse(value || "{}") as ExtensionPublicationRun & { message?: string }

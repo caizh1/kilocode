@@ -1,0 +1,113 @@
+ M bun.lock
+ M packages/kilo-indexing/src/indexing/documents/service.ts
+ M packages/kilo-indexing/test/kilocode/indexing/documents/extractors.test.ts
+ M packages/kilo-indexing/test/kilocode/indexing/documents/service.test.ts
+ M packages/kilo-vscode/esbuild.js
+ M packages/kilo-vscode/package.json
+ M packages/kilo-vscode/script/build.ts
+ M packages/kilo-vscode/script/lancedb-helper.ts
+ M packages/kilo-vscode/script/ripgrep-helper.ts
+ M packages/kilo-vscode/src/KiloProvider.ts
+ M packages/kilo-vscode/src/MarketplacePanelProvider.ts
+ M packages/kilo-vscode/src/extension.ts
+ M packages/kilo-vscode/src/provider-actions.ts
+ M packages/kilo-vscode/src/services/agent-terminal/runtime.ts
+ M packages/kilo-vscode/src/services/autocomplete/__tests__/settings.spec.ts
+ M packages/kilo-vscode/src/services/autocomplete/index.ts
+ M packages/kilo-vscode/src/services/autocomplete/settings.ts
+ M packages/kilo-vscode/src/services/cli-backend/connection-service.test.ts
+ M packages/kilo-vscode/src/services/cli-backend/connection-service.ts
+ M packages/kilo-vscode/src/services/cli-backend/server-manager.ts
+ M packages/kilo-vscode/src/services/document-artifacts/index.ts
+ M packages/kilo-vscode/src/services/marketplace/api.ts
+ M packages/kilo-vscode/src/services/marketplace/upload.ts
+ M packages/kilo-vscode/src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider.ts
+ M packages/kilo-vscode/src/services/qwen-autocomplete/QwenFimClient.ts
+ M packages/kilo-vscode/src/services/qwen-autocomplete/benchmark.ts
+ M packages/kilo-vscode/src/services/qwen-autocomplete/config.ts
+ M packages/kilo-vscode/src/services/qwen-autocomplete/diagnostics.ts
+ M packages/kilo-vscode/src/services/qwen-autocomplete/index.ts
+ M packages/kilo-vscode/src/services/qwen-autocomplete/smoke.ts
+ M packages/kilo-vscode/src/services/qwen-autocomplete/types.ts
+ M packages/kilo-vscode/src/shared/internal-offline.ts
+ M packages/kilo-vscode/src/test/extension.test.ts
+ M packages/kilo-vscode/tests/unit/agent-terminal-runtime.test.ts
+ M packages/kilo-vscode/tests/unit/agent-terminal-service.test.ts
+ M packages/kilo-vscode/tests/unit/document-artifact-card-service.test.ts
+ M packages/kilo-vscode/tests/unit/language-default.test.ts
+ M packages/kilo-vscode/tests/unit/marketplace-skills.test.ts
+ M packages/kilo-vscode/tests/unit/marketplace-upload.test.ts
+ M packages/kilo-vscode/tests/unit/provider-actions-save.test.ts
+ M packages/kilo-vscode/tests/unit/qwen-autocomplete-diagnostics.test.ts
+ M packages/kilo-vscode/tests/unit/qwen-autocomplete-manifest.test.ts
+ M packages/kilo-vscode/tests/unit/qwen-autocomplete.test.ts
+ M packages/kilo-vscode/webview-ui/src/App.tsx
+ M packages/kilo-vscode/webview-ui/src/components/chat/DocumentArtifactCard.tsx
+ M packages/kilo-vscode/webview-ui/src/components/chat/document-artifact-card.ts
+ M packages/kilo-vscode/webview-ui/src/components/marketplace/MarketplaceListView.tsx
+ M packages/kilo-vscode/webview-ui/src/components/marketplace/filter.ts
+ M packages/kilo-vscode/webview-ui/src/components/migration/migration.css
+ M packages/kilo-vscode/webview-ui/src/components/settings/IndexingTab.tsx
+ M packages/kilo-vscode/webview-ui/src/components/settings/ModelsTab.tsx
+ M packages/kilo-vscode/webview-ui/src/components/settings/autocomplete-model-selector.ts
+ M packages/kilo-vscode/webview-ui/src/context/config.tsx
+ M packages/kilo-vscode/webview-ui/src/styles/document-artifacts.css
+ M packages/kilo-vscode/webview-ui/src/styles/welcome.css
+ M packages/kilo-vscode/webview-ui/src/types/messages/webview-messages.ts
+ M packages/kilo-vscode/webview-ui/src/utils/indexing-defaults.ts
+ M packages/kilo-vscode/webview-ui/src/utils/internal-offline-ui.ts
+ M packages/opencode/script/build.ts
+ M packages/opencode/src/cli/cmd/serve.ts
+ M packages/opencode/src/config/config.ts
+ M packages/opencode/src/kilocode/cli/heap-snapshot.ts
+ M packages/opencode/src/kilocode/documents/artifacts.ts
+ M packages/opencode/src/kilocode/documents/mermaid.ts
+ M packages/opencode/src/kilocode/documents/word.ts
+ M packages/opencode/src/kilocode/indexing-worker-client.ts
+ M packages/opencode/src/kilocode/indexing.ts
+ M packages/opencode/src/kilocode/internal-offline.ts
+ M packages/opencode/src/kilocode/server/httpapi/groups/kilo-gateway.ts
+ M packages/opencode/src/kilocode/server/httpapi/handlers/kilo-gateway.ts
+ M packages/opencode/src/kilocode/server/httpapi/handlers/kilocode.ts
+ M packages/opencode/src/kilocode/server/provider-auth-lifecycle.ts
+ M packages/opencode/src/kilocode/tool/document-artifacts.ts
+ M packages/opencode/src/kilocode/tool/mermaid-documents.ts
+ M packages/opencode/src/kilocode/tool/word-documents.ts
+ M packages/opencode/src/server/event.ts
+ M packages/opencode/src/server/routes/instance/httpapi/handlers/control.ts
+ M packages/opencode/src/server/routes/instance/httpapi/handlers/global.ts
+ M packages/opencode/test/kilocode/builtin-skills.test.ts
+ M packages/opencode/test/kilocode/fixtures/source-backed-detail-design-e2e.json
+ M packages/opencode/test/kilocode/mermaid-documents.test.ts
+ M packages/opencode/test/kilocode/server/kilo-gateway-statuses.test.ts
+ M packages/opencode/test/kilocode/server/provider-auth-lifecycle.test.ts
+ M packages/opencode/test/kilocode/source-backed-detail-design-skill.test.ts
+ M packages/opencode/test/kilocode/word-documents.test.ts
+ M packages/sdk/js/src/v2/gen/sdk.gen.ts
+ M packages/sdk/js/src/v2/gen/types.gen.ts
+ M packages/sdk/openapi.json
+?? .changeset/memory-debug-recovery.md
+?? chipmate-0.0.38-win32-x64-baseline.vsix.tar.gz
+?? chipmate-0.0.40-win32-x64-baseline.vsix.tar.gz
+?? docs/chipmate-skill-market-kilo-alignment-plan.md
+?? latest.json
+?? packages/kilo-vscode/src/commands/memory-debug.ts
+?? packages/kilo-vscode/src/services/cli-backend/recovery.test.ts
+?? packages/kilo-vscode/src/services/cli-backend/recovery.ts
+?? packages/kilo-vscode/src/services/memory-debug.test.ts
+?? packages/kilo-vscode/src/services/memory-debug.ts
+?? packages/kilo-vscode/src/shared/qwen-autocomplete.ts
+?? packages/opencode/src/kilocode/memory-debug.ts
+?? packages/opencode/src/kilocode/server/provider-save-lifecycle.ts
+?? packages/opencode/test/kilocode/memory-debug.test.ts
+?? packages/opencode/test/kilocode/server/provider-save-lifecycle.test.ts
+?? server/chipmate-word-render/.gitignore
+?? server/chipmate-word-render/Dockerfile
+?? server/chipmate-word-render/README.md
+?? server/chipmate-word-render/build-offline-bundle.mjs
+?? server/chipmate-word-render/install-render-server.sh
+?? server/chipmate-word-render/package.json
+?? server/chipmate-word-render/server.js
+?? ufs-query-module-interface-edited.docx
+?? ufs-query-module-interface.docx
+?? ufs-task-module-interface.docx

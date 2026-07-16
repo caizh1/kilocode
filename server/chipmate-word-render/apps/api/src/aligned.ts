@@ -651,7 +651,7 @@ function report(item: ReleaseItem): ValidationReport {
 }
 
 function cached(reply: FastifyReply, match: string | undefined, payload: unknown, version?: string) {
-  const raw = version ?? (payload as MarketCapabilities).catalogVersion
+  const raw = version ?? createHash("sha256").update(JSON.stringify(payload)).digest("hex")
   const etag = `"${raw}"`
   reply.header("cache-control", "private, max-age=0, must-revalidate").header("etag", etag)
   if (match === etag || match === raw) return reply.code(304).send()

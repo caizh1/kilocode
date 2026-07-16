@@ -145,6 +145,35 @@ test("aligned-v1 catalog serves capabilities, detail, versions, files, status, a
   }
 })
 
+test("capability cache validator changes when the extension market is enabled", async () => {
+  const data = await fixture()
+  const disabled = build(data.db)
+  try {
+    const first = await disabled.inject({ method: "GET", url: "/api/v1/capabilities" })
+    assert.equal(first.statusCode, 200)
+    assert.equal(first.json().features.extensions, false)
+    assert.ok(first.headers.etag)
+
+    const enabled = build(data.db, { extensionMarket: true, extensionRoot: join(data.dir, "extensions") })
+    try {
+      const next = await enabled.inject({
+        method: "GET",
+        url: "/api/v1/capabilities",
+        headers: { "if-none-match": first.headers.etag },
+      })
+      assert.equal(next.statusCode, 200)
+      assert.equal(next.json().features.extensions, true)
+      assert.notEqual(next.headers.etag, first.headers.etag)
+    } finally {
+      await enabled.close()
+    }
+  } finally {
+    await disabled.close()
+    await data.db.close()
+    await rm(data.dir, { recursive: true, force: true })
+  }
+})
+
 test("market SSE sends an initial catalog invalidation event and closes cleanly", async () => {
   const data = await fixture()
   const app = build(data.db)

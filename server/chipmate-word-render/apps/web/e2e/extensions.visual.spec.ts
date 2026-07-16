@@ -129,15 +129,19 @@ test("capture extension market design QA evidence in installed Chrome", async ({
     })
   })
   await page.goto("/extensions/publish")
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.locator('input[type="file"]').first().setInputFiles({
     name: "cpp-hybrid-2.5.0-linux-x64.vsix",
     mimeType: "application/vnd.microsoft.vscode.vsix",
     buffer: Buffer.alloc(16 * 1024 * 1024, 9),
   })
-  await page.getByRole("button", { name: "开始上传并发布" }).click()
+  await expect(page.getByText("1 个待上传", { exact: true })).toBeVisible()
+  await page.waitForTimeout(500)
+  await shot(page, "08-extension-upload-review-1484x1060.png")
+  await page.getByRole("button", { name: "开始批量上传" }).click()
   await expect(page.locator(".prominent-progress")).toBeVisible()
-  await shot(page, "08-extension-upload-progress-1484x1060.png")
-  await expect(page.getByText("插件发布成功", { exact: true })).toBeVisible({ timeout: 15_000 })
+  await page.waitForTimeout(500)
+  await shot(page, "09-extension-upload-progress-1484x1060.png")
+  await expect(page.getByText("1 个发布成功", { exact: true })).toBeVisible({ timeout: 15_000 })
 
   for (const size of [
     { width: 1_440, height: 1_024 },
@@ -147,9 +151,12 @@ test("capture extension market design QA evidence in installed Chrome", async ({
     await page.goto("/extensions")
     await expect(page.getByRole("heading", { name: /发现团队可信赖的/ })).toBeVisible()
     await shot(page, `extension-home-${size.width}x${size.height}.png`)
+    await page.goto("/extensions/publish")
+    await expect(page.getByRole("heading", { name: "上传 VS Code 插件", exact: true })).toBeVisible()
+    await shot(page, `extension-upload-idle-${size.width}x${size.height}.png`)
   }
 })
 
 async function shot(page: import("@playwright/test").Page, name: string) {
-  await page.screenshot({ path: resolve(evidence, name), animations: "disabled" })
+  await page.screenshot({ path: resolve(evidence, name), animations: "allow" })
 }

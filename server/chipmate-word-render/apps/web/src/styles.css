@@ -3804,6 +3804,182 @@ select:focus-visible {
   height: 1px;
   opacity: 0;
 }
+.extension-picker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.extension-scan-progress,
+.extension-batch-review {
+  width: min(720px, 100%);
+  margin-top: 14px;
+  text-align: left;
+}
+.extension-scan-progress {
+  padding: 16px;
+  border: 1px solid rgba(86, 150, 226, 0.26);
+  border-radius: 18px;
+  background: rgba(240, 248, 255, 0.62);
+  display: grid;
+  gap: 8px;
+}
+.extension-scan-progress span {
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.extension-scan-progress > div {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(52, 114, 191, 0.12);
+  overflow: hidden;
+}
+.extension-scan-progress i {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #257ce7, #69c9f1);
+  display: block;
+  transition: width 0.2s ease;
+}
+.batch-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.batch-summary span {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(95, 144, 204, 0.2);
+  border-radius: 14px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.52);
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+.batch-summary strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+.batch-limit-warning {
+  padding: 10px 12px;
+  border: 1px solid rgba(223, 151, 45, 0.28);
+  border-radius: 14px;
+  color: #985d06;
+  background: rgba(255, 244, 219, 0.72);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.extension-batch-list {
+  max-height: 430px;
+  margin-top: 12px;
+  padding: 6px;
+  border: 1px solid rgba(86, 142, 207, 0.2);
+  border-radius: 20px;
+  background: rgba(239, 247, 255, 0.38);
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+}
+.batch-item {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(111, 157, 210, 0.18);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.66);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  transition: 0.18s ease;
+}
+.batch-item:hover {
+  border-color: rgba(59, 130, 218, 0.42);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 24px rgba(40, 91, 151, 0.08);
+}
+.batch-item > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.batch-item strong,
+.batch-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.batch-item small {
+  color: var(--muted);
+}
+.batch-item em {
+  color: #b94d42;
+  font-size: 12px;
+  font-style: normal;
+}
+.batch-item > b {
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #386b9e;
+  background: rgba(224, 240, 255, 0.8);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.batch-item.published > b {
+  color: #18784b;
+  background: rgba(223, 247, 233, 0.88);
+}
+.batch-item.failed > b,
+.batch-item.cancelled > b {
+  color: #a3473e;
+  background: rgba(255, 232, 228, 0.82);
+}
+.batch-item > button {
+  padding: 6px 9px;
+  border: 1px solid rgba(50, 117, 201, 0.28);
+  border-radius: 10px;
+  color: #1767c8;
+  background: rgba(238, 247, 255, 0.9);
+}
+.batch-notes {
+  margin-top: 10px;
+  padding: 11px 13px;
+  border: 1px solid rgba(111, 157, 210, 0.2);
+  border-radius: 14px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.48);
+}
+.batch-notes p {
+  margin: 8px 0 0;
+  display: grid;
+  gap: 2px;
+}
+.batch-notes strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.batch-result {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.batch-result > span {
+  padding: 10px 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.58);
+}
+.batch-result .publication-success {
+  margin: 0;
+  display: inline-flex;
+}
 .selected-vsix {
   width: min(560px, 100%);
   padding: 12px;
@@ -3858,6 +4034,9 @@ select:focus-visible {
 }
 .extension-progress-card {
   padding: 36px 44px;
+}
+.extension-batch-progress {
+  margin-bottom: 18px;
 }
 .extension-progress-heading {
   display: flex;
@@ -4312,6 +4491,9 @@ select:focus-visible {
   }
   .extension-stage {
     margin: 24px 0;
+  }
+  .batch-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .progress-metrics,
   .progress-footer {

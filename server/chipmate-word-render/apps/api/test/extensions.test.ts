@@ -257,11 +257,11 @@ test("extension upload rate limiting counts failed structural submissions", asyn
   const data = await fixture()
   try {
     const auth = await login(data.app)
-    for (let index = 0; index < 10; index += 1) {
+    for (let index = 0; index < 100; index += 1) {
       const response = await upload(data.app, auth, Buffer.from("not-a-vsix"), `limit-${String(index).padStart(8, "0")}`)
       assert.equal(response.statusCode, 400)
     }
-    const limited = await upload(data.app, auth, Buffer.from("not-a-vsix"), "limit-00000010")
+    const limited = await upload(data.app, auth, Buffer.from("not-a-vsix"), "limit-00000100")
     assert.equal(limited.statusCode, 429)
   } finally {
     await data.app.close()

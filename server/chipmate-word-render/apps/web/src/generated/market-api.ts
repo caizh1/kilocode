@@ -490,6 +490,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Upload one VSIX file. Web clients extract folders and archives locally; each user may submit at most 100 VSIX files per rolling hour. */
         post: operations["publishExtension"];
         delete?: never;
         options?: never;

@@ -11,6 +11,7 @@ import { Identity, sendIdentityError, type ResolveUser } from "./identity.ts"
 import { inspectVsix, safeVsixFilename } from "./vsix.ts"
 
 const MAX = 512 * 1024 * 1024
+const HOURLY_UPLOAD_LIMIT = 100
 const SOURCES = new Set(["home", "search", "detail", "external", "vscode"])
 
 interface Options {
@@ -241,8 +242,8 @@ export function registerExtensions(app: FastifyInstance, db: MarketDb, opts: Opt
       const since = new Date(now() - 60 * 60 * 1000).toISOString()
       const prior = await db.getExtensionPublication(runId, principal.user.id)
       if (prior) return reply.send(prior)
-      if ((await db.extensionUploadCount(principal.user.id, since)) >= 10)
-        return problem(reply, 429, "RATE_LIMITED", "Each user may upload at most 10 VSIX files per hour.")
+      if ((await db.extensionUploadCount(principal.user.id, since)) >= HOURLY_UPLOAD_LIMIT)
+        return problem(reply, 429, "RATE_LIMITED", "Each user may upload at most 100 VSIX files per hour.")
       await db.extensionPublication({
         id: runId,
         ownerId: principal.user.id,

@@ -60,13 +60,15 @@ server/chipmate-word-render/
 | `GET /api/v1/analytics/skills/:id` | 仅向 Skill 作者返回自己的漏斗。 |
 | `GET /api/v1/market/stream` | SSE 状态同步，支持 `Last-Event-ID` 与 `catalogVersion` 补偿。 |
 | `GET /api/v1/extensions`、`GET /api/v1/extensions/:id` | 浏览 VS Code 插件目录与版本、平台、SHA 构建详情。 |
-| `POST /api/v1/extension-publications` | 使用 Web Session、CSRF 和幂等键流式上传 VSIX；单包上限 512 MiB。 |
+| `POST /api/v1/extension-publications` | 使用 Web Session、CSRF 和幂等键流式上传单个 VSIX；单包上限 512 MiB，每用户滚动一小时最多 100 次。 |
 | `GET /api/v1/extensions/:id/artifacts/:artifactId/download` | 手动下载指定构建；拒绝 Range，仅在完整响应结束后计数。 |
 | `GET /api/v1/analytics/extensions/overview` | 返回公开、匿名的插件市场聚合分析。 |
 | `GET /`、`/skills`、`/publish`、`/me`、`/analytics`、`/status` | 同源 Web 应用与安全响应头。 |
 | `GET /extensions`、`/extensions/:id`、`/extensions/publish`、`/extensions/me`、`/extensions/analytics` | VS Code 插件市场 Web 路由。 |
 
 默认限制包括 50 MiB DOCX、512 KiB Mermaid 源码、50 MiB 总 skill 上传量和 120 秒渲染超时。不要仅靠客户端限制来放宽这些边界；如有必要，应审查 `server.js` 中的对应环境变量和资源风险后再改。
+
+插件发布页可一次选择多文件、文件夹、ZIP、TAR.GZ 或 TGZ。浏览器先在本地递归扫描，并只把其中的 VSIX 逐个发送到上述发布接口；归档本身和无关文件不会上传。每批最多选择 20 个 VSIX、合计不超过 10 GiB，嵌套归档不会递归展开。
 
 ## 本地开发
 

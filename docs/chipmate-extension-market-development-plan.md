@@ -1,6 +1,6 @@
 # ChipMate VS Code 插件市场开发账本
 
-> 状态：`LOCAL_IMPLEMENTATION_COMPLETE_DEPLOYMENT_PENDING`
+> 状态：`G9_LOCAL_COMPLETE_DEPLOYMENT_PENDING`
 > 视觉基线：用户批准的 8 张桌面设计稿；上传进度页使用已纠正的“上传 VS Code 插件”版本。
 > 发布策略：单次协调发布，`EXTENSION_MARKET_ENABLED=0` 默认关闭，完成部署验收后启用。
 
@@ -11,7 +11,7 @@
 - `/health`、Word/Mermaid 渲染、packages manifest、Skill Market 与旧客户端契约不得回归。
 - 插件只做 VSIX 结构校验，不执行扩展代码，不做代码、签名或病毒审计。
 - 匿名浏览、下载和查看公开分析；登录用户可以上传、收藏和评价。
-- 上传上限 512 MiB；用户上传每小时最多 10 次；下载完成后才计数；不支持 Range。
+- 单个 VSIX 上传上限 512 MiB；批次最多 20 个且合计不超过 10 GiB；用户上传每小时最多 100 次；下载完成后才计数；不支持 Range。
 - 任意登录用户可以补版本；只有首位 Web 上传者可以删除对应产物；系统导入由 `drop/` 文件控制。
 - 插件页面统一使用“ChipMate Market / VS Code 插件 / 发布插件”，不得复用技能审核文案。
 
@@ -28,6 +28,7 @@
 | G6 | 分析与服务状态 | COMPLETE | 公开分析、私有来源桶、保留策略和运行状态已完成 |
 | G7 | VS Code CTA | COMPLETE | 仅增加浏览器入口，不下载、安装或追踪 VSIX |
 | G8 | 本地测试与视觉验收 | COMPLETE | 已通过真实 macOS Chrome 三视口验收，无 P0/P1/P2 |
+| G9 | 批量上传与能力缓存修复 | COMPLETE | 多文件、文件夹、ZIP/TAR.GZ 本地过滤；能力 ETag 随开关变化 |
 | DEPLOY | Linux 部署与开关启用 | PENDING | 尚未获得/操作目标宿主机；功能保持默认关闭 |
 
 ## 锁定实现
@@ -57,8 +58,8 @@
 ### G3：上传与发布状态
 
 - 改动摘要：使用单次 XHR 流式上传与 `upload.onprogress`；显著进度条显示百分比、字节、平滑速度、ETA 和取消动作；服务端通过 SSE 推送校验、发布和终态。
-- 测试结果：覆盖 CSRF、滚动一小时 10 次限流、取消/失败清理、客户端任务 ID 幂等、完全重复与冲突构建。
-- 真实证据：`server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/08-extension-upload-progress-1484x1060.png`。
+- 测试结果：覆盖 CSRF、取消/失败清理、客户端任务 ID 幂等、完全重复与冲突构建；G9 将滚动一小时限额调整为 100 次并增加边界回归。
+- 真实证据：`server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/09-extension-upload-progress-1484x1060.png`。
 - 已知限制：Playwright 拦截上传时不会产生连续的网络上传事件，因此自动截图停在 0%；中间百分比视觉以批准稿为准，生产 XHR 进度回调和几何由功能测试单独验证。
 
 ### G4–G6：目录、下载、社交与分析
@@ -85,3 +86,14 @@
 - 当前状态：代码、本地契约、自动化测试和真实 Chrome 视觉验收完成；未执行目标 Linux 宿主机部署、数据库/`extensions/` 备份、真实复制 VSIX 到 `/home/share/chipmate/data/skill-market/extensions/drop/` 或生产开关启用。
 - 部署顺序：先以 `EXTENSION_MARKET_ENABLED=0` 升级并验证既有服务，再备份数据库和整个 `extensions/`，复制真实 VSIX 验证导入，最后以 `EXTENSION_MARKET_ENABLED=1` 重启启用。
 - 回滚边界：关闭 `EXTENSION_MARKET_ENABLED`；不回滚或删除 Skill Market、渲染服务及已有数据。
+
+### G9：批量上传与能力缓存修复
+
+- 改动摘要：能力 ETag 改为完整能力响应的稳定 SHA-256 摘要；上传页支持多文件、递归文件夹、ZIP、TAR.GZ 和 TGZ 的浏览器本地扫描，先展示可选清单，再按顺序逐个复用现有单 VSIX 发布 API。普通文件、链接、设备节点、归档本体和归档内非 VSIX 不产生发布请求；能力请求失败时显示真实错误。
+- 安全与资源边界：每批最多 20 个 VSIX、合计不超过 10 GiB、单个不超过 512 MiB；归档最多 100,000 个条目且展开不超过 10 GiB；拒绝危险路径、异常压缩比和无法支持的加密 ZIP；不递归嵌套归档；同时只物化一个待上传 VSIX。
+- 队列行为：每项使用独立 run ID、幂等键、XHR 上传进度和既有 SSE 状态；单项失败或 429 不阻断后续项；取消会终止当前 XHR 和剩余队列，已成功发布不回滚；失败项可单独重试。服务端限额调整为每用户滚动一小时 100 个 VSIX。
+- 测试结果：`npm run check` 通过 64 个包级测试（API 27、Web 19、Contracts 4、DB 3、Skill Spec 11），类型检查、lint、生成契约校验和 `npm run build` 全部通过。真实安装版 macOS Chrome 的批量网络边界测试与视觉测试通过；首页 INP 隔离复跑 3/3 通过。
+- 网络证据：Playwright 拦截确认 ZIP、TAR.GZ、文件夹内普通文件和其他无关字节从未作为发布请求发送，只有筛选后的 VSIX 逐项进入 `POST /api/v1/extension-publications`。
+- 视觉证据：`server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/08-extension-upload-review-1484x1060.png`、`09-extension-upload-progress-1484x1060.png`、`extension-upload-idle-1440x1024.png` 和 `extension-upload-idle-1050x1024.png`；无 P0/P1/P2。
+- 已知限制：仅验收桌面 Chromium；嵌套归档不递归；TAR.GZ/TGZ 依赖现代 Chromium 的 `DecompressionStream`。完整旧 Skill Market 只读旅程仍有一个与本次改动无关的硬编码文件大小断言（期望 16.0 KB，当前种子为 17.9 KB），G9 相关测试不受影响。
+- 状态：本地实现和验收完成；目标 Linux 部署、备份、真实 `drop/` 导入及生产开关启用仍归属 `DEPLOY`，保持待执行。

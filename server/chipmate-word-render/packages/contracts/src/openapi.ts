@@ -437,6 +437,7 @@ export const openapi = {
       post: {
         operationId: "publishExtension",
         tags: ["extensions"],
+        description: "Upload one VSIX file. Web clients extract folders and archives locally; each user may submit at most 100 VSIX files per rolling hour.",
         security: [{ cookieSession: [] }],
         parameters: [
           param("Idempotency-Key", "header", true),

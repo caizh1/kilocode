@@ -18,6 +18,7 @@ suite("Extension Test Suite", () => {
     for (const command of [
       "kilo-code.new.plusButtonClicked",
       "kilo-code.new.agentManagerOpen",
+      "kilo-code.new.sidebarTitle.agentTerminalOpen",
       "kilo-code.new.settingsButtonClicked",
       "kilo-code.new.documents.openArtifact",
       "kilo-code.new.documents.openArtifactFolder",

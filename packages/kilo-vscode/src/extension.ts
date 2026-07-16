@@ -356,6 +356,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("kilo-code.new.sidebarTitle.agentManagerOpen", () => {
       track("agent_manager", "kilo-code.new.agentManagerOpen")
     }),
+    vscode.commands.registerCommand("kilo-code.new.sidebarTitle.agentTerminalOpen", () => {
+      track("agent_console", "kilo-code.new.agentTerminal.open")
+    }),
     vscode.commands.registerCommand("kilo-code.new.sidebarTitle.kiloClawOpen", () => {
       track("kiloclaw", "kilo-code.new.kiloClawOpen")
     }),
