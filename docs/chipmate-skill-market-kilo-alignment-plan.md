@@ -1,8 +1,8 @@
 # ChipMate Skill Market 与 Kilo Code 完全对齐开发计划
 
-Status: `G10.6_COMPLETE`
+Status: `G10.7_COMPLETE`
 
-Current Gate: `G10.6_COMPLETE`
+Current Gate: `G10.7_COMPLETE`
 
 Completion allowed: `no`
 
@@ -1368,6 +1368,70 @@ Next Recommended Gate:
 
 - 在不混入用户其他修改的前提下，单独清理或隔离现有 annotation/AppRuntime guard 与 Word visual-QA 断言基线，再恢复仓库总 `Completion allowed: yes`。
 
+### G10.7 Update — 2026-07-15
+
+Status: `COMPLETE`
+
+Changed Files:
+
+- `.changeset/close-skill-publication-progress.md`
+- `docs/chipmate-skill-market-kilo-alignment-plan.md`
+- `packages/kilo-vscode/src/MarketplacePanelProvider.ts`
+- `packages/kilo-vscode/src/services/marketplace/publication.ts`
+- `packages/kilo-vscode/tests/unit/marketplace-publication.test.ts`
+- `packages/kilo-vscode/tests/unit/marketplace-upload.test.ts`
+
+Baseline Freeze:
+
+- 当前 `HEAD`: `3579480822`（`merge: upstream v7.4.8`）。
+- 相关 Marketplace 合并冲突已解决；tracked worktree 无修改。
+- 既有未跟踪 VSIX、截图、证据、模型快照和文档产物保持原状，不纳入本 Gate。
+
+Design Summary:
+
+- 服务端返回 `PUBLISHED` 或 `UNCHANGED` 后，上传进度必须立即结束；市场刷新、确定性修复提示和本地 diff 属于发布后的独立工作。
+- 原生通知只展示客户端真实可观测阶段：准备规范快照、提交并等待服务端权威复验、收到服务端终态；不伪造服务端内部百分比。
+- 无 VS Code 依赖的发布协调器先完整等待 progress promise 结束，再调用结果处理；`marketplacePublicationResult`、blocked 状态、analytics、后台 `fetchData()` 和本地修复交互均位于该边界之外。
+- 确定性修复只显示一个“发布完成 + 查看 diff”后续通知；用户不选择、长时间不返回或本地应用失败都不会重新占用上传通知。
+- 不修改 ChipMate Server、OpenAPI、SSE、Webview 消息、市场顶部 UI 或规范化归档逻辑。
+
+Commands Run:
+
+- `bun test tests/unit/marketplace-publication.test.ts tests/unit/marketplace-upload.test.ts tests/unit/marketplace-panel-arch.test.ts`
+  - Result: `PASS`，18 tests、112 assertions。
+- `packages/kilo-vscode: bun run typecheck && bun run lint && bun run compile`
+  - Result: `PASS`；compile 强制重建当前 CLI、重生成 SDK并完成扩展/webview bundle。
+- `packages/kilo-vscode: bun run knip && bun run check-kilocode-change`
+  - Result: `PASS`。
+- `bunx prettier --check <G10.7 touched TypeScript files>`
+  - Result: `PASS`。
+- `bun run script/check-md-table-padding.ts`
+  - Result: `PASS`，435 个 Markdown 文件。
+- 根目录 `bun test`
+  - Result: `NOT_RUN`，按仓库约束禁止从根目录运行。
+
+Test Results:
+
+- `PUBLISHED`、`UNCHANGED`、`NEEDS_AUTHOR_FIX`、`SECURITY_REJECTED` 和网络异常均先关闭 progress；完成阶段只在 `submit` 返回后出现。
+- 永不立即返回的修复/diff 选择和延迟或失败的后台对账均不会让 progress 重新打开或继续 pending。
+- 真实临时安装目录 `publication-skill` 通过共享规范构建确定性发布归档，返回有效 `PUBLISHED` 报告；发布前后来源 `SKILL.md` 字节一致。
+- `marketplacePublicationResult`、卡片 blocked 状态、analytics 和后台刷新保持原协议，不需要修改 ChipMate Server 或 Webview 消息。
+
+Runtime Evidence:
+
+- Environment: macOS，本仓库 Bun/TypeScript 运行时、真实临时目录和共享 Skill 规范实现。
+- Result: `G10.7_COMPLETE`；扩展 compile 通过，未生成或纳入新的 VSIX 交付物。
+
+Known Limitations:
+
+- 本 Gate 未手工启动 VS Code 点击真实通知；通知关闭顺序由无 VS Code 依赖的协调器边界测试、真实 Skill 归档测试、类型检查和完整扩展 bundle 共同验证。
+- 当前工作区另有与本 Gate 无关的 Word/Skill 文档修改和既有未跟踪产物，均保持原状且未计入 G10.7 Changed Files。
+- 既有 annotation/AppRuntime guard 与 Word visual-QA 基线 blocker 未在本 Gate 处理，因此总 `Completion allowed` 继续为 `no`。
+
+Next Recommended Gate:
+
+- 在不混入 G10.7 和用户其他修改的前提下，单独清理或隔离现有 annotation/AppRuntime guard 与 Word visual-QA 断言基线，再恢复仓库总 `Completion allowed: yes`。
+
 ## 17. 测试计划
 
 ### 17.1 契约和后端
@@ -1529,14 +1593,15 @@ Status: PARTIAL | COMPLETE | BLOCKED
 | 2026-07-13 | Web 首页推荐区改为累计下载量 Top 10 轮播 | 让下载榜头部 Skill 在空间画廊内可连续发现，同时保留真实目录、详情与服务边界 | 仅修改 React Web 首页、样式、预览种子和 E2E；继续使用现有下载排序 API，不改 schema、OpenAPI、数据库、Kilo Marketplace 或 G0–G9 状态 |
 | 2026-07-15 | G10 采用共享 Agent Skills 规范、本地快照导入和卡片后续发布 | 同时保证 Kilo 立即可用、ChipMate Server 权威复验和 Codex/Claude/OpenCode 往返保真 | 项目默认 scope，支持文件夹/SKILL.md/ZIP/TAR.GZ、批量候选、原子替换、离线导入和仅指纹 provenance |
 | 2026-07-15 | G10.6 删除采用宿主 token、CLI marker tombstone 和双缓存复读 | 修复磁盘已删但 Skill 被旧缓存重新推回 UI，同时阻止 Webview 任意路径删除 | Settings 与 Marketplace 共用删除闭环；旧 CLI 使用 instance dispose fallback；registry 自动对账 |
+| 2026-07-15 | G10.7 上传 progress 只包围规范快照准备和服务端权威请求 | 服务端已返回并更新卡片后，后台刷新或用户 diff 选择不得继续占用原生上传通知 | 发布结果、analytics、后台对账和本地修复全部在 progress promise 结束后执行 |
 
 ## 22. 当前状态摘要
 
-- Plan document: `G10.6_COMPLETE`
-- Overall status: `G10.6_COMPLETE_WITH_BASELINE_BLOCKERS`
-- Current Gate: `G10.6_COMPLETE`
+- Plan document: `G10.7_COMPLETE`
+- Overall status: `G10.7_COMPLETE_WITH_BASELINE_BLOCKERS`
+- Current Gate: `G10.7_COMPLETE`
 - Implementation started: `yes`
 - Runtime validation started: `yes`
 - Docker runtime available on current machine: `yes`（aarch64 默认 profile 与 x86_64 G9 验证 profile）。
-- Completion allowed: `no`（G10.6 scoped implementation 已完成；当前分支既有 annotation/AppRuntime guard 和 Word visual-QA 断言基线仍失败）。
-- Next action: 隔离或修复与 G10.6 无关的既有 guard/Word 断言失败后，再恢复仓库总完成许可。
+- Completion allowed: `no`（G10.7 scoped implementation 已完成；当前分支既有 annotation/AppRuntime guard 和 Word visual-QA 断言基线仍失败）。
+- Next action: 隔离或修复与 G10.7 无关的既有 guard/Word 断言失败后，再恢复仓库总完成许可。

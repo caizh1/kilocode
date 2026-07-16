@@ -345,6 +345,31 @@
   color: var(--vscode-input-placeholderForeground, var(--text-weaker));
 }
 
+.model-selector-setup {
+  order: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px;
+  padding: 10px 12px;
+  color: var(--text-weak, var(--vscode-descriptionForeground));
+  font-size: var(--kilo-font-size-12);
+  line-height: 1.45;
+  background: color-mix(in srgb, var(--vscode-editor-background) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 72%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--vscode-widget-shadow) 14%, transparent);
+  backdrop-filter: blur(12px) saturate(115%);
+}
+
+.model-selector-setup-action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .model-selector-list {
   overflow-y: auto;
   scrollbar-gutter: stable;

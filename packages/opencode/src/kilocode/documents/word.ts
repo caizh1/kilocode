@@ -1558,7 +1558,7 @@ function documentRelationshipsXml(context: RenderContext): string {
 
 function stylesXml(): string {
   return xml(
-    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:color w:val="24292F"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Subtitle"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="160"/><w:keepNext/></w:pPr><w:rPr><w:b/><w:color w:val="17324D"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="180"/><w:keepNext/></w:pPr><w:rPr><w:color w:val="3A6EA5"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="320" w:after="160"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="160" w:after="80"/><w:outlineLvl w:val="2"/></w:pPr><w:rPr><w:b/><w:color w:val="1F4D78"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="Caption"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="60" w:after="80"/><w:keepLines/></w:pPr><w:rPr><w:i/><w:color w:val="667085"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="80" w:after="80" w:line="240" w:lineRule="auto"/><w:shd w:val="clear" w:color="auto" w:fill="F3F4F6"/><w:keepLines/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="Courier New"/><w:color w:val="1F2937"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TableHeader"><w:name w:val="Table Header"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:b/><w:color w:val="24292F"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style></w:styles>',
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:color w:val="24292F"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Subtitle"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="160"/><w:keepNext/></w:pPr><w:rPr><w:b/><w:color w:val="17324D"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="180"/><w:keepNext/></w:pPr><w:rPr><w:color w:val="3A6EA5"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="320" w:after="160"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="160" w:after="80"/><w:outlineLvl w:val="2"/></w:pPr><w:rPr><w:b/><w:color w:val="1F4D78"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="0" w:after="160"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="Caption"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="60" w:after="80"/><w:keepLines/></w:pPr><w:rPr><w:i/><w:color w:val="667085"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="80" w:after="80" w:line="240" w:lineRule="auto"/><w:shd w:val="clear" w:color="auto" w:fill="F3F4F6"/><w:keepLines/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="Courier New"/><w:color w:val="1F2937"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TableHeader"><w:name w:val="Table Header"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:b/><w:color w:val="24292F"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style></w:styles>',
   )
 }
 
@@ -2274,25 +2274,37 @@ function materializeFieldsInDocument(
     return String(next)
   })
   let toc: MaterializedWordFields["summary"]["toc"] = "none"
-  if (xml.includes("{{TOC}}")) {
-    const tocLines = parseParagraphs(documentXml)
-      .filter((item) => headingLevelFromStyle(item.styleId) && item.text.trim() && item.text.trim() !== "{{TOC}}")
-      .map((item) => `${"  ".repeat((headingLevelFromStyle(item.styleId) ?? 1) - 1)}${item.text.trim()}`)
+  const placeholders = parseTopLevelBlocks(xml).filter((block) => block.text.includes("{{TOC}}"))
+  if (placeholders.length) {
     if (tocMode === "preserve") {
       toc = "preserved"
-      warnings.push("TOC placeholder preserved; open the document in Word to update dynamic TOC fields if needed")
-    } else if (tocMode === "remove") {
-      toc = "removed"
-      xml = xml.replace(/<w:p\b[\s\S]*?\{\{TOC\}\}[\s\S]*?<\/w:p>/g, "")
-    } else {
-      toc = "materialized"
-      const replacement = tocLines.length
-        ? tocLines.map((line) => paragraph(line, "Normal")).join("")
-        : paragraph("No headings found", "Normal")
-      xml = xml.replace(/<w:p\b[\s\S]*?\{\{TOC\}\}[\s\S]*?<\/w:p>/g, replacement)
+      warnings.push("TOC placeholder preserved; use tocMode materialize to create a native Word TOC field")
+      return { xml, summary: { seqFields, captions, toc }, warnings }
     }
+    if (placeholders.length !== 1)
+      throw new Error(`materialize_word_fields requires exactly one standalone {{TOC}} paragraph, found ${placeholders.length}`)
+    const placeholder = placeholders[0]!
+    if (placeholder.kind !== "paragraph" || placeholder.text.trim() !== "{{TOC}}")
+      throw new Error("materialize_word_fields requires {{TOC}} to be the only text in a standalone paragraph")
+    toc = tocMode === "remove" ? "removed" : "materialized"
+    xml = splice(xml, placeholder.start, placeholder.end, tocMode === "remove" ? "" : nativeTocXml(usesCjk(documentXml)))
   }
   return { xml, summary: { seqFields, captions, toc }, warnings }
+}
+
+function nativeTocXml(cjk: boolean): string {
+  const title = cjk ? "目录" : "Table of Contents"
+  const hint = cjk ? "请在 Word 中更新目录" : "Update table of contents in Word"
+  const heading =
+    `<w:p><w:pPr><w:pStyle w:val="TOCHeading"/><w:pageBreakBefore/><w:keepNext/><w:keepLines/></w:pPr><w:r><w:t xml:space="preserve">${title}</w:t></w:r></w:p>`
+  const field =
+    `<w:p><w:fldSimple w:instr="TOC \\o &quot;1-3&quot; \\h \\z \\u" w:dirty="true"><w:r><w:t xml:space="preserve">${hint}</w:t></w:r></w:fldSimple></w:p>`
+  const page = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+  return `${heading}${field}${page}`
+}
+
+function usesCjk(documentXml: string): boolean {
+  return parseTopLevelBlocks(documentXml).some((block) => /[\u3400-\u9fff]/.test(block.text))
 }
 
 function splitDocumentBody(documentXml: string): { content: string; sectPr: string } {

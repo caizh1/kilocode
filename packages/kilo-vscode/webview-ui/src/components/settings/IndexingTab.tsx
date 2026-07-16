@@ -181,6 +181,7 @@ const IndexingTab: Component = () => {
   const provider = useProvider()
   const server = useServer()
   const vscode = useVSCode()
+  const [fieldDrafts, setFieldDrafts] = createSignal<Record<string, string>>({})
   const [providerDrafts, setProviderDrafts] = createSignal<Record<string, string>>({})
   const [storeDrafts, setStoreDrafts] = createSignal<Record<string, string>>({})
   const [tuningDrafts, setTuningDrafts] = createSignal<Record<string, string>>({})
@@ -256,7 +257,9 @@ const IndexingTab: Component = () => {
     getKiloEmbeddingModel(model ?? undefined, embeds.catalog())?.id
   const kiloValue = () => knownKiloModel(cfg().model) ?? kiloDefault()
   const kiloAvailable = () => !!server.profileData() || provider.authStates()[KILO_PROVIDER_ID] !== undefined
-  const selectedProvider = () => cfg().provider ?? (kiloAvailable() ? "kilo" : undefined)
+  const selectedProvider = createMemo<ProviderId | undefined>(
+    () => cfg().provider ?? (kiloAvailable() ? "kilo" : undefined),
+  )
   const staleKiloModel = () => selectedProvider() === "kilo" && !!cfg().model && !knownKiloModel(cfg().model)
   const providers = createMemo(() =>
     allProviders.filter((item) => item.value !== "kilo" || kiloAvailable() || selectedProvider() === "kilo"),
@@ -264,6 +267,7 @@ const IndexingTab: Component = () => {
   const fields = createMemo(() => providerFields(selectedProvider()))
 
   const saveProvider = (next: ProviderId | undefined) => {
+    if (next === cfg().provider) return
     if (next === "kilo") {
       const model = knownKiloModel(cfg().model) ?? (kiloDefault() || null)
       updateIndexing({
@@ -289,10 +293,22 @@ const IndexingTab: Component = () => {
     updateIndexing({ enabled })
   }
 
+  const fieldValue = (key: "model" | "dimension", fallback: string) => fieldDrafts()[`${scope()}.${key}`] ?? fallback
+
+  const stageField = (key: "model" | "dimension", value: string) => {
+    setFieldDrafts((prev) => ({ ...prev, [`${scope()}.${key}`]: value }))
+  }
+
+  const clearField = (key: "model" | "dimension") => {
+    const id = `${scope()}.${key}`
+    setFieldDrafts((prev) => Object.fromEntries(Object.entries(prev).filter(([entry]) => entry !== id)))
+  }
+
   const saveModel = (value: string) => {
     if (selectedProvider() === "kilo") return
     const trimmed = value.trim()
     updateIndexing({ model: trimmed || null })
+    clearField("model")
   }
 
   const providerValue = (group: string, key: string) => {
@@ -333,7 +349,9 @@ const IndexingTab: Component = () => {
     const trimmed = value.trim()
     if (!trimmed) {
       updateIndexing({ [key]: key === "dimension" ? null : undefined })
-      if (key !== "dimension") {
+      if (key === "dimension") {
+        clearField(key)
+      } else {
         const draftKey = `${scope()}.${key}`
         setTuningDrafts((prev) => Object.fromEntries(Object.entries(prev).filter(([entry]) => entry !== draftKey)))
       }
@@ -346,7 +364,9 @@ const IndexingTab: Component = () => {
     if (options?.min !== undefined && num < options.min) return
     if (options?.max !== undefined && num > options.max) return
     updateIndexing({ [key]: num })
-    if (key !== "dimension") {
+    if (key === "dimension") {
+      clearField(key)
+    } else {
       const draftKey = `${scope()}.${key}`
       setTuningDrafts((prev) => Object.fromEntries(Object.entries(prev).filter(([entry]) => entry !== draftKey)))
     }
@@ -546,9 +566,16 @@ const IndexingTab: Component = () => {
             tag={() => tag(scope(), [["model"]])}
           >
             <TextField
-              value={cfg().model ?? ""}
+              value={fieldValue("model", cfg().model ?? "")}
               placeholder={isInternalOfflineBuild() ? INTERNAL_OFFLINE_INDEXING_DEFAULTS.model : "Enter model ID"}
-              onChange={saveModel}
+              onInput={(event: InputEvent) => {
+                const input = event.currentTarget as HTMLInputElement
+                stageField("model", input.value)
+              }}
+              onBlur={(event: FocusEvent) => {
+                const input = event.currentTarget as HTMLInputElement
+                saveModel(input.value)
+              }}
             />
           </SettingsRow>
         </Show>
@@ -563,11 +590,12 @@ const IndexingTab: Component = () => {
           last={!selectedProvider() || (fields().length === 0 && !(selectedProvider() === "kilo" && !kiloAvailable()))}
         >
           <TextField
-            value={
+            value={fieldValue(
+              "dimension",
               staleKiloModel() || cfg().dimension === undefined || cfg().dimension === null
                 ? ""
-                : String(cfg().dimension)
-            }
+                : String(cfg().dimension),
+            )}
             placeholder={
               selectedProvider() === "kilo"
                 ? "Provided by Kilo"
@@ -576,7 +604,14 @@ const IndexingTab: Component = () => {
                   : language.t("settings.indexing.dimension.placeholder")
             }
             disabled={selectedProvider() === "kilo"}
-            onChange={(value) => saveNumber("dimension", value, { integer: true, min: 1 })}
+            onInput={(event: InputEvent) => {
+              const input = event.currentTarget as HTMLInputElement
+              stageField("dimension", input.value)
+            }}
+            onBlur={(event: FocusEvent) => {
+              const input = event.currentTarget as HTMLInputElement
+              saveNumber("dimension", input.value, { integer: true, min: 1 })
+            }}
           />
         </SettingsRow>
         <Show when={selectedProvider() === "kilo" && !kiloAvailable()}>
@@ -713,6 +748,7 @@ const IndexingTab: Component = () => {
       </Card>
 
       <Card>
+        <div class="settings-section-title">{language.t("settings.indexing.documentsSection")}</div>
         <SettingsRow
           title="Documents"
           description={description("Index configured workspace document folders into a separate RAG store.", [
@@ -833,6 +869,7 @@ const IndexingTab: Component = () => {
       </Card>
 
       <Card>
+        <div class="settings-section-title">{language.t("settings.indexing.advancedSection")}</div>
         <For each={tuning}>
           {(item, index) => (
             <SettingsRow

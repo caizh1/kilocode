@@ -231,6 +231,36 @@ export const TitaniumStudioReview: Story = {
   ),
 }
 
+export const TitaniumStudioLightReview: Story = {
+  name: "Titanium Studio — 浅色 QA 与索引设置并排审查",
+  globals: { vscodeTheme: "light-modern" },
+  render: () => (
+    <StoryProviders noPadding locale="zh" config={aligned}>
+      <div
+        style={{
+          display: "grid",
+          "grid-template-columns": "minmax(360px, 0.84fr) minmax(720px, 1.6fr)",
+          width: "1450px",
+          height: "900px",
+          overflow: "hidden",
+          background: "var(--vscode-editor-background)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            "min-width": "0",
+            "border-right": "1px solid var(--vscode-panel-border, var(--vscode-widget-border))",
+          }}
+        >
+          <ChatView />
+        </div>
+        <Settings tab="indexing" onClose={noop} />
+      </div>
+    </StoryProviders>
+  ),
+}
+
 export const SettingsAlignedHover: Story = {
   name: "Settings 对齐 — 导航 Hover",
   render: () => <AlignedSettings dirty hover />,

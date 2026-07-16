@@ -101,6 +101,13 @@ const indexingConfig = {
   },
 } as Config
 
+const denseConfig = {
+  ...indexingConfig,
+  sandbox: {
+    enabled: true,
+  },
+} as Config
+
 const longSelection = {
   providerID: "openai-compatible-lab-provider",
   modelID: "deepseek/deepseek-v4-flash-preview-ultra-long-model-name",
@@ -129,6 +136,7 @@ const PromptProviders: ParentComponent<{
   indexing?: boolean
   longModel?: boolean
   speech?: boolean
+  sandbox?: boolean
   busy?: boolean
   index?: IndexingStatus
   variant?: string
@@ -150,7 +158,12 @@ const PromptProviders: ParentComponent<{
     clearModelOverride: noop,
   }
   return (
-    <StoryProviders noPadding config={props.indexing ? indexingConfig : undefined}>
+    <StoryProviders
+      noPadding
+      config={props.sandbox ? denseConfig : props.indexing ? indexingConfig : undefined}
+      features={props.sandbox ? { sandboxControls: true } : undefined}
+      kiloAuth={props.speech}
+    >
       <IndexFixture status={props.index}>
         {/* overflow:hidden prevents margin-collapse so top/bottom borders are captured in screenshots */}
         <div class="chat-view" data-ui="qa-shell" style={{ overflow: "hidden" }}>
@@ -340,7 +353,7 @@ export const DenseLongModel200: Story = {
 export const QAAllControlsSend: Story = {
   name: "QA all controls — send",
   render: () => (
-    <PromptProviders variants modelOverride indexing longModel speech index={mixed}>
+    <PromptProviders variants modelOverride indexing longModel speech sandbox index={mixed}>
       <PromptInput />
     </PromptProviders>
   ),
@@ -349,7 +362,16 @@ export const QAAllControlsSend: Story = {
 export const QAAllControlsStop: Story = {
   name: "QA all controls — busy stop",
   render: () => (
-    <PromptProviders variants modelOverride indexing longModel speech busy index={mixed}>
+    <PromptProviders variants modelOverride indexing longModel speech sandbox busy index={mixed}>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const QASparseControls: Story = {
+  name: "QA sparse controls — mode model actions",
+  render: () => (
+    <PromptProviders>
       <PromptInput />
     </PromptProviders>
   ),

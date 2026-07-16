@@ -34,7 +34,7 @@ async function fixture() {
 set -eu
 if [ "$1" = "inspect" ] && [ "\${2:-}" != "--format" ]; then exit 0; fi
 if [ "$1" = "inspect" ] && [ "\${2:-}" = "--format" ]; then
-  printf '%s\n' 'PATH=/usr/bin' 'NEW_API_BASE_URL=http://new-api.internal' 'NEW_API_ADMIN_ACCESS_TOKEN=admin-secret' 'NEW_API_USER_ID=7'
+  printf '%s\n' 'PATH=/usr/bin' 'NEW_API_BASE_URL=http://new-api.internal' 'NEW_API_ADMIN_ACCESS_TOKEN=admin-secret' 'NEW_API_USER_ID=7' 'EXTENSION_MARKET_ENABLED=1' 'EXTENSION_MARKET_ROOT=/data/skill-market/extensions' 'EXTENSION_DROP_SCAN_MS=5000'
   exit 0
 fi
 if [ "$1" = "load" ]; then echo 'Loaded image: chipmate-word-render:0.1.8'; exit 0; fi
@@ -64,7 +64,7 @@ exit 1
   return { dir, bin, log, archive }
 }
 
-test("inherits only New API resolver variables from the previous container", async () => {
+test("inherits resolver and extension directory settings while starting the market disabled", async () => {
   const item = await fixture()
   try {
     const result = await run([item.archive], {
@@ -81,6 +81,10 @@ test("inherits only New API resolver variables from the previous container", asy
     assert.match(log, /NEW_API_BASE_URL=http:\/\/new-api\.internal/)
     assert.match(log, /NEW_API_ADMIN_ACCESS_TOKEN=admin-secret/)
     assert.match(log, /NEW_API_USER_ID=7/)
+    assert.doesNotMatch(log, /EXTENSION_MARKET_ENABLED=1/)
+    assert.match(log, /EXTENSION_MARKET_ROOT=\/data\/skill-market\/extensions/)
+    assert.match(log, /EXTENSION_DROP_SCAN_MS=5000/)
+    assert.match(log, /--env EXTENSION_MARKET_ENABLED=0/)
     assert.doesNotMatch(log, /PATH=\/usr\/bin/)
   } finally {
     await rm(item.dir, { recursive: true, force: true })

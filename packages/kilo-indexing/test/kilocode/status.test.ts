@@ -6,6 +6,7 @@ import {
   type IndexingPipelineRecentErrors,
 } from "../../src/status"
 import type { CodeGraphSidecarStatus } from "../../src/indexing/codegraph"
+import type { DocumentIndexStatus } from "../../src/indexing/documents"
 
 function graph(input: Partial<NonNullable<CodeGraphSidecarStatus["storage"]>> = {}): CodeGraphSidecarStatus {
   return {
@@ -45,7 +46,8 @@ function status(input: {
   graph?: CodeGraphSidecarStatus
   recentErrors?: IndexingPipelineRecentErrors
   notices?: IndexingNotice[]
-  activePipeline?: "codeGraph" | "rag"
+  activePipeline?: "codeGraph" | "rag" | "documents"
+  document?: DocumentIndexStatus
   graphProgress?: {
     state: "Standby" | "Indexing" | "Indexed" | "Error"
     message?: string
@@ -60,6 +62,7 @@ function status(input: {
     getCodeGraphStatus: () => input.graph ?? graph(),
     getCodeGraphProgress: () => input.graphProgress,
     getRecentErrors: () => input.recentErrors ?? {},
+    getDocumentStatus: () => input.document,
     getCurrentStatus: () => ({
       systemStatus: input.systemStatus,
       message: "indexing",
@@ -198,6 +201,66 @@ describe("indexing status pipelines", () => {
       state: "Standby",
       message: "RAG indexing waiting for Code Graph.",
       detail: "Waiting for Code Graph indexing to finish.",
+    })
+    expect(result.pipelines?.documents).toMatchObject({
+      state: "Standby",
+      message: "Document RAG waiting for Code Graph.",
+    })
+  })
+
+  test("blocks downstream pipelines when Code Graph fails", () => {
+    const result = status({ systemStatus: "Error", activePipeline: "codeGraph" })
+
+    expect(result.pipelines?.codeGraph).toMatchObject({ state: "Error", message: "Code Graph indexing failed." })
+    expect(result.pipelines?.rag).toMatchObject({ state: "Standby", message: "RAG indexing blocked by Code Graph." })
+    expect(result.pipelines?.documents).toMatchObject({
+      state: "Standby",
+      message: "Document RAG blocked by Code Graph.",
+    })
+  })
+
+  test("keeps Code Graph complete and blocks documents when Code RAG fails", () => {
+    const result = status({ systemStatus: "Error", activePipeline: "rag" })
+
+    expect(result.pipelines?.codeGraph.state).toBe("Complete")
+    expect(result.pipelines?.rag.state).toBe("Error")
+    expect(result.pipelines?.documents).toMatchObject({
+      state: "Standby",
+      message: "Document RAG blocked by Code RAG.",
+    })
+  })
+
+  test("reports a Document RAG failure without changing completed code pipelines", () => {
+    const result = status({
+      systemStatus: "Indexed",
+      document: {
+        state: "Error",
+        message: "Document store failed.",
+        processedFiles: 0,
+        totalFiles: 0,
+        percent: 0,
+        errorCount: 1,
+        staleCount: 0,
+        skippedCount: 0,
+      },
+    })
+
+    expect(result.pipelines?.codeGraph.state).toBe("Complete")
+    expect(result.pipelines?.rag.state).toBe("Complete")
+    expect(result.pipelines?.documents).toMatchObject({ state: "Error", message: "Document store failed." })
+  })
+
+  test("reports a completed empty Code Graph scan instead of standby", () => {
+    const result = status({
+      systemStatus: "Indexed",
+      graph: graph({ recordCount: 0, validFileCount: 0 }),
+    })
+
+    expect(result.pipelines?.codeGraph).toMatchObject({
+      state: "Complete",
+      message: "Code Graph complete, 0 supported files.",
+      percent: 100,
+      totalFiles: 0,
     })
   })
 

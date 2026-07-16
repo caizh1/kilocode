@@ -1218,6 +1218,8 @@ export const dict = {
   "session.status.retrying": "正在重試（第 {{ attempt }} 次）… {{ message }}",
   "session.status.working": "處理中…",
   "session.status.offline": "網路已斷線 — 正在重新連線...",
+  "session.compaction.active": "正在壓縮上下文…",
+  "session.compaction.description": "整理較早的對話，以繼續目前任務",
   "session.outcome.incomplete": "回合已結束，尚有 {{count}} 個待辦事項",
   "session.outcome.limit": "未完成前已達到回應限制",
   "session.outcome.unknown": "回合已結束，模型未提供結束原因",
@@ -1816,4 +1818,8 @@ export const dict = {
   "chat.search.invalidRegex": "規則運算式無效",
   "chat.search.noResults": "無結果",
   "chat.search.searchingHistory": "正在搜尋較早的訊息…",
+  "settings.experimental.dsml.title": "DSML 工具呼叫相容解析",
+  "settings.experimental.dsml.description": "僅為選定的 Provider 和模型修復洩漏的 DeepSeek DSML 工具呼叫",
+  "settings.experimental.dsmlModel.title": "DSML 目標模型",
+  "settings.experimental.dsmlModel.description": "選擇唯一允許使用 DSML 相容解析的 Provider 和模型",
 } satisfies Partial<Record<Keys, string>>

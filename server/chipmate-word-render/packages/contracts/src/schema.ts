@@ -106,6 +106,11 @@ export const MarketCapabilitiesSchema = Type.Object(
         repairs: Type.Boolean(),
         analytics: Type.Boolean(),
         events: Type.Boolean(),
+        extensions: Type.Optional(Type.Boolean()),
+        extensionPublications: Type.Optional(Type.Boolean()),
+        extensionReviews: Type.Optional(Type.Boolean()),
+        extensionAnalytics: Type.Optional(Type.Boolean()),
+        extensionDirectoryImport: Type.Optional(Type.Boolean()),
       },
       { additionalProperties: false },
     ),
@@ -238,6 +243,145 @@ export const SkillDetailSchema = Type.Intersect(
 )
 export type SkillDetail = Static<typeof SkillDetailSchema>
 
+const extensionId = Type.String({ minLength: 3, maxLength: 256, pattern: "^[a-z0-9][a-z0-9._-]+$" })
+const semver = Type.String({
+  pattern: "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+})
+
+export const ExtensionArtifactSchema = Type.Object(
+  {
+    id: Type.String({ minLength: 1, maxLength: 128 }),
+    extensionId,
+    version: semver,
+    target: Type.String({ minLength: 1, maxLength: 64 }),
+    sha256: sha,
+    size: Type.Integer({ minimum: 1, maximum: 536870912 }),
+    filename: Type.String({ minLength: 6, maxLength: 180 }),
+    uploader: Type.Object(
+      {
+        id: Type.Optional(Type.String({ minLength: 16, maxLength: 128 })),
+        displayName: Type.String({ minLength: 1, maxLength: 128 }),
+      },
+      { additionalProperties: false },
+    ),
+    source: literals(["system", "web"] as const),
+    prerelease: Type.Boolean(),
+    conflict: Type.Boolean(),
+    downloads: Type.Integer({ minimum: 0 }),
+    publishedAt: dt,
+    status: literals(["published", "removed"] as const),
+    downloadUrl: Type.String({ minLength: 1 }),
+  },
+  { $id: "ExtensionArtifact", additionalProperties: false },
+)
+export type ExtensionArtifact = Static<typeof ExtensionArtifactSchema>
+
+export const ExtensionSummarySchema = Type.Object(
+  {
+    id: extensionId,
+    publisher: Type.String({ minLength: 1, maxLength: 128 }),
+    name: Type.String({ minLength: 1, maxLength: 128 }),
+    displayName: Type.String({ minLength: 1, maxLength: 256 }),
+    description: Type.String({ minLength: 1, maxLength: 4096 }),
+    version: semver,
+    engineVscode: Type.String({ minLength: 1, maxLength: 128 }),
+    categories: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { maxItems: 32 }),
+    keywords: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { maxItems: 64 }),
+    targets: Type.Array(Type.String({ minLength: 1, maxLength: 64 })),
+    uploader: Type.String({ minLength: 1, maxLength: 128 }),
+    iconData: Type.Optional(Type.String({ pattern: "^data:image/" })),
+    systemPlugin: Type.Boolean(),
+    prerelease: Type.Boolean(),
+    downloads: Type.Integer({ minimum: 0 }),
+    favorites: Type.Integer({ minimum: 0 }),
+    rating: Type.Number({ minimum: 0, maximum: 5 }),
+    ratingCount: Type.Integer({ minimum: 0 }),
+    updatedAt: dt,
+  },
+  { $id: "ExtensionSummary", additionalProperties: false },
+)
+export type ExtensionSummary = Static<typeof ExtensionSummarySchema>
+
+export const ExtensionDetailSchema = Type.Intersect(
+  [
+    Type.Ref(ExtensionSummarySchema),
+    Type.Object({
+      readme: Type.String(),
+      dependencies: Type.Array(Type.String({ minLength: 1, maxLength: 256 })),
+      artifacts: Type.Array(Type.Ref(ExtensionArtifactSchema)),
+      versions: Type.Array(semver),
+    }),
+  ],
+  { $id: "ExtensionDetail" },
+)
+export type ExtensionDetail = Static<typeof ExtensionDetailSchema>
+
+export const ExtensionPublicationRunSchema = Type.Object(
+  {
+    id: Type.String({ minLength: 16, maxLength: 128 }),
+    ownerId: Type.String({ minLength: 16, maxLength: 128 }),
+    artifactId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+    status: literals(["UPLOADING", "VALIDATING", "PUBLISHING", "PUBLISHED", "DUPLICATE", "CANCELLED", "FAILED"] as const),
+    stage: Type.String({ minLength: 1, maxLength: 32 }),
+    filename: Type.String({ minLength: 6, maxLength: 180 }),
+    totalBytes: Type.Integer({ minimum: 0, maximum: 536870912 }),
+    sha256: Type.Optional(sha),
+    error: Type.Optional(Type.String({ maxLength: 4096 })),
+    idempotencyKey: Type.String({ minLength: 16, maxLength: 128 }),
+    createdAt: dt,
+    updatedAt: dt,
+    artifact: Type.Optional(Type.Ref(ExtensionArtifactSchema)),
+  },
+  { $id: "ExtensionPublicationRun", additionalProperties: false },
+)
+export type ExtensionPublicationRun = Static<typeof ExtensionPublicationRunSchema>
+
+export const ExtensionReviewSchema = Type.Object(
+  {
+    userId: Type.String({ minLength: 16, maxLength: 128 }),
+    userName: Type.String({ minLength: 1, maxLength: 128 }),
+    extensionId,
+    artifactId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+    rating: Type.Integer({ minimum: 1, maximum: 5 }),
+    comment: Type.String({ maxLength: 2000 }),
+    createdAt: dt,
+    updatedAt: dt,
+  },
+  { $id: "ExtensionReview", additionalProperties: false },
+)
+export type ExtensionReview = Static<typeof ExtensionReviewSchema>
+
+export const ExtensionAnalyticsSchema = Type.Object(
+  {
+    totals: Type.Object({
+      downloads: Type.Integer({ minimum: 0 }),
+      favorites: Type.Integer({ minimum: 0 }),
+      rating: Type.Number({ minimum: 0, maximum: 5 }),
+      active: Type.Integer({ minimum: 0 }),
+      growth30d: Type.Number(),
+    }),
+    trend: Type.Array(Type.Object({ date: Type.String({ format: "date" }), downloads: Type.Integer({ minimum: 0 }), favorites: Type.Integer({ minimum: 0 }) })),
+    downloads: Type.Array(Type.Object({ id: extensionId, name: Type.String(), value: Type.Integer({ minimum: 0 }) })),
+    ratings: Type.Array(Type.Object({ id: extensionId, name: Type.String(), value: Type.Number({ minimum: 0, maximum: 5 }) })),
+    targets: Type.Array(Type.Object({ target: Type.String(), value: Type.Integer({ minimum: 0 }) })),
+    activity: Type.Array(
+      Type.Object({
+        type: Type.Literal("publish"),
+        extensionId,
+        name: Type.String(),
+        at: dt,
+      }),
+    ),
+  },
+  { $id: "ExtensionAnalytics", additionalProperties: false },
+)
+export type ExtensionAnalytics = Static<typeof ExtensionAnalyticsSchema>
+
+export const ExtensionAnalyticsSeriesSchema = Type.Intersect([Type.Ref(ExtensionAnalyticsSchema)], {
+  $id: "ExtensionAnalyticsSeries",
+})
+export type ExtensionAnalyticsSeries = Static<typeof ExtensionAnalyticsSeriesSchema>
+
 export const RepairPatchSchema = Type.Object(
   {
     id: Type.String({ minLength: 1 }),
@@ -342,6 +486,13 @@ export const SCHEMAS = {
   AnalyticsSeries: AnalyticsSeriesSchema,
   ApiError: ApiErrorSchema,
   FavoriteState: FavoriteStateSchema,
+  ExtensionAnalytics: ExtensionAnalyticsSchema,
+  ExtensionAnalyticsSeries: ExtensionAnalyticsSeriesSchema,
+  ExtensionArtifact: ExtensionArtifactSchema,
+  ExtensionDetail: ExtensionDetailSchema,
+  ExtensionPublicationRun: ExtensionPublicationRunSchema,
+  ExtensionReview: ExtensionReviewSchema,
+  ExtensionSummary: ExtensionSummarySchema,
   InstallationState: InstallationStateSchema,
   MarketCapabilities: MarketCapabilitiesSchema,
   MarketUser: MarketUserSchema,

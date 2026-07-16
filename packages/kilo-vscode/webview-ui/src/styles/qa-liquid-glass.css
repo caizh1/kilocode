@@ -37,35 +37,6 @@ body:has(.chat-view[data-ui="qa-shell"]),
   --qa-shadow-control: none;
 }
 
-body.vscode-light:has(.chat-view[data-ui="qa-shell"]),
-body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]),
-.vscode-light .chat-view[data-ui="qa-shell"],
-.vscode-high-contrast-light .chat-view[data-ui="qa-shell"] {
-  --qa-shell-bg: color-mix(in srgb, var(--background-base) 94%, #dce9f6 6%);
-  --qa-shell-ambient: color-mix(in srgb, var(--vscode-focusBorder, #006ab1) 8%, transparent);
-  --qa-glass-fill: color-mix(in srgb, var(--surface-raised-base) 89%, transparent);
-  --qa-glass-fill-strong: color-mix(in srgb, var(--surface-raised-base) 94%, #dce9f6 6%);
-  --qa-glass-fill-inset: color-mix(in srgb, var(--background-base) 76%, transparent);
-  --qa-glass-border: color-mix(in srgb, var(--surface-raised-base) 46%, var(--vscode-foreground) 54%);
-  --qa-glass-border-soft: color-mix(in srgb, var(--qa-glass-border) 42%, transparent);
-  --qa-divider: color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
-  --qa-glass-highlight: color-mix(in srgb, #fff 66%, transparent);
-  --qa-glass-shadow: color-mix(in srgb, var(--vscode-widget-shadow, #64748b) 18%, transparent);
-  --qa-active-fill: color-mix(in srgb, var(--vscode-focusBorder) 17%, var(--qa-glass-fill-strong));
-  --qa-active-border: color-mix(in srgb, var(--vscode-focusBorder) 72%, var(--vscode-foreground) 28%);
-  --qa-composer-border: var(--qa-active-border);
-  --qa-control-border: var(--qa-glass-border-soft);
-  --qa-control-border-hover: color-mix(in srgb, var(--qa-glass-border) 68%, transparent);
-  --qa-control-fill: var(--qa-glass-fill);
-  --qa-control-fill-hover: var(--qa-glass-fill-strong);
-  --qa-control-highlight: var(--qa-glass-highlight);
-  --qa-control-shadow: var(--qa-shadow-control);
-  --qa-blur: blur(22px) saturate(128%);
-  --qa-shadow-card: 0 18px 44px var(--qa-glass-shadow), inset 0 1px 0 var(--qa-glass-highlight);
-  --qa-shadow-control:
-    0 7px 20px color-mix(in srgb, var(--qa-glass-shadow) 58%, transparent), inset 0 1px 0 var(--qa-glass-highlight);
-}
-
 /* Shell and conversation plane */
 .chat-view[data-ui="qa-shell"] {
   isolation: isolate;
@@ -411,49 +382,15 @@ body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]),
   box-shadow: inset 0 1px 0 var(--qa-glass-highlight);
 }
 
-/* Composer footer: deterministic grid at every width. */
-.chat-view[data-ui="qa-shell"] .prompt-input-hint[data-ui="qa-composer-footer"] {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 9px 2px 1px;
-  font-size: var(--kilo-font-size-13);
-}
-
-.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
-  display: grid;
-  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.35fr) minmax(0, 0.86fr) 40px;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
-}
-
-.chat-view[data-ui="qa-shell"]
-  .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--mode)):not(
-    :has(.prompt-selector-trigger--thinking)
-  ):not(:has(.prompt-selector-reset)) {
-  grid-template-columns: minmax(0, 220px);
-  justify-content: start;
-}
+/* Titanium Studio owns all Composer geometry and responsive tracks. This
+   layer only supplies the Liquid Glass material and semantic states. */
 
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"] {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  height: 40px !important;
-  min-height: 40px;
-  padding: 0 10px !important;
   border: 1px solid var(--qa-control-border);
   border-radius: var(--qa-radius-control);
   background: var(--qa-control-fill);
   box-shadow: var(--qa-control-shadow);
   color: var(--vscode-foreground);
-  font-size: var(--kilo-font-size-14);
-  gap: 7px;
-  overflow: hidden;
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"]:hover:not(:disabled) {
@@ -478,33 +415,9 @@ body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]),
     var(--qa-control-shadow);
 }
 
-.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger,
-.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger--mode,
-.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger--model,
-.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger--thinking {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  flex: none;
-}
-
-.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon,
-.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon [data-component="icon"] {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
-}
-
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon [data-slot="icon-svg"],
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon .codicon {
-  width: 20px;
-  height: 20px;
   color: currentColor;
-  font-size: var(--kilo-font-size-20);
-  line-height: 20px;
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-chevron {
@@ -512,43 +425,8 @@ body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]),
   font-size: var(--kilo-font-size-14);
 }
 
-.chat-view[data-ui="qa-shell"] .prompt-selector-reset {
-  width: 40px !important;
-  min-width: 40px !important;
-  height: 40px !important;
-  min-height: 40px !important;
-  padding: 0 !important;
-}
-
-/* Action strip */
-.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions[data-ui="qa-composer-actions"] {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 42px;
-  align-items: center;
-  justify-content: end;
-  gap: 6px;
-  width: max-content;
-  min-width: 0;
-  margin: 0;
-}
-
-.chat-view[data-ui="qa-shell"]
-  .prompt-input-hint-actions[data-ui="qa-composer-actions"]
-  > [data-component="tooltip-trigger"] {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-}
-
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="button"],
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="icon-button"] {
-  width: 42px;
-  min-width: 42px;
-  height: 42px !important;
-  min-height: 42px;
-  flex: 1 1 auto;
-  padding: 0 !important;
   border: 1px solid var(--qa-control-border);
   border-radius: 12px;
   background: var(--qa-control-fill);
@@ -591,35 +469,10 @@ body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]),
   filter: saturate(0.58);
 }
 
-.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions .codicon,
-.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-slot="icon-svg"] {
-  width: 22px;
-  height: 22px;
-  color: currentColor !important;
-  font-size: var(--kilo-font-size-22);
-  line-height: 22px;
-}
-
-.chat-view[data-ui="qa-shell"] .prompt-indexing-codicon-stack {
-  width: 24px;
-  height: 24px;
-}
-
-.chat-view[data-ui="qa-shell"] .prompt-indexing-codicon-stack .prompt-indexing-codicon {
-  width: 20px !important;
-  height: 20px !important;
-  font-size: var(--kilo-font-size-20);
-  line-height: 20px;
-}
-
 .chat-view[data-ui="qa-shell"] .prompt-indexing-codicon-stack .prompt-indexing-status-codicon {
-  width: 12px !important;
-  height: 12px !important;
   background: var(--qa-glass-fill);
   box-shadow: 0 0 0 1px var(--qa-glass-fill);
   color: var(--prompt-indexing-tone) !important;
-  font-size: var(--kilo-font-size-12);
-  line-height: 12px;
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-indexing-button {
@@ -660,11 +513,6 @@ body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]),
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-send-button {
-  width: 46px !important;
-  min-width: 46px !important;
-  height: 46px !important;
-  min-height: 46px !important;
-  margin: -2px;
   border-color: color-mix(in srgb, var(--vscode-button-foreground) 30%, var(--vscode-button-background)) !important;
   border-radius: 14px !important;
   background: var(--vscode-button-background) !important;
@@ -697,135 +545,6 @@ body:has(.chat-view[data-ui="qa-shell"]) .model-selector-content {
   box-shadow: var(--qa-shadow-card);
   backdrop-filter: var(--qa-blur);
   -webkit-backdrop-filter: var(--qa-blur);
-}
-
-/* 301–420px: two deliberate rows, with a fitted action matrix. */
-@container prompt-input (max-width: 420px) {
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint[data-ui="qa-composer-footer"] {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.35fr) minmax(0, 0.85fr) 40px;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions[data-ui="qa-composer-actions"] {
-    grid-auto-flow: row;
-    grid-auto-columns: auto;
-    grid-template-columns: repeat(auto-fit, minmax(38px, 1fr));
-    width: 100%;
-    justify-content: stretch;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="button"],
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="icon-button"] {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-send-button {
-    width: 100% !important;
-    min-width: 0 !important;
-    margin: -2px 0;
-  }
-}
-
-/* Keep a true two-zone footer just above the breakpoint without allowing the
-   dense action strip to invade the selector grid. */
-@container prompt-input (min-width: 421px) and (max-width: 560px) {
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"] {
-    padding-inline: 6px !important;
-    gap: 4px;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-chevron {
-    display: none;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions[data-ui="qa-composer-actions"] {
-    grid-auto-columns: 42px;
-    gap: 4px;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="button"],
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="icon-button"] {
-    width: 42px;
-    min-width: 42px;
-    height: 42px !important;
-    min-height: 42px;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-send-button {
-    width: 42px !important;
-    min-width: 42px !important;
-    height: 42px !important;
-    min-height: 42px !important;
-  }
-}
-
-/* <=300px: icon-only selectors plus a fixed four-column action grid. */
-@container prompt-input (max-width: 300px) {
-  .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
-    margin-inline: 8px;
-    padding: 7px;
-    border-radius: 17px;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input,
-  .chat-view[data-ui="qa-shell"] .prompt-input-highlight-overlay {
-    min-height: 84px;
-    padding-inline: 12px;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint[data-ui="qa-composer-footer"] {
-    display: grid;
-    gap: 7px;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-    width: 100%;
-    justify-content: stretch;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger,
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger--mode,
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger--model,
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger--thinking,
-  .chat-view[data-ui="qa-shell"] .prompt-selector-reset {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: none !important;
-    justify-content: center !important;
-    padding: 0 !important;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .model-selector-trigger-label,
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .mode-switcher-trigger-label,
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .thinking-selector-trigger-label,
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .model-selector-trigger-free-data,
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-chevron {
-    display: none;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions[data-ui="qa-composer-actions"] {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-send-button,
-  .chat-view[data-ui="qa-shell"] .prompt-stop-button {
-    grid-column: auto;
-  }
-
-  .chat-view[data-ui="qa-shell"]
-    .prompt-input-hint-actions
-    > [data-component="tooltip-trigger"]:has(> .prompt-send-button),
-  .chat-view[data-ui="qa-shell"]
-    .prompt-input-hint-actions
-    > [data-component="tooltip-trigger"]:has(> .prompt-stop-button) {
-    grid-column: 4;
-  }
 }
 
 /* Small host surfaces keep the reading plane comfortable. */

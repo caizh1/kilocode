@@ -34,6 +34,7 @@ import type {
 import { copy, dict, own } from "../dict"
 import { buildPostingsDocument } from "./builder"
 import { tokenizeQuery } from "./tokenizer"
+import { normalizeWorkspace, workspaceKey } from "../../workspace-key"
 
 const k1 = 1.2
 const b = 0.75
@@ -41,6 +42,7 @@ const bucketCount = 64
 const rangeChunk = 512
 const cacheLimit = 64 * 1024 * 1024
 const log = Log.create({ service: "codepostings-storage" })
+type ScanState = "never" | "interrupted" | "complete" | "needs-rebuild"
 
 type TermLine = {
   term: string
@@ -50,6 +52,8 @@ type TermLine = {
 type DocHeader = Omit<CodePostingsDocument, "terms">
 
 export class CodePostingsJsonStorage implements ICodePostingsStorage {
+  private readonly workspace: string
+  private readonly key: string
   private manifest?: CodePostingsManifest
   private stage?: CodePostingsManifest
   private old?: CodePostingsManifest
@@ -61,10 +65,13 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
   private tokenizerMismatch = false
   private graphSchemaMismatch = false
   private parserMismatch = false
+  private invalid = false
   private rebuilding = false
   private queue: Promise<void> = Promise.resolve()
   private checkpointFiles = 0
   private checkpointAt = 0
+  private migrated = false
+  private scan?: ScanState
 
   constructor(
     private readonly opts: {
@@ -72,7 +79,10 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       cacheDirectory: string
       clock?: () => Date
     },
-  ) {}
+  ) {
+    this.workspace = normalizeWorkspace(opts.workspacePath)
+    this.key = workspaceKey(this.workspace)
+  }
 
   public async upsertFilePostings(
     filePath: string,
@@ -252,7 +262,8 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
 
   public async clear(): Promise<void> {
     await this.enqueue(async () => {
-      await rm(path.join(this.opts.cacheDirectory, CODE_POSTINGS_STORAGE_DIR), { recursive: true, force: true })
+      this.migrated = true
+      await rm(this.root, { recursive: true, force: true })
       this.manifest = this.empty()
       this.stage = undefined
       this.old = undefined
@@ -262,13 +273,16 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       this.tokenizerMismatch = false
       this.graphSchemaMismatch = false
       this.parserMismatch = false
+      this.invalid = false
       this.rebuilding = false
       await this.writeManifest()
+      this.scan = "never"
     })
   }
 
   public async ensureCompatible(): Promise<IndexingCompatibilityDecision> {
     return this.enqueue(async () => {
+      await this.migrateLegacy()
       const manifest = this.readManifestFile(this.manifestPath)
       const decision = this.compatibility(manifest)
       log.info("Code Postings compatibility check", {
@@ -278,7 +292,7 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
         reason: decision.reason,
       })
       if (decision.action === "reuse") return decision
-      await rm(path.join(this.opts.cacheDirectory, CODE_POSTINGS_STORAGE_DIR), { recursive: true, force: true })
+      await rm(this.root, { recursive: true, force: true })
       this.manifest = this.empty()
       this.stage = undefined
       this.old = undefined
@@ -287,15 +301,18 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       this.tokenizerMismatch = false
       this.graphSchemaMismatch = false
       this.parserMismatch = false
+      this.invalid = false
       this.rebuilding = false
       await this.writeManifest()
+      this.scan = "never"
       return decision
     })
   }
 
   public status(): CodePostingsStorageStatus {
     this.load()
-    const rebuild = this.needsRebuild()
+    const scan = this.getScanState()
+    const rebuild = this.needsRebuild() || scan === "needs-rebuild"
     const manifest = rebuild ? (this.old ?? this.empty()) : this.manifest!
     const records = Object.values(manifest.records)
     const valid = rebuild ? 0 : records.filter((record) => record.status === "ok").length
@@ -318,14 +335,36 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       parserMismatch: this.parserMismatch,
       needsRebuild: rebuild,
       updatedAt: manifest.updatedAt,
-      lastFullScanAt: rebuild ? undefined : manifest.lastFullScanAt,
+      lastFullScanAt: rebuild || scan !== "complete" ? undefined : manifest.lastFullScanAt,
       postingsDirectory: this.root,
       diagnostics: manifest.diagnostics,
     }
   }
 
+  public getScanState(): ScanState {
+    if (this.scan) return this.scan
+    if (existsSync(this.stageManifestPath)) {
+      const stage = this.readManifestFile(this.stageManifestPath)
+      this.scan = !stage || this.compatibility(stage).action === "rebuild" ? "needs-rebuild" : "interrupted"
+      return this.scan
+    }
+    if (!existsSync(this.manifestPath)) {
+      this.scan = "never"
+      return this.scan
+    }
+    const manifest = this.readManifestFile(this.manifestPath)
+    if (!manifest || this.compatibility(manifest).action === "rebuild") {
+      this.scan = "needs-rebuild"
+      return this.scan
+    }
+    this.scan = manifest.lastFullScanAt ? "complete" : "never"
+    return this.scan
+  }
+
   public async beginFullScan(): Promise<void> {
     await this.enqueue(async () => {
+      this.scan = undefined
+      await this.migrateLegacy()
       const current = this.load()
       this.stage =
         this.loadStage() ?? (this.needsRebuild() ? this.empty(globalThis.crypto.randomUUID()) : this.scanBase(current))
@@ -338,8 +377,10 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       this.tokenizerMismatch = false
       this.graphSchemaMismatch = false
       this.parserMismatch = false
+      this.invalid = false
       this.rebuilding = true
       await this.writeStageManifest()
+      this.scan = "interrupted"
     })
   }
 
@@ -358,6 +399,7 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       this.seen = undefined
       this.clearCache()
       this.rebuilding = false
+      this.scan = "complete"
       await this.cleanupOldGenerations()
     })
   }
@@ -370,11 +412,11 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
 
       const manifest = this.readManifestFile(this.manifestPath)
       const stage = this.readManifestFile(this.stageManifestPath)
-      if (manifest?.workspacePath && manifest.workspacePath !== this.opts.workspacePath) {
+      if (manifest?.workspacePath && normalizeWorkspace(manifest.workspacePath) !== this.workspace) {
         stats.skipped.push("codepostings: active manifest workspace mismatch")
         return stats
       }
-      if (stage?.workspacePath && stage.workspacePath !== this.opts.workspacePath) {
+      if (stage?.workspacePath && normalizeWorkspace(stage.workspacePath) !== this.workspace) {
         stats.skipped.push("codepostings: rebuild manifest workspace mismatch")
         return stats
       }
@@ -576,7 +618,59 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
     await this.atomicJson(file, manifest)
   }
 
+  private async migrateLegacy(): Promise<void> {
+    if (this.migrated) return
+    this.migrated = true
+    if (existsSync(this.root) || !existsSync(this.legacyRoot)) return
+
+    const manifest = this.readManifestFile(path.join(this.legacyRoot, "manifest.json"))
+    const interrupted = existsSync(path.join(this.legacyRoot, "manifest.rebuild.json"))
+    const decision = this.compatibility(manifest, this.legacyRoot)
+    if (interrupted || decision.action !== "reuse") {
+      log.warn("legacy Code Postings cache retained without migration", {
+        visible: true,
+        workspacePath: this.opts.workspacePath,
+        reason: interrupted ? "interrupted legacy scan" : decision.reason,
+      })
+      return
+    }
+
+    await mkdir(path.dirname(this.root), { recursive: true })
+    try {
+      await rename(this.legacyRoot, this.root)
+    } catch (err) {
+      log.warn("legacy Code Postings cache migration skipped", {
+        visible: true,
+        workspacePath: this.opts.workspacePath,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return
+    }
+
+    this.manifest = undefined
+    this.stage = undefined
+    this.old = undefined
+    this.seen = undefined
+    this.clearCache()
+    this.schemaMismatch = false
+    this.tokenizerMismatch = false
+    this.graphSchemaMismatch = false
+    this.parserMismatch = false
+    this.invalid = false
+    this.rebuilding = false
+    this.scan = undefined
+    log.info("legacy Code Postings cache migrated", {
+      visible: true,
+      workspacePath: this.opts.workspacePath,
+      postingsDirectory: this.root,
+    })
+  }
+
   private get root() {
+    return path.join(this.opts.cacheDirectory, CODE_POSTINGS_STORAGE_DIR, this.key, CODE_POSTINGS_STORAGE_VERSION_DIR)
+  }
+
+  private get legacyRoot() {
     return path.join(this.opts.cacheDirectory, CODE_POSTINGS_STORAGE_DIR, CODE_POSTINGS_STORAGE_VERSION_DIR)
   }
 
@@ -602,7 +696,9 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
   }
 
   private needsRebuild(): boolean {
-    return this.schemaMismatch || this.tokenizerMismatch || this.graphSchemaMismatch || this.parserMismatch
+    return (
+      this.invalid || this.schemaMismatch || this.tokenizerMismatch || this.graphSchemaMismatch || this.parserMismatch
+    )
   }
 
   private markSeen(rel: string): void {
@@ -625,8 +721,13 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       return this.manifest
     }
 
-    const parsed = JSON.parse(readFileSync(this.manifestPath, "utf-8")) as CodePostingsManifest
-    if (parsed.workspacePath && parsed.workspacePath !== this.opts.workspacePath) {
+    const parsed = this.readManifestFile(this.manifestPath)
+    if (!parsed) {
+      this.invalid = true
+      this.manifest = this.empty()
+      return this.manifest
+    }
+    if (parsed.workspacePath && normalizeWorkspace(parsed.workspacePath) !== this.workspace) {
       this.manifest = this.empty()
       return this.manifest
     }
@@ -666,8 +767,9 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
   private loadStage(): CodePostingsManifest | undefined {
     if (this.stage) return this.stage
     if (!existsSync(this.stageManifestPath)) return undefined
-    const parsed = JSON.parse(readFileSync(this.stageManifestPath, "utf-8")) as CodePostingsManifest
-    if (parsed.workspacePath && parsed.workspacePath !== this.opts.workspacePath) return undefined
+    const parsed = this.readManifestFile(this.stageManifestPath)
+    if (!parsed) return undefined
+    if (parsed.workspacePath && normalizeWorkspace(parsed.workspacePath) !== this.workspace) return undefined
     if (
       parsed.postingsSchemaVersion !== CODE_POSTINGS_SCHEMA_VERSION ||
       parsed.tokenizerVersion !== CODE_POSTINGS_TOKENIZER_VERSION ||
@@ -704,9 +806,11 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
     }
   }
 
-  private compatibility(manifest: CodePostingsManifest | undefined): IndexingCompatibilityDecision {
+  private compatibility(manifest: CodePostingsManifest | undefined, root = this.root): IndexingCompatibilityDecision {
     if (!manifest) return { action: "rebuild", reason: "missing compatibility metadata" }
-    if (manifest.workspacePath !== this.opts.workspacePath) return { action: "rebuild", reason: "workspace mismatch" }
+    if (!manifest.workspacePath) return { action: "rebuild", reason: "missing compatibility metadata" }
+    if (normalizeWorkspace(manifest.workspacePath) !== this.workspace)
+      return { action: "rebuild", reason: "workspace mismatch" }
     if (manifest.postingsSchemaVersion !== CODE_POSTINGS_SCHEMA_VERSION)
       return { action: "rebuild", reason: "schema mismatch" }
     if (manifest.tokenizerVersion !== CODE_POSTINGS_TOKENIZER_VERSION)
@@ -733,7 +837,7 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
       }
     }
     for (const part of [...manifest.docParts, ...manifest.termParts]) {
-      if (!existsSync(path.join(this.root, part.path))) return { action: "rebuild", reason: "missing postings sidecar" }
+      if (!existsSync(path.join(root, part.path))) return { action: "rebuild", reason: "missing postings sidecar" }
     }
     return { action: "reuse", reason: "compatible" }
   }

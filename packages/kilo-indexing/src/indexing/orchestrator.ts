@@ -32,6 +32,10 @@ const SYNTHETIC_EVENT_LIMIT = 1000
 const LANCEDB_SCHEMA_MISMATCH_NOTICE =
   "检测到当前工作区的本地 RAG 索引格式来自旧版本，ChipMate 正在自动重建；CodeGraph 数据会保留。"
 type ScanTarget = "all" | "codeGraph" | "rag"
+export type IndexingRunOutcome = {
+  state: "completed" | "failed" | "cancelled"
+  pipeline: "codeGraph" | "rag"
+}
 type ScanSummary = {
   filesDiscovered: number
   filesIndexed: number
@@ -54,7 +58,7 @@ export class CodeIndexOrchestrator {
   private _watcherToken = 0
   private _followUpScanRequested = false
   private _followUpScanScheduled = false
-  private _active?: Promise<void>
+  private _active?: Promise<IndexingRunOutcome>
 
   constructor(
     private readonly configManager: CodeIndexConfigManager,
@@ -68,6 +72,7 @@ export class CodeIndexOrchestrator {
     private readonly ragMeta: RagCheckpointMeta,
     private readonly onTelemetry?: IndexingTelemetryReporter,
     private readonly overlay?: WorktreeOverlay,
+    private readonly beforeRag?: () => Promise<void>,
   ) {}
 
   private getTelemetryMeta(): IndexingTelemetryMeta {
@@ -293,7 +298,7 @@ export class CodeIndexOrchestrator {
     })
   }
 
-  public startIndexing(trigger: IndexingTelemetryTrigger = "background"): Promise<void> {
+  public startIndexing(trigger: IndexingTelemetryTrigger = "background"): Promise<IndexingRunOutcome> {
     if (this._active) return this._active
     const task = this.runIndexing(trigger).finally(() => {
       if (this._active === task) this._active = undefined
@@ -302,7 +307,7 @@ export class CodeIndexOrchestrator {
     return task
   }
 
-  private async runIndexing(trigger: IndexingTelemetryTrigger): Promise<void> {
+  private async runIndexing(trigger: IndexingTelemetryTrigger): Promise<IndexingRunOutcome> {
     log.info("indexing start requested", {
       workspacePath: this.workspacePath,
       state: this.stateManager.state,
@@ -312,14 +317,15 @@ export class CodeIndexOrchestrator {
 
     if (!this.workspacePath) {
       this.stateManager.setSystemState("Error", "Indexing requires a workspace folder.")
+      this.stateManager.setActivePipeline("codeGraph")
       log.warn("start rejected: no workspace path")
-      return
+      return { state: "failed", pipeline: "codeGraph" }
     }
 
     if (this.vectorStore && !this.configManager.isFeatureConfigured) {
       this.stateManager.setSystemState("Standby", "Missing configuration. Save your settings to start indexing.")
       log.warn("start rejected: missing configuration")
-      return
+      return { state: "cancelled", pipeline: "rag" }
     }
 
     const status = this.stateManager.getCurrentStatus()
@@ -332,21 +338,22 @@ export class CodeIndexOrchestrator {
         this.stateManager.state !== "Indexed")
     ) {
       log.warn("start rejected", { state: this.stateManager.state })
-      return
+      return { state: "cancelled", pipeline: this.stateManager.state === "Indexing" ? "rag" : "codeGraph" }
     }
 
     this._cancelRequested = false
     this._isProcessing = true
+    this.stateManager.setActivePipeline("codeGraph")
     this.stateManager.setSystemState("Indexing", "Initializing services...")
 
     let started = false
     let source: IndexingTelemetrySource = "watcher"
     let mode: IndexingTelemetryMode | undefined
-    let pipeline: IndexingTelemetryPipeline | undefined
+    let pipeline: IndexingRunOutcome["pipeline"] | undefined
 
     try {
       if (!(await this.acquireLock())) {
-        return
+        return { state: "cancelled", pipeline: "codeGraph" }
       }
       const lock = this._lock
       if (!lock) throw new Error("Indexing lock acquisition did not return a lock.")
@@ -358,7 +365,7 @@ export class CodeIndexOrchestrator {
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
         await this.releaseLock()
-        return
+        return { state: "cancelled", pipeline: "codeGraph" }
       }
       this.deferWatcherCollection("scan-start")
 
@@ -372,10 +379,10 @@ export class CodeIndexOrchestrator {
         this.stateManager.setActivePipeline("codeGraph")
         this.stateManager.setSystemState("Indexing", "Starting Code Graph indexing...")
         const summary = await this._runScan(mode, trigger, "codeGraph")
-        if (!summary) return
+        if (!summary) return { state: "cancelled", pipeline: "codeGraph" }
         await this.cleanupArtifacts("after-codegraph", { local: true })
         await this.finishScan(summary, mode, trigger)
-        return
+        return { state: "completed", pipeline: "codeGraph" }
       }
 
       mode = "full"
@@ -385,7 +392,7 @@ export class CodeIndexOrchestrator {
       this.stateManager.setActivePipeline("codeGraph")
       this.stateManager.setSystemState("Indexing", "Starting Code Graph indexing before RAG...")
       const graph = await this._runScan(mode, trigger, "codeGraph")
-      if (!graph) return
+      if (!graph) return { state: "cancelled", pipeline: "codeGraph" }
       await this.cleanupArtifacts("after-codegraph", { local: true })
 
       this.stateManager.clearCodeGraphProgress()
@@ -398,6 +405,10 @@ export class CodeIndexOrchestrator {
       })
 
       pipeline = "rag"
+      if (this.beforeRag) {
+        this.stateManager.setSystemState("Indexing", "Code Graph complete. Validating embedding configuration...")
+        await this.beforeRag()
+      }
       const collectionCreated = await this.vectorStore.initialize()
       this.notifyVectorCompatibility()
       log.info("vector store initialized", { workspacePath: this.workspacePath, collectionCreated })
@@ -406,7 +417,7 @@ export class CodeIndexOrchestrator {
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
         await this.releaseLock()
-        return
+        return { state: "cancelled", pipeline: "rag" }
       }
 
       if (this.overlay) {
@@ -439,7 +450,7 @@ export class CodeIndexOrchestrator {
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
         await this.releaseLock()
-        return
+        return { state: "cancelled", pipeline: "rag" }
       }
 
       mode = hasExistingData && !collectionCreated ? "incremental" : "full"
@@ -459,8 +470,9 @@ export class CodeIndexOrchestrator {
         await this.vectorStore.markIndexingIncomplete()
       }
       const rag = await this._runScan(mode, trigger, "rag")
-      if (!rag) return
+      if (!rag) return { state: "cancelled", pipeline: "rag" }
       await this.finishScan(rag, mode, trigger)
+      return { state: "completed", pipeline: "rag" }
     } catch (err) {
       log.error("error during indexing", { err })
       this.emitError("orchestrator:startIndexing", err, source, trigger, mode, pipeline)
@@ -473,8 +485,10 @@ export class CodeIndexOrchestrator {
 
       const msg = err instanceof Error ? err.message : "Unknown error"
       this.stateManager.setSystemState("Error", `Failed during initial scan: ${msg}`)
+      this.stateManager.setActivePipeline(pipeline ?? "codeGraph")
       this.stopWatcher()
       await this.releaseLock()
+      return { state: "failed", pipeline: pipeline ?? "codeGraph" }
     } finally {
       this._isProcessing = false
       log.info("indexing start flow finished", {
@@ -487,7 +501,7 @@ export class CodeIndexOrchestrator {
   public async startRagIndexing(
     trigger: IndexingTelemetryTrigger = "background",
     reason = "settings-change",
-  ): Promise<void> {
+  ): Promise<IndexingRunOutcome> {
     log.info("rag-only indexing start requested", {
       visible: true,
       workspacePath: this.workspacePath,
@@ -501,19 +515,20 @@ export class CodeIndexOrchestrator {
 
     if (!this.workspacePath) {
       this.stateManager.setSystemState("Error", "Indexing requires a workspace folder.")
+      this.stateManager.setActivePipeline("rag")
       log.warn("rag-only start rejected: no workspace path")
-      return
+      return { state: "failed", pipeline: "rag" }
     }
 
     if (!this.vectorStore || !this.configManager.isFeatureConfigured) {
       this.stateManager.setSystemState("Standby", "Missing configuration. Save your settings to start RAG indexing.")
       log.warn("rag-only start rejected: missing configuration")
-      return
+      return { state: "cancelled", pipeline: "rag" }
     }
 
     if (this._isProcessing) {
       log.warn("rag-only start rejected", { state: this.stateManager.state })
-      return
+      return { state: "cancelled", pipeline: "rag" }
     }
 
     this._cancelRequested = false
@@ -525,12 +540,17 @@ export class CodeIndexOrchestrator {
     let mode: IndexingTelemetryMode = "full"
 
     try {
-      if (!(await this.acquireLock())) return
+      if (!(await this.acquireLock())) return { state: "cancelled", pipeline: "rag" }
       const lock = this._lock
       if (!lock) throw new Error("Indexing lock acquisition did not return a lock.")
       this.scanner.setRunContext(lock.runId, this.ragMeta)
       this.fileWatcher.setRunContext?.(lock.runId, this.ragMeta)
       this.deferWatcherCollection("rag-only-scan-start")
+
+      if (this.beforeRag) {
+        this.stateManager.setSystemState("Indexing", "Validating embedding configuration before RAG indexing...")
+        await this.beforeRag()
+      }
 
       const collectionCreated = await this.vectorStore.initialize()
       this.notifyVectorCompatibility()
@@ -547,7 +567,7 @@ export class CodeIndexOrchestrator {
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
         await this.releaseLock()
-        return
+        return { state: "cancelled", pipeline: "rag" }
       }
 
       if (collectionCreated) {
@@ -573,15 +593,18 @@ export class CodeIndexOrchestrator {
       await this.vectorStore.markIndexingIncomplete()
 
       const summary = await this._runScan(mode, trigger, "rag")
-      if (!summary) return
+      if (!summary) return { state: "cancelled", pipeline: "rag" }
       await this.finishScan(summary, mode, trigger)
+      return { state: "completed", pipeline: "rag" }
     } catch (err) {
       log.error("error during rag-only indexing", { err })
       this.emitError("orchestrator:startRagIndexing", err, "scan", trigger, mode, "rag")
       const msg = err instanceof Error ? err.message : "Unknown error"
       this.stateManager.setSystemState("Error", `Failed during RAG scan: ${msg}`)
+      this.stateManager.setActivePipeline("rag")
       this.stopWatcher()
       await this.releaseLock()
+      return { state: "failed", pipeline: "rag" }
     } finally {
       this._isProcessing = false
       log.info("rag-only indexing flow finished", {
@@ -1021,11 +1044,14 @@ export class CodeIndexOrchestrator {
   }
 
   public async clearIndexData(): Promise<void> {
-    this._isProcessing = true
     log.info("clearing index data", { workspacePath: this.workspacePath })
 
     try {
+      this._cancelRequested = true
+      this.scanner.cancel()
+      await this._active
       this.stopWatcher()
+      this._isProcessing = true
 
       try {
         if (this.vectorStore && this.configManager.isFeatureConfigured) {

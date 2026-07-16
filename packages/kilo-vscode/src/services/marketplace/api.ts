@@ -615,6 +615,14 @@ function marketCapabilities(value: unknown): MarketCapabilities | null {
   if (!isObject(features)) return null
   const names = ["versions", "favorites", "installations", "publications", "repairs", "analytics", "events"] as const
   if (names.some((name) => typeof features[name] !== "boolean")) return null
+  const optional = [
+    "extensions",
+    "extensionPublications",
+    "extensionReviews",
+    "extensionAnalytics",
+    "extensionDirectoryImport",
+  ] as const
+  if (optional.some((name) => features[name] !== undefined && typeof features[name] !== "boolean")) return null
   return value as unknown as MarketCapabilities
 }
 

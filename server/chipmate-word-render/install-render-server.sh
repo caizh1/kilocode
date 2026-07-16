@@ -7,6 +7,7 @@ PACKAGE_ROOT_ON_HOST="${PACKAGE_ROOT_ON_HOST:-/home/share/chipmate/packages}"
 DATA_ROOT_ON_HOST="${DATA_ROOT_ON_HOST:-/home/share/chipmate/data}"
 SKILL_MARKET_ROOT_ON_HOST="${SKILL_MARKET_ROOT_ON_HOST:-$DATA_ROOT_ON_HOST/skill-market}"
 BACKUP_ROOT_ON_HOST="${BACKUP_ROOT_ON_HOST:-$DATA_ROOT_ON_HOST/backups}"
+EXTENSION_MARKET_ENABLED="${EXTENSION_MARKET_ENABLED:-0}"
 ENV_FILE="${ENV_FILE:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_MARKET_SEED_ROOT="${SKILL_MARKET_SEED_ROOT:-$SCRIPT_DIR/packages/skill-market}"
@@ -65,13 +66,25 @@ if [[ -z "$IMAGE_REF" ]]; then
   exit 1
 fi
 
-mkdir -p "$PACKAGE_ROOT_ON_HOST" "$SKILL_MARKET_ROOT_ON_HOST" "$SKILL_MARKET_ROOT_ON_HOST/skills" "$BACKUP_ROOT_ON_HOST"
+market_exists=0
+if [[ -f "$SKILL_MARKET_ROOT_ON_HOST/skills.json" || -d "$SKILL_MARKET_ROOT_ON_HOST/.market-db" || -d "$SKILL_MARKET_ROOT_ON_HOST/extensions" ]]; then
+  market_exists=1
+fi
 
-if [[ -f "$SKILL_MARKET_ROOT_ON_HOST/skills.json" || -d "$SKILL_MARKET_ROOT_ON_HOST/.market-db" ]]; then
+mkdir -p \
+  "$PACKAGE_ROOT_ON_HOST" \
+  "$SKILL_MARKET_ROOT_ON_HOST" \
+  "$SKILL_MARKET_ROOT_ON_HOST/skills" \
+  "$SKILL_MARKET_ROOT_ON_HOST/extensions/drop" \
+  "$SKILL_MARKET_ROOT_ON_HOST/extensions/artifacts" \
+  "$SKILL_MARKET_ROOT_ON_HOST/extensions/.tmp" \
+  "$BACKUP_ROOT_ON_HOST"
+
+if [[ "$market_exists" == "1" ]]; then
   backup="$BACKUP_ROOT_ON_HOST/skill-market-$(date -u +%Y%m%dT%H%M%SZ)"
   echo "[chipmate-render] backing up existing market data to $backup"
   mkdir -p "$backup"
-  for item in skills.json skills .market-db .legacy-latest; do
+  for item in skills.json skills .market-db .legacy-latest extensions; do
     if [[ -e "$SKILL_MARKET_ROOT_ON_HOST/$item" ]]; then
       cp -a "$SKILL_MARKET_ROOT_ON_HOST/$item" "$backup/$item"
     fi
@@ -104,11 +117,11 @@ runtime_env_file="$ENV_FILE"
 if [[ -z "$runtime_env_file" ]] && docker inspect "$SERVICE_NAME" >/dev/null 2>&1; then
   preserved_env="$workdir/preserved.env"
   docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$SERVICE_NAME" \
-    | awk '/^NEW_API_[A-Z0-9_]+=/ { print }' > "$preserved_env"
+    | awk '/^NEW_API_[A-Z0-9_]+=/ || /^EXTENSION_MARKET_ROOT=/ || /^EXTENSION_DROP_[A-Z0-9_]+=/ { print }' > "$preserved_env"
   if [[ -s "$preserved_env" ]]; then
     chmod 600 "$preserved_env"
     runtime_env_file="$preserved_env"
-    echo "[chipmate-render] preserving existing New API resolver configuration"
+    echo "[chipmate-render] preserving existing New API resolver configuration and extension market configuration"
   fi
 fi
 
@@ -126,6 +139,7 @@ docker_args=(
 if [[ -n "$runtime_env_file" ]]; then
   docker_args+=(--env-file "$runtime_env_file")
 fi
+docker_args+=(--env "EXTENSION_MARKET_ENABLED=$EXTENSION_MARKET_ENABLED")
 docker "${docker_args[@]}" \
   "$IMAGE_REF"
 

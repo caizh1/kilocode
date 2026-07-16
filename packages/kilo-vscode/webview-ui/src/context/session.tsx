@@ -81,6 +81,7 @@ import { createAbortState } from "./abort-state"
 import { clearIfOn, createCloudPrune } from "./session-cloud-prune"
 import { isSameSessionTree } from "./model-usage"
 import { createDraftAgentSeed } from "./session-agent"
+import { compactionActive, compactionBoundary } from "./compaction-activity"
 
 const RECENT_LIMIT = 5
 const MESSAGE_PAGE_LIMIT = 80
@@ -2880,7 +2881,7 @@ export const SessionProvider: ParentComponent = (props) => {
     const id = currentSessionID()
     const msgs = messages()
     for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].role !== "assistant") continue
+      if (msgs[i].role !== "assistant" || msgs[i].summary === true) continue
       const parts = getParts(msgs[i].id)
       if (parts.length === 0) break
       const raw = computeStatus(parts[parts.length - 1], language.t) ?? fallback
@@ -2904,10 +2905,12 @@ export const SessionProvider: ParentComponent = (props) => {
   })
 
   const contextUsage = createMemo<ContextUsage | undefined>(() => {
+    if (compactionActive(messages(), getParts, statusInfo())) return undefined
     const msgs = visibleMessages()
-    for (let i = msgs.length - 1; i >= 0; i--) {
+    const boundary = compactionBoundary(msgs, getParts)
+    for (let i = msgs.length - 1; i > boundary; i--) {
       const m = msgs[i]
-      if (m.role !== "assistant" || !m.tokens) continue
+      if (m.role !== "assistant" || m.summary === true || !m.tokens) continue
       const usage = calcContextUsage(m.tokens, undefined)
       if (usage.tokens === 0) continue
       const sel = selected()

@@ -32,6 +32,18 @@ import type {
   SessionItem,
   SessionLookup,
   UnpublishInput,
+  ExtensionAnalyticsItem,
+  ExtensionArtifactInput,
+  ExtensionArtifactItem,
+  ExtensionDetailItem,
+  ExtensionDownloadInput,
+  ExtensionFavoriteInput,
+  ExtensionPublicationInput,
+  ExtensionPublicationItem,
+  ExtensionReviewInput,
+  ExtensionReviewItem,
+  ExtensionSearchInput,
+  ExtensionSummaryItem,
 } from "./model.ts"
 import type { DbRequest, DbResponse } from "./protocol.ts"
 
@@ -190,6 +202,102 @@ export class MarketDb {
 
   maintain(now: string) {
     return this.call<RetentionResult>("maintain", now)
+  }
+
+  searchExtensions(input: ExtensionSearchInput = {}) {
+    return this.call<ExtensionSummaryItem[]>("searchExtensions", input)
+  }
+
+  getExtension(id: string) {
+    return this.call<ExtensionDetailItem | undefined>("getExtension", id)
+  }
+
+  extensionArtifact(id: string) {
+    return this.call<ExtensionArtifactItem | undefined>("extensionArtifact", id)
+  }
+
+  extensionArtifactBySha(sha256: string) {
+    return this.call<ExtensionArtifactItem | undefined>("extensionArtifactBySha", sha256)
+  }
+
+  extensionArtifacts(id: string) {
+    return this.call<ExtensionArtifactItem[]>("extensionArtifacts", id)
+  }
+
+  publishExtension(input: ExtensionArtifactInput) {
+    return this.call<{ artifact: ExtensionArtifactItem; duplicate: boolean }>("publishExtension", input)
+  }
+
+  touchExtensionSource(key: string, stamp: string) {
+    return this.call<boolean>("touchExtensionSource", { key, stamp })
+  }
+
+  extensionSystemSources() {
+    return this.call<Array<{ key: string; artifactId: string; path: string }>>("extensionSystemSources")
+  }
+
+  unlistExtensionSource(key: string, stamp: string) {
+    return this.call<ExtensionArtifactItem | undefined>("unlistExtensionSource", { key, stamp })
+  }
+
+  removeExtensionArtifact(id: string, userId: string, stamp: string) {
+    return this.call<ExtensionArtifactItem>("removeExtensionArtifact", { id, userId, stamp })
+  }
+
+  extensionPublication(input: ExtensionPublicationInput) {
+    return this.call<ExtensionPublicationItem>("extensionPublication", input)
+  }
+
+  getExtensionPublication(id: string, ownerId: string) {
+    return this.call<ExtensionPublicationItem | undefined>("getExtensionPublication", { id, ownerId })
+  }
+
+  extensionPublications(ownerId: string) {
+    return this.call<ExtensionPublicationItem[]>("extensionPublications", ownerId)
+  }
+
+  extensionUploadCount(ownerId: string, since: string) {
+    return this.call<number>("extensionUploadCount", { ownerId, since })
+  }
+
+  extensionFavorite(input: ExtensionFavoriteInput) {
+    return this.call<{ extensionId: string; favorite: boolean; changedAt: string }>("extensionFavorite", input)
+  }
+
+  extensionFavorites(userId: string) {
+    return this.call<ExtensionSummaryItem[]>("extensionFavorites", userId)
+  }
+
+  extensionReviews(id: string) {
+    return this.call<ExtensionReviewItem[]>("extensionReviews", id)
+  }
+
+  extensionReview(input: ExtensionReviewInput) {
+    return this.call<ExtensionReviewItem>("extensionReview", input)
+  }
+
+  deleteExtensionReview(userId: string, extensionId: string) {
+    return this.call<boolean>("deleteExtensionReview", { userId, extensionId })
+  }
+
+  userExtensionReviews(userId: string) {
+    return this.call<ExtensionReviewItem[]>("userExtensionReviews", userId)
+  }
+
+  extensionUploads(userId: string) {
+    return this.call<ExtensionArtifactItem[]>("extensionUploads", userId)
+  }
+
+  extensionDownload(input: ExtensionDownloadInput) {
+    return this.call<void>("extensionDownload", input)
+  }
+
+  extensionAnalytics() {
+    return this.call<ExtensionAnalyticsItem>("extensionAnalytics")
+  }
+
+  extensionSources(artifactId: string, userId: string) {
+    return this.call<Array<{ source: string; value: number }>>("extensionSources", { artifactId, userId })
   }
 
   async close() {

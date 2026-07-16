@@ -56,6 +56,109 @@ final result: passed
 
 ---
 
+# ChipMate VS Code 插件市场 Design QA
+
+Approved reference directory: `/Users/archer/Work/kilocode/.runtime/design-qa/references/extension-market/`
+
+Installed macOS Chrome evidence directory: `/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/`
+
+Primary `1484 × 1060` evidence:
+
+- `01-extension-home-1484x1060.png`
+- `02-extension-detail-1484x1060.png`
+- `03-extension-sha-conflict-1484x1060.png`
+- `04-extension-upload-idle-1484x1060.png`
+- `05-extension-analytics-1484x1060.png`
+- `06-extension-service-status-1484x1060.png`
+- `07-extension-center-1484x1060.png`
+- `08-extension-upload-progress-1484x1060.png`
+
+Supplemental directory evidence: `extension-home-1440x1024.png` and `extension-home-1050x1024.png`.
+
+**Findings**
+
+- No actionable P0/P1/P2 visual issue remains after the 1050px topbar containment correction.
+- Plugin surfaces consistently use “ChipMate Market”, “VS Code 插件”, “发布插件” and “上传 VS Code 插件”. No plugin page claims code, signature or virus auditing.
+- The upload state uses a 78px Liquid Glass progress track with percentage, transferred/total bytes, smoothed speed, ETA or phase, and a visible cancel action. The progress screenshot captures the active XHR state; functional tests exercise the real `XMLHttpRequest.upload.onprogress` path.
+- SHA conflicts remain hidden during normal browsing and appear only after explicit version and target selection. The modal shows uploader, source, time, full SHA, size and completed downloads; no build is preselected and download remains disabled until risk consent.
+- The service status page exposes the shared database plus scanner, `drop/`, `artifacts/` and `.tmp` runtime surfaces. Invalid imports are rendered as specific warnings without changing Word, Mermaid or Skill Market routes.
+- Icons remain in normal Flex/Grid flow. No extension-market icon layout uses `position: absolute`.
+- Automated Chrome geometry at `1484 × 1060`, `1440 × 1024` and `1050 × 1024` reports no horizontal overflow, clipped topbar control or out-of-bounds extension card.
+- WCAG 2 A/AA, 2.1 A/AA and 2.2 AA automated checks pass on the extension directory.
+
+**Accepted P3 Differences**
+
+- Real preview VSIX fixtures do not provide marketplace artwork, so the implementation uses the approved glass code glyph fallback instead of inventing plugin icons.
+- Seed data has no completed downloads, so the trend chart correctly renders its empty state while rankings, platform distribution and recent publication activity remain visible.
+- The captured active upload begins at 0% because the Playwright network interceptor does not emit incremental browser upload events before releasing the response. The production path is XHR-based and its progress geometry and metrics are separately asserted; the approved corrected progress reference remains the visual source for the intermediate-percent state.
+
+final result: passed
+
+---
+
+# QA Composer Deterministic Three-State Layout
+
+Scope: Composer presentation only. Mode, Model, Thinking, indexing, sandbox, speech, enhancement, Send/Stop, events, state, Tooltip, ARIA, protocol, and service behavior remain unchanged.
+
+**Locked geometry**
+
+| Composer content width | Result |
+|---|---|
+| `<=300px` | Exactly two toolbar rows: labeled selectors followed by aggregate indexing, primary actions, conditional More, and Send/Stop fixed at the right edge. |
+| `301px` to density threshold | Existing two-row selector/action composition; indexing labels return at `560px`. |
+| No indexing at `>=620px` | All available direct controls share one centerline. |
+| Three indexes without optional Reset/Sandbox/Speech at `>=760px` | All available direct controls share one centerline. |
+| Indexing with any optional Reset/Sandbox/Speech at `>=860px` | All available direct controls share one centerline. |
+
+**Extreme-narrow behavior**
+
+- Code, Model, and Thinking remain readable rather than collapsing to icon-only controls. Long model labels use deterministic ellipsis.
+- CodeGraph, RAG, and Documents collapse into one upward-opening menu. Its persistent state priority is Error, In Progress, Warning, all-success, then neutral; the accessible label still enumerates all three pipelines and progress values.
+- Reset Model, Sandbox, and Speech move into a conditional More menu. Direct controls and menu items reuse the same production event and speech state paths.
+- All icons remain in Grid/Flex document flow. The layout uses no `position: absolute`, `display: contents`, `auto-fit`, or uncontrolled wrapping.
+
+**Verification**
+
+- Direct Composer-content-width coverage: `170, 200, 240, 280, 299, 300, 301, 340, 341, 559, 560, 619, 620, 621, 759, 760, 761, 859, 860, 861, 960, 1200, 1450px`.
+- Maximum-density and sparse fixtures verify two centerlines at extreme width, the existing medium layout, density-aware one-line entry, rightmost Send/Stop, preserved indexing state, no overlap, no escaped control, and no horizontal scrolling.
+- Manual captures at `170px`, `300px`, `560px`, and `860px` confirm the same geometry and Liquid Glass hierarchy.
+- Passed: six scoped Composer responsive/state tests, seven QA accessibility stories, Webview type checking, ESLint, Storybook, Knip, the Kilo marker guard, and extension compile. The complete accessibility file reports `21 passed / 2 unrelated timed out`; only the pre-existing Marketplace skills/agents empty-state stories failed to mount.
+
+final result: passed
+
+---
+
+# Historical QA Composer 0.0.67 Real VS Code Validation
+
+This section records the previously packaged `0.0.67` baseline. Its former `<=300px` three-row behavior is superseded in current source by the deterministic two-row layout documented above; no new VSIX was produced in this UI-only change.
+
+Real package: `chipmate.chipmate@0.0.67`, installed into an isolated profile of `/Applications/Visual Studio Code.app` before the main profile was upgraded.
+
+**Layout result**
+
+- Titanium Studio remains the final Composer geometry layer. At `301–380px`, selectors and actions use two deterministic rows with preserved indexing and utility groups; at `<=300px`, selectors, indexes, and utility actions use three semantic rows. No group is flattened through `display: contents`.
+- The real packaged Webview was measured at approximately `361px`, `394px`, and `441px`. Every case retained the expected selector row plus the index-left/action-right row, with zero control overlap and `scrollWidth === clientWidth`.
+- Exact isolated-profile zoom factors of `100%`, `125%`, and `150%` were exercised through `window.zoomLevel`. The measured Composer remained within the critical `360–440px` range and reported no overlap or horizontal overflow.
+- Index labels remain hidden in this compact range while their icons and state glyphs remain visible. Labeled modes at wider breakpoints retain the locked leading/trailing padding and cannot be compressed against the right border.
+
+**Real-package evidence**
+
+- `100%`: `/Users/archer/.codex/visualizations/2026/07/16/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-composer-0067-real-vscode/vscode-100-440.png`
+- `125%`: `/Users/archer/.codex/visualizations/2026/07/16/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-composer-0067-real-vscode/vscode-125-exact.png`
+- `150%`: `/Users/archer/.codex/visualizations/2026/07/16/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-composer-0067-real-vscode/vscode-150-exact.png`
+- Update manifest generated from the two delivered VSIX files: `/Users/archer/.codex/visualizations/2026/07/16/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-composer-0067-real-vscode/update-manifest-schema-v2.json`
+
+**Package and runtime checks**
+
+- The isolated VS Code Extension Host started the packaged `chipmate.chipmate-0.0.67` extension and its bundled CLI; the main VS Code profile was upgraded only after the isolated layout checks passed.
+- Both VSIX manifests keep `publisher=chipmate`, `name=chipmate`, version `0.0.67`, and their matching `chipmatePackageTarget`. Packaged ChipMate Server defaults resolve from `http://10.10.5.23:6001`; tracked source defaults were restored after packaging.
+- The update service generated `schemaVersion: 2` with matching `latestByTarget` entries, SHA-256 values, and byte sizes for `darwin-arm64` and `linux-x64-baseline`.
+- Linux validation is static only: packaged CLI and Indexer are Linux x86-64 ELF files, the Linux LanceDB native runtime and required offline resources are present, and FFmpeg/source maps are absent. No Linux target-machine runtime claim is made.
+
+final result: passed
+
+---
+
 # QA Composer Wide/Narrow Alignment Design QA
 
 Source visual truth: `/var/folders/9s/q5y69fzj3b59lt103v6y4f4m0000gn/T/codex-clipboard-e226639e-b58f-4c0d-9f6c-d1ae1577d98f.png`
@@ -71,22 +174,75 @@ Final evidence:
 - Wide dark `960px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/composer-dark-960.png`
 - Narrow dark `560px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/composer-dark-560.png`
 - Compact dark `420px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/composer-dark-420.png`
+- Maximum-density single row `1200px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-multi-width/composer-1200.png`
+- Maximum-density labeled two-row layout `620px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-multi-width/composer-620.png`
+- Maximum-density fixed four-column matrix `200px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-multi-width/composer-200.png`
 - Thinking dark/light/high contrast: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/thinking-dark-560.png`, `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/thinking-light-560.png`, `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/thinking-hc-560.png`
 
 **Findings**
 
 - No scoped P0/P1/P2 finding remains.
-- Composer content width `899px` stays in the two-row layout; `900px` switches to one row with selector and action centerlines within `2px`.
-- The action strip now has normal-flow indexing and utility groups. From `480px` through `899px`, the second row keeps labeled indexes on the left and utility actions on the right; `421–479px` keeps the same grouping with icon-only index controls.
-- At `<=420px`, selectors, indexing, and utility actions occupy deterministic rows. At `<=300px`, selector labels are hidden and Send/Stop remains in the last utility column.
+- The Composer has an independent `1240px` maximum width, so widening the QA panel no longer leaves it capped by the `98ch` message-reading lane. Message content keeps its existing readable width.
+- Composer content below `940px` stays in the deliberate two-zone layout; at `940px` and above, selectors, indexes, utility actions, and Send/Stop share one centerline within `2px`.
+- From `560px` through `939px`, the second row keeps labeled indexes on the left and utility actions on the right. At `421–559px`, only the visible index labels are removed; icons, persistent status glyphs, Tooltip content, and ARIA remain.
+- At `<=420px`, every index and utility action participates in one fixed four-column matrix in DOM order, with Send/Stop pinned to the final column. At `<=300px`, selector labels are hidden and the selector grid uses only the number of tracks required by the controls that actually exist.
+- Labeled CodeGraph, RAG, and Documents controls use `10px` leading padding, `12px` trailing padding, a `7px` icon-to-label gap, and non-shrinking intrinsic widths. The visible label-to-right-border distance is at least `11px`.
+- Reset, Auto Approve, Sandbox, Enhance, Speech, Send, and Stop expose stable internal hooks. Send/Stop use normal-flow Codicons rather than inline custom SVGs.
 - The Thinking menu uses one Titanium surface, `40px` rows, a blue-gray selected fill, a normal-flow Codicon check, and an inset blue keyboard-focus ring. Normal dark and light no longer expose the browser-native orange rectangle; genuine High Contrast retains its strong system focus boundary.
 - All production controls, index state hooks, Tooltip content, ARIA, keyboard order, events, and server/configuration contracts remain unchanged.
 
 **Quality gates**
 
-- Passed: QA responsive Playwright (`6 passed`), Thinking keyboard/focus Playwright (`1 passed`), accessibility Playwright (`16 passed`), extension and Webview typechecks, package ESLint, targeted ESLint, Storybook production build, Knip, Kilo marker check, and `bun run compile` including a fresh macOS CLI smoke test and final esbuild.
-- The complete `model-selector-accessibility.spec.ts` run remains `7 passed / 1 failed` because the existing Settings story no longer exposes the unrelated `Autocomplete model: Not set` control expected by its older assertion. The new Thinking test passes independently; this pre-existing Settings fixture mismatch was not changed in the Composer-only scope.
-- Storybook reports its existing unresolved bundled-font and large-chunk warnings, but completes successfully.
+- The five Composer-scoped QA Playwright checks pass across `200、240、280、300、301、320、420、421、479、480、519、520、559、560、720、939、940、960、1200、1450px`, including maximum-density and sparse controls, fixed matrices, label padding, index states, themes, Reduced Motion, Send, and Stop.
+- All six QA accessibility stories pass. The complete accessibility run reports `19 passed / 3 unrelated failed`; the remaining Marketplace and Agent Manager failures are outside Composer scope.
+- The complete QA responsive file still contains three unrelated reading/fixture drifts: a strict locator now matches two text wrappers, the user-message hover fixture no longer raises its action opacity, and the queued fixture no longer renders the user-message slot. No production Composer rule was changed to conceal these existing failures.
+- Webview typecheck, package lint, targeted ESLint, Storybook production build, Knip, Kilo marker check, and extension compile pass. Storybook retains its existing unresolved package/font and large-chunk warnings.
+
+scoped result: passed
+
+---
+
+# QA Task HUD and Message Flow Design QA
+
+Visual truth: `/Users/archer/.codex/generated_images/019f5e49-f6bc-77f0-8432-6a39e9928c99/exec-5a46c237-6065-47ce-9964-3fdd5737d4ce.png`
+
+Before evidence:
+
+- Dark `560px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/before/full-560.png`
+- Dark `1200px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/before/full-1200.png`
+
+Final evidence:
+
+- Dark narrow `560px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/dark-560.png`
+- Dark wide `1200px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/dark-1200.png`
+- Light `960px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/light-960.png`
+- High Contrast `960px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/hc-960.png`
+- Extreme narrow `300px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/full-300.png`
+- Todo two-column boundary `940px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/full-940.png`
+
+**Container and material audit**
+
+- Task title, cost/context summary, timeline, Token bars, Token totals, Memory, Todo summary, Todo list, search, and every existing control remain in their original order and keep their original event bindings. A single static `qa-task-hud` wrapper now owns the outer glass boundary, blur, inner highlight, and shadow.
+- HUD child sections stay transparent and use only restrained horizontal separators. At `>=940px`, the existing graph/totals region and an expanded Todo list use deterministic Grid placement; below it, Todo items return to one column. At `<=300px`, title and statistics use explicit rows rather than free wrapping.
+- The conversation uses separate work and reading lanes: semantic tools and artifacts may use the wider work lane, while assistant text and reasoning remain within the `760px` reading measure.
+- User messages retain one right-aligned lightweight glass bubble. Assistant text and reasoning remain unboxed, with the Titanium text scale and `1.55` line height.
+- Each outer transcript part is now a borderless positioning shell. Skill, normal tool execution, Bash, Todo, Question, Permission, Error, Suggest, and Document Artifact continue to own their real semantic surface. Artifact output has one visible card boundary instead of inheriting a second parent boundary.
+- Collapsed tools use a quiet titanium rail; expanded tools receive the stronger raised surface. Skill is a compact capability rail. Semantic warning/error/success colors and non-color status cues remain unchanged.
+- Light mode uses pale Titanium surfaces. Genuine High Contrast removes blur and shadow, uses the editor background, and restores `contrastBorder`. Reduced Motion keeps existing state information while suppressing decorative motion.
+
+**Behavior and responsive guarantees**
+
+- Production changes are limited to one static Task Header layout wrapper, one static transcript-part style hook, Storybook fixtures, tests, and Titanium CSS. `MessageList`, Transcript processing, Session Context, QA state, CLI, SDK, configuration schema, indexing protocol, extension messages, and user storage were not changed.
+- Composer remains owned exclusively by the existing `prompt-input` Container Query. Its `940/560/420/300px` single-row, grouped-row, four-column, and compact-selector geometry is unchanged.
+- New HUD/message assertions cover `200、240、280、300、301、320、420、421、479、480、519、520、559、560、720、939、940、960、1200、1450px`: no horizontal overflow, escaped HUD, duplicate parent border, or nondeterministic Todo columns were observed.
+- The complete visual fixture now includes a user prompt, Skill, historical Todo, normal tools, expanded Bash, Artifact, running state, current Task Header Todo data, and the full existing Composer through the same production data interfaces.
+
+**Quality gates**
+
+- Passed: eight scoped QA responsive tests, including all existing dense/sparse Composer geometry and the new HUD/message checks. The remaining queued-message test times out before CSS assertions because its existing Story no longer renders `user-message-text`; no production transcript logic was changed to hide that unrelated Fixture drift.
+- Passed: the new full-conversation WCAG story, Webview and extension typecheck, package lint, targeted ESLint, Storybook production build, Knip, and Kilo marker check.
+- The complete accessibility run retains three unrelated failures: two removed Marketplace story IDs and one existing Agent Manager sidebar-search finding. The new QA full-conversation scan passes with no automated WCAG violation.
+- Storybook retains its existing unresolved-package/font and large-chunk warnings. These warnings do not block the successful production build.
 
 scoped result: passed
 

@@ -1765,6 +1765,13 @@ export type Config = {
     disable_paste_summary?: boolean
     batch_tool?: boolean
     codebase_search?: boolean
+    /**
+     * Repair leaked DeepSeek DSML tool calls only for the exact target in "provider/model" format (default: disabled)
+     */
+    dsml_tool_call_repair?: {
+      enabled?: boolean
+      model?: string
+    }
     image_generation?: boolean
     image_generation_model?: string
     agent_requirements?: boolean

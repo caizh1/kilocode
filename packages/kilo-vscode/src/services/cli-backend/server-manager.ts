@@ -38,11 +38,6 @@ export function resolveServerCwd(folders: readonly WorkspaceFolderLike[] | undef
   return folders?.[0]?.uri.fsPath ?? storage
 }
 
-export function resolveIndexingEnv(folders: readonly WorkspaceFolderLike[] | undefined): Record<string, string> {
-  if (folders && folders.length > 0) return {}
-  return { KILO_DISABLE_CODEBASE_INDEXING: "vscode-no-workspace" }
-}
-
 export function buildBundledToolEnv(root: string, base: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const key = pathKey(base)
   const bin = path.join(root, "bin")
@@ -136,7 +131,6 @@ export class ServerManager {
       const folders = vscode.workspace.workspaceFolders
       const spawnCwd = resolveServerCwd(folders, this.context.globalStorageUri.fsPath)
       fs.mkdirSync(spawnCwd, { recursive: true })
-      const indexingEnv = resolveIndexingEnv(folders)
       const localCli =
         this.context.extensionMode === vscode.ExtensionMode.Development ||
         fs.existsSync(path.join(this.context.extensionPath, "bin", ".cli-version"))
@@ -186,7 +180,6 @@ export class ServerManager {
           KILOCODE_FEATURE: "vscode-extension",
           ...internal,
           ...indexingControl,
-          ...indexingEnv,
           KILO_TELEMETRY_LEVEL: vscode.env.isTelemetryEnabled ? "all" : "off",
           KILO_APP_NAME: "chipmate",
           KILO_EDITOR_NAME: vscode.env.appName,
@@ -401,12 +394,8 @@ function redactEndpoint(value: string): string {
 
 function indexingControlEnv(internal: Record<string, string>): Record<string, string> {
   const cfg = vscode.workspace.getConfiguration("kilo.indexing")
-  const enabled = cfg.get<boolean>("enabled", true)
   const openAICompatibleBaseUrl = cfg.get<string>("openaiCompatible.baseUrl", "").trim()
   return {
-    ...(enabled === false && !process.env.KILO_DISABLE_CODEBASE_INDEXING
-      ? { KILO_DISABLE_CODEBASE_INDEXING: "vscode-disabled" }
-      : {}),
     ...(Object.keys(internal).length > 0 &&
     openAICompatibleBaseUrl &&
     !process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL

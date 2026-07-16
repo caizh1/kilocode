@@ -149,6 +149,11 @@ export interface MarketCapabilities {
     repairs: boolean
     analytics: boolean
     events: boolean
+    extensions?: boolean
+    extensionPublications?: boolean
+    extensionReviews?: boolean
+    extensionAnalytics?: boolean
+    extensionDirectoryImport?: boolean
   }
 }
 

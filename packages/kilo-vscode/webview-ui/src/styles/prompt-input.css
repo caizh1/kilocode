@@ -639,36 +639,36 @@
 }
 
 @container prompt-input (max-width: 420px) {
-  .prompt-input-hint {
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .prompt-input-hint-selectors {
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-selectors {
     width: 100%;
     flex: 1 1 auto;
     flex-wrap: nowrap;
   }
 
-  .prompt-input-hint-selectors .prompt-selector-trigger--mode {
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-selectors .prompt-selector-trigger--mode {
     flex: 0 1 86px;
     min-width: 82px;
     max-width: 92px;
   }
 
-  .prompt-input-hint-selectors .prompt-selector-trigger--model {
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-selectors .prompt-selector-trigger--model {
     flex: 1 1 92px;
     min-width: 64px;
     max-width: none;
   }
 
-  .prompt-input-hint-selectors .prompt-selector-trigger--thinking {
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-selectors .prompt-selector-trigger--thinking {
     flex: 0 1 100px;
     min-width: 96px;
     max-width: 104px;
   }
 
-  .prompt-input-hint-actions {
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-actions {
     width: 100%;
     margin-left: 0;
     align-self: stretch;
@@ -676,23 +676,23 @@
 }
 
 @container prompt-input (max-width: 300px) {
-  .prompt-input-hint {
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint {
     flex-direction: row;
     align-items: center;
     gap: 5px;
   }
 
-  .prompt-input-hint-selectors {
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-selectors {
     width: auto;
     flex: 0 0 auto;
     flex-wrap: nowrap;
     gap: 4px;
   }
 
-  .prompt-input-hint-selectors .prompt-selector-trigger,
-  .prompt-input-hint-selectors .prompt-selector-trigger--mode,
-  .prompt-input-hint-selectors .prompt-selector-trigger--model,
-  .prompt-input-hint-selectors .prompt-selector-trigger--thinking {
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-selectors .prompt-selector-trigger,
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-selectors .prompt-selector-trigger--mode,
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-selectors .prompt-selector-trigger--model,
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-selectors .prompt-selector-trigger--thinking {
     width: 28px;
     min-width: 28px;
     max-width: 28px;
@@ -701,15 +701,27 @@
     padding: 0 !important;
   }
 
-  .prompt-input-hint-selectors .prompt-selector-trigger .model-selector-trigger-label,
-  .prompt-input-hint-selectors .prompt-selector-trigger .mode-switcher-trigger-label,
-  .prompt-input-hint-selectors .prompt-selector-trigger .thinking-selector-trigger-label,
-  .prompt-input-hint-selectors .prompt-selector-trigger .model-selector-trigger-free-data,
-  .prompt-input-hint-selectors .prompt-selector-chevron {
+  .prompt-input-container:not([data-ui="qa-composer"])
+    .prompt-input-hint-selectors
+    .prompt-selector-trigger
+    .model-selector-trigger-label,
+  .prompt-input-container:not([data-ui="qa-composer"])
+    .prompt-input-hint-selectors
+    .prompt-selector-trigger
+    .mode-switcher-trigger-label,
+  .prompt-input-container:not([data-ui="qa-composer"])
+    .prompt-input-hint-selectors
+    .prompt-selector-trigger
+    .thinking-selector-trigger-label,
+  .prompt-input-container:not([data-ui="qa-composer"])
+    .prompt-input-hint-selectors
+    .prompt-selector-trigger
+    .model-selector-trigger-free-data,
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-selectors .prompt-selector-chevron {
     display: none;
   }
 
-  .prompt-input-hint-actions {
+  .prompt-input-container:not([data-ui="qa-composer"]) .prompt-input-hint-actions {
     width: auto;
     flex: 1 1 96px;
     margin-left: 0;

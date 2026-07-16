@@ -27451,6 +27451,19 @@
               "codebase_search": {
                 "type": "boolean"
               },
+              "dsml_tool_call_repair": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Repair leaked DeepSeek DSML tool calls only for the exact target in \"provider/model\" format (default: disabled)"
+              },
               "image_generation": {
                 "type": "boolean"
               },

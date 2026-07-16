@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { validateSkillArchive } from "@chipmate/skill-spec"
 
+import { createSkillArchive } from "../../src/services/marketplace/archive"
 import {
   buildMarketplaceBuiltinSkillUploadPayload,
   buildMarketplaceSkillUploadPayload,
@@ -49,6 +51,11 @@ describe("marketplace skill upload scanner", () => {
       ])
       expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf8")).toContain("name: Fancy Skill")
       await expect(fs.access(path.join(dir, "skill.json"))).rejects.toThrow()
+
+      const snapshot = validateSkillArchive(createSkillArchive(payload.id, payload.files))
+      expect(snapshot.valid).toBe(true)
+      expect(snapshot.changed).toBe(false)
+      expect(snapshot.issues.some((issue) => issue.code === "frontmatter-normalize")).toBe(false)
     })
   })
 

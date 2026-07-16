@@ -1905,4 +1905,9 @@ export const dict = {
   "chat.search.invalidRegex": "Недійсний регулярний вираз",
   "chat.search.noResults": "Немає результатів",
   "chat.search.searchingHistory": "Пошук у попередніх повідомленнях…",
+  "settings.experimental.dsml.title": "Відновлення викликів інструментів DSML",
+  "settings.experimental.dsml.description":
+    "Відновлювати витіклі виклики DeepSeek DSML лише для вибраного провайдера й моделі",
+  "settings.experimental.dsmlModel.title": "Цільова модель DSML",
+  "settings.experimental.dsmlModel.description": "Виберіть єдиного провайдера й модель, яким дозволено розбір DSML",
 }

@@ -1,6 +1,7 @@
 import { copyFile, mkdir, rm, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import JSZip from "jszip"
 
 async function main() {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -11,7 +12,7 @@ async function main() {
     "../../docs/chipmate-skill-market-alignment-evidence/g0/source-backed-detail-design.tar.gz",
   )
 
-  const owned = ["source", "e2e-db", "e2e-legacy", "e2e-packages", "e2e-results"]
+  const owned = ["source", "e2e-db", "e2e-legacy", "e2e-packages", "e2e-extensions", "e2e-results"]
   await Promise.all(owned.map((dir) => rm(resolve(runtime, dir), { recursive: true, force: true })))
   await mkdir(resolve(source, "skills"), { recursive: true })
   await copyFile(archive, resolve(source, "skills/source-backed-detail-design.tar.gz"))
@@ -122,7 +123,42 @@ async function main() {
     )}\n`,
   )
 
-  console.log(`Preview market seeded at ${source}`)
+  const drop = resolve(runtime, "e2e-extensions/drop")
+  await mkdir(drop, { recursive: true })
+  const extensions = [
+    { publisher: "chipmate", name: "chipmate", displayName: "ChipMate", version: "0.0.67", target: "win32-x64", category: "Other", note: "团队 AI 编程助手" },
+    { publisher: "ramaxel", name: "cpp-hybrid", displayName: "C/C++ Hybrid Retrieval", version: "2.4.0-beta.2", target: "linux-x64", category: "Programming Languages", note: "Graph + BM25 构建 A" },
+    { publisher: "ramaxel", name: "cpp-hybrid", displayName: "C/C++ Hybrid Retrieval", version: "2.4.0-beta.2", target: "linux-x64", category: "Programming Languages", note: "Graph + BM25 构建 B" },
+    { publisher: "ramaxel", name: "cpp-hybrid", displayName: "C/C++ Hybrid Retrieval", version: "2.3.0", target: "universal", category: "Programming Languages", note: "通用稳定版" },
+    { publisher: "ramaxel", name: "rag-explorer", displayName: "RAG Index Explorer", version: "1.5.1", target: "universal", category: "Other", note: "查看索引与召回证据" },
+    { publisher: "ramaxel", name: "mermaid-preview", displayName: "Mermaid Preview", version: "1.2.0", target: "darwin-arm64", category: "Other", note: "离线 Mermaid 预览" },
+    { publisher: "ramaxel", name: "api-guardian", displayName: "API Contract Guardian", version: "3.0.0", target: "universal", category: "Linters", note: "接口契约漂移检查" },
+  ]
+  for (const [index, item] of extensions.entries()) {
+    const zip = new JSZip()
+    zip.file(
+      "extension/package.json",
+      JSON.stringify({
+        publisher: item.publisher,
+        name: item.name,
+        displayName: item.displayName,
+        description: item.note,
+        version: item.version,
+        engines: { vscode: "^1.95.0" },
+        categories: [item.category],
+        keywords: ["ChipMate", "VSIX", item.target],
+      }),
+    )
+    zip.file(
+      "extension.vsixmanifest",
+      `<PackageManifest><Metadata><Identity Id="${item.name}" Publisher="${item.publisher}" Version="${item.version}" TargetPlatform="${item.target}" /></Metadata></PackageManifest>`,
+    )
+    zip.file("extension/README.md", `# ${item.displayName}\n\n${item.note}\n\n预览构建 ${index + 1}。`)
+    const data = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })
+    await writeFile(resolve(drop, `${item.publisher}-${item.name}-${item.version}-${item.target}-${index + 1}.vsix`), data)
+  }
+
+  console.log(`Preview market seeded at ${source}; extension VSIX files seeded at ${drop}`)
 }
 
 void main()

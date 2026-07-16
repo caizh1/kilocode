@@ -31,7 +31,8 @@ type Target = {
 
 const packageJsonPath = join(import.meta.dir, "..", "package.json")
 const rootDir = join(import.meta.dir, "..", "..", "..")
-const packageJson = await Bun.file(packageJsonPath).json()
+const cleanPackageJson = await Bun.file(packageJsonPath).text()
+const packageJson = JSON.parse(cleanPackageJson)
 const version = process.env.KILO_VERSION ? process.env.KILO_VERSION : packageJson.version
 const prerelease = process.env.KILO_PRE_RELEASE === "true"
 const internal = process.argv.includes("--internal-offline") || process.env.CHIPMATE_INTERNAL_OFFLINE === "1"
@@ -51,21 +52,12 @@ if (internal) console.log("Using internal offline baseline build mode")
 if (packageJson.version !== version) {
   console.log(`Updating package.json version from ${packageJson.version} to ${version}`)
   packageJson.version = version
-  await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n")
 }
-const cleanPackageJson = JSON.stringify(packageJson, null, 2) + "\n"
 const render = await localRenderDefaults(rootDir)
 const indexing = await localIndexingDefaults(rootDir)
 const marketplace = await localMarketplaceDefaults(rootDir)
 const chipmate = await localChipmateServerDefaults(rootDir, render, marketplace)
 const hasLocalPackagedDefaults = Boolean(chipmate.baseUrl || indexing.openaiCompatibleBaseUrl)
-if (hasLocalPackagedDefaults) {
-  applyPackagedChipmateServer(packageJson, chipmate)
-  applyIndexingDefaults(packageJson, indexing)
-  applyMarketplaceDefaults(packageJson, { baseUrl: chipmate.marketplace })
-  await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n")
-  console.log("Using local defaults for packaged VSIX manifest.")
-}
 
 const cliDistDir = process.env.CLI_DIST_DIR || join(import.meta.dir, "..", "..", "opencode", "dist")
 console.log(`Using CLI dist directory: ${cliDistDir}`)
@@ -151,6 +143,14 @@ await $`node ${join(import.meta.dir, "..", "esbuild.js")} ${esbuildArgs}`.env({
 if (internal) removeMaps(distDir)
 
 try {
+  if (hasLocalPackagedDefaults) {
+    applyPackagedChipmateServer(packageJson, chipmate)
+    applyIndexingDefaults(packageJson, indexing)
+    applyMarketplaceDefaults(packageJson, { baseUrl: chipmate.marketplace })
+    await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n")
+    console.log("Using local defaults for packaged VSIX manifest.")
+  }
+
   for (const config of targets) {
     console.log(`\n🎯 Processing target: ${config.target}`)
     packageJson.chipmatePackageTarget = config.target
@@ -413,6 +413,8 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     "extension/bin/codegraph-parser-worker.mjs",
     "extension/bin/kilo-sandbox-mutation-worker.js",
     "extension/bin/tree-sitter/tree-sitter.wasm",
+    "extension/bin/tree-sitter/tree-sitter-c.wasm",
+    "extension/bin/tree-sitter/tree-sitter-cpp.wasm",
     "extension/bin/lancedb/node_modules/@lancedb/lancedb/dist/index.js",
     "extension/bin/lancedb/node_modules/@lancedb/lancedb/dist/native.js",
     "extension/bin/lancedb/node_modules/apache-arrow/Arrow.node.js",
@@ -433,7 +435,10 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     )
   }
   if ((config.vsceTarget ?? config.target) === "linux-x64") {
-    required.push("extension/bin/lancedb/node_modules/@lancedb/lancedb-linux-x64-gnu/lancedb.linux-x64-gnu.node")
+    required.push(
+      "extension/bin/rg",
+      "extension/bin/lancedb/node_modules/@lancedb/lancedb-linux-x64-gnu/lancedb.linux-x64-gnu.node",
+    )
   }
   for (const file of required) {
     if (!files.includes(file)) throw new Error(`Internal VSIX missing required file: ${file}`)

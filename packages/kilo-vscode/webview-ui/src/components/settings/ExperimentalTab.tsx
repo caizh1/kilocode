@@ -51,6 +51,7 @@ const ExperimentalTab: Component = () => {
   })
 
   const experimental = createMemo(() => config().experimental ?? {})
+  const dsml = createMemo(() => experimental().dsml_tool_call_repair ?? {})
   const kiloReady = createMemo(() => hasSpeechToTextAccess(config(), provider.authStates()))
   const speechModel = createMemo(() => selectedSpeechToTextModel(config()))
 
@@ -58,6 +59,10 @@ const ExperimentalTab: Component = () => {
     updateConfig({
       experimental: { ...experimental(), [key]: value },
     })
+  }
+
+  const setDsml = (patch: { enabled?: boolean; model?: string }) => {
+    updateExperimental("dsml_tool_call_repair", { ...dsml(), ...patch })
   }
 
   return (
@@ -166,6 +171,40 @@ const ExperimentalTab: Component = () => {
           >
             {language.t("settings.experimental.codebaseSearch.title")}
           </Switch>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.experimental.dsml.title")}
+          description={language.t("settings.experimental.dsml.description")}
+        >
+          <Switch
+            checked={dsml().enabled === true && !!dsml().model}
+            disabled={!dsml().model}
+            onChange={(checked) => setDsml({ enabled: checked })}
+            hideLabel
+          >
+            {language.t("settings.experimental.dsml.title")}
+          </Switch>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.experimental.dsmlModel.title")}
+          description={language.t("settings.experimental.dsmlModel.description")}
+        >
+          <ModelSelectorBase
+            value={parseModelString(dsml().model)}
+            onSelect={(providerID, modelID) =>
+              setDsml({
+                enabled: providerID && modelID ? dsml().enabled : false,
+                model: providerID && modelID ? `${providerID}/${modelID}` : undefined,
+              })
+            }
+            placement="bottom-start"
+            allowClear
+            clearLabel={language.t("settings.providers.notSet")}
+            label={language.t("settings.experimental.dsmlModel.title")}
+            description={language.t("settings.experimental.dsmlModel.description")}
+          />
         </SettingsRow>
 
         <Show when={!internal}>

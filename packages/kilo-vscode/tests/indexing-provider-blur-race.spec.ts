@@ -53,7 +53,9 @@ test("custom embedding settings survive blur and same-provider refreshes", async
   await expect(model).toHaveValue("qwen3-embedding-8b")
   await expect(dimension).toHaveValue("2048")
 
-  await model.fill("custom-click-model")
+  await model.click()
+  await model.press("ControlOrMeta+A")
+  await model.pressSequentially("custom-click-model", { delay: 10 })
   await dimension.click()
   await expect(model).toHaveValue("custom-click-model")
   await expect(dimension).toHaveValue("2048")
@@ -71,7 +73,9 @@ test("custom embedding settings survive blur and same-provider refreshes", async
   await expect(model).toHaveValue("custom-blank-model")
   await expect.poll(async () => (await saved(page)).model).toBe("custom-blank-model")
 
-  await dimension.fill("1536")
+  await dimension.click()
+  await dimension.press("ControlOrMeta+A")
+  await dimension.pressSequentially("1536", { delay: 10 })
   await model.click()
   await expect(model).toHaveValue("custom-blank-model")
   await expect(dimension).toHaveValue("1536")

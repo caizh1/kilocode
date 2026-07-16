@@ -5,6 +5,8 @@ const WIDTHS = [360, 480, 560, 720, 900, 1200, 1450]
 
 async function load(page: Page, width: number, theme = "dark-modern") {
   await page.setViewportSize({ width, height: 900 })
+  const scheme = theme === "light-modern" || theme === "hc-light" ? "light" : "dark"
+  await page.emulateMedia({ colorScheme: scheme })
   const globals = theme === "dark-modern" ? GLOBALS : `colorScheme:dark;theme:kilo-vscode;vscodeTheme:${theme}`
   await page.goto(`/iframe.html?id=settings--settings-titanium-responsive&viewMode=story&globals=${globals}`, {
     waitUntil: "load",
@@ -85,7 +87,10 @@ test("every Settings tab remains reachable in the Titanium shell", async ({ page
 
 test("Light and High Contrast keep accessible material fallbacks", async ({ page }) => {
   await load(page, 900, "light-modern")
-  await expect(page.locator("[data-ui='settings-shell']")).toBeVisible()
+  const light = page.locator("[data-ui='settings-shell']")
+  await expect(light).toBeVisible()
+  await expect(page.locator("[data-ui='settings-navigation']")).toHaveCSS("width", "176px")
+  await expect(page.locator("[data-ui='settings-content']")).toHaveCSS("background-color", "rgba(255, 255, 255, 0.72)")
 
   await load(page, 900, "hc-black")
   const panel = page.locator("[data-ui='settings-content']").first()
@@ -96,6 +101,16 @@ test("Light and High Contrast keep accessible material fallbacks", async ({ page
   expect(style.border).toBe("1px")
   expect(style.blur).toBe("none")
   expect(style.shadow).toBe("none")
+})
+
+test("Light Settings locks navigation widths at every responsive boundary", async ({ page }) => {
+  for (const width of [360, 480, 559, 560, 561, 719, 720, 721, 900, 1199, 1200, 1201, 1450]) {
+    await load(page, width, "light-modern")
+    const nav = page.locator("[data-ui='settings-navigation']")
+    const expected = width <= 719 ? 56 : width <= 1199 ? 176 : 216
+    await expect(nav, `light navigation width at ${width}px`).toHaveCSS("width", `${expected}px`)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  }
 })
 
 test("Settings close control fires once per mouse or keyboard activation", async ({ page }) => {

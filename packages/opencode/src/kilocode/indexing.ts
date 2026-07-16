@@ -50,9 +50,25 @@ const log = Log.create({ service: "kilocode-indexing" })
 const auth = makeRuntime(Auth.Service, Auth.defaultLayer)
 const UNKNOWN_INITIALIZATION_ERROR = "Unknown indexing initialization error"
 const missing = () => disabledIndexingStatus("Indexing plugin is not enabled for this workspace.")
-const noWorkspace = () =>
-  disabledIndexingStatus("Codebase indexing is disabled because no workspace folder is open in VS Code.")
-const vscodeDisabled = () => disabledIndexingStatus("Codebase indexing is disabled by the VS Code setting.")
+
+function disabledByEnvironment(reason: string) {
+  const detail = sanitizeDiagnosticMessage(reason) || "true"
+  return disabledIndexingStatus(`Codebase indexing is disabled by KILO_DISABLE_CODEBASE_INDEXING (reason: ${detail}).`)
+}
+
+function disableReason(): string | undefined {
+  const value = process.env["KILO_DISABLE_CODEBASE_INDEXING"]?.trim()
+  if (!value || ["0", "false", "off", "no"].includes(value.toLowerCase())) return undefined
+  return value
+}
+
+function resolveConfig(config?: IndexingConfig, global?: IndexingConfig) {
+  return applyInternalIndexingDefaults({
+    ...global,
+    ...config,
+    enabled: config?.enabled ?? global?.enabled,
+  })
+}
 
 export const IndexingModelError = NamedError.create("IndexingModelError", {
   model: Schema.String,
@@ -62,10 +78,10 @@ async function inputFromConfig(cfg: Config.Info): Promise<ReturnType<typeof toIn
   const auth = await kiloAuth(cfg)
   const globalConfig = await AppRuntime.runPromise(Config.Service.use((svc) => svc.getGlobal()))
   const global = globalConfig.indexing
-  const merged = indexingWithKiloDefault(applyInternalIndexingDefaults({ ...global, ...cfg.indexing }), auth)
+  const merged = indexingWithKiloDefault(resolveConfig(cfg.indexing, global), auth)
   const raw = toIndexingConfigInput({
     ...merged,
-    enabled: merged?.enabled === true || global?.enabled === true,
+    enabled: merged?.enabled === true,
   })
   return model(enrichKilo(raw, auth), auth)
 }
@@ -387,9 +403,10 @@ export namespace KiloIndexing {
   export type Status = z.infer<typeof Status>
 
   export function input(config?: IndexingConfig, global?: IndexingConfig) {
+    const merged = resolveConfig(config, global)
     return toIndexingConfigInput({
-      ...config,
-      enabled: config?.enabled ?? global?.enabled ?? false,
+      ...merged,
+      enabled: merged?.enabled === true,
     })
   }
 
@@ -451,12 +468,8 @@ export namespace KiloIndexing {
     )
     const baseline = startup.baseline
     const cfg = startup.cfg
-    if (process.env["KILO_DISABLE_CODEBASE_INDEXING"] === "vscode-no-workspace") {
-      return track(hit, await inert(() => noWorkspace()))
-    }
-    if (process.env["KILO_DISABLE_CODEBASE_INDEXING"] === "vscode-disabled") {
-      return track(hit, await inert(() => vscodeDisabled()))
-    }
+    const reason = disableReason()
+    if (reason) return track(hit, await inert(() => disabledByEnvironment(reason)))
     if (!hasIndexingPlugin(cfg.plugin)) {
       return track(hit, await inert(() => missing()))
     }
@@ -488,11 +501,7 @@ export namespace KiloIndexing {
     let base: Entry
 
     const same = (left: Status | undefined, right: Status) =>
-      left?.state === right.state &&
-      left.message === right.message &&
-      left.processedFiles === right.processedFiles &&
-      left.totalFiles === right.totalFiles &&
-      left.percent === right.percent
+      left !== undefined && JSON.stringify(left) === JSON.stringify(right)
     const report = Instance.bind((next = current()) => {
       delivery.task = delivery.task
         .then(async () => {
@@ -515,7 +524,6 @@ export namespace KiloIndexing {
       const previous = current()
       box.status = next
       if (next.state === "Complete") recoveryAttempt = 0
-      void report()
       if (same(previous, next)) return
       const immediate = previous.state !== next.state || next.state !== "In Progress"
       if (immediate) {

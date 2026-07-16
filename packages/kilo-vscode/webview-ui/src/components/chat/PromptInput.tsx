@@ -7,6 +7,7 @@ import { createSignal, createEffect, on, For, Index, onCleanup, Show, untrack, t
 import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
+import { DropdownMenu } from "@kilocode/kilo-ui/dropdown-menu"
 import { FileIcon } from "@kilocode/kilo-ui/file-icon"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { showToast } from "@kilocode/kilo-ui/toast"
@@ -22,7 +23,7 @@ import { useProvider } from "../../context/provider"
 import { ModelSelector } from "../shared/ModelSelector"
 import { ModeSwitcher } from "../shared/ModeSwitcher"
 import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButton"
-import { SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
+import { speechAction, SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
 import { canUseSpeechToText, selectedSpeechToTextModel } from "../speech-to-text/availability"
 import { ThinkingSelector } from "../shared/ThinkingSelector"
 import { useFileMention } from "../../hooks/useFileMention"
@@ -105,13 +106,7 @@ const IndexingProgressButton: Component<{
     return `inset(${inset}% 0 0 0)`
   }
   const state = () => (props.status().state === "In Progress" ? "indexing" : props.status().state.toLowerCase())
-  const mark = () => {
-    if (props.status().state === "Error") return "error"
-    if (props.status().state === "In Progress") return "sync"
-    if (tone() === "success") return "check"
-    if (tone() === "warning") return "warning"
-    return "circle-outline"
-  }
+  const mark = () => indexingMark(props.status())
   const label = () => {
     const status = props.status()
     const issues =
@@ -127,6 +122,7 @@ const IndexingProgressButton: Component<{
         onClick={props.onClick}
         aria-label={label()}
         aria-busy={props.status().state === "In Progress"}
+        data-ui="qa-indexing-item"
         data-state={state()}
         data-tone={tone()}
         data-progress={progress()}
@@ -145,6 +141,100 @@ const IndexingProgressButton: Component<{
         </span>
       </Button>
     </Tooltip>
+  )
+}
+
+type IndexingItem = {
+  title: string
+  label: string
+  icon: "graph" | "database" | "book"
+  status: IndexingPipelineStatus
+}
+
+const indexingMark = (status: IndexingPipelineStatus) => {
+  const tone = indexingPipelineTone(status)
+  if (status.state === "Error") return "error"
+  if (status.state === "In Progress") return "sync"
+  if (tone === "success") return "check"
+  if (tone === "warning") return "warning"
+  return "circle-outline"
+}
+
+const IndexingSummaryMenu: Component<{
+  items: () => IndexingItem[]
+  onSelect: () => void
+}> = (props) => {
+  const statuses = () => props.items().map((item) => item.status)
+  const tone = () => {
+    const list = statuses()
+    if (list.some((status) => indexingPipelineTone(status) === "error")) return "error"
+    if (list.some((status) => status.state === "In Progress")) return "warning"
+    if (list.some((status) => indexingPipelineTone(status) === "warning")) return "warning"
+    if (list.length > 0 && list.every((status) => indexingPipelineTone(status) === "success")) return "success"
+    return "muted"
+  }
+  const state = () => {
+    const list = statuses()
+    if (list.some((status) => indexingPipelineTone(status) === "error")) return "error"
+    if (list.some((status) => status.state === "In Progress")) return "indexing"
+    if (list.some((status) => indexingPipelineTone(status) === "warning")) return "warning"
+    if (list.length > 0 && list.every((status) => indexingPipelineTone(status) === "success")) return "complete"
+    return "standby"
+  }
+  const mark = () => {
+    if (state() === "error") return "error"
+    if (state() === "indexing") return "sync"
+    if (state() === "warning") return "warning"
+    if (state() === "complete") return "check"
+    return "circle-outline"
+  }
+  const label = () =>
+    `Indexing: ${props
+      .items()
+      .map((item) => `${item.label} ${item.status.state} ${item.status.percent}%`)
+      .join(", ")}`
+
+  return (
+    <DropdownMenu gutter={6} placement="top-start">
+      <Tooltip value={label()} placement="top">
+        <DropdownMenu.Trigger
+          class="prompt-indexing-summary-button"
+          data-ui="qa-indexing-summary"
+          data-state={state()}
+          data-tone={tone()}
+          aria-label={label()}
+          aria-busy={statuses().some((status) => status.state === "In Progress")}
+        >
+          <span class="prompt-indexing-summary-stack" aria-hidden="true">
+            <span class="codicon codicon-graph" />
+            <span class={`codicon codicon-${mark()} prompt-indexing-summary-state`} />
+          </span>
+        </DropdownMenu.Trigger>
+      </Tooltip>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          class="prompt-compact-menu prompt-indexing-summary-menu"
+          data-ui="qa-indexing-summary-menu"
+        >
+          <For each={props.items()}>
+            {(item) => (
+              <DropdownMenu.Item class="prompt-indexing-summary-item" onSelect={props.onSelect}>
+                <span class={`codicon codicon-${item.icon} prompt-compact-menu-icon`} aria-hidden="true" />
+                <DropdownMenu.ItemLabel class="prompt-indexing-summary-label">
+                  <span>{item.label}</span>
+                  <span>{`${item.status.state} · ${item.status.percent}%`}</span>
+                </DropdownMenu.ItemLabel>
+                <span
+                  class={`codicon codicon-${indexingMark(item.status)} prompt-indexing-summary-item-state`}
+                  data-tone={indexingPipelineTone(item.status)}
+                  aria-hidden="true"
+                />
+              </DropdownMenu.Item>
+            )}
+          </For>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu>
   )
 }
 
@@ -1484,10 +1574,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 size="small"
                 onClick={() => session.clearModelOverride(sid())}
                 aria-label={language.t("prompt.action.resetModel")}
+                class="prompt-selector-reset"
+                data-ui="qa-selector-reset"
               >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" />
-                </svg>
+                <span class="codicon codicon-close prompt-action-codicon" aria-hidden="true" />
               </Button>
             </Tooltip>
           </Show>
@@ -1495,6 +1585,29 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         <div class="prompt-input-hint-actions" data-ui="qa-composer-actions">
           <Show when={showIndexing()}>
             <div class="prompt-input-indexing-actions" data-ui="qa-indexing-actions">
+              <IndexingSummaryMenu
+                items={() => [
+                  {
+                    title: "CodeGraph index",
+                    label: "CodeGraph",
+                    icon: "graph",
+                    status: indexing.pipelines().codeGraph,
+                  },
+                  {
+                    title: "RAG index",
+                    label: "RAG",
+                    icon: "database",
+                    status: indexing.pipelines().rag,
+                  },
+                  {
+                    title: "Documents index",
+                    label: "Documents",
+                    icon: "book",
+                    status: indexing.pipelines().documents,
+                  },
+                ]}
+                onSelect={handleOpenIndexingSettings}
+              />
               <IndexingProgressButton
                 title="CodeGraph index"
                 label="CodeGraph"
@@ -1541,6 +1654,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 }
                 aria-pressed={autoApprove()}
                 class={`prompt-status-button ${autoApprove() ? "prompt-status-button--active" : ""}`}
+                data-ui="qa-action-auto-approve"
               >
                 <Icon name="shield" size="small" />
               </Button>
@@ -1563,12 +1677,75 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 onClick={handleEnhance}
                 disabled={!canEnhance()}
                 aria-label={language.t("prompt.action.enhance")}
+                data-ui="qa-action-enhance"
               >
                 <WandSparkles size={16} class={enhancing() ? "enhance-spinner" : ""} />
               </Button>
             </Tooltip>
             <Show when={canUseSpeech()}>
               <SpeechToTextButton speech={speech} disabled={isDisabled()} start={startSpeech} label={language.t} />
+            </Show>
+            <Show when={session.hasModelOverride(sid()) || sandboxVisible() || canUseSpeech()}>
+              <DropdownMenu gutter={6} placement="top-end">
+                <Tooltip value={language.t("common.moreOptions")} placement="top">
+                  <DropdownMenu.Trigger
+                    class={`prompt-overflow-button prompt-overflow-button--${speech.state()}`}
+                    data-ui="qa-action-more"
+                    aria-label={language.t("common.moreOptions")}
+                    aria-busy={speechAction.busy(speech)}
+                    aria-pressed={sandboxEnabled() || speech.active()}
+                  >
+                    <span class="codicon codicon-ellipsis" aria-hidden="true" />
+                    <Show
+                      when={speechAction.busy(speech) || speech.state() === "recording" || speech.state() === "error"}
+                    >
+                      <span
+                        class={`codicon codicon-${speech.state() === "error" ? "error" : speechAction.busy(speech) ? "sync" : "record"} prompt-overflow-state`}
+                        aria-hidden="true"
+                      />
+                    </Show>
+                  </DropdownMenu.Trigger>
+                </Tooltip>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content class="prompt-compact-menu prompt-overflow-menu" data-ui="qa-action-more-menu">
+                    <Show when={session.hasModelOverride(sid())}>
+                      <DropdownMenu.Item onSelect={() => session.clearModelOverride(sid())}>
+                        <span class="codicon codicon-close prompt-compact-menu-icon" aria-hidden="true" />
+                        <DropdownMenu.ItemLabel>{language.t("prompt.action.resetModel")}</DropdownMenu.ItemLabel>
+                      </DropdownMenu.Item>
+                    </Show>
+                    <Show when={sandboxVisible()}>
+                      <DropdownMenu.Item disabled={sandboxDisabled()} onSelect={toggleSandbox}>
+                        <Icon name="lock" size="small" />
+                        <DropdownMenu.ItemLabel>
+                          {language.t(
+                            sandboxEnabled() ? "prompt.action.sandbox.disable" : "prompt.action.sandbox.enable",
+                          )}
+                        </DropdownMenu.ItemLabel>
+                        <span
+                          class={`codicon codicon-${sandboxEnabled() ? "check" : "circle-outline"} prompt-compact-menu-state`}
+                          aria-hidden="true"
+                        />
+                      </DropdownMenu.Item>
+                    </Show>
+                    <Show when={canUseSpeech()}>
+                      <DropdownMenu.Item
+                        disabled={speechAction.locked(speech, isDisabled())}
+                        onSelect={() => speechAction.run(speech, isDisabled(), startSpeech)}
+                      >
+                        <span class="codicon codicon-mic prompt-compact-menu-icon" aria-hidden="true" />
+                        <DropdownMenu.ItemLabel>{speechAction.label(speech, language.t)}</DropdownMenu.ItemLabel>
+                        <Show when={speechAction.busy(speech) || speech.state() === "recording"}>
+                          <span
+                            class={`codicon codicon-${speechAction.busy(speech) ? "sync" : "record"} prompt-compact-menu-state`}
+                            aria-hidden="true"
+                          />
+                        </Show>
+                      </DropdownMenu.Item>
+                    </Show>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu>
             </Show>
             <Show
               when={showStop()}
@@ -1581,10 +1758,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     aria-disabled={!canSend()}
                     aria-describedby={props.blockedReason?.() ? blockedHelpId() : undefined}
                     aria-label={sendLabel()}
+                    class="prompt-send-button"
+                    data-ui="qa-action-submit"
                   >
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M1.5 1.5L14.5 8L1.5 14.5V9L10 8L1.5 7V1.5Z" />
-                    </svg>
+                    <span class="codicon codicon-send prompt-action-codicon" aria-hidden="true" />
                   </Button>
                 </Tooltip>
               }
@@ -1595,10 +1772,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   size="small"
                   onClick={() => session.abort()}
                   aria-label={language.t("prompt.action.stop")}
+                  class="prompt-stop-button"
+                  data-ui="qa-action-submit"
                 >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <rect x="3" y="3" width="10" height="10" rx="1" />
-                  </svg>
+                  <span class="codicon codicon-debug-stop prompt-action-codicon" aria-hidden="true" />
                 </Button>
               </Tooltip>
             </Show>

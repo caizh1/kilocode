@@ -11,24 +11,11 @@ const SettingsRow: Component<{
 }> = (props) => (
   <div
     data-slot="settings-row"
-    style={{
-      "margin-bottom": props.last ? "0" : "8px",
-      "padding-bottom": props.last ? "0" : "8px",
-      "border-bottom": props.last ? "none" : "1px solid var(--border-weak-base)",
-      ...(props.description === null || props.description === undefined ? { "align-items": "center" } : {}),
-    }}
+    data-last={props.last ? "true" : undefined}
+    data-description={props.description === null || props.description === undefined ? undefined : "true"}
   >
     <div data-slot="settings-row-label">
-      <div
-        data-slot="settings-row-label-title"
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "6px",
-          "flex-wrap": "wrap",
-          ...(props.description === null || props.description === undefined ? { "margin-bottom": "0" } : {}),
-        }}
-      >
+      <div data-slot="settings-row-label-title">
         <span>{props.title}</span>
         <Show when={props.tag?.()}>{(tag) => <Tag>{tag()}</Tag>}</Show>
       </div>

@@ -28,13 +28,17 @@ import type {
   ICodeGraphStorage,
 } from "../types"
 import { copy, dict, own } from "../dict"
+import { normalizeWorkspace, workspaceKey } from "../../workspace-key"
 
 const log = Log.create({ service: "codegraph-storage" })
 const writeConcurrency = 4
 const derivedWindow = 64
 const cacheLimit = 64 * 1024 * 1024
+type ScanState = "never" | "interrupted" | "complete" | "needs-rebuild"
 
 export class CodeGraphJsonStorage implements ICodeGraphStorage {
+  private readonly workspace: string
+  private readonly key: string
   private manifest?: CodeGraphManifest
   private stage?: CodeGraphManifest
   private old?: CodeGraphManifest
@@ -44,7 +48,10 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   private cacheBytes = 0
   private schemaMismatch = false
   private parserMismatch = false
+  private invalid = false
   private rebuilding = false
+  private migrated = false
+  private scan?: ScanState
   private checkpointFiles = 0
   private checkpointAt = 0
 
@@ -54,7 +61,10 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
       cacheDirectory: string
       clock?: () => Date
     },
-  ) {}
+  ) {
+    this.workspace = normalizeWorkspace(opts.workspacePath)
+    this.key = workspaceKey(this.workspace)
+  }
 
   public async upsertFileGraph(filePath: string, fileHash: string, graph: CodeGraphFileGraph): Promise<void> {
     if (!this.canWrite()) return
@@ -115,7 +125,8 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   public async clear(): Promise<void> {
-    await rm(path.join(this.opts.cacheDirectory, CODE_GRAPH_STORAGE_DIR), { recursive: true, force: true })
+    this.migrated = true
+    await rm(this.root, { recursive: true, force: true })
     this.manifest = this.empty()
     this.stage = undefined
     this.old = undefined
@@ -123,11 +134,14 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     this.clearCache()
     this.schemaMismatch = false
     this.parserMismatch = false
+    this.invalid = false
     this.rebuilding = false
     await this.writeManifest()
+    this.scan = "never"
   }
 
   public async ensureCompatible(): Promise<IndexingCompatibilityDecision> {
+    await this.migrateLegacy()
     const manifest = this.readManifestFile(this.manifestPath)
     const decision = this.compatibility(manifest)
     log.info("Code Graph compatibility check", {
@@ -143,7 +157,8 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
 
   public status(): CodeGraphStorageStatus {
     this.load()
-    const rebuild = this.needsRebuild()
+    const scan = this.getScanState()
+    const rebuild = this.needsRebuild() || scan === "needs-rebuild"
     const manifest = rebuild ? (this.old ?? this.empty()) : this.manifest!
     const records = Object.values(manifest.records)
     const valid = rebuild ? 0 : records.filter((record) => record.status === "ok").length
@@ -162,8 +177,28 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
       evidenceAvailable: false,
       graphDirectory: this.root,
     }
-    if (!rebuild && manifest.lastFullScanAt) status.lastFullScanAt = manifest.lastFullScanAt
+    if (!rebuild && scan === "complete" && manifest.lastFullScanAt) status.lastFullScanAt = manifest.lastFullScanAt
     return status
+  }
+
+  public getScanState(): ScanState {
+    if (this.scan) return this.scan
+    if (existsSync(this.stageManifestPath)) {
+      const stage = this.readManifestFile(this.stageManifestPath)
+      this.scan = !stage || this.compatibility(stage).action === "rebuild" ? "needs-rebuild" : "interrupted"
+      return this.scan
+    }
+    if (!existsSync(this.manifestPath)) {
+      this.scan = "never"
+      return this.scan
+    }
+    const manifest = this.readManifestFile(this.manifestPath)
+    if (!manifest || this.compatibility(manifest).action === "rebuild") {
+      this.scan = "needs-rebuild"
+      return this.scan
+    }
+    this.scan = manifest.lastFullScanAt ? "complete" : "never"
+    return this.scan
   }
 
   public async markFileGraphStatus(
@@ -194,6 +229,8 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   public async beginFullScan(): Promise<void> {
+    this.scan = undefined
+    await this.migrateLegacy()
     const current = this.load()
     this.stage =
       this.loadStage() ?? (this.needsRebuild() ? this.empty(globalThis.crypto.randomUUID()) : this.scanBase(current))
@@ -203,8 +240,10 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     this.clearCache()
     this.schemaMismatch = false
     this.parserMismatch = false
+    this.invalid = false
     this.rebuilding = true
     await this.writeStageManifest()
+    this.scan = "interrupted"
   }
 
   public async markFullScanComplete(): Promise<void> {
@@ -219,6 +258,7 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     this.seen = undefined
     this.clearCache()
     this.rebuilding = false
+    this.scan = "complete"
     await this.cleanupOldShardGenerations()
   }
 
@@ -229,11 +269,11 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
 
     const manifest = this.readManifestFile(this.manifestPath)
     const stage = this.readManifestFile(this.stageManifestPath)
-    if (manifest?.workspacePath && manifest.workspacePath !== this.opts.workspacePath) {
+    if (manifest?.workspacePath && normalizeWorkspace(manifest.workspacePath) !== this.workspace) {
       stats.skipped.push("codegraph: active manifest workspace mismatch")
       return stats
     }
-    if (stage?.workspacePath && stage.workspacePath !== this.opts.workspacePath) {
+    if (stage?.workspacePath && normalizeWorkspace(stage.workspacePath) !== this.workspace) {
       stats.skipped.push("codegraph: rebuild manifest workspace mismatch")
       return stats
     }
@@ -255,6 +295,10 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   private get root() {
+    return path.join(this.opts.cacheDirectory, CODE_GRAPH_STORAGE_DIR, this.key, CODE_GRAPH_STORAGE_VERSION_DIR)
+  }
+
+  private get legacyRoot() {
     return path.join(this.opts.cacheDirectory, CODE_GRAPH_STORAGE_DIR, CODE_GRAPH_STORAGE_VERSION_DIR)
   }
 
@@ -280,7 +324,7 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   private needsRebuild(): boolean {
-    return this.schemaMismatch || this.parserMismatch
+    return this.invalid || this.schemaMismatch || this.parserMismatch
   }
 
   private markSeen(rel: string): void {
@@ -342,6 +386,52 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     }
     await this.writeDerived(manifest, aggregate, `derived/${generation}/aggregate`)
     await this.atomicJson(file, manifest)
+  }
+
+  private async migrateLegacy(): Promise<void> {
+    if (this.migrated) return
+    this.migrated = true
+    if (existsSync(this.root) || !existsSync(this.legacyRoot)) return
+
+    const manifest = this.readManifestFile(path.join(this.legacyRoot, "manifest.json"))
+    const interrupted = existsSync(path.join(this.legacyRoot, "manifest.rebuild.json"))
+    const decision = this.compatibility(manifest, this.legacyRoot)
+    if (interrupted || decision.action !== "reuse") {
+      log.warn("legacy Code Graph cache retained without migration", {
+        visible: true,
+        workspacePath: this.opts.workspacePath,
+        reason: interrupted ? "interrupted legacy scan" : decision.reason,
+      })
+      return
+    }
+
+    await mkdir(path.dirname(this.root), { recursive: true })
+    try {
+      await rename(this.legacyRoot, this.root)
+    } catch (err) {
+      log.warn("legacy Code Graph cache migration skipped", {
+        visible: true,
+        workspacePath: this.opts.workspacePath,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return
+    }
+
+    this.manifest = undefined
+    this.stage = undefined
+    this.old = undefined
+    this.seen = undefined
+    this.clearCache()
+    this.schemaMismatch = false
+    this.parserMismatch = false
+    this.invalid = false
+    this.rebuilding = false
+    this.scan = undefined
+    log.info("legacy Code Graph cache migrated", {
+      visible: true,
+      workspacePath: this.opts.workspacePath,
+      graphDirectory: this.root,
+    })
   }
 
   private async writeDerived(
@@ -485,8 +575,13 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
       return this.manifest
     }
 
-    const parsed = JSON.parse(readFileSync(this.manifestPath, "utf-8")) as CodeGraphManifest
-    if (parsed.workspacePath && parsed.workspacePath !== this.opts.workspacePath) {
+    const parsed = this.readManifestFile(this.manifestPath)
+    if (!parsed) {
+      this.invalid = true
+      this.manifest = this.empty()
+      return this.manifest
+    }
+    if (parsed.workspacePath && normalizeWorkspace(parsed.workspacePath) !== this.workspace) {
       this.manifest = this.empty()
       return this.manifest
     }
@@ -514,8 +609,9 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   private loadStage(): CodeGraphManifest | undefined {
     if (this.stage) return this.stage
     if (!existsSync(this.stageManifestPath)) return undefined
-    const parsed = JSON.parse(readFileSync(this.stageManifestPath, "utf-8")) as CodeGraphManifest
-    if (parsed.workspacePath && parsed.workspacePath !== this.opts.workspacePath) return undefined
+    const parsed = this.readManifestFile(this.stageManifestPath)
+    if (!parsed) return undefined
+    if (parsed.workspacePath && normalizeWorkspace(parsed.workspacePath) !== this.workspace) return undefined
     if (parsed.graphSchemaVersion !== CODE_GRAPH_SCHEMA_VERSION || parsed.parserVersion !== CODE_GRAPH_PARSER_VERSION) {
       return undefined
     }
@@ -542,9 +638,11 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     }
   }
 
-  private compatibility(manifest: CodeGraphManifest | undefined): IndexingCompatibilityDecision {
+  private compatibility(manifest: CodeGraphManifest | undefined, root = this.root): IndexingCompatibilityDecision {
     if (!manifest) return { action: "rebuild", reason: "missing compatibility metadata" }
-    if (manifest.workspacePath !== this.opts.workspacePath) return { action: "rebuild", reason: "workspace mismatch" }
+    if (!manifest.workspacePath) return { action: "rebuild", reason: "missing compatibility metadata" }
+    if (normalizeWorkspace(manifest.workspacePath) !== this.workspace)
+      return { action: "rebuild", reason: "workspace mismatch" }
     if (manifest.graphSchemaVersion !== CODE_GRAPH_SCHEMA_VERSION)
       return { action: "rebuild", reason: "schema mismatch" }
     if (manifest.parserVersion !== CODE_GRAPH_PARSER_VERSION) return { action: "rebuild", reason: "parser mismatch" }
@@ -561,21 +659,21 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     }
     for (const shard of manifest.shards) {
       for (const part of shard.parts) {
-        if (!existsSync(path.join(this.root, part.path))) return { action: "rebuild", reason: "missing graph shard" }
+        if (!existsSync(path.join(root, part.path))) return { action: "rebuild", reason: "missing graph shard" }
       }
     }
     for (const record of Object.values(manifest.records)) {
       if (record.status !== "ok") continue
       if (!record.graphParts?.length) return { action: "rebuild", reason: "storage layout changed" }
       for (const part of record.graphParts) {
-        if (!existsSync(path.join(this.root, part.path))) return { action: "rebuild", reason: "missing graph shard" }
+        if (!existsSync(path.join(root, part.path))) return { action: "rebuild", reason: "missing graph shard" }
       }
     }
     for (const field of CODEGRAPH_DERIVED_SIDECAR_FIELDS) {
       const parts = manifest.derived.fields[field]
       if (!Array.isArray(parts)) return { action: "rebuild", reason: "storage layout changed" }
       for (const part of parts) {
-        if (!existsSync(path.join(this.root, part.path)))
+        if (!existsSync(path.join(root, part.path)))
           return { action: "rebuild", reason: "missing graph derived sidecar" }
       }
     }

@@ -4,6 +4,7 @@ import { basename, dirname, join, resolve } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { gunzipSync } from "node:zlib"
 import { applySkillPatches, validateSkillArchive, type SkillSnapshot } from "@chipmate/skill-spec"
+import { ExtensionRepo } from "./extension-repo.ts"
 import { MIGRATIONS } from "./migrations.ts"
 import type {
   ArtworkItem,
@@ -40,6 +41,12 @@ import type {
   SessionItem,
   SessionLookup,
   UnpublishInput,
+  ExtensionArtifactInput,
+  ExtensionDownloadInput,
+  ExtensionFavoriteInput,
+  ExtensionPublicationInput,
+  ExtensionReviewInput,
+  ExtensionSearchInput,
 } from "./model.ts"
 
 interface LegacyItem {
@@ -116,6 +123,7 @@ const SAFE_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
 export class MarketRepo {
   private readonly db: DatabaseSync
   private readonly dir: string
+  private readonly extensions: ExtensionRepo
 
   constructor(dir: string) {
     this.dir = resolve(dir)
@@ -124,6 +132,7 @@ export class MarketRepo {
     this.db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
     this.db.prepare("PRAGMA journal_mode=WAL").get()
     this.migrate()
+    this.extensions = new ExtensionRepo(this.db)
   }
 
   health(): MarketDbHealth {
@@ -883,6 +892,102 @@ export class MarketRepo {
       this.db.exec("ROLLBACK")
       throw err
     }
+  }
+
+  searchExtensions(input: ExtensionSearchInput = {}) {
+    return this.extensions.search(input)
+  }
+
+  getExtension(id: string) {
+    return this.extensions.get(id)
+  }
+
+  extensionArtifact(id: string) {
+    return this.extensions.artifact(id)
+  }
+
+  extensionArtifactBySha(sha256: string) {
+    return this.extensions.artifactBySha(sha256)
+  }
+
+  extensionArtifacts(id: string) {
+    return this.extensions.artifacts(id)
+  }
+
+  publishExtension(input: ExtensionArtifactInput) {
+    return this.extensions.publish(input)
+  }
+
+  touchExtensionSource(key: string, stamp: string) {
+    return this.extensions.touchSource(key, stamp)
+  }
+
+  extensionSystemSources() {
+    return this.extensions.systemSources()
+  }
+
+  unlistExtensionSource(key: string, stamp: string) {
+    return this.extensions.unlistSource(key, stamp)
+  }
+
+  removeExtensionArtifact(id: string, userId: string, stamp: string) {
+    return this.extensions.remove(id, userId, stamp)
+  }
+
+  extensionPublication(input: ExtensionPublicationInput) {
+    return this.extensions.publication(input)
+  }
+
+  getExtensionPublication(id: string, ownerId: string) {
+    return this.extensions.getPublication(id, ownerId)
+  }
+
+  extensionPublications(ownerId: string) {
+    return this.extensions.publications(ownerId)
+  }
+
+  extensionUploadCount(ownerId: string, since: string) {
+    return this.extensions.uploadCount(ownerId, since)
+  }
+
+  extensionFavorite(input: ExtensionFavoriteInput) {
+    return this.extensions.favorite(input)
+  }
+
+  extensionFavorites(userId: string) {
+    return this.extensions.favorites(userId)
+  }
+
+  extensionReviews(id: string) {
+    return this.extensions.reviews(id)
+  }
+
+  extensionReview(input: ExtensionReviewInput) {
+    return this.extensions.review(input)
+  }
+
+  deleteExtensionReview(userId: string, extensionId: string) {
+    return this.extensions.deleteReview(userId, extensionId)
+  }
+
+  userExtensionReviews(userId: string) {
+    return this.extensions.userReviews(userId)
+  }
+
+  extensionUploads(userId: string) {
+    return this.extensions.uploads(userId)
+  }
+
+  extensionDownload(input: ExtensionDownloadInput) {
+    return this.extensions.download(input)
+  }
+
+  extensionAnalytics() {
+    return this.extensions.analytics()
+  }
+
+  extensionSources(artifactId: string, userId: string) {
+    return this.extensions.sources(artifactId, userId)
   }
 
   private metrics(): DailyMetric[] {

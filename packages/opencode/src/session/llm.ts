@@ -28,6 +28,7 @@ import { KiloSession } from "@/kilocode/session"
 import { KiloLLM } from "@/kilocode/session/llm"
 import { KiloSessionOverflow } from "@/kilocode/session/overflow"
 import { KiloToolSchema } from "@/kilocode/session/tool-schema"
+import { DSML } from "@/kilocode/session/dsml"
 import { SessionExport } from "@/kilocode/session-export"
 import { getActiveOrg } from "@/kilocode/session-export/eligibility"
 import { normalizeUsageForExport, observeFullStreamForExport } from "@/kilocode/session-export/llm"
@@ -165,6 +166,10 @@ const live: Layer.Layer<
       }
       const prepared = { ...base, tools, params: { ...base.params, maxOutputTokens } }
       // kilocode_change end
+      // kilocode_change start - keep a trusted no-side-effect invalid executor only for targeted DSML repair
+      const repair = DSML.enabled({ cfg, model: input.model, tools: prepared.tools, toolChoice: input.toolChoice })
+      const runtime: Record<string, Tool> = repair ? { ...prepared.tools, invalid: DSML.invalid } : prepared.tools
+      // kilocode_change end
 
       // Wire up toolExecutor for DWS workflow models so that tool calls
       // from the workflow service are executed via opencode's tool system
@@ -300,7 +305,9 @@ const live: Layer.Layer<
 
       // Runtime seam: native is an opt-in adapter over @opencode-ai/llm. It
       // either returns a ready LLMEvent stream or a concrete fallback reason.
-      if (flags.experimentalNativeLlm) {
+      // kilocode_change start - targeted DSML repair requires the AI SDK stream middleware
+      if (flags.experimentalNativeLlm && !repair) {
+        // kilocode_change end
         const native = LLMNativeRuntime.stream({
           model: input.model,
           provider: item,
@@ -384,8 +391,10 @@ const live: Layer.Layer<
         topP: prepared.params.topP,
         topK: prepared.params.topK,
         providerOptions: ProviderTransform.providerOptions(input.model, prepared.params.options),
-        activeTools: Object.keys(prepared.tools).filter((x) => x !== "invalid"),
-        tools: prepared.tools,
+        // kilocode_change start - invalid remains executable for repair but hidden from the model
+        activeTools: Object.keys(runtime).filter((x) => x !== "invalid"),
+        tools: runtime,
+        // kilocode_change end
         toolChoice: input.toolChoice,
         maxOutputTokens: prepared.params.maxOutputTokens,
         abortSignal: input.abort,
@@ -410,6 +419,7 @@ const live: Layer.Layer<
                 return args.params
               },
             },
+            ...(repair ? [DSML.middleware({ tools: runtime, messages: prepared.messages })] : []), // kilocode_change
           ],
         }),
         // kilocode_change start - disable AI SDK span recording (ai.* / gen_ai.*)

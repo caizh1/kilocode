@@ -26,7 +26,7 @@ export function InlineError(props: { message: string }) {
   )
 }
 
-export function useApi<T>(path: string) {
+export function useApi<T>(path?: string) {
   const [data, setData] = useState<T>()
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
@@ -34,6 +34,12 @@ export function useApi<T>(path: string) {
   const refresh = useCallback(() => setRevision((value) => value + 1), [])
 
   useEffect(() => {
+    if (!path) {
+      setData(undefined)
+      setError("")
+      setLoading(false)
+      return
+    }
     const abort = new AbortController()
     setLoading(true)
     setError("")

@@ -228,4 +228,142 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE UNIQUE INDEX idx_publication_owner_idempotency ON publication_runs(owner_id, idempotency_key);
     `,
   },
+  {
+    version: 6,
+    name: "extension-market",
+    sql: `
+      CREATE TABLE extensions (
+        id TEXT PRIMARY KEY,
+        publisher TEXT NOT NULL,
+        name TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        categories_json TEXT NOT NULL DEFAULT '[]',
+        keywords_json TEXT NOT NULL DEFAULT '[]',
+        engine_vscode TEXT NOT NULL DEFAULT '*',
+        latest_version TEXT NOT NULL,
+        latest_artifact_id TEXT,
+        icon_data TEXT,
+        readme TEXT NOT NULL DEFAULT '',
+        system_plugin INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'published',
+        download_count INTEGER NOT NULL DEFAULT 0,
+        favorite_count INTEGER NOT NULL DEFAULT 0,
+        rating_total INTEGER NOT NULL DEFAULT 0,
+        rating_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE extension_artifacts (
+        id TEXT PRIMARY KEY,
+        extension_id TEXT NOT NULL REFERENCES extensions(id),
+        version TEXT NOT NULL,
+        target TEXT NOT NULL,
+        sha256 TEXT NOT NULL UNIQUE,
+        size_bytes INTEGER NOT NULL,
+        path TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        uploader_id TEXT REFERENCES users(id),
+        uploader_name TEXT NOT NULL,
+        manifest_json TEXT NOT NULL,
+        prerelease INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'published',
+        download_count INTEGER NOT NULL DEFAULT 0,
+        published_at TEXT NOT NULL,
+        removed_at TEXT,
+        removed_by TEXT,
+        removal_reason TEXT,
+        UNIQUE(extension_id, version, target, sha256)
+      );
+      CREATE TABLE extension_sources (
+        source_key TEXT PRIMARY KEY,
+        artifact_id TEXT NOT NULL REFERENCES extension_artifacts(id),
+        kind TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      );
+      CREATE TABLE extension_publication_runs (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users(id),
+        artifact_id TEXT REFERENCES extension_artifacts(id),
+        status TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        total_bytes INTEGER NOT NULL DEFAULT 0,
+        sha256 TEXT,
+        error TEXT,
+        idempotency_key TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(owner_id, idempotency_key)
+      );
+      CREATE TABLE extension_favorites (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        extension_id TEXT NOT NULL REFERENCES extensions(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(user_id, extension_id)
+      );
+      CREATE TABLE extension_reviews (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        extension_id TEXT NOT NULL REFERENCES extensions(id) ON DELETE CASCADE,
+        artifact_id TEXT REFERENCES extension_artifacts(id),
+        rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+        comment TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(user_id, extension_id)
+      );
+      CREATE TABLE extension_download_events (
+        id TEXT PRIMARY KEY,
+        extension_id TEXT NOT NULL,
+        artifact_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        occurred_at TEXT NOT NULL
+      );
+      CREATE TABLE extension_daily_metrics (
+        date TEXT NOT NULL,
+        metric TEXT NOT NULL,
+        extension_id TEXT NOT NULL DEFAULT '',
+        artifact_id TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT '',
+        count INTEGER NOT NULL,
+        PRIMARY KEY(date, metric, extension_id, artifact_id, source)
+      );
+      CREATE TABLE extension_audit_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT,
+        action TEXT NOT NULL,
+        extension_id TEXT,
+        artifact_id TEXT,
+        details_json TEXT NOT NULL DEFAULT '{}',
+        occurred_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_extensions_rank ON extensions(status, download_count DESC, updated_at DESC);
+      CREATE INDEX idx_extension_artifacts_lookup ON extension_artifacts(extension_id, version, target, status);
+      CREATE INDEX idx_extension_artifacts_uploader ON extension_artifacts(uploader_id, published_at DESC);
+      CREATE INDEX idx_extension_sources_artifact ON extension_sources(artifact_id, active);
+      CREATE INDEX idx_extension_publications_owner ON extension_publication_runs(owner_id, created_at DESC);
+      CREATE INDEX idx_extension_downloads_time ON extension_download_events(occurred_at);
+      CREATE TRIGGER extension_favorite_insert AFTER INSERT ON extension_favorites BEGIN
+        UPDATE extensions SET favorite_count = favorite_count + 1 WHERE id = new.extension_id;
+      END;
+      CREATE TRIGGER extension_favorite_delete AFTER DELETE ON extension_favorites BEGIN
+        UPDATE extensions SET favorite_count = MAX(0, favorite_count - 1) WHERE id = old.extension_id;
+      END;
+      CREATE TRIGGER extension_review_insert AFTER INSERT ON extension_reviews BEGIN
+        UPDATE extensions
+        SET rating_total = rating_total + new.rating, rating_count = rating_count + 1
+        WHERE id = new.extension_id;
+      END;
+      CREATE TRIGGER extension_review_update AFTER UPDATE OF rating ON extension_reviews BEGIN
+        UPDATE extensions SET rating_total = rating_total - old.rating + new.rating WHERE id = new.extension_id;
+      END;
+      CREATE TRIGGER extension_review_delete AFTER DELETE ON extension_reviews BEGIN
+        UPDATE extensions
+        SET rating_total = MAX(0, rating_total - old.rating), rating_count = MAX(0, rating_count - 1)
+        WHERE id = old.extension_id;
+      END;
+    `,
+  },
 ]

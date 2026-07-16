@@ -45,6 +45,7 @@ type Telemetry = IndexingTelemetryEvent extends infer Event
 export class DocumentIndexService {
   private readonly cache: DocumentIndexCache
   private task: Promise<void> | undefined
+  private close: Promise<void> | undefined
   private disposed = false
   private status: DocumentIndexStatus = disabled("Document RAG disabled.")
   private pressure: IndexingPressure = "normal"
@@ -70,8 +71,18 @@ export class DocumentIndexService {
     }
   }
 
-  dispose(): void {
+  dispose(): Promise<void> {
     this.disposed = true
+    if (this.close) return this.close
+    const task = this.task
+    this.close = (async () => {
+      try {
+        await task
+      } finally {
+        await this.store?.close?.()
+      }
+    })()
+    return this.close
   }
 
   setMemoryPressure(pressure: IndexingPressure): void {
@@ -79,12 +90,15 @@ export class DocumentIndexService {
   }
 
   async rebuild(trigger: IndexingTelemetryTrigger = "manual"): Promise<void> {
+    if (this.disposed) return
     if (!this.store) {
       this.setStatus(error("Document RAG requires a configured embedding vector store."))
       return
     }
     await this.store.deleteCollection()
+    if (this.disposed) return
     await this.cache.clear()
+    if (this.disposed) return
     await this.start(trigger, true)
   }
 
@@ -136,6 +150,7 @@ export class DocumentIndexService {
 
     const meta = this.meta()
     await this.cache.initialize(meta)
+    if (this.disposed) return
     this.emit({ type: "started", source: "scan", trigger })
 
     const started = Date.now()
@@ -147,6 +162,7 @@ export class DocumentIndexService {
     try {
       this.setStatus(progress("Discovering document files...", 0, 0))
       const discovery = await this.discover()
+      if (this.disposed) return
       if (discovery.limited) {
         const message = `Document RAG paused after finding more than ${cfg.maxFiles} documents. Narrow document paths or excludes before rebuilding.`
         this.setStatus(standby(message))
@@ -157,8 +173,13 @@ export class DocumentIndexService {
         return
       }
       const created = await this.store.initialize()
-      if (created || force) await this.cache.clear()
+      if (this.disposed) return
+      if (created || force) {
+        await this.cache.clear()
+        if (this.disposed) return
+      }
       await this.store.markIndexingIncomplete()
+      if (this.disposed) return
 
       const files = discovery.files
       skipped += discovery.skipped
@@ -171,33 +192,40 @@ export class DocumentIndexService {
         const rel = path.normalize(path.relative(this.workspace, file))
         try {
           const info = await stat(file)
+          if (this.disposed) return
           if (info.size > cfg.maxFileBytes) {
             skipped += 1
             this.cache.delete(rel)
             await this.store.deletePointsByFilePath(rel)
+            if (this.disposed) return
             this.report(index + 1, files.length, `Skipped large document: ${path.basename(file)}`, skipped, errors)
             continue
           }
           const hash = await fileHash(file)
+          if (this.disposed) return
           if (this.cache.get(rel) === hash) {
             indexed += 1
             this.report(index + 1, files.length, `Document unchanged: ${path.basename(file)}`, skipped, errors)
             continue
           }
           const sections = await extractDocument(file, cfg.maxExtractedBytesPerFile)
+          if (this.disposed) return
           const items = sections.flatMap((section) =>
             chunkDocument(section, this.workspace, cfg.chunkChars, cfg.chunkOverlapChars),
           )
           await this.upsert(file, hash, items, meta)
+          if (this.disposed) return
           this.cache.set(rel, hash)
           if ((index + 1) % 8 === 0 || Date.now() - checkpoint >= 2_000) {
             await this.cache.flush()
+            if (this.disposed) return
             checkpoint = Date.now()
           }
           indexed += 1
           chunks += items.length
           this.report(index + 1, files.length, `Indexed document: ${path.basename(file)}`, skipped, errors)
         } catch (err) {
+          if (this.disposed) return
           errors += 1
           this.record("documents:index", err, rel)
           this.report(index + 1, files.length, `Document indexing issue: ${path.basename(file)}`, skipped, errors)
@@ -205,13 +233,17 @@ export class DocumentIndexService {
       }
 
       for (const file of Object.keys(this.cache.all())) {
+        if (this.disposed) return
         if (seen.has(path.normalize(file))) continue
         await this.store.deletePointsByFilePath(file)
+        if (this.disposed) return
         this.cache.delete(file)
       }
 
       await this.cache.flush()
+      if (this.disposed) return
       await this.store.markIndexingComplete()
+      if (this.disposed) return
       this.setStatus({
         state: errors > 0 ? "Complete" : "Complete",
         message: errors > 0 ? "Document RAG indexed with issues." : "Document RAG up-to-date.",
@@ -246,6 +278,7 @@ export class DocumentIndexService {
         chunks,
       })
     } catch (err) {
+      if (this.disposed) return
       this.record("documents:run", err)
       this.setStatus(error(err instanceof Error ? err.message : String(err), this.status.recentErrors))
       this.emit({
@@ -284,12 +317,14 @@ export class DocumentIndexService {
     }
 
     for (const item of cfg.paths) {
+      if (this.disposed) return { files: [...out].sort(), skipped, limited: false }
       const root = path.resolve(this.workspace, item)
       const rel = path.relative(this.workspace, root)
       if (path.isAbsolute(rel) || rel === ".." || rel.startsWith(`..${path.sep}`)) {
         throw new Error(`document path must be within the current workspace: ${item}`)
       }
       const info = await stat(root).catch(() => undefined)
+      if (this.disposed) return { files: [...out].sort(), skipped, limited: false }
       if (!info) continue
       if (!info.isDirectory()) {
         if (add(root)) return { files: [...out].sort(), skipped, limited: true }
@@ -303,6 +338,7 @@ export class DocumentIndexService {
         nocase: true,
         ignore: FileIgnore.PATTERNS,
       })) {
+        if (this.disposed) return { files: [...out].sort(), skipped, limited: false }
         if (add(file)) return { files: [...out].sort(), skipped, limited: true }
       }
     }
@@ -310,7 +346,7 @@ export class DocumentIndexService {
   }
 
   private async upsert(file: string, hash: string, chunks: DocumentChunk[], meta: string): Promise<void> {
-    if (!this.embedder || !this.store) return
+    if (this.disposed || !this.embedder || !this.store) return
     const rel = path.normalize(path.relative(this.workspace, file))
     const generation = digest(`${meta}\0${rel}\0${hash}`)
     const texts = chunks.map((item) => item.content)
@@ -323,16 +359,21 @@ export class DocumentIndexService {
       Math.min(this.config.currentEmbeddingBatchSize ?? 60, constrained(this.pressure) ? 16 : 60),
     )
     for (let index = 0; index < texts.length; index += batch) {
+      if (this.disposed) return
       const slice = texts.slice(index, index + batch)
       const { embeddings } = await this.embedder.createEmbeddings(slice)
+      if (this.disposed) return
       const points = embeddings.flatMap<PointStruct>((vector, offset) => {
         const chunk = chunks[index + offset]
         if (!chunk) return []
         return [point(chunk, vector, this.workspace, meta, generation)]
       })
       await this.store.upsertPoints(points)
+      if (this.disposed) return
     }
+    if (this.disposed) return
     await this.store.activateFileGeneration?.(rel, generation, "documents")
+    if (this.disposed) return
     await this.store.deleteInactiveFilePoints?.(rel, generation)
   }
 
@@ -360,6 +401,7 @@ export class DocumentIndexService {
   }
 
   private setStatus(status: DocumentIndexStatus): void {
+    if (this.disposed) return
     this.status = status
     this.onStatus?.()
   }
@@ -381,6 +423,7 @@ export class DocumentIndexService {
   }
 
   private emit(event: Telemetry): void {
+    if (this.disposed) return
     const next = event.type === "error" ? { ...event, pipeline: event.pipeline ?? "documents" } : event
     this.onTelemetry?.({
       ...next,

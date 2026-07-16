@@ -284,6 +284,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
             >
               <div
                 data-component="tool-part-wrapper"
+                data-ui="qa-part-shell"
                 data-part-type={part.type}
                 data-timeline-highlight={highlighted() ? "" : undefined}
                 style={

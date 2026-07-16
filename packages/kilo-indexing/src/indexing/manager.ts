@@ -19,7 +19,7 @@ import { CodeIndexSearchService } from "./search-service"
 import { CodeIndexAnalysisService } from "./analysis"
 import { CodeGraphSidecarLifecycle, disabledCodeGraphSidecarStatus } from "./codegraph"
 import { CodeGraphJsonStorage, CodePostingsJsonStorage } from "./codegraph/storage"
-import { CodeIndexOrchestrator } from "./orchestrator"
+import { CodeIndexOrchestrator, type IndexingRunOutcome } from "./orchestrator"
 import { CacheManager } from "./cache-manager"
 import { Emitter } from "./runtime"
 import { Log } from "../util/log"
@@ -44,6 +44,8 @@ type Baseline = {
   overlay?: WorktreeOverlay
 }
 
+type GraphScanState = "never" | "interrupted" | "complete" | "needs-rebuild"
+
 /**
  * RATIONALE: Removed the static singleton Map and vscode.ExtensionContext.
  * The manager is now constructed directly with a workspace path and cache
@@ -58,7 +60,9 @@ export class CodeIndexManager {
   private _orchestrator: CodeIndexOrchestrator | undefined
   private _searchService: CodeIndexSearchService | undefined
   private _documentService: DocumentIndexService | undefined
-  private _documentToken = 0
+  private _documentGate: DocumentIndexStatus | undefined
+  private _documentStop: Promise<void> = Promise.resolve()
+  private _generation = 0
   private _pressure: IndexingPressure = "normal"
   private readonly _analysisService: CodeIndexAnalysisService
   private readonly _graphStorage: CodeGraphJsonStorage
@@ -71,6 +75,9 @@ export class CodeIndexManager {
   private _baselineChecked = 0
   private _baselineSigned = 0
   private _baselineRefresh: Promise<void> | undefined
+  private _baselineTimer: ReturnType<typeof setTimeout> | undefined
+  private _baselineInitialDelay = BASELINE_CHECK_INTERVAL
+  private _baselineDelay = BASELINE_CHECK_INTERVAL
   private _overlay: WorktreeOverlay | undefined
   private _isRecoveringFromError = false
   private _retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -79,6 +86,7 @@ export class CodeIndexManager {
   private _retryAttempt = 0
   private _retryMaxAttempts = MAX_MANAGER_RECOVERY_ATTEMPTS
   private _retryInitialDelayMs = INITIAL_MANAGER_RECOVERY_DELAY_MS
+  private _flow: Promise<void> = Promise.resolve()
   private _disposed = false
   private readonly _recentErrors: IndexingPipelineRecentErrors = {}
 
@@ -174,10 +182,89 @@ export class CodeIndexManager {
     this.clearRetryTimer()
   }
 
+  private enqueue<T>(run: () => Promise<T>): Promise<T> {
+    const task = this._flow.then(run, run)
+    this._flow = task.then(
+      () => undefined,
+      () => undefined,
+    )
+    return task
+  }
+
+  private stopDocuments(): Promise<void> {
+    const service = this._documentService
+    this._documentService = undefined
+    this._documentGate = undefined
+    if (!service) return this._documentStop
+    const stop = service.dispose().catch((err) => {
+      log.warn("failed while stopping Document RAG", { workspacePath: this.workspacePath, err })
+    })
+    const task = Promise.all([this._documentStop, stop]).then(() => {
+      if (this._stateManager.getCurrentStatus().activePipeline === "documents") {
+        this._stateManager.setActivePipeline(undefined)
+        this._stateManager.notify()
+      }
+    })
+    this._documentStop = task
+    return task
+  }
+
+  private async nextGeneration(): Promise<number> {
+    this._generation += 1
+    const generation = this._generation
+    await this.stopDocuments()
+    return generation
+  }
+
+  private current(generation: number): boolean {
+    return !this._disposed && generation === this._generation
+  }
+
+  private graphScanState(): GraphScanState {
+    const states = [this._graphStorage.getScanState(), this._postingsStorage.getScanState()]
+    if (states.includes("needs-rebuild")) return "needs-rebuild"
+    if (states.includes("interrupted")) return "interrupted"
+    if (states.every((state) => state === "complete")) return "complete"
+    return "never"
+  }
+
   private waiting(): boolean {
     if (!this.baselinePath || this._baselineStore) return false
     this._stateManager.setSystemState("Standby", BASELINE_PENDING)
+    if (this._configManager?.currentDocuments?.enabled && this._documentGate?.message !== BASELINE_PENDING) {
+      this._documentGate = documentStandby(BASELINE_PENDING)
+      this._stateManager.notify()
+    }
+    this.scheduleBaselineRetry()
     return true
+  }
+
+  private scheduleBaselineRetry(): void {
+    if (!this.baselinePath || this._baselineStore || this._baselineTimer || this._disposed) return
+    this._baselineTimer = setTimeout(() => {
+      this._baselineTimer = undefined
+      void this.refreshBaseline()
+        .catch((err) => {
+          log.warn("failed to refresh shared indexing baseline", { workspacePath: this.workspacePath, err })
+        })
+        .finally(() => {
+          if (this._baselineStore) return
+          this._baselineDelay = Math.min(this._baselineDelay * 2, BASELINE_SIGNATURE_INTERVAL)
+          this.scheduleBaselineRetry()
+        })
+    }, this._baselineDelay)
+    this._baselineTimer.unref?.()
+  }
+
+  private clearBaselineRetry(): void {
+    if (!this._baselineTimer) return
+    clearTimeout(this._baselineTimer)
+    this._baselineTimer = undefined
+  }
+
+  private resetBaselineRetry(): void {
+    this.clearBaselineRetry()
+    this._baselineDelay = this._baselineInitialDelay
   }
 
   private async waitForRetry(delay: number): Promise<void> {
@@ -201,7 +288,12 @@ export class CodeIndexManager {
     }
 
     if (event.type !== "error") return
-    if (event.location !== "orchestrator:startIndexing" && event.location !== "orchestrator:watcher") return
+    if (
+      event.location !== "orchestrator:startIndexing" &&
+      event.location !== "orchestrator:startRagIndexing" &&
+      event.location !== "orchestrator:watcher"
+    )
+      return
     if (!this.isFeatureEnabled || !this.isFeatureConfigured) return
     if (this._retryTask || this._isRecoveringFromError) return
 
@@ -257,15 +349,25 @@ export class CodeIndexManager {
     this._stateManager.setSystemState("Standby", "")
 
     try {
-      await this._recreateServices()
-      if (this._disposed) return
+      const generation = await this.nextGeneration()
+      if (!this.current(generation)) {
+        this._isRecoveringFromError = false
+        return
+      }
+      await this._recreateServices(undefined, generation)
+      if (!this.current(generation)) {
+        this._isRecoveringFromError = false
+        return
+      }
       if (this.waiting()) {
         this.resetRetryState()
         this._isRecoveringFromError = false
         return
       }
+      this._codeGraph.start("indexing-recovery")
       this.emitStart(trigger)
-      await this._orchestrator!.startIndexing(trigger)
+      const scan = this._orchestrator!.startIndexing(trigger)
+      await this.configureDocuments(trigger, { after: scan, generation, wait: true })
       if (this._disposed) return
     } catch (err) {
       if (this._disposed) return
@@ -328,13 +430,7 @@ export class CodeIndexManager {
   }
 
   public get isInitialized(): boolean {
-    try {
-      this.assertInitialized()
-      return true
-    } catch (e) {
-      log.warn(`CodeIndexManager not initialized: ${e}`)
-      return false
-    }
+    return !!this._configManager && !!this._orchestrator && !!this._cacheManager
   }
 
   public getRecentErrors(): IndexingPipelineRecentErrors {
@@ -361,7 +457,11 @@ export class CodeIndexManager {
     return this._cacheManager
   }
 
-  public async initialize(input: IndexingConfigInput): Promise<{ requiresRestart: boolean }> {
+  public initialize(input: IndexingConfigInput): Promise<{ requiresRestart: boolean }> {
+    return this.enqueue(() => this.init(input))
+  }
+
+  private async init(input: IndexingConfigInput): Promise<{ requiresRestart: boolean }> {
     if (this._disposed) return { requiresRestart: false }
 
     if (!this._configManager) {
@@ -389,6 +489,8 @@ export class CodeIndexManager {
     if (this._disposed) return { requiresRestart }
 
     if (!this.isFeatureEnabled || !this.isFeatureConfigured) {
+      const generation = await this.nextGeneration()
+      if (!this.current(generation)) return { requiresRestart }
       const reason = this.isFeatureEnabled ? "indexing-not-configured" : "indexing-disabled"
       const msg = this.isFeatureEnabled
         ? "RAG indexing is not configured. Code Graph is available."
@@ -398,17 +500,15 @@ export class CodeIndexManager {
         reason,
         provider: this._configManager.currentEmbedderProvider,
       })
-      await this._recreateGraphServices(reason)
-      if (this._disposed) {
+      await this._recreateGraphServices(reason, generation)
+      if (!this.current(generation)) {
         this._orchestrator?.cancelIndexing()
-        this._orchestrator = undefined
-        this._searchService = undefined
         return { requiresRestart }
       }
       this._codeGraph.start("code-graph-default-enabled")
       this._stateManager.setSystemState("Standby", msg)
-      const scan = this._orchestrator?.startIndexing("background") ?? Promise.resolve()
-      await this.configureDocuments("background", { after: scan })
+      const scan = this._orchestrator?.startIndexing("background")
+      await this.configureDocuments("background", { after: scan, generation })
       return { requiresRestart }
     }
 
@@ -421,16 +521,21 @@ export class CodeIndexManager {
 
     if (needsServiceRecreation) {
       try {
+        const generation = await this.nextGeneration()
+        if (!this.current(generation)) return { requiresRestart }
         log.info("recreating indexing services", { workspacePath: this.workspacePath })
-        await this._recreateServices()
-        if (this._disposed) {
+        await this._recreateServices(undefined, generation)
+        if (!this.current(generation)) {
           this._orchestrator?.cancelIndexing()
-          this._orchestrator = undefined
-          this._searchService = undefined
           return { requiresRestart }
         }
         log.info("indexing services recreated", { workspacePath: this.workspacePath })
         this._codeGraph.start("indexing-services-initialized")
+        if (this.waiting()) return { requiresRestart }
+        this.emitStart("background")
+        const scan = this._orchestrator?.startIndexing("background") ?? Promise.resolve()
+        await this.configureDocuments("background", { after: scan, generation })
+        return { requiresRestart }
       } catch (err) {
         log.error("failed to recreate services", { err })
         this.emitError("manager:initialize", err, "background")
@@ -445,9 +550,15 @@ export class CodeIndexManager {
     if (this.waiting()) return { requiresRestart }
 
     const shouldStartOrRestart =
-      requiresRestart || (needsServiceRecreation && (!this._orchestrator || this._orchestrator.state !== "Indexing"))
+      requiresRestart ||
+      this.graphScanState() !== "complete" ||
+      this._orchestrator?.state === "Standby" ||
+      this._orchestrator?.state === "Error" ||
+      (needsServiceRecreation && (!this._orchestrator || this._orchestrator.state !== "Indexing"))
 
     if (shouldStartOrRestart && !this._disposed) {
+      const generation = await this.nextGeneration()
+      if (!this.current(generation)) return { requiresRestart }
       log.info("starting background indexing", {
         workspacePath: this.workspacePath,
         requiresRestart,
@@ -456,7 +567,15 @@ export class CodeIndexManager {
       this.emitStart("background")
       // Fire and forget — indexing is a long-running background process
       const scan = this._orchestrator?.startIndexing("background") ?? Promise.resolve()
-      await this.configureDocuments("background", { after: scan })
+      await this.configureDocuments("background", { after: scan, generation })
+      return { requiresRestart }
+    }
+
+    if (this._orchestrator?.state === "Indexing") {
+      const generation = await this.nextGeneration()
+      if (!this.current(generation)) return { requiresRestart }
+      const scan = this._orchestrator.startIndexing("background")
+      await this.configureDocuments("background", { after: scan, generation })
       return { requiresRestart }
     }
 
@@ -464,10 +583,14 @@ export class CodeIndexManager {
     return { requiresRestart }
   }
 
-  public async startIndexing(): Promise<void> {
+  public startIndexing(): Promise<void> {
+    return this.enqueue(() => this.start())
+  }
+
+  private async start(): Promise<void> {
     if (this._disposed) return
 
-    await this.refreshBaseline()
+    await this.refresh()
     if (this.waiting()) return
 
     log.info("manual indexing start requested", { workspacePath: this.workspacePath })
@@ -479,7 +602,7 @@ export class CodeIndexManager {
         message: currentStatus.message,
       })
       this.resetRetryState()
-      await this.recoverFromError("manual")
+      await this.recover("manual")
       return
     }
 
@@ -488,7 +611,10 @@ export class CodeIndexManager {
     if (this.isFeatureEnabled && this.isFeatureConfigured) this.assertInitialized()
     if (this.isFeatureEnabled && this.isFeatureConfigured) this.emitStart("manual")
     log.info("delegating manual indexing start to orchestrator", { workspacePath: this.workspacePath })
-    await this._orchestrator!.startIndexing("manual")
+    const generation = await this.nextGeneration()
+    if (!this.current(generation)) return
+    const scan = this._orchestrator!.startIndexing("manual")
+    await this.configureDocuments("manual", { after: scan, generation, wait: true })
   }
 
   public stopWatcher(): void {
@@ -496,6 +622,8 @@ export class CodeIndexManager {
   }
 
   public cancelIndexing(): void {
+    this._generation += 1
+    void this.stopDocuments()
     this._orchestrator?.cancelIndexing()
   }
 
@@ -510,6 +638,16 @@ export class CodeIndexManager {
       return
     }
 
+    const task = this.enqueue(() => this.recover(trigger)).finally(() => {
+      this._retryTask = undefined
+      this._isRecoveringFromError = false
+      this.clearRetryTimer()
+    })
+    this._retryTask = task
+    await task
+  }
+
+  private async recover(trigger: IndexingTelemetryTrigger): Promise<void> {
     const attempt = this._retryAttempt + 1
     if (attempt > this._retryMaxAttempts) {
       log.warn("indexing recovery skipped: retry budget exhausted", {
@@ -519,24 +657,17 @@ export class CodeIndexManager {
       })
       return
     }
-
-    const task = this.runRecovery(trigger, attempt).finally(() => {
-      this._retryTask = undefined
-      this._isRecoveringFromError = false
-      this.clearRetryTimer()
-    })
-    this._retryTask = task
-    await task
+    await this.runRecovery(trigger, attempt)
   }
 
   public async dispose(): Promise<void> {
     if (this._disposed) return
     this._disposed = true
+    this._generation += 1
     this.clearRetryTimer()
+    this.clearBaselineRetry()
     this._retryTask = undefined
-    await this._orchestrator?.shutdown?.()
-    await this._baselineStore?.close?.()
-    this._documentService?.dispose()
+    await Promise.all([this._orchestrator?.shutdown?.(), this._baselineStore?.close?.(), this.stopDocuments()])
     this._codeGraph.dispose("manager-disposed")
     this._stateManager.dispose()
     this._telemetry.dispose()
@@ -546,13 +677,22 @@ export class CodeIndexManager {
     return this._cacheManager?.checkpoint(true) ?? Promise.resolve()
   }
 
-  public async clearIndexData(): Promise<void> {
+  public clearIndexData(): Promise<void> {
+    return this.enqueue(() => this.clear())
+  }
+
+  private async clear(): Promise<void> {
     if (!this._orchestrator || !this._cacheManager) return
+    const generation = await this.nextGeneration()
+    if (!this.current(generation)) return
     await this._orchestrator!.clearIndexData()
     await this._cacheManager!.clearCacheFile()
     await this._graphStorage.clear()
     await this._postingsStorage.clear()
-    await this._documentService?.rebuild("manual")
+    if (!this.current(generation)) return
+    this._codeGraph.start("index-data-cleared")
+    const scan = this._orchestrator.startIndexing("manual")
+    await this.configureDocuments("manual", { after: scan, force: true, generation, wait: true })
   }
 
   public clearErrorState(): void {
@@ -580,12 +720,14 @@ export class CodeIndexManager {
   }
 
   public getDocumentStatus(): DocumentIndexStatus {
+    if (this._documentGate) return this._documentGate
     if (this._documentService) return this._documentService.getStatus()
     if (!this._configManager) return documentDisabled("Document RAG is not initialized.")
     const cfg = this._configManager.currentDocuments
     if (!cfg.enabled) return documentDisabled("Document RAG disabled.")
+    if (!this.isFeatureEnabled) return documentDisabled("Document RAG disabled because Code RAG is disabled.")
     if (cfg.paths.length === 0) return documentStandby("No document folders configured.")
-    if (!this.isFeatureConfigured) return documentError("Document RAG requires configured embeddings.")
+    if (!this.isFeatureConfigured) return documentStandby("Document RAG blocked: embeddings are not configured.")
     return documentStandby("Document RAG starting.")
   }
 
@@ -602,10 +744,23 @@ export class CodeIndexManager {
     return this._documentService.search(query, options)
   }
 
-  public async rebuildDocuments(): Promise<void> {
-    await this.configureDocuments("manual", { start: false })
+  public rebuildDocuments(): Promise<void> {
+    return this.enqueue(() => this.rebuild())
+  }
+
+  private async rebuild(): Promise<void> {
+    if (this.graphScanState() !== "complete" || this.getCurrentStatus().systemStatus !== "Indexed") {
+      await this.start()
+      return
+    }
+    const generation = await this.nextGeneration()
+    if (!this.current(generation)) return
+    await this.configureDocuments("manual", { start: false, generation })
     if (!this._documentService) return
+    this._stateManager.setActivePipeline("documents")
     await this._documentService.rebuild("manual")
+    if (!this.current(generation)) return
+    this._stateManager.setActivePipeline(undefined)
     this._stateManager.notify()
   }
 
@@ -624,16 +779,16 @@ export class CodeIndexManager {
     return "phase-0-stub"
   }
 
-  private async _recreateGraphServices(reason: string): Promise<void> {
+  private async _recreateGraphServices(reason: string, generation = this._generation): Promise<void> {
     log.info("starting code graph service recreation", { workspacePath: this.workspacePath, reason })
-    this._orchestrator?.stopWatcher()
-    this._orchestrator = undefined
-    this._searchService = undefined
+    const previous = this._orchestrator
+    const store = this._baselineStore
+    previous?.stopWatcher()
     this._codeGraph.stop("code-graph-services-recreating")
 
     const loaded = await loadIgnoreWithFingerprint(this.workspacePath)
     const ignoreInstance = loaded.ignore
-    this._serviceFactory = new CodeIndexServiceFactory(
+    const factory = new CodeIndexServiceFactory(
       this._configManager!,
       this.workspacePath,
       this._cacheManager!,
@@ -644,11 +799,8 @@ export class CodeIndexManager {
       this._postingsStorage,
     )
 
-    const { scanner, fileWatcher, ragMeta } = this._serviceFactory.createGraphServices(
-      this._cacheManager!,
-      ignoreInstance,
-    )
-    this._orchestrator = new CodeIndexOrchestrator(
+    const { scanner, fileWatcher, ragMeta } = factory.createGraphServices(this._cacheManager!, ignoreInstance)
+    const orchestrator = new CodeIndexOrchestrator(
       this._configManager!,
       this._stateManager,
       this.workspacePath,
@@ -660,12 +812,39 @@ export class CodeIndexManager {
       ragMeta,
       (event) => this.handleTelemetry(event),
     )
-    this._orchestrator.setMemoryPressure(this._pressure)
+    orchestrator.setMemoryPressure(this._pressure)
+    try {
+      await previous?.shutdown?.()
+      await store?.close?.()
+    } catch (err) {
+      await orchestrator.shutdown()
+      throw err
+    }
+    if (!this.current(generation)) {
+      await orchestrator.shutdown()
+      if (this._orchestrator === previous) this._orchestrator = undefined
+      this._serviceFactory = undefined
+      this._searchService = undefined
+      if (this._baselineStore === store) this._baselineStore = undefined
+      return
+    }
+
+    this._serviceFactory = factory
+    this._orchestrator = orchestrator
+    this._searchService = undefined
+    this._baselineStore = undefined
+    this._baselineSignature = undefined
+    this._baselineStamp = undefined
+    this._overlay = undefined
     this._stateManager.setSystemState("Standby", "")
     log.info("code graph services are ready", { workspacePath: this.workspacePath, reason })
   }
 
-  private async refreshBaseline(): Promise<void> {
+  private refreshBaseline(): Promise<void> {
+    return this.enqueue(() => this.refresh())
+  }
+
+  private async refresh(): Promise<void> {
     if (!this.baselinePath || this._disposed) return
     if (this._baselineRefresh) return this._baselineRefresh
     const now = Date.now()
@@ -694,13 +873,19 @@ export class CodeIndexManager {
         return
       }
 
+      this.resetBaselineRetry()
       log.info("shared indexing baseline changed; rebuilding worktree delta", {
         workspacePath: this.workspacePath,
         baselinePath,
       })
-      await this._recreateServices(baseline)
-      if (this._disposed) return
-      await this._orchestrator?.startIndexing("background")
+      const generation = await this.nextGeneration()
+      if (!this.current(generation)) return
+      await this._recreateServices(baseline, generation)
+      if (!this.current(generation)) return
+      this._codeGraph.start("worktree-baseline-ready")
+      this.emitStart("background")
+      const scan = this._orchestrator?.startIndexing("background")
+      await this.configureDocuments("background", { after: scan, generation })
     })().finally(() => {
       this._baselineRefresh = undefined
     })
@@ -745,12 +930,11 @@ export class CodeIndexManager {
     }
   }
 
-  private async _recreateServices(prepared?: Baseline): Promise<void> {
+  private async _recreateServices(prepared?: Baseline, generation = this._generation): Promise<void> {
     log.info("starting indexing service recreation", { workspacePath: this.workspacePath })
     const previous = this._orchestrator
+    const store = this._baselineStore
     previous?.stopWatcher()
-    this._orchestrator = undefined
-    this._searchService = undefined
     this._codeGraph.stop("indexing-services-recreating")
 
     const loaded = await loadIgnoreWithFingerprint(this.workspacePath)
@@ -779,24 +963,6 @@ export class CodeIndexManager {
       model: config.modelId ?? "default",
     })
 
-    const shouldValidate = embedder && embedder.embedderInfo.name === config.embedderProvider
-    if (shouldValidate) {
-      log.info("validating embedder configuration", {
-        workspacePath: this.workspacePath,
-        provider: embedder.embedderInfo.name,
-      })
-      const validationResult = await factory.validateEmbedder(embedder)
-      if (!validationResult.valid) {
-        const errorMessage = validationResult.error || "Embedder configuration validation failed"
-        this._stateManager.setSystemState("Error", errorMessage)
-        throw new Error(errorMessage)
-      }
-      log.info("embedder configuration validated", {
-        workspacePath: this.workspacePath,
-        provider: embedder.embedderInfo.name,
-      })
-    }
-
     const orchestrator = new CodeIndexOrchestrator(
       this._configManager!,
       this._stateManager,
@@ -809,6 +975,14 @@ export class CodeIndexManager {
       ragMeta,
       (event) => this.handleTelemetry(event),
       baseline?.overlay,
+      async () => {
+        log.info("validating embedder configuration at RAG boundary", {
+          workspacePath: this.workspacePath,
+          provider: embedder.embedderInfo.name,
+        })
+        const result = await factory.validateEmbedder(embedder)
+        if (!result.valid) throw new Error(result.error || "Embedder configuration validation failed")
+      },
     )
     const search = new CodeIndexSearchService(
       this._configManager!,
@@ -819,11 +993,21 @@ export class CodeIndexManager {
     )
     orchestrator.setMemoryPressure(this._pressure)
 
-    await previous?.shutdown?.()
-    await this._baselineStore?.close?.()
-    if (this._disposed) {
+    try {
+      await previous?.shutdown?.()
+      await store?.close?.()
+    } catch (err) {
       await orchestrator.shutdown()
       await baseline?.store?.close?.()
+      throw err
+    }
+    if (!this.current(generation)) {
+      await orchestrator.shutdown()
+      await baseline?.store?.close?.()
+      if (this._orchestrator === previous) this._orchestrator = undefined
+      this._serviceFactory = undefined
+      this._searchService = undefined
+      if (this._baselineStore === store) this._baselineStore = undefined
       return
     }
 
@@ -841,29 +1025,48 @@ export class CodeIndexManager {
 
   private async configureDocuments(
     trigger: IndexingTelemetryTrigger,
-    opts: { start?: boolean; force?: boolean; after?: Promise<unknown> } = {},
+    opts: {
+      start?: boolean
+      force?: boolean
+      after?: Promise<IndexingRunOutcome | void>
+      generation?: number
+      wait?: boolean
+    } = {},
   ): Promise<void> {
-    const token = ++this._documentToken
+    const generation = opts.generation ?? (await this.nextGeneration())
+    if (!this.current(generation)) return
     if (!this._configManager) return
     const cfg = this._configManager.currentDocuments
+    if (!cfg) return
     if (!cfg.enabled) {
-      this._documentService?.dispose()
-      this._documentService = undefined
+      await this.stopDocuments()
+      if (!this.current(generation)) return
+      this._documentGate = undefined
+      this._stateManager.notify()
+      return
+    }
+
+    if (!this.isFeatureEnabled) {
+      await this.stopDocuments()
+      if (!this.current(generation)) return
+      this._documentGate = documentDisabled("Document RAG disabled because Code RAG is disabled.")
       this._stateManager.notify()
       return
     }
 
     await this.ensureCache()
-    if (this._disposed) return
+    if (!this.current(generation)) return
 
     if (!this.isFeatureConfigured) {
-      this._documentService?.dispose()
-      this._documentService = undefined
+      await this.stopDocuments()
+      if (!this.current(generation)) return
+      this._documentGate = documentStandby("Document RAG blocked: embeddings are not configured.")
       this._stateManager.notify()
       return
     }
 
     const loaded = await loadIgnoreWithFingerprint(this.workspacePath)
+    if (!this.current(generation)) return
     const factory = new CodeIndexServiceFactory(
       this._configManager,
       this.workspacePath,
@@ -874,31 +1077,67 @@ export class CodeIndexManager {
       this._graphStorage,
       this._postingsStorage,
     )
-    if (!this._serviceFactory) this._serviceFactory = factory
-
     const next = factory.createDocumentService(loaded.ignore, () => this._stateManager.notify())
     next.setMemoryPressure(this._pressure)
-    this._documentService?.dispose()
+    await this.stopDocuments()
+    if (!this.current(generation)) {
+      await next.dispose()
+      return
+    }
+    if (!this._serviceFactory) this._serviceFactory = factory
     this._documentService = next
+    this._documentGate = opts.after
+      ? documentStandby("Document RAG waiting for Code Graph and Code RAG to finish.")
+      : undefined
     this._stateManager.notify()
 
     if (opts.start === false) return
     const start = async () => {
-      if (this._disposed || token !== this._documentToken) return
+      const outcome = await opts.after
+      if (!this.current(generation)) return
+      if (outcome && outcome.state !== "completed") {
+        const reason = outcome.state === "failed" ? "failed" : "was cancelled"
+        this._documentGate = documentStandby(
+          `Document RAG blocked because ${outcome.pipeline === "codeGraph" ? "Code Graph" : "Code RAG"} ${reason}.`,
+        )
+        this._stateManager.notify()
+        return
+      }
+      if (outcome?.pipeline === "codeGraph") {
+        this._documentGate = documentStandby("Document RAG blocked because Code RAG did not run.")
+        this._stateManager.notify()
+        return
+      }
+      this._documentGate = undefined
+      this._stateManager.setActivePipeline("documents")
       await next.start(trigger, opts.force === true)
+      if (!this.current(generation)) return
+      this._stateManager.setActivePipeline(undefined)
+      this._stateManager.notify()
     }
-    const task = opts.after ? opts.after.then(start) : start()
-    void task.catch((err) => {
+    const task = start().catch((err) => {
+      if (!this.current(generation)) return
       log.error("failed to start document indexing", { err })
       this.emitError("documents:start", err, trigger, "documents")
+      this._documentGate = documentError(err instanceof Error ? err.message : String(err))
+      this._stateManager.setActivePipeline(undefined)
       this._stateManager.notify()
     })
+    if (opts.wait) await task
+    else void task
   }
 
-  public async handleSettingsChange(input: IndexingConfigInput): Promise<void> {
+  public handleSettingsChange(input: IndexingConfigInput): Promise<void> {
+    return this.enqueue(() => this.settings(input))
+  }
+
+  private async settings(input: IndexingConfigInput): Promise<void> {
     if (!this._configManager) return
 
+    this.resetBaselineRetry()
+    const documents = JSON.stringify(this._configManager.currentDocuments)
     const { requiresRestart } = this._configManager.loadConfiguration(input)
+    const documentsChanged = documents !== JSON.stringify(this._configManager.currentDocuments)
     log.info("processed indexing settings change", {
       workspacePath: this.workspacePath,
       featureEnabled: this.isFeatureEnabled,
@@ -907,10 +1146,13 @@ export class CodeIndexManager {
     })
 
     if (!this.isFeatureEnabled || !this.isFeatureConfigured) {
+      const generation = await this.nextGeneration()
+      if (!this.current(generation)) return
       const reason = this.isFeatureEnabled ? "indexing-not-configured" : "indexing-disabled"
       await this.ensureCache()
       if (this._disposed) return
-      await this._recreateGraphServices(reason)
+      await this._recreateGraphServices(reason, generation)
+      if (!this.current(generation)) return
       this._codeGraph.start("code-graph-default-enabled")
       this._stateManager.setSystemState(
         "Standby",
@@ -918,32 +1160,32 @@ export class CodeIndexManager {
           ? "RAG indexing is not configured. Code Graph is available."
           : "RAG indexing is disabled. Code Graph is available.",
       )
-      const scan = this._orchestrator?.startIndexing("background") ?? Promise.resolve()
-      await this.configureDocuments("background", { after: scan })
+      const scan = this._orchestrator?.startIndexing("background")
+      await this.configureDocuments("background", { after: scan, generation })
       return
     }
 
     if (requiresRestart && this.isFeatureEnabled && this.isFeatureConfigured) {
       try {
+        const generation = await this.nextGeneration()
+        if (!this.current(generation)) return
         if (!this._cacheManager) {
           this._cacheManager = new CacheManager(this.cacheDirectory, this.workspacePath)
           await this._cacheManager.initialize()
         }
         log.info("recreating RAG services for indexing settings change", {
           workspacePath: this.workspacePath,
-          ragOnly: true,
+          ragOnly: false,
           codeGraphPreserved: true,
+          reason: "service recreation interrupts watcher continuity",
         })
-        await this._recreateServices()
-        if (this._disposed) return
+        await this._recreateServices(undefined, generation)
+        if (!this.current(generation)) return
+        if (this.waiting()) return
         this._codeGraph.start("rag-settings-updated")
         this.emitStart("background")
-        const scan =
-          this._orchestrator?.startRagIndexing("background", "settings-change").catch((err) => {
-            log.error("failed to start RAG-only indexing after settings change", { err })
-            this.emitError("manager:handleSettingsChange", err, "background")
-          }) ?? Promise.resolve()
-        await this.configureDocuments("background", { force: true, after: scan })
+        const scan = this._orchestrator?.startIndexing("background")
+        await this.configureDocuments("background", { force: true, after: scan, generation })
       } catch (err) {
         log.error("failed to recreate services on settings change", { err })
         throw err
@@ -951,7 +1193,19 @@ export class CodeIndexManager {
       return
     }
 
-    await this.configureDocuments("background", { force: true })
+    if (!documentsChanged) return
+
+    const generation = await this.nextGeneration()
+    if (!this.current(generation)) return
+    const ready = this.graphScanState() === "complete" && this.getCurrentStatus().systemStatus === "Indexed"
+    if (ready) {
+      await this.configureDocuments("background", { force: true, generation })
+      return
+    }
+
+    this._codeGraph.start("document-settings-waiting-for-index")
+    const scan = this._orchestrator?.startIndexing("background")
+    await this.configureDocuments("background", { force: true, after: scan, generation })
   }
 }
 

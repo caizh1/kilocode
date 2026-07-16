@@ -1902,4 +1902,9 @@ export const dict = {
   "chat.search.invalidRegex": "Expressão regular inválida",
   "chat.search.noResults": "Nenhum resultado",
   "chat.search.searchingHistory": "Pesquisando mensagens anteriores…",
+  "settings.experimental.dsml.title": "Reparo de chamadas de ferramenta DSML",
+  "settings.experimental.dsml.description":
+    "Repare chamadas DeepSeek DSML vazadas apenas para o provedor e modelo selecionados",
+  "settings.experimental.dsmlModel.title": "Modelo de destino DSML",
+  "settings.experimental.dsmlModel.description": "Selecione o único provedor e modelo autorizado a analisar DSML",
 }

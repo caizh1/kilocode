@@ -14,6 +14,7 @@ import { CodeIndexAnalysisService } from "../../../../src/indexing/analysis"
 import { queryVectorEvidence, type VectorEvidenceAdapter } from "../../../../src/indexing/analysis/vector"
 import { parseCodeGraphFile } from "../../../../src/indexing/codegraph/parser"
 import { CodeGraphJsonStorage, CodePostingsJsonStorage } from "../../../../src/indexing/codegraph/storage"
+import { workspaceKey } from "../../../../src/indexing/workspace-key"
 
 const driver = `
 #include "driver.h"
@@ -809,7 +810,13 @@ describe("graph-only queryEvidence", () => {
 
   test("does not read old graph when schema or parser version needs rebuild", async () => {
     const ctx = await fixture()
-    const manifestPath = path.join(ctx.cacheDirectory, "codegraph", CODE_GRAPH_STORAGE_VERSION_DIR, "manifest.json")
+    const manifestPath = path.join(
+      ctx.cacheDirectory,
+      "codegraph",
+      workspaceKey(ctx.workspacePath),
+      CODE_GRAPH_STORAGE_VERSION_DIR,
+      "manifest.json",
+    )
     const manifest = JSON.parse(await readFile(manifestPath, "utf-8")) as CodeGraphManifest
     await writeFile(
       manifestPath,
@@ -840,6 +847,7 @@ describe("graph-only queryEvidence", () => {
     const manifestPath = path.join(
       ctx.cacheDirectory,
       "codepostings",
+      workspaceKey(ctx.workspacePath),
       CODE_POSTINGS_STORAGE_VERSION_DIR,
       "manifest.json",
     )

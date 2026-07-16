@@ -23,7 +23,10 @@ body:has(.settings-shell),
   --titanium-muted: #9c9ea0;
   --titanium-faint: #777c83;
   --titanium-accent: #1f72c6;
+  --titanium-accent-strong: #52acde;
   --titanium-focus: #39a2e7;
+  --titanium-focus-ring: rgba(57, 162, 231, 0.22);
+  --titanium-input-border: var(--titanium-line-strong);
   --titanium-success: #68d899;
   --titanium-warning: #d7a93a;
   --titanium-danger: #f07178;
@@ -50,6 +53,9 @@ body:has(.settings-shell),
 
 body:has(.chat-view[data-ui="qa-shell"]),
 .chat-view[data-ui="qa-shell"] {
+  --qa-composer-max-width: 1240px;
+  --qa-reading-width: 760px;
+  --qa-work-width: 1120px;
   --qa-shell-bg: var(--titanium-deep);
   --qa-shell-ambient: rgba(57, 162, 231, 0.075);
   --qa-glass-fill: var(--titanium-glass);
@@ -57,7 +63,7 @@ body:has(.chat-view[data-ui="qa-shell"]),
   --qa-glass-fill-inset: var(--titanium-inset);
   --qa-glass-border: var(--titanium-line-strong);
   --qa-glass-border-soft: var(--titanium-line);
-  --qa-divider: #2d3a46;
+  --qa-divider: var(--titanium-line-strong);
   --qa-glass-highlight: var(--titanium-highlight);
   --qa-glass-shadow: var(--titanium-shadow);
   --qa-active-fill: var(--titanium-active);
@@ -99,23 +105,48 @@ body:has(.chat-view[data-ui="qa-shell"]),
 .chat-view[data-ui="qa-shell"] .message-list-content,
 .chat-view[data-ui="qa-shell"] .message-list-content-empty,
 .chat-view[data-ui="qa-shell"] .message-list-turns {
-  width: min(100%, 760px);
+  width: min(100%, var(--qa-work-width));
 }
 
 .chat-view[data-ui="qa-shell"] .message-list-content {
   gap: 16px;
 }
 
-.chat-view[data-ui="qa-shell"] [data-component="task-header"],
-.chat-view[data-ui="qa-shell"] [data-component="task-header-graph"],
-.chat-view[data-ui="qa-shell"] [data-component="task-header-todos"] {
-  margin-inline: 14px;
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] {
+  box-sizing: border-box;
+  width: min(calc(100% - 24px), var(--qa-work-width));
+  margin: 8px auto 2px;
+  overflow: clip;
   color: var(--titanium-muted);
+  border: 1px solid color-mix(in srgb, var(--titanium-line) 58%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.025), transparent 44%),
+    color-mix(in srgb, var(--titanium-glass) 48%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(12px) saturate(1.05);
+  -webkit-backdrop-filter: blur(12px) saturate(1.05);
 }
 
-.chat-view[data-ui="qa-shell"] [data-component="task-header"] {
-  min-height: 42px;
-  margin-top: 6px;
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-component="task-header"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-component="task-header-search"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-component="task-header-graph"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-component="task-header-todos"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-slot="task-header-memory"] {
+  box-sizing: border-box;
+  margin: 0;
+  color: var(--titanium-muted);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-component="task-header"] {
+  min-height: 40px;
+  padding: 7px 12px;
 }
 
 .chat-view[data-ui="qa-shell"] [data-slot="task-header-title-label"] {
@@ -124,9 +155,92 @@ body:has(.chat-view[data-ui="qa-shell"]),
   font-weight: 600;
 }
 
+.chat-view[data-ui="qa-shell"]
+  [data-ui="qa-task-hud"]
+  [data-slot="task-header-title-trigger"][data-renamable]
+  [data-slot="task-header-title-label"] {
+  text-decoration: none;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-stats"] {
+  min-width: 0;
+  gap: 10px;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-metrics"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-actions"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-context"] {
+  display: inline-flex;
+  align-items: center;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-metrics"] {
+  min-width: 0;
+  gap: 8px;
+  color: var(--titanium-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-context"] {
+  min-width: 0;
+  gap: 4px;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-context-unit"] {
+  color: var(--titanium-faint);
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-context-compact"] {
+  display: none;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-actions"] {
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.chat-view[data-ui="qa-shell"]
+  [data-ui="qa-task-hud"]
+  [data-slot="task-header-metrics"]
+  + [data-slot="task-header-actions"] {
+  padding-left: 10px;
+  border-left: 1px solid rgba(113, 137, 155, 0.16);
+}
+
+.chat-view[data-ui="qa-shell"]
+  [data-ui="qa-task-hud"]
+  [data-slot="task-header-actions"]
+  :is([data-component="icon-button"], [data-slot="task-header-expand"]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  color: inherit;
+}
+
 .chat-view[data-ui="qa-shell"] [data-component="task-header-graph"] {
-  gap: 3px;
-  padding-block: 3px 6px;
+  gap: 5px;
+  padding: 8px 12px 10px;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] .task-timeline-outer,
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-graph-row"] {
+  min-width: 0;
+  padding-inline: 0;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] .task-header-usage-trigger {
+  width: 100%;
+  margin-inline: 0;
+  padding-inline: 0;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] .task-header-tokens {
+  padding-inline: 0;
 }
 
 .chat-view[data-ui="qa-shell"] [data-slot="task-header-graph-row"],
@@ -150,14 +264,40 @@ body:has(.chat-view[data-ui="qa-shell"]),
 }
 
 .chat-view[data-ui="qa-shell"] [data-slot="task-header-todos-list"] {
-  border-radius: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px 14px;
+  padding: 6px 12px 10px;
+  border-radius: 0;
   color: var(--titanium-text);
+  background: color-mix(in srgb, var(--titanium-inset) 34%, transparent);
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-component="task-header-graph"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-component="task-header-todos"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-component="task-header-search"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-slot="task-header-memory"] {
+  border-top: 1px solid rgba(113, 137, 155, 0.12);
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-todos-trigger"] {
+  min-height: 32px;
+  padding: 6px 12px;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-memory"] {
+  padding: 6px 12px;
 }
 
 .chat-view[data-ui="qa-shell"] .message-list-empty {
   width: min(100%, 540px);
   padding: 32px 22px;
   gap: 16px;
+}
+
+.chat-view[data-ui="qa-shell"] .kilo-product-title,
+.chat-view[data-ui="qa-shell"] .settings-section-title {
+  display: none;
 }
 
 .chat-view[data-ui="qa-shell"] .kilo-logo {
@@ -182,6 +322,10 @@ body:has(.chat-view[data-ui="qa-shell"]),
   color: var(--titanium-muted);
   font-size: var(--kilo-font-size-11);
   letter-spacing: 0.04em;
+}
+
+.chat-view[data-ui="qa-shell"] .recent-session-list {
+  display: contents;
 }
 
 .chat-view[data-ui="qa-shell"] .feedback-button,
@@ -272,8 +416,23 @@ body:has(.chat-view[data-ui="qa-shell"]),
   line-height: 1.55;
 }
 
-.chat-view[data-ui="qa-shell"] [data-component="tool-part-wrapper"][data-part-type="text"],
-.chat-view[data-ui="qa-shell"] [data-component="tool-part-wrapper"][data-part-type="reasoning"] {
+.chat-view[data-ui="qa-shell"] [data-ui="qa-part-shell"] {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--qa-work-width);
+  margin-inline: auto;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-part-shell"][data-part-type="text"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-part-shell"][data-part-type="reasoning"] {
+  max-width: var(--qa-reading-width);
   color: var(--titanium-text);
   border: 0;
   border-radius: 0;
@@ -282,12 +441,52 @@ body:has(.chat-view[data-ui="qa-shell"]),
 }
 
 .chat-view[data-ui="qa-shell"]
-  [data-component="tool-part-wrapper"]:not([data-part-type="text"]):not([data-part-type="reasoning"]) {
+  [data-ui="qa-part-shell"]
+  > [data-component="tool-part-wrapper"][data-part-type="tool"][data-tool],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-part-shell"] > [data-component="collapsible"].tool-collapsible {
   overflow: hidden;
   border: 1px solid var(--titanium-line);
   border-radius: var(--titanium-radius-card);
-  background: var(--titanium-glass);
+  background: color-mix(in srgb, var(--titanium-glass) 84%, transparent);
   box-shadow: inset 0 1px 0 var(--titanium-highlight);
+}
+
+.chat-view[data-ui="qa-shell"]
+  [data-ui="qa-part-shell"]
+  > [data-component="tool-part-wrapper"][data-part-type="tool"][data-tool]:has(
+    > [data-component="collapsible"][data-expanded]
+  ),
+.chat-view[data-ui="qa-shell"]
+  [data-ui="qa-part-shell"]
+  > [data-component="collapsible"].tool-collapsible[data-expanded] {
+  border-color: color-mix(in srgb, var(--titanium-line) 68%, var(--titanium-line-strong));
+  background: var(--titanium-raised);
+  box-shadow: var(--titanium-control-shadow);
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-part-shell"] > [data-component="tool-part-wrapper"][data-tool="skill"] {
+  border-color: var(--titanium-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--titanium-raised) 58%, transparent);
+  box-shadow: inset 0 1px 0 var(--titanium-highlight);
+}
+
+.chat-view[data-ui="qa-shell"]
+  [data-ui="qa-part-shell"]
+  > [data-component="tool-part-wrapper"][data-tool="skill"]
+  > [data-component="collapsible"]
+  > [data-slot="collapsible-trigger"] {
+  min-height: 34px;
+}
+
+.chat-view[data-ui="qa-shell"]
+  [data-ui="qa-part-shell"]:has(> .document-artifact-card)
+  > [data-component="tool-part-wrapper"][data-part-type="tool"][data-tool] {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .chat-view[data-ui="qa-shell"] [data-component="tool-part-wrapper"] [data-component="tool-output"][data-scrollable] {
@@ -317,9 +516,117 @@ body:has(.chat-view[data-ui="qa-shell"]),
   box-shadow: var(--titanium-control-shadow);
 }
 
+.chat-view[data-ui="qa-shell"] [data-ui="qa-part-shell"] > [data-component="todos"],
+.chat-view[data-ui="qa-shell"] [data-ui="qa-part-shell"] > .document-artifact-card {
+  width: 100%;
+  margin: 0;
+}
+
 .chat-view[data-ui="qa-shell"] .startup-error-banner,
 .chat-view[data-ui="qa-shell"] .revert-banner {
   border-color: rgba(240, 113, 120, 0.52);
+}
+
+@container chat (min-width: 940px) {
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-component="task-header-graph"] {
+    display: grid;
+    grid-template-areas:
+      "timeline usage"
+      "context usage";
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 290px);
+    grid-template-rows: auto auto;
+    gap: 5px 16px;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] .task-timeline-outer {
+    grid-area: timeline;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-graph-row"] {
+    grid-area: context;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] :is(.task-header-usage, .task-header-tokens) {
+    grid-area: usage;
+    align-self: stretch;
+    min-width: 0;
+    padding-left: 16px;
+    border-left: 1px solid rgba(113, 137, 155, 0.16);
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] .task-header-usage .task-header-tokens {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-slot="task-header-todos-list"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container chat (max-width: 559px) {
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] {
+    width: calc(100% - 16px);
+    margin-top: 8px;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] > [data-component="task-header"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    padding-inline: 10px;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-stats"] {
+    justify-content: space-between;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-actions"] {
+    margin-left: auto;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-component="task-header-graph"] {
+    padding-inline: 10px;
+  }
+
+  .chat-view[data-ui="qa-shell"] .message-list {
+    padding-inline: 10px;
+  }
+}
+
+@container chat (max-width: 300px) {
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] {
+    width: calc(100% - 14px);
+    margin-top: 7px;
+    border-radius: 10px;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-stats"] {
+    gap: 6px;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-context-value"],
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-context-unit"] {
+    display: none;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-context-compact"] {
+    display: inline;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    [data-ui="qa-task-hud"]
+    [data-slot="task-header-metrics"]
+    + [data-slot="task-header-actions"] {
+    padding-left: 6px;
+  }
+
+  .chat-view[data-ui="qa-shell"] [data-ui="qa-task-hud"] [data-slot="task-header-todos-list"] {
+    padding-inline: 9px;
+  }
 }
 
 .chat-view[data-ui="qa-shell"] .scroll-to-bottom-button {
@@ -342,7 +649,9 @@ body:has(.chat-view[data-ui="qa-shell"]),
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
-  margin: 10px 12px 12px;
+  width: min(calc(100% - 24px), var(--qa-composer-max-width));
+  max-width: none;
+  margin: 10px auto 12px;
   padding: 8px;
   border-color: var(--titanium-line-strong);
   border-radius: var(--titanium-radius-shell);
@@ -359,7 +668,7 @@ body:has(.chat-view[data-ui="qa-shell"]),
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-input-wrapper[data-ui="qa-composer-input"] {
-  border-color: #2d3a46;
+  border-color: var(--qa-divider);
   border-radius: var(--titanium-radius-card);
   background: var(--titanium-inset);
   box-shadow: inset 0 1px 0 var(--titanium-highlight);
@@ -368,7 +677,7 @@ body:has(.chat-view[data-ui="qa-shell"]),
 .chat-view[data-ui="qa-shell"] .prompt-input-wrapper[data-ui="qa-composer-input"]:focus-within {
   border-color: var(--titanium-focus);
   box-shadow:
-    0 0 0 2px rgba(57, 162, 231, 0.22),
+    0 0 0 2px var(--titanium-focus-ring),
     inset 0 1px 0 var(--titanium-highlight);
 }
 
@@ -387,16 +696,21 @@ body:has(.chat-view[data-ui="qa-shell"]),
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-input-hint[data-ui="qa-composer-footer"] {
+  display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
   gap: 7px;
+  min-width: 0;
   padding: 8px 1px 0;
   font-size: var(--kilo-font-size-13);
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
+  display: grid;
   grid-template-columns: minmax(78px, 0.82fr) minmax(112px, 1.36fr) minmax(76px, 0.86fr) 36px;
   gap: 6px;
+  width: 100%;
+  min-width: 0;
 }
 
 .chat-view[data-ui="qa-shell"]
@@ -427,6 +741,9 @@ body:has(.chat-view[data-ui="qa-shell"]),
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"] {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
   height: 36px !important;
   min-height: 36px;
   padding: 0 9px !important;
@@ -437,6 +754,17 @@ body:has(.chat-view[data-ui="qa-shell"]),
   box-shadow: var(--titanium-control-shadow);
   font-size: var(--kilo-font-size-13);
   gap: 6px;
+  overflow: hidden;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger,
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger--mode,
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger--model,
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-trigger--thinking {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  flex: none;
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon,
@@ -523,6 +851,164 @@ body:has(.chat-view[data-ui="qa-shell"]),
   box-shadow: var(--titanium-control-shadow);
 }
 
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-button,
+.chat-view[data-ui="qa-shell"] .prompt-overflow-button {
+  display: none;
+  place-items: center;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  color: var(--titanium-text);
+  border: 1px solid var(--titanium-line);
+  border-radius: var(--titanium-radius-control);
+  background: var(--titanium-raised);
+  box-shadow: var(--titanium-control-shadow);
+}
+
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-indexing-actions[data-ui="qa-indexing-actions"]
+  > [data-component="tooltip-trigger"]:has(.prompt-indexing-summary-button),
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-utility-actions[data-ui="qa-utility-actions"]
+  > [data-component="tooltip-trigger"]:has(.prompt-overflow-button) {
+  display: none;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-stack,
+.chat-view[data-ui="qa-shell"] .prompt-overflow-button {
+  grid-template-areas: "stack";
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-stack {
+  display: grid;
+  place-items: center;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-stack > *,
+.chat-view[data-ui="qa-shell"] .prompt-overflow-button > * {
+  grid-area: stack;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-stack > .codicon:first-child,
+.chat-view[data-ui="qa-shell"] .prompt-overflow-button > .codicon:first-child {
+  font-size: var(--kilo-font-size-17);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-state,
+.chat-view[data-ui="qa-shell"] .prompt-overflow-state {
+  display: grid;
+  place-items: center;
+  width: 10px;
+  height: 10px;
+  align-self: end;
+  justify-self: end;
+  padding: 1px;
+  font-size: var(--kilo-font-size-8);
+  line-height: 1;
+  border-radius: 999px;
+  background: var(--titanium-raised);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-button[data-tone="success"] {
+  color: var(--titanium-success);
+  border-color: color-mix(in srgb, var(--titanium-success) 68%, transparent);
+  background: color-mix(in srgb, var(--titanium-success) 12%, var(--titanium-raised));
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-button[data-state="indexing"],
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-button[data-state="warning"] {
+  color: var(--titanium-warning);
+  border-color: color-mix(in srgb, var(--titanium-warning) 68%, transparent);
+  background: color-mix(in srgb, var(--titanium-warning) 12%, var(--titanium-raised));
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-button[data-tone="error"],
+.chat-view[data-ui="qa-shell"] .prompt-overflow-button--error {
+  color: var(--titanium-danger);
+  border-color: color-mix(in srgb, var(--titanium-danger) 68%, transparent);
+  background: color-mix(in srgb, var(--titanium-danger) 12%, var(--titanium-raised));
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-button:hover:not(:disabled),
+.chat-view[data-ui="qa-shell"] .prompt-overflow-button:hover:not(:disabled) {
+  border-color: var(--qa-index-border, rgba(113, 137, 155, 0.5));
+  background: var(--qa-index-bg, var(--titanium-active));
+  transform: translateY(-1px);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-summary-button:focus-visible,
+.chat-view[data-ui="qa-shell"] .prompt-overflow-button:focus-visible {
+  border-color: var(--titanium-focus);
+  outline: 2px solid var(--titanium-focus);
+  outline-offset: 2px;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-overflow-button--recording,
+.chat-view[data-ui="qa-shell"] .prompt-overflow-button--starting,
+.chat-view[data-ui="qa-shell"] .prompt-overflow-button--transcribing {
+  color: var(--titanium-accent-strong);
+  border-color: color-mix(in srgb, var(--titanium-accent-strong) 68%, transparent);
+}
+
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-compact-menu {
+  display: grid;
+  gap: 2px;
+  min-width: 210px;
+  padding: 5px;
+}
+
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-compact-menu [data-slot="dropdown-menu-item"] {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  color: var(--titanium-muted);
+  border-radius: 7px;
+}
+
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-compact-menu [data-slot="dropdown-menu-item"]:hover,
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-compact-menu [data-slot="dropdown-menu-item"]:focus-visible,
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-compact-menu [data-slot="dropdown-menu-item"][data-highlighted] {
+  color: var(--titanium-text);
+  outline: 1px solid color-mix(in srgb, var(--titanium-accent-strong) 72%, transparent);
+  outline-offset: -2px;
+  background: var(--titanium-active);
+}
+
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-compact-menu-icon,
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-compact-menu-state,
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-indexing-summary-item-state {
+  justify-self: center;
+  font-size: var(--kilo-font-size-15);
+}
+
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-indexing-summary-label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-indexing-summary-label > span:last-child {
+  color: var(--titanium-faint);
+  font-size: var(--kilo-font-size-11);
+}
+
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-indexing-summary-item-state[data-tone="success"] {
+  color: var(--titanium-success);
+}
+
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-indexing-summary-item-state[data-tone="warning"] {
+  color: var(--titanium-warning);
+}
+
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-indexing-summary-item-state[data-tone="error"] {
+  color: var(--titanium-danger);
+}
+
 .chat-view[data-ui="qa-shell"]
   .prompt-input-hint-actions
   [data-component="button"]:hover:not(:disabled):not([aria-disabled="true"]),
@@ -551,8 +1037,9 @@ body:has(.chat-view[data-ui="qa-shell"]),
 .chat-view[data-ui="qa-shell"] .prompt-indexing-button {
   width: auto !important;
   min-width: 36px !important;
-  padding-inline: 8px !important;
-  gap: 6px;
+  flex: 0 0 auto;
+  padding: 0 12px 0 10px !important;
+  gap: 7px;
 }
 
 .chat-view[data-ui="qa-shell"] .prompt-indexing-codicon-stack {
@@ -582,8 +1069,8 @@ body:has(.chat-view[data-ui="qa-shell"]),
   min-width: 0;
   overflow: hidden;
   color: currentColor;
-  font-size: var(--kilo-font-size-11);
-  font-weight: 560;
+  font-size: var(--kilo-font-size-12);
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -870,6 +1357,12 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
   letter-spacing: -0.015em;
 }
 
+.settings-shell .settings-page-header p,
+.settings-shell .settings-section-title,
+.settings-shell .settings-save-status {
+  display: none;
+}
+
 .settings-shell .settings-page-groups {
   gap: 14px;
 }
@@ -896,8 +1389,19 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
   align-items: center;
   gap: 18px;
   min-height: 66px;
-  padding: 12px 0;
-  border-bottom-color: rgba(113, 137, 155, 0.18);
+  margin-bottom: 8px;
+  padding: 12px 0 8px;
+  border-bottom: 1px solid var(--border-weak-base);
+}
+
+.settings-shell [data-slot="settings-row"][data-last] {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.settings-shell [data-slot="settings-row"]:not([data-description]) {
+  align-items: center;
 }
 
 .settings-shell [data-slot="settings-row-label"] {
@@ -905,6 +1409,10 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
 }
 
 .settings-shell [data-slot="settings-row-label-title"] {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   color: var(--titanium-text);
   font-size: var(--kilo-font-size-13);
   font-weight: 560;
@@ -918,8 +1426,24 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
 
 .settings-shell [data-slot="settings-row-input"] {
   width: 100%;
+  min-width: 0;
   max-width: 260px;
   justify-self: end;
+}
+
+.settings-shell [data-slot="settings-row-input"] > [data-component="tooltip-trigger"],
+.settings-shell [data-slot="settings-row-input"] [data-component="select"],
+.settings-shell [data-slot="settings-row-input"] [data-slot="select-select-trigger"] {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.settings-shell [data-slot="settings-row-input"] [data-slot="select-select-trigger"] > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-shell [data-variant="wide-input"] [data-slot="settings-row-input"] {
@@ -931,7 +1455,7 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
 .settings-shell [data-component="text-field"],
 .settings-shell [data-slot="select-select-trigger"] {
   color: var(--titanium-text);
-  border-color: var(--titanium-line);
+  border-color: var(--titanium-input-border);
   border-radius: var(--titanium-radius-control);
   background: var(--titanium-inset);
   box-shadow: inset 0 1px 0 var(--titanium-highlight);
@@ -952,7 +1476,7 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
 .settings-shell [data-slot="select-select-trigger"]:focus-visible {
   border-color: var(--titanium-focus);
   box-shadow:
-    0 0 0 2px rgba(57, 162, 231, 0.2),
+    0 0 0 2px var(--titanium-focus-ring),
     inset 0 1px 0 var(--titanium-highlight);
 }
 
@@ -1089,104 +1613,407 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
 
 /* -------------------------- Container response ------------------------- */
 
-@container prompt-input (min-width: 900px) {
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint[data-ui="qa-composer-footer"] {
-    grid-template-columns: minmax(0, 432px) minmax(0, 1fr);
-    align-items: center;
-  }
-
-  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
-    grid-template-columns: 96px minmax(130px, 170px) 112px 36px;
-    max-width: 432px;
-  }
-
-  .chat-view[data-ui="qa-shell"]
-    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-reset)) {
-    grid-template-columns: 96px minmax(130px, 170px) 112px;
-    max-width: 390px;
-  }
-
-  .chat-view[data-ui="qa-shell"]
-    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)):has(
-      .prompt-selector-reset
-    ) {
-    grid-template-columns: 96px minmax(130px, 170px) 36px;
-    max-width: 314px;
-  }
-
-  .chat-view[data-ui="qa-shell"]
-    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)):not(
-      :has(.prompt-selector-reset)
-    ) {
-    grid-template-columns: 96px minmax(130px, 220px);
-    max-width: 322px;
-  }
-}
-
-@container prompt-input (max-width: 479px) {
+@container prompt-input (max-width: 559px) {
   .chat-view[data-ui="qa-shell"] .prompt-indexing-label {
     display: none;
   }
 
   .chat-view[data-ui="qa-shell"] .prompt-indexing-button {
     width: 36px !important;
+    min-width: 36px !important;
     padding: 0 !important;
   }
 }
 
-@container prompt-input (max-width: 420px) {
+@container prompt-input (min-width: 301px) and (max-width: 380px) {
   .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions[data-ui="qa-composer-actions"] {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
-    gap: 6px;
+    grid-template-columns: max-content minmax(5px, 1fr) max-content;
+    gap: 3px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-actions[data-ui="qa-composer-actions"]:not(:has([data-ui="qa-indexing-actions"])) {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-indexing-actions[data-ui="qa-indexing-actions"],
+  .chat-view[data-ui="qa-shell"] .prompt-input-utility-actions[data-ui="qa-utility-actions"] {
+    gap: 3px;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-utility-actions[data-ui="qa-utility-actions"] {
+    grid-auto-columns: 34px;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="button"],
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="icon-button"] {
+    width: 34px;
+    min-width: 34px;
+    height: 34px !important;
+    min-height: 34px;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-indexing-button {
+    width: 34px !important;
+    min-width: 34px !important;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-send-button {
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    margin: 0;
+    border-radius: 9px !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-actions[data-ui="qa-composer-actions"]
+    [data-component="tooltip-trigger"] {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+@container prompt-input (max-width: 340px) {
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"] {
+    padding-inline: 6px !important;
+    gap: 4px;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .model-selector-trigger-free-data,
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-chevron {
+    display: none;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
+    grid-template-columns: minmax(62px, 0.82fr) minmax(96px, 1.36fr) minmax(60px, 0.86fr) 34px !important;
+    gap: 3px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-reset)) {
+    grid-template-columns: minmax(62px, 0.82fr) minmax(96px, 1.36fr) minmax(60px, 0.86fr) !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)):has(
+      .prompt-selector-reset
+    ) {
+    grid-template-columns: minmax(62px, 0.82fr) minmax(96px, 1.36fr) 34px !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)):not(
+      :has(.prompt-selector-reset)
+    ) {
+    grid-template-columns: minmax(62px, 0.82fr) minmax(96px, 1.36fr) !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--mode)):not(
+      :has(.prompt-selector-trigger--thinking)
+    ):not(:has(.prompt-selector-reset)) {
+    grid-template-columns: minmax(96px, 1fr) !important;
+  }
+}
+
+@container prompt-input (max-width: 300px) {
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
+    grid-template-columns: minmax(48px, 0.75fr) minmax(64px, 1.4fr) minmax(48px, 0.75fr) !important;
+    gap: 3px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)) {
+    grid-template-columns: minmax(48px, 0.75fr) minmax(64px, 1.4fr) !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--mode)):not(
+      :has(.prompt-selector-trigger--thinking)
+    ) {
+    grid-template-columns: minmax(64px, 1fr) !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]
+    > [data-component="tooltip-trigger"]:has(.prompt-selector-reset) {
+    display: none;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"] {
+    height: 30px !important;
+    min-height: 30px;
+    padding-inline: 4px !important;
+    gap: 3px;
+    font-size: var(--kilo-font-size-11);
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon,
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon [data-component="icon"] {
+    width: 14px;
+    height: 14px;
+    flex-basis: 14px;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon [data-slot="icon-svg"],
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon .codicon {
+    width: 14px;
+    height: 14px;
+    font-size: var(--kilo-font-size-14);
+    line-height: 14px;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions[data-ui="qa-composer-actions"] {
+    grid-template-columns: max-content minmax(3px, 1fr) max-content;
+    grid-template-rows: auto;
+    align-items: center;
+    gap: 3px;
   }
 
   .chat-view[data-ui="qa-shell"] .prompt-input-indexing-actions[data-ui="qa-indexing-actions"] {
     grid-column: 1;
     grid-row: 1;
-    grid-template-columns: repeat(3, 36px);
-    grid-auto-flow: row;
+    grid-auto-columns: 30px;
+    gap: 3px;
+    width: 30px;
     justify-content: start;
-    width: 100%;
   }
 
-  .chat-view[data-ui="qa-shell"] .prompt-input-utility-actions[data-ui="qa-utility-actions"],
   .chat-view[data-ui="qa-shell"]
-    .prompt-input-hint-actions[data-ui="qa-composer-actions"]:not(:has([data-ui="qa-indexing-actions"]))
-    .prompt-input-utility-actions[data-ui="qa-utility-actions"] {
-    grid-column: 1;
-    grid-row: 2;
-    grid-template-columns: repeat(4, 36px);
-    grid-auto-flow: row;
-    justify-content: end;
-    width: 100%;
+    .prompt-input-indexing-actions[data-ui="qa-indexing-actions"]
+    > [data-component="tooltip-trigger"]:has(.prompt-indexing-button) {
+    display: none;
   }
 
+  .chat-view[data-ui="qa-shell"] .prompt-indexing-summary-button,
+  .chat-view[data-ui="qa-shell"] .prompt-overflow-button {
+    display: grid;
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    min-height: 30px;
+    border-radius: 9px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-indexing-actions[data-ui="qa-indexing-actions"]
+    > [data-component="tooltip-trigger"]:has(.prompt-indexing-summary-button),
   .chat-view[data-ui="qa-shell"]
     .prompt-input-utility-actions[data-ui="qa-utility-actions"]
-    > [data-component="tooltip-trigger"]:has(> .prompt-send-button),
-  .chat-view[data-ui="qa-shell"]
-    .prompt-input-utility-actions[data-ui="qa-utility-actions"]
-    > [data-component="tooltip-trigger"]:has(> .prompt-stop-button) {
-    grid-column: 4;
+    > [data-component="tooltip-trigger"]:has(.prompt-overflow-button) {
+    display: flex;
   }
 
-  .chat-view[data-ui="qa-shell"]
-    .prompt-input-hint-actions[data-ui="qa-composer-actions"]:not(:has([data-ui="qa-indexing-actions"]))
-    .prompt-input-utility-actions[data-ui="qa-utility-actions"] {
+  .chat-view[data-ui="qa-shell"] .prompt-input-utility-actions[data-ui="qa-utility-actions"] {
+    grid-column: 3;
     grid-row: 1;
+    grid-auto-columns: 30px;
+    gap: 3px;
+    width: auto;
+    justify-content: end;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-utility-actions[data-ui="qa-utility-actions"]
+    > [data-component="tooltip-trigger"]:has([data-ui="qa-action-sandbox"]),
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-utility-actions[data-ui="qa-utility-actions"]
+    > [data-component="tooltip-trigger"]:has([data-ui="qa-action-speech"]) {
+    display: none;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="button"],
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="icon-button"] {
+    width: 30px;
+    min-width: 30px;
+    height: 30px !important;
+    min-height: 30px;
+    border-radius: 9px;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-indexing-button {
+    display: none;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-send-button {
+    width: 30px !important;
+    min-width: 30px !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    margin: 0;
+    border-radius: 9px !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-actions[data-ui="qa-composer-actions"]
+    [data-component="tooltip-trigger"] {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-actions[data-ui="qa-composer-actions"]:not(:has([data-ui="qa-indexing-actions"])) {
+    grid-template-columns: minmax(3px, 1fr) max-content;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-actions[data-ui="qa-composer-actions"]:not(:has([data-ui="qa-indexing-actions"]))
+    .prompt-input-utility-actions[data-ui="qa-utility-actions"] {
+    grid-column: 2;
   }
 }
 
-@container prompt-input (max-width: 300px) {
-  .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
-    margin-inline: 7px;
-    padding: 7px;
-    border-radius: var(--titanium-radius-shell);
+@container prompt-input (max-width: 220px) {
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
+    grid-template-columns: 42px minmax(70px, 1fr) 52px !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)) {
+    grid-template-columns: 42px minmax(70px, 1fr) !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--mode)):not(
+      :has(.prompt-selector-trigger--thinking)
+    ) {
+    grid-template-columns: minmax(70px, 1fr) !important;
+  }
+
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon {
+    display: none;
+  }
+}
+
+@container prompt-input (min-width: 620px) {
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:not(:has([data-ui="qa-indexing-actions"])) {
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:not(:has([data-ui="qa-indexing-actions"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
+    grid-template-columns: 78px minmax(112px, 150px) 76px 36px;
+    width: max-content;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:not(:has([data-ui="qa-indexing-actions"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-reset)) {
+    grid-template-columns: 78px minmax(112px, 150px) 76px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:not(:has([data-ui="qa-indexing-actions"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)):has(
+      .prompt-selector-reset
+    ) {
+    grid-template-columns: 78px minmax(112px, 150px) 36px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:not(:has([data-ui="qa-indexing-actions"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)):not(
+      :has(.prompt-selector-reset)
+    ) {
+    grid-template-columns: 78px minmax(112px, 150px);
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:not(:has([data-ui="qa-indexing-actions"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--mode)):not(
+      :has(.prompt-selector-trigger--thinking)
+    ):not(:has(.prompt-selector-reset)) {
+    grid-template-columns: minmax(112px, 150px);
+  }
+}
+
+@container prompt-input (min-width: 760px) {
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:has([data-ui="qa-indexing-actions"]):not(
+      :has(.prompt-selector-reset)
+    ):not(:has([data-ui="qa-action-sandbox"])):not(:has([data-ui="qa-action-speech"])) {
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:has([data-ui="qa-indexing-actions"]):not(
+      :has(.prompt-selector-reset)
+    ):not(:has([data-ui="qa-action-sandbox"])):not(:has([data-ui="qa-action-speech"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
+    grid-template-columns: 78px minmax(112px, 150px) 76px;
+    width: max-content;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:has([data-ui="qa-indexing-actions"]):not(
+      :has(.prompt-selector-reset)
+    ):not(:has([data-ui="qa-action-sandbox"])):not(:has([data-ui="qa-action-speech"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)) {
+    grid-template-columns: 78px minmax(112px, 150px);
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:has([data-ui="qa-indexing-actions"]):not(
+      :has(.prompt-selector-reset)
+    ):not(:has([data-ui="qa-action-sandbox"])):not(:has([data-ui="qa-action-speech"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--mode)):not(
+      :has(.prompt-selector-trigger--thinking)
+    ) {
+    grid-template-columns: minmax(112px, 150px);
+  }
+}
+
+@container prompt-input (min-width: 860px) {
+  .chat-view[data-ui="qa-shell"] .prompt-input-hint[data-ui="qa-composer-footer"] {
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
   }
 
   .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors[data-ui="qa-composer-selectors"] {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    grid-template-columns: 70px 124px 68px 34px;
+    gap: 4px;
+    width: max-content;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-reset)) {
+    grid-template-columns: 70px 124px 68px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)):has(
+      .prompt-selector-reset
+    ) {
+    grid-template-columns: 70px 124px 34px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--thinking)):not(
+      :has(.prompt-selector-reset)
+    ) {
+    grid-template-columns: 70px 124px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"]:not(:has(.prompt-selector-trigger--mode)):not(
+      :has(.prompt-selector-trigger--thinking)
+    ):not(:has(.prompt-selector-reset)) {
+    grid-template-columns: 124px;
+  }
+}
+
+@media (max-width: 300px) {
+  .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
+    width: calc(100% - 14px);
+    margin-inline: auto;
+    padding: 7px;
+    border-radius: var(--titanium-radius-shell);
   }
 }
 
@@ -1316,8 +2143,24 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
 
   .settings-shell [data-slot="settings-row-input"] {
     width: 100%;
+    min-width: 0;
     max-width: none;
     justify-self: stretch;
+  }
+
+  .settings-shell [data-slot="settings-row-input"] > [data-component="tooltip-trigger"],
+  .settings-shell [data-slot="settings-row-input"] [data-component="select"],
+  .settings-shell [data-slot="settings-row-input"] [data-slot="select-select-trigger"] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .settings-shell [data-slot="settings-row-input"] [data-slot="select-select-trigger"] > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -1325,24 +2168,537 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
 
 body.vscode-light:has(.chat-view[data-ui="qa-shell"]),
 body.vscode-light:has(.settings-shell),
-body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]),
-body.vscode-high-contrast-light:has(.settings-shell),
 .vscode-light .chat-view[data-ui="qa-shell"],
 .vscode-light .settings-shell {
-  --titanium-deep: #edf2f6;
-  --titanium-canvas: #f4f7fa;
-  --titanium-panel: #e7edf2;
-  --titanium-glass: rgba(248, 251, 253, 0.88);
-  --titanium-raised: rgba(255, 255, 255, 0.94);
-  --titanium-inset: rgba(224, 232, 239, 0.66);
-  --titanium-active: #dceaf5;
-  --titanium-line: rgba(68, 91, 109, 0.24);
-  --titanium-line-strong: #b9c8d3;
-  --titanium-text: #202b34;
-  --titanium-muted: #56636e;
-  --titanium-faint: #76838e;
-  --titanium-highlight: rgba(255, 255, 255, 0.72);
-  --titanium-shadow: rgba(45, 64, 80, 0.16);
+  --titanium-deep: #fbfcfe;
+  --titanium-canvas: #ffffff;
+  --titanium-panel: #f8fafc;
+  --titanium-glass: rgba(255, 255, 255, 0.78);
+  --titanium-raised: rgba(255, 255, 255, 0.92);
+  --titanium-inset: rgba(255, 255, 255, 0.76);
+  --titanium-active: #eaf4ff;
+  --titanium-line: rgba(48, 68, 89, 0.14);
+  --titanium-line-strong: #cbd4dd;
+  --titanium-input-border: var(--vscode-input-border, #8294a5);
+  --titanium-text: #172433;
+  --titanium-muted: #667383;
+  --titanium-faint: #8a96a3;
+  --titanium-accent: #007aff;
+  --titanium-accent-strong: #005fb8;
+  --titanium-focus: var(--vscode-focusBorder, #007aff);
+  --titanium-focus-ring: rgba(0, 122, 255, 0.18);
+  --titanium-warning: #ff9f0a;
+  --titanium-highlight: rgba(255, 255, 255, 0.95);
+  --titanium-shadow: rgba(31, 50, 72, 0.07);
+  --titanium-blur: blur(22px) saturate(135%);
+  --titanium-card-shadow: 0 8px 24px var(--titanium-shadow), inset 0 1px 0 var(--titanium-highlight);
+  --titanium-control-shadow: 0 2px 8px rgba(31, 50, 72, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --titanium-radius-shell: 14px;
+  --titanium-radius-card: 11px;
+  --titanium-radius-control: 9px;
+  --qa-shell-ambient: rgba(0, 122, 255, 0.04);
+  --qa-divider: var(--titanium-input-border);
+  --qa-control-border-hover: rgba(48, 68, 89, 0.28);
+  --settings-active-border: var(--titanium-focus);
+}
+
+/* ----------------------- Light material application ------------------- */
+
+body.vscode-light .chat-view[data-ui="qa-shell"],
+.vscode-light .chat-view[data-ui="qa-shell"] {
+  background:
+    radial-gradient(circle at 58% -12%, var(--qa-shell-ambient), transparent 42%),
+    linear-gradient(155deg, var(--titanium-canvas) 0%, var(--titanium-deep) 100%);
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-conversation"],
+.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-conversation"] {
+  background: transparent;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty,
+.vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty {
+  width: min(100%, 520px);
+  padding: 28px 20px;
+  gap: 12px;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .kilo-logo,
+.vscode-light .chat-view[data-ui="qa-shell"] .kilo-logo {
+  width: 64px;
+  height: 64px;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .kilo-logo img,
+.vscode-light .chat-view[data-ui="qa-shell"] .kilo-logo img {
+  filter: saturate(1.04) brightness(1.03) drop-shadow(0 8px 18px rgba(0, 122, 255, 0.14));
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .kilo-product-title,
+.vscode-light .chat-view[data-ui="qa-shell"] .kilo-product-title {
+  display: block;
+  margin: 2px 0 0;
+  color: var(--titanium-text);
+  font-size: var(--kilo-font-size-24);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .kilo-about-text,
+.vscode-light .chat-view[data-ui="qa-shell"] .kilo-about-text {
+  max-width: 360px;
+  margin: 0;
+  color: var(--titanium-muted);
+  font-size: var(--kilo-font-size-14);
+  font-weight: 450;
+  line-height: 1.55;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions,
+.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions {
+  width: min(100%, 492px);
+  max-width: 492px;
+  gap: 8px;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions-label,
+.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions-label {
+  padding: 0 4px;
+  color: var(--titanium-muted);
+  font-size: var(--kilo-font-size-12);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-list,
+.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--titanium-line);
+  border-radius: 11px;
+  background: var(--titanium-glass);
+  box-shadow: 0 6px 18px rgba(31, 50, 72, 0.05), inset 0 1px 0 var(--titanium-highlight);
+  backdrop-filter: var(--titanium-blur);
+  -webkit-backdrop-filter: var(--titanium-blur);
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item,
+.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item {
+  min-height: 52px;
+  padding: 0 20px;
+  border: 0;
+  border-bottom: 1px solid #edf1f5;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-title,
+.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-title {
+  color: var(--titanium-text);
+  font-size: var(--kilo-font-size-14);
+  font-weight: 500;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-date,
+.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-date {
+  color: var(--titanium-muted);
+  font-size: var(--kilo-font-size-12);
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn,
+.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn {
+  min-height: 44px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item:hover,
+body.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn:hover,
+.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item:hover,
+.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn:hover {
+  border-color: #edf1f5;
+  background: rgba(0, 122, 255, 0.05);
+  box-shadow: none;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .feedback-button,
+.vscode-light .chat-view[data-ui="qa-shell"] .feedback-button {
+  min-height: 42px;
+  padding-inline: 16px;
+  border-color: var(--titanium-line);
+  border-radius: 10px;
+  background: var(--titanium-raised);
+  box-shadow: var(--titanium-control-shadow);
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-dock"],
+.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-dock"] {
+  border-top-color: #e7ecf1;
+  background: rgba(251, 252, 254, 0.94);
+  box-shadow: 0 -8px 20px rgba(31, 50, 72, 0.035);
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"],
+.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
+  width: min(calc(100% - 32px), var(--qa-composer-max-width));
+  margin: 10px auto 16px;
+  padding: 10px;
+  border: 1px solid var(--titanium-line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--titanium-card-shadow);
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"]:focus-within,
+.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"]:focus-within {
+  border-color: rgba(0, 122, 255, 0.38);
+  background: var(--titanium-raised);
+  box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.08), var(--titanium-card-shadow);
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-wrapper[data-ui="qa-composer-input"],
+.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-wrapper[data-ui="qa-composer-input"] {
+  border-color: var(--titanium-input-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] :is(.prompt-input, .prompt-input-highlight-overlay),
+.vscode-light .chat-view[data-ui="qa-shell"] :is(.prompt-input, .prompt-input-highlight-overlay) {
+  min-height: 64px;
+  max-height: 180px;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"],
+.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"] {
+  height: 38px !important;
+  min-height: 38px;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions :is([data-component="button"], [data-component="icon-button"]),
+.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions :is([data-component="button"], [data-component="icon-button"]) {
+  height: 38px !important;
+  min-height: 38px;
+}
+
+body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-action-submit"]:not(:disabled),
+.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-action-submit"]:not(:disabled) {
+  color: #ffffff;
+  border-color: color-mix(in srgb, var(--titanium-accent) 76%, white);
+  background: var(--titanium-accent);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+body.vscode-light .settings-shell,
+.vscode-light .settings-shell {
+  background: var(--titanium-panel);
+}
+
+body.vscode-light .settings-shell .settings-brand-icon,
+.vscode-light .settings-shell .settings-brand-icon {
+  box-shadow: 0 6px 16px rgba(31, 50, 72, 0.08), inset 0 1px 0 var(--titanium-highlight);
+}
+
+body.vscode-light .settings-shell .settings-header-actions [data-component="button"],
+.vscode-light .settings-shell .settings-header-actions [data-component="button"] {
+  min-height: 36px;
+  border-radius: 9px;
+  font-size: var(--kilo-font-size-13);
+}
+
+body.vscode-light .settings-shell .settings-close-button[data-component="button"],
+.vscode-light .settings-shell .settings-close-button[data-component="button"] {
+  flex-basis: 36px;
+  width: 36px;
+  height: 36px;
+}
+
+body.vscode-light .settings-shell .settings-tabs[data-component="tabs"],
+.vscode-light .settings-shell .settings-tabs[data-component="tabs"] {
+  gap: 8px;
+}
+
+body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
+.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
+  flex-basis: 216px;
+  width: 216px;
+  min-width: 216px;
+  padding: 8px 7px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 6px 20px rgba(31, 50, 72, 0.05), inset 0 1px 0 var(--titanium-highlight);
+}
+
+body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"],
+.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"] {
+  flex-basis: 50px;
+  height: 50px;
+}
+
+body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"],
+.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"] {
+  font-size: var(--kilo-font-size-15);
+}
+
+body.vscode-light .settings-shell .settings-nav-icon,
+.vscode-light .settings-shell .settings-nav-icon {
+  flex-basis: 20px;
+  width: 20px;
+  height: 20px;
+  font-size: var(--kilo-font-size-18);
+}
+
+body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:hover:not(:disabled),
+.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:hover:not(:disabled) {
+  background: rgba(0, 122, 255, 0.05);
+}
+
+body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:has([data-selected]),
+.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:has([data-selected]) {
+  border-color: transparent;
+  background: var(--titanium-active);
+  box-shadow: inset 3px 0 0 var(--titanium-accent);
+}
+
+body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"]:focus-visible,
+.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"]:focus-visible {
+  outline: 2px solid var(--titanium-focus);
+  outline-offset: -2px;
+}
+
+body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+  padding: 24px 28px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 6px 20px rgba(31, 50, 72, 0.045), inset 0 1px 0 var(--titanium-highlight);
+}
+
+body.vscode-light .settings-shell .settings-page-header,
+.vscode-light .settings-shell .settings-page-header {
+  margin-bottom: 16px;
+}
+
+body.vscode-light .settings-shell .settings-page-header p,
+.vscode-light .settings-shell .settings-page-header p {
+  display: block;
+  max-width: 680px;
+  margin: 7px 0 0;
+  color: var(--titanium-muted);
+  font-size: var(--kilo-font-size-13);
+  line-height: 1.5;
+}
+
+body.vscode-light .settings-shell .settings-page-groups,
+.vscode-light .settings-shell .settings-page-groups {
+  gap: 12px;
+}
+
+body.vscode-light .settings-shell .settings-page-groups [data-component="card"],
+.vscode-light .settings-shell .settings-page-groups [data-component="card"] {
+  padding: 0;
+  overflow: hidden;
+  border-color: var(--titanium-line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 4px 16px rgba(31, 50, 72, 0.04), inset 0 1px 0 var(--titanium-highlight);
+}
+
+body.vscode-light .settings-shell .settings-section-title,
+.vscode-light .settings-shell .settings-section-title {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  padding: 0 18px;
+  color: var(--titanium-text);
+  border-bottom: 1px solid #edf1f5;
+  font-size: var(--kilo-font-size-14);
+  font-weight: 600;
+}
+
+body.vscode-light .settings-shell [data-slot="settings-row"],
+.vscode-light .settings-shell [data-slot="settings-row"] {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 280px);
+  gap: 24px;
+  min-height: 68px;
+  margin: 0;
+  padding: 12px 18px;
+  border-bottom: 1px solid #edf1f5;
+}
+
+body.vscode-light .settings-shell [data-slot="settings-row"][data-last],
+body.vscode-light .settings-shell [data-component="card"] > [data-slot="settings-row"]:last-child,
+.vscode-light .settings-shell [data-slot="settings-row"][data-last],
+.vscode-light .settings-shell [data-component="card"] > [data-slot="settings-row"]:last-child {
+  padding-bottom: 12px;
+  border-bottom: 0;
+}
+
+body.vscode-light .settings-shell [data-slot="settings-row-label-title"],
+.vscode-light .settings-shell [data-slot="settings-row-label-title"] {
+  font-size: var(--kilo-font-size-13);
+  font-weight: 600;
+}
+
+body.vscode-light .settings-shell [data-slot="settings-row-label-subtitle"],
+.vscode-light .settings-shell [data-slot="settings-row-label-subtitle"] {
+  color: var(--titanium-muted);
+  font-size: var(--kilo-font-size-12);
+  line-height: 1.45;
+}
+
+body.vscode-light .settings-shell [data-slot="settings-row-input"],
+.vscode-light .settings-shell [data-slot="settings-row-input"] {
+  max-width: 280px;
+}
+
+body.vscode-light .settings-shell :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]),
+.vscode-light .settings-shell :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]) {
+  min-height: 38px;
+  color: var(--titanium-text);
+  border-color: var(--titanium-input-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  font-size: var(--kilo-font-size-13);
+}
+
+body.vscode-light .settings-shell :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]):disabled,
+body.vscode-light .settings-shell :is([data-component="text-field"], [data-slot="select-select-trigger"])[aria-disabled="true"],
+.vscode-light .settings-shell :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]):disabled,
+.vscode-light .settings-shell :is([data-component="text-field"], [data-slot="select-select-trigger"])[aria-disabled="true"] {
+  color: var(--titanium-faint);
+  border-color: var(--titanium-line);
+  background: #f3f6f9;
+  opacity: 1;
+}
+
+body.vscode-light .settings-shell .settings-save-bar-wrap,
+.vscode-light .settings-shell .settings-save-bar-wrap {
+  border-color: var(--titanium-line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 4px 16px rgba(31, 50, 72, 0.05), inset 0 1px 0 var(--titanium-highlight);
+}
+
+body.vscode-light .settings-shell .settings-save-bar,
+.vscode-light .settings-shell .settings-save-bar {
+  min-height: 60px;
+  padding: 10px 16px;
+}
+
+body.vscode-light .settings-shell .settings-save-status,
+.vscode-light .settings-shell .settings-save-status {
+  display: block;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--titanium-warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--titanium-warning) 14%, transparent);
+}
+
+body.vscode-light .settings-shell .settings-save-status-saving,
+.vscode-light .settings-shell .settings-save-status-saving {
+  background: var(--titanium-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--titanium-accent) 14%, transparent);
+}
+
+body.vscode-light .settings-shell .settings-save-status-error,
+.vscode-light .settings-shell .settings-save-status-error {
+  background: var(--titanium-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--titanium-danger) 14%, transparent);
+}
+
+body.vscode-light .settings-shell .settings-discard-button[data-component="button"],
+.vscode-light .settings-shell .settings-discard-button[data-component="button"] {
+  min-width: 112px;
+  min-height: 40px;
+  border-radius: 8px;
+}
+
+body.vscode-light .settings-shell .settings-save-button[data-component="button"],
+.vscode-light .settings-shell .settings-save-button[data-component="button"] {
+  min-width: 120px;
+  min-height: 40px;
+  color: #ffffff;
+  border-color: color-mix(in srgb, var(--titanium-accent) 76%, white);
+  border-radius: 8px;
+  background: var(--titanium-accent);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  font-weight: 600;
+}
+
+@container settings (max-width: 1199px) {
+  body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
+  .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
+    flex-basis: 176px;
+    width: 176px;
+    min-width: 176px;
+  }
+
+  body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+  .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+    padding: 18px 24px;
+  }
+}
+
+@container settings (max-width: 719px) {
+  body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
+  .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
+    flex-basis: 56px;
+    width: 56px;
+    min-width: 56px;
+  }
+
+  body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+  .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+    padding: 18px;
+  }
+
+  body.vscode-light .settings-shell [data-slot="settings-row"],
+  .vscode-light .settings-shell [data-slot="settings-row"] {
+    grid-template-columns: minmax(150px, 1fr) minmax(150px, 220px);
+    gap: 14px;
+  }
+}
+
+@container settings (max-width: 559px) {
+  body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+  .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+    padding: 16px 12px;
+  }
+
+  body.vscode-light .settings-shell [data-slot="settings-row"],
+  .vscode-light .settings-shell [data-slot="settings-row"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  body.vscode-light .settings-shell [data-slot="settings-row-input"],
+  .vscode-light .settings-shell [data-slot="settings-row-input"] {
+    max-width: none;
+  }
+}
+
+@media (max-width: 420px) {
+  body.vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty,
+  .vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty {
+    padding: 20px 12px;
+  }
+}
+
+@media (max-width: 300px) {
+  body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"],
+  .vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
+    width: calc(100% - 14px);
+    padding: 7px;
+  }
 }
 
 body.vscode-high-contrast:has(.chat-view[data-ui="qa-shell"]),
@@ -1362,14 +2718,24 @@ body.vscode-high-contrast-light:has(.settings-shell),
   --titanium-active: var(--vscode-list-activeSelectionBackground, var(--vscode-editor-background));
   --titanium-line: var(--vscode-contrastBorder, var(--vscode-foreground));
   --titanium-line-strong: var(--vscode-contrastBorder, var(--vscode-foreground));
+  --titanium-input-border: var(--vscode-contrastBorder, var(--vscode-foreground));
   --titanium-text: var(--vscode-foreground);
   --titanium-muted: var(--vscode-foreground);
   --titanium-faint: var(--vscode-disabledForeground, var(--vscode-foreground));
   --titanium-highlight: transparent;
   --titanium-shadow: transparent;
+  --titanium-accent-strong: var(--vscode-focusBorder);
+  --titanium-focus-ring: transparent;
   --titanium-blur: none;
   --titanium-card-shadow: none;
   --titanium-control-shadow: none;
+}
+
+body.vscode-high-contrast:has(.chat-view[data-ui="qa-shell"]) [data-ui="qa-task-hud"],
+body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]) [data-ui="qa-task-hud"] {
+  border-color: var(--vscode-contrastBorder, var(--vscode-foreground));
+  background: var(--vscode-editor-background);
+  box-shadow: none;
 }
 
 body.vscode-high-contrast .chat-view[data-ui="qa-shell"] *,
@@ -1384,6 +2750,15 @@ body.vscode-high-contrast:has(.chat-view[data-ui="qa-shell"]) .thinking-selector
 body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item:focus-visible {
   outline: 2px solid var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)) !important;
   outline-offset: -2px !important;
+  box-shadow: none;
+}
+
+body.vscode-high-contrast:has(.chat-view[data-ui="qa-shell"]) .prompt-indexing-summary-button,
+body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]) .prompt-indexing-summary-button,
+body.vscode-high-contrast:has(.chat-view[data-ui="qa-shell"]) .prompt-overflow-button,
+body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]) .prompt-overflow-button {
+  border-color: var(--vscode-contrastBorder, var(--vscode-foreground));
+  background: var(--vscode-editor-background);
   box-shadow: none;
 }
 

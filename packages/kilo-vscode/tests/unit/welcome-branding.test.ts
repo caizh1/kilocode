@@ -14,6 +14,8 @@ describe("QA welcome branding", () => {
     expect(logo).toContain('props.welcome ? "chipmate-icon.png"')
     expect(messages).not.toContain('<ChipMateLogo class="kilo-logo" welcome />')
     expect(welcome).toContain('<ChipMateLogo class="kilo-logo" welcome />')
+    expect(welcome).toContain('<h1 class="kilo-product-title">ChipMate</h1>')
+    expect(welcome).toContain('<div class="recent-session-list">')
     expect(feedback).toContain('<ChipMateLogo class="feedback-dialog-logo" />')
   })
 })

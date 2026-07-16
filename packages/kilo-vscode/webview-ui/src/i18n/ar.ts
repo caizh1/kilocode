@@ -1853,4 +1853,8 @@ export const dict = {
   "chat.search.invalidRegex": "تعبير عادي غير صالح",
   "chat.search.noResults": "لا توجد نتائج",
   "chat.search.searchingHistory": "جارٍ البحث في الرسائل السابقة…",
+  "settings.experimental.dsml.title": "إصلاح استدعاءات أدوات DSML",
+  "settings.experimental.dsml.description": "إصلاح استدعاءات DeepSeek DSML المتسربة للمزوّد والنموذج المحددين فقط",
+  "settings.experimental.dsmlModel.title": "نموذج DSML المستهدف",
+  "settings.experimental.dsmlModel.description": "حدد المزوّد والنموذج الوحيدين المسموح لهما باستخدام تحليل DSML",
 }

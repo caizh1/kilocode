@@ -41,6 +41,10 @@ export interface WatcherConfig {
 export interface ExperimentalConfig {
   batch_tool?: boolean
   codebase_search?: boolean
+  dsml_tool_call_repair?: {
+    enabled?: boolean
+    model?: string
+  }
   image_generation?: boolean
   image_generation_model?: string
   agent_requirements?: boolean

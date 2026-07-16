@@ -5,6 +5,7 @@ import { snapshotProgress } from "../context/session-utils"
 export const UPSTREAM_SUPPRESSED_TOOLS = new Set(["todowrite", "todoread"])
 
 export function isRenderable(part: Part, message: AssistantMessage): boolean {
+  if (message.summary === true) return false
   if (part.type === "tool") {
     if (UPSTREAM_SUPPRESSED_TOOLS.has(part.tool)) {
       return part.state.status === "completed" && !!ToolRegistry.render(part.tool)

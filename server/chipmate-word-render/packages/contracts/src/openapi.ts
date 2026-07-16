@@ -60,6 +60,7 @@ export const openapi = {
     { name: "installations" },
     { name: "publications" },
     { name: "analytics" },
+    { name: "extensions" },
     { name: "status" },
   ],
   paths: {
@@ -402,6 +403,173 @@ export const openapi = {
         security: [{ cookieSession: [] }, { bearerKey: [] }],
         parameters: [skill],
         responses: ok({ type: "array", items: ref("AnalyticsSeries") }),
+      },
+    },
+    "/api/v1/extensions": {
+      get: {
+        operationId: "listExtensions",
+        tags: ["extensions"],
+        parameters: [
+          ...page,
+          param("q", "query"),
+          param("category", "query"),
+          param("target", "query"),
+          param("uploader", "query"),
+          param("sort", "query"),
+        ],
+        responses: ok({
+          type: "object",
+          additionalProperties: false,
+          required: ["items"],
+          properties: { items: { type: "array", items: ref("ExtensionSummary") }, nextCursor: { type: "string" } },
+        }),
+      },
+    },
+    "/api/v1/extensions/{id}": {
+      get: {
+        operationId: "getExtension",
+        tags: ["extensions"],
+        parameters: [skill],
+        responses: ok(ref("ExtensionDetail")),
+      },
+    },
+    "/api/v1/extension-publications": {
+      post: {
+        operationId: "publishExtension",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }],
+        parameters: [
+          param("Idempotency-Key", "header", true),
+          param("X-Publication-Run-Id", "header", true),
+          param("X-VSIX-Filename", "header", true),
+          param("X-CSRF-Token", "header", true),
+        ],
+        requestBody: {
+          required: true,
+          content: { "application/vnd.microsoft.vscode.vsix": { schema: { type: "string", format: "binary" } } },
+        },
+        responses: ok(ref("ExtensionPublicationRun")),
+      },
+    },
+    "/api/v1/extension-publications/{runId}": {
+      get: {
+        operationId: "getExtensionPublication",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }, { bearerKey: [] }],
+        parameters: [run],
+        responses: ok(ref("ExtensionPublicationRun")),
+      },
+    },
+    "/api/v1/extensions/{id}/artifacts/{artifactId}/download": {
+      get: {
+        operationId: "downloadExtensionArtifact",
+        tags: ["extensions"],
+        parameters: [skill, param("artifactId", "path"), param("source", "query")],
+        responses: {
+          "200": {
+            description: "Original VSIX artifact",
+            content: { "application/vnd.microsoft.vscode.vsix": { schema: { type: "string", format: "binary" } } },
+          },
+          "404": { description: "Not found", content: json(ref("ApiError")) },
+          "416": { description: "Range requests are not supported" },
+        },
+      },
+    },
+    "/api/v1/extension-favorites/{id}": {
+      put: {
+        operationId: "favoriteExtension",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }, { bearerKey: [] }],
+        parameters: [skill, param("X-CSRF-Token", "header")],
+        responses: ok({ type: "object" }),
+      },
+      delete: {
+        operationId: "unfavoriteExtension",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }, { bearerKey: [] }],
+        parameters: [skill, param("X-CSRF-Token", "header")],
+        responses: ok({ type: "object" }),
+      },
+    },
+    "/api/v1/extensions/{id}/review": {
+      get: {
+        operationId: "listExtensionReviews",
+        tags: ["extensions"],
+        parameters: [skill],
+        responses: ok({ type: "array", items: ref("ExtensionReview") }),
+      },
+      put: {
+        operationId: "putExtensionReview",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }, { bearerKey: [] }],
+        parameters: [skill, param("X-CSRF-Token", "header")],
+        requestBody: body({
+          type: "object",
+          additionalProperties: false,
+          required: ["rating"],
+          properties: {
+            rating: { type: "integer", minimum: 1, maximum: 5 },
+            comment: { type: "string", maxLength: 2000 },
+            artifactId: { type: "string" },
+          },
+        }),
+        responses: ok(ref("ExtensionReview")),
+      },
+      delete: {
+        operationId: "deleteExtensionReview",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }, { bearerKey: [] }],
+        parameters: [skill, param("X-CSRF-Token", "header")],
+        responses: ok({ type: "object" }),
+      },
+    },
+    "/api/v1/me/extensions/uploads": {
+      get: {
+        operationId: "listMyExtensionUploads",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }, { bearerKey: [] }],
+        responses: ok({ type: "array", items: ref("ExtensionArtifact") }),
+      },
+    },
+    "/api/v1/me/extensions/favorites": {
+      get: {
+        operationId: "listMyExtensionFavorites",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }, { bearerKey: [] }],
+        responses: ok({ type: "array", items: ref("ExtensionSummary") }),
+      },
+    },
+    "/api/v1/me/extensions/reviews": {
+      get: {
+        operationId: "listMyExtensionReviews",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }, { bearerKey: [] }],
+        responses: ok({ type: "array", items: ref("ExtensionReview") }),
+      },
+    },
+    "/api/v1/extension-artifacts/{artifactId}": {
+      delete: {
+        operationId: "deleteExtensionArtifact",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }],
+        parameters: [param("artifactId", "path"), param("X-CSRF-Token", "header", true)],
+        responses: ok(ref("ExtensionArtifact")),
+      },
+    },
+    "/api/v1/analytics/extensions/overview": {
+      get: {
+        operationId: "getExtensionAnalytics",
+        tags: ["extensions"],
+        responses: ok(ref("ExtensionAnalytics")),
+      },
+    },
+    "/api/v1/analytics/extension-artifacts/{artifactId}/sources": {
+      get: {
+        operationId: "getExtensionArtifactSources",
+        tags: ["extensions"],
+        security: [{ cookieSession: [] }, { bearerKey: [] }],
+        parameters: [param("artifactId", "path")],
+        responses: ok({ type: "array", items: { type: "object" } }),
       },
     },
     "/api/v1/status": {

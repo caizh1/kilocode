@@ -18,7 +18,6 @@ import type {
   CodeGraphStatusInput,
   CodePostingsDocument,
   CodePostingsSearchResult,
-  CodePostingsStatusInput,
   CodePostingsStorageStatus,
   ICodeGraphStorage,
   ICodePostingsStorage,
@@ -339,7 +338,7 @@ describe("code graph scanner and watcher integration", () => {
     expect(store.points).toBe(1)
   })
 
-  test("graph storage failures do not interrupt vector indexing flow", async () => {
+  test("graph transaction failures stop vector indexing", async () => {
     const ctx = await make()
     const file = path.join(ctx.root, "main.c")
     await writeFile(file, "int main(void) { return 0; }\n")
@@ -357,9 +356,7 @@ describe("code graph scanner and watcher integration", () => {
       new ThrowGraph(),
     )
 
-    const result = await scan.scanDirectory(ctx.root)
-
-    expect(result.stats.processed).toBe(1)
-    expect(store.points).toBe(1)
+    await expect(scan.scanDirectory(ctx.root)).rejects.toThrow("graph begin failed")
+    expect(store.points).toBe(0)
   })
 })

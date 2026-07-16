@@ -7,7 +7,9 @@ const server = await Bun.file(
   new URL("../../webview-ui/src/components/settings/ChipmateServerTab.tsx", import.meta.url),
 ).text()
 const styles = await Bun.file(new URL("../../webview-ui/src/styles/settings.css", import.meta.url)).text()
+const chat = await Bun.file(new URL("../../webview-ui/src/styles/chat.css", import.meta.url)).text()
 const titanium = await Bun.file(new URL("../../webview-ui/src/styles/titanium-studio.css", import.meta.url)).text()
+const rows = await Bun.file(new URL("../../webview-ui/src/components/settings/SettingsRow.tsx", import.meta.url)).text()
 const stories = await Bun.file(new URL("../../webview-ui/src/stories/settings.stories.tsx", import.meta.url)).text()
 const app = await Bun.file(new URL("../../webview-ui/src/App.tsx", import.meta.url)).text()
 const messages = await Bun.file(
@@ -96,12 +98,19 @@ describe("Settings UI alignment", () => {
     expect(titanium).toContain("--titanium-panel: #171e25")
     expect(titanium).toContain("--titanium-text: #dadbdc")
     expect(titanium).toContain("--titanium-success: #68d899")
+    expect(titanium).toContain("--titanium-accent-strong: #52acde")
+    expect(titanium).toContain("--titanium-deep: #fbfcfe")
+    expect(titanium).toContain("--titanium-panel: #f8fafc")
+    expect(titanium).toContain("--titanium-accent: #007aff")
     expect(titanium).toContain("@container settings (max-width: 1199px)")
     expect(titanium).toContain("@container settings (max-width: 719px)")
     expect(titanium).toContain("@container settings (max-width: 559px)")
     expect(titanium).toContain("@media (prefers-reduced-motion: reduce)")
     expect(titanium).toContain("body.vscode-high-contrast:has(.settings-shell)")
     expect(titanium).not.toMatch(/position:\s*absolute/)
+    expect(chat.indexOf('@import "./titanium-studio.css"')).toBeLessThan(chat.indexOf('@import "./high-contrast.css"'))
+    expect(rows).not.toContain("style={{")
+    expect(rows).toContain('data-last={props.last ? "true" : undefined}')
 
     const selectors = styles.split("\n").filter((line) => line.startsWith(".") && line.endsWith("{"))
     expect(selectors.every((line) => line.startsWith(".settings-shell"))).toBeTrue()
@@ -109,10 +118,10 @@ describe("Settings UI alignment", () => {
 
   it("uses the Titanium navigation density from the visual truth", () => {
     expect(titanium).toMatch(
-      /\.settings-shell \.settings-tabs\[data-variant="settings"\] \[data-slot="tabs-trigger"\] \{[\s\S]*?font-size: var\(--kilo-font-size-16\)/,
+      /body\.vscode-light \.settings-shell \.settings-tabs\[data-variant="settings"\] \[data-slot="tabs-trigger"\],[\s\S]*?font-size: var\(--kilo-font-size-15\)/,
     )
     expect(titanium).toMatch(
-      /\.settings-shell \.settings-nav-icon \{[\s\S]*?flex-basis: 20px;[\s\S]*?font-size: var\(--kilo-font-size-20\)/,
+      /body\.vscode-light \.settings-shell \.settings-nav-icon,[\s\S]*?flex-basis: 20px;[\s\S]*?font-size: var\(--kilo-font-size-18\)/,
     )
   })
 
@@ -152,6 +161,7 @@ describe("Settings UI alignment", () => {
       "SettingsTitaniumResponsive",
       "SettingsCloseInteraction",
       "TitaniumStudioReview",
+      "TitaniumStudioLightReview",
     ]) {
       expect(stories).toContain(`export const ${name}`)
     }

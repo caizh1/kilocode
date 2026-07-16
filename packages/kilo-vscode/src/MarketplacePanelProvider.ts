@@ -24,6 +24,7 @@ import {
   type SkillRemovePhase,
 } from "./services/marketplace/local-skill-removal"
 import { confirmRepairDiff, generateAiRepair } from "./services/marketplace/repair"
+import { publish, type PublicationOutcome, type PublicationPhase } from "./services/marketplace/publication"
 import { isListedUploadableSkill, normalizeSkillKey } from "./services/marketplace/skills"
 import { archiveUrl, installLink, repairLink, type InstallLink } from "./services/marketplace/uri"
 import {
@@ -73,6 +74,12 @@ interface UploadableSkill {
   description?: string
   root?: string
   content?: string
+}
+
+function phaseLabel(phase: PublicationPhase, status?: string) {
+  if (phase === "preparing") return "正在准备规范快照..."
+  if (phase === "submitting") return "正在上传并等待服务端权威复验..."
+  return `已收到服务端结果：${status ?? "SUCCESS"}`
 }
 
 export class MarketplacePanelProvider implements vscode.Disposable {
@@ -751,56 +758,75 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     if (!apiKey) return
     void this.analytics.track("publication_start", { context: { source: "vscode" } })
 
-    await vscode.window.withProgress(
+    await publish({
+      progress: (task) =>
+        vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: "正在发布 Skill 到市场...",
+            cancellable: false,
+          },
+          async (progress) =>
+            task((phase, status) => {
+              progress.report({ message: phaseLabel(phase, status) })
+            }),
+        ),
+      build: async () =>
+        selected.root
+          ? await buildMarketplaceSkillUploadPayload(selected.root)
+          : buildMarketplaceBuiltinSkillUploadPayload({
+              name: selected.name,
+              description: selected.description,
+              content: selected.content ?? "",
+            }),
+      submit: (payload) => this.marketplace.uploadSkill(payload, apiKey),
+      finish: (outcome) => this.finishPublication(id, selected, outcome),
+    }).catch((err: unknown) => {
+      void this.analytics.track("publication_validation_failed", { context: { reason: "request-failed" } })
+      void vscode.window.showErrorMessage(`Skill 上传失败：${marketplaceIdentityErrorMessage(err)}`)
+    })
+  }
+
+  private async finishPublication(id: string, selected: UploadableSkill, outcome: PublicationOutcome) {
+    const run = outcome.run
+    if (!run) {
+      void vscode.window.showInformationMessage(`Skill 上传成功：${outcome.payload.name}`)
+      void this.fetchData()
+      return
+    }
+
+    if (run.status === "PUBLISHED" || run.status === "UNCHANGED") this.blockedSkillIds.delete(id)
+    else this.blockedSkillIds.add(id)
+    void this.analytics.track(
+      run.status === "PUBLISHED" || run.status === "UNCHANGED"
+        ? "publication_success"
+        : "publication_validation_failed",
       {
-        location: vscode.ProgressLocation.Notification,
-        title: "正在上传 Skill 到市场...",
-        cancellable: false,
-      },
-      async () => {
-        try {
-          const payload = selected.root
-            ? await buildMarketplaceSkillUploadPayload(selected.root)
-            : buildMarketplaceBuiltinSkillUploadPayload({
-                name: selected.name,
-                description: selected.description,
-                content: selected.content ?? "",
-              })
-          const run = await this.marketplace.uploadSkill(payload, apiKey)
-          if (run) {
-            if (run.status === "PUBLISHED" || run.status === "UNCHANGED") this.blockedSkillIds.delete(id)
-            else this.blockedSkillIds.add(id)
-            void this.analytics.track(
-              run.status === "PUBLISHED" || run.status === "UNCHANGED"
-                ? "publication_success"
-                : "publication_validation_failed",
-              {
-                ...(run.skillId ? { skillId: run.skillId } : {}),
-                ...(run.release ? { revision: run.release.revision } : {}),
-                context: { status: run.status },
-              },
-            )
-            this.post({ type: "marketplacePublicationResult", run })
-            const label = run.status === "PUBLISHED" || run.status === "UNCHANGED" ? "发布完成" : "校验完成"
-            vscode.window.showInformationMessage(`${label}：${payload.name} · ${run.status}`)
-            const files = run.patches.filter((patch) => patch.kind === "deterministic").flatMap((patch) => patch.files)
-            if (selected.root && run.report?.changed && files.length > 0) {
-              const choice = await vscode.window.showInformationMessage(
-                "服务端仅修复了上传快照。是否查看逐文件 diff，并选择是否应用到本地？",
-                "查看 diff",
-              )
-              if (choice === "查看 diff") await applyLocalRepairs(selected.root, files)
-            }
-          } else {
-            vscode.window.showInformationMessage(`Skill 上传成功：${payload.name}`)
-          }
-          await this.fetchData()
-        } catch (err) {
-          void this.analytics.track("publication_validation_failed", { context: { reason: "request-failed" } })
-          vscode.window.showErrorMessage(`Skill 上传失败：${marketplaceIdentityErrorMessage(err)}`)
-        }
+        ...(run.skillId ? { skillId: run.skillId } : {}),
+        ...(run.release ? { revision: run.release.revision } : {}),
+        context: { status: run.status },
       },
     )
+    this.post({ type: "marketplacePublicationResult", run })
+    void this.fetchData()
+
+    const label = run.status === "PUBLISHED" || run.status === "UNCHANGED" ? "发布完成" : "校验完成"
+    const files = run.patches.filter((patch) => patch.kind === "deterministic").flatMap((patch) => patch.files)
+    if (!selected.root || !run.report?.changed || files.length === 0) {
+      void vscode.window.showInformationMessage(`${label}：${outcome.payload.name} · ${run.status}`)
+      return
+    }
+
+    const choice = await vscode.window.showInformationMessage(
+      `${label}：${outcome.payload.name} · ${run.status}。服务端仅修复了上传快照，本地文件未修改。`,
+      "查看 diff",
+    )
+    if (choice !== "查看 diff") return
+    const applied = await applyLocalRepairs(selected.root, files).catch((err: unknown) => {
+      void vscode.window.showErrorMessage(`应用 Skill 本地修复失败：${marketplaceIdentityErrorMessage(err)}`)
+      return false
+    })
+    if (applied) void this.fetchData()
   }
 
   private async installedSkillForUpload(id: string): Promise<UploadableSkill | undefined> {

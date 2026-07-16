@@ -1879,4 +1879,8 @@ export const dict = {
   "chat.search.invalidRegex": "Ugyldig regulært uttrykk",
   "chat.search.noResults": "Ingen resultater",
   "chat.search.searchingHistory": "Søker i tidligere meldinger…",
+  "settings.experimental.dsml.title": "Reparer DSML-verktøykall",
+  "settings.experimental.dsml.description": "Reparer lekkede DeepSeek DSML-kall bare for valgt leverandør og modell",
+  "settings.experimental.dsmlModel.title": "DSML-målmodell",
+  "settings.experimental.dsmlModel.description": "Velg den eneste leverandøren og modellen som kan bruke DSML-parsing",
 } satisfies Partial<Record<Keys, string>>

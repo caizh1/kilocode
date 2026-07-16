@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { messageTurns } from "../../webview-ui/src/context/session-queue"
-import { partitionRows, retainTurn, transcriptRows } from "../../webview-ui/src/context/transcript-rows"
+import { partitionRows, retainTurn, stabilize, transcriptRows } from "../../webview-ui/src/context/transcript-rows"
 import type { Message, Part } from "../../webview-ui/src/types/messages"
 
 const base = {
@@ -160,7 +160,22 @@ describe("transcriptRows", () => {
     const turns = messageTurns([u1, a1, u2, a2, u3], { messageID: "u3" })
     const rows = transcriptRows(turns, (id) => (id === "u2" ? (u2.parts ?? []) : []))
 
-    expect(rows.map((row) => `${row.turn}:${row.message.id}`)).toEqual(["u1:u1", "u1:a1", "u2:u2", "u2:a2"])
+    expect(rows.map((row) => `${row.turn}:${row.message.id}`)).toEqual(["u1:u1", "u1:a1", "u2:a2"])
+  })
+
+  it("hides internal compaction summaries while preserving their errors", () => {
+    const u1 = user("u1", {
+      parts: [{ id: "compact", messageID: "u1", type: "compaction", auto: false }],
+    })
+    const summary = assistant("a1", "u1", { summary: true })
+    const failed = assistant("a2", "u1", { summary: true, error: { name: "ProviderError" } })
+    const rows = transcriptRows(
+      messageTurns([u1, summary, failed]),
+      lookup({ u1: u1.parts ?? [], a1: [part("p1", "a1")], a2: [part("p2", "a2")] }),
+    )
+
+    expect(rows.map((row) => row.type)).toEqual(["error"])
+    expect(rows.at(-1)).toMatchObject({ message: failed, error: failed.error })
   })
 
   it("replaces only rows whose data or metadata changed", () => {
@@ -290,5 +305,66 @@ describe("partitionRows", () => {
     expect(result.direct.map((row) => row.type)).toEqual(["assistant"])
     expect(result.queued.map((row) => row.turn)).toEqual(["u2"])
     expect(result.queued[0]).toMatchObject({ type: "user", queued: true })
+  })
+})
+
+describe("stabilize", () => {
+  it("keeps 500 historical rows and their keys stable across 100 live tail deltas", () => {
+    const messages: Message[] = []
+    const parts: Record<string, Part[]> = {}
+    for (let i = 0; i < 250; i += 1) {
+      const uid = `history-user-${i}`
+      const aid = `history-assistant-${i}`
+      messages.push(user(uid), assistant(aid, uid))
+      parts[aid] = [part(`history-part-${i}`, aid)]
+    }
+
+    const uid = "live-user"
+    const aid = "live-assistant"
+    messages.push(user(uid), assistant(aid, uid))
+    parts[aid] = [part("live-part", aid)]
+
+    const opts = { live: new Set([uid]) }
+    const direct = new Set([uid])
+    let rows = transcriptRows(messageTurns(messages), lookup(parts), opts)
+    let virtual = stabilize(partitionRows(rows, direct).virtual)
+    let keys = stabilize(virtual.map((row) => row.key))
+
+    expect(virtual.filter((row) => row.turn !== uid)).toHaveLength(500)
+
+    for (let i = 0; i < 100; i += 1) {
+      parts[aid] = [{ ...parts[aid]![0]!, text: `delta-${i}` }]
+      const next = transcriptRows(messageTurns(messages), lookup(parts), opts, rows)
+      const history = stabilize(partitionRows(next, direct).virtual, virtual)
+      const nextKeys = stabilize(
+        history.map((row) => row.key),
+        keys,
+      )
+
+      expect(history).toBe(virtual)
+      expect(nextKeys).toBe(keys)
+      rows = next
+      virtual = history
+      keys = nextKeys
+    }
+  })
+
+  it("returns new virtual arrays for prepend, revert, and part removal", () => {
+    const u1 = user("u1")
+    const a1 = assistant("a1", "u1")
+    const u2 = user("u2")
+    const p1 = part("p1", "a1")
+    const rows = transcriptRows(messageTurns([u1, a1, u2]), lookup({ a1: [p1] }))
+    const virtual = stabilize(partitionRows(rows).virtual)
+
+    const u0 = user("u0")
+    const prepended = transcriptRows(messageTurns([u0, u1, a1, u2]), lookup({ a1: [p1] }), {}, rows)
+    expect(stabilize(partitionRows(prepended).virtual, virtual)).not.toBe(virtual)
+
+    const reverted = transcriptRows(messageTurns([u1, a1, u2], { messageID: "u2" }), lookup({ a1: [p1] }))
+    expect(stabilize(partitionRows(reverted).virtual, virtual)).not.toBe(virtual)
+
+    const removed = transcriptRows(messageTurns([u1, a1, u2]), lookup({}), {}, rows)
+    expect(stabilize(partitionRows(removed).virtual, virtual)).not.toBe(virtual)
   })
 })

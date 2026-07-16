@@ -2,7 +2,18 @@ import { createReadStream, existsSync } from "node:fs"
 import { extname, resolve, sep } from "node:path"
 import type { FastifyInstance, FastifyReply } from "fastify"
 
-const ROUTES = ["/", "/skills", "/skills/*", "/publish", "/me", "/analytics", "/status", "/login"] as const
+const ROUTES = [
+  "/",
+  "/skills",
+  "/skills/*",
+  "/publish",
+  "/me",
+  "/analytics",
+  "/status",
+  "/login",
+  "/extensions",
+  "/extensions/*",
+] as const
 const TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",

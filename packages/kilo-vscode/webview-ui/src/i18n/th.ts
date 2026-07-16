@@ -1859,4 +1859,9 @@ export const dict = {
   "chat.search.invalidRegex": "นิพจน์ทั่วไปไม่ถูกต้อง",
   "chat.search.noResults": "ไม่มีผลลัพธ์",
   "chat.search.searchingHistory": "กำลังค้นหาข้อความก่อนหน้า…",
+  "settings.experimental.dsml.title": "ซ่อมแซมการเรียกเครื่องมือ DSML",
+  "settings.experimental.dsml.description":
+    "ซ่อมแซมการเรียก DeepSeek DSML ที่รั่วไหลสำหรับผู้ให้บริการและโมเดลที่เลือกเท่านั้น",
+  "settings.experimental.dsmlModel.title": "โมเดลเป้าหมาย DSML",
+  "settings.experimental.dsmlModel.description": "เลือกผู้ให้บริการและโมเดลเดียวที่อนุญาตให้แยกวิเคราะห์ DSML",
 }

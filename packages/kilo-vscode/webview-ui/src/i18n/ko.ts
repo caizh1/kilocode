@@ -1862,4 +1862,8 @@ export const dict = {
   "chat.search.invalidRegex": "정규식이 잘못되었습니다",
   "chat.search.noResults": "검색 결과 없음",
   "chat.search.searchingHistory": "이전 메시지를 검색하는 중…",
+  "settings.experimental.dsml.title": "DSML 도구 호출 복구",
+  "settings.experimental.dsml.description": "선택한 공급자와 모델에 대해서만 유출된 DeepSeek DSML 호출을 복구합니다",
+  "settings.experimental.dsmlModel.title": "DSML 대상 모델",
+  "settings.experimental.dsmlModel.description": "DSML 호환 파싱을 허용할 유일한 공급자와 모델을 선택합니다",
 }

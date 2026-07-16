@@ -33,6 +33,7 @@ const SCRIPT = `
     { id: "read-running", type: "tool", tool: "read", state: { status: "running", input: {} } },
   ]
   const visible = parts.filter((part) => isRenderable(part, message)).map((part) => part.id)
+  const summary = parts.filter((part) => isRenderable(part, { ...message, summary: true }))
 
   const fail = (reason) => {
     console.log("${FAIL}" + reason)
@@ -42,6 +43,7 @@ const SCRIPT = `
   if (visible.length !== expected.length || visible.some((id, index) => id !== expected[index])) {
     fail("did not exclude transcript-invisible parts")
   }
+  if (summary.length !== 0) fail("rendered internal summary parts")
   console.log("${PASS}")
 `
 

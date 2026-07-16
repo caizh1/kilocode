@@ -1908,4 +1908,9 @@ export const dict = {
   "chat.search.invalidRegex": "Geçersiz normal ifade",
   "chat.search.noResults": "Sonuç yok",
   "chat.search.searchingHistory": "Önceki mesajlarda aranıyor…",
+  "settings.experimental.dsml.title": "DSML araç çağrısı onarımı",
+  "settings.experimental.dsml.description":
+    "Sızan DeepSeek DSML çağrılarını yalnızca seçilen sağlayıcı ve model için onar",
+  "settings.experimental.dsmlModel.title": "DSML hedef modeli",
+  "settings.experimental.dsmlModel.description": "DSML ayrıştırmasına izin verilen tek sağlayıcıyı ve modeli seçin",
 }

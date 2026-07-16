@@ -73,7 +73,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
     if (!usage) return undefined
     const tokens = usage.tokens.toLocaleString(language.locale())
     const pct = usage.percentage !== null ? `${usage.percentage}%` : undefined
-    return { tokens, pct }
+    return { tokens, compact: formatCompactCount(usage.tokens), pct }
   })
 
   const tokens = createMemo(() => {
@@ -170,212 +170,239 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
 
   return (
     <Show when={hasMessages()}>
-      <div data-component="task-header">
-        <div data-slot="task-header-title">
-          <Show
-            when={!renaming()}
-            fallback={
-              <SessionRenameEditor
-                title={renaming()?.title ?? ""}
-                autosize
-                onSave={commitRename}
-                onCancel={cancelRename}
-              />
-            }
-          >
-            <span
-              data-slot="task-header-title-trigger"
-              data-renamable={canRename() ? "" : undefined}
-              title={canRename() ? language.t("agentManager.worktree.doubleClickRename") : title()}
-              tabIndex={canRename() ? 0 : undefined}
-              role={canRename() ? "button" : undefined}
-              onDblClick={startRename}
-              onKeyDown={(e) => {
-                if (!canRename() || (e.key !== "Enter" && e.key !== " ")) return
-                e.preventDefault()
-                startRename()
-              }}
+      <div data-ui="qa-task-hud">
+        <div data-component="task-header">
+          <div data-slot="task-header-title">
+            <Show
+              when={!renaming()}
+              fallback={
+                <SessionRenameEditor
+                  title={renaming()?.title ?? ""}
+                  autosize
+                  onSave={commitRename}
+                  onCancel={cancelRename}
+                />
+              }
             >
-              <span data-slot="task-header-title-label">{title()}</span>
-            </span>
-          </Show>
-        </div>
-        <div data-slot="task-header-stats">
-          <Show when={cost()}>
-            {(c) => (
-              <Tooltip value={costTooltip()} placement="bottom">
-                <span>{c()}</span>
-              </Tooltip>
-            )}
-          </Show>
-          <Show when={context()}>
-            {(ctx) => (
-              <Tooltip
-                value={ctx().pct ? `${ctx().tokens} tokens (${ctx().pct} of context)` : `${ctx().tokens} tokens`}
-                placement="bottom"
+              <span
+                data-slot="task-header-title-trigger"
+                data-renamable={canRename() ? "" : undefined}
+                title={canRename() ? language.t("agentManager.worktree.doubleClickRename") : title()}
+                tabIndex={canRename() ? 0 : undefined}
+                role={canRename() ? "button" : undefined}
+                onDblClick={startRename}
+                onKeyDown={(e) => {
+                  if (!canRename() || (e.key !== "Enter" && e.key !== " ")) return
+                  e.preventDefault()
+                  startRename()
+                }}
               >
-                <span>{ctx().pct ?? ctx().tokens}</span>
-              </Tooltip>
-            )}
-          </Show>
-          <Show when={!props.readonly}>
-            <Tooltip value={language.t("command.session.compact")} placement="bottom">
-              <IconButton
-                icon="compress"
-                size="small"
-                variant="ghost"
-                disabled={!canCompact()}
-                onClick={() => session.compact()}
-                aria-label={language.t("command.session.compact")}
-              />
-            </Tooltip>
-          </Show>
-          <Show when={hasMessages()}>
-            <Tooltip value={language.t("chat.search.toggle")} placement="bottom">
-              <IconButton
-                icon="magnifying-glass"
-                size="small"
-                variant="ghost"
-                class="task-header-search-toggle"
-                data-active={search.active() ? "" : undefined}
-                onClick={() => search.setActive(!search.active())}
-                aria-label={language.t("chat.search.toggle")}
-                aria-pressed={search.active()}
-              />
-            </Tooltip>
-            <button
-              data-slot="task-header-expand"
-              onClick={toggle}
-              aria-expanded={expanded()}
-              aria-label="Toggle timeline"
-            >
-              <Icon name="chevron-down" size="small" style={expanded() ? { transform: "rotate(180deg)" } : undefined} />
-            </button>
-          </Show>
+                <span data-slot="task-header-title-label">{title()}</span>
+              </span>
+            </Show>
+          </div>
+          <div data-slot="task-header-stats">
+            <Show when={cost() || context()}>
+              <span data-slot="task-header-metrics">
+                <Show when={cost()}>
+                  {(c) => (
+                    <Tooltip value={costTooltip()} placement="bottom">
+                      <span data-slot="task-header-cost">{c()}</span>
+                    </Tooltip>
+                  )}
+                </Show>
+                <Show when={context()}>
+                  {(ctx) => (
+                    <Tooltip
+                      value={
+                        ctx().pct
+                          ? `${ctx().tokens} tokens (${ctx().pct} of context)`
+                          : `${ctx().tokens} tokens`
+                      }
+                      placement="bottom"
+                    >
+                      <span
+                        data-slot="task-header-context"
+                        aria-label={`${ctx().tokens} ${language.t("context.usage.tokens")}`}
+                      >
+                        <span data-slot="task-header-context-value">{ctx().pct ?? ctx().tokens}</span>
+                        <Show when={!ctx().pct}>
+                          <span data-slot="task-header-context-unit">{language.t("context.usage.tokens")}</span>
+                        </Show>
+                        <span data-slot="task-header-context-compact" aria-hidden="true">
+                          {ctx().pct ?? ctx().compact}
+                        </span>
+                      </span>
+                    </Tooltip>
+                  )}
+                </Show>
+              </span>
+            </Show>
+            <span data-slot="task-header-actions">
+              <Show when={!props.readonly}>
+                <Tooltip value={language.t("command.session.compact")} placement="bottom">
+                  <IconButton
+                    icon="compress"
+                    size="small"
+                    variant="ghost"
+                    disabled={!canCompact()}
+                    onClick={() => session.compact()}
+                    aria-label={language.t("command.session.compact")}
+                  />
+                </Tooltip>
+              </Show>
+              <Show when={hasMessages()}>
+                <Tooltip value={language.t("chat.search.toggle")} placement="bottom">
+                  <IconButton
+                    icon="magnifying-glass"
+                    size="small"
+                    variant="ghost"
+                    class="task-header-search-toggle"
+                    data-active={search.active() ? "" : undefined}
+                    onClick={() => search.setActive(!search.active())}
+                    aria-label={language.t("chat.search.toggle")}
+                    aria-pressed={search.active()}
+                  />
+                </Tooltip>
+                <button
+                  data-slot="task-header-expand"
+                  onClick={toggle}
+                  aria-expanded={expanded()}
+                  aria-label="Toggle timeline"
+                >
+                  <Icon
+                    name="chevron-down"
+                    size="small"
+                    style={expanded() ? { transform: "rotate(180deg)" } : undefined}
+                  />
+                </button>
+              </Show>
+            </span>
+          </div>
         </div>
-      </div>
-      {/* Standalone search bar, directly under the header, so it has room for
+        {/* Standalone search bar, directly under the header, so it has room for
           the VS Code–style inline options and doesn't require the timeline
           to be expanded. */}
-      <Show when={search.active()}>
-        <div data-component="task-header-search">
-          <TranscriptSearch />
-        </div>
-      </Show>
-      {/* Expanded graph section: timeline + context bar + token breakdown */}
-      <Show when={expanded() && hasTimeline()}>
-        <div data-component="task-header-graph">
-          <TaskTimeline />
-          <div data-slot="task-header-graph-row">
-            <ContextProgress />
+        <Show when={search.active()}>
+          <div data-component="task-header-search">
+            <TranscriptSearch />
           </div>
-          <Show when={tokens()}>{(tk) => <TaskUsage tokens={tk()} usage={session.modelUsage()} />}</Show>
-        </div>
-      </Show>
-      <Show when={memory.enabled()}>
-        <div data-slot="task-header-memory">
-          <Tooltip value={memoryTooltip()} placement="bottom" class="task-header-memory-tooltip">
-            <span data-slot="task-header-memory-status">
-              <Icon name="brain" size="small" />
-              <span>{memoryLabel()}</span>
-            </span>
-          </Tooltip>
-          <span data-slot="task-header-memory-actions">
-            <Tooltip value={language.t("chat.memory.inspect")} placement="bottom">
-              <IconButton
-                icon="eye"
-                size="small"
-                variant="ghost"
-                disabled={memory.loading() || memory.pending()}
-                onClick={() => memory.showMemory()}
-                aria-label={language.t("chat.memory.inspect")}
-              />
-            </Tooltip>
-            <Tooltip value={language.t("chat.memory.remember")} placement="bottom">
-              <IconButton
-                icon="plus-small"
-                size="small"
-                variant="ghost"
-                disabled={memory.pending() || !memory.enabled()}
-                onClick={() => memory.remember()}
-                aria-label={language.t("chat.memory.remember")}
-              />
-            </Tooltip>
-            <Tooltip value={language.t("chat.memory.forget")} placement="bottom">
-              <IconButton
-                icon="trash"
-                size="small"
-                variant="ghost"
-                disabled={memory.pending() || !memory.enabled()}
-                onClick={() => memory.forget()}
-                aria-label={language.t("chat.memory.forget")}
-              />
-            </Tooltip>
-            <Tooltip value={language.t("chat.memory.rebuild")} placement="bottom">
-              <IconButton
-                icon="reset"
-                size="small"
-                variant="ghost"
-                disabled={memory.pending() || !memory.enabled()}
-                onClick={() => memory.rebuild()}
-                aria-label={language.t("chat.memory.rebuild")}
-              />
-            </Tooltip>
-            {/* Strip only mounts when enabled, so this is always the disable action; re-enable lives in Settings > Context. */}
-            <Tooltip value={language.t("chat.memory.disable")} placement="bottom">
-              <IconButton
-                icon="circle-ban-sign"
-                size="small"
-                variant="ghost"
-                disabled={memory.pending()}
-                onClick={() => memory.disable()}
-                aria-label={language.t("chat.memory.disable")}
-              />
-            </Tooltip>
-          </span>
-        </div>
-      </Show>
-      <Show when={hasTodos()}>
-        <div data-component="task-header-todos">
-          <button
-            data-slot="task-header-todos-trigger"
-            onClick={() => setTodosOpen((v) => !v)}
-            aria-expanded={todosOpen()}
-          >
-            <Icon name="checklist" size="small" />
-            <span data-slot="task-header-todos-summary" data-all-done={allDone() ? "" : undefined}>
-              {todoSummary()}
-            </span>
-            <Icon
-              name="chevron-down"
-              size="small"
-              data-slot="task-header-todos-arrow"
-              data-open={todosOpen() ? "" : undefined}
-            />
-          </button>
-          <Show when={todosOpen()}>
-            <div data-slot="task-header-todos-list">
-              <For each={todos()}>
-                {(todo: TodoItem, idx) => {
-                  const part = createMemo(() => (todo.status === "completed" ? donePart(idx()) : undefined))
-                  return (
-                    <Tooltip value={part() ? language.t("settings.checkpoints.title") : undefined} placement="bottom">
-                      <Checkbox readOnly checked={todo.status === "completed"} onClick={() => revertTodo(part())}>
-                        <span
-                          data-slot="task-header-todo-content"
-                          data-completed={todo.status === "completed" ? "" : undefined}
-                        >
-                          {todo.content}
-                        </span>
-                      </Checkbox>
-                    </Tooltip>
-                  )
-                }}
-              </For>
+        </Show>
+        {/* Expanded graph section: timeline + context bar + token breakdown */}
+        <Show when={expanded() && hasTimeline()}>
+          <div data-component="task-header-graph">
+            <TaskTimeline />
+            <div data-slot="task-header-graph-row">
+              <ContextProgress />
             </div>
-          </Show>
-        </div>
-      </Show>
+            <Show when={tokens()}>{(tk) => <TaskUsage tokens={tk()} usage={session.modelUsage()} />}</Show>
+          </div>
+        </Show>
+        <Show when={memory.enabled()}>
+          <div data-slot="task-header-memory">
+            <Tooltip value={memoryTooltip()} placement="bottom" class="task-header-memory-tooltip">
+              <span data-slot="task-header-memory-status">
+                <Icon name="brain" size="small" />
+                <span>{memoryLabel()}</span>
+              </span>
+            </Tooltip>
+            <span data-slot="task-header-memory-actions">
+              <Tooltip value={language.t("chat.memory.inspect")} placement="bottom">
+                <IconButton
+                  icon="eye"
+                  size="small"
+                  variant="ghost"
+                  disabled={memory.loading() || memory.pending()}
+                  onClick={() => memory.showMemory()}
+                  aria-label={language.t("chat.memory.inspect")}
+                />
+              </Tooltip>
+              <Tooltip value={language.t("chat.memory.remember")} placement="bottom">
+                <IconButton
+                  icon="plus-small"
+                  size="small"
+                  variant="ghost"
+                  disabled={memory.pending() || !memory.enabled()}
+                  onClick={() => memory.remember()}
+                  aria-label={language.t("chat.memory.remember")}
+                />
+              </Tooltip>
+              <Tooltip value={language.t("chat.memory.forget")} placement="bottom">
+                <IconButton
+                  icon="trash"
+                  size="small"
+                  variant="ghost"
+                  disabled={memory.pending() || !memory.enabled()}
+                  onClick={() => memory.forget()}
+                  aria-label={language.t("chat.memory.forget")}
+                />
+              </Tooltip>
+              <Tooltip value={language.t("chat.memory.rebuild")} placement="bottom">
+                <IconButton
+                  icon="reset"
+                  size="small"
+                  variant="ghost"
+                  disabled={memory.pending() || !memory.enabled()}
+                  onClick={() => memory.rebuild()}
+                  aria-label={language.t("chat.memory.rebuild")}
+                />
+              </Tooltip>
+              {/* Strip only mounts when enabled, so this is always the disable action; re-enable lives in Settings > Context. */}
+              <Tooltip value={language.t("chat.memory.disable")} placement="bottom">
+                <IconButton
+                  icon="circle-ban-sign"
+                  size="small"
+                  variant="ghost"
+                  disabled={memory.pending()}
+                  onClick={() => memory.disable()}
+                  aria-label={language.t("chat.memory.disable")}
+                />
+              </Tooltip>
+            </span>
+          </div>
+        </Show>
+        <Show when={hasTodos()}>
+          <div data-component="task-header-todos">
+            <button
+              data-slot="task-header-todos-trigger"
+              onClick={() => setTodosOpen((v) => !v)}
+              aria-expanded={todosOpen()}
+            >
+              <Icon name="checklist" size="small" />
+              <span data-slot="task-header-todos-summary" data-all-done={allDone() ? "" : undefined}>
+                {todoSummary()}
+              </span>
+              <Icon
+                name="chevron-down"
+                size="small"
+                data-slot="task-header-todos-arrow"
+                data-open={todosOpen() ? "" : undefined}
+              />
+            </button>
+            <Show when={todosOpen()}>
+              <div data-slot="task-header-todos-list">
+                <For each={todos()}>
+                  {(todo: TodoItem, idx) => {
+                    const part = createMemo(() => (todo.status === "completed" ? donePart(idx()) : undefined))
+                    return (
+                      <Tooltip value={part() ? language.t("settings.checkpoints.title") : undefined} placement="bottom">
+                        <Checkbox readOnly checked={todo.status === "completed"} onClick={() => revertTodo(part())}>
+                          <span
+                            data-slot="task-header-todo-content"
+                            data-completed={todo.status === "completed" ? "" : undefined}
+                          >
+                            {todo.content}
+                          </span>
+                        </Checkbox>
+                      </Tooltip>
+                    )
+                  }}
+                </For>
+              </div>
+            </Show>
+          </div>
+        </Show>
+      </div>
     </Show>
   )
 }

@@ -4,7 +4,6 @@ import {
   buildBundledToolEnv,
   isIndexingDiagnosticLine,
   resolveServerCwd,
-  resolveIndexingEnv,
   resolveManagedServerEnv,
   ServerManager,
   toErrorMessage,
@@ -314,16 +313,17 @@ describe("server workspace helpers", () => {
     expect(resolveServerCwd([], "/global-storage")).toBe("/global-storage")
   })
 
-  it("disables codebase indexing only when no workspace folder is open", () => {
-    expect(resolveIndexingEnv(undefined)).toEqual({ KILO_DISABLE_CODEBASE_INDEXING: "vscode-no-workspace" })
-    expect(resolveIndexingEnv([])).toEqual({ KILO_DISABLE_CODEBASE_INDEXING: "vscode-no-workspace" })
-    expect(resolveIndexingEnv([{ uri: { fsPath: "/repo" } }])).toEqual({})
-  })
-
   it("uses the shared database for the managed backend while preserving the environment", () => {
-    expect(resolveManagedServerEnv({ PATH: "/usr/bin", KILO_DISABLE_CHANNEL_DB: "false" })).toEqual({
+    expect(
+      resolveManagedServerEnv({
+        PATH: "/usr/bin",
+        KILO_DISABLE_CHANNEL_DB: "false",
+        KILO_DISABLE_CODEBASE_INDEXING: "maintenance-window",
+      }),
+    ).toEqual({
       PATH: "/usr/bin",
       KILO_DISABLE_CHANNEL_DB: "true",
+      KILO_DISABLE_CODEBASE_INDEXING: "maintenance-window",
     })
   })
 })

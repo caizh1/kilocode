@@ -16,9 +16,22 @@ import {
   normalizeWordTableSpec,
   renderWordDocument,
 } from "../../src/kilocode/documents/word"
-import { provideTmpdirInstance } from "../fixture/fixture"
+import { provideTestInstance, tmpdir } from "../fixture/fixture"
 
 const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+
+function provideTmpdirInstance<A, E>(
+  self: (dir: string) => Effect.Effect<A, E>,
+  options?: { git?: boolean },
+) {
+  return Effect.promise(async () => {
+    await using temp = await tmpdir(options)
+    return await provideTestInstance({
+      directory: temp.path,
+      fn: () => Effect.runPromise(self(temp.path).pipe(Effect.provide(CrossSpawnSpawner.defaultLayer))),
+    })
+  })
+}
 
 describe("kilocode Word documents", () => {
   test("creates a docx artifact and inspects bounded document structure", async () => {
@@ -173,6 +186,112 @@ describe("kilocode Word documents", () => {
             expect(header).toContain("Source-backed Design")
             expect(footer).toContain(" PAGE ")
             expect(settings).toContain('<w:updateFields w:val="true"/>')
+          }),
+        { git: true },
+      ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
+    )
+  })
+
+  test("materializes a standalone TOC as a native field without deleting the cover or first chapter", async () => {
+    await Effect.runPromise(
+      provideTmpdirInstance(
+        (dir) =>
+          Effect.promise(async () => {
+            const created = await createWordDocument({
+              title: "模块详细设计",
+              documentType: "详细设计",
+              taskSlug: "module-detail-design",
+              outputFile: "module-detail-design.docx",
+              summary: ["本文档基于源码证据生成。", "{{TOC}}"],
+              sections: [
+                { title: "阅读路径", paragraphs: ["先阅读总体架构，再点读关键源码。"] },
+                { title: "术语、范围与证据基线", paragraphs: ["本章说明术语和源码范围。"] },
+              ],
+            })
+
+            const materialized = await materializeWordFields({
+              sourcePath: created.path,
+              taskSlug: "module-detail-design",
+              outputFile: "module-detail-design.docx",
+              tocMode: "materialize",
+            })
+            expect(materialized.summary.toc).toBe("materialized")
+            expect(path.basename(materialized.path)).toBe("module-detail-design.docx")
+
+            const inspection = await inspectWordDocument({ path: materialized.path })
+            expect(
+              inspection.paragraphs.filter((item) => item.styleId === "Title" && item.text === "模块详细设计"),
+            ).toHaveLength(1)
+            expect(inspection.outline.map((item) => item.title)).toEqual(["阅读路径", "术语、范围与证据基线"])
+            expect(inspection.paragraphs.some((item) => item.text.includes("{{TOC}}"))).toBe(false)
+            expect(inspection.styles).toContain("TOCHeading")
+
+            const bytes = new Uint8Array(await fs.readFile(path.join(dir, materialized.path)))
+            const reader = new ZipReader(new Uint8ArrayReader(bytes))
+            const entries = await reader.getEntries()
+            const byName = new Map(entries.map((entry) => [entry.filename, entry]))
+            const document = await byName.get("word/document.xml")!.getData!(new TextWriter())
+            const styles = await byName.get("word/styles.xml")!.getData!(new TextWriter())
+            await reader.close()
+
+            expect(document).not.toContain("{{TOC}}")
+            expect(document).toContain('<w:fldSimple w:instr="TOC \\o &quot;1-3&quot; \\h \\z \\u" w:dirty="true">')
+            expect(document).toContain(">目录</w:t>")
+            expect(document).toContain(">请在 Word 中更新目录</w:t>")
+            expect(document).toContain('<w:pStyle w:val="TOCHeading"/><w:pageBreakBefore/>')
+            expect(document).toContain('<w:br w:type="page"/>')
+            expect(styles).toContain('<w:style w:type="paragraph" w:styleId="TOCHeading">')
+            const order = ["模块详细设计", 'w:pStyle w:val="TOCHeading"', "w:fldSimple", "阅读路径"].map((token) =>
+              document.indexOf(token),
+            )
+            expect(order.every((index, offset) => index >= 0 && (offset === 0 || index > order[offset - 1]!))).toBe(true)
+          }),
+        { git: true },
+      ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
+    )
+  })
+
+  test("rejects ambiguous TOC placeholders and removes only an exact standalone placeholder", async () => {
+    await Effect.runPromise(
+      provideTmpdirInstance(
+        () =>
+          Effect.promise(async () => {
+            const embedded = await createWordDocument({
+              title: "Embedded TOC",
+              summary: ["Prefix {{TOC}} suffix"],
+              sections: [{ title: "Overview", paragraphs: ["Body"] }],
+            })
+            await expect(
+              materializeWordFields({ sourcePath: embedded.path, tocMode: "materialize" }),
+            ).rejects.toThrow("{{TOC}} to be the only text in a standalone paragraph")
+
+            const repeated = await createWordDocument({
+              title: "Repeated TOC",
+              summary: ["{{TOC}}", "{{TOC}}"],
+              sections: [{ title: "Overview", paragraphs: ["Body"] }],
+            })
+            await expect(
+              materializeWordFields({ sourcePath: repeated.path, tocMode: "materialize" }),
+            ).rejects.toThrow("exactly one standalone {{TOC}} paragraph, found 2")
+
+            const removable = await createWordDocument({
+              title: "Removable TOC",
+              summary: ["Summary before directory", "{{TOC}}"],
+              sections: [{ title: "Reading Path", paragraphs: ["Body after directory"] }],
+            })
+            const removed = await materializeWordFields({
+              sourcePath: removable.path,
+              outputFile: "removed.docx",
+              tocMode: "remove",
+            })
+            expect(removed.summary.toc).toBe("removed")
+            const inspection = await inspectWordDocument({ path: removed.path })
+            expect(inspection.paragraphs.some((item) => item.styleId === "Title" && item.text === "Removable TOC")).toBe(
+              true,
+            )
+            expect(inspection.paragraphs.some((item) => item.text === "Summary before directory")).toBe(true)
+            expect(inspection.outline.map((item) => item.title)).toEqual(["Reading Path"])
+            expect(inspection.paragraphs.some((item) => item.text.includes("{{TOC}}"))).toBe(false)
           }),
         { git: true },
       ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
@@ -742,7 +861,7 @@ describe("kilocode Word documents", () => {
                   expect.objectContaining({ code: "word-render-remote-failed", severity: "warning" }),
                 )
               } finally {
-                failedRemote.stop(true)
+                await failedRemote.stop(true)
               }
             } finally {
               if (previousEndpoint === undefined) delete process.env["KILO_WORD_RENDER_ENDPOINT"]
@@ -789,7 +908,7 @@ describe("kilocode Word documents", () => {
               expect(manifest.derivedFiles).toContain("rendered/page-001.png")
               expect(manifest.derivedFiles).toContain("render-diagnostics.json")
             } finally {
-              server.stop(true)
+              await server.stop(true)
             }
 
             const nested = Bun.serve({
@@ -850,7 +969,7 @@ describe("kilocode Word documents", () => {
               })
               expect(rendered.diagnostics.some((item) => item.code === "pdf-missing")).toBe(false)
             } finally {
-              nested.stop(true)
+              await nested.stop(true)
             }
           }),
         { git: true },

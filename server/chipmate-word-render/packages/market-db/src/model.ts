@@ -11,6 +11,172 @@ export interface MarketDbHealth {
   message?: string
 }
 
+export type ExtensionPublicationStatus =
+  | "UPLOADING"
+  | "VALIDATING"
+  | "PUBLISHING"
+  | "PUBLISHED"
+  | "DUPLICATE"
+  | "CANCELLED"
+  | "FAILED"
+
+export interface ExtensionManifest {
+  id: string
+  publisher: string
+  name: string
+  displayName: string
+  description: string
+  version: string
+  target: string
+  engineVscode: string
+  categories: string[]
+  keywords: string[]
+  dependencies: string[]
+  prerelease: boolean
+  systemPlugin: boolean
+  readme: string
+  iconData?: string
+}
+
+export interface ExtensionArtifactInput {
+  id: string
+  sha256: string
+  size: number
+  path: string
+  filename: string
+  uploaderId?: string
+  uploaderName: string
+  sourceKey: string
+  sourceKind: "system" | "web"
+  manifest: ExtensionManifest
+  publishedAt: string
+}
+
+export interface ExtensionArtifactItem {
+  id: string
+  extensionId: string
+  version: string
+  target: string
+  sha256: string
+  size: number
+  path: string
+  filename: string
+  uploaderId?: string
+  uploaderName: string
+  source: "system" | "web"
+  prerelease: boolean
+  conflict: boolean
+  downloads: number
+  publishedAt: string
+  status: "published" | "removed"
+  manifest: ExtensionManifest
+}
+
+export interface ExtensionSummaryItem {
+  id: string
+  publisher: string
+  name: string
+  displayName: string
+  description: string
+  version: string
+  engineVscode: string
+  categories: string[]
+  keywords: string[]
+  targets: string[]
+  uploader: string
+  iconData?: string
+  systemPlugin: boolean
+  prerelease: boolean
+  downloads: number
+  favorites: number
+  rating: number
+  ratingCount: number
+  updatedAt: string
+}
+
+export interface ExtensionDetailItem extends ExtensionSummaryItem {
+  readme: string
+  dependencies: string[]
+  artifacts: ExtensionArtifactItem[]
+  versions: string[]
+}
+
+export interface ExtensionSearchInput {
+  q?: string
+  category?: string
+  target?: string
+  uploader?: string
+  sort?: "downloads" | "rating" | "favorites" | "updated" | "name"
+  limit?: number
+  offset?: number
+}
+
+export interface ExtensionPublicationInput {
+  id: string
+  ownerId: string
+  filename: string
+  totalBytes: number
+  idempotencyKey: string
+  status: ExtensionPublicationStatus
+  stage: string
+  sha256?: string
+  artifactId?: string
+  error?: string
+}
+
+export interface ExtensionPublicationItem extends ExtensionPublicationInput {
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ExtensionFavoriteInput {
+  userId: string
+  extensionId: string
+  value: boolean
+}
+
+export interface ExtensionReviewInput {
+  userId: string
+  userName: string
+  extensionId: string
+  artifactId?: string
+  rating: number
+  comment: string
+}
+
+export interface ExtensionReviewItem {
+  userId: string
+  userName: string
+  extensionId: string
+  artifactId?: string
+  rating: number
+  comment: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ExtensionDownloadInput {
+  id: string
+  artifactId: string
+  source: string
+  occurredAt: string
+}
+
+export interface ExtensionAnalyticsItem {
+  totals: {
+    downloads: number
+    favorites: number
+    rating: number
+    active: number
+    growth30d: number
+  }
+  trend: Array<{ date: string; downloads: number; favorites: number }>
+  downloads: Array<{ id: string; name: string; value: number }>
+  ratings: Array<{ id: string; name: string; value: number }>
+  targets: Array<{ target: string; value: number }>
+  activity: Array<{ type: "publish"; extensionId: string; name: string; at: string }>
+}
+
 export interface ImportResult {
   imported: number
   unchanged: number

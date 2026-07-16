@@ -1,6 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { createReadStream } from "node:fs"
-import type { ServerResponse } from "node:http"
 import type { FastifyInstance, FastifyReply } from "fastify"
 import type {
   AnalyticsEvent,
@@ -21,6 +20,7 @@ import type {
 } from "@chipmate/market-db"
 import { SKILL_SPEC_VERSION } from "@chipmate/skill-spec"
 import { Identity, IdentityError, isSecure, sendIdentityError, type ResolveUser } from "./identity.ts"
+import { MarketEvents } from "./events.ts"
 
 interface Params {
   id: string
@@ -43,6 +43,18 @@ interface Query {
 interface AlignedOptions {
   resolveUser?: ResolveUser
   now?: () => number
+  events?: MarketEvents
+  extensionMarket?: boolean
+  extensionStatus?: () => ExtensionStatus
+}
+
+interface ExtensionStatus {
+  enabled: boolean
+  scanner: string
+  drop: boolean
+  artifacts: boolean
+  temporary: boolean
+  warnings: string[]
 }
 
 interface InstallationBody {
@@ -87,15 +99,12 @@ const CONTEXT = new Set([
 export function registerAligned(app: FastifyInstance, db: MarketDb, opts: AlignedOptions = {}) {
   const identity = new Identity(db, opts.resolveUser, opts.now)
   const now = opts.now ?? Date.now
-  const streams = new Set<ServerResponse>()
+  const events = opts.events ?? new MarketEvents()
   const searches = new Map<string, Promise<SearchItem[]>>()
-  const publish = (name: string, payload: unknown) => {
-    const message = event(name, randomUUID(), payload)
-    for (const stream of streams) stream.write(message)
-  }
+  const publish = (name: string, payload: unknown) => events.publish(name, payload)
 
   app.get("/api/v1/capabilities", async (req, reply) =>
-    cached(reply, req.headers["if-none-match"], await capabilities(db)),
+    cached(reply, req.headers["if-none-match"], await capabilities(db, opts.extensionMarket === true)),
   )
 
   app.post("/api/v1/auth/session", async (req, reply) => {
@@ -512,12 +521,31 @@ export function registerAligned(app: FastifyInstance, db: MarketDb, opts: Aligne
   app.get("/api/v1/status", async (req, reply) => {
     const health = await db.health()
     const trustedHttp = req.protocol !== "https"
+    const runtime = opts.extensionStatus?.() ?? {
+      enabled: true,
+      scanner: "starting",
+      drop: false,
+      artifacts: false,
+      temporary: false,
+      warnings: [],
+    }
+    const extensions = opts.extensionMarket
+      ? { database: health.available ? "ready" : "degraded", ...runtime }
+      : undefined
+    const extensionReady =
+      !extensions ||
+      (extensions.database === "ready" &&
+        extensions.drop === true &&
+        extensions.artifacts === true &&
+        extensions.temporary === true &&
+        (extensions.warnings?.length ?? 0) === 0)
     return reply.send({
-      ok: health.available,
+      ok: health.available && extensionReady,
       transport: trustedHttp ? "trusted-http" : "https",
       render: "ready",
       market: health.available ? "ready" : "degraded",
       packages: "ready",
+      ...(extensions ? { extensions } : {}),
       warnings: [
         ...(trustedHttp ? ["当前使用受信内网 HTTP，登录时的 New API key 不受传输加密保护。"] : []),
         ...(health.available ? [] : ["Market database is unavailable."]),
@@ -537,16 +565,16 @@ export function registerAligned(app: FastifyInstance, db: MarketDb, opts: Aligne
     const known = (req.query as Query).catalogVersion
     if (known !== version) reply.raw.write(event("catalog.invalidated", version, { catalogVersion: version }))
     else reply.raw.write(`: catalog ${version} current\n\n`)
-    streams.add(reply.raw)
+    const remove = events.add(reply.raw)
     const timer = setInterval(() => reply.raw.write(`: heartbeat ${Date.now()}\n\n`), 25_000)
     req.raw.once("close", () => {
       clearInterval(timer)
-      streams.delete(reply.raw)
+      remove()
     })
   })
 }
 
-async function capabilities(db: MarketDb): Promise<MarketCapabilities> {
+async function capabilities(db: MarketDb, extensions: boolean): Promise<MarketCapabilities> {
   return {
     mode: "aligned-v1",
     apiVersion: "1.0.0",
@@ -560,6 +588,11 @@ async function capabilities(db: MarketDb): Promise<MarketCapabilities> {
       repairs: true,
       analytics: true,
       events: true,
+      extensions,
+      extensionPublications: extensions,
+      extensionReviews: extensions,
+      extensionAnalytics: extensions,
+      extensionDirectoryImport: extensions,
     },
   }
 }

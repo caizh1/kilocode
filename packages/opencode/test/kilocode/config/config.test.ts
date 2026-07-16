@@ -244,7 +244,37 @@ describe("kilocode indexing config", () => {
     const input = KiloIndexing.input({ enabled: false }, { enabled: true })
     expect(input.enabled).toBe(false)
     expect(KiloIndexing.input(undefined, { enabled: true }).enabled).toBe(true)
+    expect(KiloIndexing.input({ enabled: undefined }, { enabled: true }).enabled).toBe(true)
     expect(KiloIndexing.input({ enabled: true }, { enabled: false }).enabled).toBe(true)
+  })
+
+  test("uses public-off and internal-on defaults only when enablement is unset", () => {
+    const kilo = process.env.KILO_INTERNAL_OFFLINE
+    const chipmate = process.env.CHIPMATE_INTERNAL_OFFLINE
+
+    try {
+      delete process.env.KILO_INTERNAL_OFFLINE
+      delete process.env.CHIPMATE_INTERNAL_OFFLINE
+      expect(KiloIndexing.input().enabled).toBe(false)
+
+      process.env.KILO_INTERNAL_OFFLINE = "1"
+      expect(KiloIndexing.input()).toMatchObject({
+        enabled: true,
+        embedderProvider: "openai-compatible",
+        modelId: "qwen3-embedding-8b",
+        modelDimension: 2048,
+        vectorStoreProvider: "lancedb",
+        documents: { enabled: true, paths: ["."] },
+      })
+      expect(KiloIndexing.input(undefined, { enabled: false }).enabled).toBe(false)
+      expect(KiloIndexing.input({ enabled: false }, { enabled: true }).enabled).toBe(false)
+      expect(KiloIndexing.input({ enabled: true }, { enabled: false }).enabled).toBe(true)
+    } finally {
+      if (kilo === undefined) delete process.env.KILO_INTERNAL_OFFLINE
+      else process.env.KILO_INTERNAL_OFFLINE = kilo
+      if (chipmate === undefined) delete process.env.CHIPMATE_INTERNAL_OFFLINE
+      else process.env.CHIPMATE_INTERNAL_OFFLINE = chipmate
+    }
   })
 
   test("creates missing project config as .kilo/kilo.jsonc", async () => {

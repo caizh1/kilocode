@@ -1924,4 +1924,10 @@ export const dict = {
   "chat.search.invalidRegex": "Ungültiger regulärer Ausdruck",
   "chat.search.noResults": "Keine Ergebnisse",
   "chat.search.searchingHistory": "Frühere Nachrichten werden durchsucht…",
+  "settings.experimental.dsml.title": "DSML-Werkzeugaufrufe reparieren",
+  "settings.experimental.dsml.description":
+    "Durchgesickerte DeepSeek-DSML-Aufrufe nur für den gewählten Anbieter und das Modell reparieren",
+  "settings.experimental.dsmlModel.title": "DSML-Zielmodell",
+  "settings.experimental.dsmlModel.description":
+    "Wählen Sie den einzigen Anbieter und das Modell für die DSML-Kompatibilitätsanalyse",
 } satisfies Partial<Record<Keys, string>>

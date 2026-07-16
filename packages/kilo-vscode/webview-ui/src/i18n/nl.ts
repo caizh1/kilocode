@@ -1921,4 +1921,9 @@ export const dict = {
   "chat.search.invalidRegex": "Ongeldige reguliere expressie",
   "chat.search.noResults": "Geen resultaten",
   "chat.search.searchingHistory": "Eerdere berichten doorzoeken…",
+  "settings.experimental.dsml.title": "DSML-tooloproepen herstellen",
+  "settings.experimental.dsml.description":
+    "Herstel gelekte DeepSeek DSML-oproepen alleen voor de gekozen provider en het model",
+  "settings.experimental.dsmlModel.title": "DSML-doelmodel",
+  "settings.experimental.dsmlModel.description": "Selecteer de enige provider en het model die DSML mogen parseren",
 }

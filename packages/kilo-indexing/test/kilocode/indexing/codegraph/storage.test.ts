@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "fs/promises"
+import { access, mkdir, mkdtemp, readFile, readdir, rename, symlink, writeFile } from "fs/promises"
 import { tmpdir } from "os"
 import path from "path"
 import { describe, expect, test } from "bun:test"
@@ -10,6 +10,7 @@ import {
 } from "../../../../src/indexing/codegraph"
 import { parseCodeGraphFile } from "../../../../src/indexing/codegraph/parser"
 import { CodeGraphJsonStorage } from "../../../../src/indexing/codegraph/storage"
+import { workspaceKey } from "../../../../src/indexing/workspace-key"
 
 async function root() {
   return mkdtemp(path.join(tmpdir(), "codegraph-storage-test-"))
@@ -40,6 +41,32 @@ async function walk(dir: string): Promise<string[]> {
 }
 
 describe("CodeGraphJsonStorage", () => {
+  test("tracks never, interrupted, and complete empty scans", async () => {
+    const workspacePath = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const storage = new CodeGraphJsonStorage({
+      workspacePath,
+      cacheDirectory,
+      clock: () => new Date("2026-06-10T00:00:00.000Z"),
+    })
+
+    expect(storage.getScanState()).toBe("never")
+    await storage.beginFullScan()
+    expect(storage.getScanState()).toBe("interrupted")
+    await storage.markFullScanComplete()
+
+    expect(storage.getScanState()).toBe("complete")
+    expect(storage.status()).toMatchObject({
+      recordCount: 0,
+      validFileCount: 0,
+      lastFullScanAt: "2026-06-10T00:00:00.000Z",
+    })
+
+    await storage.beginFullScan()
+    expect(storage.getScanState()).toBe("interrupted")
+    expect(storage.status().lastFullScanAt).toBeUndefined()
+  })
+
   test("upserts, gets, lists, and writes atomically with sharded graph parts", async () => {
     const workspacePath = await root()
     const cacheDirectory = path.join(workspacePath, ".cache")
@@ -217,6 +244,7 @@ describe("CodeGraphJsonStorage", () => {
       needsRebuild: true,
       evidenceAvailable: false,
     })
+    expect(mismatched.getScanState()).toBe("needs-rebuild")
     expect(await mismatched.getFileGraph(filePath)).toBeUndefined()
   })
 
@@ -237,6 +265,105 @@ describe("CodeGraphJsonStorage", () => {
     expect(await storage.listFiles()).toEqual(["main.c"])
   })
 
+  test("isolates workspaces sharing one cache and clears only the selected graph", async () => {
+    const first = await root()
+    const second = await root()
+    const cacheDirectory = await root()
+    const left = new CodeGraphJsonStorage({ workspacePath: first, cacheDirectory })
+    const right = new CodeGraphJsonStorage({ workspacePath: second, cacheDirectory })
+    const leftFile = path.join(first, "left.c")
+    const rightFile = path.join(second, "right.c")
+    const leftGraph = sample(first, leftFile, "int left(void) { return 1; }\n")
+    const rightGraph = sample(second, rightFile, "int right(void) { return 2; }\n")
+
+    await left.beginFullScan()
+    await left.upsertFileGraph(leftFile, leftGraph.fileHash, leftGraph)
+    await left.markFullScanComplete()
+    await right.beginFullScan()
+    await right.upsertFileGraph(rightFile, rightGraph.fileHash, rightGraph)
+    await right.markFullScanComplete()
+
+    expect(left.status().graphDirectory).not.toBe(right.status().graphDirectory)
+    expect(await left.listFiles()).toEqual(["left.c"])
+    expect(await right.listFiles()).toEqual(["right.c"])
+
+    await left.clear()
+    expect(await left.listFiles()).toEqual([])
+    expect(await right.listFiles()).toEqual(["right.c"])
+  })
+
+  test("atomically migrates only an exact, completed legacy graph cache", async () => {
+    const workspacePath = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const filePath = path.join(workspacePath, "main.c")
+    const graph = sample(workspacePath, filePath)
+    const current = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
+    await current.beginFullScan()
+    await current.upsertFileGraph(filePath, graph.fileHash, graph)
+    await current.markFullScanComplete()
+
+    const isolated = graphDir(cacheDirectory, workspacePath)
+    const legacy = legacyGraphDir(cacheDirectory)
+    await rename(isolated, legacy)
+
+    const storage = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
+    expect(await storage.ensureCompatible()).toEqual({ action: "reuse", reason: "compatible" })
+    expect(await storage.listFiles()).toEqual(["main.c"])
+    expect(await exists(legacy)).toBe(false)
+    expect(await exists(path.join(isolated, "manifest.json"))).toBe(true)
+  })
+
+  test("retains an incompatible legacy graph cache while rebuilding isolated storage", async () => {
+    const workspacePath = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const filePath = path.join(workspacePath, "main.c")
+    const graph = sample(workspacePath, filePath)
+    const source = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
+    await source.beginFullScan()
+    await source.upsertFileGraph(filePath, graph.fileHash, graph)
+    await source.markFullScanComplete()
+
+    const isolated = graphDir(cacheDirectory, workspacePath)
+    const legacy = legacyGraphDir(cacheDirectory)
+    await rename(isolated, legacy)
+    const file = path.join(legacy, "manifest.json")
+    const manifest = JSON.parse(await readFile(file, "utf-8")) as CodeGraphManifest
+    manifest.parserVersion = CODE_GRAPH_PARSER_VERSION + 1
+    await writeFile(file, JSON.stringify(manifest), "utf-8")
+    const before = await readFile(file, "utf-8")
+
+    const storage = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
+    expect((await storage.ensureCompatible()).action).toBe("rebuild")
+
+    expect(await readFile(file, "utf-8")).toBe(before)
+    expect(await exists(legacy)).toBe(true)
+    expect(await exists(path.join(isolated, "manifest.json"))).toBe(true)
+    expect(await storage.listFiles()).toEqual([])
+  })
+
+  test("retains interrupted or mismatched legacy graph caches", async () => {
+    const workspacePath = await root()
+    const other = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const source = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
+    await source.beginFullScan()
+    await source.markFullScanComplete()
+
+    const isolated = graphDir(cacheDirectory, workspacePath)
+    const legacy = legacyGraphDir(cacheDirectory)
+    await rename(isolated, legacy)
+    const manifest = await readFile(path.join(legacy, "manifest.json"), "utf-8")
+    await writeFile(path.join(legacy, "manifest.rebuild.json"), manifest, "utf-8")
+
+    const interrupted = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
+    expect((await interrupted.ensureCompatible()).action).toBe("rebuild")
+    expect(await exists(legacy)).toBe(true)
+
+    const mismatch = new CodeGraphJsonStorage({ workspacePath: other, cacheDirectory })
+    expect((await mismatch.ensureCompatible()).action).toBe("rebuild")
+    expect(await exists(legacy)).toBe(true)
+  })
+
   test("rebuilds graph storage when manifest references missing graph data", async () => {
     const workspacePath = await root()
     const cacheDirectory = path.join(workspacePath, ".cache")
@@ -253,7 +380,9 @@ describe("CodeGraphJsonStorage", () => {
     manifest.shards![0]!.parts[0]!.path = "shards/missing/missing.json"
     await writeFile(manifestPath, JSON.stringify(manifest), "utf-8")
 
-    const decision = await new CodeGraphJsonStorage({ workspacePath, cacheDirectory }).ensureCompatible()
+    const broken = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
+    expect(broken.getScanState()).toBe("needs-rebuild")
+    const decision = await broken.ensureCompatible()
 
     expect(decision).toEqual({ action: "rebuild", reason: "missing graph shard" })
     expect(new CodeGraphJsonStorage({ workspacePath, cacheDirectory }).status()).toMatchObject({
@@ -409,7 +538,11 @@ describe("CodeGraphJsonStorage", () => {
   })
 })
 
-function graphDir(cacheDirectory: string): string {
+function graphDir(cacheDirectory: string, workspacePath = path.dirname(cacheDirectory)): string {
+  return path.join(cacheDirectory, "codegraph", workspaceKey(workspacePath), CODE_GRAPH_STORAGE_VERSION_DIR)
+}
+
+function legacyGraphDir(cacheDirectory: string): string {
   return path.join(cacheDirectory, "codegraph", CODE_GRAPH_STORAGE_VERSION_DIR)
 }
 

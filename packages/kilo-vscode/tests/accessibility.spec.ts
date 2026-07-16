@@ -16,6 +16,8 @@ const STORIES = [
   { id: "marketplace--aligned-skills-home", name: "Marketplace / aligned Skill home" },
   { id: "marketplace--aligned-skill-detail", name: "Marketplace / aligned Skill detail" },
   { id: "chat--chat-view-idle", name: "QA / aligned empty state" },
+  { id: "chat--qa-welcome-recent-light", name: "QA / light welcome with recent sessions" },
+  { id: "chat--qa-titanium-full-conversation", name: "QA / Titanium full conversation" },
   { id: "prompt-input--qa-all-controls-send", name: "QA / all controls send state" },
   { id: "prompt-input--qa-all-controls-stop", name: "QA / all controls busy stop state" },
   { id: "prompt-input--qa-indexing-standby", name: "QA / indexing standby state" },
@@ -23,10 +25,14 @@ const STORIES = [
   { id: "prompt-input--qa-thinking-open", name: "QA / thinking selector open state" },
   { id: "marketplace--empty-list", name: "Marketplace / empty state" },
   { id: "agentmanager--sidebar-search-open", name: "Agent Manager / sidebar search" },
+  { id: "settings--titanium-studio-light-review", name: "Settings / light indexing review" },
 ]
 
+const LIGHT = new Set(["chat--qa-welcome-recent-light", "settings--titanium-studio-light-review"])
+
 function url(id: string) {
-  return `/iframe.html?id=${id}&viewMode=story&globals=${GLOBALS}`
+  const globals = LIGHT.has(id) ? "colorScheme:light;theme=kilo-vscode;vscodeTheme:light-modern" : GLOBALS
+  return `/iframe.html?id=${id}&viewMode=story&globals=${globals}`
 }
 
 async function open(page: Page, id: string) {

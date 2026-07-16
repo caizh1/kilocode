@@ -157,16 +157,39 @@ export function normalizeIndexingStatus(manager: StatusSource): IndexingStatus {
     ...status,
     ...notice,
     pipelines: {
-      codeGraph: codeGraphPipeline(graphStatus, graphProgress, graphErrors),
+      codeGraph:
+        cfg.activePipeline === "codeGraph" && cfg.systemStatus === "Error"
+          ? {
+              ...codeGraphPipeline(graphStatus, graphProgress, graphErrors),
+              state: "Error",
+              message: "Code Graph indexing failed.",
+              detail: cfg.message || "Code Graph indexing failed.",
+            }
+          : codeGraphPipeline(graphStatus, graphProgress, graphErrors),
       rag:
         cfg.activePipeline === "codeGraph"
           ? standbyPipeline(
-              "RAG indexing waiting for Code Graph.",
-              "Waiting for Code Graph indexing to finish.",
+              cfg.systemStatus === "Error"
+                ? "RAG indexing blocked by Code Graph."
+                : "RAG indexing waiting for Code Graph.",
+              cfg.systemStatus === "Error"
+                ? "Code Graph must recover before RAG indexing can start."
+                : "Waiting for Code Graph indexing to finish.",
               ragErrors,
             )
           : ragPipeline(status, ragErrors),
-      documents: documentPipeline(docStatus, docErrors),
+      documents:
+        cfg.activePipeline === "codeGraph" || cfg.activePipeline === "rag"
+          ? standbyPipeline(
+              cfg.systemStatus === "Error"
+                ? `Document RAG blocked by ${cfg.activePipeline === "codeGraph" ? "Code Graph" : "Code RAG"}.`
+                : `Document RAG waiting for ${cfg.activePipeline === "codeGraph" ? "Code Graph" : "Code RAG"}.`,
+              cfg.systemStatus === "Error"
+                ? "The preceding indexing stage must recover before Document RAG can start."
+                : "Document RAG starts only after Code Graph and Code RAG complete.",
+              docErrors,
+            )
+          : documentPipeline(docStatus, docErrors),
     },
   })
 
@@ -350,6 +373,22 @@ function codeGraphPipeline(
   }
 
   if (total <= 0) {
+    if (storage.lastFullScanAt) {
+      return pipeline({
+        state: "Complete",
+        message: "Code Graph complete, 0 supported files.",
+        processedFiles: 0,
+        totalFiles: 0,
+        percent: 100,
+        detail: "The completed scan found no supported C/C++ files.",
+        lastFullScanAt: storage.lastFullScanAt,
+        errorCount: error,
+        staleCount: stale,
+        skippedCount: skipped,
+        validFileCount: valid,
+        recentErrors,
+      })
+    }
     return pipeline({
       state: "Standby",
       message: "Code Graph waiting for C/C++ files.",

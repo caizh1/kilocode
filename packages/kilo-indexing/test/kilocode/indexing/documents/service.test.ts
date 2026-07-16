@@ -34,6 +34,31 @@ const store = {
 } satisfies IVectorStore
 
 describe("DocumentIndexService", () => {
+  test("completes an empty document scan with zero files", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    try {
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, store, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus()).toMatchObject({
+        state: "Complete",
+        processedFiles: 0,
+        totalFiles: 0,
+        percent: 100,
+        validFileCount: 0,
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("discovers documents across the workspace without configured paths", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
     try {
@@ -107,6 +132,117 @@ describe("DocumentIndexService", () => {
       expect(batches.length).toBeGreaterThan(1)
       expect(Math.max(...batches)).toBeLessThanOrEqual(5)
     } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("dispose waits for an in-flight embedding and prevents later writes", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const gate = Promise.withResolvers<void>()
+    const ready = Promise.withResolvers<void>()
+    const writes: string[] = []
+    let closes = 0
+    try {
+      await writeFile(path.join(root, "notes.md"), "document indexing cancellation")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const delayed = {
+        ...embedder,
+        createEmbeddings: async (texts: string[]) => {
+          ready.resolve()
+          await gate.promise
+          return { embeddings: texts.map(() => [0.1]) }
+        },
+      } satisfies IEmbedder
+      const tracked = {
+        ...store,
+        upsertPoints: async (_points: PointStruct[]) => {
+          writes.push("upsert")
+        },
+        activateFileGeneration: async () => {
+          writes.push("activate")
+        },
+        deleteInactiveFilePoints: async () => {
+          writes.push("cleanup")
+        },
+        markIndexingComplete: async () => {
+          writes.push("complete")
+        },
+        close: async () => {
+          closes += 1
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, delayed, tracked, ignore())
+
+      const running = service.start("manual")
+      await ready.promise
+      const draining = service.dispose()
+      const repeated = service.dispose()
+
+      expect(repeated).toBe(draining)
+      expect(await Promise.race([draining.then(() => "done"), Promise.resolve("pending")])).toBe("pending")
+      expect(closes).toBe(0)
+      gate.resolve()
+      await Promise.all([running, draining, repeated])
+
+      expect(writes).toEqual([])
+      expect(closes).toBe(1)
+      expect(service.getStatus().state).not.toBe("Complete")
+    } finally {
+      gate.resolve()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("does not activate or complete after an in-flight upsert is cancelled", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const gate = Promise.withResolvers<void>()
+    const ready = Promise.withResolvers<void>()
+    const writes: string[] = []
+    try {
+      await writeFile(path.join(root, "notes.md"), "document upsert cancellation")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const delayed = {
+        ...store,
+        markIndexingIncomplete: async () => {
+          writes.push("incomplete")
+        },
+        upsertPoints: async (_points: PointStruct[]) => {
+          ready.resolve()
+          await gate.promise
+          writes.push("upsert")
+        },
+        activateFileGeneration: async () => {
+          writes.push("activate")
+        },
+        deleteInactiveFilePoints: async () => {
+          writes.push("cleanup")
+        },
+        markIndexingComplete: async () => {
+          writes.push("complete")
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, delayed, ignore())
+
+      const running = service.start("manual")
+      await ready.promise
+      const draining = service.dispose()
+      gate.resolve()
+      await Promise.all([running, draining])
+
+      expect(writes).toEqual(["incomplete", "upsert"])
+      expect(service.getStatus().state).not.toBe("Complete")
+    } finally {
+      gate.resolve()
       await rm(root, { recursive: true, force: true })
     }
   })

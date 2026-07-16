@@ -65,6 +65,65 @@ test("model selector exposes combobox relationships and active option movement",
   await expect(preview.locator("button, a, [tabindex]")).toHaveCount(0)
 })
 
+test("prompt selector stays compact and guides first-time custom provider setup", async ({ page }) => {
+  await load(page, "shared--model-selector-custom-provider-setup")
+
+  await page.getByRole("button", { name: /Select model/ }).click()
+  const body = page.locator(".model-selector-body")
+  const preview = page.locator(".model-selector-preview")
+
+  await expect(page.locator(".model-selector-setup")).toContainText("Add a custom provider by base URL.")
+  await expect(page.getByRole("button", { name: "Manage models" })).toBeVisible()
+  await expect(page.locator(".model-selector-splitter")).toHaveCount(0)
+  await expect(page.locator(".model-preview")).toHaveCount(0)
+  await expect(preview).toHaveAttribute("aria-hidden", "true")
+  await expect.poll(async () => (await preview.boundingBox())?.height).toBe(0)
+  await expect.poll(async () => (await body.boundingBox())?.height).toBeLessThanOrEqual(300)
+  await expect(page.getByRole("button", { name: /^(Expand|Collapse)$/ })).toHaveCount(0)
+
+  const gateway = page.getByRole("treeitem", { name: "Kilo", exact: true })
+  await expect(page.getByRole("treeitem", { name: "Auto Models" })).toHaveAttribute("aria-expanded", "false")
+  await expect(page.getByRole("treeitem", { name: "Recommended" })).toHaveAttribute("aria-expanded", "false")
+  await expect(gateway).toHaveAttribute("aria-expanded", "false")
+  await expect(page.getByRole("treeitem", { name: "NVIDIA" })).toHaveAttribute("aria-expanded", "false")
+  await expect(page.getByRole("treeitem", { name: "Internal Lab" })).toHaveAttribute("aria-expanded", "false")
+
+  await gateway.click()
+  await expect(gateway).toHaveAttribute("aria-expanded", "true")
+  await expect(page.getByRole("treeitem", { name: "Alpha" })).toBeVisible()
+})
+
+test("prompt selector opens provider setup when the offline model catalog is empty", async ({ page }) => {
+  await load(page, "shared--model-selector-custom-provider-empty-catalog")
+
+  const trigger = page.getByRole("button", { name: "Select model: No providers" })
+  await expect(trigger).toBeEnabled()
+  await trigger.click()
+
+  await expect(page.locator(".model-selector-setup")).toContainText("Add a custom provider by base URL.")
+  await expect(page.getByRole("button", { name: "Manage models" })).toBeVisible()
+  await expect(page.locator(".model-selector-splitter, .model-preview")).toHaveCount(0)
+})
+
+test("prompt selector initially expands only configured custom providers", async ({ page }) => {
+  await load(page, "shared--model-selector-custom-provider-groups")
+
+  await page.getByRole("button", { name: /Intranet Chat/ }).click()
+
+  await expect(page.getByRole("treeitem", { name: "Favorites" })).toHaveAttribute("aria-expanded", "false")
+  await expect(page.getByRole("treeitem", { name: "Auto Models" })).toHaveAttribute("aria-expanded", "false")
+  await expect(page.getByRole("treeitem", { name: "Recommended" })).toHaveAttribute("aria-expanded", "false")
+  await expect(page.getByRole("treeitem", { name: "Kilo", exact: true })).toHaveAttribute("aria-expanded", "false")
+  await expect(page.getByRole("treeitem", { name: "NVIDIA" })).toHaveAttribute("aria-expanded", "false")
+  await expect(page.getByRole("treeitem", { name: "Internal Lab" })).toHaveAttribute("aria-expanded", "true")
+  await expect(page.getByRole("treeitem", { name: "Intranet Chat" })).toBeVisible()
+
+  const gateway = page.getByRole("treeitem", { name: "Kilo", exact: true })
+  await gateway.click()
+  await expect(gateway).toHaveAttribute("aria-expanded", "true")
+  await expect(page.getByRole("treeitem", { name: "Alpha" })).toBeVisible()
+})
+
 test("auto efficient details show server description and model choices", async ({ page }) => {
   await load(page, "shared--model-selector-accessible")
 

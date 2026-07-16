@@ -74,6 +74,12 @@ export const AlignedSkillMarket = (props: Props) => {
     vscode.postMessage({ type: "openExternal", url: `${root}/status` })
   }
 
+  const browse = () => {
+    if (!props.baseUrl) return
+    const root = props.baseUrl.replace(/\/marketplace\/?$/i, "")
+    vscode.postMessage({ type: "openExternal", url: `${root}/extensions?source=vscode` })
+  }
+
   const list = (items: SkillMarketplaceItem[], empty: string) => (
     <MarketplaceListView
       items={items}
@@ -109,6 +115,12 @@ export const AlignedSkillMarket = (props: Props) => {
           </Show>
         </div>
         <nav class="aligned-marketplace-nav" aria-label={t("marketplace.tab.skills")}>
+          <Show when={props.capabilities?.features.extensions && props.baseUrl}>
+            <Button size="small" variant="secondary" onClick={browse}>
+              <span class="codicon codicon-extensions" aria-hidden="true" />
+              在浏览器中打开 VS Code 插件市场
+            </Button>
+          </Show>
           <For each={sections}>
             {(item) => (
               <Button

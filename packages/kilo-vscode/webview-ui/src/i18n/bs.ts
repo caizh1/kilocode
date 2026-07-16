@@ -1894,4 +1894,10 @@ export const dict = {
   "chat.search.invalidRegex": "Nevažeći regularni izraz",
   "chat.search.noResults": "Nema rezultata",
   "chat.search.searchingHistory": "Pretraživanje ranijih poruka…",
+  "settings.experimental.dsml.title": "Popravka DSML poziva alata",
+  "settings.experimental.dsml.description":
+    "Popravi procurjele DeepSeek DSML pozive samo za odabranog pružaoca i model",
+  "settings.experimental.dsmlModel.title": "Ciljni DSML model",
+  "settings.experimental.dsmlModel.description":
+    "Odaberite jedinog pružaoca i model kojima je dozvoljeno DSML parsiranje",
 }

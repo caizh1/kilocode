@@ -239,6 +239,12 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(combined).toContain("An image-count match does not compensate for a missing chapter")
     expect(combined).toContain("Automated `pageQa`, ink ratios, edge checks")
     expect(combined).toContain("cannot substitute for actually opening all pages")
+    expect(combined).toContain('tocMode: "materialize"')
+    expect(combined).toContain("one summary item whose complete text is exactly `{{TOC}}`")
+    expect(combined).toContain("write a manual directory as Normal paragraphs")
+    expect(combined).toContain('styleId: "Title"')
+    expect(combined).toContain("the first outline entry to be `阅读路径`")
+    expect(combined).toContain("does not accumulate `-edited` suffixes")
   })
 
   test("preserves all non-contract capability families after chapter restructuring", async () => {

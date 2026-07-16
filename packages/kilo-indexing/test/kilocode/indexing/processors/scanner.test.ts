@@ -204,6 +204,18 @@ class Store implements IVectorStore {
   public async markIndexingIncomplete(): Promise<void> {}
 }
 
+class BeginFailGraph extends CodeGraphJsonStorage {
+  public override async beginFullScan(): Promise<void> {
+    throw new Error("graph begin failed")
+  }
+}
+
+class FinishFailGraph extends CodeGraphJsonStorage {
+  public override async markFullScanComplete(): Promise<void> {
+    throw new Error("graph commit rename failed")
+  }
+}
+
 class FailStore extends Store {
   private calls = 0
 
@@ -486,6 +498,71 @@ describe("DirectoryScanner", () => {
     expect(cache.getHash(file)).toBeUndefined()
     expect((await graph.getFileGraph(file))?.functions[0]?.name).toBe("main")
     expect((await postings.search("main"))[0]?.filePath).toBe("main.c")
+  })
+
+  test("propagates graph transaction begin and completion failures", async () => {
+    for (const phase of ["begin", "finish"] as const) {
+      const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+      const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+      const cache = new CacheManager(cacheDir, root)
+      await cache.initialize()
+      const graph =
+        phase === "begin"
+          ? new BeginFailGraph({ workspacePath: root, cacheDirectory: cacheDir })
+          : new FinishFailGraph({ workspacePath: root, cacheDirectory: cacheDir })
+      const scan = new DirectoryScanner(
+        undefined,
+        undefined,
+        new Parser(),
+        cache,
+        ignore(),
+        1,
+        1,
+        undefined,
+        undefined,
+        graph,
+        undefined,
+        { writeCache: false },
+      )
+
+      await expect(
+        scan.scanDirectory(root, undefined, undefined, undefined, "full", undefined, "codeGraph"),
+      ).rejects.toThrow(phase === "begin" ? "graph begin failed" : "graph commit rename failed")
+      expect(graph.getScanState()).toBe(phase === "begin" ? "never" : "interrupted")
+      scan.disposeGraphWorkers()
+    }
+  })
+
+  test("commits an empty Code Graph and Postings scan once", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const graph = new CodeGraphJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const postings = new CodePostingsJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const scan = new DirectoryScanner(
+      undefined,
+      undefined,
+      new Parser(),
+      cache,
+      ignore(),
+      1,
+      1,
+      undefined,
+      undefined,
+      graph,
+      postings,
+      { writeCache: false },
+    )
+
+    const result = await scan.scanDirectory(root, undefined, undefined, undefined, "full", undefined, "codeGraph")
+
+    expect(result.candidateFiles).toEqual([])
+    expect(graph.getScanState()).toBe("complete")
+    expect(postings.getScanState()).toBe("complete")
+    expect(graph.status()).toMatchObject({ validFileCount: 0, recordCount: 0 })
+    expect(postings.status()).toMatchObject({ validFileCount: 0, recordCount: 0 })
+    scan.disposeGraphWorkers()
   })
 
   test("graph-only target skips embedding and keeps RAG cache stale", async () => {

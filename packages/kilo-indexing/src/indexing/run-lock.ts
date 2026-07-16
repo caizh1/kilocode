@@ -1,7 +1,7 @@
-import { createHash } from "crypto"
 import { mkdir, readFile, rm, writeFile } from "fs/promises"
 import path from "path"
 import { Log } from "../util/log"
+import { normalizeWorkspace, workspaceKey } from "./workspace-key"
 
 const log = Log.create({ service: "indexing-run-lock" })
 const STALE_MS = 120_000
@@ -49,27 +49,28 @@ export class IndexingRunLock {
     cacheDirectory: string
     workspacePath: string
   }): Promise<IndexingRunLockAcquireResult> {
-    const dir = lockDir(input.cacheDirectory, input.workspacePath)
+    const workspace = normalizeWorkspace(input.workspacePath)
+    const dir = lockDir(input.cacheDirectory, workspace)
     const runId = globalThis.crypto.randomUUID()
-    const lock = new IndexingRunLock(runId, dir, input.workspacePath)
+    const lock = new IndexingRunLock(runId, dir, workspace)
     await mkdir(input.cacheDirectory, { recursive: true })
 
     try {
       await mkdir(dir, { recursive: false })
       await lock.write()
       lock.start()
-      log.info("indexing lock acquired", { visible: true, workspacePath: input.workspacePath, runId })
+      log.info("indexing lock acquired", { visible: true, workspacePath: workspace, runId })
       return { status: "acquired", lock }
     } catch (err) {
       const code = err instanceof Error && "code" in err ? (err as { code?: string }).code : undefined
       if (code !== "EEXIST") throw err
     }
 
-    const stale = await checkStale(dir, input.workspacePath)
+    const stale = await checkStale(dir, workspace)
     if (!stale.stale) {
       log.warn("indexing lock is held", {
         visible: true,
-        workspacePath: input.workspacePath,
+        workspacePath: workspace,
         reason: stale.reason,
         retryAfterMs: retryMs(),
         ownerPid: stale.info?.pid,
@@ -86,7 +87,7 @@ export class IndexingRunLock {
 
     log.warn("removing stale indexing lock", {
       visible: true,
-      workspacePath: input.workspacePath,
+      workspacePath: workspace,
       dir,
       reason: stale.reason,
       ownerPid: stale.info?.pid,
@@ -96,7 +97,7 @@ export class IndexingRunLock {
     await mkdir(dir, { recursive: false })
     await lock.write()
     lock.start()
-    log.info("indexing lock acquired after stale cleanup", { visible: true, workspacePath: input.workspacePath, runId })
+    log.info("indexing lock acquired after stale cleanup", { visible: true, workspacePath: workspace, runId })
     return {
       status: "acquired",
       lock,
@@ -142,7 +143,7 @@ async function checkStale(
     const raw = await readFile(path.join(dir, "lock.json"), "utf-8")
     const info = JSON.parse(raw) as Partial<LockInfo>
     const root = info.workspacePath ?? info.root
-    if (root && root !== workspacePath) {
+    if (root && normalizeWorkspace(root) !== workspacePath) {
       return { stale: false, reason: "workspace mismatch", info }
     }
 
@@ -161,8 +162,7 @@ async function checkStale(
 }
 
 function lockDir(cacheDirectory: string, workspacePath: string): string {
-  const hash = createHash("sha256").update(workspacePath).digest("hex")
-  return path.join(cacheDirectory, `indexing-lock-${hash}`)
+  return path.join(cacheDirectory, `indexing-lock-${workspaceKey(workspacePath)}`)
 }
 
 function pidAlive(pid: number): boolean {

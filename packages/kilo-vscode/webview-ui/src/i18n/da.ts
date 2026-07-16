@@ -1886,4 +1886,8 @@ export const dict = {
   "chat.search.invalidRegex": "Ugyldigt regulært udtryk",
   "chat.search.noResults": "Ingen resultater",
   "chat.search.searchingHistory": "Søger i tidligere beskeder…",
+  "settings.experimental.dsml.title": "Reparation af DSML-værktøjskald",
+  "settings.experimental.dsml.description": "Reparer lækkede DeepSeek DSML-kald kun for den valgte udbyder og model",
+  "settings.experimental.dsmlModel.title": "DSML-målmodel",
+  "settings.experimental.dsmlModel.description": "Vælg den eneste udbyder og model, der må bruge DSML-parsing",
 }

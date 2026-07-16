@@ -60,6 +60,68 @@ const ACCESSIBLE_MODELS: EnrichedModel[] = [
   { id: "nemotron", name: "Nemotron", providerID: "nvidia", providerName: "NVIDIA" },
 ]
 
+const CUSTOM_MODELS: EnrichedModel[] = [
+  ...ACCESSIBLE_MODELS,
+  { id: "intranet-chat", name: "Intranet Chat", providerID: "lab", providerName: "Internal Lab" },
+]
+
+export const ModelSelectorCustomProviderSetup: Story = {
+  name: "ModelSelector — custom provider setup",
+  render: () => (
+    <StoryProviders>
+      <ModelSelectorBase
+        value={{ providerID: "missing", modelID: "missing" }}
+        models={CUSTOM_MODELS}
+        placement="bottom-start"
+        customProviderOnly
+        customProviderIDs={[]}
+        onSelect={() => {}}
+      />
+    </StoryProviders>
+  ),
+}
+
+export const ModelSelectorCustomProviderEmptyCatalog: Story = {
+  name: "ModelSelector — custom provider empty catalog",
+  render: () => (
+    <StoryProviders>
+      <ModelSelectorBase
+        value={null}
+        models={[]}
+        placement="bottom-start"
+        customProviderOnly
+        customProviderIDs={[]}
+        onSelect={() => {}}
+      />
+    </StoryProviders>
+  ),
+}
+
+export const ModelSelectorCustomProviderGroups: Story = {
+  name: "ModelSelector — custom provider groups",
+  render: () => {
+    const session = {
+      ...mockSessionValue(),
+      favoriteModels: () => [{ providerID: "kilo", modelID: "alpha" }],
+    }
+
+    return (
+      <StoryProviders>
+        <SessionContext.Provider value={session as any}>
+          <ModelSelectorBase
+            value={{ providerID: "lab", modelID: "intranet-chat" }}
+            models={CUSTOM_MODELS}
+            placement="bottom-start"
+            customProviderOnly
+            customProviderIDs={["lab"]}
+            onSelect={() => {}}
+          />
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
+}
+
 const AccessibleModelSelector = () => {
   const [value, setValue] = createSignal<ModelSelection | null>({ providerID: "kilo", modelID: "alpha" })
 

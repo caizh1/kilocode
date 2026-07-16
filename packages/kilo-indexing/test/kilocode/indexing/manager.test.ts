@@ -3,7 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { CacheManager } from "../../../src/indexing/cache-manager"
+import { CodeIndexConfigManager } from "../../../src/indexing/config-manager"
 import { CodeIndexManager } from "../../../src/indexing/manager"
+import { CodeIndexOrchestrator } from "../../../src/indexing/orchestrator"
 import type { IndexingConfigInput } from "../../../src/indexing/config-manager"
 import type { IndexingTelemetryEvent, IndexingTelemetryTrigger } from "../../../src/indexing/interfaces/telemetry"
 
@@ -78,6 +80,245 @@ function createStartError(location = "orchestrator:startIndexing"): IndexingTele
 }
 
 describe("CodeIndexManager", () => {
+  test("waits for an active Document RAG generation before starting a new scan", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const gate = Promise.withResolvers<void>()
+    const events: string[] = []
+    const data = createData(mgr) as Data & {
+      _documentService?: { dispose(): Promise<void> }
+      _orchestrator: {
+        state: string
+        startIndexing(): Promise<{ state: "completed"; pipeline: "rag" }>
+      }
+    }
+    data._documentService = {
+      dispose() {
+        events.push("document-stop")
+        return gate.promise
+      },
+    }
+    data._orchestrator = {
+      state: "Standby",
+      async startIndexing() {
+        events.push("scan-start")
+        return { state: "completed", pipeline: "rag" }
+      },
+    }
+
+    const task = mgr.startIndexing()
+    await Bun.sleep(0)
+    expect(events).toEqual(["document-stop"])
+
+    gate.resolve()
+    await task
+    expect(events).toEqual(["document-stop", "scan-start"])
+    await mgr.dispose()
+  })
+
+  test("serializes initialization and settings service recreation", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const gate = Promise.withResolvers<void>()
+    const events: string[] = []
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _serviceFactory?: {}
+      _orchestrator?: {
+        state: string
+        startIndexing(): Promise<{ state: "completed"; pipeline: "rag" }>
+      }
+      _searchService?: {}
+      _configManager?: CodeIndexConfigManager
+      _recreateServices(): Promise<void>
+    }
+    let active = 0
+    let peak = 0
+    let calls = 0
+    data._cacheManager = {}
+    data._recreateServices = async () => {
+      calls += 1
+      const id = calls
+      active += 1
+      peak = Math.max(peak, active)
+      events.push(`start:${id}`)
+      if (id === 1) await gate.promise
+      events.push(`end:${id}`)
+      active -= 1
+      data._serviceFactory = {}
+      data._orchestrator = {
+        state: "Standby",
+        async startIndexing() {
+          this.state = "Indexed"
+          return { state: "completed", pipeline: "rag" }
+        },
+      }
+      data._searchService = {}
+    }
+
+    const first = mgr.initialize(createInput({ openAiKey: "sk-test", modelId: "text-embedding-3-small" }))
+    await Bun.sleep(0)
+    const second = mgr.handleSettingsChange(createInput({ openAiKey: "sk-test", modelId: "text-embedding-ada-002" }))
+    await Bun.sleep(0)
+
+    expect(events).toEqual(["start:1"])
+    expect(peak).toBe(1)
+    gate.resolve()
+    await Promise.all([first, second])
+
+    expect(events).toEqual(["start:1", "end:1", "start:2", "end:2"])
+    expect(peak).toBe(1)
+    expect(data._configManager?.currentModelId).toBe("text-embedding-ada-002")
+    await mgr.dispose()
+  })
+
+  test("does not commit services created by a cancelled generation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kilo-manager-generation-"))
+    const mgr = new CodeIndexManager(root, join(root, "cache"))
+    const data = mgr as unknown as {
+      _configManager: CodeIndexConfigManager
+      _cacheManager: CacheManager
+      _generation: number
+      _orchestrator?: CodeIndexOrchestrator
+      _recreateServices(prepared: undefined, generation: number): Promise<void>
+    }
+    data._configManager = new CodeIndexConfigManager(createInput({ openAiKey: "sk-test" }))
+    data._cacheManager = new CacheManager(join(root, "cache"), root)
+    await data._cacheManager.initialize()
+    data._generation = 1
+    const shutdown = spyOn(CodeIndexOrchestrator.prototype, "shutdown")
+
+    try {
+      const task = data._recreateServices(undefined, 1)
+      mgr.cancelIndexing()
+      await task
+
+      expect(shutdown).toHaveBeenCalledTimes(1)
+      expect(data._orchestrator).toBeUndefined()
+    } finally {
+      shutdown.mockRestore()
+      await mgr.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("blocks Document RAG when the preceding RAG generation fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kilo-manager-doc-gate-"))
+    const mgr = new CodeIndexManager(root, join(root, "cache"))
+    const data = mgr as unknown as {
+      _configManager: CodeIndexConfigManager
+      _cacheManager: CacheManager
+      _generation: number
+      configureDocuments(
+        trigger: IndexingTelemetryTrigger,
+        opts: {
+          after: Promise<{ state: "failed"; pipeline: "rag" }>
+          generation: number
+        },
+      ): Promise<void>
+    }
+    data._configManager = new CodeIndexConfigManager(
+      createInput({ openAiKey: "sk-test", documents: { enabled: true } }),
+    )
+    data._cacheManager = new CacheManager(join(root, "cache"), root)
+    data._generation = 1
+
+    await data.configureDocuments("background", {
+      after: Promise.resolve({ state: "failed", pipeline: "rag" }),
+      generation: 1,
+    })
+    await Bun.sleep(0)
+
+    expect(mgr.getDocumentStatus()).toMatchObject({
+      state: "Standby",
+      message: "Document RAG blocked because Code RAG failed.",
+    })
+    await mgr.dispose()
+    await rm(root, { recursive: true, force: true })
+  })
+
+  test("does not start Document RAG from a stale generation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kilo-manager-doc-generation-"))
+    const mgr = new CodeIndexManager(root, join(root, "cache"))
+    const gate = Promise.withResolvers<{ state: "completed"; pipeline: "rag" }>()
+    const data = mgr as unknown as {
+      _configManager: CodeIndexConfigManager
+      _cacheManager: CacheManager
+      _generation: number
+      _documentService?: { getStatus(): { state: string; message: string; lastFullScanAt?: string } }
+      configureDocuments(
+        trigger: IndexingTelemetryTrigger,
+        opts: {
+          after: Promise<{ state: "completed"; pipeline: "rag" }>
+          generation: number
+        },
+      ): Promise<void>
+    }
+    data._configManager = new CodeIndexConfigManager(
+      createInput({ openAiKey: "sk-test", documents: { enabled: true } }),
+    )
+    data._cacheManager = new CacheManager(join(root, "cache"), root)
+    data._generation = 1
+
+    await data.configureDocuments("background", { after: gate.promise, generation: 1 })
+    const service = data._documentService
+    data._generation = 2
+    gate.resolve({ state: "completed", pipeline: "rag" })
+    await Bun.sleep(0)
+
+    expect(service?.getStatus()).toMatchObject({ state: "Standby", message: "Document RAG ready." })
+    expect(service?.getStatus().lastFullScanAt).toBeUndefined()
+    await mgr.dispose()
+    await rm(root, { recursive: true, force: true })
+  })
+
+  test("retries a waiting worktree baseline once and stops after it becomes ready", async () => {
+    const mgr = new CodeIndexManager("/tmp/worktree", "/tmp/cache", "/tmp/main")
+    const data = mgr as unknown as {
+      _baselineInitialDelay: number
+      _baselineDelay: number
+      _baselineStore?: {}
+      waiting(): boolean
+      refreshBaseline(): Promise<void>
+    }
+    let refreshes = 0
+    data._baselineInitialDelay = 1
+    data._baselineDelay = 1
+    data.refreshBaseline = async () => {
+      refreshes += 1
+      data._baselineStore = {}
+    }
+
+    expect(data.waiting()).toBe(true)
+    expect(data.waiting()).toBe(true)
+    await Bun.sleep(10)
+
+    expect(refreshes).toBe(1)
+    expect(data.waiting()).toBe(false)
+    await mgr.dispose()
+  })
+
+  test("backs off repeated worktree baseline checks", async () => {
+    const mgr = new CodeIndexManager("/tmp/worktree", "/tmp/cache", "/tmp/main")
+    const data = mgr as unknown as {
+      _baselineInitialDelay: number
+      _baselineDelay: number
+      waiting(): boolean
+      refreshBaseline(): Promise<void>
+    }
+    let refreshes = 0
+    data._baselineInitialDelay = 10
+    data._baselineDelay = 10
+    data.refreshBaseline = async () => {
+      refreshes += 1
+    }
+
+    expect(data.waiting()).toBe(true)
+    await Bun.sleep(15)
+
+    expect(refreshes).toBe(1)
+    expect(data._baselineDelay).toBe(20)
+    await mgr.dispose()
+  })
+
   test("falls back when the shared baseline is not ready", async () => {
     const mgr = new CodeIndexManager("/tmp/worktree", "/tmp/cache", "/tmp/main")
     let closed = 0
@@ -184,6 +425,29 @@ describe("CodeIndexManager", () => {
     }
   })
 
+  test("does not start Document RAG when top-level RAG indexing is disabled", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kilo-manager-rag-disabled-"))
+    const mgr = new CodeIndexManager(root, join(root, "cache"))
+
+    try {
+      await mgr.initialize(
+        createInput({
+          enabled: false,
+          openAiKey: "sk-test",
+          documents: { enabled: true, paths: ["."] },
+        }),
+      )
+
+      expect(mgr.getDocumentStatus()).toMatchObject({
+        state: "Disabled",
+        message: "Document RAG disabled because Code RAG is disabled.",
+      })
+    } finally {
+      await mgr.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("starts code graph sidecar container after services initialize", async () => {
     const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
     const data = mgr as unknown as {
@@ -274,7 +538,12 @@ describe("CodeIndexManager", () => {
             modelDimension: 3,
             openAiCompatibleBaseUrl: ${JSON.stringify(`http://127.0.0.1:${server.port}/v1`)},
           })
+          const deadline = Date.now() + 5_000
+          while (mgr.state === "Indexing" && Date.now() < deadline) {
+            await Bun.sleep(10)
+          }
           if (!mgr.isInitialized) throw new Error("Manager did not initialize")
+          if (mgr.state === "Error") throw new Error(mgr.getCurrentStatus().message)
           if (normalizeIndexingStatus(mgr).state === "Disabled") throw new Error("Indexing remained disabled")
         } finally {
           await mgr.dispose()
@@ -425,7 +694,36 @@ describe("CodeIndexManager", () => {
     expect(started?.source).toBe("scan")
   })
 
-  test("restarts RAG only when embedding settings change", async () => {
+  test("starts a standby manager when Code Graph has never completed", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _serviceFactory: {}
+      _orchestrator: {
+        state: string
+        startIndexing(): Promise<{ state: "completed"; pipeline: "rag" }>
+      }
+      _searchService: {}
+    }
+    let starts = 0
+    data._cacheManager = {}
+    data._serviceFactory = {}
+    data._orchestrator = {
+      state: "Standby",
+      async startIndexing() {
+        starts += 1
+        this.state = "Indexed"
+        return { state: "completed", pipeline: "rag" }
+      },
+    }
+    data._searchService = {}
+
+    await mgr.initialize(createInput({ openAiKey: "sk-test" }))
+
+    expect(starts).toBe(1)
+  })
+
+  test("reconciles Code Graph before RAG when embedding settings change", async () => {
     const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
     const data = mgr as unknown as {
       _cacheManager: {}
@@ -439,18 +737,24 @@ describe("CodeIndexManager", () => {
     }
     let full = 0
     let rag = 0
-    let reason: string | undefined
 
     data._cacheManager = {}
+    const storage = mgr as unknown as {
+      _graphStorage: { getScanState(): string }
+      _postingsStorage: { getScanState(): string }
+    }
+    storage._graphStorage.getScanState = () => "complete"
+    storage._postingsStorage.getScanState = () => "complete"
     data._recreateServices = async () => {
       data._orchestrator = {
         state: "Standby",
         async startIndexing() {
           full += 1
+          this.state = "Indexed"
         },
         async startRagIndexing(_trigger, value) {
           rag += 1
-          reason = value
+          void value
         },
       }
       data._searchService = {}
@@ -462,9 +766,50 @@ describe("CodeIndexManager", () => {
 
     await mgr.handleSettingsChange(createInput({ openAiKey: "sk-test", modelId: "text-embedding-ada-002" }))
 
-    expect(full).toBe(0)
-    expect(rag).toBe(1)
-    expect(reason).toBe("settings-change")
+    expect(full).toBe(1)
+    expect(rag).toBe(0)
+  })
+
+  test("reruns Code Graph when postings are interrupted before an embedding settings change", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _graphStorage: { getScanState(): string }
+      _postingsStorage: { getScanState(): string }
+      _orchestrator?: {
+        state: string
+        startIndexing(): Promise<void>
+        startRagIndexing(): Promise<void>
+      }
+      _searchService?: {}
+      _recreateServices(): Promise<void>
+    }
+    let full = 0
+    let rag = 0
+    data._cacheManager = {}
+    data._recreateServices = async () => {
+      data._orchestrator = {
+        state: "Standby",
+        async startIndexing() {
+          full += 1
+          this.state = "Indexed"
+        },
+        async startRagIndexing() {
+          rag += 1
+        },
+      }
+      data._searchService = {}
+    }
+
+    await mgr.initialize(createInput({ openAiKey: "sk-test", modelId: "text-embedding-3-small" }))
+    full = 0
+    data._graphStorage.getScanState = () => "complete"
+    data._postingsStorage.getScanState = () => "interrupted"
+
+    await mgr.handleSettingsChange(createInput({ openAiKey: "sk-test", modelId: "text-embedding-ada-002" }))
+
+    expect(full).toBe(1)
+    expect(rag).toBe(0)
   })
 
   test("does not restart indexing when only search tuning changes", async () => {

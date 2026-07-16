@@ -33,7 +33,20 @@ export const MARKET_ENDPOINTS = [
   "/api/v1/events/batch",
   "/api/v1/analytics/overview",
   "/api/v1/analytics/skills/{id}",
-  "/api/v1/status",
+  "/api/v1/extensions",
+  "/api/v1/extensions/{id}",
+  "/api/v1/extension-publications",
+  "/api/v1/extension-publications/{runId}",
+  "/api/v1/extensions/{id}/artifacts/{artifactId}/download",
+  "/api/v1/extension-favorites/{id}",
+  "/api/v1/extensions/{id}/review",
+  "/api/v1/me/extensions/uploads",
+  "/api/v1/me/extensions/favorites",
+  "/api/v1/me/extensions/reviews",
+  "/api/v1/extension-artifacts/{artifactId}",
+  "/api/v1/analytics/extensions/overview",
+  "/api/v1/analytics/extension-artifacts/{artifactId}/sources",
+  "/api/v1/status"
 ] as const satisfies readonly Path[]
 
 export interface MarketClientOptions {

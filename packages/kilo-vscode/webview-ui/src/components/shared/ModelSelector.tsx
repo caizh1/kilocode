@@ -28,6 +28,7 @@ import { Icon } from "@kilocode/kilo-ui/icon"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { useProvider } from "../../context/provider"
 import type { EnrichedModel } from "../../context/provider"
+import { useConfig } from "../../context/config"
 import { useSession, SessionContext } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
@@ -48,6 +49,7 @@ import {
 } from "./model-selector-utils"
 import { ModelPreview } from "./ModelPreview"
 import { searchMatch } from "../../utils/search-match"
+import { isCustomProviderPackage } from "../../../../src/shared/provider-model"
 
 // ---------------------------------------------------------------------------
 // Row / group key helpers — single source of truth for key formatting
@@ -134,6 +136,10 @@ export interface ModelSelectorBaseProps {
   label?: string
   /** Additional accessible context for this model setting. */
   description?: string
+  /** Apply the prompt's custom-provider-only default group policy. */
+  customProviderOnly?: boolean
+  /** Configured custom provider IDs. Undefined while provider config is loading. */
+  customProviderIDs?: readonly string[]
 }
 
 export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
@@ -166,9 +172,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   const [preActiveKey, setPreActiveKey] = createSignal<string | null>(null)
   const [previewKey, setPreviewKey] = createSignal<string | null>(null)
   const [previewHeight, setPreviewHeight] = createSignal(500)
-  // Per-group collapse state. Not persisted — resets every time the
-  // selector mounts so groups are always expanded on reopen.
+  // Per-group collapse state. Not persisted; the reusable base starts open,
+  // while the prompt policy seeds configured custom providers once.
   const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set())
+  const [seeded, setSeeded] = createSignal(false)
   // Snapshot of the active model key captured when the popover opens.
   // Used to reorder favorites so the current model appears first — but only
   // based on the state at open-time, not reactively, to avoid list jumps
@@ -221,7 +228,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   })
 
   const hasProviders = () => visibleModels().length > 0
-  const canOpen = () => hasProviders() || ((props.allowClear ?? false) && !!props.value)
+  const setup = () =>
+    props.customProviderOnly === true && props.customProviderIDs !== undefined && props.customProviderIDs.length === 0
+  const canOpen = () => hasProviders() || setup() || ((props.allowClear ?? false) && !!props.value)
 
   // Debounce search input to avoid re-filtering on every keystroke
   createEffect(() => {
@@ -348,6 +357,18 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     return [...result, ...rest]
   })
 
+  // Prompt-only policy: initialize once after both model and config data are
+  // available. Later user toggles remain local and are never overwritten.
+  createEffect(() => {
+    if (seeded() || !props.customProviderOnly) return
+    const ids = props.customProviderIDs
+    const list = groups()
+    if (ids === undefined || list.length === 0) return
+    const open = new Set(ids)
+    setCollapsed(new Set(list.filter((group) => !open.has(group.key)).map((group) => group.key)))
+    setSeeded(true)
+  })
+
   // Collapse state is honored even during search so users can skip past
   // large providers (e.g. Kilo Gateway) without scrolling through every match.
   const isGroupOpen = (key: string) => !collapsed().has(key)
@@ -412,6 +433,12 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   const [anchor, setAnchor] = createSignal<ScrollAnchor | null>(null)
 
   const previewModel = createMemo(() => rowMap().get(previewKey() ?? "")?.model ?? null)
+  const preview = createMemo(() => previewModel() ?? activeModel() ?? null)
+  const previewable = createMemo(() => {
+    if (!props.customProviderOnly) return true
+    return props.customProviderIDs !== undefined && props.customProviderIDs.length > 0
+  })
+  const details = createMemo(() => expanded() && previewable() && !!preview())
 
   const isSelected = createSelector(selectedKey)
   const isPreActive = createSelector(preActiveKey)
@@ -540,6 +567,11 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     if (!open()) return
     setOpen(false)
     props.onCancel?.()
+  }
+
+  function configure() {
+    setOpen(false)
+    vscode.postMessage({ type: "openSettingsPanel", tab: "providers" })
   }
 
   function setRow(key: string) {
@@ -727,7 +759,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         </span>
       </Show>
       <PopupSelector
-        expanded={expanded()}
+        expanded={details()}
         preferredWidth={350}
         preferredExpandedWidth={450}
         preferredHeight={300}
@@ -770,11 +802,11 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
             </svg>
           </>
         }
-        class={`model-selector-popover${expanded() ? " model-selector-popover--expanded" : ""}`}
+        class={`model-selector-popover${details() ? " model-selector-popover--expanded" : ""}`}
       >
         {(bodyH) => {
           createEffect(() => {
-            if (!expanded()) return
+            if (!details()) return
             const h = bodyH()
             if (h === undefined) return
             const chrome = (searchWrapperRef?.offsetHeight ?? 0) + (splitterRef?.offsetHeight ?? 0)
@@ -783,7 +815,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           return (
             <div
               onKeyDown={handleKeyDown}
-              class={`model-selector-body${expanded() ? " model-selector-body--expanded" : ""}`}
+              class={`model-selector-body${details() ? " model-selector-body--expanded" : ""}`}
               style={{ height: `${bodyH()}px` }}
               ref={bodyRef}
             >
@@ -816,31 +848,49 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                     }
                   }}
                 />
-                <Tooltip
-                  value={expanded() ? language.t("dialog.model.collapse") : language.t("dialog.model.expand")}
-                  placement="top"
-                >
-                  <IconButton
-                    icon={expanded() ? "collapse" : "expand"}
-                    size="small"
-                    variant="ghost"
-                    aria-label={expanded() ? language.t("dialog.model.collapse") : language.t("dialog.model.expand")}
-                    aria-expanded={expanded()}
-                    aria-controls={previewID}
-                    onClick={() => {
-                      if (expanded()) {
-                        setPreActiveKey(null)
-                        setPreviewKey(null)
-                      }
-                      setExpanded(!expanded())
-                      requestAnimationFrame(() => {
-                        searchRef?.focus()
-                        scrollRow(preActiveKey() ?? selectedKey(), "nearest")
-                      })
-                    }}
-                  />
-                </Tooltip>
+                <Show when={previewable() && preview()}>
+                  <Tooltip
+                    value={expanded() ? language.t("dialog.model.collapse") : language.t("dialog.model.expand")}
+                    placement="top"
+                  >
+                    <IconButton
+                      icon={expanded() ? "collapse" : "expand"}
+                      size="small"
+                      variant="ghost"
+                      aria-label={expanded() ? language.t("dialog.model.collapse") : language.t("dialog.model.expand")}
+                      aria-expanded={expanded()}
+                      aria-controls={previewID}
+                      onClick={() => {
+                        if (expanded()) {
+                          setPreActiveKey(null)
+                          setPreviewKey(null)
+                        }
+                        setExpanded(!expanded())
+                        requestAnimationFrame(() => {
+                          searchRef?.focus()
+                          scrollRow(preActiveKey() ?? selectedKey(), "nearest")
+                        })
+                      }}
+                    />
+                  </Tooltip>
+                </Show>
               </div>
+
+              <Show when={setup()}>
+                <div class="model-selector-setup" role="note">
+                  <span>{language.t("settings.providers.custom.description")}</span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="small"
+                    class="model-selector-setup-action"
+                    onClick={configure}
+                  >
+                    <Icon name="settings-gear" size="small" />
+                    <span>{language.t("dialog.model.manage")}</span>
+                  </Button>
+                </div>
+              </Show>
 
               <div id={listID} class="model-selector-list" role="tree" aria-label={label()} ref={listRef}>
                 <Show when={groups().length === 0}>
@@ -1037,17 +1087,17 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                 </Show>
               </div>
 
-              <Show when={expanded()}>
+              <Show when={details()}>
                 <div class="model-selector-splitter" ref={splitterRef} onMouseDown={onSplitterMouseDown} />
               </Show>
               <div
                 id={previewID}
-                aria-hidden={!expanded()}
-                class={`model-selector-preview${expanded() ? " model-selector-preview--visible" : ""}`}
-                style={expanded() ? { height: `${previewHeight()}px` } : {}}
+                aria-hidden={!details()}
+                class={`model-selector-preview${details() ? " model-selector-preview--visible" : ""}`}
+                style={details() ? { height: `${previewHeight()}px` } : {}}
               >
-                <Show when={expanded()}>
-                  <ModelPreview model={previewModel() ?? activeModel() ?? null} models={visibleModels()} />
+                <Show when={details()}>
+                  <ModelPreview model={preview()} models={visibleModels()} />
                 </Show>
               </div>
             </div>
@@ -1068,7 +1118,14 @@ interface ModelSelectorProps {
 
 export const ModelSelector: Component<ModelSelectorProps> = (props) => {
   const session = useSession()
+  const config = useConfig()
   const id = () => props.sessionID?.()
+  const custom = createMemo(() => {
+    if (config.loading()) return
+    return Object.entries(config.config().provider ?? {})
+      .filter(([, value]) => isCustomProviderPackage(value.npm))
+      .map(([key]) => key)
+  })
 
   return (
     <ModelSelectorBase
@@ -1082,6 +1139,8 @@ export const ModelSelector: Component<ModelSelectorProps> = (props) => {
       onCancel={() => {
         requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { restore: true } })))
       }}
+      customProviderOnly
+      customProviderIDs={custom()}
     />
   )
 }

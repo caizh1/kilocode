@@ -58,6 +58,7 @@ import {
 import {
   partitionRows,
   retainTurn,
+  stabilize,
   transcriptRows,
   type TranscriptErrorRow,
   type TranscriptHold,
@@ -597,9 +598,10 @@ export const MessageList: Component<MessageListProps> = (props) => {
   // Virtua continues to own completed history and stable live chunks, but not
   // the growing assistant suffix whose measurements would produce visible jumps.
   const partition = createMemo(() => partitionRows(rows(), direct()))
+  const virtual = createMemo((prev: TranscriptRow[] | undefined) => stabilize(partition().virtual, prev))
   const tail = createMemo(() => partition().direct.map((row) => row.key))
   const lookup = createMemo(() => new Map(partition().direct.map((row) => [row.key, row])))
-  const keys = createMemo(() => partition().virtual.map((row) => row.key))
+  const keys = createMemo((prev: string[] | undefined) => stabilize(virtual().map((row) => row.key), prev))
   const fingerprint = createMemo(() => rowFingerprint(keys()))
 
   // Clicking a bar in the task timeline scrolls the transcript to that message.
@@ -712,6 +714,15 @@ export const MessageList: Component<MessageListProps> = (props) => {
   })
 
   const [pendingRestore, setPendingRestore] = createSignal<string>()
+  let restoreFrame: number | undefined
+  let restoreFrameInner: number | undefined
+
+  const cancelRestore = () => {
+    if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
+    if (restoreFrameInner !== undefined) cancelAnimationFrame(restoreFrameInner)
+    restoreFrame = undefined
+    restoreFrameInner = undefined
+  }
 
   createEffect(
     on(session.currentSessionID, (id, prev) => {
@@ -723,13 +734,17 @@ export const MessageList: Component<MessageListProps> = (props) => {
 
   createEffect(() => {
     const id = pendingRestore()
-    if (!id || session.loading()) return
+    const loading = session.loading()
+    cancelRestore()
+    if (!id || loading) return
     turns().length
     // Double-rAF: the first frame lets the browser paint the new DOM from
     // the messagesLoaded batch. The second frame restores scroll position
     // without forcing a synchronous layout reflow mid-paint.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
+    restoreFrame = requestAnimationFrame(() => {
+      restoreFrame = undefined
+      restoreFrameInner = requestAnimationFrame(() => {
+        restoreFrameInner = undefined
         if (pendingRestore() !== id) return
         const el = scrollEl()
         if (!el) return
@@ -748,7 +763,10 @@ export const MessageList: Component<MessageListProps> = (props) => {
     })
   })
 
-  onCleanup(() => save(session.currentSessionID()))
+  onCleanup(() => {
+    cancelRestore()
+    save(session.currentSessionID())
+  })
 
   return (
     <div class="message-list-container">
@@ -802,18 +820,18 @@ export const MessageList: Component<MessageListProps> = (props) => {
                 {language.t("session.messages.loadEarlier")}
               </button>
             </Show>
-            <Show when={partition().virtual.length > 0 || partition().direct.length > 0}>
+            <Show when={virtual().length > 0 || partition().direct.length > 0}>
               <div
                 class="message-list-turns"
                 data-loaded-messages={session.messages().length}
-                data-row-count={partition().virtual.length}
+                data-row-count={virtual().length}
                 data-direct-count={partition().direct.length}
                 data-queued-count={partition().queued.length}
               >
-                <Show when={scrollEl() && partition().virtual.length > 0}>
+                <Show when={scrollEl() && virtual().length > 0}>
                   <Virtualizer
                     ref={setVirtualizer}
-                    data={partition().virtual}
+                    data={virtual()}
                     scrollRef={scrollEl()}
                     shift={session.messageMutation() === "prepend"}
                     cache={measurement()}

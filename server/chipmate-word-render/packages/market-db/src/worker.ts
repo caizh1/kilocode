@@ -15,6 +15,12 @@ import type {
   SessionInput,
   SessionLookup,
   UnpublishInput,
+  ExtensionArtifactInput,
+  ExtensionDownloadInput,
+  ExtensionFavoriteInput,
+  ExtensionPublicationInput,
+  ExtensionReviewInput,
+  ExtensionSearchInput,
 } from "./model.ts"
 import type { DbRequest, DbResponse } from "./protocol.ts"
 import { MarketRepo } from "./repo.ts"
@@ -109,6 +115,68 @@ function execute(msg: DbRequest): unknown {
       return repo.aggregate()
     case "maintain":
       return repo.maintain(String(msg.payload))
+    case "searchExtensions":
+      return repo.searchExtensions((msg.payload ?? {}) as ExtensionSearchInput)
+    case "getExtension":
+      return repo.getExtension(String(msg.payload))
+    case "extensionArtifact":
+      return repo.extensionArtifact(String(msg.payload))
+    case "extensionArtifactBySha":
+      return repo.extensionArtifactBySha(String(msg.payload))
+    case "extensionArtifacts":
+      return repo.extensionArtifacts(String(msg.payload))
+    case "publishExtension":
+      return repo.publishExtension(msg.payload as ExtensionArtifactInput)
+    case "touchExtensionSource": {
+      const value = msg.payload as { key: string; stamp: string }
+      return repo.touchExtensionSource(value.key, value.stamp)
+    }
+    case "extensionSystemSources":
+      return repo.extensionSystemSources()
+    case "unlistExtensionSource": {
+      const value = msg.payload as { key: string; stamp: string }
+      return repo.unlistExtensionSource(value.key, value.stamp)
+    }
+    case "removeExtensionArtifact": {
+      const value = msg.payload as { id: string; userId: string; stamp: string }
+      return repo.removeExtensionArtifact(value.id, value.userId, value.stamp)
+    }
+    case "extensionPublication":
+      return repo.extensionPublication(msg.payload as ExtensionPublicationInput)
+    case "getExtensionPublication": {
+      const value = msg.payload as { id: string; ownerId: string }
+      return repo.getExtensionPublication(value.id, value.ownerId)
+    }
+    case "extensionPublications":
+      return repo.extensionPublications(String(msg.payload))
+    case "extensionUploadCount": {
+      const value = msg.payload as { ownerId: string; since: string }
+      return repo.extensionUploadCount(value.ownerId, value.since)
+    }
+    case "extensionFavorite":
+      return repo.extensionFavorite(msg.payload as ExtensionFavoriteInput)
+    case "extensionFavorites":
+      return repo.extensionFavorites(String(msg.payload))
+    case "extensionReviews":
+      return repo.extensionReviews(String(msg.payload))
+    case "extensionReview":
+      return repo.extensionReview(msg.payload as ExtensionReviewInput)
+    case "deleteExtensionReview": {
+      const value = msg.payload as { userId: string; extensionId: string }
+      return repo.deleteExtensionReview(value.userId, value.extensionId)
+    }
+    case "userExtensionReviews":
+      return repo.userExtensionReviews(String(msg.payload))
+    case "extensionUploads":
+      return repo.extensionUploads(String(msg.payload))
+    case "extensionDownload":
+      return repo.extensionDownload(msg.payload as ExtensionDownloadInput)
+    case "extensionAnalytics":
+      return repo.extensionAnalytics()
+    case "extensionSources": {
+      const value = msg.payload as { artifactId: string; userId: string }
+      return repo.extensionSources(value.artifactId, value.userId)
+    }
     case "close":
       repo.close()
       return true

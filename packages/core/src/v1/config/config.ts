@@ -18,7 +18,10 @@ import { ConfigServerV1 } from "./server"
 import { ConfigSkillsV1 } from "./skills"
 // kilocode_change start
 import { ZodOverride } from "../../effect-zod"
-import { IndexingConfig as KiloIndexingConfig, IndexingSchema as KiloIndexingSchema } from "@kilocode/kilo-indexing/config"
+import {
+  IndexingConfig as KiloIndexingConfig,
+  IndexingSchema as KiloIndexingSchema,
+} from "@kilocode/kilo-indexing/config"
 import z from "zod"
 // kilocode_change end
 
@@ -278,6 +281,15 @@ export const Info = Schema.Struct({
       batch_tool: Schema.optional(Schema.Boolean).annotate({ description: "Enable the batch tool" }),
       // kilocode_change start
       codebase_search: Schema.optional(Schema.Boolean).annotate({ description: "Enable AI-powered codebase search" }),
+      dsml_tool_call_repair: Schema.optional(
+        Schema.Struct({
+          enabled: Schema.optional(Schema.Boolean),
+          model: Schema.optional(Schema.String),
+        }).annotate({
+          description:
+            'Repair leaked DeepSeek DSML tool calls only for the exact target in "provider/model" format (default: disabled)',
+        }),
+      ),
       image_generation: Schema.optional(Schema.Boolean).annotate({ description: "Enable AI image generation" }),
       image_generation_model: Schema.optional(Schema.String).annotate({
         description: "Model ID to use for image generation (default: openrouter/auto)",

@@ -23,7 +23,7 @@ import {
   X,
   Wrench,
 } from "@phosphor-icons/react"
-import type { MarketUser, SkillSummary } from "@chipmate/market-contracts"
+import type { MarketCapabilities, MarketUser, SkillSummary } from "@chipmate/market-contracts"
 import {
   lazy,
   StrictMode,
@@ -67,6 +67,12 @@ const StatusPage = lazy(() => import("./routes/status").then((module) => ({ defa
 const PublishPage = lazy(() => import("./routes/publish").then((module) => ({ default: module.PublishPage })))
 const MePage = lazy(() => import("./routes/me").then((module) => ({ default: module.MePage })))
 const AnalyticsPage = lazy(() => import("./routes/analytics").then((module) => ({ default: module.AnalyticsPage })))
+const ExtensionHome = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionHome })))
+const ExtensionDetail = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionDetail })))
+const ExtensionPublish = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionPublish })))
+const ExtensionMe = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionMe })))
+const ExtensionAnalyticsPage = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionAnalyticsPage })))
+const ExtensionUnavailable = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionUnavailable })))
 
 collectVitals()
 
@@ -82,6 +88,7 @@ function App() {
   const [detailSync, setDetailSync] = useState(0)
   const [meSync, setMeSync] = useState(0)
   const [analyticsSync, setAnalyticsSync] = useState(0)
+  const capabilities = useApi<MarketCapabilities>("/api/v1/capabilities")
 
   useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)")
@@ -184,7 +191,37 @@ function App() {
 
   const url = new URL(path, location.origin)
   const detail = url.pathname.match(/^\/skills\/([^/]+)$/)
-  const page = detail ? (
+  const extension = url.pathname.match(/^\/extensions\/([^/]+)$/)
+  const extensionId = extension && !["publish", "me", "analytics"].includes(extension[1] ?? "") ? extension[1] : undefined
+  const enabled = capabilities.data?.features.extensions === true
+  const extensionPage = url.pathname.startsWith("/extensions")
+  const plugin = !enabled ? (
+    capabilities.loading ? <Skeleton label="正在检查插件市场能力" /> : <ExtensionUnavailable navigate={navigate} />
+  ) : url.pathname === "/extensions" ? (
+    <ExtensionHome navigate={navigate} />
+  ) : url.pathname === "/extensions/publish" ? (
+    <ExtensionPublish user={user} csrf={csrf} requestLogin={() => requestLogin("/extensions/publish")} />
+  ) : url.pathname === "/extensions/me" ? (
+    <ExtensionMe
+      navigate={navigate}
+      user={user}
+      csrf={csrf}
+      requestLogin={() => requestLogin("/extensions/me")}
+    />
+  ) : url.pathname === "/extensions/analytics" ? (
+    <ExtensionAnalyticsPage user={user} requestLogin={() => requestLogin("/extensions/analytics")} />
+  ) : extensionId ? (
+    <ExtensionDetail
+      id={decodeURIComponent(extensionId)}
+      navigate={navigate}
+      user={user}
+      csrf={csrf}
+      requestLogin={() => requestLogin(url.pathname)}
+    />
+  ) : (
+    <ExtensionHome navigate={navigate} />
+  )
+  const page = extensionPage ? plugin : detail ? (
     <Detail
       key={detailSync}
       id={decodeURIComponent(detail[1] ?? "")}
@@ -219,6 +256,7 @@ function App() {
     <div className="app-shell">
       <Header
         path={url.pathname}
+        extensions={enabled}
         navigate={navigate}
         theme={theme}
         setTheme={setTheme}
@@ -248,6 +286,7 @@ function App() {
 
 function Header(props: {
   path: string
+  extensions: boolean
   navigate(path: string): void
   theme: Theme
   setTheme(value: Theme): void
@@ -260,19 +299,24 @@ function Header(props: {
       <button className="brand" onClick={() => props.navigate("/")} aria-label="返回首页">
         <img src={icon} alt="" />
         <span>
-          <strong>ChipMate Skill Market</strong>
-          <small>发现、评估并安装可信赖的 AI 编码技能</small>
+          <strong>ChipMate Market</strong>
+          <small>团队可信赖的 AI 能力与开发工具市场</small>
         </span>
       </button>
       <nav aria-label="主要导航">
         <ThemeButton theme={props.theme} setTheme={props.setTheme} />
-        <NavButton active={props.path === "/skills"} onClick={() => props.navigate("/skills")} icon={<SquaresFour />}>
-          技能目录
+        <NavButton active={!props.path.startsWith("/extensions") && props.path !== "/status"} onClick={() => props.navigate("/")} icon={<SquaresFour />}>
+          技能市场
         </NavButton>
+        {props.extensions && (
+          <NavButton active={props.path.startsWith("/extensions")} onClick={() => props.navigate("/extensions")} icon={<Code />}>
+            VS Code 插件
+          </NavButton>
+        )}
         <NavButton active={props.path === "/status"} onClick={() => props.navigate("/status")} icon={<ShieldCheck />}>
           服务状态
         </NavButton>
-        {props.user && (
+        {props.user && !props.path.startsWith("/extensions") && (
           <NavButton
             active={props.path === "/analytics"}
             onClick={() => props.navigate("/analytics")}
@@ -281,8 +325,17 @@ function Header(props: {
             分析
           </NavButton>
         )}
+        {props.extensions && props.path.startsWith("/extensions") && (
+          <NavButton
+            active={props.path === "/extensions/analytics"}
+            onClick={() => props.navigate("/extensions/analytics")}
+            icon={<FunnelSimple />}
+          >
+            分析
+          </NavButton>
+        )}
         {props.user ? (
-          <button className="glass-button account-button" onClick={() => props.navigate("/me")} title="打开个人工作台">
+          <button className="glass-button account-button" onClick={() => props.navigate(props.path.startsWith("/extensions") ? "/extensions/me" : "/me")} title="打开个人工作台">
             <UserCircle />
             <span>{props.user.displayName}</span>
           </button>
@@ -292,8 +345,8 @@ function Header(props: {
             <span>登录</span>
           </button>
         )}
-        <button className="glass-button" onClick={() => props.navigate("/publish")}>
-          <UploadSimple /> 发布技能
+        <button className="glass-button" onClick={() => props.navigate(props.path.startsWith("/extensions") ? "/extensions/publish" : "/publish")}>
+          <UploadSimple /> {props.path.startsWith("/extensions") ? "发布插件" : "发布技能"}
         </button>
       </nav>
     </header>
@@ -349,7 +402,7 @@ function LoginDialog(props: { open: boolean; close(): void; signedIn(user: Marke
         </span>
         <div>
           <span className="eyebrow">统一市场身份</span>
-          <h2>登录 ChipMate Skill Market</h2>
+          <h2>登录 ChipMate Market</h2>
         </div>
         <p>
           使用现有 New API key 完成一次身份解析。原始 key 会在本次请求后立即从输入框清除，浏览器仅保留服务端随机会话。
@@ -884,7 +937,7 @@ function Footer(props: { navigate(path: string): void }) {
     <footer className="footer">
       <div className="page-width">
         <span>
-          <img src={icon} alt="" /> ChipMate Skill Market
+          <img src={icon} alt="" /> ChipMate Market
         </span>
         <nav>
           <button onClick={() => props.navigate("/skills")}>技能目录</button>

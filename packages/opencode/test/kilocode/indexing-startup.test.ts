@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { normalizeIndexingStatus } from "@kilocode/kilo-indexing/status"
-import type { Config } from "../../src/config/config"
+import { Config } from "../../src/config/config"
 import { GlobalBus } from "../../src/bus/global"
 import { failed, IndexingModelError, KiloIndexing } from "../../src/kilocode/indexing"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
@@ -14,6 +14,7 @@ import { IndexingWorker } from "../../src/kilocode/indexing-worker-client"
 import { disposeAllInstances, provideTestInstance, tmpdir, withTestInstance } from "../fixture/fixture"
 import { Server } from "../../src/server/server"
 import * as Log from "@opencode-ai/core/util/log"
+import { AppRuntime } from "../../src/effect/app-runtime"
 
 Log.init({ print: false })
 
@@ -218,6 +219,90 @@ describe("indexing model catalog", () => {
 })
 
 describe("indexing startup degradation", () => {
+  test("keeps a project disable override when global indexing is enabled", async () => {
+    await using global = await tmpdir({
+      init: (dir) =>
+        Bun.write(
+          path.join(dir, "kilo.jsonc"),
+          JSON.stringify({
+            plugin: ["@kilocode/kilo-indexing"],
+            indexing: { enabled: true, provider: "ollama", vectorStore: "qdrant" },
+          }),
+        ),
+    })
+    await using tmp = await tmpdir({
+      git: true,
+      config: { indexing: { enabled: false } },
+    })
+    process.env["KILO_CONFIG_DIR"] = global.path
+    const init = spyOn(CodeIndexManager.prototype, "initialize").mockResolvedValue({ requiresRestart: false })
+
+    try {
+      await provideTestInstance({
+        directory: tmp.path,
+        init: Effect.promise(() => KiloIndexing.init()),
+        fn: async () => {
+          await called(init)
+          expect(init.mock.calls[0]?.[0].enabled).toBe(false)
+        },
+      })
+    } finally {
+      init.mockRestore()
+    }
+  })
+
+  test("hot-reloads indexing config in the current directory without replacing its worker", async () => {
+    const enabled: boolean[] = []
+    const done: KiloIndexing.Status = {
+      state: "Complete",
+      message: "Indexing complete.",
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 100,
+    }
+    let created = 0
+    IndexingWorker.override(() => {
+      created += 1
+      return {
+        async init(input) {
+          enabled.push(input.enabled)
+          return done
+        },
+        async updateConfig(input) {
+          enabled.push(input.enabled)
+          return done
+        },
+        async search() {
+          return []
+        },
+        async dispose() {},
+      }
+    })
+
+    await using tmp = await tmpdir({ git: true, config: cfg })
+    process.env["KILO_CONFIG_DIR"] = tmp.path
+
+    await provideTestInstance({
+      directory: tmp.path,
+      init: Effect.promise(() => KiloIndexing.init()),
+      fn: async () => {
+        for (const _ of Array.from({ length: 100 })) {
+          if (enabled.length === 1) break
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+        expect(enabled).toEqual([true])
+        await AppRuntime.runPromise(Config.Service.use((svc) => svc.update({ indexing: { enabled: false } })))
+        for (const _ of Array.from({ length: 100 })) {
+          if (enabled.length === 2) break
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+
+        expect(enabled).toEqual([true, false])
+        expect(created).toBe(1)
+      },
+    })
+  })
+
   test("keeps server routes alive when indexing initialization fails", async () => {
     const init = spyOn(CodeIndexManager.prototype, "initialize").mockRejectedValue(error)
 
@@ -417,6 +502,77 @@ describe("indexing startup degradation", () => {
       expect(progress.length).toBeLessThanOrEqual(2)
       expect(progress.filter((status) => status.processedFiles > 0)).toHaveLength(1)
       expect(events.filter((status) => status.state === "Complete")).toEqual([complete])
+    } finally {
+      GlobalBus.off("event", on)
+    }
+  })
+
+  test("publishes pipeline-only status changes", async () => {
+    const pipeline = (message: string) => ({
+      state: "Standby" as const,
+      message,
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 0,
+      errorCount: 0,
+      staleCount: 0,
+      skippedCount: 0,
+    })
+    const first: KiloIndexing.Status = {
+      state: "Standby",
+      message: "Indexing pipelines are starting.",
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 0,
+      pipelines: {
+        codeGraph: pipeline("Code Graph complete."),
+        rag: pipeline("Code RAG complete."),
+        documents: pipeline("Document RAG waiting."),
+      },
+    }
+    const second: KiloIndexing.Status = {
+      ...first,
+      pipelines: {
+        ...first.pipelines!,
+        documents: pipeline("Document RAG starting."),
+      },
+    }
+    IndexingWorker.override((_directory, _root, hooks) => ({
+      async init() {
+        hooks.status(first)
+        hooks.status(second)
+        return second
+      },
+      async search() {
+        return []
+      },
+      async dispose() {},
+    }))
+
+    await using tmp = await tmpdir({ git: true, config: cfg })
+    process.env["KILO_CONFIG_DIR"] = tmp.path
+    const events: KiloIndexing.Status[] = []
+    const on = (data: {
+      directory?: string
+      payload?: { type?: string; properties?: { status?: KiloIndexing.Status } }
+    }) => {
+      if (data.directory !== tmp.path) return
+      if (data.payload?.type !== KiloIndexing.Event.type) return
+      if (data.payload.properties?.status) events.push(data.payload.properties.status)
+    }
+    GlobalBus.on("event", on)
+
+    try {
+      await withTestInstance({
+        directory: tmp.path,
+        fn: async () => expect(await wait(() => KiloIndexing.current(), "Standby")).toEqual(second),
+      })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      const messages = events
+        .map((item) => item.pipelines?.documents.message)
+        .filter((item) => item === "Document RAG waiting." || item === "Document RAG starting.")
+      expect(messages).toEqual(["Document RAG waiting.", "Document RAG starting."])
     } finally {
       GlobalBus.off("event", on)
     }
@@ -834,29 +990,6 @@ describe("indexing startup degradation", () => {
     }
   })
 
-  test("does not allocate an engine when indexing configuration is disabled", async () => {
-    const created: string[] = []
-    IndexingWorker.override((directory, root, hooks) => {
-      created.push(directory)
-      return inline(directory, root, hooks)
-    })
-
-    await using tmp = await tmpdir({ git: true, config: inactive })
-    process.env["KILO_CONFIG_DIR"] = tmp.path
-
-    await provideTestInstance({
-      directory: tmp.path,
-      fn: async () => {
-        const status = await wait(() => KiloIndexing.current(), "Disabled")
-        expect(status).toMatchObject({ state: "Disabled", message: "Indexing disabled." })
-        expect(await KiloIndexing.available()).toBe(false)
-        expect(KiloIndexing.ready()).toBe(false)
-        expect(await KiloIndexing.search("disabled")).toEqual([])
-        expect(created).toEqual([])
-      },
-    })
-  })
-
   test("enriches Kilo provider config from env auth", async () => {
     global.fetch = (() =>
       Promise.resolve(
@@ -1112,10 +1245,10 @@ describe("indexing startup degradation", () => {
     }
   })
 
-  test("stays disabled when VS Code starts without a workspace folder", async () => {
+  test("honors an explicit environment kill switch and reports its reason", async () => {
     await using tmp = await tmpdir({ git: true, config: cfg })
     process.env["KILO_CONFIG_DIR"] = tmp.path
-    process.env["KILO_DISABLE_CODEBASE_INDEXING"] = "vscode-no-workspace"
+    process.env["KILO_DISABLE_CODEBASE_INDEXING"] = "maintenance-window"
     const init = spyOn(CodeIndexManager.prototype, "initialize")
 
     try {
@@ -1127,11 +1260,11 @@ describe("indexing startup degradation", () => {
 
           expect(status).toMatchObject({
             state: "Disabled",
-            message: "Codebase indexing is disabled because no workspace folder is open in VS Code.",
+            message: "Codebase indexing is disabled by KILO_DISABLE_CODEBASE_INDEXING (reason: maintenance-window).",
           })
           expect(await KiloIndexing.available()).toBe(false)
           expect(KiloIndexing.ready()).toBe(false)
-          expect(await KiloIndexing.search("no workspace")).toEqual([])
+          expect(await KiloIndexing.search("environment disabled")).toEqual([])
           expect(init).not.toHaveBeenCalled()
         },
       })

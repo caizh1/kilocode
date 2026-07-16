@@ -83,6 +83,20 @@ const SKIP = new Set<string>([
   "settings--sandboxing-panel",
 ])
 
+const LIGHT = new Set<string>([
+  "chat--qa-aligned-idle-light",
+  "chat--qa-task-hud-integrated-light-1280",
+  "chat--qa-welcome-recent-light",
+  "settings--settings-aligned-light",
+  "settings--titanium-studio-light-review",
+])
+
+const CONTRAST = new Set<string>([
+  "chat--qa-aligned-idle-contrast",
+  "chat--qa-task-hud-integrated-contrast",
+  "settings--settings-aligned-contrast",
+])
+
 const DOCS = new Map<string, string[]>([
   [
     "chat--task-header-with-todos",
@@ -119,8 +133,10 @@ for (const story of stories) {
     const width = story.id.endsWith("-200") ? 200 : story.id.endsWith("-1280") ? 1280 : 420
     await page.setViewportSize({ width, height: 720 })
 
+    const vscode = LIGHT.has(story.id) ? "light-modern" : CONTRAST.has(story.id) ? "hc-black" : "dark-modern"
+    const scheme = LIGHT.has(story.id) ? "light" : "dark"
     await page.goto(
-      `/iframe.html?id=${story.id}&viewMode=story&globals=colorScheme:dark;theme:kilo-vscode;vscodeTheme:dark-modern`,
+      `/iframe.html?id=${story.id}&viewMode=story&globals=colorScheme:${scheme};theme:kilo-vscode;vscodeTheme:${vscode}`,
       { waitUntil: "load" },
     )
     await disableAnimations(page)

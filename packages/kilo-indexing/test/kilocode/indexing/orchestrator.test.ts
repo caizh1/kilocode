@@ -278,6 +278,73 @@ function createConfig(): CodeIndexConfigManager {
 }
 
 describe("CodeIndexOrchestrator telemetry", () => {
+  test("validates embeddings only after Code Graph and before RAG", async () => {
+    const ctx = await env()
+    const order: string[] = []
+    const scanner = new Scanner(1, 1, 1)
+    const scan = scanner.scanDirectory.bind(scanner)
+    scanner.scanDirectory = async (...args) => {
+      order.push(`scan:${args[6] ?? "all"}`)
+      return scan(...args)
+    }
+    const store = new Store(false)
+    store.initialize = async () => {
+      order.push("store")
+      return false
+    }
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      store as unknown as IVectorStore,
+      scanner as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+      undefined,
+      undefined,
+      async () => {
+        order.push("validate")
+      },
+    )
+
+    const outcome = await orchestrator.startIndexing("manual")
+
+    expect(outcome).toEqual({ state: "completed", pipeline: "rag" })
+    expect(order).toEqual(["scan:codeGraph", "validate", "store", "scan:rag"])
+  })
+
+  test("keeps Code Graph complete and blocks RAG when embedding validation fails", async () => {
+    const ctx = await env()
+    const scanner = new Scanner(1, 1, 1)
+    const state = new CodeIndexStateManager()
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      state,
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      new Store(false) as unknown as IVectorStore,
+      scanner as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+      undefined,
+      undefined,
+      async () => {
+        throw new Error("embedding unavailable")
+      },
+    )
+
+    const outcome = await orchestrator.startIndexing("manual")
+
+    expect(outcome).toEqual({ state: "failed", pipeline: "rag" })
+    expect(scanner.targets).toEqual(["codeGraph"])
+    expect(state.state).toBe("Error")
+    expect(state.getCurrentStatus().message).toContain("embedding unavailable")
+    expect(state.getCurrentStatus().activePipeline).toBe("rag")
+  })
+
   test("emits full completion telemetry", async () => {
     const events: IndexingTelemetryEvent[] = []
     const ctx = await env()
@@ -705,9 +772,10 @@ describe("CodeIndexOrchestrator telemetry", () => {
       secondScanned = true
       return Scanner.prototype.scanDirectory.call(new Scanner(1, 1, 1), ...args)
     }
+    const secondState = new CodeIndexStateManager()
     const second = new CodeIndexOrchestrator(
       createConfig(),
-      new CodeIndexStateManager(),
+      secondState,
       ctx.root,
       { async clearCacheFile() {} } as unknown as CacheManager,
       new Store(false) as unknown as IVectorStore,
@@ -721,6 +789,7 @@ describe("CodeIndexOrchestrator telemetry", () => {
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(secondScanned).toBe(false)
     expect(second.state).toBe("Indexing")
+    expect(secondState.getCurrentStatus().activePipeline).toBe("codeGraph")
 
     firstResolve?.()
     await firstRun
@@ -733,6 +802,41 @@ describe("CodeIndexOrchestrator telemetry", () => {
       if (oldRetry === undefined) delete process.env.KILO_INDEXING_LOCK_RETRY_MS
       else process.env.KILO_INDEXING_LOCK_RETRY_MS = oldRetry
     }
+  })
+
+  test("keeps Code Graph active while checking storage compatibility", async () => {
+    const ctx = await env()
+    const state = new CodeIndexStateManager()
+    const gate = Promise.withResolvers<void>()
+    const ready = Promise.withResolvers<void>()
+    const scanner = Object.assign(new Scanner(1, 1, 1), {
+      async ensureCompatible() {
+        ready.resolve()
+        await gate.promise
+        return {}
+      },
+    })
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      state,
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      undefined,
+      scanner as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    const run = orchestrator.startIndexing("manual")
+    await ready.promise
+
+    expect(scanner.targets).toEqual([])
+    expect(state.state).toBe("Indexing")
+    expect(state.getCurrentStatus().activePipeline).toBe("codeGraph")
+
+    gate.resolve()
+    expect(await run).toEqual({ state: "completed", pipeline: "codeGraph" })
   })
 
   test("shutdown waits for an active scan before closing the store", async () => {
@@ -760,6 +864,40 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(store.closeCount).toBe(1)
     expect(store.incompleteCount).toBe(1)
     expect(store.completeCount).toBe(0)
+  })
+
+  test("waits for an active scan before clearing and permits a fresh run", async () => {
+    const ctx = await env()
+    const scanner = new BlockingScanner()
+    const store = new Store(false)
+    let safe = false
+    const clear = store.deleteCollection.bind(store)
+    store.deleteCollection = async () => {
+      safe = scanner.finished
+      await clear()
+    }
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {}, async flush() {} } as unknown as CacheManager,
+      store as unknown as IVectorStore,
+      scanner as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    const active = orchestrator.startIndexing("background")
+    await scanner.started.promise
+    await orchestrator.clearIndexData()
+    await active
+
+    expect(safe).toBe(true)
+    expect(store.deleteCount).toBe(1)
+    const fresh = orchestrator.startIndexing("manual")
+    expect(fresh).not.toBe(active)
+    await fresh
   })
 
   test("preserves an unchanged index when an incremental scan is interrupted", async () => {

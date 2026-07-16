@@ -85,6 +85,7 @@ export const SandboxButtonBase: Component<SandboxButtonBaseProps> = (props) => {
         }
         aria-pressed={props.enabled}
         class={`prompt-status-button ${props.enabled ? "prompt-status-button--active" : ""}`}
+        data-ui="qa-action-sandbox"
       >
         <Icon name="lock" size="small" />
       </Button>

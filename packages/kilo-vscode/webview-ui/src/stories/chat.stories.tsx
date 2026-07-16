@@ -9,6 +9,7 @@
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
 import type { AssistantMessage } from "@kilocode/sdk/v2"
+import { onMount } from "solid-js"
 import { StoryProviders, defaultMockData, mockSessionValue } from "./StoryProviders"
 import { ChatView } from "../components/chat/ChatView"
 import { ErrorDisplay } from "../components/chat/ErrorDisplay"
@@ -216,6 +217,44 @@ export const QAAlignedIdleLight: Story = {
       </div>
     </StoryProviders>
   ),
+}
+
+function QAWelcomeRecentLightStory() {
+  const session = {
+    ...mockSessionValue({ status: "idle" }),
+    currentSessionID: () => undefined,
+    currentSession: () => undefined,
+    sessions: () => [
+      {
+        id: "recent-architecture",
+        title: "检查索引架构",
+        createdAt: "2026-07-15T08:00:00.000Z",
+        updatedAt: "2026-07-16T08:00:00.000Z",
+      },
+      {
+        id: "recent-settings",
+        title: "优化浅色模式设置",
+        createdAt: "2026-07-14T08:00:00.000Z",
+        updatedAt: "2026-07-15T08:00:00.000Z",
+      },
+    ],
+  }
+
+  return (
+    <StoryProviders sessionID={SESSION_ID} status="idle" locale="zh">
+      <SessionContext.Provider value={session as any}>
+        <div style={{ width: "100%", height: "720px", display: "flex", "flex-direction": "column" }}>
+          <ChatView onSelectSession={() => undefined} onShowHistory={() => undefined} />
+        </div>
+      </SessionContext.Provider>
+    </StoryProviders>
+  )
+}
+
+export const QAWelcomeRecentLight: Story = {
+  name: "QA — welcome with recent sessions, light theme",
+  globals: { vscodeTheme: "light-modern" },
+  render: () => <QAWelcomeRecentLightStory />,
 }
 
 export const QAAlignedIdleContrast: Story = {
@@ -781,7 +820,9 @@ export const MessageListToolToQueuedUserSpacing: Story = {
     const session = {
       ...mockSessionValue({ id: SESSION_ID, status: "busy" }),
       messages: () => spacingMessages,
+      visibleMessages: () => spacingMessages,
       userMessages: () => spacingMessages.filter((msg) => msg.role === "user"),
+      getParts: (id: string) => spacingParts[id as keyof typeof spacingParts] ?? [],
     }
     return (
       <StoryProviders data={spacingData} sessionID={SESSION_ID} status="busy" noPadding>
@@ -985,6 +1026,15 @@ const headerMessages: Message[] = [
   },
 ]
 const headerParts: Record<string, Part[]> = {
+  [headerUserID]: [
+    {
+      id: "part-header-user-text-001",
+      sessionID: SESSION_ID,
+      messageID: headerUserID,
+      type: "text",
+      text: "/chip-design-doc 请分析 MP CP 模块，生成一份源码驱动的详细设计文档。",
+    },
+  ],
   [headerAssistantID]: [
     {
       id: "part-header-skill-001",
@@ -1010,6 +1060,32 @@ const headerParts: Record<string, Part[]> = {
         input: { filePath: "packages/opencode/src/cli/index.ts" },
         output: "export async function main() { /* existing CLI bootstrap */ }",
         title: "Read CLI entrypoint",
+      },
+    },
+    {
+      id: "part-header-todos-001",
+      sessionID: SESSION_ID,
+      messageID: headerAssistantID,
+      type: "tool",
+      tool: "todowrite",
+      state: {
+        status: "completed",
+        input: {
+          todos: [
+            { id: "1", content: "Locate MP and CP module sources", status: "completed" },
+            { id: "2", content: "Trace control flow and state machines", status: "in_progress" },
+            { id: "3", content: "Generate the design document", status: "pending" },
+          ],
+        },
+        output: "Updated 3 todos",
+        title: "Updated design tasks",
+        metadata: {
+          todos: [
+            { id: "1", content: "Locate MP and CP module sources", status: "completed" },
+            { id: "2", content: "Trace control flow and state machines", status: "in_progress" },
+            { id: "3", content: "Generate the design document", status: "pending" },
+          ],
+        },
       },
     },
     {
@@ -1073,6 +1149,24 @@ const headerParts: Record<string, Part[]> = {
       },
     },
     {
+      id: "part-header-artifact-001",
+      sessionID: SESSION_ID,
+      messageID: headerAssistantID,
+      type: "tool",
+      tool: "save_mermaid_artifact",
+      state: {
+        status: "completed",
+        input: { source: "flowchart LR\n  MP --> CP" },
+        output: JSON.stringify({
+          artifactDir: ".kilo/artifacts/mp-cp-design",
+          sourcePath: ".kilo/artifacts/mp-cp-design/control-flow.mmd",
+          pngPath: ".kilo/artifacts/mp-cp-design/control-flow.png",
+          quality: "ok",
+        }),
+        title: "MP CP control-flow diagram",
+      },
+    },
+    {
       id: "part-header-text-002",
       sessionID: SESSION_ID,
       messageID: headerAssistantID,
@@ -1112,10 +1206,80 @@ const mockTodosAllDone: TodoItem[] = [
   { id: "2", content: "Create a poem about Henk", status: "completed" },
 ]
 
+const mockTodosIntegrated: TodoItem[] = [
+  { id: "1", content: "完成输入对象扫描", status: "completed" },
+  { id: "2", content: "完成候选分类", status: "completed" },
+  { id: "3", content: "完成 IAR Map 对账", status: "completed" },
+  { id: "4", content: "完成 GCC 链接检查", status: "completed" },
+  { id: "5", content: "完成指标汇总", status: "completed" },
+  { id: "6", content: "完成状态说明", status: "completed" },
+  { id: "7", content: "完成结果复核", status: "completed" },
+]
+
 const headerData = {
   ...defaultMockData,
   message: { [SESSION_ID]: headerMessages },
   part: headerParts,
+}
+
+function IntegratedTaskHudStory() {
+  onMount(() => {
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new MessageEvent("message", { data: { type: "timelineSettingLoaded", visible: false } }))
+    })
+  })
+  const session = {
+    ...mockSessionValue({ id: SESSION_ID, status: "idle" }),
+    messages: () => headerMessages,
+    visibleMessages: () => headerMessages,
+    userMessages: () => headerMessages.filter((message) => message.role === "user"),
+    currentSession: () => ({
+      id: SESSION_ID,
+      title: "MPBL警告全量分类与候选台账",
+      createdAt: new Date(headerNow - 12000).toISOString(),
+      updatedAt: new Date(headerNow).toISOString(),
+    }),
+    todos: () => mockTodosIntegrated,
+    getParts: (id: string) => headerParts[id] ?? [],
+    contextUsage: () => ({ tokens: 212930, percentage: null }),
+    costBreakdown: () => [],
+  }
+  return (
+    <StoryProviders
+      data={headerData}
+      sessionID={SESSION_ID}
+      status="idle"
+      noPadding
+      locale="zh"
+      config={{ plugin: ["@kilocode/kilo-indexing"] } as Config}
+    >
+      <SessionContext.Provider value={session as any}>
+        <div style={{ width: "100%", height: "980px", display: "flex", "flex-direction": "column" }}>
+          <ChatView />
+        </div>
+      </SessionContext.Provider>
+    </StoryProviders>
+  )
+}
+
+export const QATaskHudIntegrated1280: Story = {
+  name: "QA 任务 HUD 融合效果 — 桌面深色",
+  render: () => <IntegratedTaskHudStory />,
+}
+
+export const QATaskHudIntegratedNarrow: Story = {
+  name: "QA 任务 HUD 融合效果 — 窄宽深色",
+  render: () => <IntegratedTaskHudStory />,
+}
+
+export const QATaskHudIntegratedLight1280: Story = {
+  name: "QA 任务 HUD 融合效果 — 桌面浅色",
+  render: () => <IntegratedTaskHudStory />,
+}
+
+export const QATaskHudIntegratedContrast: Story = {
+  name: "QA 任务 HUD 融合效果 — 高对比",
+  render: () => <IntegratedTaskHudStory />,
 }
 
 export const QATitaniumFullConversation: Story = {

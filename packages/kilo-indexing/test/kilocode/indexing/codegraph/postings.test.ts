@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
@@ -14,6 +14,7 @@ import { parseCodeGraphFile } from "../../../../src/indexing/codegraph/parser"
 import { buildPostingsDocument } from "../../../../src/indexing/codegraph/postings/builder"
 import { CodePostingsJsonStorage } from "../../../../src/indexing/codegraph/storage"
 import { tokenizeField, tokenizePath } from "../../../../src/indexing/codegraph/postings/tokenizer"
+import { workspaceKey } from "../../../../src/indexing/workspace-key"
 
 const source = `
 #include "driver.h"
@@ -55,6 +56,33 @@ async function fixture(content = source) {
 }
 
 describe("code postings tokenizer and storage", () => {
+  test("tracks never, interrupted, and complete empty scans", async () => {
+    const workspacePath = await root()
+    const cacheDirectory = path.join(workspacePath, ".cache")
+    const storage = new CodePostingsJsonStorage({
+      workspacePath,
+      cacheDirectory,
+      clock: () => new Date("2026-06-10T00:00:00.000Z"),
+    })
+
+    expect(storage.getScanState()).toBe("never")
+    await storage.beginFullScan()
+    expect(storage.getScanState()).toBe("interrupted")
+    await storage.markFullScanComplete()
+
+    expect(storage.getScanState()).toBe("complete")
+    expect(storage.status()).toMatchObject({
+      recordCount: 0,
+      validFileCount: 0,
+      documentCount: 0,
+      lastFullScanAt: "2026-06-10T00:00:00.000Z",
+    })
+
+    await storage.beginFullScan()
+    expect(storage.getScanState()).toBe("interrupted")
+    expect(storage.status().lastFullScanAt).toBeUndefined()
+  })
+
   test("builds postings for prototype-named source tokens", async () => {
     const workspacePath = await root()
     const filePath = "drivers/ufs/prototype_tokens.c"
@@ -270,6 +298,7 @@ static void __attribute__((__constructor__)) prototype_tokens(void) {}
       cacheDirectory: ctx.cacheDirectory,
     })
     expect(mismatched.status()).toMatchObject({ tokenizerMismatch: true, needsRebuild: true, validFileCount: 0 })
+    expect(mismatched.getScanState()).toBe("needs-rebuild")
     expect(await mismatched.search("UART0_CTRL_REG")).toHaveLength(0)
   })
 
@@ -282,6 +311,93 @@ static void __attribute__((__constructor__)) prototype_tokens(void) {}
     expect((await ctx.storage.search("UART0_CTRL_REG"))[0]?.filePath).toBe(ctx.filePath)
   })
 
+  test("isolates workspaces sharing one cache and clears only the selected postings", async () => {
+    const first = await root()
+    const second = await root()
+    const cacheDirectory = await root()
+    const left = new CodePostingsJsonStorage({ workspacePath: first, cacheDirectory })
+    const right = new CodePostingsJsonStorage({ workspacePath: second, cacheDirectory })
+    const leftFile = "drivers/ufs/left.c"
+    const rightFile = "drivers/ufs/right.c"
+    const leftGraph = graph(first, leftFile, "int left(void) { return 1; }\n")
+    const rightGraph = graph(second, rightFile, "int right(void) { return 2; }\n")
+
+    await left.beginFullScan()
+    await left.upsertFilePostings(path.join(first, leftFile), leftGraph.fileHash, leftGraph)
+    await left.markFullScanComplete()
+    await right.beginFullScan()
+    await right.upsertFilePostings(path.join(second, rightFile), rightGraph.fileHash, rightGraph)
+    await right.markFullScanComplete()
+
+    expect(left.status().postingsDirectory).not.toBe(right.status().postingsDirectory)
+    expect(await left.listFiles()).toEqual([leftFile])
+    expect(await right.listFiles()).toEqual([rightFile])
+
+    await left.clear()
+    expect(await left.listFiles()).toEqual([])
+    expect(await right.listFiles()).toEqual([rightFile])
+  })
+
+  test("atomically migrates only an exact, completed legacy postings cache", async () => {
+    const ctx = await fixture()
+    const isolated = postingsDir(ctx.cacheDirectory, ctx.workspacePath)
+    const legacy = legacyPostingsDir(ctx.cacheDirectory)
+    await rename(isolated, legacy)
+
+    const storage = new CodePostingsJsonStorage({
+      workspacePath: ctx.workspacePath,
+      cacheDirectory: ctx.cacheDirectory,
+    })
+    expect(await storage.ensureCompatible()).toEqual({ action: "reuse", reason: "compatible" })
+    expect(await storage.listFiles()).toEqual([ctx.filePath])
+    expect(await exists(legacy)).toBe(false)
+    expect(await exists(path.join(isolated, "manifest.json"))).toBe(true)
+  })
+
+  test("retains an incompatible legacy postings cache while rebuilding isolated storage", async () => {
+    const ctx = await fixture()
+    const isolated = postingsDir(ctx.cacheDirectory, ctx.workspacePath)
+    const legacy = legacyPostingsDir(ctx.cacheDirectory)
+    await rename(isolated, legacy)
+    const file = path.join(legacy, "manifest.json")
+    const manifest = JSON.parse(await readFile(file, "utf-8")) as CodePostingsManifest
+    manifest.tokenizerVersion = CODE_POSTINGS_TOKENIZER_VERSION + 1
+    await writeFile(file, JSON.stringify(manifest), "utf-8")
+    const before = await readFile(file, "utf-8")
+
+    const storage = new CodePostingsJsonStorage({
+      workspacePath: ctx.workspacePath,
+      cacheDirectory: ctx.cacheDirectory,
+    })
+    expect((await storage.ensureCompatible()).action).toBe("rebuild")
+
+    expect(await readFile(file, "utf-8")).toBe(before)
+    expect(await exists(legacy)).toBe(true)
+    expect(await exists(path.join(isolated, "manifest.json"))).toBe(true)
+    expect(await storage.listFiles()).toEqual([])
+  })
+
+  test("retains interrupted or mismatched legacy postings caches", async () => {
+    const ctx = await fixture()
+    const other = await root()
+    const isolated = postingsDir(ctx.cacheDirectory, ctx.workspacePath)
+    const legacy = legacyPostingsDir(ctx.cacheDirectory)
+    await rename(isolated, legacy)
+    const manifest = await readFile(path.join(legacy, "manifest.json"), "utf-8")
+    await writeFile(path.join(legacy, "manifest.rebuild.json"), manifest, "utf-8")
+
+    const interrupted = new CodePostingsJsonStorage({
+      workspacePath: ctx.workspacePath,
+      cacheDirectory: ctx.cacheDirectory,
+    })
+    expect((await interrupted.ensureCompatible()).action).toBe("rebuild")
+    expect(await exists(legacy)).toBe(true)
+
+    const mismatch = new CodePostingsJsonStorage({ workspacePath: other, cacheDirectory: ctx.cacheDirectory })
+    expect((await mismatch.ensureCompatible()).action).toBe("rebuild")
+    expect(await exists(legacy)).toBe(true)
+  })
+
   test("rebuilds postings storage when key compatibility metadata is missing", async () => {
     const ctx = await fixture()
     const manifestPath = path.join(postingsDir(ctx.cacheDirectory), "manifest.json")
@@ -289,10 +405,12 @@ static void __attribute__((__constructor__)) prototype_tokens(void) {}
     delete manifest.documentCount
     await writeFile(manifestPath, JSON.stringify(manifest), "utf-8")
 
-    const decision = await new CodePostingsJsonStorage({
+    const broken = new CodePostingsJsonStorage({
       workspacePath: ctx.workspacePath,
       cacheDirectory: ctx.cacheDirectory,
-    }).ensureCompatible()
+    })
+    expect(broken.getScanState()).toBe("needs-rebuild")
+    const decision = await broken.ensureCompatible()
 
     expect(decision).toEqual({ action: "rebuild", reason: "missing compatibility metadata" })
     expect(
@@ -456,7 +574,11 @@ static void __attribute__((__constructor__)) prototype_tokens(void) {}
   })
 })
 
-function postingsDir(cacheDirectory: string): string {
+function postingsDir(cacheDirectory: string, workspacePath = path.dirname(cacheDirectory)): string {
+  return path.join(cacheDirectory, "codepostings", workspaceKey(workspacePath), CODE_POSTINGS_STORAGE_VERSION_DIR)
+}
+
+function legacyPostingsDir(cacheDirectory: string): string {
   return path.join(cacheDirectory, "codepostings", CODE_POSTINGS_STORAGE_VERSION_DIR)
 }
 

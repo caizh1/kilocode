@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { createHash } from "crypto"
 import { mkdir, mkdtemp, writeFile } from "fs/promises"
 import { tmpdir } from "os"
-import { join } from "path"
+import { basename, join } from "path"
 import { IndexingRunLock } from "../../../src/indexing/run-lock"
+import { workspaceKey } from "../../../src/indexing/workspace-key"
 
 describe("IndexingRunLock", () => {
   test("allows only one active workspace indexing run", async () => {
@@ -21,6 +21,19 @@ describe("IndexingRunLock", () => {
     const third = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
     expect(third.status).toBe("acquired")
     if (third.status === "acquired") await third.lock.release()
+  })
+
+  test("uses one lock for normalized aliases of the same workspace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lock-root-"))
+    const alias = `${root}/../${basename(root)}`
+    const cacheDir = await mkdtemp(join(tmpdir(), "lock-cache-"))
+
+    const first = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+    const second = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: alias })
+
+    expect(first.status).toBe("acquired")
+    expect(second.status).toBe("held")
+    if (first.status === "acquired") await first.lock.release()
   })
 
   test("creates the cache directory before acquiring the lock", async () => {
@@ -101,6 +114,5 @@ describe("IndexingRunLock", () => {
 })
 
 function lockDir(cacheDirectory: string, workspacePath: string): string {
-  const hash = createHash("sha256").update(workspacePath).digest("hex")
-  return join(cacheDirectory, `indexing-lock-${hash}`)
+  return join(cacheDirectory, `indexing-lock-${workspaceKey(workspacePath)}`)
 }

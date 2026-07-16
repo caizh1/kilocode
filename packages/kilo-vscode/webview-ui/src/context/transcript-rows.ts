@@ -80,6 +80,11 @@ function same<T>(a: T[], b: T[]) {
   return true
 }
 
+export function stabilize<T>(next: T[], prev?: T[]) {
+  if (!prev || !same(next, prev)) return next
+  return prev
+}
+
 function meta(a: TranscriptRow, b: TranscriptRow) {
   return a.turn === b.turn && a.partial === b.partial && a.queued === b.queued && a.live === b.live
 }
@@ -132,27 +137,30 @@ export function transcriptRows(
   const terminal = (msg: Message) => !(opts.revert?.partID && msg.id === opts.revert.messageID)
 
   for (const turn of turns) {
+    const assistants = turn.assistant.filter((msg) => msg.summary !== true)
+    const user = parts(turn.user.id)
+    const compact = user.some((part) => part.type === "compaction")
     const meta = {
       turn: turn.id,
       partial: turn.partial === true,
       queued: opts.queued?.has(turn.id) === true,
       live: opts.live?.has(turn.id) === true,
     }
-    const copied = copy(turn.assistant, parts)
+    const copied = copy(assistants, parts)
 
-    if (!turn.partial) {
+    if (!turn.partial && !compact) {
       rows.push({
         ...meta,
         type: "user",
         key: `${turn.id}:user`,
         message: turn.user,
-        parts: parts(turn.user.id),
+        parts: user,
         interrupted: turn.assistant.some((msg) => terminal(msg) && msg.error?.name === "MessageAbortedError"),
         answered: turn.assistant.length > 0,
       })
     }
 
-    for (const msg of turn.assistant) {
+    for (const msg of assistants) {
       const visible = parts(msg.id)
       if (visible.length === 0) {
         rows.push({

@@ -68,10 +68,11 @@ const tabs: readonly Item[] = [
 
 const Codicon: Component<{ name: string }> = (props) => <i class={`codicon codicon-${props.name}`} aria-hidden="true" />
 
-const Panel: ParentComponent<{ title: string }> = (props) => (
+const Panel: ParentComponent<{ title: string; description?: string }> = (props) => (
   <>
     <div class="settings-page-header" data-ui="settings-page-title">
       <h3>{props.title}</h3>
+      <Show when={props.description}>{(description) => <p>{description()}</p>}</Show>
     </div>
     <div class="settings-page-groups" data-ui="settings-groups">
       {props.children}
@@ -296,7 +297,10 @@ const Settings: Component<SettingsProps> = (props) => {
             </Tabs.Content>
             <Show when={features().indexing}>
               <Tabs.Content value="indexing" data-ui="settings-content">
-                <Panel title={language.t("settings.indexing.title")}>
+                <Panel
+                  title={language.t("settings.indexing.title")}
+                  description={language.t("settings.indexing.description")}
+                >
                   <IndexingTab />
                 </Panel>
               </Tabs.Content>
@@ -361,6 +365,10 @@ const Settings: Component<SettingsProps> = (props) => {
               )}
             </Show>
             <div class="settings-save-bar">
+              <span
+                class={`settings-save-status${saving() ? " settings-save-status-saving" : ""}${saveError() ? " settings-save-status-error" : ""}`}
+                aria-hidden="true"
+              />
               <span class="settings-save-bar-label">{language.t("settings.saveBar.unsavedChanges")}</span>
               <Button
                 class="settings-discard-button"

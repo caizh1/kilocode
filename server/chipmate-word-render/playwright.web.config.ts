@@ -21,7 +21,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "npm run preview:seed && MARKET_DB_ROOT=.runtime/e2e-db MARKET_IMPORT_ROOT=.runtime/source MARKET_LEGACY_ROOT=.runtime/e2e-legacy PACKAGE_ROOT=.runtime/e2e-packages SKILL_MARKET_ROOT=.runtime/e2e-legacy PORT=6111 npm run dev",
+        "npm run preview:seed && MARKET_DB_ROOT=.runtime/e2e-db MARKET_IMPORT_ROOT=.runtime/source MARKET_LEGACY_ROOT=.runtime/e2e-legacy PACKAGE_ROOT=.runtime/e2e-packages SKILL_MARKET_ROOT=.runtime/e2e-legacy EXTENSION_MARKET_ENABLED=1 EXTENSION_MARKET_ROOT=.runtime/e2e-extensions EXTENSION_DROP_SCAN_MS=1000 PORT=6111 npm run dev",
       url: "http://127.0.0.1:6111/api/v1/status",
       timeout: 30_000,
       reuseExistingServer: false,

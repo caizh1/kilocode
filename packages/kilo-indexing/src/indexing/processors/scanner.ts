@@ -865,26 +865,14 @@ export class DirectoryScanner implements IDirectoryScanner {
 
   private async beginGraphScan(): Promise<void> {
     if (!this.graph) return
-    try {
-      await this.graph.beginFullScan()
-      await this.postings?.beginFullScan()
-    } catch (err) {
-      log.warn("code graph full scan marker failed", {
-        error: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
-      })
-    }
+    await this.graph.beginFullScan()
+    await this.postings?.beginFullScan()
   }
 
   private async finishGraphScan(): Promise<void> {
     if (!this.graph) return
-    try {
-      await this.graph.markFullScanComplete()
-      await this.postings?.markFullScanComplete()
-    } catch (err) {
-      log.warn("code graph full scan completion marker failed", {
-        error: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
-      })
-    }
+    await this.graph.markFullScanComplete()
+    await this.postings?.markFullScanComplete()
   }
 
   private async updateFileGraph(

@@ -1879,4 +1879,9 @@ export const dict = {
   "chat.search.invalidRegex": "正規表現が無効です",
   "chat.search.noResults": "見つかりませんでした",
   "chat.search.searchingHistory": "以前のメッセージを検索しています…",
+  "settings.experimental.dsml.title": "DSML ツール呼び出し修復",
+  "settings.experimental.dsml.description":
+    "選択したプロバイダーとモデルに限り、漏れた DeepSeek DSML 呼び出しを修復します",
+  "settings.experimental.dsmlModel.title": "DSML 対象モデル",
+  "settings.experimental.dsmlModel.description": "DSML 互換解析を許可する唯一のプロバイダーとモデルを選択します",
 }

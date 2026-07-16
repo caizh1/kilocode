@@ -15,10 +15,10 @@ const archive = resolve(repo, "docs/chipmate-skill-market-alignment-evidence/g0/
 const source = resolve(repo, ".kilo/skills/source-backed-detail-design")
 
 test("database schema uses ordered migrations", () => {
-  assert.equal(MARKET_DB_SCHEMA_VERSION, 5)
+  assert.equal(MARKET_DB_SCHEMA_VERSION, 6)
   assert.deepEqual(
     MIGRATIONS.map((migration) => migration.version),
-    [1, 2, 3, 4, 5],
+    [1, 2, 3, 4, 5, 6],
   )
 })
 
@@ -45,7 +45,7 @@ test("worker owns import, revisions, FTS, state, metrics, and legacy export", { 
         foreignKeys: health.foreignKeys,
         busyTimeout: health.busyTimeout,
       },
-      { available: true, schemaVersion: 5, journalMode: "wal", foreignKeys: true, busyTimeout: 5000 },
+      { available: true, schemaVersion: 6, journalMode: "wal", foreignKeys: true, busyTimeout: 5000 },
     )
 
     const first = await db.importLegacy(legacy)

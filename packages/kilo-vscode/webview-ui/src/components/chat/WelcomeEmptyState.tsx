@@ -35,24 +35,27 @@ export const WelcomeEmptyState: Component<WelcomeEmptyStateProps> = (props) => {
   return (
     <div class="message-list-empty">
       <ChipMateLogo class="kilo-logo" welcome />
+      <h1 class="kilo-product-title">ChipMate</h1>
       <p class="kilo-about-text">{language.t("session.messages.welcome")}</p>
       <Show when={recent().length > 0 && props.onSelectSession}>
         <div class="recent-sessions">
           <span class="recent-sessions-label">{language.t("session.recent")}</span>
-          <For each={recent()}>
-            {(item) => (
-              <button class="recent-session-item" onClick={() => props.onSelectSession?.(item.id)}>
-                <span class="recent-session-title">{item.title || language.t("session.untitled")}</span>
-                <span class="recent-session-date">{formatRelativeDate(item.updatedAt)}</span>
+          <div class="recent-session-list">
+            <For each={recent()}>
+              {(item) => (
+                <button class="recent-session-item" onClick={() => props.onSelectSession?.(item.id)}>
+                  <span class="recent-session-title">{item.title || language.t("session.untitled")}</span>
+                  <span class="recent-session-date">{formatRelativeDate(item.updatedAt)}</span>
+                </button>
+              )}
+            </For>
+            <Show when={props.onShowHistory}>
+              <button class="show-history-btn" onClick={() => props.onShowHistory?.()}>
+                <Icon name="history" size="small" />
+                {language.t("session.showHistory")}
               </button>
-            )}
-          </For>
-          <Show when={props.onShowHistory}>
-            <button class="show-history-btn" onClick={() => props.onShowHistory?.()}>
-              <Icon name="history" size="small" />
-              {language.t("session.showHistory")}
-            </button>
-          </Show>
+            </Show>
+          </div>
         </div>
       </Show>
       <button class="feedback-button" onClick={() => dialog.show(() => <FeedbackDialog />)}>

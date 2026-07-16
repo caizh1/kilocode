@@ -13,6 +13,7 @@
     "@chipmate/market-contracts": "0.1.0",
     "@chipmate/market-db": "0.1.0",
     "@chipmate/skill-spec": "0.1.0",
-    "fastify": "5.10.0"
+    "fastify": "5.10.0",
+    "yauzl": "^3.4.0"
   }
 }
