@@ -11,11 +11,24 @@ import {
   validateMermaidDiagram,
 } from "../../src/kilocode/documents/mermaid"
 import { createWordDocument, inspectWordDocument } from "../../src/kilocode/documents/word"
-import { provideTmpdirInstance } from "../fixture/fixture"
+import { provideTestInstance, tmpdir } from "../fixture/fixture"
 
 const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const SIMPLE_MERMAID = "flowchart TD\n  A[Start] --> B[Done]"
+
+function provideTmpdirInstance<A, E>(
+  self: (dir: string) => Effect.Effect<A, E>,
+  options?: { git?: boolean },
+) {
+  return Effect.promise(async () => {
+    await using temp = await tmpdir(options)
+    return await provideTestInstance({
+      directory: temp.path,
+      fn: () => Effect.runPromise(self(temp.path).pipe(Effect.provide(CrossSpawnSpawner.defaultLayer))),
+    })
+  })
+}
 
 describe("kilocode Mermaid documents", () => {
   test("validates Mermaid source and saves source/png artifacts", async () => {
@@ -69,7 +82,7 @@ describe("kilocode Mermaid documents", () => {
               const png = await fs.readFile(path.join(dir, rendered.pngPath!))
               expect(png.subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true)
             } finally {
-              server.stop(true)
+              await server.stop(true)
             }
 
             const requests: Array<Record<string, unknown>> = []
@@ -147,7 +160,7 @@ describe("kilocode Mermaid documents", () => {
               const png = await fs.readFile(path.join(dir, rendered.pngPath!))
               expect(png.subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true)
             } finally {
-              nested.stop(true)
+              await nested.stop(true)
             }
 
             const rejected = Bun.serve({
@@ -176,7 +189,7 @@ describe("kilocode Mermaid documents", () => {
                 }),
               )
             } finally {
-              rejected.stop(true)
+              await rejected.stop(true)
             }
 
             const empty = Bun.serve({
@@ -196,7 +209,7 @@ describe("kilocode Mermaid documents", () => {
                 message: "remote Mermaid renderer returned no PNG",
               })
             } finally {
-              empty.stop(true)
+              await empty.stop(true)
             }
 
             const slow = Bun.serve({
@@ -216,7 +229,7 @@ describe("kilocode Mermaid documents", () => {
               expect(timedOut.rendered).toBe(false)
               expect(timedOut.diagnostics.some((item) => item.code === "mermaid-render-timeout")).toBe(true)
             } finally {
-              slow.stop(true)
+              await slow.stop(true)
             }
           }),
         { git: true },
@@ -308,7 +321,7 @@ describe("kilocode Mermaid documents", () => {
                   expect.objectContaining({ code: "mermaid-render-remote-failed", severity: "warning" }),
                 )
               } finally {
-                remote.stop(true)
+                await remote.stop(true)
               }
             } finally {
               if (previousCommand === undefined) delete process.env["KILO_MERMAID_MMDC"]

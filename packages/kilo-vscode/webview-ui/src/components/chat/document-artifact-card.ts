@@ -42,7 +42,7 @@ export function documentArtifactCardFromToolPart(part: ToolPart): DocumentArtifa
   const metadata = isObject(state.metadata) ? state.metadata : {}
   const read = (key: string) => value(metadata[key]) ?? value(output[key])
   const artifactDir = read("artifactDir")
-  const warnings = stringArray(metadata.warnings).concat(stringArray(output.warnings))
+  const warnings = [...new Set(stringArray(metadata.warnings).concat(stringArray(output.warnings)))]
   const links = uniqueLinks([
     link("primary", "Open artifact", read("path") ?? read("wordPath")),
     link("pdf", "Open PDF", read("pdfPath")),
@@ -63,7 +63,7 @@ export function documentArtifactCardFromToolPart(part: ToolPart): DocumentArtifa
     tool: part.tool,
     title: titleFor(part.tool, state.title),
     artifactDir,
-    quality: qualityFrom(metadata.quality ?? output.quality, warnings),
+    quality: qualityFrom(metadata.quality ?? output.quality, warnings, part.tool, metadata, output),
     warnings,
     links,
   }
@@ -123,9 +123,32 @@ function stringArray(input: unknown): string[] {
     : []
 }
 
-function qualityFrom(input: unknown, warnings: string[]): DocumentArtifactCardModel["quality"] {
+function qualityFrom(
+  input: unknown,
+  warnings: string[],
+  tool: string,
+  metadata: Record<string, unknown>,
+  output: Record<string, unknown>,
+): DocumentArtifactCardModel["quality"] {
   if (input === "ok" || input === "warning" || input === "failed" || input === "unknown") return input
+  if (tool === "render_mermaid_diagram") {
+    const rendered = flag(metadata.rendered) ?? flag(output.rendered)
+    const issues = objects(metadata.issues).concat(objects(output.issues), objects(output.diagnostics))
+    if (rendered === false || issues.some((item) => item.severity === "error")) return "failed"
+    if (rendered === true) {
+      if (warnings.length || issues.some((item) => item.severity === "warning")) return "warning"
+      return "ok"
+    }
+  }
   if (warnings.some((item) => FAILED_RE.test(item))) return "failed"
   if (warnings.some((item) => WARNING_RE.test(item))) return "warning"
   return warnings.length ? "warning" : "unknown"
+}
+
+function flag(input: unknown): boolean | undefined {
+  return typeof input === "boolean" ? input : undefined
+}
+
+function objects(input: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(input) ? input.filter(isObject) : []
 }

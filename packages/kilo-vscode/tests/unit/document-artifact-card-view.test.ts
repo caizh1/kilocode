@@ -49,9 +49,11 @@ describe("documentArtifactCardFromToolPart", () => {
           diagnosticsPath: ".kilo/artifacts/mermaid-1/mermaid-diagnostics.json",
         },
         output: JSON.stringify({
+          rendered: false,
           artifactDir: ".kilo/artifacts/mermaid-1",
           sourcePath: ".kilo/artifacts/mermaid-1/flow.mmd",
           diagnosticsPath: ".kilo/artifacts/mermaid-1/mermaid-diagnostics.json",
+          diagnostics: [{ severity: "error", code: "mermaid-render-failed", message: "bad syntax" }],
           warnings: ["mermaid-render-failed: bad syntax"],
         }),
       },
@@ -60,5 +62,61 @@ describe("documentArtifactCardFromToolPart", () => {
     expect(card?.quality).toBe("failed")
     expect(card?.links.some((link) => link.kind === "source")).toBe(true)
     expect(card?.links.some((link) => link.kind === "diagnostics")).toBe(true)
+  })
+
+  test("marks a clean legacy Mermaid render as ok without an explicit quality field", () => {
+    const card = documentArtifactCardFromToolPart({
+      id: "part-3",
+      type: "tool",
+      tool: "render_mermaid_diagram",
+      state: {
+        status: "completed",
+        input: {},
+        title: "Mermaid Diagram Rendered",
+        metadata: {
+          rendered: true,
+          artifactDir: ".kilo/artifacts/mermaid-2",
+          pngPath: ".kilo/artifacts/mermaid-2/flow.png",
+        },
+        output: JSON.stringify({
+          rendered: true,
+          artifactDir: ".kilo/artifacts/mermaid-2",
+          pngPath: ".kilo/artifacts/mermaid-2/flow.png",
+          diagnostics: [],
+          issues: [],
+          warnings: [],
+        }),
+      },
+    } satisfies ToolPart)
+
+    expect(card?.quality).toBe("ok")
+  })
+
+  test("keeps a successful fallback Mermaid render at warning instead of failed", () => {
+    const warning = "mermaid-render-remote-failed: Remote render failed; local mmdc fallback succeeded."
+    const card = documentArtifactCardFromToolPart({
+      id: "part-4",
+      type: "tool",
+      tool: "render_mermaid_diagram",
+      state: {
+        status: "completed",
+        input: {},
+        title: "Mermaid Diagram Rendered",
+        metadata: {
+          rendered: true,
+          artifactDir: ".kilo/artifacts/mermaid-3",
+          warnings: [warning],
+        },
+        output: JSON.stringify({
+          rendered: true,
+          artifactDir: ".kilo/artifacts/mermaid-3",
+          diagnostics: [{ severity: "warning", code: "mermaid-render-remote-failed", message: warning }],
+          warnings: [warning],
+        }),
+      },
+    } satisfies ToolPart)
+
+    expect(card?.quality).toBe("warning")
+    expect(card?.warnings).toEqual([warning])
   })
 })

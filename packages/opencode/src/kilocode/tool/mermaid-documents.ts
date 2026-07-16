@@ -75,6 +75,8 @@ type MermaidMeta = {
   pixelHeight?: number
   scale?: number
   issues?: Array<{ severity?: string; code?: string; message?: string }>
+  quality?: "ok" | "warning" | "failed" | "unknown"
+  warnings?: string[]
   valid?: boolean
   failed?: boolean
   error?: string
@@ -84,12 +86,26 @@ function mermaidFailure(title: string, err: unknown, metadata: MermaidMeta = {})
   const message = formatError(err)
   return {
     title,
-    metadata: { ...metadata, failed: true, error: message },
+    metadata: { ...metadata, failed: true, error: message, quality: "failed", warnings: [message] },
     output: [
       `${title}: ${message}`,
       "This Mermaid sidecar operation failed; Kilo native QA, code understanding, and document_search are not replaced by this tool.",
     ].join("\n"),
   }
+}
+
+function quality(input: {
+  inserted?: boolean
+  rendered?: boolean
+  diagnostics?: Array<{ severity?: string }>
+  issues?: Array<{ severity?: string }>
+  warnings?: string[]
+}): MermaidMeta["quality"] {
+  if (input.inserted === false || input.rendered === false) return "failed"
+  if (input.diagnostics?.some((item) => item.severity === "error")) return "failed"
+  if (input.issues?.some((item) => item.severity === "error")) return "failed"
+  if (input.warnings?.length || input.diagnostics?.length || input.issues?.length) return "warning"
+  return "ok"
 }
 
 function runMermaidOperation<T>(
@@ -169,6 +185,8 @@ export const SaveMermaidArtifactTool = Tool.define(
               sourcePath: result.sourcePath,
               pngPath: result.pngPath,
               diagnosticsPath: result.diagnosticsPath,
+              quality: quality(result),
+              warnings: result.warnings,
             },
             output: JSON.stringify(result, null, 2),
           }),
@@ -217,6 +235,8 @@ export const RenderMermaidDiagramTool = Tool.define(
               pixelHeight: result.pixelHeight,
               scale: result.scale,
               issues: result.issues,
+              quality: quality(result),
+              warnings: result.warnings,
             },
             output: JSON.stringify(result, null, 2),
           }),
@@ -258,6 +278,8 @@ export const InsertMermaidIntoWordTool = Tool.define(
               artifactDir: result.artifactDir,
               manifestPath: result.manifestPath,
               pngPath: result.mermaidPngPath,
+              quality: quality(result),
+              warnings: result.warnings,
             },
             output: JSON.stringify(result, null, 2),
           }),
