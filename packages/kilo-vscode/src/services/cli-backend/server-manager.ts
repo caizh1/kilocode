@@ -38,6 +38,14 @@ export function resolveServerCwd(folders: readonly WorkspaceFolderLike[] | undef
   return folders?.[0]?.uri.fsPath ?? storage
 }
 
+export function emptyWorkspaceEnv(
+  folders: readonly WorkspaceFolderLike[] | undefined,
+  cwd: string,
+): Record<string, string> {
+  if (folders?.length) return {}
+  return { KILO_VSCODE_EMPTY_WORKSPACE_DIR: path.resolve(cwd) }
+}
+
 export function buildBundledToolEnv(root: string, base: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const key = pathKey(base)
   const bin = path.join(root, "bin")
@@ -130,6 +138,7 @@ export class ServerManager {
       // or "$HOME" in empty VS Code windows.
       const folders = vscode.workspace.workspaceFolders
       const spawnCwd = resolveServerCwd(folders, this.context.globalStorageUri.fsPath)
+      const empty = emptyWorkspaceEnv(folders, spawnCwd)
       fs.mkdirSync(spawnCwd, { recursive: true })
       const localCli =
         this.context.extensionMode === vscode.ExtensionMode.Development ||
@@ -180,6 +189,7 @@ export class ServerManager {
           KILOCODE_FEATURE: "vscode-extension",
           ...internal,
           ...indexingControl,
+          ...empty,
           KILO_TELEMETRY_LEVEL: vscode.env.isTelemetryEnabled ? "all" : "off",
           KILO_APP_NAME: "chipmate",
           KILO_EDITOR_NAME: vscode.env.appName,

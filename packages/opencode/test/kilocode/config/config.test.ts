@@ -248,6 +248,29 @@ describe("kilocode indexing config", () => {
     expect(KiloIndexing.input({ enabled: true }, { enabled: false }).enabled).toBe(true)
   })
 
+  test("resolves nested indexing fields independently across project and global config", () => {
+    const input = KiloIndexing.input(
+      {
+        "openai-compatible": { apiKey: "project-key" },
+        documents: { paths: [] },
+      },
+      {
+        enabled: true,
+        provider: "openai-compatible",
+        "openai-compatible": { baseUrl: "https://embedding.example.test/v1" },
+        documents: { enabled: false, paths: ["global-docs"] },
+      },
+    )
+
+    expect(input).toMatchObject({
+      enabled: true,
+      embedderProvider: "openai-compatible",
+      openAiCompatibleBaseUrl: "https://embedding.example.test/v1",
+      openAiCompatibleApiKey: "project-key",
+      documents: { enabled: false, paths: [] },
+    })
+  })
+
   test("uses public-off and internal-on defaults only when enablement is unset", () => {
     const kilo = process.env.KILO_INTERNAL_OFFLINE
     const chipmate = process.env.CHIPMATE_INTERNAL_OFFLINE

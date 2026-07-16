@@ -37,6 +37,7 @@ export type IndexingRunLockAcquireResult =
 
 export class IndexingRunLock {
   private timer: ReturnType<typeof setInterval> | undefined
+  private task: Promise<void> = Promise.resolve()
   private readonly startedAt = Date.now()
 
   private constructor(
@@ -48,9 +49,10 @@ export class IndexingRunLock {
   static async acquire(input: {
     cacheDirectory: string
     workspacePath: string
+    kind?: "code" | "documents"
   }): Promise<IndexingRunLockAcquireResult> {
     const workspace = normalizeWorkspace(input.workspacePath)
-    const dir = lockDir(input.cacheDirectory, workspace)
+    const dir = lockDir(input.cacheDirectory, workspace, input.kind)
     const runId = globalThis.crypto.randomUUID()
     const lock = new IndexingRunLock(runId, dir, workspace)
     await mkdir(input.cacheDirectory, { recursive: true })
@@ -110,13 +112,63 @@ export class IndexingRunLock {
   async release(): Promise<void> {
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
+    await this.task
+    if (!(await this.owned())) {
+      log.warn("indexing lock release skipped for non-owner", {
+        visible: true,
+        workspacePath: this.workspacePath,
+        runId: this.runId,
+      })
+      return
+    }
     await rm(this.dir, { recursive: true, force: true })
     log.info("indexing lock released", { visible: true, workspacePath: this.workspacePath, runId: this.runId })
   }
 
   private start(): void {
-    this.timer = setInterval(() => void this.write(), HEARTBEAT_MS)
+    this.timer = setInterval(() => {
+      const task = this.task.then(() => this.heartbeat())
+      this.task = task.catch((err) => {
+        log.error("indexing lock heartbeat failed", {
+          workspacePath: this.workspacePath,
+          runId: this.runId,
+          err,
+        })
+      })
+    }, HEARTBEAT_MS)
     this.timer.unref?.()
+  }
+
+  private async heartbeat(): Promise<void> {
+    if (await this.owned()) {
+      await this.write()
+      return
+    }
+    if (this.timer) clearInterval(this.timer)
+    this.timer = undefined
+    log.warn("indexing lock heartbeat stopped after ownership changed", {
+      visible: true,
+      workspacePath: this.workspacePath,
+      runId: this.runId,
+    })
+  }
+
+  private async owned(): Promise<boolean> {
+    try {
+      const raw = await readFile(path.join(this.dir, "lock.json"), "utf-8")
+      const info = JSON.parse(raw) as Partial<LockInfo>
+      return info.runId === this.runId
+    } catch (err) {
+      const code = err instanceof Error && "code" in err ? (err as { code?: string }).code : undefined
+      if (code !== "ENOENT") {
+        log.warn("failed to verify indexing lock ownership", {
+          workspacePath: this.workspacePath,
+          runId: this.runId,
+          err,
+        })
+      }
+      return false
+    }
   }
 
   private async write(): Promise<void> {
@@ -149,8 +201,10 @@ async function checkStale(
 
     const heartbeat = typeof info.heartbeatAt === "number" ? info.heartbeatAt : 0
     const pid = typeof info.pid === "number" ? info.pid : 0
-    if (pid > 0 && !pidAlive(pid)) {
-      return { stale: true, reason: "owner pid exited", info }
+    if (pid > 0) {
+      if (!pidAlive(pid)) return { stale: true, reason: "owner pid exited", info }
+      const reason = Date.now() - heartbeat > STALE_MS ? "owner pid alive with stale heartbeat" : "active heartbeat"
+      return { stale: false, reason, info }
     }
     if (Date.now() - heartbeat > STALE_MS) {
       return { stale: true, reason: "heartbeat timeout", info }
@@ -161,7 +215,10 @@ async function checkStale(
   }
 }
 
-function lockDir(cacheDirectory: string, workspacePath: string): string {
+function lockDir(cacheDirectory: string, workspacePath: string, kind: "code" | "documents" = "code"): string {
+  if (kind === "documents") {
+    return path.join(cacheDirectory, `document-indexing-lock-${workspaceKey(workspacePath)}`)
+  }
   return path.join(cacheDirectory, `indexing-lock-${workspaceKey(workspacePath)}`)
 }
 

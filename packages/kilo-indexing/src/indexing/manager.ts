@@ -239,6 +239,18 @@ export class CodeIndexManager {
     return true
   }
 
+  private async waitWithGraph(generation: number, trigger: IndexingTelemetryTrigger): Promise<void> {
+    await this._recreateGraphServices("worktree-baseline-wait", generation)
+    if (!this.current(generation)) return
+    this._codeGraph.start("worktree-baseline-wait")
+    const scan = this._orchestrator?.startIndexing(trigger)
+    await this.configureDocuments(trigger, { start: false, generation })
+    this.waiting()
+    void scan?.finally(() => {
+      if (this.current(generation) && !this._baselineStore) this.waiting()
+    })
+  }
+
   private scheduleBaselineRetry(): void {
     if (!this.baselinePath || this._baselineStore || this._baselineTimer || this._disposed) return
     this._baselineTimer = setTimeout(() => {
@@ -359,7 +371,8 @@ export class CodeIndexManager {
         this._isRecoveringFromError = false
         return
       }
-      if (this.waiting()) {
+      if (this.baselinePath && !this._baselineStore) {
+        await this.waitWithGraph(generation, trigger)
         this.resetRetryState()
         this._isRecoveringFromError = false
         return
@@ -530,8 +543,11 @@ export class CodeIndexManager {
           return { requiresRestart }
         }
         log.info("indexing services recreated", { workspacePath: this.workspacePath })
+        if (this.baselinePath && !this._baselineStore) {
+          await this.waitWithGraph(generation, "background")
+          return { requiresRestart }
+        }
         this._codeGraph.start("indexing-services-initialized")
-        if (this.waiting()) return { requiresRestart }
         this.emitStart("background")
         const scan = this._orchestrator?.startIndexing("background") ?? Promise.resolve()
         await this.configureDocuments("background", { after: scan, generation })
@@ -1181,7 +1197,10 @@ export class CodeIndexManager {
         })
         await this._recreateServices(undefined, generation)
         if (!this.current(generation)) return
-        if (this.waiting()) return
+        if (this.baselinePath && !this._baselineStore) {
+          await this.waitWithGraph(generation, "background")
+          return
+        }
         this._codeGraph.start("rag-settings-updated")
         this.emitStart("background")
         const scan = this._orchestrator?.startIndexing("background")

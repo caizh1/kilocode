@@ -338,7 +338,7 @@ static void __attribute__((__constructor__)) prototype_tokens(void) {}
     expect(await right.listFiles()).toEqual([rightFile])
   })
 
-  test("atomically migrates only an exact, completed legacy postings cache", async () => {
+  test("retains and ignores a completed legacy shared postings cache", async () => {
     const ctx = await fixture()
     const isolated = postingsDir(ctx.cacheDirectory, ctx.workspacePath)
     const legacy = legacyPostingsDir(ctx.cacheDirectory)
@@ -348,9 +348,9 @@ static void __attribute__((__constructor__)) prototype_tokens(void) {}
       workspacePath: ctx.workspacePath,
       cacheDirectory: ctx.cacheDirectory,
     })
-    expect(await storage.ensureCompatible()).toEqual({ action: "reuse", reason: "compatible" })
-    expect(await storage.listFiles()).toEqual([ctx.filePath])
-    expect(await exists(legacy)).toBe(false)
+    expect(await storage.ensureCompatible()).toEqual({ action: "rebuild", reason: "missing compatibility metadata" })
+    expect(await storage.listFiles()).toEqual([])
+    expect(await exists(legacy)).toBe(true)
     expect(await exists(path.join(isolated, "manifest.json"))).toBe(true)
   })
 

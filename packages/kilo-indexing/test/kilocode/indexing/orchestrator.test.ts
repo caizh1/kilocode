@@ -545,7 +545,7 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(scanner.targets).toEqual(["codeGraph", "rag"])
   })
 
-  test("starts watcher only after Code Graph and RAG scans complete", async () => {
+  test("waits for watcher readiness before Code Graph and RAG scans", async () => {
     const ctx = await env()
     const state = new CodeIndexStateManager()
     const scanner = new Scanner(1, 1, 1, 1)
@@ -577,49 +577,53 @@ describe("CodeIndexOrchestrator telemetry", () => {
       ctx.meta,
     )
 
-    await orchestrator.startIndexing("manual")
-
-    expect(scanner.targets).toEqual(["codeGraph", "rag"])
-    expect(order).toEqual(["scan:codeGraph", "scan:rag", "watcher:init"])
-    expect(watcher.initialized).toBe(1)
-    expect(watcher.collecting).toEqual([false])
-    expect(orchestrator.state).toBe("Indexed")
-    expect(state.getCurrentStatus().message).toBe("Index up-to-date. File watcher starting.")
-
-    ready()
-    await watcher.ready
+    const task = orchestrator.startIndexing("manual")
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(watcher.collecting).toEqual([false, true])
+    expect(scanner.targets).toEqual([])
+    expect(order).toEqual(["watcher:init"])
+    expect(watcher.initialized).toBe(1)
+    expect(watcher.collecting).toEqual([false])
+
+    ready()
+    await task
+
+    expect(scanner.targets).toEqual(["codeGraph", "rag"])
+    expect(order).toEqual(["watcher:init", "scan:codeGraph", "scan:rag"])
+    expect(watcher.collecting.at(0)).toBe(false)
+    expect(watcher.collecting.at(-1)).toBe(true)
+    expect(orchestrator.state).toBe("Indexed")
     expect(state.getCurrentStatus().message).toBe("File watcher started. Index up-to-date.")
   })
 
-  test("does not fail indexing when watcher initialization fails", async () => {
+  test("fails closed when watcher initialization fails", async () => {
     const events: IndexingTelemetryEvent[] = []
     const ctx = await env()
     const watcher = new Watcher()
     watcher.fail = new Error("watcher unavailable")
+    const scanner = new Scanner(1, 1, 1, 1)
     const orchestrator = new CodeIndexOrchestrator(
       createConfig(),
       new CodeIndexStateManager(),
       ctx.root,
       { async clearCacheFile() {} } as unknown as CacheManager,
       new Store(false) as unknown as IVectorStore,
-      new Scanner(1, 1, 1, 1) as unknown as DirectoryScanner,
+      scanner as unknown as DirectoryScanner,
       watcher as unknown as IFileWatcher,
       ctx.cacheDirectory,
       ctx.meta,
       (event) => events.push(event),
     )
 
-    await orchestrator.startIndexing("manual")
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    const outcome = await orchestrator.startIndexing("manual")
 
     const error = events.find(
       (event): event is Extract<IndexingTelemetryEvent, { type: "error" }> =>
         event.type === "error" && event.location === "orchestrator:startWatcher",
     )
-    expect(orchestrator.state).toBe("Indexed")
+    expect(outcome).toEqual({ state: "failed", pipeline: "codeGraph" })
+    expect(scanner.targets).toEqual([])
+    expect(orchestrator.state).toBe("Error")
     expect(error?.source).toBe("watcher")
     expect(error?.error).toContain("watcher unavailable")
   })
@@ -667,6 +671,62 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(events).toContain(`${changed}:change`)
     expect(events).toContain(`${deleted}:delete`)
     expect(events).toContain(`${created}:create`)
+  })
+
+  test("does not mark the vector index complete until watcher reconciliation is stable", async () => {
+    const ctx = await env()
+    const store = new Store(false)
+    const watcher = Object.assign(new Watcher(), {
+      async drainPending() {
+        return false
+      },
+    })
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      store as unknown as IVectorStore,
+      new Scanner(1, 1, 1) as unknown as DirectoryScanner,
+      watcher as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    const outcome = await orchestrator.startIndexing("manual")
+
+    expect(outcome).toEqual({ state: "cancelled", pipeline: "rag" })
+    expect(store.incompleteCount).toBe(1)
+    expect(store.completeCount).toBe(0)
+    expect(orchestrator.state).toBe("Standby")
+  })
+
+  test("treats a watcher drain write failure as fatal before committing the vector index", async () => {
+    const ctx = await env()
+    const store = new Store(false)
+    const watcher = Object.assign(new Watcher(), {
+      async drainPending() {
+        throw new Error("graph commit failed")
+      },
+    })
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      store as unknown as IVectorStore,
+      new Scanner(1, 1, 1) as unknown as DirectoryScanner,
+      watcher as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    const outcome = await orchestrator.startIndexing("manual")
+
+    expect(outcome).toEqual({ state: "failed", pipeline: "rag" })
+    expect(store.incompleteCount).toBe(1)
+    expect(store.completeCount).toBe(0)
+    expect(orchestrator.state).toBe("Error")
   })
 
   test("does not start RAG when Code Graph scan fails", async () => {

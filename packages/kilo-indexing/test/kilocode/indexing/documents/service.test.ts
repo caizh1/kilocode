@@ -59,6 +59,41 @@ describe("DocumentIndexService", () => {
     }
   })
 
+  test("treats an explicit empty path list as a completed empty collection", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    let embeddings = 0
+    try {
+      await writeFile(path.join(root, "notes.md"), "must not be discovered")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true, paths: [] },
+      })
+      const unused = {
+        ...embedder,
+        createEmbeddings: async (texts: string[]) => {
+          embeddings += 1
+          return { embeddings: texts.map(() => [0.1]) }
+        },
+      } satisfies IEmbedder
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, unused, store, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus()).toMatchObject({
+        state: "Complete",
+        processedFiles: 0,
+        totalFiles: 0,
+        percent: 100,
+        validFileCount: 0,
+      })
+      expect(embeddings).toBe(0)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("discovers documents across the workspace without configured paths", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
     try {
@@ -131,6 +166,33 @@ describe("DocumentIndexService", () => {
 
       expect(batches.length).toBeGreaterThan(1)
       expect(Math.max(...batches)).toBeLessThanOrEqual(5)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("reports embedding failures as a document pipeline error", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    try {
+      await writeFile(path.join(root, "notes.md"), "document embedding failure")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const failed = {
+        ...embedder,
+        createEmbeddings: async () => {
+          throw new Error("embedding service unavailable")
+        },
+      } satisfies IEmbedder
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, failed, store, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus().state).toBe("Error")
+      expect(service.getStatus().message).toContain("embedding service unavailable")
     } finally {
       await rm(root, { recursive: true, force: true })
     }

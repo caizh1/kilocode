@@ -58,6 +58,7 @@ export class CodeIndexOrchestrator {
   private _watcherToken = 0
   private _followUpScanRequested = false
   private _followUpScanScheduled = false
+  private _gapOverflows = 0
   private _active?: Promise<IndexingRunOutcome>
 
   constructor(
@@ -170,7 +171,7 @@ export class CodeIndexOrchestrator {
     if (this._watcherStart || this._watcherReady || this._watcherFailed) return
 
     const token = ++this._watcherToken
-    log.info("file watcher starting after scan", {
+    log.info("file watcher starting", {
       visible: true,
       workspacePath: this.workspacePath,
       reason,
@@ -178,6 +179,20 @@ export class CodeIndexOrchestrator {
       pendingWatcherEvents: this.fileWatcher.getPendingEventCount?.() ?? 0,
     })
     this._watcherStart = this.startWatcher(token, reason, trigger)
+  }
+
+  private async prepareWatcher(reason: string, trigger: IndexingTelemetryTrigger): Promise<void> {
+    if (!this._watcherStart && !this._watcherReady && !this._watcherFailed) {
+      this.startWatcherInBackground(reason, trigger)
+    }
+    await this._watcherStart
+    if (this._watcherReady) return
+    throw new Error("File watcher did not become ready before indexing started.")
+  }
+
+  private setWatcherTarget(target: ScanTarget): void {
+    const watcher = this.fileWatcher as IFileWatcher & { setTarget?: (target: ScanTarget) => void }
+    watcher.setTarget?.(target)
   }
 
   private async startWatcher(token: number, reason: string, trigger: IndexingTelemetryTrigger): Promise<void> {
@@ -350,6 +365,7 @@ export class CodeIndexOrchestrator {
     let source: IndexingTelemetrySource = "watcher"
     let mode: IndexingTelemetryMode | undefined
     let pipeline: IndexingRunOutcome["pipeline"] | undefined
+    let graph: ScanSummary | undefined
 
     try {
       if (!(await this.acquireLock())) {
@@ -361,6 +377,8 @@ export class CodeIndexOrchestrator {
       this.fileWatcher.setRunContext?.(lock.runId, this.ragMeta)
       await this.ensureCompatible("startup")
       this.overlay?.prepare()
+      this.setWatcherTarget(this.vectorStore ? "all" : "codeGraph")
+      await this.prepareWatcher("scan-start", trigger)
 
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
@@ -381,8 +399,8 @@ export class CodeIndexOrchestrator {
         const summary = await this._runScan(mode, trigger, "codeGraph")
         if (!summary) return { state: "cancelled", pipeline: "codeGraph" }
         await this.cleanupArtifacts("after-codegraph", { local: true })
-        await this.finishScan(summary, mode, trigger)
-        return { state: "completed", pipeline: "codeGraph" }
+        const complete = await this.finishScan(summary, mode, trigger)
+        return { state: complete ? "completed" : "cancelled", pipeline: "codeGraph" }
       }
 
       mode = "full"
@@ -391,7 +409,7 @@ export class CodeIndexOrchestrator {
       log.info("starting graph-only scan before RAG indexing", { workspacePath: this.workspacePath })
       this.stateManager.setActivePipeline("codeGraph")
       this.stateManager.setSystemState("Indexing", "Starting Code Graph indexing before RAG...")
-      const graph = await this._runScan(mode, trigger, "codeGraph")
+      graph = await this._runScan(mode, trigger, "codeGraph")
       if (!graph) return { state: "cancelled", pipeline: "codeGraph" }
       await this.cleanupArtifacts("after-codegraph", { local: true })
 
@@ -471,8 +489,8 @@ export class CodeIndexOrchestrator {
       }
       const rag = await this._runScan(mode, trigger, "rag")
       if (!rag) return { state: "cancelled", pipeline: "rag" }
-      await this.finishScan(rag, mode, trigger)
-      return { state: "completed", pipeline: "rag" }
+      const complete = await this.finishScan(rag, mode, trigger)
+      return { state: complete ? "completed" : "cancelled", pipeline: "rag" }
     } catch (err) {
       log.error("error during indexing", { err })
       this.emitError("orchestrator:startIndexing", err, source, trigger, mode, pipeline)
@@ -486,11 +504,18 @@ export class CodeIndexOrchestrator {
       const msg = err instanceof Error ? err.message : "Unknown error"
       this.stateManager.setSystemState("Error", `Failed during initial scan: ${msg}`)
       this.stateManager.setActivePipeline(pipeline ?? "codeGraph")
-      this.stopWatcher()
+      if (pipeline === "rag" && graph) {
+        this.setWatcherTarget("codeGraph")
+        await this.sweepGap(graph)
+        this.enableWatcherCollection(trigger)
+      } else {
+        this.stopWatcher()
+      }
       await this.releaseLock()
       return { state: "failed", pipeline: pipeline ?? "codeGraph" }
     } finally {
       this._isProcessing = false
+      await this.releaseLock()
       log.info("indexing start flow finished", {
         workspacePath: this.workspacePath,
         state: this.stateManager.state,
@@ -545,6 +570,8 @@ export class CodeIndexOrchestrator {
       if (!lock) throw new Error("Indexing lock acquisition did not return a lock.")
       this.scanner.setRunContext(lock.runId, this.ragMeta)
       this.fileWatcher.setRunContext?.(lock.runId, this.ragMeta)
+      this.setWatcherTarget("all")
+      await this.prepareWatcher("rag-only-scan-start", trigger)
       this.deferWatcherCollection("rag-only-scan-start")
 
       if (this.beforeRag) {
@@ -594,8 +621,8 @@ export class CodeIndexOrchestrator {
 
       const summary = await this._runScan(mode, trigger, "rag")
       if (!summary) return { state: "cancelled", pipeline: "rag" }
-      await this.finishScan(summary, mode, trigger)
-      return { state: "completed", pipeline: "rag" }
+      const complete = await this.finishScan(summary, mode, trigger)
+      return { state: complete ? "completed" : "cancelled", pipeline: "rag" }
     } catch (err) {
       log.error("error during rag-only indexing", { err })
       this.emitError("orchestrator:startRagIndexing", err, "scan", trigger, mode, "rag")
@@ -607,6 +634,7 @@ export class CodeIndexOrchestrator {
       return { state: "failed", pipeline: "rag" }
     } finally {
       this._isProcessing = false
+      await this.releaseLock()
       log.info("rag-only indexing flow finished", {
         workspacePath: this.workspacePath,
         state: this.stateManager.state,
@@ -853,13 +881,13 @@ export class CodeIndexOrchestrator {
     return false
   }
 
-  private async sweepGap(summary: ScanSummary): Promise<void> {
+  private async sweepGap(summary: ScanSummary): Promise<boolean> {
     if (typeof this.fileWatcher.enqueueSyntheticEvents !== "function") {
       log.info("gap sweep skipped: watcher does not support synthetic events", {
         workspacePath: this.workspacePath,
         target: summary.target,
       })
-      return
+      return true
     }
 
     const started = Date.now()
@@ -913,6 +941,7 @@ export class CodeIndexOrchestrator {
 
     if (events.length > SYNTHETIC_EVENT_LIMIT) {
       this._followUpScanRequested = true
+      this._gapOverflows += 1
       log.warn("gap sweep exceeded synthetic event limit; scheduling follow-up indexing scan", {
         visible: true,
         workspacePath: this.workspacePath,
@@ -926,10 +955,16 @@ export class CodeIndexOrchestrator {
         discoveryEngine: engine,
         elapsedMs: Date.now() - started,
       })
-      return
+      return false
     }
 
     this.fileWatcher.enqueueSyntheticEvents(events)
+    if (this.fileWatcher.takeReconciliationRequest?.()) {
+      this._followUpScanRequested = true
+      this._gapOverflows += 1
+      return false
+    }
+    this._gapOverflows = 0
     log.info("gap sweep complete", {
       visible: true,
       workspacePath: this.workspacePath,
@@ -942,6 +977,7 @@ export class CodeIndexOrchestrator {
       discoveryEngine: engine,
       elapsedMs: Date.now() - started,
     })
+    return true
   }
 
   private scheduleFollowUpScan(trigger: IndexingTelemetryTrigger): void {
@@ -953,6 +989,7 @@ export class CodeIndexOrchestrator {
       visible: true,
       workspacePath: this.workspacePath,
     })
+    const wait = Math.min(30_000, 1_000 * 2 ** Math.max(0, this._gapOverflows - 1))
     setTimeout(() => {
       this._followUpScanScheduled = false
       void this.startIndexing(trigger).catch((err) => {
@@ -962,18 +999,33 @@ export class CodeIndexOrchestrator {
           error: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
         })
       })
-    }, 0)
+    }, wait)
   }
 
   private async finishScan(
     summary: ScanSummary,
     mode: IndexingTelemetryMode,
     trigger: IndexingTelemetryTrigger,
-  ): Promise<void> {
-    await this.vectorStore?.markIndexingComplete()
-    await this.sweepGap(summary)
-    await this.releaseLock()
+  ): Promise<boolean> {
+    let stable = await this.sweepGap(summary)
     this.enableWatcherCollection(trigger)
+    if (stable) {
+      const watcher = this.fileWatcher as IFileWatcher & {
+        drainPending?: (limit?: number, timeout?: number, ownsLock?: boolean) => Promise<boolean>
+      }
+      stable = (await watcher.drainPending?.(SYNTHETIC_EVENT_LIMIT, 30_000, true)) ?? true
+      if (!stable) {
+        this._followUpScanRequested = true
+        this._gapOverflows += 1
+      }
+    }
+    if (stable) await this.vectorStore?.markIndexingComplete()
+    await this.releaseLock()
+    if (!stable) {
+      this.stateManager.setSystemState("Standby", "Workspace changed too quickly; reconciling again shortly.")
+      this.scheduleFollowUpScan(trigger)
+      return false
+    }
     this.stateManager.setSystemState(
       "Indexed",
       this._watcherReady ? this.watcherReadyMessage() : this.watcherPendingMessage(),
@@ -997,6 +1049,7 @@ export class CodeIndexOrchestrator {
       totalBlocks: summary.totalBlocks,
       batchErrors: summary.batchErrors,
     })
+    return true
   }
 
   public async shutdown(): Promise<void> {
@@ -1028,7 +1081,6 @@ export class CodeIndexOrchestrator {
       this.stateManager.setSystemState("Standby", "File watcher stopped.")
     }
     this._isProcessing = false
-    void this.releaseLock()
     log.info("file watcher stopped", { workspacePath: this.workspacePath, state: this.stateManager.state })
   }
 
@@ -1038,8 +1090,6 @@ export class CodeIndexOrchestrator {
     this.scanner.cancel()
     this.stopWatcher()
     this.stateManager.setSystemState("Standby", "Indexing cancelled.")
-    this._isProcessing = false
-    void this.releaseLock()
     log.info("indexing cancelled", { workspacePath: this.workspacePath })
   }
 

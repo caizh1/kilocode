@@ -71,6 +71,17 @@ describe("applyInternalIndexingDefaults", () => {
     })
   })
 
+  it("preserves an explicit empty document path list", () => {
+    expect(applyInternalIndexingDefaults({ documents: { paths: [] } }, true)).toEqual({
+      enabled: true,
+      documents: { enabled: true, paths: [] },
+      provider: "openai-compatible",
+      model: "qwen3-embedding-8b",
+      dimension: 2048,
+      vectorStore: "lancedb",
+    })
+  })
+
   it("injects only the internal openai-compatible baseUrl when provided by runtime env", () => {
     process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL = "https://example.test/v1/embeddings"
 

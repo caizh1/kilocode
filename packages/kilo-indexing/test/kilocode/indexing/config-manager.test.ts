@@ -33,7 +33,7 @@ describe("CodeIndexConfigManager", () => {
 
     expect(input.enabled).toBe(false)
     expect(cfg.currentDocuments.enabled).toBe(false)
-    expect(cfg.currentDocuments.paths).toEqual(["."])
+    expect(cfg.currentDocuments.paths).toEqual([])
   })
 
   test("uses default ollama base URL when omitted", () => {

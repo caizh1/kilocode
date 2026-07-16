@@ -54,6 +54,7 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   private scan?: ScanState
   private checkpointFiles = 0
   private checkpointAt = 0
+  private queue: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly opts: {
@@ -67,6 +68,10 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   public async upsertFileGraph(filePath: string, fileHash: string, graph: CodeGraphFileGraph): Promise<void> {
+    await this.enqueue(() => this.upsert(filePath, fileHash, graph))
+  }
+
+  private async upsert(filePath: string, fileHash: string, graph: CodeGraphFileGraph): Promise<void> {
     if (!this.canWrite()) return
 
     const rel = this.relative(filePath)
@@ -99,7 +104,7 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   public async removeFileGraph(filePath: string): Promise<void> {
-    await this.markFileGraphStatus(filePath, "stale")
+    await this.enqueue(() => this.mark(filePath, "stale"))
   }
 
   public async getFileGraph(filePath: string): Promise<CodeGraphFileGraph | undefined> {
@@ -125,6 +130,10 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   public async clear(): Promise<void> {
+    await this.enqueue(() => this.reset())
+  }
+
+  private async reset(): Promise<void> {
     this.migrated = true
     await rm(this.root, { recursive: true, force: true })
     this.manifest = this.empty()
@@ -141,18 +150,20 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   public async ensureCompatible(): Promise<IndexingCompatibilityDecision> {
-    await this.migrateLegacy()
-    const manifest = this.readManifestFile(this.manifestPath)
-    const decision = this.compatibility(manifest)
-    log.info("Code Graph compatibility check", {
-      visible: true,
-      workspacePath: this.opts.workspacePath,
-      action: decision.action,
-      reason: decision.reason,
+    return this.enqueue(async () => {
+      await this.migrateLegacy()
+      const manifest = this.readManifestFile(this.manifestPath)
+      const decision = this.compatibility(manifest)
+      log.info("Code Graph compatibility check", {
+        visible: true,
+        workspacePath: this.opts.workspacePath,
+        action: decision.action,
+        reason: decision.reason,
+      })
+      if (decision.action === "reuse") return decision
+      await this.reset()
+      return decision
     })
-    if (decision.action === "reuse") return decision
-    await this.clear()
-    return decision
   }
 
   public status(): CodeGraphStorageStatus {
@@ -206,6 +217,14 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
     status: Exclude<CodeGraphFileRecordStatus, "ok">,
     input: CodeGraphStatusInput = {},
   ): Promise<void> {
+    await this.enqueue(() => this.mark(filePath, status, input))
+  }
+
+  private async mark(
+    filePath: string,
+    status: Exclude<CodeGraphFileRecordStatus, "ok">,
+    input: CodeGraphStatusInput = {},
+  ): Promise<void> {
     if (!this.canWrite()) return
 
     const rel = this.relative(filePath)
@@ -229,69 +248,84 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   }
 
   public async beginFullScan(): Promise<void> {
-    this.scan = undefined
-    await this.migrateLegacy()
-    const current = this.load()
-    this.stage =
-      this.loadStage() ?? (this.needsRebuild() ? this.empty(globalThis.crypto.randomUUID()) : this.scanBase(current))
-    this.seen = new Set()
-    this.checkpointFiles = 0
-    this.checkpointAt = Date.now()
-    this.clearCache()
-    this.schemaMismatch = false
-    this.parserMismatch = false
-    this.invalid = false
-    this.rebuilding = true
-    await this.writeStageManifest()
-    this.scan = "interrupted"
+    await this.enqueue(async () => {
+      this.scan = undefined
+      await this.migrateLegacy()
+      const current = this.load()
+      this.stage =
+        this.loadStage() ?? (this.needsRebuild() ? this.empty(globalThis.crypto.randomUUID()) : this.scanBase(current))
+      this.seen = new Set()
+      this.checkpointFiles = 0
+      this.checkpointAt = Date.now()
+      this.clearCache()
+      this.schemaMismatch = false
+      this.parserMismatch = false
+      this.invalid = false
+      this.rebuilding = true
+      await this.writeStageManifest()
+      this.scan = "interrupted"
+    })
   }
 
   public async markFullScanComplete(): Promise<void> {
-    if (!this.canWrite()) return
-    const manifest = this.active()
-    this.pruneUnseen(manifest)
-    manifest.lastFullScanAt = this.now()
-    await this.commit(manifest, this.stageManifestPath)
-    await rename(this.stageManifestPath, this.manifestPath)
-    this.manifest = manifest
-    this.stage = undefined
-    this.seen = undefined
-    this.clearCache()
-    this.rebuilding = false
-    this.scan = "complete"
-    await this.cleanupOldShardGenerations()
+    await this.enqueue(async () => {
+      if (!this.canWrite()) return
+      const manifest = this.active()
+      this.pruneUnseen(manifest)
+      manifest.lastFullScanAt = this.now()
+      await this.commit(manifest, this.stageManifestPath)
+      await rename(this.stageManifestPath, this.manifestPath)
+      this.manifest = manifest
+      this.stage = undefined
+      this.seen = undefined
+      this.clearCache()
+      this.rebuilding = false
+      this.scan = "complete"
+      await this.cleanupOldShardGenerations()
+    })
   }
 
   public async cleanupAbandonedArtifacts(): Promise<IndexingCleanupStats> {
-    const stats = emptyCleanupStats()
-    const root = await cleanupRoot(this.root, stats, "codegraph")
-    if (!root) return stats
+    return this.enqueue(async () => {
+      const stats = emptyCleanupStats()
+      const root = await cleanupRoot(this.root, stats, "codegraph")
+      if (!root) return stats
 
-    const manifest = this.readManifestFile(this.manifestPath)
-    const stage = this.readManifestFile(this.stageManifestPath)
-    if (manifest?.workspacePath && normalizeWorkspace(manifest.workspacePath) !== this.workspace) {
-      stats.skipped.push("codegraph: active manifest workspace mismatch")
+      const manifest = this.readManifestFile(this.manifestPath)
+      const stage = this.readManifestFile(this.stageManifestPath)
+      if (manifest?.workspacePath && normalizeWorkspace(manifest.workspacePath) !== this.workspace) {
+        stats.skipped.push("codegraph: active manifest workspace mismatch")
+        return stats
+      }
+      if (stage?.workspacePath && normalizeWorkspace(stage.workspacePath) !== this.workspace) {
+        stats.skipped.push("codegraph: rebuild manifest workspace mismatch")
+        return stats
+      }
+
+      if (!manifest && !stage) return stats
+
+      const keep = new Set(
+        [manifest, stage]
+          .filter((item): item is CodeGraphManifest => item !== undefined)
+          .flatMap((item) => (item.shards ?? []).flatMap((shard) => shard.parts.map((part) => normalize(part.path)))),
+      )
+      for (const item of [manifest, stage]) {
+        if (!item) continue
+        for (const part of this.derivedParts(item)) keep.add(normalize(part.path))
+      }
+      await this.cleanupShards(root, keep, stats)
+      await this.cleanupDerived(root, keep, stats)
       return stats
-    }
-    if (stage?.workspacePath && normalizeWorkspace(stage.workspacePath) !== this.workspace) {
-      stats.skipped.push("codegraph: rebuild manifest workspace mismatch")
-      return stats
-    }
+    })
+  }
 
-    if (!manifest && !stage) return stats
-
-    const keep = new Set(
-      [manifest, stage]
-        .filter((item): item is CodeGraphManifest => item !== undefined)
-        .flatMap((item) => (item.shards ?? []).flatMap((shard) => shard.parts.map((part) => normalize(part.path)))),
+  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(fn, fn)
+    this.queue = next.then(
+      () => undefined,
+      () => undefined,
     )
-    for (const item of [manifest, stage]) {
-      if (!item) continue
-      for (const part of this.derivedParts(item)) keep.add(normalize(part.path))
-    }
-    await this.cleanupShards(root, keep, stats)
-    await this.cleanupDerived(root, keep, stats)
-    return stats
+    return next
   }
 
   private get root() {
@@ -391,46 +425,11 @@ export class CodeGraphJsonStorage implements ICodeGraphStorage {
   private async migrateLegacy(): Promise<void> {
     if (this.migrated) return
     this.migrated = true
-    if (existsSync(this.root) || !existsSync(this.legacyRoot)) return
-
-    const manifest = this.readManifestFile(path.join(this.legacyRoot, "manifest.json"))
-    const interrupted = existsSync(path.join(this.legacyRoot, "manifest.rebuild.json"))
-    const decision = this.compatibility(manifest, this.legacyRoot)
-    if (interrupted || decision.action !== "reuse") {
-      log.warn("legacy Code Graph cache retained without migration", {
-        visible: true,
-        workspacePath: this.opts.workspacePath,
-        reason: interrupted ? "interrupted legacy scan" : decision.reason,
-      })
-      return
-    }
-
-    await mkdir(path.dirname(this.root), { recursive: true })
-    try {
-      await rename(this.legacyRoot, this.root)
-    } catch (err) {
-      log.warn("legacy Code Graph cache migration skipped", {
-        visible: true,
-        workspacePath: this.opts.workspacePath,
-        error: err instanceof Error ? err.message : String(err),
-      })
-      return
-    }
-
-    this.manifest = undefined
-    this.stage = undefined
-    this.old = undefined
-    this.seen = undefined
-    this.clearCache()
-    this.schemaMismatch = false
-    this.parserMismatch = false
-    this.invalid = false
-    this.rebuilding = false
-    this.scan = undefined
-    log.info("legacy Code Graph cache migrated", {
+    if (!existsSync(this.legacyRoot)) return
+    log.warn("legacy shared Code Graph cache retained and ignored", {
       visible: true,
       workspacePath: this.opts.workspacePath,
-      graphDirectory: this.root,
+      reason: "workspace-isolated storage requires a fresh scan",
     })
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, writeFile } from "fs/promises"
+import { mkdir, mkdtemp, readFile, writeFile } from "fs/promises"
 import { tmpdir } from "os"
 import { basename, join } from "path"
 import { IndexingRunLock } from "../../../src/indexing/run-lock"
@@ -110,6 +110,61 @@ describe("IndexingRunLock", () => {
     if (lock.status === "held") {
       expect(lock.reason).toBe("workspace mismatch")
     }
+  })
+
+  test("does not steal a live pid lock only because its heartbeat is stale", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lock-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "lock-cache-"))
+    const dir = lockDir(cacheDir, root)
+    await mkdir(dir)
+    await writeFile(
+      join(dir, "lock.json"),
+      JSON.stringify({
+        runId: "live",
+        workspacePath: root,
+        pid: process.pid,
+        startedAt: Date.now() - 300_000,
+        heartbeatAt: Date.now() - 300_000,
+      }),
+    )
+
+    const lock = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+
+    expect(lock.status).toBe("held")
+    if (lock.status === "held") expect(lock.reason).toBe("owner pid alive with stale heartbeat")
+  })
+
+  test("does not remove a replacement lock when an old owner releases", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lock-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "lock-cache-"))
+    const first = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+    expect(first.status).toBe("acquired")
+    if (first.status !== "acquired") return
+    const file = join(lockDir(cacheDir, root), "lock.json")
+    const info = JSON.parse(await readFile(file, "utf-8")) as Record<string, unknown>
+    await writeFile(file, JSON.stringify({ ...info, runId: "replacement" }))
+
+    await first.lock.release()
+    const next = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+
+    expect(next.status).toBe("held")
+    if (next.status === "held") expect(next.owner?.runId).toBe("replacement")
+  })
+
+  test("uses an independent lock namespace for documents", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lock-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "lock-cache-"))
+    const code = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+    const documents = await IndexingRunLock.acquire({
+      cacheDirectory: cacheDir,
+      workspacePath: root,
+      kind: "documents",
+    })
+
+    expect(code.status).toBe("acquired")
+    expect(documents.status).toBe("acquired")
+    if (code.status === "acquired") await code.lock.release()
+    if (documents.status === "acquired") await documents.lock.release()
   })
 })
 

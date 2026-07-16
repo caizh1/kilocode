@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test"
 import { parseServerPort } from "../../src/services/cli-backend/server-utils"
 import {
   buildBundledToolEnv,
+  emptyWorkspaceEnv,
   isIndexingDiagnosticLine,
   resolveServerCwd,
   resolveManagedServerEnv,
@@ -311,6 +312,13 @@ describe("server workspace helpers", () => {
   it("uses extension storage as server cwd when no workspace folder is open", () => {
     expect(resolveServerCwd(undefined, "/global-storage")).toBe("/global-storage")
     expect(resolveServerCwd([], "/global-storage")).toBe("/global-storage")
+  })
+
+  it("marks only an empty-window cwd as an indexing placeholder", () => {
+    expect(emptyWorkspaceEnv(undefined, "/global-storage/../global-storage")).toEqual({
+      KILO_VSCODE_EMPTY_WORKSPACE_DIR: "/global-storage",
+    })
+    expect(emptyWorkspaceEnv([{ uri: { fsPath: "/repo" } }], "/repo")).toEqual({})
   })
 
   it("uses the shared database for the managed backend while preserving the environment", () => {

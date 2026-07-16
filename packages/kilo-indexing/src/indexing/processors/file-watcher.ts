@@ -105,6 +105,9 @@ export class FileWatcher implements IFileWatcher {
   }
 
   private readonly lockCacheDirectory?: string
+  private target: IndexingScanTarget = "all"
+  private ownsLock = false
+  private batchError?: Error
 
   private emitRetry(attempt: number, batchSize: number, err: unknown): void {
     if (!this.onTelemetry || !this.telemetryMeta) {
@@ -253,6 +256,42 @@ export class FileWatcher implements IFileWatcher {
     this.ragMeta = meta
   }
 
+  setTarget(target: IndexingScanTarget): void {
+    this.target = target
+  }
+
+  async drainPending(limit = 1000, timeout = 30_000, ownsLock = false): Promise<boolean> {
+    this.throwBatchError()
+    if (this.accumulatedEvents.size > limit || this.reconcile) {
+      this.reconcile = true
+      return false
+    }
+    this.ownsLock = ownsLock
+    try {
+      this.setCollecting(true)
+      const started = Date.now()
+      while (this.accumulatedEvents.size > 0 || this.drainTask || this.batchProcessDebounceTimer) {
+        if (this.accumulatedEvents.size > limit || Date.now() - started >= timeout) {
+          this.reconcile = true
+          return false
+        }
+        await this.drainTask
+        this.throwBatchError()
+        await delay(10)
+      }
+      this.throwBatchError()
+      return !this.reconcile
+    } finally {
+      this.ownsLock = false
+    }
+  }
+
+  private throwBatchError(): void {
+    const err = this.batchError
+    this.batchError = undefined
+    if (err) throw err
+  }
+
   /**
    * Disposes the file watcher and cleans up resources.
    */
@@ -339,7 +378,7 @@ export class FileWatcher implements IFileWatcher {
 
         const filePathsInBatch = Array.from(events.keys())
         const lock = await this.acquireBatchLock()
-        if (this.lockCacheDirectory && !lock) {
+        if (this.lockCacheDirectory && !lock && !this.ownsLock) {
           for (const [file, event] of events) {
             if (!this.accumulatedEvents.has(file)) this.accumulatedEvents.set(file, event)
           }
@@ -383,7 +422,7 @@ export class FileWatcher implements IFileWatcher {
   }
 
   private async acquireBatchLock(): Promise<IndexingRunLock | undefined> {
-    if (!this.lockCacheDirectory) return undefined
+    if (!this.lockCacheDirectory || this.ownsLock) return undefined
 
     while (this.collecting) {
       const result = await IndexingRunLock.acquire({
@@ -707,6 +746,10 @@ export class FileWatcher implements IFileWatcher {
   private async processBatch(
     eventsToProcess: Map<string, { path: string; type: "create" | "change" | "delete" }>,
   ): Promise<void> {
+    if (this.target === "codeGraph") {
+      await this.processGraphBatch(eventsToProcess)
+      return
+    }
     const batchResults: FileProcessingResult[] = []
     let processedCountInBatch = 0
     const totalFilesInBatch = eventsToProcess.size
@@ -794,6 +837,10 @@ export class FileWatcher implements IFileWatcher {
 
     const resultError = batchResults.find((item) => item.status === "error" || item.status === "local_error")?.error
     overallBatchError ??= resultError
+    if (overallBatchError) {
+      this.batchError = overallBatchError
+      this.reconcile = true
+    }
     await this.cacheManager.flush()
 
     for (const event of eventsToProcess.values()) {
@@ -833,6 +880,43 @@ export class FileWatcher implements IFileWatcher {
         currentFile: undefined,
       })
     }
+  }
+
+  private async processGraphBatch(
+    events: Map<string, { path: string; type: "create" | "change" | "delete" }>,
+  ): Promise<void> {
+    const results: FileProcessingResult[] = []
+    const paths = [...events.values()]
+    this.onBatchProgressUpdate.fire({ processedInBatch: 0, totalInBatch: paths.length })
+
+    for (const [index, event] of paths.entries()) {
+      try {
+        if (event.type === "delete") {
+          await this.removeFileGraph(event.path)
+          results.push({ path: event.path, status: "success" })
+        } else {
+          results.push(await this.processFile(event.path, "codeGraph"))
+        }
+      } catch (err) {
+        results.push({
+          path: event.path,
+          status: "error",
+          error: err instanceof Error ? err : new Error(String(err)),
+        })
+      }
+      this.onBatchProgressUpdate.fire({
+        processedInBatch: index + 1,
+        totalInBatch: paths.length,
+        currentFile: event.path,
+      })
+    }
+
+    const error = results.find((item) => item.status === "error" || item.status === "local_error")?.error
+    if (error) {
+      this.batchError = error
+      this.reconcile = true
+    }
+    this.onDidFinishBatchProcessing.fire({ processedFiles: results, batchError: error })
   }
 
   /**

@@ -22,7 +22,6 @@ import { Question } from "@/question"
 // kilocode_change start
 import { KiloSessionProcessor, type ReviewTelemetry } from "@/kilocode/session/processor"
 import { KiloSessionOverflow } from "@/kilocode/session/overflow"
-import { KiloSessionThinking } from "@/kilocode/session/thinking"
 import { KiloRoutedModel } from "@/kilocode/session/routed-model"
 import { Suggestion } from "@/kilocode/suggestion"
 // kilocode_change end
@@ -1190,12 +1189,10 @@ export const layer = Layer.effect(
             yield* status.set(ctx.sessionID, { type: "busy" })
             // kilocode_change start
             ctx.step = { reasoning: false, text: false, tool: false }
-            const stream = KiloSessionThinking.stream(
-              llm.stream({
-                ...streamInput,
-                preflight: !ctx.assistantMessage.summary,
-              }),
-            )
+            const stream = llm.stream({
+              ...streamInput,
+              preflight: !ctx.assistantMessage.summary,
+            })
             // kilocode_change end
 
             yield* stream.pipe(

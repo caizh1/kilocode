@@ -305,10 +305,10 @@ export class CodeIndexConfigManager {
   private normalizeDocuments(input?: DocumentIndexConfig): Required<DocumentIndexConfig> {
     const chunkChars = positive(input?.chunkChars, DEFAULT_DOCUMENT_CHUNK_CHARS)
     const overlap = nonnegative(input?.chunkOverlapChars, DEFAULT_DOCUMENT_CHUNK_OVERLAP_CHARS)
-    const paths = cleanList(input?.paths)
+    const paths = input?.paths === undefined ? ["."] : cleanList(input.paths)
     return {
       enabled: input?.enabled === true,
-      paths: paths.length > 0 ? paths : ["."],
+      paths,
       include: cleanList(input?.include),
       exclude: cleanList(input?.exclude),
       maxFiles: positive(input?.maxFiles, DEFAULT_DOCUMENT_MAX_FILES),

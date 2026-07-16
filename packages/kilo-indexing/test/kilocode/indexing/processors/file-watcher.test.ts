@@ -158,6 +158,42 @@ describe("FileWatcher", () => {
     }
   })
 
+  test("drains buffered events under the scan lock without reacquiring it", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "file-watcher-owned-lock-"))
+    const cacheDir = path.join(root, ".cache")
+    const file = path.join(root, "main.ts")
+    await mkdir(cacheDir, { recursive: true })
+    await writeFile(file, "export const value = 1\n")
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const held = await IndexingRunLock.acquire({ cacheDirectory: cacheDir, workspacePath: root })
+    expect(held.status).toBe("acquired")
+    const watcher = new FileWatcher(
+      root,
+      cache,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { lockCacheDirectory: cacheDir },
+    )
+    watcher.setTarget("codeGraph")
+    watcher.setCollecting(false)
+    watcher.enqueueSyntheticEvents([{ path: file, type: "change" }])
+
+    expect(await watcher.drainPending(1000, 2_000, true)).toBe(true)
+    expect(watcher.getPendingEventCount()).toBe(0)
+
+    if (held.status === "acquired") await held.lock.release()
+    watcher.dispose()
+    await rm(root, { recursive: true, force: true })
+  })
+
   test("processFile preserves same-line segments during incremental updates", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "file-watcher-test-"))
     const cacheDir = path.join(root, ".cache")
@@ -220,6 +256,41 @@ describe("FileWatcher", () => {
     expect(cache.getHash(file)).toBeDefined()
   })
 
+  test("does not call embeddings or vector storage in graph-only mode", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "file-watcher-graph-only-"))
+    const cacheDir = path.join(root, ".cache")
+    const file = path.join(root, "main.c")
+    let embeddings = 0
+    let vectors = 0
+    await mkdir(cacheDir, { recursive: true })
+    await writeFile(file, "int main(void) { return 0; }\n")
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const tracked = {
+      ...createEmbedder(),
+      createEmbeddings: async (texts: string[]) => {
+        embeddings += 1
+        return { embeddings: texts.map(() => [0.1]) }
+      },
+    } satisfies IEmbedder
+    const recorded = new RecordStore()
+    recorded.upsertPoints = async () => {
+      vectors += 1
+    }
+    const watcher = new FileWatcher(root, cache, tracked, recorded)
+    const data = watcher as unknown as {
+      processBatch(events: Map<string, { path: string; type: "create" | "change" | "delete" }>): Promise<void>
+    }
+    watcher.setTarget("codeGraph")
+
+    await data.processBatch(new Map([[file, { path: file, type: "create" }]]))
+
+    expect(embeddings).toBe(0)
+    expect(vectors).toBe(0)
+    watcher.dispose()
+    await rm(root, { recursive: true, force: true })
+  })
+
   test("caps pending watcher events and requests reconciliation", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "file-watcher-cap-"))
     const cacheDir = path.join(root, ".cache")
@@ -236,6 +307,7 @@ describe("FileWatcher", () => {
     )
 
     expect(watcher.getPendingEventCount()).toBe(1_000)
+    expect(await watcher.drainPending()).toBe(false)
     expect(watcher.takeReconciliationRequest()).toBe(true)
     expect(watcher.takeReconciliationRequest()).toBe(false)
     watcher.dispose()
@@ -348,6 +420,8 @@ describe("FileWatcher", () => {
     expect(error?.mode).toBe("incremental")
     expect(error?.retryCount).toBe(2)
     expect(error?.error).toContain("[REDACTED_PATH]")
+    await expect(watcher.drainPending()).rejects.toThrow("watcher upsert failure")
+    expect(watcher.takeReconciliationRequest()).toBe(true)
   })
 
   test("updates worktree shadows when a baseline file changes and reverts", async () => {

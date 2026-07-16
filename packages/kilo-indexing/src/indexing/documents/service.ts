@@ -19,6 +19,7 @@ import { generateRelativeIgnorePath } from "../shared/get-relative-path"
 import { checkpointMetaHash, normalizedRoot, workspaceId } from "../rag-checkpoint"
 import { constrained, type IndexingPressure } from "../memory"
 import type { IgnoreMatcher } from "../shared/load-ignore"
+import { IndexingRunLock } from "../run-lock"
 import { DocumentIndexCache } from "./cache"
 import { chunkDocument } from "./chunker"
 import { extractDocument } from "./extractors"
@@ -128,19 +129,49 @@ export class DocumentIndexService {
   private initialStatus(): DocumentIndexStatus {
     const cfg = this.config.currentDocuments
     if (!cfg.enabled) return disabled("Document RAG disabled.")
-    if (cfg.paths.length === 0) return standby("No document folders configured.")
+    if (cfg.paths.length === 0) return completeEmpty()
     if (!this.embedder || !this.store) return error("Document RAG requires configured embeddings.")
     return standby("Document RAG ready.")
   }
 
   private async run(trigger: IndexingTelemetryTrigger, force: boolean): Promise<void> {
     const cfg = this.config.currentDocuments
+    if (!cfg.enabled || cfg.paths.length === 0 || !this.embedder || !this.store) {
+      await this.index(trigger, force)
+      return
+    }
+
+    const lock = await this.acquire()
+    if (!lock) return
+    try {
+      if (!this.disposed) await this.index(trigger, force)
+    } finally {
+      await lock.release()
+    }
+  }
+
+  private async acquire(): Promise<IndexingRunLock | undefined> {
+    while (!this.disposed) {
+      const result = await IndexingRunLock.acquire({
+        cacheDirectory: this.cacheDirectory,
+        workspacePath: this.workspace,
+        kind: "documents",
+      })
+      if (result.status === "acquired") return result.lock
+      this.setStatus(standby("Document RAG waiting for another document indexing run."))
+      await delay(Math.min(result.retryAfterMs, 250))
+    }
+    return undefined
+  }
+
+  private async index(trigger: IndexingTelemetryTrigger, force: boolean): Promise<void> {
+    const cfg = this.config.currentDocuments
     if (!cfg.enabled) {
       this.setStatus(disabled("Document RAG disabled."))
       return
     }
     if (cfg.paths.length === 0) {
-      this.setStatus(standby("No document folders configured."))
+      this.setStatus(completeEmpty())
       return
     }
     if (!this.embedder || !this.store) {
@@ -190,46 +221,50 @@ export class DocumentIndexService {
       for (const [index, file] of files.entries()) {
         if (this.disposed) return
         const rel = path.normalize(path.relative(this.workspace, file))
-        try {
-          const info = await stat(file)
-          if (this.disposed) return
-          if (info.size > cfg.maxFileBytes) {
-            skipped += 1
-            this.cache.delete(rel)
-            await this.store.deletePointsByFilePath(rel)
-            if (this.disposed) return
-            this.report(index + 1, files.length, `Skipped large document: ${path.basename(file)}`, skipped, errors)
-            continue
+        const item = await (async () => {
+          try {
+            const info = await stat(file)
+            if (info.size > cfg.maxFileBytes) return { kind: "large" as const }
+            const hash = await fileHash(file)
+            if (this.cache.get(rel) === hash) return { kind: "unchanged" as const, hash }
+            const sections = await extractDocument(file, cfg.maxExtractedBytesPerFile)
+            const items = sections.flatMap((section) =>
+              chunkDocument(section, this.workspace, cfg.chunkChars, cfg.chunkOverlapChars),
+            )
+            return { kind: "changed" as const, hash, items }
+          } catch (err) {
+            errors += 1
+            this.record("documents:extract", err, rel)
+            this.report(index + 1, files.length, `Document extraction issue: ${path.basename(file)}`, skipped, errors)
+            return undefined
           }
-          const hash = await fileHash(file)
+        })()
+        if (this.disposed) return
+        if (!item) continue
+        if (item.kind === "large") {
+          skipped += 1
+          this.cache.delete(rel)
+          await this.store.deletePointsByFilePath(rel)
           if (this.disposed) return
-          if (this.cache.get(rel) === hash) {
-            indexed += 1
-            this.report(index + 1, files.length, `Document unchanged: ${path.basename(file)}`, skipped, errors)
-            continue
-          }
-          const sections = await extractDocument(file, cfg.maxExtractedBytesPerFile)
-          if (this.disposed) return
-          const items = sections.flatMap((section) =>
-            chunkDocument(section, this.workspace, cfg.chunkChars, cfg.chunkOverlapChars),
-          )
-          await this.upsert(file, hash, items, meta)
-          if (this.disposed) return
-          this.cache.set(rel, hash)
-          if ((index + 1) % 8 === 0 || Date.now() - checkpoint >= 2_000) {
-            await this.cache.flush()
-            if (this.disposed) return
-            checkpoint = Date.now()
-          }
-          indexed += 1
-          chunks += items.length
-          this.report(index + 1, files.length, `Indexed document: ${path.basename(file)}`, skipped, errors)
-        } catch (err) {
-          if (this.disposed) return
-          errors += 1
-          this.record("documents:index", err, rel)
-          this.report(index + 1, files.length, `Document indexing issue: ${path.basename(file)}`, skipped, errors)
+          this.report(index + 1, files.length, `Skipped large document: ${path.basename(file)}`, skipped, errors)
+          continue
         }
+        if (item.kind === "unchanged") {
+          indexed += 1
+          this.report(index + 1, files.length, `Document unchanged: ${path.basename(file)}`, skipped, errors)
+          continue
+        }
+        await this.upsert(file, item.hash, item.items, meta)
+        if (this.disposed) return
+        this.cache.set(rel, item.hash)
+        if ((index + 1) % 8 === 0 || Date.now() - checkpoint >= 2_000) {
+          await this.cache.flush()
+          if (this.disposed) return
+          checkpoint = Date.now()
+        }
+        indexed += 1
+        chunks += item.items.length
+        this.report(index + 1, files.length, `Indexed document: ${path.basename(file)}`, skipped, errors)
       }
 
       for (const file of Object.keys(this.cache.all())) {
@@ -527,6 +562,16 @@ function standby(message: string): DocumentIndexStatus {
   }
 }
 
+function completeEmpty(): DocumentIndexStatus {
+  return {
+    ...disabled("Document RAG complete: 0 files."),
+    state: "Complete",
+    percent: 100,
+    validFileCount: 0,
+    lastFullScanAt: new Date().toISOString(),
+  }
+}
+
 function error(message: string, recentErrors?: DocumentIndexStatus["recentErrors"]): DocumentIndexStatus {
   return {
     ...disabled(message),
@@ -557,6 +602,10 @@ async function fileHash(filePath: string): Promise<string> {
 
 function digest(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex")
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function included(file: string, patterns: string[]): boolean {

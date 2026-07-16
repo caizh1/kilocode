@@ -292,7 +292,7 @@ describe("CodeGraphJsonStorage", () => {
     expect(await right.listFiles()).toEqual(["right.c"])
   })
 
-  test("atomically migrates only an exact, completed legacy graph cache", async () => {
+  test("retains and ignores a completed legacy shared graph cache", async () => {
     const workspacePath = await root()
     const cacheDirectory = path.join(workspacePath, ".cache")
     const filePath = path.join(workspacePath, "main.c")
@@ -307,9 +307,9 @@ describe("CodeGraphJsonStorage", () => {
     await rename(isolated, legacy)
 
     const storage = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
-    expect(await storage.ensureCompatible()).toEqual({ action: "reuse", reason: "compatible" })
-    expect(await storage.listFiles()).toEqual(["main.c"])
-    expect(await exists(legacy)).toBe(false)
+    expect(await storage.ensureCompatible()).toEqual({ action: "rebuild", reason: "missing compatibility metadata" })
+    expect(await storage.listFiles()).toEqual([])
+    expect(await exists(legacy)).toBe(true)
     expect(await exists(path.join(isolated, "manifest.json"))).toBe(true)
   })
 

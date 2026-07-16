@@ -35,7 +35,7 @@ export function applyInternalIndexingDefaults(
   const documents = {
     ...cfg?.documents,
     enabled: cfg?.documents?.enabled ?? true,
-    paths: cfg?.documents?.paths?.length ? cfg.documents.paths : ["."],
+    paths: cfg?.documents?.paths === undefined ? ["."] : cfg.documents.paths,
   }
   const base = {
     ...cfg,

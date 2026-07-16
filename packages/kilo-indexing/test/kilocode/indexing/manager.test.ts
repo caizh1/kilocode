@@ -296,6 +296,64 @@ describe("CodeIndexManager", () => {
     await mgr.dispose()
   })
 
+  test("starts worktree Code Graph before waiting for the primary RAG baseline", async () => {
+    const mgr = new CodeIndexManager("/tmp/worktree", "/tmp/cache", "/tmp/main")
+    const events: string[] = []
+    const scan = Promise.withResolvers<{ state: "completed"; pipeline: "codeGraph" }>()
+    const data = mgr as unknown as {
+      _generation: number
+      _baselineStore?: {}
+      _codeGraph: { start(reason: string): void; dispose(reason: string): void }
+      _orchestrator?: {
+        startIndexing(trigger: IndexingTelemetryTrigger): Promise<{ state: "completed"; pipeline: "codeGraph" }>
+      }
+      _recreateGraphServices(reason: string, generation: number): Promise<void>
+      configureDocuments(
+        trigger: IndexingTelemetryTrigger,
+        opts: { start: boolean; generation: number },
+      ): Promise<void>
+      waiting(): boolean
+      waitWithGraph(generation: number, trigger: IndexingTelemetryTrigger): Promise<void>
+    }
+    data._generation = 1
+    data._recreateGraphServices = async (reason, generation) => {
+      events.push(`services:${reason}:${generation}`)
+      data._orchestrator = {
+        startIndexing(trigger) {
+          events.push(`scan:${trigger}`)
+          return scan.promise
+        },
+      }
+    }
+    data._codeGraph = {
+      start(reason) {
+        events.push(`graph:${reason}`)
+      },
+      dispose() {},
+    }
+    data.configureDocuments = async (trigger, opts) => {
+      events.push(`documents:${trigger}:${opts.start}:${opts.generation}`)
+    }
+    data.waiting = () => {
+      events.push("baseline:waiting")
+      return true
+    }
+
+    await data.waitWithGraph(1, "background")
+
+    expect(events).toEqual([
+      "services:worktree-baseline-wait:1",
+      "graph:worktree-baseline-wait",
+      "scan:background",
+      "documents:background:false:1",
+      "baseline:waiting",
+    ])
+    scan.resolve({ state: "completed", pipeline: "codeGraph" })
+    await Bun.sleep(0)
+    expect(events.at(-1)).toBe("baseline:waiting")
+    await mgr.dispose()
+  })
+
   test("backs off repeated worktree baseline checks", async () => {
     const mgr = new CodeIndexManager("/tmp/worktree", "/tmp/cache", "/tmp/main")
     const data = mgr as unknown as {

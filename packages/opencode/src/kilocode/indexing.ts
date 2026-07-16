@@ -62,12 +62,42 @@ function disableReason(): string | undefined {
   return value
 }
 
+function emptyWorkspace(dir: string): boolean {
+  const value = process.env["KILO_VSCODE_EMPTY_WORKSPACE_DIR"]?.trim()
+  if (!value) return false
+  return path.resolve(value) === path.resolve(dir)
+}
+
 function resolveConfig(config?: IndexingConfig, global?: IndexingConfig) {
-  return applyInternalIndexingDefaults({
+  if (!config && !global) return applyInternalIndexingDefaults(undefined)
+
+  const merged: IndexingConfig = {
     ...global,
     ...config,
     enabled: config?.enabled ?? global?.enabled,
-  })
+  }
+  const keys = [
+    "documents",
+    "kilo",
+    "openai",
+    "ollama",
+    "openai-compatible",
+    "gemini",
+    "mistral",
+    "vercel-ai-gateway",
+    "bedrock",
+    "openrouter",
+    "voyage",
+    "qdrant",
+    "lancedb",
+  ] as const
+  for (const key of keys) {
+    const parent = global?.[key]
+    const child = config?.[key]
+    if (!parent && !child) continue
+    Object.assign(merged, { [key]: { ...parent, ...child } })
+  }
+  return applyInternalIndexingDefaults(merged)
 }
 
 export const IndexingModelError = NamedError.create("IndexingModelError", {
@@ -263,10 +293,6 @@ function extractDiagnosticFile(message: string): string | undefined {
   return match?.[1]?.trim()
 }
 
-function isWorktreePath(dir: string): boolean {
-  return /(?:\/|\\)\.kilo(?:code)?(?:\/|\\)worktrees(?:\/|\\)/.test(dir)
-}
-
 async function kiloAuth(cfg: Config.Info): Promise<KiloIndexingAuth> {
   const info = await auth.runPromise((svc) => svc.get("kilo"))
   return resolveKiloIndexingAuth({ config: cfg, auth: info })
@@ -435,20 +461,6 @@ export namespace KiloIndexing {
 
   const cache = new Map<string, Cache>()
 
-  const inert = async (current: () => Status): Promise<Entry> => {
-    const publish = async () => {
-      await Bus.publish(Instance.current, Event, { status: current() })
-    }
-
-    return {
-      current,
-      warnings: () => [],
-      scope() {},
-      publish,
-      async dispose() {},
-    }
-  }
-
   function track(hit: Cache, entry: Entry) {
     if (!hit.entry) hit.resolve(entry)
     hit.entry = entry
@@ -457,32 +469,15 @@ export namespace KiloIndexing {
   }
 
   const boot = async (hit: Cache): Promise<Entry> => {
+    const ctx = Instance.current
+    const bind = <Args extends unknown[], Result>(fn: (...args: Args) => Result) =>
+      (...args: Args): Result => Instance.restore(ctx, () => fn(...args))
     const dir = Instance.directory
     void MemoryDebug.event({ name: "indexing.boot.begin", data: { workspace: MemoryDebug.hash(dir) } })
-    const startup = await AppRuntime.runPromise(
-      Effect.gen(function* () {
-        const baseline = yield* baselineDirectory(dir)
-        const cfg = yield* Config.Service.use((svc) => svc.get())
-        return { baseline, cfg }
-      }),
-    )
-    const baseline = startup.baseline
-    const cfg = startup.cfg
-    const reason = disableReason()
-    if (reason) return track(hit, await inert(() => disabledByEnvironment(reason)))
-    if (!hasIndexingPlugin(cfg.plugin)) {
-      return track(hit, await inert(() => missing()))
-    }
+    const baseline = emptyWorkspace(dir) ? undefined : await AppRuntime.runPromise(baselineDirectory(dir))
 
     log.info("initializing project indexing", { workspacePath: dir, baselineDirectory: baseline })
     const root = path.join(Global.Path.state, "indexing")
-    let cfgInput: Awaited<ReturnType<typeof inputFromConfig>>
-    try {
-      cfgInput = await inputFromConfig(cfg)
-    } catch (err) {
-      log.warn("indexing model resolution failed", { err })
-      return track(hit, await inert(() => failed(err)))
-    }
     const workspaces = new Set<WorkspaceV2.ID | undefined>([WorkspaceContext.workspaceID])
     const box = { status: pending() }
     const warnings = new Map<string, IndexingWarning>()
@@ -495,6 +490,8 @@ export namespace KiloIndexing {
     const current = () => box.status
     let disposed = false
     let refreshTask: Promise<void> | undefined
+    let revision = 0
+    let applied = 0
     let recoveryTimer: ReturnType<typeof setTimeout> | undefined
     let recoveryAttempt = 0
     let forcedLow = false
@@ -502,7 +499,7 @@ export namespace KiloIndexing {
 
     const same = (left: Status | undefined, right: Status) =>
       left !== undefined && JSON.stringify(left) === JSON.stringify(right)
-    const report = Instance.bind((next = current()) => {
+    const report = bind((next: Status = current()) => {
       delivery.task = delivery.task
         .then(async () => {
           if (disposed || same(delivery.last, next)) return
@@ -519,7 +516,7 @@ export namespace KiloIndexing {
       clearTimeout(delivery.timer)
       delivery.timer = undefined
     }
-    const status = Instance.bind((next: Status) => {
+    const status = bind((next: Status) => {
       if (disposed) return
       const previous = current()
       box.status = next
@@ -540,7 +537,7 @@ export namespace KiloIndexing {
         return
       }
       delivery.timer = setTimeout(
-        Instance.bind(() => {
+        bind(() => {
           delivery.timer = undefined
           delivery.time = Date.now()
           void report()
@@ -548,11 +545,11 @@ export namespace KiloIndexing {
         delay,
       )
     })
-    const telemetry = Instance.bind((event: IndexingTelemetryEvent) => {
+    const telemetry = bind((event: IndexingTelemetryEvent) => {
       if (disposed) return
       trackTelemetry(event)
     })
-    const scheduleRecovery = Instance.bind(() => {
+    const scheduleRecovery = bind(() => {
       if (disposed || recoveryTimer) return
       const delays = [1_000, 2_000, 5_000, 10_000, 30_000]
       const delay = delays[Math.min(recoveryAttempt, delays.length - 1)]!
@@ -562,7 +559,7 @@ export namespace KiloIndexing {
         void refresh()
       }, delay)
     })
-    const failure = Instance.bind((err: unknown) => {
+    const failure = bind((err: unknown) => {
       if (disposed) return
       base.initialized = false
       const msg = err instanceof Error ? err.message : String(err)
@@ -583,40 +580,84 @@ export namespace KiloIndexing {
       log.error("project indexing worker failed", { err, workspacePath: dir })
       void report()
     })
-    const refresh = Instance.bind(async () => {
-      if (disposed) return
-      if (refreshTask) {
-        await refreshTask
-        return
-      }
-      refreshTask = (async () => {
-        try {
-          const nextConfig = await AppRuntime.runPromise(Config.Service.use((svc) => svc.get()))
-          if (!hasIndexingPlugin(nextConfig.plugin)) return
-          const nextInput = await inputFromConfig(nextConfig)
-          const nextRag = new CodeIndexConfigManager(nextInput)
-          if (needsVectorRuntime(nextRag)) await LanceDBRuntime.ensure(nextRag.getConfig().vectorStoreProvider)
-          if (!base.engine) {
-            const engine = IndexingWorker.create(
-              dir,
-              root,
-              { status, telemetry, warning, log: output, failure },
-              { forcedLow },
-            )
-            base.engine = engine
-            box.status = await engine.init(nextInput, baseline)
-          } else {
-            box.status = await base.engine.updateConfig(nextInput)
-          }
-          base.initialized = true
-          await report()
-        } catch (err) {
-          failure(err)
-        } finally {
-          refreshTask = undefined
+    const suspend = bind(async (next: Status) => {
+      const engine = base.engine
+      base.engine = undefined
+      base.initialized = false
+      await engine?.dispose().catch((err) => {
+        log.warn("failed to dispose inactive project indexing worker", { err, workspacePath: dir })
+      })
+      box.status = next
+      await report()
+    })
+    const apply = bind(async () => {
+      try {
+        const nextConfig = await AppRuntime.runPromise(Config.Service.use((svc) => svc.get()))
+        const reason = disableReason()
+        if (reason) {
+          await suspend(disabledByEnvironment(reason))
+          return
         }
-      })()
-      await refreshTask
+        if (emptyWorkspace(dir)) {
+          await suspend(disabledIndexingStatus("Indexing is waiting for a workspace folder."))
+          return
+        }
+        if (!hasIndexingPlugin(nextConfig.plugin)) {
+          await suspend(missing())
+          return
+        }
+
+        const nextInput = await inputFromConfig(nextConfig)
+        const nextRag = new CodeIndexConfigManager(nextInput)
+        if (needsVectorRuntime(nextRag)) await LanceDBRuntime.ensure(nextRag.getConfig().vectorStoreProvider)
+        if (!base.engine) {
+          const engine = IndexingWorker.create(
+            dir,
+            root,
+            { status, telemetry, warning, log: output, failure },
+            { forcedLow },
+          )
+          base.engine = engine
+          box.status = await engine.init(nextInput, baseline)
+        } else {
+          box.status = await base.engine.updateConfig(nextInput)
+        }
+        base.initialized = true
+        await report()
+      } catch (err) {
+        if (IndexingModelError.isInstance(err)) log.warn("indexing model resolution failed", { err })
+        const engine = base.engine
+        base.engine = undefined
+        base.initialized = false
+        await engine?.dispose().catch((disposeErr) => {
+          log.warn("failed to dispose failed project indexing worker", { err: disposeErr, workspacePath: dir })
+        })
+        failure(err)
+      }
+    })
+    const drain = bind(async () => {
+      while (!disposed && applied < revision) {
+        const target = revision
+        await apply()
+        applied = target
+      }
+    })
+    const refresh = bind(async () => {
+      if (disposed) return
+      revision += 1
+      while (!disposed && applied < revision) {
+        if (!refreshTask) {
+          const task = drain()
+          refreshTask = task
+          try {
+            await task
+          } finally {
+            if (refreshTask === task) refreshTask = undefined
+          }
+          continue
+        }
+        await refreshTask
+      }
     })
     const onConfig = (event: GlobalEvent) => {
       if (disposed) return
@@ -624,7 +665,7 @@ export namespace KiloIndexing {
       if (event.directory && event.directory !== "global" && event.directory !== dir) return
       void refresh()
     }
-    const warning = Instance.bind((item: IndexingWarning) => {
+    const warning = bind((item: IndexingWarning) => {
       if (disposed) return
       const key = indexingWarningKey(item)
       if (warnings.has(key)) return
@@ -640,7 +681,7 @@ export namespace KiloIndexing {
         log.error("failed to publish indexing warning", { err, workspacePath: dir })
       })
     })
-    const output = Instance.bind((event: Parameters<IndexingWorker.Hooks["log"]>[0]) => {
+    const output = bind((event: Parameters<IndexingWorker.Hooks["log"]>[0]) => {
       if (disposed) return
       log[event.level](event.message, { source: "worker", workspacePath: dir })
     })
@@ -671,32 +712,8 @@ export namespace KiloIndexing {
 
     if (hit.disposed) return base
 
-    const rag = new CodeIndexConfigManager(cfgInput)
-    const err = await (
-      needsVectorRuntime(rag) ? LanceDBRuntime.ensure(rag.getConfig().vectorStoreProvider) : Promise.resolve()
-    )
-      .then(async () => {
-        if (hit.disposed) return
-        const engine = IndexingWorker.create(dir, root, { status, telemetry, warning, log: output, failure })
-        base.engine = engine
-        box.status = await engine.init(cfgInput, baseline)
-        base.initialized = true
-      })
-      .then(
-        () => undefined,
-        (err) => err,
-      )
+    await refresh()
     if (hit.disposed) return base
-
-    if (err) {
-      await base.engine?.dispose().catch((disposeErr) => {
-        log.warn("failed to dispose failed project indexing worker", { err: disposeErr, workspacePath: dir })
-      })
-      base.engine = undefined
-      failure(err)
-      await report()
-      return base
-    }
 
     log.info("project indexing initialized", {
       workspacePath: dir,

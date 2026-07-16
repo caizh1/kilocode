@@ -64,6 +64,17 @@ describe("applyInternalIndexingDefaults", () => {
     })
   })
 
+  it("preserves an explicit empty document path list", () => {
+    expect(applyInternalIndexingDefaults({ documents: { paths: [] } }, true)).toEqual({
+      enabled: true,
+      documents: { enabled: true, paths: [] },
+      provider: "openai-compatible",
+      model: "qwen3-embedding-8b",
+      dimension: 2048,
+      vectorStore: "lancedb",
+    })
+  })
+
   it("preserves explicit openai-compatible provider options while applying internal defaults", () => {
     expect(
       applyInternalIndexingDefaults(

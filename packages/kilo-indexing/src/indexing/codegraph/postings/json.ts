@@ -621,48 +621,11 @@ export class CodePostingsJsonStorage implements ICodePostingsStorage {
   private async migrateLegacy(): Promise<void> {
     if (this.migrated) return
     this.migrated = true
-    if (existsSync(this.root) || !existsSync(this.legacyRoot)) return
-
-    const manifest = this.readManifestFile(path.join(this.legacyRoot, "manifest.json"))
-    const interrupted = existsSync(path.join(this.legacyRoot, "manifest.rebuild.json"))
-    const decision = this.compatibility(manifest, this.legacyRoot)
-    if (interrupted || decision.action !== "reuse") {
-      log.warn("legacy Code Postings cache retained without migration", {
-        visible: true,
-        workspacePath: this.opts.workspacePath,
-        reason: interrupted ? "interrupted legacy scan" : decision.reason,
-      })
-      return
-    }
-
-    await mkdir(path.dirname(this.root), { recursive: true })
-    try {
-      await rename(this.legacyRoot, this.root)
-    } catch (err) {
-      log.warn("legacy Code Postings cache migration skipped", {
-        visible: true,
-        workspacePath: this.opts.workspacePath,
-        error: err instanceof Error ? err.message : String(err),
-      })
-      return
-    }
-
-    this.manifest = undefined
-    this.stage = undefined
-    this.old = undefined
-    this.seen = undefined
-    this.clearCache()
-    this.schemaMismatch = false
-    this.tokenizerMismatch = false
-    this.graphSchemaMismatch = false
-    this.parserMismatch = false
-    this.invalid = false
-    this.rebuilding = false
-    this.scan = undefined
-    log.info("legacy Code Postings cache migrated", {
+    if (!existsSync(this.legacyRoot)) return
+    log.warn("legacy shared Code Postings cache retained and ignored", {
       visible: true,
       workspacePath: this.opts.workspacePath,
-      postingsDirectory: this.root,
+      reason: "workspace-isolated storage requires a fresh scan",
     })
   }
 
