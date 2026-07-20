@@ -3,7 +3,7 @@ import { QWEN_FIM_MODEL_ID, isQwenFimTarget } from "../../shared/qwen-autocomple
 import { QWEN_AUTOCOMPLETE_CACHE_DEFAULT_MAX_ENTRIES, clampMaxEntries } from "./autocompleteLruCache"
 import type { QwenAutocompleteConfig, QwenAutocompleteLogLevel } from "./types"
 
-export const QWEN_CONFIG_SECTION = "kilo.autocomplete"
+export const QWEN_CONFIG_SECTION = "chipmate.v2.autocomplete"
 
 function str(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback
@@ -25,12 +25,11 @@ function logLevel(value: unknown): QwenAutocompleteLogLevel {
 
 export function readQwenAutocompleteConfig(resource?: vscode.Uri): QwenAutocompleteConfig {
   const cfg = vscode.workspace.getConfiguration(QWEN_CONFIG_SECTION, resource)
-  const autocomplete = vscode.workspace.getConfiguration("kilo-code.new.autocomplete", resource)
-  const providerID = str(autocomplete.get("provider"), "")
-  const selected = isQwenFimTarget(providerID, autocomplete.get<string>("model"))
+  const providerID = str(cfg.get("provider"), "")
+  const selected = isQwenFimTarget(providerID, cfg.get<string>("model"))
   return {
     enabled: selected,
-    autoTrigger: bool(autocomplete.get("enableAutoTrigger"), true),
+    autoTrigger: bool(cfg.get("enableAutoTrigger"), true),
     provider: selected ? "qwen-direct" : "none",
     providerID,
     model: QWEN_FIM_MODEL_ID,

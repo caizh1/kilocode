@@ -125,7 +125,7 @@ Extension (Node.js)                          CLI Backend (child process)
 Two separate esbuild builds in [`esbuild.js`](esbuild.js):
 
 - **Extension** (Node/CJS): `src/extension.ts` → `dist/extension.js`
-- **Webview** (browser/IIFE): `webview-ui/src/index.tsx` → `dist/webview.js` AND `webview-ui/agent-manager/index.tsx` → `dist/agent-manager.js`
+- **Webview** (browser/IIFE): sidebar → `dist/webview.js`, Agent Manager → `dist/agent-manager.js`, and Agent Console → `dist/agent-console.js`
 
 ### Non-Obvious Details
 
@@ -213,8 +213,8 @@ Generated screenshot baselines live under `packages/kilo-docs/public/img/screens
 
 ## Naming Conventions
 
-- All VSCode commands must use `kilo-code.new.` prefix (not `kilo-code.`)
-- All view IDs must use `kilo-code.new.` prefix, **except** the sidebar view which uses `kilo-code.SidebarProvider` to preserve user sidebar position when upgrading from the legacy extension
+- All VSCode commands must use `chipmate.v2.` prefix (not `kilo-code.`)
+- All view IDs must use `chipmate.v2.` prefix, **except** the sidebar view which uses `chipmate.v2.SidebarProvider` to preserve user sidebar position when upgrading from the legacy extension
 
 ## Kilocode Change Markers
 

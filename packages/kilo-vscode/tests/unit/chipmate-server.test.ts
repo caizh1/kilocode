@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import * as vscode from "vscode"
-import {
-  migrateChipmateServer,
-  promptChipmateServerReload,
-  resolveChipmateServer,
-  testChipmateServer,
-} from "../../src/services/chipmate-server"
+import { promptChipmateServerReload, resolveChipmateServer, testChipmateServer } from "../../src/services/chipmate-server"
 import { CHIPMATE_SERVER_DEFAULT, deriveChipmateServerEndpoints } from "../../src/shared/chipmate-server"
 import { marketplaceApiOptions } from "../../src/services/marketplace"
 import { mermaidEndpoint, renderEnv } from "../../src/services/cli-backend/server-manager"
@@ -58,52 +53,39 @@ describe("ChipMate Server configuration", () => {
   })
 
   it("uses the manifest default without writing it to the profile", () => {
-    set(state, "kilo-code.new.chipmateServer", "baseUrl", "defaultValue", CHIPMATE_SERVER_DEFAULT)
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "defaultValue", "http://package.test:6001")
+    expect(resolveChipmateServer()).toEqual({ baseUrl: "http://package.test:6001", source: "default" })
+    expect(state.get("chipmate.v2.chipmateServer.baseUrl")?.globalValue).toBeUndefined()
+  })
+
+  it("falls back to the public default when the manifest default is unavailable", () => {
     expect(resolveChipmateServer()).toEqual({ baseUrl: CHIPMATE_SERVER_DEFAULT, source: "default" })
-    expect(state.get("kilo-code.new.chipmateServer.baseUrl")?.globalValue).toBeUndefined()
   })
 
   it("ignores a workspace override for the unified setting", () => {
-    set(state, "kilo-code.new.chipmateServer", "baseUrl", "workspaceValue", "http://workspace.test:6001")
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "workspaceValue", "http://workspace.test:6001")
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "defaultValue", "http://package.test:6001")
+    expect(resolveChipmateServer()).toEqual({ baseUrl: "http://package.test:6001", source: "default" })
+  })
+
+  it("does not read a legacy marketplace endpoint", () => {
+    set(state, "kilo.marketplace", "baseUrl", "globalValue", "http://legacy.test:6001/marketplace")
     expect(resolveChipmateServer()).toEqual({ baseUrl: CHIPMATE_SERVER_DEFAULT, source: "default" })
   })
 
-  it("migrates one legacy endpoint and keeps the saved origin thereafter", async () => {
-    set(state, "kilo.marketplace", "baseUrl", "globalValue", "http://legacy.test:6001/marketplace")
-    expect(await migrateChipmateServer()).toMatchObject({ baseUrl: "http://legacy.test:6001", source: "migrated" })
-
-    set(state, "kilo.marketplace", "baseUrl", "globalValue", "http://changed.test:6001/marketplace")
-    expect(resolveChipmateServer()).toEqual({ baseUrl: "http://legacy.test:6001", source: "saved" })
-  })
-
-  it("migrates three legacy endpoints when they share one origin", async () => {
-    set(state, "kilo.marketplace", "baseUrl", "globalValue", "http://legacy.test:6001/marketplace")
-    set(state, "kilo.documents", "wordRender.remoteEndpoint", "globalValue", "http://legacy.test:6001/render/word")
-    set(
-      state,
-      "kilo.documents",
-      "mermaidRender.remoteEndpoint",
-      "globalValue",
-      "http://legacy.test:6001/render/mermaid",
-    )
-    expect(await migrateChipmateServer()).toMatchObject({ baseUrl: "http://legacy.test:6001", source: "migrated" })
-  })
-
-  it("reports conflicting legacy origins without migrating", async () => {
-    set(state, "kilo.marketplace", "baseUrl", "globalValue", "http://market.test:6001/marketplace")
-    set(state, "kilo.documents", "wordRender.remoteEndpoint", "globalValue", "http://render.test:6001/render/word")
-    expect(await migrateChipmateServer()).toMatchObject({ source: "conflict" })
-    expect(state.get("kilo-code.new.chipmateServer.baseUrl")?.globalValue).toBeUndefined()
-  })
-
   it("never replaces a user-saved origin with a later default", () => {
-    set(state, "kilo-code.new.chipmateServer", "baseUrl", "globalValue", "https://saved.test:7443")
-    set(state, "kilo-code.new.chipmateServer", "baseUrl", "defaultValue", CHIPMATE_SERVER_DEFAULT)
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "https://saved.test:7443")
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "defaultValue", "http://package.test:6001")
     expect(resolveChipmateServer()).toEqual({ baseUrl: "https://saved.test:7443", source: "saved" })
   })
 
   it("surfaces an invalid manually written unified setting", () => {
-    set(state, "kilo-code.new.chipmateServer", "baseUrl", "globalValue", "http://bad.test:6001/v1")
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "http://bad.test:6001/v1")
+    expect(resolveChipmateServer()).toMatchObject({ source: "invalid", baseUrl: "http://bad.test:6001/v1" })
+  })
+
+  it("surfaces an invalid manifest default", () => {
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "defaultValue", "http://bad.test:6001/v1")
     expect(resolveChipmateServer()).toMatchObject({ source: "invalid", baseUrl: "http://bad.test:6001/v1" })
   })
 
@@ -112,7 +94,7 @@ describe("ChipMate Server configuration", () => {
     const mermaid = process.env.KILO_MERMAID_RENDER_ENDPOINT
     delete process.env.KILO_WORD_RENDER_ENDPOINT
     delete process.env.KILO_MERMAID_RENDER_ENDPOINT
-    set(state, "kilo-code.new.chipmateServer", "baseUrl", "globalValue", "https://runtime.test:7443")
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "https://runtime.test:7443")
     try {
       expect(marketplaceApiOptions()).toMatchObject({ baseUrl: "https://runtime.test:7443/marketplace" })
       expect(deriveChipmateServerEndpoints("https://runtime.test:7443").updates).toBe(
@@ -135,7 +117,7 @@ describe("ChipMate Server configuration", () => {
     const mermaid = process.env.KILO_MERMAID_RENDER_ENDPOINT
     process.env.KILO_WORD_RENDER_ENDPOINT = "https://override.test:7443/word"
     process.env.KILO_MERMAID_RENDER_ENDPOINT = "https://override.test:7443/mermaid"
-    set(state, "kilo-code.new.chipmateServer", "baseUrl", "globalValue", "https://runtime.test:7443")
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "https://runtime.test:7443")
     try {
       expect(renderEnv()).toEqual({})
     } finally {
@@ -159,21 +141,21 @@ describe("ChipMate Server configuration", () => {
     expect(mermaidEndpoint({}, "")).toEqual({ state: "absent" })
   })
 
-  it("preserves legacy per-service runtime behavior when origins conflict", () => {
+  it("ignores legacy per-service settings", () => {
     set(state, "kilo.marketplace", "baseUrl", "globalValue", "http://market.test:6001/marketplace")
-    set(state, "kilo.documents", "wordRender.remoteEndpoint", "globalValue", "http://render.test:6001/render/word")
+    set(state, "chipmate.v2.documents", "wordRender.remoteEndpoint", "globalValue", "http://render.test:6001/render/word")
     set(
       state,
-      "kilo.documents",
+      "chipmate.v2.documents",
       "mermaidRender.remoteEndpoint",
       "globalValue",
       "http://render.test:6001/render/mermaid",
     )
-    expect(marketplaceApiOptions()).toMatchObject({ baseUrl: "http://market.test:6001/marketplace" })
+    expect(marketplaceApiOptions()).toMatchObject({ baseUrl: `${CHIPMATE_SERVER_DEFAULT}/marketplace` })
   })
 
   it("disables Marketplace remote access for an invalid saved origin", () => {
-    set(state, "kilo-code.new.chipmateServer", "baseUrl", "globalValue", "http://bad.test:6001/v1")
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "http://bad.test:6001/v1")
     expect(marketplaceApiOptions()).toMatchObject({ disabledReason: expect.any(String) })
   })
 

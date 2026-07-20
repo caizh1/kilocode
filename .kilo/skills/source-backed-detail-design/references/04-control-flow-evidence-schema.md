@@ -99,4 +99,4 @@ business_capability_id,capability_name,capability_description,business_value,sco
 item_type,item_name,section_file,has_description,description_chars,has_evidence,diagram_refs,quality_status,notes
 ```
 
-item_type 包括 capability/submodule/parent_flow。quality_status 包括 pass/weak/missing。每个业务能力和每个重要子模块都必须有一行覆盖记录。
+item_type 包括 capability/submodule/target_flow。quality_status 包括 pass/weak/missing。每个业务能力、target module 和每个已确认子模块都必须有一行覆盖记录。Context parent 仅作为定位或 handoff 证据，不占 target_flow 覆盖行。重要性只决定深挖和拆图程度，不得把已确认子模块排除在覆盖记录之外。

@@ -16,6 +16,7 @@ import { spawn } from "./launch"
 import { Npm } from "@opencode-ai/core/npm"
 import { TsCheck } from "../kilocode/ts-check" // kilocode_change
 import type { RuntimeFlags } from "@/effect/runtime-flags"
+import { userOptions } from "@/kilocode/product-env" // kilocode_change
 
 const log = Log.create({ service: "lsp.server" })
 const pathExists = async (p: string) =>
@@ -23,8 +24,11 @@ const pathExists = async (p: string) =>
     .stat(p)
     .then(() => true)
     .catch(() => false)
-const run = (cmd: string[], opts: Process.RunOptions = {}) => Process.run(cmd, { ...opts, nothrow: true })
-const output = (cmd: string[], opts: Process.RunOptions = {}) => Process.text(cmd, { ...opts, nothrow: true })
+// kilocode_change start - LSP servers and installers are user children of the managed backend
+const run = (cmd: string[], opts: Process.RunOptions = {}) => Process.run(cmd, userOptions({ ...opts, nothrow: true }))
+const output = (cmd: string[], opts: Process.RunOptions = {}) =>
+  Process.text(cmd, userOptions({ ...opts, nothrow: true }))
+// kilocode_change end
 
 export interface Handle {
   process: ChildProcessWithoutNullStreams
@@ -187,8 +191,8 @@ export const ESLint: Info = {
       await fs.rename(extractedPath, finalPath)
 
       const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm"
-      await Process.run([npmCmd, "install"], { cwd: finalPath })
-      await Process.run([npmCmd, "run", "compile"], { cwd: finalPath })
+      await Process.run([npmCmd, "install"], userOptions({ cwd: finalPath })) // kilocode_change
+      await Process.run([npmCmd, "run", "compile"], userOptions({ cwd: finalPath })) // kilocode_change
 
       log.info("installed VS Code ESLint server", { serverPath })
     }
@@ -356,12 +360,16 @@ export const Gopls: Info = {
       if (flags.disableLspDownload) return
 
       log.info("installing gopls")
-      const proc = Process.spawn(["go", "install", "golang.org/x/tools/gopls@latest"], {
-        env: { ...process.env, GOBIN: Global.Path.bin },
-        stdout: "pipe",
-        stderr: "pipe",
-        stdin: "pipe",
-      })
+      const proc = Process.spawn(
+        ["go", "install", "golang.org/x/tools/gopls@latest"],
+        userOptions({
+          // kilocode_change
+          env: { ...process.env, GOBIN: Global.Path.bin },
+          stdout: "pipe",
+          stderr: "pipe",
+          stdin: "pipe",
+        }),
+      ) // kilocode_change
       const exit = await proc.exited
       if (exit !== 0) {
         log.error("Failed to install gopls")
@@ -395,11 +403,15 @@ export const Rubocop: Info = {
       }
       if (flags.disableLspDownload) return
       log.info("installing rubocop")
-      const proc = Process.spawn(["gem", "install", "rubocop", "--bindir", Global.Path.bin], {
-        stdout: "pipe",
-        stderr: "pipe",
-        stdin: "pipe",
-      })
+      const proc = Process.spawn(
+        ["gem", "install", "rubocop", "--bindir", Global.Path.bin],
+        userOptions({
+          // kilocode_change
+          stdout: "pipe",
+          stderr: "pipe",
+          stdin: "pipe",
+        }),
+      ) // kilocode_change
       const exit = await proc.exited
       if (exit !== 0) {
         log.error("Failed to install rubocop")
@@ -569,9 +581,9 @@ export const ElixirLS: Info = {
 
         const cwd = path.join(Global.Path.bin, "elixir-ls-master")
         const env = { MIX_ENV: "prod", ...process.env }
-        await Process.run(["mix", "deps.get"], { cwd, env })
-        await Process.run(["mix", "compile"], { cwd, env })
-        await Process.run(["mix", "elixir_ls.release2", "-o", "release"], { cwd, env })
+        await Process.run(["mix", "deps.get"], userOptions({ cwd, env })) // kilocode_change
+        await Process.run(["mix", "compile"], userOptions({ cwd, env })) // kilocode_change
+        await Process.run(["mix", "elixir_ls.release2", "-o", "release"], userOptions({ cwd, env })) // kilocode_change
 
         log.info(`installed elixir-ls`, {
           path: elixirLsPath,
@@ -772,11 +784,15 @@ async function installRoslynLanguageServer(disableLspDownload: boolean) {
 
   if (disableLspDownload) return
   log.info("installing roslyn-language-server via dotnet tool")
-  const proc = Process.spawn(["dotnet", "tool", "install", "--global", "roslyn-language-server", "--prerelease"], {
-    stdout: "pipe",
-    stderr: "pipe",
-    stdin: "pipe",
-  })
+  const proc = Process.spawn(
+    ["dotnet", "tool", "install", "--global", "roslyn-language-server", "--prerelease"],
+    userOptions({
+      // kilocode_change
+      stdout: "pipe",
+      stderr: "pipe",
+      stdin: "pipe",
+    }),
+  ) // kilocode_change
   const exit = await proc.exited
   if (exit !== 0) {
     log.error("Failed to install roslyn-language-server")
@@ -858,11 +874,15 @@ export const FSharp: Info = {
 
       if (flags.disableLspDownload) return
       log.info("installing fsautocomplete via dotnet tool")
-      const proc = Process.spawn(["dotnet", "tool", "install", "fsautocomplete", "--tool-path", Global.Path.bin], {
-        stdout: "pipe",
-        stderr: "pipe",
-        stdin: "pipe",
-      })
+      const proc = Process.spawn(
+        ["dotnet", "tool", "install", "fsautocomplete", "--tool-path", Global.Path.bin],
+        userOptions({
+          // kilocode_change
+          stdout: "pipe",
+          stderr: "pipe",
+          stdin: "pipe",
+        }),
+      ) // kilocode_change
       const exit = await proc.exited
       if (exit !== 0) {
         log.error("Failed to install fsautocomplete")

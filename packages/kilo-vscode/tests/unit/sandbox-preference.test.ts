@@ -3,7 +3,7 @@ import { SandboxPreference } from "../../src/services/sandbox-preference"
 
 function store(initial?: boolean) {
   const values = new Map<string, unknown>()
-  if (initial !== undefined) values.set("kilo.sandbox.newSessionDefault", initial)
+  if (initial !== undefined) values.set("chipmate.v2.sandbox.newSessionDefault", initial)
   return {
     get<T>(key: string, fallback?: T) {
       return (values.has(key) ? values.get(key) : fallback) as T | undefined

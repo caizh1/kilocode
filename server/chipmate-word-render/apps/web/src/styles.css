@@ -1262,6 +1262,178 @@ select:focus-visible {
   gap: 22px;
   align-items: start;
 }
+
+.skill-risk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.74), 0 7px 16px rgba(25, 56, 86, 0.1);
+  backdrop-filter: blur(16px) saturate(1.18);
+}
+
+.skill-risk-badge svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.risk-none {
+  color: #176d49;
+  border-color: rgba(91, 192, 137, 0.42);
+  background: rgba(222, 249, 233, 0.76);
+}
+
+.risk-medium {
+  color: #8a5700;
+  border-color: rgba(226, 167, 54, 0.48);
+  background: rgba(255, 241, 203, 0.82);
+}
+
+.risk-critical {
+  color: #a52b28;
+  border-color: rgba(224, 95, 88, 0.46);
+  background: rgba(255, 226, 223, 0.82);
+}
+
+.risk-unknown {
+  color: #50657a;
+  border-color: rgba(118, 143, 166, 0.36);
+  background: rgba(232, 239, 246, 0.78);
+}
+
+.skill-risk-panel {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+  padding: 20px 22px;
+}
+
+.skill-risk-panel p,
+.skill-risk-dialog p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.skill-risk-list {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.skill-risk-list article {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.skill-risk-list article > svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin-top: 1px;
+}
+
+.skill-risk-list article > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.skill-risk-list small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.skill-risk-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(620px, calc(100vw - 40px));
+  max-height: min(760px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 24px;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(9, 29, 48, 0.34);
+  backdrop-filter: blur(14px) saturate(1.12);
+  -webkit-backdrop-filter: blur(14px) saturate(1.12);
+}
+
+.risk-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.skill-risk-dialog .dialog-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.42);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.78), 0 10px 24px rgba(91, 61, 10, 0.12);
+}
+
+.skill-risk-dialog .dialog-mark svg {
+  width: 26px;
+  height: 26px;
+}
+
+.skill-risk-dialog > .risk-dialog-head > .dialog-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.52);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.76);
+}
+
+.skill-risk-dialog > .risk-dialog-head > .dialog-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.risk-agreement {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.risk-agreement input {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
 .prose-panel,
 .file-panel,
 .version-panel,
@@ -1491,6 +1663,18 @@ select:focus-visible {
   width: 16px;
   height: 16px;
 }
+.extension-runtime-status .extension-runtime-metrics {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.extension-runtime-status .extension-runtime-metrics span {
+  min-height: 30px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid rgba(111, 157, 210, 0.16);
+}
 
 .publish-grid {
   display: grid;
@@ -1528,6 +1712,96 @@ select:focus-visible {
   border-radius: 15px;
   background: rgba(255, 255, 255, 0.6);
   color: var(--ink);
+}
+.publish-form.dragging {
+  border-color: rgba(50, 130, 238, 0.54);
+  box-shadow: inset 0 0 0 2px rgba(67, 145, 245, 0.16), 0 24px 70px rgba(33, 91, 158, 0.16);
+}
+.skill-publish-pickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.skill-publish-pickers label {
+  display: inline-flex;
+  flex: 1 1 170px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+.skill-publish-pickers label svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+}
+.skill-publish-pickers input {
+  display: none;
+}
+.skill-upload-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid rgba(111, 157, 210, 0.22);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.42);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.72);
+}
+.skill-upload-summary > svg {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  color: var(--accent);
+}
+.skill-upload-summary span,
+.skill-upload-progress > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.skill-upload-summary strong,
+.skill-upload-summary small,
+.skill-upload-progress small {
+  overflow-wrap: anywhere;
+}
+.skill-upload-summary small,
+.skill-upload-progress small {
+  color: var(--muted);
+}
+.skill-upload-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 14px;
+  align-items: end;
+  padding: 15px;
+  border: 1px solid rgba(75, 143, 235, 0.28);
+  border-radius: 18px;
+  background: rgba(236, 246, 255, 0.58);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.82);
+}
+.skill-upload-progress > div {
+  grid-column: 1 / -1;
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(75, 143, 235, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.54);
+  box-shadow: inset 0 2px 5px rgba(35, 75, 124, 0.1);
+}
+.skill-upload-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2477e7, #67bfff 72%, #a5e7ff);
+  box-shadow: 0 0 18px rgba(54, 144, 244, 0.36), inset 0 1px rgba(255, 255, 255, 0.58);
+  transition: width 180ms ease-out;
+}
+.skill-upload-progress b {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
 }
 .publish-icon {
   width: 58px;
@@ -3847,7 +4121,7 @@ select:focus-visible {
 }
 .batch-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 .batch-summary span {
@@ -3886,7 +4160,12 @@ select:focus-visible {
   display: grid;
   gap: 6px;
 }
+.virtual-batch-list > div {
+  display: grid;
+  gap: 6px;
+}
 .batch-item {
+  min-height: 106px;
   min-width: 0;
   padding: 11px 12px;
   border: 1px solid rgba(111, 157, 210, 0.18);
@@ -3938,6 +4217,10 @@ select:focus-visible {
 .batch-item.cancelled > b {
   color: #a3473e;
   background: rgba(255, 232, 228, 0.82);
+}
+.batch-item.paused > b {
+  color: #985d06;
+  background: rgba(255, 244, 219, 0.82);
 }
 .batch-item > button {
   padding: 6px 9px;
@@ -4145,6 +4428,11 @@ select:focus-visible {
 }
 .progress-footer p {
   color: var(--muted);
+}
+.progress-footer > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 .danger-outline,
 .danger-button {

@@ -8,9 +8,19 @@ export interface ShortcutCategory {
   shortcuts: ShortcutEntry[]
 }
 
+function pr(
+  include: boolean,
+  bindings: Record<string, string>,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): ShortcutEntry[] {
+  if (!include) return []
+  return [{ label: t("agentManager.shortcuts.openPR"), binding: bindings.openPR ?? "" }]
+}
+
 export function buildShortcutCategories(
   bindings: Record<string, string>,
   t: (key: string, params?: Record<string, string | number>) => string,
+  includePR = true,
 ): ShortcutCategory[] {
   return [
     {
@@ -36,7 +46,7 @@ export function buildShortcutCategories(
         { label: t("agentManager.shortcuts.advancedWorktree"), binding: bindings.advancedWorktree ?? "" },
         { label: t("agentManager.shortcuts.deleteWorktree"), binding: bindings.closeWorktree ?? "" },
         { label: t("agentManager.shortcuts.openWorktree"), binding: bindings.openWorktree ?? "" },
-        { label: t("agentManager.shortcuts.openPR"), binding: bindings.openPR ?? "" },
+        ...pr(includePR, bindings, t),
       ],
     },
     {

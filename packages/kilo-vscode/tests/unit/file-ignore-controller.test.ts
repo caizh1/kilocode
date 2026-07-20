@@ -29,10 +29,10 @@ async function createTempWorkspace(): Promise<string> {
 }
 
 describe("FileIgnoreController", () => {
-  describe("when .kilocodeignore exists", () => {
-    it("applies only .kilocodeignore patterns", async () => {
+  describe("when .chipmate-v2ignore exists", () => {
+    it("applies only .chipmate-v2ignore patterns", async () => {
       const workspace = await createTempWorkspace()
-      await fs.writeFile(path.join(workspace, ".kilocodeignore"), "secret/**\n*.snap\n")
+      await fs.writeFile(path.join(workspace, ".chipmate-v2ignore"), "secret/**\n*.snap\n")
 
       const controller = new FileIgnoreController(workspace)
       await controller.initialize()
@@ -44,7 +44,7 @@ describe("FileIgnoreController", () => {
 
     it("does NOT block .env files unless explicitly listed", async () => {
       const workspace = await createTempWorkspace()
-      await fs.writeFile(path.join(workspace, ".kilocodeignore"), "dist/\n")
+      await fs.writeFile(path.join(workspace, ".chipmate-v2ignore"), "dist/\n")
 
       const controller = new FileIgnoreController(workspace)
       await controller.initialize()
@@ -57,19 +57,19 @@ describe("FileIgnoreController", () => {
     it("does NOT apply .gitignore patterns", async () => {
       const workspace = await createTempWorkspace()
       await fs.writeFile(path.join(workspace, ".gitignore"), "node_modules/\n")
-      await fs.writeFile(path.join(workspace, ".kilocodeignore"), "dist/\n")
+      await fs.writeFile(path.join(workspace, ".chipmate-v2ignore"), "dist/\n")
 
       const controller = new FileIgnoreController(workspace)
       await controller.initialize()
 
       // .gitignore pattern should NOT apply
       expect(controller.validateAccess(path.join(workspace, "node_modules", "foo.js"))).toBe(true)
-      // .kilocodeignore pattern should apply
+      // .chipmate-v2ignore pattern should apply
       expect(controller.validateAccess(path.join(workspace, "dist", "bundle.js"))).toBe(false)
     })
   })
 
-  describe("when no .kilocodeignore exists (fallback)", () => {
+  describe("when no .chipmate-v2ignore exists (fallback)", () => {
     it("applies .gitignore patterns", async () => {
       const workspace = await createTempWorkspace()
       await fs.writeFile(path.join(workspace, ".gitignore"), "node_modules/\nbuild/\n")
@@ -84,7 +84,7 @@ describe("FileIgnoreController", () => {
 
     it("blocks .env files via hardcoded sensitive patterns", async () => {
       const workspace = await createTempWorkspace()
-      // No .kilocodeignore, no .gitignore
+      // No .chipmate-v2ignore, no .gitignore
 
       const controller = new FileIgnoreController(workspace)
       await controller.initialize()

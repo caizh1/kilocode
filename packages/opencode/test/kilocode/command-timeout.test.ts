@@ -83,6 +83,23 @@ describe("CommandTimeout", () => {
     )
   })
 
+  test("does not expose the backend password to command substitutions", async () => {
+    delete process.env.KILO_COMMAND_TIMEOUT_MAX_MS
+    const secret = process.env.KILO_SERVER_PASSWORD
+    process.env.KILO_SERVER_PASSWORD = "must-not-leak"
+    try {
+      const exe = JSON.stringify(process.execPath)
+      const script = JSON.stringify("process.stdout.write(process.env.KILO_SERVER_PASSWORD || 'clean')")
+      const result = CommandTimeout.text(`${exe} -e ${script}`, Shell.acceptable()).pipe(
+        Effect.provide(CrossSpawnSpawner.defaultLayer),
+      )
+      expect(await Effect.runPromise(result)).toBe("clean")
+    } finally {
+      if (secret === undefined) delete process.env.KILO_SERVER_PASSWORD
+      else process.env.KILO_SERVER_PASSWORD = secret
+    }
+  })
+
   // TestClock advances instantly; this does not wait 25 ms in real time.
   it.effect("caps output draining at the exact environment deadline", () =>
     Effect.gen(function* () {

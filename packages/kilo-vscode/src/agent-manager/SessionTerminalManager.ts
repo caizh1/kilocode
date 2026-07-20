@@ -19,8 +19,6 @@ export interface TerminalHost {
   setContext(key: string, value: boolean): void
   onTerminalClosed(cb: (handle: TerminalHandle) => void): Disposable
   onActiveTerminalChanged(cb: (handle: TerminalHandle | undefined) => void): Disposable
-  registerCommand(id: string, handler: (...args: unknown[]) => Promise<unknown>): Disposable
-  executeCommand(id: string, ...args: unknown[]): Promise<unknown>
 }
 
 export interface Disposable {
@@ -37,9 +35,6 @@ export class SessionTerminalManager {
 
   private terminals = new Map<string, { terminal: TerminalHandle; cwd: string }>()
   private disposables: Disposable[] = []
-  private commandHandlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
-  private commandDisposables = new Map<string, Disposable>()
-  private panelOpen = false
 
   constructor(
     private log: (msg: string) => void,
@@ -57,27 +52,9 @@ export class SessionTerminalManager {
       }),
       host.onActiveTerminalChanged((terminal) => {
         const managed = terminal ? this.isManaged(terminal) : false
-        if (terminal) this.panelOpen = true
-        void host.setContext("kilo-code.agentTerminalFocus", managed)
+        void host.setContext("chipmate.v2.agentTerminalFocus", managed)
       }),
     )
-
-    this.registerPanelCommand("workbench.action.togglePanel", () => {
-      this.panelOpen = !this.panelOpen
-      this.log(`panel visibility toggled via command (open=${this.panelOpen})`)
-    })
-    this.registerPanelCommand("workbench.action.closePanel", () => {
-      this.panelOpen = false
-      this.log("panel hidden via command")
-    })
-    this.registerPanelCommand("workbench.action.focusPanel", () => {
-      this.panelOpen = true
-      this.log("panel focused via command")
-    })
-    this.registerPanelCommand("workbench.action.terminal.focus", () => {
-      this.panelOpen = true
-      this.log("terminal focused via command")
-    })
   }
 
   /**
@@ -123,37 +100,6 @@ export class SessionTerminalManager {
   }
 
   /**
-   * Show the existing local terminal if one was previously created (used on context switch).
-   */
-  showExistingLocal(): boolean {
-    return this.showExisting(SessionTerminalManager.LOCAL_KEY)
-  }
-
-  /**
-   * Sync terminal on session switch: only switch terminals when panel is open.
-   */
-  syncOnSessionSwitch(sessionId: string): boolean {
-    if (!this.panelOpen) {
-      this.log(`syncOnSessionSwitch: panel hidden, skipping session ${sessionId}`)
-      return false
-    }
-
-    return this.showExisting(sessionId)
-  }
-
-  /**
-   * Sync local terminal on context switch: only switch when panel is open.
-   */
-  syncLocalOnSessionSwitch(): boolean {
-    if (!this.panelOpen) {
-      this.log("syncLocalOnSessionSwitch: panel hidden, skipping")
-      return false
-    }
-
-    return this.showExistingLocal()
-  }
-
-  /**
    * Show the terminal for a session if it already exists (used when switching sessions).
    * Returns true if the terminal was shown, false if no terminal exists for the session.
    * Pass preserveFocus=true to keep focus on the current editor (default for session switching).
@@ -169,7 +115,6 @@ export class SessionTerminalManager {
     }
 
     entry.terminal.show(preserveFocus)
-    this.panelOpen = true
     this.log(`showExisting: revealed terminal for session ${sessionId}`)
     return true
   }
@@ -202,54 +147,10 @@ export class SessionTerminalManager {
   }
 
   dispose(): void {
-    void this.host.setContext("kilo-code.agentTerminalFocus", false)
+    void this.host.setContext("chipmate.v2.agentTerminalFocus", false)
     for (const entry of this.terminals.values()) entry.terminal.dispose()
     this.terminals.clear()
-    for (const d of this.commandDisposables.values()) d.dispose()
-    this.commandDisposables.clear()
-    this.commandHandlers.clear()
     for (const d of this.disposables) d.dispose()
-  }
-
-  private registerPanelCommand(id: string, onAfterRun: () => void): void {
-    const handler = async (...args: unknown[]) => {
-      const result = await this.runOriginalCommand(id, args)
-      onAfterRun()
-      return result
-    }
-
-    const disposable = this.tryRegisterCommand(id, handler)
-    if (!disposable) return
-    this.commandHandlers.set(id, handler)
-    this.commandDisposables.set(id, disposable)
-  }
-
-  private async runOriginalCommand(id: string, args: unknown[]): Promise<unknown> {
-    const disposable = this.commandDisposables.get(id)
-    if (!disposable) return this.host.executeCommand(id, ...args)
-
-    disposable.dispose()
-    this.commandDisposables.delete(id)
-
-    try {
-      return await this.host.executeCommand(id, ...args)
-    } finally {
-      const handler = this.commandHandlers.get(id)
-      if (handler) {
-        const replacement = this.tryRegisterCommand(id, handler)
-        if (replacement) this.commandDisposables.set(id, replacement)
-      }
-    }
-  }
-
-  private tryRegisterCommand(id: string, handler: (...args: unknown[]) => Promise<unknown>): Disposable | undefined {
-    try {
-      return this.host.registerCommand(id, handler)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      this.log(`panel command registration skipped for ${id}: ${msg}`)
-      return undefined
-    }
   }
 
   private isManaged(terminal: TerminalHandle): boolean {
@@ -262,8 +163,7 @@ export class SessionTerminalManager {
   private updateContextKey(): void {
     const active = this.host.activeTerminal()
     const managed = active ? this.isManaged(active) : false
-    if (active) this.panelOpen = true
-    void this.host.setContext("kilo-code.agentTerminalFocus", managed)
+    void this.host.setContext("chipmate.v2.agentTerminalFocus", managed)
   }
 
   private showOrCreate(sessionId: string, cwd: string, name: string): void {
@@ -291,7 +191,6 @@ export class SessionTerminalManager {
     }
 
     entry.terminal.show(false)
-    this.panelOpen = true
     this.updateContextKey()
   }
 }

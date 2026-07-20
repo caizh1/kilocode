@@ -12,6 +12,7 @@ import { Filesystem } from "@/util/filesystem"
 import { isRecord } from "@/util/record"
 import { KilocodeConfig } from "./config"
 import { KilocodeConfigSources } from "./sources"
+import { ProductProfile } from "../product-profile"
 
 export namespace KilocodeConfigOverlay {
   const log = Log.create({ service: "kilocode.config.overlay" })
@@ -73,8 +74,8 @@ export namespace KilocodeConfigOverlay {
     sources: KilocodeConfigSources.Source[]
   }
 
-  const files = ["kilo.jsonc", "kilo.json", "opencode.jsonc", "opencode.json"] as const
-  const dirs = [".kilocode", ".kilo"] as const
+  const files = KilocodeConfig.ACTIVE_CONFIG_FILES
+  const dirs = ProductProfile.dirs
 
   const fieldPaths = [
     ["model"],
@@ -130,9 +131,9 @@ export namespace KilocodeConfigOverlay {
 
   export async function projectTarget(input: { directory: string; worktree?: string }) {
     const found = await Filesystem.findUp(dirs.toReversed(), input.directory, input.worktree)
-    const roots = await Filesystem.findUp([...files], input.directory, input.worktree)
+    const roots = ProductProfile.chipmate ? [] : await Filesystem.findUp([...files], input.directory, input.worktree)
     const candidates = [...found.flatMap((dir) => files.map((file) => path.join(dir, file))), ...roots]
-    return candidates.find((file) => existsSync(file)) ?? path.join(input.directory, ".kilo", "kilo.jsonc")
+    return candidates.find((file) => existsSync(file)) ?? ProductProfile.project(input.directory, "kilo.jsonc")
   }
 
   export function globalTarget() {
@@ -176,7 +177,9 @@ export namespace KilocodeConfigOverlay {
   }
 
   async function projectFiles(input: { directory: string; worktree?: string }) {
-    const roots = await Filesystem.findUp([...files], input.directory, input.worktree, { rootFirst: true })
+    const roots = ProductProfile.chipmate
+      ? []
+      : await Filesystem.findUp([...files], input.directory, input.worktree, { rootFirst: true })
     const found = await Filesystem.findUp([...dirs], input.directory, input.worktree)
     const nested = found.flatMap((dir) => files.map((file) => path.join(dir, file)))
     const checks = await Promise.all(
@@ -190,6 +193,7 @@ export namespace KilocodeConfigOverlay {
   }
 
   function globalDirs() {
+    if (ProductProfile.chipmate) return [ProductProfile.config()!]
     return [Global.Path.config, path.join(Global.Path.home, ".kilocode"), path.join(Global.Path.home, ".kilo")]
   }
 

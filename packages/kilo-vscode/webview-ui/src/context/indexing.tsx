@@ -38,6 +38,7 @@ export {
   indexingPipelineDescription,
   indexingPipelineTone,
   indexingTone,
+  localizeIndexingText,
 } from "./indexing-utils"
 
 const IndexingContext = createContext<IndexingContextValue>()

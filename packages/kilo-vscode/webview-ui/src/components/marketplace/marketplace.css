@@ -776,6 +776,27 @@
   border-color: var(--border-success-base) !important;
 }
 
+.marketplace-risk-badge {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+}
+
+.marketplace-risk-badge.risk-none {
+  color: var(--text-on-success-base) !important;
+  border-color: var(--border-success-base) !important;
+}
+
+.marketplace-risk-badge.risk-medium,
+.marketplace-risk-badge.risk-critical {
+  color: var(--text-on-warning-base) !important;
+  border-color: var(--border-warning-base) !important;
+}
+
+.marketplace-risk-badge.risk-unknown {
+  color: var(--vscode-descriptionForeground, var(--text-weak)) !important;
+}
+
 /* Remove dialog actions */
 
 .marketplace-remove-actions {
@@ -822,6 +843,38 @@
 
 .install-modal-param {
   margin-bottom: 8px;
+}
+
+.install-modal-risk {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-warning-base);
+  border-radius: 4px;
+  background: var(--surface-warning-base);
+}
+
+.install-modal-risk.risk-unknown {
+  border-color: var(--vscode-widget-border, var(--border-base));
+  background: var(--vscode-textBlockQuote-background, var(--surface-raised-base));
+}
+
+.install-modal-risk > div,
+.install-modal-risk label {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.install-modal-risk p {
+  margin: 0;
+  color: var(--vscode-descriptionForeground, var(--text-weak));
+}
+
+.install-modal-risk input {
+  flex: 0 0 auto;
+  margin-top: 2px;
 }
 
 .install-modal-footer {
@@ -976,6 +1029,48 @@
   grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
   gap: 12px;
   align-items: start;
+}
+
+.aligned-risk-panel {
+  display: grid;
+  gap: 8px;
+  border-color: var(--border-warning-base);
+}
+
+.aligned-risk-panel.risk-none {
+  border-color: var(--border-success-base);
+}
+
+.aligned-risk-panel.risk-unknown {
+  border-color: var(--vscode-widget-border, var(--border-base));
+}
+
+.aligned-risk-panel > p {
+  margin: 0;
+  color: var(--vscode-descriptionForeground, var(--text-weak));
+}
+
+.aligned-risk-heading,
+.aligned-risk-issue {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.aligned-risk-issue {
+  padding-top: 8px;
+  border-top: 1px solid var(--vscode-widget-border, var(--border-base));
+}
+
+.aligned-risk-issue > span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.aligned-risk-issue small {
+  color: var(--vscode-descriptionForeground, var(--text-weak));
+  overflow-wrap: anywhere;
 }
 
 .aligned-skill-prose,

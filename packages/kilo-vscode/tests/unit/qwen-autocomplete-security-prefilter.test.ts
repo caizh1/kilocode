@@ -152,7 +152,7 @@ describe("qwen security and prefilter decisions", () => {
 
   it("blocks non-file, outside-workspace, sensitive, ignored, and guard-error files with distinct reasons", async () => {
     const root = await temp()
-    await writeFile(path.join(root, ".kilocodeignore"), "blocked.c\n")
+    await writeFile(path.join(root, ".chipmate-v2ignore"), "blocked.c\n")
     ;(vscode.workspace as unknown as { workspaceFolders: typeof folders }).workspaceFolders = [
       { uri: vscode.Uri.file(root), name: "repo", index: 0 },
     ]

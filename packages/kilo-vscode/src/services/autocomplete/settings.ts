@@ -3,7 +3,7 @@ import { validAutocompleteModel, validAutocompleteProvider } from "../../shared/
 import { QWEN_FIM_MODEL_ID } from "../../shared/qwen-autocomplete"
 import { autocompleteResource } from "./workspace"
 
-export const QWEN_DEFAULT_STATE = "kilo.autocomplete.qwenDefault"
+export const QWEN_DEFAULT_STATE = "chipmate.v2.autocomplete.qwenDefault"
 
 export type AutocompleteScope = "global" | "workspace" | "workspace-folder" | "none"
 
@@ -69,7 +69,7 @@ export function buildAutocompleteSettingsMessage(context?: vscode.ExtensionConte
 /** Push autocomplete settings to the webview whenever VS Code config changes. */
 export function watchAutocompleteConfig(post: Post, context?: vscode.ExtensionContext): vscode.Disposable {
   const config = vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration("kilo-code.new.autocomplete")) {
+    if (e.affectsConfiguration("chipmate.v2.autocomplete")) {
       if (autocompleteSelectionUpdating()) return
       post(buildAutocompleteSettingsMessage(context))
     }
@@ -79,7 +79,7 @@ export function watchAutocompleteConfig(post: Post, context?: vscode.ExtensionCo
 }
 
 export function autocompleteConfig(): vscode.WorkspaceConfiguration {
-  return vscode.workspace.getConfiguration("kilo-code.new.autocomplete", autocompleteResource())
+  return vscode.workspace.getConfiguration("chipmate.v2.autocomplete", autocompleteResource())
 }
 
 export function autocompleteScope(config = autocompleteConfig()): AutocompleteScope {

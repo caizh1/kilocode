@@ -14,7 +14,7 @@ function inspect(config: vscode.WorkspaceConfiguration, key: string): WorkStyleS
 }
 
 async function apply(connection: KiloConnectionService, directory: string, style: WorkStyle) {
-  const settings = vscode.workspace.getConfiguration("kilo-code.new")
+  const settings = vscode.workspace.getConfiguration("chipmate.v2")
   return applyWorkStyle(style, {
     read: async () => {
       const client = await connection.getClientAsync(directory)

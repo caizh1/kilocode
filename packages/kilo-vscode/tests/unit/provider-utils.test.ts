@@ -41,6 +41,14 @@ describe("flattenModels", () => {
     const providers = { empty: makeProvider("empty", "Empty", []) }
     expect(flattenModels(providers)).toEqual([])
   })
+
+  it("maps the Kilo Auto Free catalog name to ChipMate without changing its id", () => {
+    const providers = { kilo: makeProvider("kilo", "Kilo Gateway", ["kilo-auto/free"]) }
+    const model = flattenModels(providers)[0]
+    expect(model?.id).toBe("kilo-auto/free")
+    expect(model?.name).toBe("ChipMate Auto Free")
+    expect(model?.providerName).toBe("ChipMate Gateway")
+  })
 })
 
 describe("findModel", () => {

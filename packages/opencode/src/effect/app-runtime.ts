@@ -55,6 +55,7 @@ import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Notebook } from "@/kilocode/notebook/service" // kilocode_change
 import { AgentManager } from "@/kilocode/agent-manager/service" // kilocode_change
+import { SkillMarket } from "@/kilocode/skill-market/service" // kilocode_change
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { ProjectV2 } from "@opencode-ai/core/project" // kilocode_change - listener routes are provided by AppLayer
 import { ProjectCopy } from "@opencode-ai/core/project/copy" // kilocode_change - listener routes are provided by AppLayer
@@ -84,6 +85,7 @@ const CoreLayer = Layer.mergeAll(
 
 const SessionLayer = Layer.mergeAll(
   AgentManager.defaultLayer, // kilocode_change
+  SkillMarket.defaultLayer, // kilocode_change
   Question.defaultLayer,
   Notebook.defaultLayer, // kilocode_change
   Permission.defaultLayer,

@@ -22,6 +22,91 @@ test("Fastify registers the complete frozen legacy route list", () => {
   assert.ok(LEGACY_ROUTES.some((route) => route.method === "GET" && route.url === "/marketplace/skills/*"))
 })
 
+test("word render response exposes exact page evidence and an optional refreshed DOCX", () => {
+  const route = LEGACY_ROUTES.find((item) => item.method === "POST" && item.url === "/render/word")
+  assert.ok(route?.schema.response?.[200])
+  assert.equal(
+    Value.Check(route.schema.response[200], {
+      ok: true,
+      pageCount: 3,
+      returnedPageCount: 3,
+      pageCountKind: "exact",
+      fieldRefreshStatus: "completed",
+      fieldRefreshDiagnostics: [],
+      tocHeadingCount: 2,
+      tocEntryCount: 2,
+      tocPageNumberCount: 2,
+      updatedDocxBase64: "UEsDBA==",
+      pdf: { contentType: "application/pdf", base64: "JVBERg==" },
+      pages: [1, 2, 3].map((page) => ({
+        page,
+        contentType: "image/png",
+        base64: "iVBORw==",
+        width: 100,
+        height: 100,
+        visualSummary: {},
+      })),
+      textQa: {
+        ok: true,
+        titlePresent: true,
+        firstHeadingPresent: true,
+        sourceCjkCount: 20,
+        pdfCjkCount: 20,
+        cjkCoverage: 1,
+        sentinelCount: 3,
+        matchedSentinelCount: 3,
+        sentinelCoverage: 1,
+        diagnostics: [],
+      },
+      issues: [],
+      renderer: { wordFieldRefresh: "libreoffice" },
+    }),
+    true,
+  )
+})
+
+test("word render response reports failed field refresh without claiming an updated DOCX", () => {
+  const route = LEGACY_ROUTES.find((item) => item.method === "POST" && item.url === "/render/word")
+  assert.ok(route?.schema.response?.[200])
+  assert.equal(
+    Value.Check(route.schema.response[200], {
+      ok: true,
+      pageCount: 3,
+      returnedPageCount: 3,
+      pageCountKind: "exact",
+      fieldRefreshStatus: "failed",
+      fieldRefreshDiagnostics: ["TOC entries have no materialized page numbers"],
+      tocHeadingCount: 2,
+      tocEntryCount: 2,
+      tocPageNumberCount: 0,
+      pdf: { contentType: "application/pdf", base64: "JVBERg==" },
+      pages: [1, 2, 3].map((page) => ({
+        page,
+        contentType: "image/png",
+        base64: "iVBORw==",
+        width: 100,
+        height: 100,
+        visualSummary: {},
+      })),
+      textQa: {
+        ok: false,
+        titlePresent: true,
+        firstHeadingPresent: false,
+        sourceCjkCount: 20,
+        pdfCjkCount: 20,
+        cjkCoverage: 1,
+        sentinelCount: 3,
+        matchedSentinelCount: 2,
+        sentinelCoverage: 2 / 3,
+        diagnostics: ["first heading has no refreshed page mapping"],
+      },
+      issues: [{ severity: "warning", code: "word-field-refresh-failed", message: "refresh failed" }],
+      renderer: { wordFieldRefresh: "failed" },
+    }),
+    true,
+  )
+})
+
 test("ValidationIssue enforces the frozen structured fields", () => {
   const issue = {
     code: "frontmatter-missing",
@@ -34,6 +119,7 @@ test("ValidationIssue enforces the frozen structured fields", () => {
     actual: "# title",
     fixable: true,
     repairKind: "deterministic",
+    riskLevel: "none",
   }
   assert.equal(Value.Check(ValidationIssueSchema, issue), true)
   assert.equal(Value.Check(ValidationIssueSchema, { ...issue, unknown: true }), false)

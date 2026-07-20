@@ -51,11 +51,30 @@ export const dict = {
   "marketplace.install.about.mcp":
     "An MCP server gives Kilo additional tools for working with external services or local programs.",
   "marketplace.install.about.agent": "An agent adds a reusable role with its own instructions and permissions.",
-  "marketplace.install.about.skill": "A skill adds task-specific instructions and resources that Kilo can load when needed.",
+  "marketplace.install.about.skill":
+    "A skill adds task-specific instructions and resources that Kilo can load when needed.",
   "marketplace.install.mcp.warning":
     "MCP servers can run local commands or connect to external services. Kilo will ask for permission before using their tools unless your permissions allow them automatically.",
   "marketplace.install.project.warning":
     "Project files may be committed to version control. Do not store secrets here unless the configuration references an environment variable.",
+  "marketplace.risk.none": "No risks found",
+  "marketplace.risk.medium": "Risk detected · {{count}}",
+  "marketplace.risk.critical": "Critical risk",
+  "marketplace.risk.unknown": "Not assessed",
+  "marketplace.risk.installTitle": "This Skill has potential risks",
+  "marketplace.risk.unknownTitle": "This Skill has not been assessed",
+  "marketplace.risk.installMedium":
+    "Automated scanning found {{count}} risk item(s). Review the Skill before installation.",
+  "marketplace.risk.installUnknown":
+    "This historical version was not scanned with the current rules. Review it before installation.",
+  "marketplace.risk.accept": "I understand the notice and want to continue",
+  "marketplace.risk.detailNone": "Automated scanning found no risks",
+  "marketplace.risk.detailMedium": "Automated scanning found {{count}} risk item(s)",
+  "marketplace.risk.noGuarantee":
+    "This result only means the current automated rules found no issue and is not a security guarantee.",
+  "marketplace.risk.detailHint":
+    "This Skill can be published, but may contain scripts, credentials, or external links. Review every item before use.",
+  "marketplace.risk.archive": "Skill archive",
   "marketplace.install.learnMore": "Learn how Marketplace installs work",
   "marketplace.install.learnMcp": "Learn more about MCP",
   "marketplace.install.installedAt": "Installed to {{path}}",

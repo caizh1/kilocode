@@ -78,8 +78,8 @@ describe("sanitizeName", () => {
     expect(sanitizeName("Model (FREE)")).toBe("Model")
   })
 
-  it("preserves bare trailing Free in names like 'Kilo Auto Free'", () => {
-    expect(sanitizeName("Kilo Auto Free")).toBe("Kilo Auto Free")
+  it("brands Kilo Auto Free while preserving other bare trailing Free names", () => {
+    expect(sanitizeName("Kilo Auto Free")).toBe("ChipMate Auto Free")
     expect(sanitizeName("Mixtral free")).toBe("Mixtral free")
     expect(sanitizeName("Mistral:free")).toBe("Mistral:free")
     expect(sanitizeName("Gemma-free")).toBe("Gemma-free")
@@ -215,6 +215,13 @@ describe("buildTriggerLabel", () => {
     expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels)).toBe("kilo-auto/frontier")
   })
 
+  it("brands the raw kilo-auto/free selection when the catalog is unavailable", () => {
+    const raw = { providerID: "kilo", modelID: "kilo-auto/free" }
+    expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels)).toBe(
+      "ChipMate Auto Free",
+    )
+  })
+
   it("returns providerID / modelID for non-kilo raw selection", () => {
     const raw = { providerID: "anthropic", modelID: "claude-3-5-sonnet" }
     expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels)).toBe(
@@ -232,6 +239,12 @@ describe("buildTriggerLabel", () => {
 
   it("returns labels.select when providers exist and no selection", () => {
     expect(buildTriggerLabel(undefined, undefined, undefined, null, false, "", true, labels)).toBe("Select model")
+  })
+
+  it("uses a prompt-only empty label without enabling clear", () => {
+    expect(buildTriggerLabel(undefined, undefined, undefined, null, false, "", true, labels, "No model selected")).toBe(
+      "No model selected",
+    )
   })
 
   it("returns labels.noProviders when no providers available", () => {

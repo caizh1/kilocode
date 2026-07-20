@@ -2,13 +2,14 @@ import path from "path"
 import { existsSync, realpathSync } from "fs"
 import { Global } from "@opencode-ai/core/global"
 import { KilocodePaths } from "@/kilocode/paths"
+import { ProductProfile } from "@/kilocode/product-profile"
 
 export namespace ConfigProtection {
   /**
    * Config directory prefixes (relative paths, forward-slash normalized).
    * Matches .kilo/ and legacy .kilocode/ at any depth within the project.
    */
-  const CONFIG_DIRS = [".kilo/", ".kilocode/"]
+  const CONFIG_DIRS = ProductProfile.dirs.map((dir) => `${dir}/`)
 
   /**
    * Subdirectories under CONFIG_DIRS that are NOT config files (e.g. plan files).
@@ -71,6 +72,7 @@ export namespace ConfigProtection {
   }
 
   function configs(): string[] {
+    if (ProductProfile.chipmate) return [Global.Path.config]
     return Array.from(
       new Set([Global.Path.config, process.env.XDG_CONFIG_HOME ? path.join(process.env.XDG_CONFIG_HOME, "kilo") : ""]),
     ).filter(Boolean)

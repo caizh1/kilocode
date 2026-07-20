@@ -1,4 +1,4 @@
-import { Component, createSignal, createMemo, Switch, Match, Show, onMount, onCleanup } from "solid-js"
+import { Component, createSignal, createMemo, Switch, Match, onMount, onCleanup } from "solid-js"
 import { ThemeProvider } from "@kilocode/kilo-ui/theme"
 import { DialogProvider } from "@kilocode/kilo-ui/context/dialog"
 import { MarkedProvider } from "@kilocode/kilo-ui/context/marked"
@@ -36,7 +36,6 @@ registerExpandedTaskTool()
 // Apply VS Code sidebar preferences to other tools (e.g. bash expanded by default).
 registerVscodeToolOverrides()
 import HistoryView from "./components/history/HistoryView"
-import { MigrationWizard } from "./components/migration" // legacy-migration
 import { NotificationsProvider } from "./context/notifications"
 import { FeedbackProvider } from "./context/feedback"
 import { KiloEmbeddingModelsProvider } from "./context/kilo-embedding-models"
@@ -234,10 +233,6 @@ export const MermaidDownloadBridge: Component = () => {
 const AppContent: Component = () => {
   const [currentView, setCurrentView] = createSignal<ViewType>("newTask")
   const [settingsTab, setSettingsTab] = createSignal<string | undefined>()
-  // legacy-migration: state-driven flag independent of currentView to avoid
-  // race conditions with SettingsEditorProvider's navigate messages.
-  const [migrationNeeded, setMigrationNeeded] = createSignal(false)
-  const [migrationSource, setMigrationSource] = createSignal<"legacy" | "roo">("legacy")
   const session = useSession()
   const tabs = useLocalTabs()
   const server = useServer()
@@ -325,12 +320,6 @@ const AppContent: Component = () => {
         session.setCurrentSessionID(message.sessionID)
         setCurrentView("subAgentViewer")
       }
-      // legacy-migration: state-driven migration wizard
-      if (message?.type === "migrationState") {
-        console.log("[Kilo New] App: 🔄 migrationState:", message.needed)
-        setMigrationSource(message.source)
-        setMigrationNeeded(message.needed)
-      }
     }
     window.addEventListener("message", handler)
     onCleanup(() => window.removeEventListener("message", handler))
@@ -352,63 +341,42 @@ const AppContent: Component = () => {
 
   return (
     <div class="container">
-      {/* legacy-migration start — state-driven overlay, independent of currentView */}
-      <Show
-        when={migrationNeeded()}
+      <Switch
         fallback={
-          <Switch
-            fallback={
-              <ChatView
-                continueInWorktree
-                onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
-                promptBoxId="sidebar:fallback"
-                emptyState={emptyState}
-              />
-            }
-          >
-            <Match when={currentView() === "newTask"}>
-              <ChatView
-                onSelectSession={handleSelectSession}
-                onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
-                continueInWorktree
-                promptBoxId="sidebar:new-task"
-                emptyState={emptyState}
-              />
-            </Match>
-            <Match when={currentView() === "history"}>
-              <HistoryView onSelectSession={handleSelectSession} onBack={() => setCurrentView("newTask")} />
-            </Match>
-            <Match when={currentView() === "profile"}>
-              <ProfileView
-                profileData={server.profileData()}
-                deviceAuth={server.deviceAuth()}
-                onLogin={server.startLogin}
-              />
-            </Match>
-            <Match when={currentView() === "settings"}>
-              <Settings
-                tab={settingsTab()}
-                onTabChange={setSettingsTab}
-                onClose={() => vscode.postMessage({ type: "closePanel" })}
-                onMigrationClick={(source) => {
-                  setMigrationSource(source)
-                  setMigrationNeeded(true)
-                }}
-              />
-            </Match>
-            <Match when={currentView() === "subAgentViewer"}>
-              <ChatView readonly />
-            </Match>
-          </Switch>
+          <ChatView
+            continueInWorktree
+            onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
+            promptBoxId="sidebar:fallback"
+            emptyState={emptyState}
+          />
         }
       >
-        <MigrationWizard
-          source={migrationSource()}
-          onBack={() => setMigrationNeeded(false)}
-          onComplete={() => setMigrationNeeded(false)}
-        />
-      </Show>
-      {/* legacy-migration end */}
+        <Match when={currentView() === "newTask"}>
+          <ChatView
+            onSelectSession={handleSelectSession}
+            onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
+            continueInWorktree
+            promptBoxId="sidebar:new-task"
+            emptyState={emptyState}
+          />
+        </Match>
+        <Match when={currentView() === "history"}>
+          <HistoryView onSelectSession={handleSelectSession} onBack={() => setCurrentView("newTask")} />
+        </Match>
+        <Match when={currentView() === "profile"}>
+          <ProfileView profileData={server.profileData()} deviceAuth={server.deviceAuth()} onLogin={server.startLogin} />
+        </Match>
+        <Match when={currentView() === "settings"}>
+          <Settings
+            tab={settingsTab()}
+            onTabChange={setSettingsTab}
+            onClose={() => vscode.postMessage({ type: "closePanel" })}
+          />
+        </Match>
+        <Match when={currentView() === "subAgentViewer"}>
+          <ChatView readonly />
+        </Match>
+      </Switch>
     </div>
   )
 }

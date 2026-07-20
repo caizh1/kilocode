@@ -1,0 +1,50 @@
+{
+  "confirmedDesignUnits": ["DU-TARGET", "DU-INGEST", "DU-SCHEDULER", "DU-STORE"],
+  "requiredTopics": [
+    "positioning",
+    "boundaries",
+    "io",
+    "architecture",
+    "business",
+    "objects",
+    "functions",
+    "state",
+    "interfaces",
+    "errors",
+    "strategy",
+    "integration",
+    "observability",
+    "evidence"
+  ],
+  "chapters": [
+    {
+      "designUnitId": "DU-TARGET",
+      "topics": ["positioning", "boundaries", "io", "architecture", "business", "objects", "functions", "state", "interfaces", "errors", "strategy", "integration", "observability", "evidence"],
+      "explanations": ["functions", "objects", "interfaces", "lifecycle", "recovery", "transitions", "line-evidence"]
+    },
+    {
+      "designUnitId": "DU-INGEST",
+      "topics": ["positioning", "boundaries", "io", "architecture", "business", "objects", "functions", "state", "interfaces", "errors", "strategy", "integration", "observability", "evidence"],
+      "explanations": ["functions", "objects", "interfaces", "lifecycle", "recovery", "transitions", "line-evidence"]
+    },
+    {
+      "designUnitId": "DU-SCHEDULER",
+      "topics": ["positioning", "functions", "state"],
+      "explanations": ["name-lists-only"]
+    }
+  ],
+  "views": {
+    "DU-TARGET": ["architecture", "business", "code", "state", "data"],
+    "DU-INGEST": ["architecture", "business", "code", "state", "data"],
+    "DU-SCHEDULER": ["architecture", "business"],
+    "DU-STORE": []
+  },
+  "expectedStatus": "PARTIAL",
+  "expectedFindings": [
+    "missing-design-unit-chapter:DU-STORE",
+    "incomplete-content-topics:DU-SCHEDULER",
+    "list-only-content:DU-SCHEDULER",
+    "missing-five-view-coverage:DU-SCHEDULER",
+    "missing-five-view-coverage:DU-STORE"
+  ]
+}

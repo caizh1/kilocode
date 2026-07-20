@@ -116,6 +116,7 @@ describe("MarketplaceApiClient", () => {
               downloads: 12,
               favorites: 3,
               tags: ["docs"],
+              risk: { level: "medium", issueCount: 2, policyVersion: "skill-risk-v2" },
             },
           ],
           catalogVersion: "v1",
@@ -131,6 +132,7 @@ describe("MarketplaceApiClient", () => {
       revision: 4,
       sha256: "a".repeat(64),
       content: "http://market.test/api/v1/skills/documents/releases/4/archive",
+      risk: { level: "medium", issueCount: 2, policyVersion: "skill-risk-v2" },
     })
   })
 
@@ -195,6 +197,7 @@ describe("MarketplaceApiClient", () => {
             updatedAt: "2026-07-12T00:00:00.000Z",
             downloads: 1,
             favorites: 1,
+            risk: { level: "unknown", issueCount: 0 },
             markdown: "# Docs",
             releases: [],
             files: [],

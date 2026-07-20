@@ -2,18 +2,23 @@ import * as vscode from "vscode"
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import { createHash } from "node:crypto"
+import { createReadStream } from "node:fs"
 import type { ExecFileOptionsWithStringEncoding } from "node:child_process"
 import { exec as run } from "../../util/process"
 import { chipmateServerEndpoints } from "../chipmate-server"
+import { readVsixManifest } from "./vsix"
 
-export const LAST_AUTO_KEY = "kilo.updateCheck.lastAutoCheckMs"
-export const LAST_MANUAL_KEY = "kilo.updateCheck.lastManualCheckMs"
-export const LAST_WARNING_KEY = "kilo.updateCheck.lastWarningMs"
+export const LAST_AUTO_KEY = "chipmate.v2.updateCheck.lastAutoCheckMs"
+export const LAST_MANUAL_KEY = "chipmate.v2.updateCheck.lastManualCheckMs"
+export const LAST_WARNING_KEY = "chipmate.v2.updateCheck.lastWarningMs"
 
 const DEFAULT_INTERVAL = 24
-const DEFAULT_TIMEOUT = 10_000
+const DEFAULT_TIMEOUT = 30_000
+const DEFAULT_DOWNLOAD_TIMEOUT = 15 * 60_000
 const DEFAULT_CODE = "code"
-const DEFAULT_MAX = 209_715_200
+const DEFAULT_MAX = 268_435_456
+const DEFAULT_IDLE = 60_000
+const INSTALL_TIMEOUT = 5 * 60_000
 const INSTALL = "Install Update"
 const RELOAD = "Reload Window"
 const TARGETS = ["win32-x64-baseline", "linux-x64-baseline", "darwin-x64", "darwin-arm64"] as const
@@ -21,6 +26,7 @@ const TARGETS = ["win32-x64-baseline", "linux-x64-baseline", "darwin-x64", "darw
 type Mode = "auto" | "manual"
 type Target = (typeof TARGETS)[number]
 type Kind =
+  | "availability"
   | "manifest"
   | "server"
   | "identity"
@@ -53,6 +59,7 @@ type Config = {
   checkOnStartup: boolean
   intervalHours: number
   timeoutMs: number
+  downloadTimeoutMs: number
   codeCliPath: string
   maxDownloadBytes: number
 }
@@ -82,14 +89,22 @@ class UpdateError extends Error {
     readonly kind: Kind,
     message: string,
     readonly warning = message,
+    readonly file?: string,
   ) {
     super(message)
   }
 }
 
+type Transaction =
+  | { state: "running"; promise: Promise<"declined" | "installed"> }
+  | { state: "installed"; file: string }
+  | { state: "manual"; file: string; warning: string }
+
 export class UpdateCheckService implements vscode.Disposable {
   private timer: ReturnType<typeof setTimeout> | undefined
   private readonly disposables: vscode.Disposable[] = []
+  private readonly controllers = new Set<AbortController>()
+  private readonly transactions = new Map<string, Transaction>()
   private readonly deps: Deps
 
   constructor(
@@ -106,8 +121,8 @@ export class UpdateCheckService implements vscode.Disposable {
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (
-          event.affectsConfiguration("kilo.updateCheck") ||
-          event.affectsConfiguration("kilo-code.new.chipmateServer")
+          event.affectsConfiguration("chipmate.v2.updateCheck") ||
+          event.affectsConfiguration("chipmate.v2.chipmateServer")
         ) {
           this.schedule()
         }
@@ -160,6 +175,8 @@ export class UpdateCheckService implements vscode.Disposable {
 
   dispose(): void {
     if (this.timer) clearTimeout(this.timer)
+    for (const ctrl of this.controllers) ctrl.abort()
+    this.controllers.clear()
     for (const item of this.disposables) item.dispose()
   }
 
@@ -197,26 +214,62 @@ export class UpdateCheckService implements vscode.Disposable {
       if (mode === "manual") await vscode.window.showInformationMessage("ChipMate is already up to date.")
       return
     }
+    await this.update(cfg, mode, id, item, resolvePackageUrl(url, item.url))
+  }
+
+  private async update(cfg: Config, mode: Mode, id: Identity, item: Package, url: URL): Promise<void> {
+    const key = `${item.target}/${item.version}/${item.sha256.toLowerCase()}`
+    const current = this.transactions.get(key)
+    if (current?.state === "running") {
+      await current.promise.catch(() => undefined)
+      return
+    }
+    if (current?.state === "installed") {
+      if (mode === "manual")
+        await vscode.window.showInformationMessage("ChipMate update is installed and awaiting reload.")
+      return
+    }
+    if (current?.state === "manual") {
+      if (mode === "manual") await this.warning(current.warning)
+      return
+    }
+
+    const task = this.apply(cfg, id, item, url)
+    this.transactions.set(key, { state: "running", promise: task })
+    try {
+      const result = await task
+      if (result === "declined") {
+        this.transactions.delete(key)
+        return
+      }
+      const file = this.packagePath(item)
+      this.transactions.set(key, { state: "installed", file })
+      const reload = await vscode.window.showInformationMessage(
+        "ChipMate update installed. Reload Window to finish.",
+        RELOAD,
+      )
+      if (reload === RELOAD) await vscode.commands.executeCommand("workbench.action.reloadWindow")
+    } catch (err) {
+      if (err instanceof UpdateError && err.kind === "install" && err.file) {
+        this.transactions.set(key, { state: "manual", file: err.file, warning: err.warning })
+      } else {
+        this.transactions.delete(key)
+      }
+      throw err
+    }
+  }
+
+  private async apply(cfg: Config, id: Identity, item: Package, url: URL): Promise<"declined" | "installed"> {
     if (!cfg.autoInstall) {
       const choice = await vscode.window.showInformationMessage(
         `ChipMate update ${item.version} is available. Current version: ${id.version}.`,
         INSTALL,
       )
-      if (choice !== INSTALL) return
+      if (choice !== INSTALL) return "declined"
     }
-
-    const file = await this.download(cfg, item, resolvePackageUrl(url, item.url))
-    try {
-      await this.install(cfg, file)
-    } catch (err) {
-      await fs.rm(file, { force: true })
-      throw err
-    }
-    const reload = await vscode.window.showInformationMessage(
-      "ChipMate update installed. Reload Window to finish.",
-      RELOAD,
-    )
-    if (reload === RELOAD) await vscode.commands.executeCommand("workbench.action.reloadWindow")
+    const file = await this.download(cfg, item, url)
+    await this.install(cfg, file)
+    return "installed"
   }
 
   private manifestUrl(): URL {
@@ -228,41 +281,55 @@ export class UpdateCheckService implements vscode.Disposable {
   }
 
   private async fetchManifest(cfg: Config, url: URL): Promise<Manifest> {
-    const ctrl = new AbortController()
+    const ctrl = this.controller()
     const timer = setTimeout(() => ctrl.abort(), cfg.timeoutMs)
     try {
-      const res = await this.deps.fetch(url.toString(), { signal: ctrl.signal })
-      if (!res.ok) throw new UpdateError("manifest", `Failed to read update manifest: HTTP ${res.status}`)
-      return parseManifest(await res.json())
-    } catch (err) {
-      if (err instanceof UpdateError) throw err
-      throw new UpdateError("manifest", `Failed to read update manifest: ${message(err)}`)
+      const res = await this.deps.fetch(url.toString(), { signal: ctrl.signal }).catch((err) => {
+        throw new UpdateError("availability", `Failed to read update manifest: ${message(err)}`)
+      })
+      if (!res.ok) {
+        const kind = transient(res.status) ? "availability" : "manifest"
+        throw new UpdateError(kind, `Failed to read update manifest: HTTP ${res.status}`)
+      }
+      const raw = await res.json().catch((err) => {
+        throw new UpdateError("manifest", `Failed to parse update manifest: ${message(err)}`)
+      })
+      return parseManifest(raw)
     } finally {
       clearTimeout(timer)
+      this.controllers.delete(ctrl)
     }
   }
 
   private async download(cfg: Config, item: Package, url: URL): Promise<string> {
-    const dir = path.join(this.context.globalStorageUri.fsPath, "update-check")
-    const name = `${safe(item.publisher)}.${safe(item.name)}-${safe(item.version)}.vsix`
-    const file = path.join(dir, name)
-    const tmp = `${file}.tmp`
+    const file = this.packagePath(item)
+    const dir = path.dirname(file)
+    const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
     await fs.mkdir(dir, { recursive: true })
-    await fs.rm(tmp, { force: true })
+    if (await this.valid(file, item)) return file
+    await fs.rm(file, { force: true })
 
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), cfg.timeoutMs)
+    const ctrl = this.controller()
+    const header = setTimeout(() => ctrl.abort(), cfg.timeoutMs)
+    const total = setTimeout(() => ctrl.abort(), cfg.downloadTimeoutMs)
     try {
       const res = await this.deps.fetch(url.toString(), { signal: ctrl.signal })
+      clearTimeout(header)
       if (!res.ok) throw new UpdateError("download", `Failed to download VSIX: HTTP ${res.status}`)
-      const len = Number(res.headers.get("content-length") ?? "0")
-      if (Number.isFinite(len) && len > cfg.maxDownloadBytes) {
-        throw new UpdateError("download-size", `VSIX download is larger than ${cfg.maxDownloadBytes} bytes.`)
-      }
-      const digest = await writeResponse(res, tmp, cfg.maxDownloadBytes)
-      if (digest.toLowerCase() !== item.sha256.toLowerCase()) {
+      this.validateLength(res, cfg, item)
+      const result = await writeResponse(
+        res,
+        tmp,
+        cfg.maxDownloadBytes,
+        item.sizeBytes,
+        Math.max(cfg.timeoutMs, DEFAULT_IDLE),
+        ctrl,
+      )
+      if (result.digest.toLowerCase() !== item.sha256.toLowerCase()) {
         throw new UpdateError("sha256", "VSIX sha256 verification failed.")
       }
+      await this.verify(tmp, item)
+      await fs.rm(file, { force: true })
       await fs.rename(tmp, file)
       return file
     } catch (err) {
@@ -270,19 +337,78 @@ export class UpdateCheckService implements vscode.Disposable {
       if (err instanceof UpdateError) throw err
       throw new UpdateError("download", `Failed to download VSIX: ${message(err)}`)
     } finally {
-      clearTimeout(timer)
+      clearTimeout(header)
+      clearTimeout(total)
+      this.controllers.delete(ctrl)
     }
+  }
+
+  private validateLength(res: Response, cfg: Config, item: Package): void {
+    const raw = res.headers.get("content-length")
+    if (raw === null) return
+    const len = Number(raw)
+    if (!Number.isSafeInteger(len) || len < 0) throw new UpdateError("download-size", "VSIX Content-Length is invalid.")
+    if (len > cfg.maxDownloadBytes) {
+      throw new UpdateError("download-size", `VSIX download is larger than ${cfg.maxDownloadBytes} bytes.`)
+    }
+    if (len !== item.sizeBytes)
+      throw new UpdateError("download-size", "VSIX Content-Length does not match the manifest.")
+  }
+
+  private async valid(file: string, item: Package): Promise<boolean> {
+    try {
+      await this.verify(file, item)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private async verify(file: string, item: Package): Promise<void> {
+    const stat = await fs.stat(file)
+    if (stat.size !== item.sizeBytes) throw new UpdateError("download-size", "VSIX size does not match the manifest.")
+    if ((await hashFile(file)).toLowerCase() !== item.sha256.toLowerCase()) {
+      throw new UpdateError("sha256", "VSIX sha256 verification failed.")
+    }
+    const manifest = await readVsixManifest(file).catch((err) => {
+      throw new UpdateError("identity", `VSIX package manifest is invalid: ${message(err)}`)
+    })
+    if (manifest.publisher !== item.publisher || manifest.name !== item.name) {
+      throw new UpdateError("identity", "VSIX package identity does not match the update manifest.")
+    }
+    if (`${manifest.publisher}.${manifest.name}` !== item.extensionId) {
+      throw new UpdateError("identity", "VSIX package extensionId does not match the update manifest.")
+    }
+    if (manifest.version !== item.version) {
+      throw new UpdateError("version", "VSIX package version does not match the update manifest.")
+    }
+    if (manifest.chipmatePackageTarget !== item.target) {
+      throw new UpdateError("target", "VSIX package target does not match the update manifest.")
+    }
+  }
+
+  private packagePath(item: Package): string {
+    const dir = path.join(this.context.globalStorageUri.fsPath, "update-check")
+    const name = `${safe(item.publisher)}.${safe(item.name)}-${safe(item.version)}.vsix`
+    return path.join(dir, name)
+  }
+
+  private controller(): AbortController {
+    const ctrl = new AbortController()
+    this.controllers.add(ctrl)
+    return ctrl
   }
 
   private async install(cfg: Config, file: string): Promise<void> {
     const cmd = `${quote(cfg.codeCliPath)} --install-extension ${quote(file)} --force`
     try {
-      await this.deps.exec(cfg.codeCliPath, ["--install-extension", file, "--force"], { timeout: 120_000 })
+      await this.deps.exec(cfg.codeCliPath, ["--install-extension", file, "--force"], { timeout: INSTALL_TIMEOUT })
     } catch (err) {
       throw new UpdateError(
         "install",
         `Failed to install VSIX: ${message(err)}`,
         `ChipMate update install failed. You can run this command manually:\n${cmd}\n\n${message(err)}`,
+        file,
       )
     }
   }
@@ -290,6 +416,7 @@ export class UpdateCheckService implements vscode.Disposable {
   private async fail(err: unknown, cfg: Config, mode: Mode): Promise<void> {
     const item = err instanceof UpdateError ? err : new UpdateError("manifest", message(err))
     this.deps.log.warn(`[Kilo New] Update check failed (${item.kind}): ${item.message}`)
+    if (mode === "auto" && item.kind === "availability") return
     if (mode === "manual" || this.shouldWarn(item.kind, cfg)) {
       await this.warning(item.warning)
       if (mode === "auto") await this.markWarning(item.kind)
@@ -333,13 +460,14 @@ export class UpdateCheckService implements vscode.Disposable {
   }
 
   private config(): Config {
-    const cfg = vscode.workspace.getConfiguration("kilo.updateCheck")
+    const cfg = vscode.workspace.getConfiguration("chipmate.v2.updateCheck")
     return {
       enabled: cfg.get("enabled", true),
       autoInstall: cfg.get("autoInstall", true),
       checkOnStartup: cfg.get("checkOnStartup", true),
       intervalHours: positive(cfg.get("intervalHours", DEFAULT_INTERVAL), DEFAULT_INTERVAL),
       timeoutMs: positive(cfg.get("timeoutMs", DEFAULT_TIMEOUT), DEFAULT_TIMEOUT),
+      downloadTimeoutMs: positive(cfg.get("downloadTimeoutMs", DEFAULT_DOWNLOAD_TIMEOUT), DEFAULT_DOWNLOAD_TIMEOUT),
       codeCliPath: nonempty(cfg.get("codeCliPath", DEFAULT_CODE), DEFAULT_CODE),
       maxDownloadBytes: positive(cfg.get("maxDownloadBytes", DEFAULT_MAX), DEFAULT_MAX),
     }
@@ -366,7 +494,7 @@ export function registerUpdateCheck(context: vscode.ExtensionContext): UpdateChe
   const service = new UpdateCheckService(context)
   context.subscriptions.push(service)
   context.subscriptions.push(
-    vscode.commands.registerCommand("kilo-code.new.checkForUpdates", () => service.checkManual()),
+    vscode.commands.registerCommand("chipmate.v2.checkForUpdates", () => service.checkManual()),
   )
   return service
 }
@@ -385,10 +513,22 @@ export function resolvePackageUrl(base: URL, value: string): URL {
   }
   const path = text.startsWith("/") ? text.slice(1) : text
   const parts = path.split("/")
-  if (!path.startsWith("packages/") || parts.some((part) => part === "" || part === "." || part === "..")) {
+  const unsafe = parts.some((part) => {
+    try {
+      const decoded = decodeURIComponent(part)
+      return !decoded || decoded === "." || decoded === ".." || decoded.includes("/") || decoded.includes("\\")
+    } catch {
+      return true
+    }
+  })
+  if (!path.startsWith("packages/") || unsafe) {
     throw new UpdateError("vsix-url", "Update package URL must stay under /packages/.")
   }
-  return new URL(`/${path}`, base.origin)
+  const url = new URL(`/${path}`, base.origin)
+  if (!url.pathname.startsWith("/packages/")) {
+    throw new UpdateError("vsix-url", "Update package URL must stay under /packages/.")
+  }
+  return url
 }
 
 export function compareVersions(a: string, b: string): number {
@@ -409,6 +549,10 @@ function updateManifestUrl(): string {
   if (!result.endpoints)
     throw new UpdateError("server", result.state.error ?? result.state.warning ?? "ChipMate Server is unavailable.")
   return result.endpoints.updates
+}
+
+function transient(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500
 }
 
 function parseManifest(raw: unknown): Manifest {
@@ -457,25 +601,66 @@ function target(value: unknown): Target | undefined {
   return typeof value === "string" && (TARGETS as readonly string[]).includes(value) ? (value as Target) : undefined
 }
 
-async function writeResponse(res: Response, file: string, max: number): Promise<string> {
+async function writeResponse(
+  res: Response,
+  file: string,
+  max: number,
+  expected: number,
+  timeout: number,
+  ctrl: AbortController,
+): Promise<{ digest: string; size: number }> {
   if (!res.body) throw new UpdateError("download", "VSIX download response has no body.")
   const hash = createHash("sha256")
   const handle = await fs.open(file, "w")
   const reader = res.body.getReader()
   let size = 0
+  let idle: ReturnType<typeof setTimeout> | undefined
+  let abort: (() => void) | undefined
+  const stopped = new Promise<never>((_, reject) => {
+    abort = () => reject(new Error("VSIX download was aborted."))
+    ctrl.signal.addEventListener("abort", abort, { once: true })
+    if (ctrl.signal.aborted) abort()
+  })
+  const reset = () => {
+    if (idle) clearTimeout(idle)
+    idle = setTimeout(() => ctrl.abort(), timeout)
+  }
   try {
+    reset()
     while (true) {
-      const chunk = await reader.read()
+      const chunk = await Promise.race([reader.read(), stopped])
       if (chunk.done) break
+      reset()
       size += chunk.value.byteLength
       if (size > max) throw new UpdateError("download-size", `VSIX download is larger than ${max} bytes.`)
+      if (size > expected) throw new UpdateError("download-size", "VSIX size does not match the manifest.")
       hash.update(chunk.value)
-      await handle.write(Buffer.from(chunk.value))
+      const data = Buffer.from(chunk.value)
+      let offset = 0
+      while (offset < data.length) {
+        const result = await handle.write(data, offset, data.length - offset)
+        if (result.bytesWritten <= 0) throw new UpdateError("download", "Failed to write the complete VSIX download.")
+        offset += result.bytesWritten
+      }
     }
+    if (size !== expected) throw new UpdateError("download-size", "VSIX size does not match the manifest.")
   } finally {
+    if (idle) clearTimeout(idle)
+    if (abort) ctrl.signal.removeEventListener("abort", abort)
+    if (ctrl.signal.aborted) await reader.cancel().catch(() => undefined)
     await handle.close()
   }
-  return hash.digest("hex")
+  return { digest: hash.digest("hex"), size }
+}
+
+function hashFile(file: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256")
+    const stream = createReadStream(file)
+    stream.on("data", (chunk) => hash.update(chunk))
+    stream.on("error", reject)
+    stream.on("end", () => resolve(hash.digest("hex")))
+  })
 }
 
 function parseVersion(value: string): { main: [number, number, number]; pre: string } | undefined {

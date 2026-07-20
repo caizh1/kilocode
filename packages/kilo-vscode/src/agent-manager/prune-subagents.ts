@@ -14,7 +14,7 @@ export async function pruneSubagents(
     const parent = result.info?.parentID
     if (parent === undefined || parent === null) continue
     state.removeSession(result.item.id)
-    sessions.clearSessionDirectory(result.item.id)
+    sessions.forgetSessionDirectory(result.item.id)
     log(`Removed subagent session ${result.item.id} from managed state`)
   }
 }

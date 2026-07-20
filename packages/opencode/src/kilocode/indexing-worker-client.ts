@@ -25,6 +25,7 @@ import {
   type Result,
 } from "./indexing-worker-protocol"
 import type { IndexingWarning } from "./indexing-warning"
+import { selfEnv, userEnv } from "./product-env"
 
 declare global {
   const KILO_INDEXING_PROCESS_PATH: string
@@ -61,12 +62,15 @@ export namespace IndexingWorker {
       stdout: "pipe",
       stderr: "pipe",
       env: {
+        ...userEnv(process.env),
+        ...selfEnv(),
         KILO_INDEXING_SOFT_RSS_BYTES: String(budget.soft),
         KILO_INDEXING_CRITICAL_RSS_BYTES: String(budget.critical),
         KILO_INDEXING_HARD_RSS_BYTES: String(budget.hard),
         KILO_INDEXING_RECOVERY_RSS_BYTES: String(budget.recovery),
         KILO_INDEXING_FORCED_LOW: options.forcedLow ? "1" : "0",
       },
+      extendEnv: false,
     })
     if (!task.stdin || !task.stdout || !task.stderr) throw new Error("Indexing process pipes are unavailable.")
 

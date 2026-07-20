@@ -34,6 +34,18 @@ function context(sent: unknown[]) {
 }
 
 describe("cloud session preview handler", () => {
+  it("rejects import before touching the CLI when no model is selected", async () => {
+    const sent: unknown[] = []
+    await handleImportAndSend(context(sent), "cloud-session", "Continue")
+    expect(sent).toEqual([
+      {
+        type: "cloudSessionImportFailed",
+        cloudSessionId: "cloud-session",
+        error: "Select a model before sending",
+      },
+    ])
+  })
+
   it("reports a failure when the CLI preview request stalls", async () => {
     const timeout = AbortSignal.timeout
     AbortSignal.timeout = () => {
@@ -73,7 +85,9 @@ describe("cloud session preview handler", () => {
     try {
       const sent: unknown[] = []
       const outcome = await Promise.race([
-        handleImportAndSend(context(sent), "cloud-session", "Continue").then(() => "resolved" as const),
+        handleImportAndSend(context(sent), "cloud-session", "Continue", undefined, "openai", "gpt-4.1").then(
+          () => "resolved" as const,
+        ),
         Bun.sleep(50).then(() => "still-pending" as const),
       ])
 

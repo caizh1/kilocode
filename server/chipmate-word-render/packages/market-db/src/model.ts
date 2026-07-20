@@ -215,6 +215,7 @@ export interface SearchItem {
   updatedAt: string
   downloads: number
   favorites: number
+  report: Record<string, unknown>
   artwork?: ArtworkItem
   gallery?: ArtworkItem[]
 }
@@ -395,10 +396,17 @@ export interface PublicationReport {
     actual?: string
     fixable: boolean
     repairKind: "none" | "deterministic" | "ai"
+    riskLevel: "none" | "medium" | "critical"
   }>
   sourceSha256: string
   snapshotSha256: string
   changed: boolean
+  policyVersion?: string
+  risk: {
+    level: "none" | "medium" | "critical"
+    issueCount: number
+    policyVersion: string
+  }
 }
 
 export interface PublicationItem {
@@ -413,6 +421,7 @@ export interface PublicationItem {
     | "PUBLISHING"
     | "PUBLISHED"
     | "UNPUBLISHED"
+    | "UNDONE"
     | "UNCHANGED"
     | "FAILED"
   stage: "uploaded" | "format" | "deterministic" | "security" | "semantic" | "publishing" | "complete"
@@ -436,6 +445,14 @@ export interface UnpublishInput {
   ownerId: string
   ownerName: string
   skillId: string
+}
+
+export interface UndoPublicationInput {
+  id: string
+  ownerId: string
+  ownerName: string
+  runId: string
+  idempotencyKey: string
 }
 
 export interface EventInput {

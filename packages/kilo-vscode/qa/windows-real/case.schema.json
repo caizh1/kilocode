@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chipmate.local/qa/windows-real/case.schema.json",
+  "title": "ChipMate Windows installed-VSIX regression matrix",
+  "type": "object",
+  "required": ["version", "cases"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": [
+        "id",
+        "suite",
+        "title",
+        "severity",
+        "profiles",
+        "changesets",
+        "pathPatterns",
+        "preconditions",
+        "steps",
+        "expectedState",
+        "visualOracle",
+        "timeoutSeconds",
+        "cleanup"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^WIN-[A-Z0-9-]+$" },
+        "suite": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["P0", "P1", "P2", "P3"] },
+        "profiles": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["clean", "upgrade", "coexist", "empty"] },
+          "uniqueItems": true
+        },
+        "changesets": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "uniqueItems": true
+        },
+        "pathPatterns": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "preconditions": { "type": "array", "items": { "type": "string" } },
+        "steps": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "expectedState": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "visualOracle": { "enum": ["none", "structure", "baseline", "review"] },
+        "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "cleanup": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

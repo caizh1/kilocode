@@ -14,7 +14,7 @@ describe("RunScriptService", () => {
 
   beforeEach(() => {
     root = tmpdir()
-    dir = path.join(root, ".kilo")
+    dir = path.join(root, ".chipmate-v2")
     fs.mkdirSync(dir)
   })
 
@@ -58,13 +58,13 @@ describe("RunScriptService", () => {
       command: "sh",
       args: ["/tmp/run-script"],
     })
-    expect(buildRunTaskCommand({ path: "C:\\repo\\.kilo\\run-script.ps1", kind: "powershell" })).toEqual({
+    expect(buildRunTaskCommand({ path: "C:\\repo\\.chipmate-v2\\run-script.ps1", kind: "powershell" })).toEqual({
       command: "powershell.exe",
-      args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\repo\\.kilo\\run-script.ps1"],
+      args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\repo\\.chipmate-v2\\run-script.ps1"],
     })
-    expect(buildRunTaskCommand({ path: "C:\\repo path\\.kilo\\run-script.cmd", kind: "cmd" })).toEqual({
+    expect(buildRunTaskCommand({ path: "C:\\repo path\\.chipmate-v2\\run-script.cmd", kind: "cmd" })).toEqual({
       command: "cmd.exe",
-      args: ["/d", "/s", "/c", '"C:\\repo path\\.kilo\\run-script.cmd"'],
+      args: ["/d", "/s", "/c", '"C:\\repo path\\.chipmate-v2\\run-script.cmd"'],
     })
   })
 
@@ -73,14 +73,14 @@ describe("RunScriptService", () => {
     expect(new RunScriptService(root).resolveScript("darwin")).toBeUndefined()
   })
 
-  it("rejects symlinks pointing outside the .kilo directory", () => {
+  it("rejects symlinks pointing outside the .chipmate-v2 directory", () => {
     const outside = path.join(root, "evil.sh")
     fs.writeFileSync(outside, "echo pwned")
     fs.symlinkSync(outside, path.join(dir, "run-script"))
     expect(new RunScriptService(root).resolveScript("darwin")).toBeUndefined()
   })
 
-  it("accepts symlinks pointing inside the .kilo directory", () => {
+  it("accepts symlinks pointing inside the .chipmate-v2 directory", () => {
     const target = path.join(dir, "real-script")
     fs.writeFileSync(target, "bun test")
     fs.symlinkSync(target, path.join(dir, "run-script"))

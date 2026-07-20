@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Config } from "../../src/config/config"
 import { Plugin } from "../../src/plugin"
@@ -6,6 +6,7 @@ import { PtyPreparation } from "../../src/pty-preparation"
 import { Pty } from "@opencode-ai/core/pty"
 import { Shell } from "../../src/shell/shell"
 import { testEffect } from "../lib/effect"
+import { KiloPtySelfCommand } from "../../src/kilocode/pty/self-command"
 
 Shell.preferred.reset()
 
@@ -99,4 +100,14 @@ describe("pty environment preparation", () => {
       expect(prepared.env.KILO_TERMINAL).toBe("1")
     }),
   )
+
+  test("marks only explicit bare Kilo commands as trusted self commands", () => {
+    const cmd = { command: "/extension/bin/kilo", args: [], cwd: "/repo" }
+    expect(KiloPtySelfCommand.resolve({ command: "kilo", cwd: "/work" }, cmd)).toMatchObject({
+      command: cmd.command,
+      self: true,
+    })
+    expect(KiloPtySelfCommand.resolve({ command: "/extension/bin/kilo", cwd: "/work" }, cmd).self).toBeUndefined()
+    expect(KiloPtySelfCommand.resolve({ command: "sh", cwd: "/work" }, cmd).self).toBeUndefined()
+  })
 })

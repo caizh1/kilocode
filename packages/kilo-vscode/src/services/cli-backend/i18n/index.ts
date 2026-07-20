@@ -66,7 +66,7 @@ export function resolveConfiguredLocale(cfg: string | undefined, env: string): s
 function loadTranslations(): Record<string, string> {
   // vscode.env.language and configuration defaults are available at module load time in the extension host.
   const vscode = require("vscode") as typeof import("vscode")
-  const cfg = vscode.workspace.getConfiguration("kilo-code.new").get<string>("language")
+  const cfg = vscode.workspace.getConfiguration("chipmate.v2").get<string>("language")
   const locale = resolveConfiguredLocale(cfg, vscode.env.language)
   return { ...en, ...(bundles[locale] ?? {}) }
 }

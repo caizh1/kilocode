@@ -321,17 +321,20 @@ describe("server workspace helpers", () => {
     expect(emptyWorkspaceEnv([{ uri: { fsPath: "/repo" } }], "/repo")).toEqual({})
   })
 
-  it("uses the shared database for the managed backend while preserving the environment", () => {
+  it("forces an isolated ChipMate v2 profile while preserving unrelated environment", () => {
     expect(
       resolveManagedServerEnv({
         PATH: "/usr/bin",
         KILO_DISABLE_CHANNEL_DB: "false",
         KILO_DISABLE_CODEBASE_INDEXING: "maintenance-window",
-      }),
+      }, "/global-storage/v2"),
     ).toEqual({
       PATH: "/usr/bin",
       KILO_DISABLE_CHANNEL_DB: "true",
       KILO_DISABLE_CODEBASE_INDEXING: "maintenance-window",
+      KILO_PRODUCT_PROFILE: "chipmate-v2",
+      KILO_STORAGE_ROOT: "/global-storage/v2",
+      KILO_VSCODE_GLOBAL_STORAGE: "/global-storage/v2",
     })
   })
 })
@@ -343,6 +346,7 @@ describe("server bundled tool env", () => {
     expect(env).toEqual({
       PATH: `/extension/bin/poppler${path.delimiter}/extension/bin${path.delimiter}/usr/bin`,
       KILO_RIPGREP_PATH: "/extension/bin/rg",
+      KILO_VSCODE_BUNDLED_BIN: "/extension/bin",
     })
   })
 
@@ -352,6 +356,7 @@ describe("server bundled tool env", () => {
     expect(env).toEqual({
       PATH: `/extension/bin/poppler${path.delimiter}/extension/bin`,
       KILO_RIPGREP_PATH: "/extension/bin/rg",
+      KILO_VSCODE_BUNDLED_BIN: "/extension/bin",
     })
   })
 })

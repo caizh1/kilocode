@@ -13,7 +13,6 @@ import {
   Package,
   Pause,
   Play,
-  SealCheck,
   ShieldCheck,
   Sparkle,
   SquaresFour,
@@ -39,6 +38,7 @@ import { createRoot, type Root } from "react-dom/client"
 import { compact, icon, InlineError, mutate, request, Skeleton, useApi } from "./shared"
 import { image, repair } from "./icons"
 import { track } from "./analytics"
+import { RiskBadge } from "./risk"
 import { next, previous, query, type Theme } from "./state"
 import "./styles.css"
 
@@ -68,11 +68,19 @@ const PublishPage = lazy(() => import("./routes/publish").then((module) => ({ de
 const MePage = lazy(() => import("./routes/me").then((module) => ({ default: module.MePage })))
 const AnalyticsPage = lazy(() => import("./routes/analytics").then((module) => ({ default: module.AnalyticsPage })))
 const ExtensionHome = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionHome })))
-const ExtensionDetail = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionDetail })))
-const ExtensionPublish = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionPublish })))
+const ExtensionDetail = lazy(() =>
+  import("./routes/extensions").then((module) => ({ default: module.ExtensionDetail })),
+)
+const ExtensionPublish = lazy(() =>
+  import("./routes/extensions").then((module) => ({ default: module.ExtensionPublish })),
+)
 const ExtensionMe = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionMe })))
-const ExtensionAnalyticsPage = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionAnalyticsPage })))
-const ExtensionUnavailable = lazy(() => import("./routes/extensions").then((module) => ({ default: module.ExtensionUnavailable })))
+const ExtensionAnalyticsPage = lazy(() =>
+  import("./routes/extensions").then((module) => ({ default: module.ExtensionAnalyticsPage })),
+)
+const ExtensionUnavailable = lazy(() =>
+  import("./routes/extensions").then((module) => ({ default: module.ExtensionUnavailable })),
+)
 
 collectVitals()
 
@@ -88,6 +96,7 @@ function App() {
   const [detailSync, setDetailSync] = useState(0)
   const [meSync, setMeSync] = useState(0)
   const [analyticsSync, setAnalyticsSync] = useState(0)
+  const waiters = useRef<Array<(value: { user: MarketUser; csrf: string } | undefined) => void>>([])
   const capabilities = useApi<MarketCapabilities>("/api/v1/capabilities")
 
   useEffect(() => {
@@ -152,6 +161,7 @@ function App() {
     setCsrf(token)
     setUser(next)
     setLogin(false)
+    for (const resolve of waiters.current.splice(0)) resolve({ user: next, csrf: token })
     if (location.pathname === "/login") {
       const target = new URL(location.href).searchParams.get("return")
       const path = target?.startsWith("/") && !target.startsWith("//") ? target : "/"
@@ -179,6 +189,7 @@ function App() {
 
   const closeLogin = () => {
     setLogin(false)
+    for (const resolve of waiters.current.splice(0)) resolve(undefined)
     if (location.pathname !== "/login") return
     const target = new URL(location.href).searchParams.get("return")
     navigate(target?.startsWith("/") && !target.startsWith("//") ? target : "/")
@@ -189,29 +200,37 @@ function App() {
     setLogin(true)
   }
 
+  const reauthenticate = () => {
+    setLogin(true)
+    return new Promise<{ user: MarketUser; csrf: string } | undefined>((resolve) => waiters.current.push(resolve))
+  }
+
   const url = new URL(path, location.origin)
   const detail = url.pathname.match(/^\/skills\/([^/]+)$/)
   const extension = url.pathname.match(/^\/extensions\/([^/]+)$/)
-  const extensionId = extension && !["publish", "me", "analytics"].includes(extension[1] ?? "") ? extension[1] : undefined
+  const extensionId =
+    extension && !["publish", "me", "analytics"].includes(extension[1] ?? "") ? extension[1] : undefined
   const enabled = capabilities.data?.features.extensions === true
   const extensionPage = url.pathname.startsWith("/extensions")
   const plugin = capabilities.loading ? (
     <Skeleton label="正在检查插件市场能力" />
   ) : capabilities.error ? (
-    <section className="page-width"><InlineError message={`无法读取插件市场能力：${capabilities.error}`} /></section>
+    <section className="page-width">
+      <InlineError message={`无法读取插件市场能力：${capabilities.error}`} />
+    </section>
   ) : !enabled ? (
     <ExtensionUnavailable navigate={navigate} />
   ) : url.pathname === "/extensions" ? (
     <ExtensionHome navigate={navigate} />
   ) : url.pathname === "/extensions/publish" ? (
-    <ExtensionPublish user={user} csrf={csrf} requestLogin={() => requestLogin("/extensions/publish")} />
-  ) : url.pathname === "/extensions/me" ? (
-    <ExtensionMe
-      navigate={navigate}
+    <ExtensionPublish
       user={user}
       csrf={csrf}
-      requestLogin={() => requestLogin("/extensions/me")}
+      requestLogin={() => requestLogin("/extensions/publish")}
+      reauthenticate={reauthenticate}
     />
+  ) : url.pathname === "/extensions/me" ? (
+    <ExtensionMe navigate={navigate} user={user} csrf={csrf} requestLogin={() => requestLogin("/extensions/me")} />
   ) : url.pathname === "/extensions/analytics" ? (
     <ExtensionAnalyticsPage user={user} requestLogin={() => requestLogin("/extensions/analytics")} />
   ) : extensionId ? (
@@ -225,7 +244,9 @@ function App() {
   ) : (
     <ExtensionHome navigate={navigate} />
   )
-  const page = extensionPage ? plugin : detail ? (
+  const page = extensionPage ? (
+    plugin
+  ) : detail ? (
     <Detail
       key={detailSync}
       id={decodeURIComponent(detail[1] ?? "")}
@@ -309,11 +330,19 @@ function Header(props: {
       </button>
       <nav aria-label="主要导航">
         <ThemeButton theme={props.theme} setTheme={props.setTheme} />
-        <NavButton active={!props.path.startsWith("/extensions") && props.path !== "/status"} onClick={() => props.navigate("/")} icon={<SquaresFour />}>
+        <NavButton
+          active={!props.path.startsWith("/extensions") && props.path !== "/status"}
+          onClick={() => props.navigate("/")}
+          icon={<SquaresFour />}
+        >
           技能市场
         </NavButton>
         {props.extensions && (
-          <NavButton active={props.path.startsWith("/extensions")} onClick={() => props.navigate("/extensions")} icon={<Code />}>
+          <NavButton
+            active={props.path.startsWith("/extensions")}
+            onClick={() => props.navigate("/extensions")}
+            icon={<Code />}
+          >
             VS Code 插件
           </NavButton>
         )}
@@ -339,7 +368,11 @@ function Header(props: {
           </NavButton>
         )}
         {props.user ? (
-          <button className="glass-button account-button" onClick={() => props.navigate(props.path.startsWith("/extensions") ? "/extensions/me" : "/me")} title="打开个人工作台">
+          <button
+            className="glass-button account-button"
+            onClick={() => props.navigate(props.path.startsWith("/extensions") ? "/extensions/me" : "/me")}
+            title="打开个人工作台"
+          >
             <UserCircle />
             <span>{props.user.displayName}</span>
           </button>
@@ -349,7 +382,10 @@ function Header(props: {
             <span>登录</span>
           </button>
         )}
-        <button className="glass-button" onClick={() => props.navigate(props.path.startsWith("/extensions") ? "/extensions/publish" : "/publish")}>
+        <button
+          className="glass-button"
+          onClick={() => props.navigate(props.path.startsWith("/extensions") ? "/extensions/publish" : "/publish")}
+        >
           <UploadSimple /> {props.path.startsWith("/extensions") ? "发布插件" : "发布技能"}
         </button>
       </nav>
@@ -463,7 +499,7 @@ function Home(props: { navigate(path: string): void }) {
     <>
       <section className="hero-section">
         <div className="trust-line">
-          <ShieldCheck /> 所有技能均经过安全扫描与人工审核
+          <ShieldCheck /> 技能发布前会自动扫描，风险结果请以版本详情为准
         </div>
         <div className="hero-grid page-width">
           <div className="hero-copy">
@@ -679,9 +715,7 @@ function Featured(props: { items: SkillSummary[]; navigate(path: string): void }
             <div className="feature-copy">
               <div className="title-row">
                 <h3>{active.name}</h3>
-                <span className="verified">
-                  <SealCheck weight="fill" /> 已验证
-                </span>
+                <RiskBadge risk={active.risk} />
               </div>
               <p>{active.description}</p>
               <div className="meta-row">
@@ -912,9 +946,7 @@ function SkillCard(props: { item: SkillSummary; navigate(path: string): void }) 
     <button className="skill-card" onClick={() => props.navigate(`/skills/${encodeURIComponent(props.item.id)}`)}>
       <span className="card-top">
         <img src={image(props.item)} alt="" onError={(event) => repair(event, props.item)} />
-        <span className="verified">
-          <ShieldCheck /> 已验证
-        </span>
+        <RiskBadge risk={props.item.risk} />
       </span>
       <span className="card-copy">
         <strong>{props.item.name}</strong>

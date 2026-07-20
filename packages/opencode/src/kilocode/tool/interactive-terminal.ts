@@ -1,6 +1,7 @@
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import { InteractiveTerminal } from "@/kilocode/interactive-terminal"
+import { userEnv } from "@/kilocode/product-env"
 import { Plugin } from "@/plugin"
 import { Shell } from "@/shell/shell"
 import { ShellPermission } from "@/tool/shell"
@@ -68,7 +69,7 @@ export const InteractiveTerminalTool = Tool.define<
               cwd,
               description: params.description,
               shell,
-              env: { ...process.env, ...extra.env },
+              env: userEnv({ ...process.env, ...extra.env }),
               abort: ctx.abort,
             }),
           )

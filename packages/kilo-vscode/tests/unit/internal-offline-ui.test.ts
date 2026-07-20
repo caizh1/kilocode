@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test"
+import fs from "node:fs"
+import path from "node:path"
 
 import { canUseGatewayUi, gatewayTarget } from "../../webview-ui/src/utils/internal-offline-ui"
+
+const ROOT = path.resolve(import.meta.dir, "../..")
 
 describe("internal offline webview gateway UI", () => {
   it("keeps Gateway UI available in public builds", () => {
@@ -11,5 +15,28 @@ describe("internal offline webview gateway UI", () => {
   it("redirects Gateway login entry points to Providers in internal offline builds", () => {
     expect(canUseGatewayUi(true)).toBe(false)
     expect(gatewayTarget(true)).toEqual({ view: "settings", tab: "providers" })
+  })
+
+  it("hides KiloClaw and Profile entry points from internal builds", () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"))
+    const title = pkg.contributes.menus["view/title"] as Array<{ command: string; when?: string }>
+    const editor = pkg.contributes.menus["editor/title"] as Array<{ command: string; when?: string }>
+    const palette = pkg.contributes.menus.commandPalette as Array<{ command: string; when?: string }>
+
+    for (const command of ["chipmate.v2.sidebarTitle.kiloClawOpen", "chipmate.v2.sidebarTitle.profileButtonClicked"]) {
+      expect(title.find((item) => item.command === command)?.when).toContain("!chipmate.v2.internalOffline")
+    }
+    expect(editor.find((item) => item.command === "chipmate.v2.profileButtonClicked")?.when).toContain(
+      "!chipmate.v2.internalOffline",
+    )
+    for (const command of ["chipmate.v2.kiloClawOpen", "chipmate.v2.profileButtonClicked"]) {
+      expect(palette.find((item) => item.command === command)?.when).toBe("!chipmate.v2.internalOffline")
+    }
+
+    const host = fs.readFileSync(path.join(ROOT, "src/extension.ts"), "utf8")
+    const prompt = fs.readFileSync(path.join(ROOT, "webview-ui/src/components/chat/PromptInput.tsx"), "utf8")
+    expect(host).toContain('executeCommand("setContext", INTERNAL_OFFLINE_CONTEXT, internal)')
+    expect(host).toContain('if (internal && suffix === "profilePanel")')
+    expect(prompt).toContain('if (isInternalOfflineBuild()) hidden.add("kiloclaw")')
   })
 })

@@ -14,6 +14,7 @@ import { KiloReadObject } from "@/kilocode/tool/read-object" // kilocode_change
 import { isInterrupted } from "@/kilocode/effect/cause" // kilocode_change
 import * as SandboxPolicy from "@/kilocode/sandbox/policy" // kilocode_change
 import { CommandTimeout } from "@/kilocode/command-timeout" // kilocode_change
+import { userEnv } from "@/kilocode/product-env" // kilocode_change
 import { Suggestion } from "@/kilocode/suggestion" // kilocode_change
 import { Question } from "@/question" // kilocode_change
 import { BUILTIN_COMMANDS } from "@/kilocode/session/builtin-commands" // kilocode_change
@@ -672,8 +673,10 @@ export const layer = Layer.effect(
               )
               const cmd = ChildProcess.make(sh, args, {
                 cwd,
-                extendEnv: true,
-                env: { ...shellEnv.env, TERM: "dumb" },
+                // kilocode_change start - do not leak the managed backend environment to direct user shells
+                extendEnv: false,
+                env: userEnv({ ...process.env, ...shellEnv.env, TERM: "dumb" }),
+                // kilocode_change end
                 stdin: "ignore",
                 forceKillAfter: "3 seconds",
               })

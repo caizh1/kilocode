@@ -11,12 +11,12 @@ export function registerCodeActions(
 ): void {
   const target = () => (agentManager?.isActive() ? agentManager : provider)
   const reveal = async () => {
-    await vscode.commands.executeCommand("kilo-code.SidebarProvider.focus")
+    await vscode.commands.executeCommand("chipmate.v2.SidebarProvider.focus")
     await provider.waitForReady()
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("kilo-code.new.explainCode", async () => {
+    vscode.commands.registerCommand("chipmate.v2.explainCode", async () => {
       const ctx = getEditorContext()
       if (!ctx) return
       const prompt = createPrompt("EXPLAIN", {
@@ -30,7 +30,7 @@ export function registerCodeActions(
       provider.postMessage({ type: "triggerTask", text: prompt })
     }),
 
-    vscode.commands.registerCommand("kilo-code.new.fixCode", async () => {
+    vscode.commands.registerCommand("chipmate.v2.fixCode", async () => {
       const ctx = getEditorContext()
       if (!ctx) return
       const prompt = createPrompt("FIX", {
@@ -45,7 +45,7 @@ export function registerCodeActions(
       provider.postMessage({ type: "triggerTask", text: prompt })
     }),
 
-    vscode.commands.registerCommand("kilo-code.new.improveCode", async () => {
+    vscode.commands.registerCommand("chipmate.v2.improveCode", async () => {
       const ctx = getEditorContext()
       if (!ctx) return
       const prompt = createPrompt("IMPROVE", {
@@ -59,7 +59,7 @@ export function registerCodeActions(
       provider.postMessage({ type: "triggerTask", text: prompt })
     }),
 
-    vscode.commands.registerCommand("kilo-code.new.addToContext", async () => {
+    vscode.commands.registerCommand("chipmate.v2.addToContext", async () => {
       const ctx = getEditorContext()
       if (!ctx) return
       const prompt = createPrompt("ADD_TO_CONTEXT", {
@@ -75,7 +75,7 @@ export function registerCodeActions(
       view.postMessage({ type: "appendChatBoxMessage", text: prompt })
     }),
 
-    vscode.commands.registerCommand("kilo-code.new.focusChatInput", async () => {
+    vscode.commands.registerCommand("chipmate.v2.focusChatInput", async () => {
       const view = target()
       if (view === provider) {
         await reveal()

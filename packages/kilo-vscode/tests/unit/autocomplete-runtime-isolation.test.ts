@@ -7,12 +7,113 @@ type Target = { providerID: string; modelID: string }
 const qwen = { providerID: "qwen", modelID: "qwen-coder-30b0" }
 const builtin = { providerID: "kilo", modelID: "inception/mercury-next-edit" }
 const original = vscode.workspace.getConfiguration
+const execute = vscode.commands.executeCommand
 
 afterEach(() => {
   ;(vscode.workspace as unknown as { getConfiguration: typeof original }).getConfiguration = original
+  ;(vscode.commands as unknown as { executeCommand: typeof execute }).executeCommand = execute
 })
 
 describe("autocomplete coordinator", () => {
+  it("keeps every autocomplete runtime stopped while official Kilo owns completion", async () => {
+    config(builtin)
+    const ctx = context()
+    const runtime = manager()
+    let enabled = false
+    let calls = 0
+    const coordinator = new Coordinator(ctx.value, {} as never, {
+      gate: { autocomplete: () => enabled },
+      qwen: async () => {
+        calls++
+        return undefined
+      },
+      manager: () => runtime.value,
+    })
+
+    coordinator.schedule()
+    await coordinator.flush()
+    expect(calls).toBe(0)
+    expect(runtime.created()).toBe(0)
+
+    enabled = true
+    coordinator.schedule()
+    await coordinator.flush()
+    expect(runtime.created()).toBe(1)
+
+    enabled = false
+    coordinator.schedule()
+    await coordinator.flush()
+    expect(runtime.disposed()).toBe(1)
+  })
+
+  it("discards an in-flight provider lookup when official Kilo is installed", async () => {
+    const cfg = config()
+    const ctx = context()
+    const runtime = manager()
+    let enabled = true
+    let start: (() => void) | undefined
+    let release: (() => void) | undefined
+    let fallback = 0
+    const started = new Promise<void>((resolve) => {
+      start = resolve
+    })
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const coordinator = new Coordinator(ctx.value, {} as never, {
+      gate: { autocomplete: () => enabled },
+      qwen: async () => {
+        start?.()
+        await pending
+        return qwen
+      },
+      manager: () => runtime.value,
+      gateway: async () => {
+        fallback++
+        return true
+      },
+    })
+
+    coordinator.schedule()
+    await started
+    enabled = false
+    coordinator.gateChanged(false)
+    release?.()
+    await coordinator.flush()
+
+    expect(cfg.updates).toEqual([])
+    expect(runtime.created()).toBe(0)
+    expect(fallback).toBe(0)
+  })
+
+  it("clears suggestion contexts and synchronously disposes the provider on handoff", async () => {
+    config(builtin)
+    const ctx = context()
+    const runtime = manager()
+    const calls: unknown[][] = []
+    ;(vscode.commands as unknown as { executeCommand: (...args: unknown[]) => Promise<void> }).executeCommand = async (
+      ...args
+    ) => {
+      calls.push(args)
+    }
+    const coordinator = new Coordinator(ctx.value, {} as never, {
+      gate: { autocomplete: () => true },
+      manager: () => runtime.value,
+    })
+
+    coordinator.schedule()
+    await coordinator.flush()
+    coordinator.gateChanged(false)
+    expect(runtime.disposed()).toBe(1)
+    await Promise.resolve()
+
+    expect(calls).toEqual([
+      ["setContext", "chipmate.v2.autocomplete.hasSuggestions", false],
+      ["setContext", "chipmate.v2.autocomplete.enableSmartInlineTaskKeybinding", false],
+      ["setContext", "chipmate.v2.nextEdit.hasPendingSuggestion", false],
+    ])
+  })
+
   it("selects Qwen from a clean config and publishes both settings in the same activation", async () => {
     const cfg = config()
     const ctx = context()
@@ -40,7 +141,7 @@ describe("autocomplete coordinator", () => {
 
   it("keeps a persisted explicit Qwen target when the provider is temporarily disconnected", async () => {
     const cfg = config(qwen)
-    const ctx = context([["kilo.autocomplete.qwenDefault", false]])
+    const ctx = context([["chipmate.v2.autocomplete.qwenDefault", false]])
     const logs: string[] = []
     const coordinator = new Coordinator(ctx.value, {} as never, {
       qwen: async () => undefined,
@@ -58,7 +159,7 @@ describe("autocomplete coordinator", () => {
 
   it("migrates the incorrect 0.0.48 and 0.0.49 Qwen model without changing the provider", async () => {
     const cfg = config({ providerID: "qwen", modelID: "qwen3-coder-30b0" })
-    const ctx = context([["kilo.autocomplete.qwenDefault", true]])
+    const ctx = context([["chipmate.v2.autocomplete.qwenDefault", true]])
     let calls = 0
     let coordinator: Coordinator
     coordinator = new Coordinator(ctx.value, {} as never, {
@@ -81,7 +182,7 @@ describe("autocomplete coordinator", () => {
 
   it("switches between builtin and Qwen targets without keeping both runtimes active", async () => {
     const cfg = config(builtin)
-    const ctx = context([["kilo.autocomplete.qwenDefault", false]])
+    const ctx = context([["chipmate.v2.autocomplete.qwenDefault", false]])
     const first = manager()
     const second = manager()
     const pool = [first, second]
@@ -103,7 +204,7 @@ describe("autocomplete coordinator", () => {
     coordinator.change()
     await coordinator.flush()
     expect(second.created()).toBe(1)
-    expect(ctx.data.get("kilo.autocomplete.qwenDefault")).toBe(false)
+    expect(ctx.data.get("chipmate.v2.autocomplete.qwenDefault")).toBe(false)
   })
 
   it("waits through provider and model intermediate states without starting a fallback runtime", async () => {
@@ -223,7 +324,7 @@ describe("autocomplete coordinator", () => {
 
     expect(cfg.values).toEqual({ provider: builtin.providerID, model: builtin.modelID })
     expect(fallback.created()).toBe(1)
-    expect(ctx.data.get("kilo.autocomplete.lastBuiltinTarget")).toEqual(builtin)
+    expect(ctx.data.get("chipmate.v2.autocomplete.lastBuiltinTarget")).toEqual(builtin)
   })
 
   it("does not start the built-in model in an internal offline build without Qwen", async () => {

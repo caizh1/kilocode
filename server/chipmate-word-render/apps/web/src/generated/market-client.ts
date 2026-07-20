@@ -29,6 +29,7 @@ export const MARKET_ENDPOINTS = [
   "/api/v1/publications/{runId}",
   "/api/v1/publications/{runId}/patches",
   "/api/v1/publications/{runId}/apply",
+  "/api/v1/publications/{runId}/undo",
   "/api/v1/skills/{id}/unpublish",
   "/api/v1/events/batch",
   "/api/v1/analytics/overview",
@@ -59,6 +60,7 @@ export class MarketApiError extends Error {
   constructor(
     readonly status: number,
     readonly payload: unknown,
+    readonly retryAfter?: string,
   ) {
     super(`Market API request failed with HTTP ${status}`)
     this.name = "MarketApiError"
@@ -83,7 +85,7 @@ export class MarketClient {
     })
     const type = res.headers.get("content-type") ?? ""
     const payload: unknown = type.includes("application/json") ? await res.json() : await res.text()
-    if (!res.ok) throw new MarketApiError(res.status, payload)
+    if (!res.ok) throw new MarketApiError(res.status, payload, res.headers.get("retry-after") ?? undefined)
     return payload as T
   }
 }

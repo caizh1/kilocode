@@ -30,6 +30,7 @@ import { WebSearchTool } from "./websearch"
 import { KiloToolRegistry } from "../kilocode/tool/registry" // kilocode_change
 import { Notebook } from "@/kilocode/notebook/service" // kilocode_change
 import { AgentManager } from "@/kilocode/agent-manager/service" // kilocode_change
+import { SkillMarket } from "@/kilocode/skill-market/service" // kilocode_change
 import { RepoOverviewTool } from "@/kilocode/tool/repo-overview" // kilocode_change
 import { RepoCloneTool } from "./repo_clone" // kilocode_change
 import { Flag } from "@opencode-ai/core/flag/flag" // kilocode_change
@@ -170,7 +171,8 @@ export const layer: Layer.Layer<
     const suggesttool = yield* SuggestTool
     const manager = Option.getOrUndefined(yield* Effect.serviceOption(AgentManager.Service))
     const notebook = Option.getOrUndefined(yield* Effect.serviceOption(Notebook.Service))
-    const kiloToolInfos = yield* KiloToolRegistry.infos(manager, notebook).pipe(Effect.provide(MemoryService.layer))
+    const market = Option.getOrUndefined(yield* Effect.serviceOption(SkillMarket.Service))
+    const kiloToolInfos = yield* KiloToolRegistry.infos(manager, notebook, market).pipe(Effect.provide(MemoryService.layer))
     // kilocode_change end
 
     const state = yield* InstanceState.make<State>(
@@ -317,7 +319,7 @@ export const layer: Layer.Layer<
               tool.patch,
               tool.plan,
               ...(["cli", "vscode"].includes(flags.client) ? [tool.suggest] : []),
-              ...KiloToolRegistry.extra(kilo, cfg),
+              ...KiloToolRegistry.extra(kilo, cfg, { market: !flags.disableSkillMarketTools }),
               ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ],
             kilo,
@@ -474,6 +476,7 @@ export const defaultLayer: Layer.Layer<Service> = Layer.suspend(
         Layer.provide(Command.defaultLayer),
         Layer.provide(AgentManager.defaultLayer),
         Layer.provide(Notebook.defaultLayer),
+        Layer.provide(SkillMarket.defaultLayer),
         Layer.provide(Database.defaultLayer),
         Layer.provide(RuntimeFlags.defaultLayer),
         Layer.provide(SessionStatus.defaultLayer),

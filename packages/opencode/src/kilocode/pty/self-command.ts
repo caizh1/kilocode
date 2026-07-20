@@ -4,6 +4,7 @@ type Input = {
   command?: string
   args?: string[]
   cwd?: string
+  self?: boolean
 }
 
 type Command = {
@@ -52,6 +53,7 @@ export function resolve(input: Input, cmd = self): Input {
     command: cmd.command,
     args: [...cmd.args, ...project, ...args],
     cwd: cmd.cwd ?? input.cwd,
+    self: true,
   }
 }
 

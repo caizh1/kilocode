@@ -83,6 +83,7 @@ export interface SkillMarketplaceItem extends MarketplaceItemBase {
   favorite?: boolean
   revision?: number
   sha256?: string
+  risk?: SkillRiskSummary
   /** Generated from the locally installed CLI skill list, not the remote catalog. */
   localOnly?: boolean
   /** The latest successful remote catalog scan confirmed this local Skill is absent. */
@@ -169,6 +170,16 @@ export interface LocalSkillConflict {
 export interface SkillValidationReport {
   valid: boolean
   issues: ValidationIssue[]
+  policyVersion?: string
+  risk?: SkillRiskSummary
+}
+
+export type SkillRiskLevel = "none" | "medium" | "critical" | "unknown"
+
+export interface SkillRiskSummary {
+  level: SkillRiskLevel
+  issueCount: number
+  policyVersion?: string
 }
 
 export interface SkillImportCandidate extends SkillValidationReport {
@@ -251,7 +262,7 @@ export interface SkillRelease {
   sha256: string
   size: number
   notes?: string
-  report: Record<string, unknown>
+  report: SkillValidationReport
   archiveUrl: string
   publishedAt: string
 }
@@ -278,6 +289,7 @@ export interface SkillDetail {
   updatedAt: string
   downloads: number
   favorites: number
+  risk: SkillRiskSummary
   markdown: string
   releases: SkillRelease[]
   files: SkillFile[]
@@ -323,6 +335,7 @@ export interface ValidationIssue {
   actual?: string
   fixable: boolean
   repairKind: "none" | "deterministic" | "ai"
+  riskLevel: "none" | "medium" | "critical"
 }
 
 export interface PublicationPatchFile {
@@ -353,6 +366,7 @@ export interface PublicationRun {
     | "PUBLISHING"
     | "PUBLISHED"
     | "UNPUBLISHED"
+    | "UNDONE"
     | "UNCHANGED"
     | "FAILED"
   stage: "uploaded" | "format" | "deterministic" | "security" | "semantic" | "publishing" | "complete"
@@ -363,6 +377,8 @@ export interface PublicationRun {
     sourceSha256: string
     snapshotSha256: string
     changed: boolean
+    policyVersion?: string
+    risk?: SkillRiskSummary
   }
   patches: PublicationPatch[]
   release?: {

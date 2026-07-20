@@ -233,6 +233,7 @@ function SkillDetailView(props: {
               </div>
               <div class="aligned-skill-tags">
                 <For each={detail().tags}>{(tag) => <Tag>{tag}</Tag>}</For>
+                <SkillRiskBadge risk={detail().risk} />
               </div>
               <div class="aligned-skill-meta">
                 <span>{detail().author.displayName}</span>
@@ -250,6 +251,7 @@ function SkillDetailView(props: {
                 </div>
               </Show>
             </Card>
+            <SkillRiskPanel detail={detail()} />
             <div class="aligned-skill-columns">
               <Card class="aligned-skill-prose">
                 <h3>{t("marketplace.aligned.instructions")}</h3>
@@ -331,17 +333,73 @@ function PublicationList(props: { items: PublicationRun[]; empty: string; unpubl
                 </div>
               </Show>
               <For each={run.report?.issues ?? []}>
-                {(issue) => (
-                  <p class="aligned-publication-issue">
-                    <strong>{issue.code}</strong> · {issue.message}
-                  </p>
-                )}
+                {(issue) => <p class="aligned-publication-issue">{issue.message}</p>}
               </For>
             </Card>
           )}
         </For>
       </div>
     </Show>
+  )
+}
+
+function SkillRiskBadge(props: { risk: SkillDetail["risk"] }) {
+  const { t } = useLanguage()
+  const label = () => {
+    if (props.risk.level === "none") return t("marketplace.risk.none")
+    if (props.risk.level === "medium") return t("marketplace.risk.medium", { count: props.risk.issueCount })
+    if (props.risk.level === "critical") return t("marketplace.risk.critical")
+    return t("marketplace.risk.unknown")
+  }
+  return (
+    <Tag class={`marketplace-risk-badge risk-${props.risk.level}`}>
+      <span
+        class={`codicon codicon-${props.risk.level === "none" ? "pass-filled" : props.risk.level === "unknown" ? "question" : "warning"}`}
+        aria-hidden="true"
+      />
+      {label()}
+    </Tag>
+  )
+}
+
+function SkillRiskPanel(props: { detail: SkillDetail }) {
+  const { t } = useLanguage()
+  const release = () => props.detail.releases.find((item) => item.revision === props.detail.latestRevision)
+  const issues = () => (release()?.report.issues ?? []).filter((item) => item.riskLevel !== "none")
+  return (
+    <Card class={`aligned-risk-panel risk-${props.detail.risk.level}`}>
+      <div class="aligned-risk-heading">
+        <span
+          class={`codicon codicon-${props.detail.risk.level === "none" ? "pass-filled" : props.detail.risk.level === "unknown" ? "question" : "warning"}`}
+          aria-hidden="true"
+        />
+        <strong>
+          {props.detail.risk.level === "none"
+            ? t("marketplace.risk.detailNone")
+            : props.detail.risk.level === "unknown"
+              ? t("marketplace.risk.unknownTitle")
+              : t("marketplace.risk.detailMedium", { count: props.detail.risk.issueCount })}
+        </strong>
+      </div>
+      <p>
+        {props.detail.risk.level === "none"
+          ? t("marketplace.risk.noGuarantee")
+          : props.detail.risk.level === "unknown"
+            ? t("marketplace.risk.installUnknown")
+            : t("marketplace.risk.detailHint")}
+      </p>
+      <For each={issues()}>
+        {(issue) => (
+          <div class="aligned-risk-issue">
+            <span class="codicon codicon-warning" aria-hidden="true" />
+            <span>
+              <strong>{issue.message}</strong>
+              <small>{issue.file ?? issue.field ?? t("marketplace.risk.archive")}</small>
+            </span>
+          </div>
+        )}
+      </For>
+    </Card>
   )
 }
 

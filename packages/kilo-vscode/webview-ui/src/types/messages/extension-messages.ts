@@ -372,7 +372,7 @@ export interface ProvidersLoadedMessage {
   providers: Record<string, Provider>
   connected: string[]
   defaults: Record<string, string>
-  defaultSelection: ModelSelection
+  defaultSelection: ModelSelection | null
   authMethods: Record<string, ProviderAuthMethod[]>
   authStates: Record<string, ProviderAuthState>
 }
@@ -720,13 +720,6 @@ export interface AgentManagerStateMessage {
   runScriptPath?: string
 }
 
-export type AgentManagerMode = "manager" | "console"
-
-export interface AgentManagerOpenModeMessage {
-  type: "agentManager.openMode"
-  mode: AgentManagerMode
-}
-
 // ---------------------------------------------------------------------------
 // Agent Manager terminal messages
 // ---------------------------------------------------------------------------
@@ -755,6 +748,37 @@ export interface AgentManagerTerminalErrorMessage {
   type: "agentManager.terminal.error"
   terminalId?: string
   message: string
+}
+
+export interface AgentConsoleTerminalCreatedMessage {
+  type: "agentConsole.terminal.created"
+  terminalId: string
+  title: string
+  wsUrl: string
+  font: TerminalFont
+}
+
+export interface AgentConsoleTerminalFontChangedMessage {
+  type: "agentConsole.terminal.fontChanged"
+  font: TerminalFont
+}
+
+export interface AgentConsoleTerminalClosedMessage {
+  type: "agentConsole.terminal.closed"
+  terminalId: string
+}
+
+export interface AgentConsoleTerminalErrorMessage {
+  type: "agentConsole.terminal.error"
+  terminalId?: string
+  message: string
+}
+
+export interface AgentConsoleInputRoutedMessage {
+  type: "agentConsole.input.routed"
+  requestId: string
+  route: "agent" | "shell"
+  input: string
 }
 
 export interface AgentManagerRunStatusMessage extends RunStatus {
@@ -1119,6 +1143,8 @@ export interface MarketplaceInstallResultMessage {
   success: boolean
   slug: string
   error?: string
+  filePath?: string
+  line?: number
 }
 
 export interface OpenInstallModalMessage {
@@ -1290,7 +1316,6 @@ export type ExtensionMessage =
   | AgentManagerSessionAddedMessage
   | AgentManagerSessionForkedMessage
   | AgentManagerStateMessage
-  | AgentManagerOpenModeMessage
   | AgentManagerRunStatusMessage
   | AgentManagerKeybindingsMessage
   | AutoApproveStateMessage
@@ -1324,6 +1349,11 @@ export type ExtensionMessage =
   | AgentManagerLocalStatsMessage
   | AgentManagerPRStatusMessage
   | AgentManagerTerminalCreatedMessage
+  | AgentConsoleTerminalCreatedMessage
+  | AgentConsoleTerminalFontChangedMessage
+  | AgentConsoleTerminalClosedMessage
+  | AgentConsoleTerminalErrorMessage
+  | AgentConsoleInputRoutedMessage
   | AgentManagerTerminalFontChangedMessage
   | AgentManagerTerminalClosedMessage
   | AgentManagerTerminalErrorMessage

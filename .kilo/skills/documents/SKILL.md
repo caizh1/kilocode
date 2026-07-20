@@ -58,7 +58,7 @@ This skill intentionally carries only generic Word/Mermaid/artifact guidance. Do
 
 ## Artifact Guidance
 
-- Generated files must be registered under `.kilo/artifacts` through the artifact tools or returned document tool manifests.
+- Generated files must be registered through the artifact tools or returned document tool manifests; use the profile-specific path returned by the tool.
 - Tool results should return paths, concise summaries, warnings, diagnostics, and quality status. Do not paste large binary content, full OOXML, or full document text into the chat context.
 - Keep source files and generated artifacts separate. Do not overwrite a user-provided `.docx` unless the user explicitly requests that exact path.
 - When a render, Mermaid, or edit step fails, preserve the successful upstream artifact and report a warning instead of treating the whole QA session as failed.

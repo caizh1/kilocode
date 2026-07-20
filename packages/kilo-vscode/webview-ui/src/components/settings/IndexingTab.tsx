@@ -16,6 +16,7 @@ import {
   indexingDiagnosticMessage,
   indexingPipelineDescription,
   indexingPipelineTone,
+  localizeIndexingText,
   useIndexing,
 } from "../../context/indexing"
 import { useKiloEmbeddingModels } from "../../context/kilo-embedding-models"
@@ -46,11 +47,12 @@ import {
 type Option = { value: string; label: string }
 type TuningKey = "searchMinScore" | "searchMaxResults" | "embeddingBatchSize" | "scannerMaxBatchRetries"
 type DocumentNumberKey = "maxFileBytes" | "chunkChars" | "chunkOverlapChars" | "searchMaxResults"
+type Translate = ReturnType<typeof useLanguage>["t"]
 
 const allProviders: { value: ProviderId; label: string }[] = [
   { value: "kilo", label: "Kilo" },
   { value: "openai", label: "OpenAI" },
-  { value: "ollama", label: "Ollama (local)" },
+  { value: "ollama", label: "Ollama" },
   { value: "openai-compatible", label: "OpenAI-Compatible" },
   { value: "gemini", label: "Gemini" },
   { value: "mistral", label: "Mistral" },
@@ -60,34 +62,35 @@ const allProviders: { value: ProviderId; label: string }[] = [
   { value: "voyage", label: "Voyage" },
 ]
 
-const stores: Option[] = [
-  { value: "lancedb", label: "LanceDB (default)" },
-  { value: "qdrant", label: "Qdrant" },
-]
-
 const tuning: Array<{ key: TuningKey; label: string; placeholder: string }> = [
-  { key: "searchMinScore", label: "Search Min Score", placeholder: "0.4" },
-  { key: "searchMaxResults", label: "Search Max Results", placeholder: "50" },
-  { key: "embeddingBatchSize", label: "Embedding Batch Size", placeholder: "60" },
-  { key: "scannerMaxBatchRetries", label: "Scanner Max Batch Retries", placeholder: "3" },
+  { key: "searchMinScore", label: "settings.indexing.tuning.searchMinScore", placeholder: "0.4" },
+  { key: "searchMaxResults", label: "settings.indexing.tuning.searchMaxResults", placeholder: "50" },
+  { key: "embeddingBatchSize", label: "settings.indexing.tuning.embeddingBatchSize", placeholder: "60" },
+  { key: "scannerMaxBatchRetries", label: "settings.indexing.tuning.scannerMaxBatchRetries", placeholder: "3" },
 ]
 
-const PipelineBadge: Component<{ label: string; status: IndexingPipelineStatus }> = (props) => (
+const PipelineBadge: Component<{ label: string; status: IndexingPipelineStatus; t: Translate }> = (props) => (
   <div style={{ display: "flex", "align-items": "center", gap: "8px", "justify-content": "flex-end" }}>
     <span class={`indexing-status-badge indexing-status-badge--${indexingPipelineTone(props.status)}`}>
-      {formatIndexingPipelineLabel(props.label, props.status)}
+      {formatIndexingPipelineLabel(props.label, props.status, props.t)}
     </span>
     <span style={{ color: "var(--vscode-descriptionForeground)", "font-size": "var(--kilo-font-size-12)" }}>
-      {props.status.errorCount} err / {props.status.staleCount} stale / {props.status.skippedCount} skipped
+      {props.t("settings.indexing.pipeline.issues", {
+        errors: props.status.errorCount,
+        stale: props.status.staleCount,
+        skipped: props.status.skippedCount,
+      })}
     </span>
   </div>
 )
 
 const PipelineDiagnostics: Component<{
   label: string
+  diagnosticLabel: string
   status: IndexingPipelineStatus
   copied: boolean
   onCopy: (label: string, status: IndexingPipelineStatus) => void
+  t: Translate
 }> = (props) => (
   <Show when={hasIndexingDiagnostics(props.status)}>
     <div
@@ -103,21 +106,23 @@ const PipelineDiagnostics: Component<{
       }}
     >
       <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "8px" }}>
-        <strong style={{ color: "var(--vscode-foreground)" }}>{props.label} diagnostics</strong>
+        <strong style={{ color: "var(--vscode-foreground)" }}>
+          {props.t("settings.indexing.pipeline.diagnostics", { name: props.label })}
+        </strong>
         <Button
           variant="ghost"
           size="small"
           icon={props.copied ? "check" : "copy"}
-          onClick={() => props.onCopy(props.label, props.status)}
+          onClick={() => props.onCopy(props.diagnosticLabel, props.status)}
         >
-          {props.copied ? "Copied" : "Copy"}
+          {props.copied ? props.t("ui.message.copied") : props.t("ui.message.copy")}
         </Button>
       </div>
       <Show
         when={(props.status.recentErrors?.length ?? 0) > 0}
         fallback={
           <div style={{ color: "var(--vscode-foreground)", "overflow-wrap": "anywhere" }}>
-            {indexingPipelineDescription(props.status)}
+            {indexingPipelineDescription(props.status, props.t)}
           </div>
         }
       >
@@ -136,40 +141,50 @@ const PipelineDiagnostics: Component<{
   </Show>
 )
 
-function sourceLabel(source: IndexingSource) {
-  if (source === "global") return "Global"
-  if (source === "local") return "Local"
-  if (source === "mixed") return "Global + Local"
-  if (source === "default") return "Default"
+function sourceLabel(source: IndexingSource, t: Translate) {
+  if (source === "global") return t("settings.indexing.source.global")
+  if (source === "local") return t("settings.indexing.source.local")
+  if (source === "mixed") return t("settings.indexing.source.mixed")
+  if (source === "default") return t("settings.indexing.source.default")
   return ""
 }
 
-function providerFields(provider: ProviderId | undefined): Array<{ key: string; label: string; placeholder: string }> {
+function providerFields(
+  provider: ProviderId | undefined,
+): Array<{ key: string; label: string; placeholder: string; optional?: boolean }> {
   if (provider === "kilo") return []
-  if (provider === "openai") return [{ key: "apiKey", label: "API Key", placeholder: "sk-..." }]
-  if (provider === "ollama") return [{ key: "baseUrl", label: "Base URL", placeholder: "http://localhost:11434" }]
+  if (provider === "openai") return [{ key: "apiKey", label: "settings.indexing.field.apiKey", placeholder: "sk-..." }]
+  if (provider === "ollama") {
+    return [{ key: "baseUrl", label: "settings.indexing.field.baseUrl", placeholder: "http://localhost:11434" }]
+  }
   if (provider === "openai-compatible") {
     return [
-      { key: "baseUrl", label: "Base URL", placeholder: "https://api.example.com/v1" },
-      { key: "apiKey", label: "API Key (optional)", placeholder: "sk-..." },
+      { key: "baseUrl", label: "settings.indexing.field.baseUrl", placeholder: "https://api.example.com/v1" },
+      { key: "apiKey", label: "settings.indexing.field.apiKey", placeholder: "sk-...", optional: true },
     ]
   }
-  if (provider === "gemini") return [{ key: "apiKey", label: "API Key", placeholder: "AI..." }]
-  if (provider === "mistral") return [{ key: "apiKey", label: "API Key", placeholder: "..." }]
-  if (provider === "vercel-ai-gateway") return [{ key: "apiKey", label: "API Key", placeholder: "..." }]
+  if (provider === "gemini") return [{ key: "apiKey", label: "settings.indexing.field.apiKey", placeholder: "AI..." }]
+  if (provider === "mistral") return [{ key: "apiKey", label: "settings.indexing.field.apiKey", placeholder: "..." }]
+  if (provider === "vercel-ai-gateway") {
+    return [{ key: "apiKey", label: "settings.indexing.field.apiKey", placeholder: "..." }]
+  }
   if (provider === "bedrock") {
     return [
-      { key: "region", label: "AWS Region", placeholder: "us-east-1" },
-      { key: "profile", label: "AWS Profile", placeholder: "default" },
+      { key: "region", label: "settings.indexing.field.awsRegion", placeholder: "us-east-1" },
+      { key: "profile", label: "settings.indexing.field.awsProfile", placeholder: "default" },
     ]
   }
   if (provider === "openrouter") {
     return [
-      { key: "apiKey", label: "API Key", placeholder: "sk-or-..." },
-      { key: "specificProvider", label: "Specific Provider", placeholder: "optional" },
+      { key: "apiKey", label: "settings.indexing.field.apiKey", placeholder: "sk-or-..." },
+      {
+        key: "specificProvider",
+        label: "settings.indexing.field.specificProvider",
+        placeholder: "settings.indexing.field.optional",
+      },
     ]
   }
-  if (provider === "voyage") return [{ key: "apiKey", label: "API Key", placeholder: "pa-..." }]
+  if (provider === "voyage") return [{ key: "apiKey", label: "settings.indexing.field.apiKey", placeholder: "pa-..." }]
   return []
 }
 
@@ -208,9 +223,9 @@ const IndexingTab: Component = () => {
   const inheritance = (paths: readonly (readonly string[])[]) =>
     indexingInheritance(scope(), globalCfg(), projectCfg(), paths)
   const tag = (current: IndexingScope, paths: readonly (readonly string[])[]) =>
-    sourceLabel(indexingSource(current, globalCfg(), projectCfg(), paths)) || undefined
+    sourceLabel(indexingSource(current, globalCfg(), projectCfg(), paths), language.t) || undefined
   const description = (value: string, paths: readonly (readonly string[])[]) =>
-    indexingDescription(value, inheritance(paths))
+    indexingDescription(value, inheritance(paths), language.t)
   const changeScope = (next: IndexingScope) => {
     const active = document.activeElement
     if (active instanceof HTMLElement) active.blur()
@@ -262,8 +277,18 @@ const IndexingTab: Component = () => {
   )
   const staleKiloModel = () => selectedProvider() === "kilo" && !!cfg().model && !knownKiloModel(cfg().model)
   const providers = createMemo(() =>
-    allProviders.filter((item) => item.value !== "kilo" || kiloAvailable() || selectedProvider() === "kilo"),
+    allProviders
+      .filter((item) => item.value !== "kilo" || kiloAvailable() || selectedProvider() === "kilo")
+      .map((item) =>
+        item.value === "ollama"
+          ? { ...item, label: language.t("settings.indexing.provider.local", { name: item.label }) }
+          : item,
+      ),
   )
+  const stores = createMemo<Option[]>(() => [
+    { value: "lancedb", label: language.t("settings.indexing.store.default", { name: "LanceDB" }) },
+    { value: "qdrant", label: "Qdrant" },
+  ])
   const fields = createMemo(() => providerFields(selectedProvider()))
 
   const saveProvider = (next: ProviderId | undefined) => {
@@ -431,40 +456,70 @@ const IndexingTab: Component = () => {
   const content = (_scope: IndexingScope) => (
     <div style={{ display: "flex", "flex-direction": "column", gap: "16px" }}>
       <Card>
-        <SettingsRow title={language.t("settings.indexing.status.title")} description={indexing.status().message}>
+        <SettingsRow
+          title={language.t("settings.indexing.status.title")}
+          description={localizeIndexingText(indexing.status().message, language.t)}
+        >
           <span class={`indexing-status-badge indexing-status-badge--${indexing.tone()}`}>
-            {formatIndexingLabel(indexing.status())}
+            {formatIndexingLabel(indexing.status(), language.t)}
           </span>
         </SettingsRow>
-        <SettingsRow title="Code Graph" description={indexingPipelineDescription(indexing.pipelines().codeGraph)}>
-          <PipelineBadge label="CG" status={indexing.pipelines().codeGraph} />
+        <SettingsRow
+          title={language.t("settings.indexing.pipeline.codeGraph")}
+          description={indexingPipelineDescription(indexing.pipelines().codeGraph, language.t)}
+        >
+          <PipelineBadge
+            label={language.t("settings.indexing.pipeline.short.codeGraph")}
+            status={indexing.pipelines().codeGraph}
+            t={language.t}
+          />
         </SettingsRow>
-        <SettingsRow title="RAG" description={indexingPipelineDescription(indexing.pipelines().rag)}>
-          <PipelineBadge label="RAG" status={indexing.pipelines().rag} />
+        <SettingsRow
+          title={language.t("settings.indexing.pipeline.rag")}
+          description={indexingPipelineDescription(indexing.pipelines().rag, language.t)}
+        >
+          <PipelineBadge
+            label={language.t("settings.indexing.pipeline.short.rag")}
+            status={indexing.pipelines().rag}
+            t={language.t}
+          />
         </SettingsRow>
-        <SettingsRow title="Documents" description={indexingPipelineDescription(indexing.pipelines().documents)}>
-          <PipelineBadge label="DOC" status={indexing.pipelines().documents} />
+        <SettingsRow
+          title={language.t("settings.indexing.pipeline.documents")}
+          description={indexingPipelineDescription(indexing.pipelines().documents, language.t)}
+        >
+          <PipelineBadge
+            label={language.t("settings.indexing.pipeline.short.documents")}
+            status={indexing.pipelines().documents}
+            t={language.t}
+          />
         </SettingsRow>
         <PipelineDiagnostics
-          label="Code Graph"
+          label={language.t("settings.indexing.pipeline.codeGraph")}
+          diagnosticLabel="Code Graph"
           status={indexing.pipelines().codeGraph}
           copied={copied() === "Code Graph"}
           onCopy={copyDiagnostics}
+          t={language.t}
         />
         <PipelineDiagnostics
-          label="RAG"
+          label={language.t("settings.indexing.pipeline.rag")}
+          diagnosticLabel="RAG"
           status={indexing.pipelines().rag}
           copied={copied() === "RAG"}
           onCopy={copyDiagnostics}
+          t={language.t}
         />
         <PipelineDiagnostics
-          label="Documents"
+          label={language.t("settings.indexing.pipeline.documents")}
+          diagnosticLabel="Documents"
           status={indexing.pipelines().documents}
           copied={copied() === "Documents"}
           onCopy={copyDiagnostics}
+          t={language.t}
         />
         <SettingsRow
-          title="Configuration scope"
+          title={language.t("settings.indexing.scope.title")}
           description={
             scope() === "global"
               ? language.t("settings.indexing.globalEnable.description")
@@ -496,7 +551,11 @@ const IndexingTab: Component = () => {
           }
           description={
             inherited()
-              ? `Inherited from global config (${enabled() ? "on" : "off"}) until a project value is saved.`
+              ? language.t("settings.indexing.inheritance.enabled", {
+                  state: enabled()
+                    ? language.t("settings.indexing.state.on")
+                    : language.t("settings.indexing.state.off"),
+                })
               : language.t("settings.indexing.enable.description")
           }
           tag={() => tag(scope(), [["enabled"]])}
@@ -554,7 +613,7 @@ const IndexingTab: Component = () => {
                 variant="secondary"
                 size="small"
                 triggerVariant="settings"
-                placeholder="Select a model"
+                placeholder={language.t("settings.indexing.model.select")}
               />
             </SettingsRow>
           </Show>
@@ -567,7 +626,11 @@ const IndexingTab: Component = () => {
           >
             <TextField
               value={fieldValue("model", cfg().model ?? "")}
-              placeholder={isInternalOfflineBuild() ? INTERNAL_OFFLINE_INDEXING_DEFAULTS.model : "Enter model ID"}
+              placeholder={
+                isInternalOfflineBuild()
+                  ? INTERNAL_OFFLINE_INDEXING_DEFAULTS.model
+                  : language.t("settings.indexing.model.enter")
+              }
               onInput={(event: InputEvent) => {
                 const input = event.currentTarget as HTMLInputElement
                 stageField("model", input.value)
@@ -598,7 +661,7 @@ const IndexingTab: Component = () => {
             )}
             placeholder={
               selectedProvider() === "kilo"
-                ? "Provided by Kilo"
+                ? language.t("settings.indexing.model.provided")
                 : isInternalOfflineBuild() && selectedProvider() === INTERNAL_OFFLINE_INDEXING_DEFAULTS.provider
                   ? String(INTERNAL_OFFLINE_INDEXING_DEFAULTS.dimension)
                   : language.t("settings.indexing.dimension.placeholder")
@@ -631,7 +694,9 @@ const IndexingTab: Component = () => {
               <For each={fields}>
                 {(field, index) => (
                   <SettingsRow
-                    title={`${name} ${field.label}`}
+                    title={`${name} ${language.t(field.label)}${
+                      field.optional ? ` ${language.t("settings.indexing.field.optionalSuffix")}` : ""
+                    }`}
                     description={description(language.t("settings.indexing.providerField.description"), [
                       [group, field.key],
                     ])}
@@ -641,7 +706,9 @@ const IndexingTab: Component = () => {
                     <TextField
                       type={field.key === "apiKey" ? "password" : undefined}
                       value={providerValue(group, field.key)}
-                      placeholder={field.placeholder}
+                      placeholder={
+                        field.placeholder.startsWith("settings.") ? language.t(field.placeholder) : field.placeholder
+                      }
                       onInput={(e: InputEvent) => {
                         const target = e.currentTarget as HTMLInputElement
                         setProviderDrafts((prev) => ({ ...prev, [`${scope()}.${group}.${field.key}`]: target.value }))
@@ -666,8 +733,8 @@ const IndexingTab: Component = () => {
           tag={() => tag(scope(), [["vectorStore"]])}
         >
           <Select
-            options={stores}
-            current={stores.find((item) => item.value === vectorStore())}
+            options={stores()}
+            current={stores().find((item) => item.value === vectorStore())}
             value={(item) => item.value}
             label={(item) => item.label}
             onSelect={(item) => updateIndexing({ vectorStore: item?.value as "lancedb" | "qdrant" | undefined })}
@@ -750,10 +817,8 @@ const IndexingTab: Component = () => {
       <Card>
         <div class="settings-section-title">{language.t("settings.indexing.documentsSection")}</div>
         <SettingsRow
-          title="Documents"
-          description={description("Index configured workspace document folders into a separate RAG store.", [
-            ["documents"],
-          ])}
+          title={language.t("settings.indexing.documents.title")}
+          description={description(language.t("settings.indexing.documents.description"), [["documents"]])}
           tag={() => tag(scope(), [["documents"]])}
         >
           <Switch
@@ -761,16 +826,19 @@ const IndexingTab: Component = () => {
             onChange={(value) => updateDocuments({ enabled: value })}
             hideLabel
           >
-            Documents
+            {language.t("settings.indexing.documents.title")}
           </Switch>
         </SettingsRow>
-        <SettingsRow title="Document Folders" description="Workspace-relative folders scanned for document RAG.">
+        <SettingsRow
+          title={language.t("settings.indexing.documents.folders.title")}
+          description={language.t("settings.indexing.documents.folders.description")}
+        >
           <div style={{ display: "flex", "flex-direction": "column", gap: "8px", width: "min(360px, 100%)" }}>
             <For
               each={documentPaths()}
               fallback={
                 <span style={{ color: "var(--vscode-descriptionForeground)", "font-size": "var(--kilo-font-size-12)" }}>
-                  No folders
+                  {language.t("settings.indexing.documents.folders.empty")}
                 </span>
               }
             >
@@ -778,7 +846,7 @@ const IndexingTab: Component = () => {
                 <div style={{ display: "flex", "align-items": "center", gap: "8px", "min-width": 0 }}>
                   <TextField value={item} placeholder="docs" onChange={(value) => setDocumentPath(index(), value)} />
                   <Button variant="ghost" size="small" icon="trash" onClick={() => removeDocumentPath(index())}>
-                    Remove
+                    {language.t("settings.indexing.documents.folders.remove")}
                   </Button>
                 </div>
               )}
@@ -790,7 +858,7 @@ const IndexingTab: Component = () => {
                 icon="folder"
                 onClick={() => vscode.postMessage({ type: "selectDocumentRagFolder" })}
               >
-                Add Folder
+                {language.t("settings.indexing.documents.folders.add")}
               </Button>
               <Button
                 variant="secondary"
@@ -798,19 +866,25 @@ const IndexingTab: Component = () => {
                 icon="reset"
                 onClick={() => vscode.postMessage({ type: "rebuildDocumentRag" })}
               >
-                Rebuild
+                {language.t("settings.indexing.documents.rebuild")}
               </Button>
             </div>
           </div>
         </SettingsRow>
-        <SettingsRow title="Include" description="Optional comma-separated glob patterns for document files.">
+        <SettingsRow
+          title={language.t("settings.indexing.documents.include.title")}
+          description={language.t("settings.indexing.documents.include.description")}
+        >
           <TextField
             value={(documents().include ?? []).join(", ")}
             placeholder="**/*.pdf, docs/**/*.md"
             onChange={(value) => saveDocumentPatterns("include", value)}
           />
         </SettingsRow>
-        <SettingsRow title="Exclude" description="Optional comma-separated glob patterns skipped by document RAG.">
+        <SettingsRow
+          title={language.t("settings.indexing.documents.exclude.title")}
+          description={language.t("settings.indexing.documents.exclude.description")}
+        >
           <TextField
             value={(documents().exclude ?? []).join(", ")}
             placeholder="**/archive/**"
@@ -821,36 +895,36 @@ const IndexingTab: Component = () => {
           each={[
             {
               key: "maxFileBytes" as const,
-              title: "Max File Bytes",
-              description: "Documents larger than this are skipped.",
+              title: "settings.indexing.documents.maxFileBytes.title",
+              description: "settings.indexing.documents.maxFileBytes.description",
               placeholder: "52428800",
               min: 1,
             },
             {
               key: "chunkChars" as const,
-              title: "Chunk Chars",
-              description: "Approximate character budget for each document chunk.",
+              title: "settings.indexing.documents.chunkChars.title",
+              description: "settings.indexing.documents.chunkChars.description",
               placeholder: "1200",
               min: 1,
             },
             {
               key: "chunkOverlapChars" as const,
-              title: "Chunk Overlap Chars",
-              description: "Character overlap between adjacent document chunks.",
+              title: "settings.indexing.documents.chunkOverlapChars.title",
+              description: "settings.indexing.documents.chunkOverlapChars.description",
               placeholder: "200",
               min: 0,
             },
             {
               key: "searchMaxResults" as const,
-              title: "Search Max Results",
-              description: "Default number of snippets returned by document_search.",
+              title: "settings.indexing.documents.searchMaxResults.title",
+              description: "settings.indexing.documents.searchMaxResults.description",
               placeholder: "8",
               min: 1,
             },
           ]}
         >
           {(item, index) => (
-            <SettingsRow title={item.title} description={item.description} last={index() === 3}>
+            <SettingsRow title={language.t(item.title)} description={language.t(item.description)} last={index() === 3}>
               <TextField
                 value={documentValue(item.key)}
                 placeholder={item.placeholder}
@@ -873,7 +947,7 @@ const IndexingTab: Component = () => {
         <For each={tuning}>
           {(item, index) => (
             <SettingsRow
-              title={item.label}
+              title={language.t(item.label)}
               description={description(language.t("settings.indexing.tuning.description"), [[item.key]])}
               tag={() => tag(scope(), [[item.key]])}
               last={index() === tuning.length - 1}

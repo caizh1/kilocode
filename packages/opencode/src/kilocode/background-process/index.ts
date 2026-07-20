@@ -5,6 +5,7 @@ import { makeRuntime } from "@/effect/run-service"
 import { Identifier } from "@/id/id"
 import { Instance, type InstanceContext } from "@/kilocode/instance"
 import { KiloShutdown } from "@/kilocode/cli/shutdown"
+import { userEnv } from "@/kilocode/product-env"
 import { SessionID } from "@/session/schema"
 import { Shell } from "@/shell/shell"
 import { ProjectV2 } from "@opencode-ai/core/project"
@@ -575,7 +576,7 @@ export namespace BackgroundProcess {
 
   function env(id?: ID, token?: string) {
     const result: NodeJS.ProcessEnv = {
-      ...process.env,
+      ...userEnv(process.env),
       TERM: "dumb",
       ...(id ? { KILO_BACKGROUND_PROCESS_ID: id } : {}),
       ...(token ? { KILO_BACKGROUND_PROCESS_TOKEN: token } : {}),

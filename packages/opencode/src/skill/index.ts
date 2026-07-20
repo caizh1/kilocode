@@ -19,6 +19,7 @@ import { Discovery } from "./discovery"
 import { mkdir, rename, rm, writeFile } from "fs/promises" // kilocode_change
 import { BUILTIN_SKILLS } from "../kilocode/skills/builtin" // kilocode_change
 import { primaryPaths } from "../kilocode/primary-worktree" // kilocode_change
+import { ProductProfile } from "../kilocode/product-profile" // kilocode_change
 import { Git } from "@/git" // kilocode_change
 import { isRecord } from "@/util/record"
 import { Flag } from "@opencode-ai/core/flag/flag" // kilocode_change
@@ -241,7 +242,7 @@ const discoverSkills = Effect.fnUntraced(function* (
   }
 
   const configDirs = yield* config.directories()
-  const primary = new Set(yield* primaryPaths(directory, worktree, [".kilocode", ".kilo"])) // kilocode_change
+  const primary = new Set(yield* primaryPaths(directory, worktree, [...ProductProfile.dirs])) // kilocode_change
   for (const dir of configDirs) {
     // kilocode_change start - global and explicit KILO_CONFIG_DIR skills are trusted; project and primary-checkout
     // skills remain confined to the active project boundary.

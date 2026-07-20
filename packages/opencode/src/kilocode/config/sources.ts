@@ -8,6 +8,7 @@ import { Auth } from "@/auth"
 import { ConfigManaged } from "@/config/managed"
 import { Filesystem } from "@/util/filesystem"
 import { KilocodeConfig } from "./config"
+import { ProductProfile } from "../product-profile"
 
 export namespace KilocodeConfigSources {
   export const Scope = z.enum(["global", "project", "env", "managed", "cloud"])
@@ -56,8 +57,10 @@ export namespace KilocodeConfigSources {
 
   type Pending = Omit<Source, "order">
 
-  const roots = [".kilocode", ".kilo"] as const
-  const global = ["config.json", "kilo.json", "kilo.jsonc", "opencode.json", "opencode.jsonc"] as const
+  const roots = ProductProfile.dirs
+  const global = ProductProfile.chipmate
+    ? (["kilo.jsonc"] as const)
+    : (["config.json", "kilo.json", "kilo.jsonc", "opencode.json", "opencode.jsonc"] as const)
 
   export async function list(input: Input): Promise<Result> {
     const project = Flag.KILO_DISABLE_PROJECT_CONFIG ? [] : await projectSources(input)
@@ -97,9 +100,10 @@ export namespace KilocodeConfigSources {
   }
 
   async function globalSources(): Promise<Pending[]> {
+    const root = ProductProfile.config() ?? Global.Path.config
     return Promise.all(
       global.map(async (name) => {
-        const file = path.join(Global.Path.config, name)
+        const file = path.join(root, name)
         return fileSource({ kind: "global-file", scope: "global", label: `Global ${name}`, file })
       }),
     )
@@ -119,6 +123,7 @@ export namespace KilocodeConfigSources {
   }
 
   async function projectSources(input: Input): Promise<Pending[]> {
+    if (ProductProfile.chipmate) return []
     const kilo = await projectFiles("kilo", input)
     const opencode = await projectFiles("opencode", input)
     return Promise.all(
@@ -134,9 +139,9 @@ export namespace KilocodeConfigSources {
 
   async function configDirSources(input: Input): Promise<Pending[]> {
     const project = await Filesystem.findUp([...roots], input.directory, input.worktree)
-    const home = await Filesystem.findUp([...roots], Global.Path.home, Global.Path.home)
+    const home = ProductProfile.chipmate ? [] : await Filesystem.findUp([...roots], Global.Path.home, Global.Path.home)
     const env = Flag.KILO_CONFIG_DIR ? [Flag.KILO_CONFIG_DIR] : []
-    const dirs = unique([Global.Path.config, ...project, ...home, ...env]).filter((dir) =>
+    const dirs = unique([ProductProfile.config() ?? Global.Path.config, ...project, ...home, ...env]).filter((dir) =>
       KilocodeConfig.isConfigDir(dir, Flag.KILO_CONFIG_DIR),
     )
 
@@ -153,7 +158,7 @@ export namespace KilocodeConfigSources {
         editable: scope !== "managed" && scope !== "cloud",
       })
 
-      for (const name of KilocodeConfig.ALL_CONFIG_FILES) {
+      for (const name of KilocodeConfig.ACTIVE_CONFIG_FILES) {
         const file = path.join(dir, name)
         result.push(await fileSource({ kind: "config-dir-file", scope, label: `Config directory ${name}`, file }))
       }
@@ -223,6 +228,7 @@ export namespace KilocodeConfigSources {
   }
 
   async function managedSources(): Promise<Pending[]> {
+    if (ProductProfile.chipmate) return []
     const dir = ConfigManaged.managedConfigDir()
     const files = await Promise.all(
       KilocodeConfig.ALL_CONFIG_FILES.map((name) =>

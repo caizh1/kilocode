@@ -172,12 +172,12 @@ describe("attention defaults", () => {
     }
     const properties = manifest.contributes.configuration.properties
 
-    expect(properties["kilo-code.new.attention.enabled"]?.default).toBe(false)
-    expect(properties["kilo-code.new.attention.sound"]?.default).toBe("default")
-    expect(properties["kilo-code.new.attention.sound"]?.enum).toEqual(["default", "system", ...CustomSoundIDs])
-    expect(properties["kilo-code.new.sounds.agentEnabled"]).toBeUndefined()
-    expect(properties["kilo-code.new.sounds.permissionsEnabled"]).toBeUndefined()
-    expect(properties["kilo-code.new.sounds.errorsEnabled"]).toBeUndefined()
+    expect(properties["chipmate.v2.attention.enabled"]?.default).toBe(false)
+    expect(properties["chipmate.v2.attention.sound"]?.default).toBe("default")
+    expect(properties["chipmate.v2.attention.sound"]?.enum).toEqual(["default", "system", ...CustomSoundIDs])
+    expect(properties["chipmate.v2.sounds.agentEnabled"]).toBeUndefined()
+    expect(properties["chipmate.v2.sounds.permissionsEnabled"]).toBeUndefined()
+    expect(properties["chipmate.v2.sounds.errorsEnabled"]).toBeUndefined()
   })
 
   it("resolves global sound choices safely", () => {

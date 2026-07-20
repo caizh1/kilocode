@@ -1,6 +1,6 @@
 import { ArrowClockwise, CheckCircle, Code, Package, SquaresFour, Wrench } from "@phosphor-icons/react"
 import { useState, type ReactNode } from "react"
-import { InlineError, Skeleton, status, useApi } from "../shared"
+import { bytes, InlineError, Skeleton, status, useApi } from "../shared"
 
 interface MarketStatus {
   ok: boolean
@@ -16,6 +16,12 @@ interface MarketStatus {
     artifacts?: boolean
     temporary?: boolean
     warnings?: string[]
+    activeUploads?: number
+    maxActiveUploads?: number
+    reservedBytes?: number
+    freeBytes?: number
+    minimumFreeBytes?: number
+    storagePressure?: boolean
   }
   warnings?: string[]
 }
@@ -84,6 +90,7 @@ function ExtensionRuntimeStatus(props: { value: NonNullable<MarketStatus["extens
     ["drop 导入目录", props.value.drop === true],
     ["artifacts 产物目录", props.value.artifacts === true],
     [".tmp 临时目录", props.value.temporary === true],
+    ["插件上传资源", props.value.storagePressure !== true],
   ] as const
   return (
     <section className="glass-panel extension-runtime-status" aria-label="插件市场运行状态">
@@ -95,6 +102,12 @@ function ExtensionRuntimeStatus(props: { value: NonNullable<MarketStatus["extens
           </span>
         ))}
       </div>
+      <p className="extension-runtime-metrics">
+        <span>活动上传 {props.value.activeUploads ?? 0} / {props.value.maxActiveUploads ?? 20}</span>
+        <span>已预留 {bytes(props.value.reservedBytes ?? 0)}</span>
+        <span>可用空间 {bytes(props.value.freeBytes ?? 0)}</span>
+        <span>最低保留 {bytes(props.value.minimumFreeBytes ?? 0)}</span>
+      </p>
     </section>
   )
 }

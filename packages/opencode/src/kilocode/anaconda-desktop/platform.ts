@@ -55,10 +55,7 @@ export function directory(info: Info) {
 
 export function candidates(info: Info) {
   if (info.platform === "darwin") {
-    return [
-      "/Applications/Anaconda Desktop.app",
-      path.posix.join(info.home, "Applications", "Anaconda Desktop.app"),
-    ]
+    return ["/Applications/Anaconda Desktop.app", path.posix.join(info.home, "Applications", "Anaconda Desktop.app")]
   }
 
   if (info.platform === "win32") {
@@ -180,7 +177,7 @@ export function makeLayer(info: Info) {
         const cmd = command(info, install)
         if (!cmd) return yield* new PlatformError({ operation: "open", reason: "unsupported" })
         const child = yield* Effect.try({
-          try: () => Process.spawn(cmd, { env: environment(info) }),
+          try: () => Process.spawn(cmd, { env: environment(info), extendEnv: false }),
           catch: () => new PlatformError({ operation: "open", reason: "failed" }),
         })
         yield* Effect.callback<void, PlatformError>((resume) => {

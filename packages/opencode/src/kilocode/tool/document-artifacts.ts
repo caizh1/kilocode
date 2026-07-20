@@ -5,6 +5,7 @@ import {
   exportArtifactDiagnostics,
   listArtifacts,
   resolveOpenArtifact,
+  DEFAULT_ARTIFACT_ROOT,
   type ArtifactQualityStatus,
 } from "@/kilocode/documents/artifacts"
 
@@ -24,7 +25,7 @@ const DeclareParameters = Schema.Struct({
     description: "Optional slug used when creating a new artifact directory.",
   }),
   artifactDir: Schema.optional(Schema.String).annotate({
-    description: "Existing artifact directory relative to the workspace, under .kilo/artifacts.",
+    description: `Existing artifact directory relative to the workspace, under ${DEFAULT_ARTIFACT_ROOT}.`,
   }),
   primaryFile: Schema.optional(Schema.String).annotate({
     description: "Primary artifact file path relative to the artifact directory.",
@@ -171,7 +172,7 @@ export const ListArtifactsTool = Tool.define(
             },
             output:
               artifacts.length === 0
-                ? "No document artifacts found in .kilo/artifacts."
+                ? `No document artifacts found in ${DEFAULT_ARTIFACT_ROOT}.`
                 : [
                     `Found ${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"}.`,
                     "",
@@ -229,7 +230,7 @@ export const ExportArtifactDiagnosticsTool = Tool.define(
       Effect.gen(function* () {
         yield* ctx.ask({
           permission: "export_artifact_diagnostics",
-          patterns: [".kilo/artifacts"],
+          patterns: [DEFAULT_ARTIFACT_ROOT],
           always: ["*"],
           metadata: {},
         })

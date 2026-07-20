@@ -78,7 +78,8 @@ test("validation preserves SKILL.md bytes when portable metadata needs no repair
   try {
     const dir = join(root, "my-skill")
     mkdirSync(join(dir, "node_modules"), { recursive: true })
-    const original = "---\n# retain formatting\nname: my-skill\ndescription: A useful skill\nversion: 1.2.3\n---\n\n# Guide\n\nKeep this body.\r\n"
+    const original =
+      "---\n# retain formatting\nname: my-skill\ndescription: A useful skill\nversion: 1.2.3\n---\n\n# Guide\n\nKeep this body.\r\n"
     writeFileSync(join(dir, "skill.md"), original)
     writeFileSync(join(dir, "node_modules", "ignored.js"), "ignored")
     const archive = join(root, "input.tar.gz")
@@ -97,7 +98,10 @@ test("validation preserves SKILL.md bytes when portable metadata needs no repair
     execFileSync("tar", ["-xzf", output, "-C", extracted])
     const markdown = readFileSync(join(extracted, "my-skill", "SKILL.md"), "utf8")
     assert.equal(markdown, original)
-    assert.equal(result.issues.some((issue) => issue.code === "frontmatter-normalize"), false)
+    assert.equal(
+      result.issues.some((issue) => issue.code === "frontmatter-normalize"),
+      false,
+    )
     assert.equal(readFileSync(join(extracted, "my-skill", "skill.json"), "utf8").includes('"id": "my-skill"'), true)
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -156,9 +160,27 @@ test("security validation rejects secrets, XSS, hidden archives, malformed image
     assert.ok(codes.has("security-markdown-xss"))
     assert.ok(codes.has("security-nested-archive"))
     assert.ok(codes.has("security-image-invalid"))
+    assert.equal(result.risk.level, "critical")
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test("credentials and scripts are publishable medium risks with Chinese guidance", () => {
+  const result = validateSkillFiles("credential-skill", [
+    { path: "SKILL.md", data: Buffer.from(body("credential-skill", "Credential instructions")) },
+    { path: "README.md", data: Buffer.from("password=abcdefghijklmnop\n") },
+    { path: "scripts/connect.sh", data: Buffer.from("-----BEGIN OPENSSH PRIVATE KEY-----\nexample\n") },
+  ])
+  assert.equal(result.valid, true)
+  assert.equal(result.stage, "complete")
+  assert.equal(result.risk.level, "medium")
+  assert.equal(result.policyVersion, "skill-risk-v2")
+  const risks = result.issues.filter((issue) => issue.riskLevel === "medium")
+  assert.ok(risks.some((issue) => issue.code === "security-secret"))
+  assert.ok(risks.some((issue) => issue.code === "scripts-present"))
+  assert.ok(risks.every((issue) => issue.severity === "warning"))
+  assert.ok(risks.every((issue) => /[\u4e00-\u9fff]/.test(issue.message)))
 })
 
 test("adversarial archives fail closed across paths, headers, limits, binaries, and image dimensions", () => {
@@ -324,7 +346,9 @@ test("canonical archives are deterministic across input order and preserve all s
   const second = createCanonicalArchive("deterministic-skill", files.toReversed())
   assert.equal(createHash("sha256").update(first).digest("hex"), createHash("sha256").update(second).digest("hex"))
   assert.deepEqual(
-    readSkillArchive(first).map((file) => file.path).toSorted(),
+    readSkillArchive(first)
+      .map((file) => file.path)
+      .toSorted(),
     files.map((file) => file.path).toSorted(),
   )
 })
@@ -342,9 +366,15 @@ test("folder, direct SKILL.md, ZIP, TAR.GZ, nested Skills, and platform hints ar
     writeFileSync(join(child, "child.md"), "Child guide\n")
     const folder = await discoverSkillCandidates(parent)
     assert.equal(folder.length, 2)
-    assert.equal(folder[0]?.files.some((file) => file.path.includes("nested/")), false)
+    assert.equal(
+      folder[0]?.files.some((file) => file.path.includes("nested/")),
+      false,
+    )
     const direct = await discoverSkillCandidates(join(child, "SKILL.md"))
-    assert.deepEqual(direct.map((item) => item.id), ["child-skill"])
+    assert.deepEqual(
+      direct.map((item) => item.id),
+      ["child-skill"],
+    )
 
     const archive = zip([
       { path: "wrapper/one/SKILL.md", data: Buffer.from(body("one-skill", "One instructions")) },
@@ -376,7 +406,10 @@ test("folder, direct SKILL.md, ZIP, TAR.GZ, nested Skills, and platform hints ar
         { path: "SKILL.md", data: Buffer.from(body("tar-skill", "Tar instructions")) },
       ]),
     )
-    assert.deepEqual((await discoverSkillCandidates(tarFile)).map((item) => item.id), ["tar-skill"])
+    assert.deepEqual(
+      (await discoverSkillCandidates(tarFile)).map((item) => item.id),
+      ["tar-skill"],
+    )
 
     const claude = join(repo, ".claude", "skills", "claude-skill")
     const opencode = join(repo, ".opencode", "skills", "open-skill")
@@ -444,7 +477,7 @@ test("ZIP traversal, case collisions, encryption, and compression bombs fail clo
   }
 })
 
-test("safe PDF and OOXML pass while active documents and external relationships fail", () => {
+test("safe PDF and OOXML pass, active documents fail, and external relationships warn", () => {
   const skill = { path: "SKILL.md", data: Buffer.from(body("document-skill", "Document instructions")) }
   const pdf = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\nxref\n0 1\n0000000000 65535 f \ntrailer\n<<>>\n%%EOF\n")
   const docx = zip([
@@ -479,6 +512,8 @@ test("safe PDF and OOXML pass while active documents and external relationships 
     },
   ])
   assert.ok(external.issues.some((issue) => issue.code === "security-office-external-link"))
+  assert.equal(external.valid, true)
+  assert.equal(external.risk.level, "medium")
 })
 
 function body(name: string, description: string) {
@@ -486,10 +521,7 @@ function body(name: string, description: string) {
 }
 
 function expectRepairs(repairs: Array<{ field: "name" | "description" }>) {
-  assert.deepEqual(
-    repairs.map((repair) => repair.field).toSorted(),
-    ["description", "name"],
-  )
+  assert.deepEqual(repairs.map((repair) => repair.field).toSorted(), ["description", "name"])
 }
 
 function zip(entries: Array<{ path: string; data: Buffer }>, flags = 0) {

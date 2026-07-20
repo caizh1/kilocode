@@ -385,6 +385,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/publications/{runId}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["undoPublication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/skills/{id}/unpublish": {
         parameters: {
             query?: never;
@@ -490,7 +506,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Upload one VSIX file. Web clients extract folders and archives locally; each user may submit at most 100 VSIX files per rolling hour. */
+        /** @description Upload one VSIX file. Web clients extract folders and archives locally, split unlimited selections into logical groups, and submit one VSIX per request. The service applies instance-wide concurrency and storage admission controls. */
         post: operations["publishExtension"];
         delete?: never;
         options?: never;
@@ -703,7 +719,7 @@ export interface components {
         ApiError: {
             /** @constant */
             ok: false;
-            code: "CAPABILITY_UNSUPPORTED" | "AUTH_REQUIRED" | "AUTH_INVALID" | "SESSION_EXPIRED" | "CSRF_INVALID" | "ORIGIN_INVALID" | "NOT_FOUND" | "CONFLICT" | "VALIDATION_FAILED" | "SECURITY_REJECTED" | "OWNERSHIP_REQUIRED" | "IDEMPOTENCY_CONFLICT" | "INTENT_EXPIRED" | "INTENT_REPLAYED" | "HASH_MISMATCH" | "ARCHIVE_UNSAFE" | "RATE_LIMITED" | "MARKET_UNAVAILABLE" | "INTERNAL_ERROR";
+            code: "CAPABILITY_UNSUPPORTED" | "AUTH_REQUIRED" | "AUTH_INVALID" | "SESSION_EXPIRED" | "STALE_PUBLICATION" | "CSRF_INVALID" | "ORIGIN_INVALID" | "NOT_FOUND" | "CONFLICT" | "VALIDATION_FAILED" | "SECURITY_REJECTED" | "OWNERSHIP_REQUIRED" | "IDEMPOTENCY_CONFLICT" | "INTENT_EXPIRED" | "INTENT_REPLAYED" | "HASH_MISMATCH" | "ARCHIVE_UNSAFE" | "RATE_LIMITED" | "MARKET_UNAVAILABLE" | "INTERNAL_ERROR";
             message: string;
             issues?: components["schemas"]["ValidationIssue"][];
         };
@@ -872,7 +888,7 @@ export interface components {
             id: string;
             skillId?: string;
             ownerId: string;
-            status: "VALIDATING" | "NEEDS_AUTHOR_FIX" | "NEEDS_AI_CONFIRMATION" | "SECURITY_REJECTED" | "PUBLISHING" | "PUBLISHED" | "UNPUBLISHED" | "UNCHANGED" | "FAILED";
+            status: "VALIDATING" | "NEEDS_AUTHOR_FIX" | "NEEDS_AI_CONFIRMATION" | "SECURITY_REJECTED" | "PUBLISHING" | "PUBLISHED" | "UNPUBLISHED" | "UNDONE" | "UNCHANGED" | "FAILED";
             stage: "uploaded" | "format" | "deterministic" | "security" | "semantic" | "publishing" | "complete";
             report?: components["schemas"]["ValidationReport"];
             patches: components["schemas"]["RepairPatch"][];
@@ -882,7 +898,7 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        PublicationStatus: "VALIDATING" | "NEEDS_AUTHOR_FIX" | "NEEDS_AI_CONFIRMATION" | "SECURITY_REJECTED" | "PUBLISHING" | "PUBLISHED" | "UNPUBLISHED" | "UNCHANGED" | "FAILED";
+        PublicationStatus: "VALIDATING" | "NEEDS_AUTHOR_FIX" | "NEEDS_AI_CONFIRMATION" | "SECURITY_REJECTED" | "PUBLISHING" | "PUBLISHED" | "UNPUBLISHED" | "UNDONE" | "UNCHANGED" | "FAILED";
         RepairPatch: {
             id: string;
             runId: string;
@@ -931,6 +947,11 @@ export interface components {
             /** Format: date-time */
             publishedAt: string;
         };
+        SkillRiskSummary: {
+            level: "unknown" | "none" | "medium" | "critical";
+            issueCount: number;
+            policyVersion?: string;
+        };
         SkillSummary: {
             id: string;
             name: string;
@@ -951,6 +972,7 @@ export interface components {
             favorite?: boolean;
             installation?: components["schemas"]["InstallationState"];
             artwork?: components["schemas"]["SkillArtwork"];
+            risk: components["schemas"]["SkillRiskSummary"];
         };
         ValidationIssue: {
             code: string;
@@ -963,6 +985,7 @@ export interface components {
             actual?: string;
             fixable: boolean;
             repairKind: "none" | "deterministic" | "ai";
+            riskLevel: "none" | "medium" | "critical";
         };
         ValidationReport: {
             valid: boolean;
@@ -971,6 +994,8 @@ export interface components {
             sourceSha256: string;
             snapshotSha256: string;
             changed: boolean;
+            policyVersion?: string;
+            risk: components["schemas"]["SkillRiskSummary"];
         };
     };
     responses: never;
@@ -1038,6 +1063,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -1148,6 +1183,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -1227,6 +1272,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -1295,6 +1350,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -1387,6 +1452,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -1457,6 +1532,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -1542,6 +1627,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -1613,6 +1708,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -1719,6 +1824,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -1801,6 +1916,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -1873,6 +1998,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -1959,6 +2094,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -2031,6 +2176,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2115,6 +2270,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -2189,6 +2354,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -2257,6 +2432,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2343,6 +2528,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -2417,6 +2612,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2511,6 +2716,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -2586,6 +2801,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2673,6 +2898,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -2741,6 +2976,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2823,6 +3068,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -2897,6 +3152,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2987,6 +3252,105 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    undoPublication: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                "X-CSRF-Token"?: string;
+            };
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationRun"];
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -3059,6 +3423,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3145,6 +3519,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -3213,6 +3597,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3289,6 +3683,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3380,6 +3784,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -3450,6 +3864,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3530,6 +3954,15 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Upload idle or absolute timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Conflict */
             409: {
                 headers: {
@@ -3539,8 +3972,36 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description All publication slots are busy; retry after the response Retry-After interval */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Extension artifact storage is under pressure */
+            507: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3609,6 +4070,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3734,6 +4205,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -3812,6 +4293,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -3882,6 +4373,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3974,6 +4475,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -4046,6 +4557,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4126,6 +4647,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -4200,6 +4731,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -4268,6 +4809,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4352,6 +4903,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -4420,6 +4981,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4502,6 +5073,16 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Internal error */
             500: {
                 headers: {
@@ -4538,6 +5119,23 @@ export interface operations {
                         market: "ready" | "degraded" | "unavailable";
                         /** @enum {unknown} */
                         packages: "ready" | "degraded" | "unavailable";
+                        extensions?: {
+                            enabled: boolean;
+                            /** @enum {unknown} */
+                            database: "ready" | "degraded";
+                            /** @enum {unknown} */
+                            scanner: "starting" | "scanning" | "ready";
+                            drop: boolean;
+                            artifacts: boolean;
+                            temporary: boolean;
+                            warnings: string[];
+                            activeUploads?: number;
+                            maxActiveUploads?: number;
+                            reservedBytes?: number;
+                            freeBytes?: number;
+                            minimumFreeBytes?: number;
+                            storagePressure?: boolean;
+                        };
                         warnings?: string[];
                     };
                 };
@@ -4581,6 +5179,16 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {

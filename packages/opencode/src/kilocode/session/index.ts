@@ -18,6 +18,7 @@ import type { Provider } from "@/provider/provider"
 import { ENV_FEATURE } from "@kilocode/kilo-gateway"
 import { existsSync } from "fs"
 import path from "path"
+import { ProductProfile } from "../product-profile"
 import { KiloSessionEvent, type KiloSessionCloseReason } from "./event"
 
 export namespace KiloSession {
@@ -372,7 +373,7 @@ export namespace KiloSession {
           if (!Filesystem.contains(root, dir) || nested(root, dir)) continue
           const rel = path.relative(root, dir)
           const parts = rel.split(path.sep)
-          if ((parts[0] === ".kilo" || parts[0] === ".kilocode") && parts[1] === "worktrees" && parts[2]) {
+          if (ProductProfile.dirs.includes(parts[0] as never) && parts[1] === "worktrees" && parts[2]) {
             return path.join(root, parts[0], parts[1], parts[2])
           }
           return root

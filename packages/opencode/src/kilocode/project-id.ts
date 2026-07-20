@@ -4,6 +4,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
 import path from "path"
 import { $ } from "bun"
+import { ProductProfile } from "./product-profile"
 
 /**
  * Normalize a project identifier: extract repo name from git URLs, truncate to 100 chars
@@ -44,7 +45,7 @@ function normalizeProjectId(input: string): string {
  */
 async function getProjectIdFromConfig(directory: string): Promise<string | undefined> {
   // Check .kilo first, then legacy .kilocode
-  for (const dir of [".kilo", ".kilocode"]) {
+  for (const dir of ProductProfile.dirs) {
     const file = Bun.file(path.join(directory, dir, "config.json"))
     const text = await file.text().catch(() => undefined)
     if (!text) continue

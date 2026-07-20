@@ -5,7 +5,9 @@ import ignore, { type Ignore } from "ignore"
 import path from "path"
 import { FileIgnore } from "../../file/ignore"
 
-const files = [".gitignore", ".kilocodeignore"] as const
+const product = process.env.KILO_PRODUCT_PROFILE === "chipmate-v2"
+const ignoreFile = product ? ".chipmate-v2ignore" : ".kilocodeignore"
+const files = [".gitignore", ignoreFile] as const
 const order = new Map(files.map((name, index) => [name, index]))
 
 type Entry = {
@@ -112,7 +114,7 @@ class WorkspaceIgnore implements IgnoreMatcher {
 }
 
 async function collect(root: string): Promise<Entry[]> {
-  const paths = await glob("**/{.gitignore,.kilocodeignore}", {
+  const paths = await glob(`**/{.gitignore,${ignoreFile}}`, {
     cwd: root,
     absolute: true,
     nodir: true,
@@ -178,7 +180,7 @@ function compile(sorted: Entry[]): IgnoreMatcher {
     }
     matcher.add(`${entry.dir}/${entry.name}`)
   }
-  matcher.add([".gitignore", ".kilocodeignore", "**/.gitignore", "**/.kilocodeignore"])
+  matcher.add([".gitignore", ignoreFile, "**/.gitignore", `**/${ignoreFile}`])
 
   return new WorkspaceIgnore(matcher)
 }

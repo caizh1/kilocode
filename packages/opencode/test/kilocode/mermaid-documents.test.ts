@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { PhotonImage } from "@silvia-odwyer/photon-node"
 import fs from "fs/promises"
+import { createServer } from "node:http"
 import path from "path"
 import { Effect } from "effect"
 import {
@@ -28,6 +29,27 @@ function provideTmpdirInstance<A, E>(
       fn: () => Effect.runPromise(self(temp.path).pipe(Effect.provide(CrossSpawnSpawner.defaultLayer))),
     })
   })
+}
+
+async function serveJson(payload: unknown, requests?: Array<Record<string, unknown>>, delay = 0) {
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = []
+    request.on("data", (chunk) => chunks.push(Buffer.from(chunk)))
+    request.once("end", async () => {
+      const body = Buffer.concat(chunks).toString("utf8")
+      if (body && requests) requests.push(JSON.parse(body) as Record<string, unknown>)
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+      response.writeHead(200, { "connection": "close", "content-type": "application/json" })
+      response.end(JSON.stringify(payload))
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("test renderer did not bind a TCP port")
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    stop: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
+  }
 }
 
 describe("kilocode Mermaid documents", () => {
@@ -65,15 +87,11 @@ describe("kilocode Mermaid documents", () => {
       provideTmpdirInstance(
         (dir) =>
           Effect.promise(async () => {
-            const server = Bun.serve({
-              hostname: "127.0.0.1",
-              port: 0,
-              fetch: async () => Response.json({ pngBase64: PNG_1X1 }),
-            })
+            const server = await serveJson({ pngBase64: PNG_1X1 })
             try {
               const rendered = await renderMermaidDiagram({
                 source: SIMPLE_MERMAID,
-                remoteEndpoint: `http://127.0.0.1:${server.port}`,
+                remoteEndpoint: server.origin,
                 sourceFile: "remote.mmd",
                 pngFile: "remote.png",
               })
@@ -82,44 +100,40 @@ describe("kilocode Mermaid documents", () => {
               const png = await fs.readFile(path.join(dir, rendered.pngPath!))
               expect(png.subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true)
             } finally {
-              await server.stop(true)
+              await server.stop()
             }
 
             const requests: Array<Record<string, unknown>> = []
-            const nested = Bun.serve({
-              hostname: "127.0.0.1",
-              port: 0,
-              fetch: async (request) => {
-                requests.push((await request.json()) as Record<string, unknown>)
-                return Response.json({
-                  ok: true,
-                  png: { contentType: "image/png", base64: PNG_1X1 },
-                  width: 480,
-                  height: 280,
-                  pixelWidth: 1440,
-                  pixelHeight: 840,
-                  scale: 3,
-                  contentBounds: { x: 10, y: 20, width: 448, height: 238 },
-                  cropBounds: { x: 0, y: 0, width: 480, height: 280 },
-                  padding: 32,
-                  contentCropRatio: 0.79,
-                  elapsedMs: 321,
-                  renderer: { kind: "remote-opencode", diagramToPng: "mermaid-chromium" },
-                  warnings: ["renderer warning"],
-                  issues: [
-                    {
-                      severity: "warning",
-                      code: "mermaid-render-content-bounds-suspicious",
-                      message: "content bounds need review",
-                    },
-                  ],
-                })
+            const nested = await serveJson(
+              {
+                ok: true,
+                png: { contentType: "image/png", base64: PNG_1X1 },
+                width: 480,
+                height: 280,
+                pixelWidth: 1440,
+                pixelHeight: 840,
+                scale: 3,
+                contentBounds: { x: 10, y: 20, width: 448, height: 238 },
+                cropBounds: { x: 0, y: 0, width: 480, height: 280 },
+                padding: 32,
+                contentCropRatio: 0.79,
+                elapsedMs: 321,
+                renderer: { kind: "remote-opencode", diagramToPng: "mermaid-chromium" },
+                warnings: ["renderer warning"],
+                issues: [
+                  {
+                    severity: "warning",
+                    code: "mermaid-render-content-bounds-suspicious",
+                    message: "content bounds need review",
+                  },
+                ],
               },
-            })
+              requests,
+            )
             try {
               const rendered = await renderMermaidDiagram({
                 source: SIMPLE_MERMAID,
-                remoteEndpoint: `http://127.0.0.1:${nested.port}`,
+                remoteEndpoint: nested.origin,
                 sourceFile: "nested.mmd",
                 pngFile: "nested.png",
                 scale: 3,
@@ -160,22 +174,17 @@ describe("kilocode Mermaid documents", () => {
               const png = await fs.readFile(path.join(dir, rendered.pngPath!))
               expect(png.subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true)
             } finally {
-              await nested.stop(true)
+              await nested.stop()
             }
 
-            const rejected = Bun.serve({
-              hostname: "127.0.0.1",
-              port: 0,
-              fetch: async () =>
-                Response.json({
-                  ok: false,
-                  issues: [{ severity: "error", code: "mermaid-source-empty", message: "source is required" }],
-                }),
+            const rejected = await serveJson({
+              ok: false,
+              issues: [{ severity: "error", code: "mermaid-source-empty", message: "source is required" }],
             })
             try {
               const rendered = await renderMermaidDiagram({
                 source: SIMPLE_MERMAID,
-                remoteEndpoint: `http://127.0.0.1:${rejected.port}`,
+                remoteEndpoint: rejected.origin,
               })
               expect(rendered.rendered).toBe(false)
               expect(rendered.issues).toEqual([
@@ -189,18 +198,14 @@ describe("kilocode Mermaid documents", () => {
                 }),
               )
             } finally {
-              await rejected.stop(true)
+              await rejected.stop()
             }
 
-            const empty = Bun.serve({
-              hostname: "127.0.0.1",
-              port: 0,
-              fetch: async () => Response.json({ ok: true, issues: [] }),
-            })
+            const empty = await serveJson({ ok: true, issues: [] })
             try {
               const rendered = await renderMermaidDiagram({
                 source: SIMPLE_MERMAID,
-                remoteEndpoint: `http://127.0.0.1:${empty.port}`,
+                remoteEndpoint: empty.origin,
               })
               expect(rendered.rendered).toBe(false)
               expect(rendered.diagnostics).toContainEqual({
@@ -209,27 +214,20 @@ describe("kilocode Mermaid documents", () => {
                 message: "remote Mermaid renderer returned no PNG",
               })
             } finally {
-              await empty.stop(true)
+              await empty.stop()
             }
 
-            const slow = Bun.serve({
-              hostname: "127.0.0.1",
-              port: 0,
-              fetch: async () => {
-                await new Promise((resolve) => setTimeout(resolve, 50))
-                return Response.json({ pngBase64: PNG_1X1 })
-              },
-            })
+            const slow = await serveJson({ pngBase64: PNG_1X1 }, undefined, 50)
             try {
               const timedOut = await renderMermaidDiagram({
                 source: SIMPLE_MERMAID,
-                remoteEndpoint: `http://127.0.0.1:${slow.port}`,
+                remoteEndpoint: slow.origin,
                 timeoutMs: 1,
               })
               expect(timedOut.rendered).toBe(false)
               expect(timedOut.diagnostics.some((item) => item.code === "mermaid-render-timeout")).toBe(true)
             } finally {
-              await slow.stop(true)
+              await slow.stop()
             }
           }),
         { git: true },

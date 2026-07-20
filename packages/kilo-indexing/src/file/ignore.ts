@@ -22,6 +22,7 @@ export namespace FileIgnore {
     ".kilo",
     ".opencode",
     ".kilocode",
+    ".chipmate-v2",
     ".turbo",
     ".output",
     "desktop",
@@ -51,6 +52,7 @@ export namespace FileIgnore {
     "**/.nyc_output/**",
     "**/.kilo/worktrees/**",
     "**/.kilocode/worktrees/**",
+    "**/.chipmate-v2/worktrees/**",
   ]
 
   export const PATTERNS = [...files, ...folders]

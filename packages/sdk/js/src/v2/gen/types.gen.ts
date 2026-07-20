@@ -26,6 +26,8 @@ export type Event =
   | EventKilocodeAgentManagerCancelled
   | EventKilocodeNotebookRequested
   | EventKilocodeNotebookCancelled
+  | EventKilocodeSkillMarketRequested
+  | EventKilocodeSkillMarketCancelled
   | EventLspClientDiagnostics
   | EventKiloSessionsRemoteStatusChanged
   | EventMemoryStatus1
@@ -335,6 +337,119 @@ export type NotebookExecuteRequest = {
 }
 
 export type NotebookRequest = NotebookReadRequest | NotebookEditRequest | NotebookExecuteRequest
+
+export type SkillMarketRequest =
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "search"
+      query: string
+      category?: string
+      author?: string
+      sort?: "updated" | "downloads" | "favorites" | "name"
+      cursor?: string
+      limit: number
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "begin"
+      skillId: string
+      scope: "global" | "project"
+      intents: Array<"create" | "install" | "publish">
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "prepare_create"
+      transactionId?: string
+      skillId: string
+      name: string
+      description: string
+      category?: string
+      tags?: Array<string>
+      scope: "global" | "project"
+      files: Array<{
+        path: string
+        encoding: "utf8" | "base64"
+        content: string
+      }>
+      replace: boolean
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "prepare_install"
+      transactionId?: string
+      skillId: string
+      revision?: number
+      scope: "global" | "project"
+      replace: boolean
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "prepare_publish"
+      transactionId?: string
+      skillId: string
+      scope: "global" | "project"
+      notes?: string
+      expectedSha256?: string
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "approve"
+      transactionId: string
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "commit"
+      transactionId: string
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "abort"
+      transactionId: string
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "status"
+      transactionId: string
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "list"
+      limit: number
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "undo"
+      transactionId: string
+    }
+  | {
+      id: string
+      sessionID: string
+      key: string
+      operation: "purge"
+      transactionId: string
+    }
 
 export type IndexingStatusState = "Disabled" | "In Progress" | "Complete" | "Error" | "Standby"
 
@@ -1092,6 +1207,8 @@ export type GlobalEvent = {
     | EventKilocodeAgentManagerCancelled
     | EventKilocodeNotebookRequested
     | EventKilocodeNotebookCancelled
+    | EventKilocodeSkillMarketRequested
+    | EventKilocodeSkillMarketCancelled
     | EventLspClientDiagnostics
     | EventKiloSessionsRemoteStatusChanged
     | EventMemoryStatus
@@ -3408,6 +3525,57 @@ export type AgentManagerFailure = {
   message: string
 }
 
+export type SkillMarketResult = {
+  operation: string
+  transactionId?: string
+  state?:
+    | "OPEN"
+    | "PREPARING"
+    | "PREPARED"
+    | "COMMITTING"
+    | "COMMITTED"
+    | "REMOTE_UNCERTAIN"
+    | "ABORTED"
+    | "ROLLING_BACK"
+    | "ROLLED_BACK"
+    | "UNDOING"
+    | "UNDONE"
+    | "EXPIRED"
+    | "MANUAL_INTERVENTION"
+  skillId?: string
+  scope?: "global" | "project"
+  preview?: {
+    [key: string]: unknown
+  }
+  result?: {
+    [key: string]: unknown
+  }
+  undoUntil?: string
+}
+
+export type SkillMarketFailure = {
+  code:
+    | "intent_required"
+    | "host_unavailable"
+    | "auth_required"
+    | "validation_failed"
+    | "security_rejected"
+    | "conflict"
+    | "stale_target"
+    | "locked"
+    | "cancelled"
+    | "timeout"
+    | "remote_uncertain"
+    | "rollback_failed"
+    | "undo_expired"
+    | "undo_conflict"
+    | "manual_intervention"
+    | "not_found"
+    | "host_error"
+  message: string
+  transactionId?: string
+}
+
 export type AnacondaDesktopStatus =
   | {
       type: "unsupported-platform"
@@ -3773,6 +3941,22 @@ export type EventKilocodeNotebookCancelled = {
   type: "kilocode.notebook.cancelled"
   properties: {
     requestID: NotebookRequestId
+    sessionID: string
+    reason: "cancelled" | "disposed" | "timeout"
+  }
+}
+
+export type EventKilocodeSkillMarketRequested = {
+  id: string
+  type: "kilocode.skill_market.requested"
+  properties: SkillMarketRequest
+}
+
+export type EventKilocodeSkillMarketCancelled = {
+  id: string
+  type: "kilocode.skill_market.cancelled"
+  properties: {
+    requestID: string
     sessionID: string
     reason: "cancelled" | "disposed" | "timeout"
   }
@@ -12862,6 +13046,108 @@ export type KilocodeAgentManagerRejectResponses = {
 
 export type KilocodeAgentManagerRejectResponse =
   KilocodeAgentManagerRejectResponses[keyof KilocodeAgentManagerRejectResponses]
+
+export type KilocodeSkillMarketListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/skill-market"
+}
+
+export type KilocodeSkillMarketListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type KilocodeSkillMarketListError = KilocodeSkillMarketListErrors[keyof KilocodeSkillMarketListErrors]
+
+export type KilocodeSkillMarketListResponses = {
+  /**
+   * Pending Skill Market host requests
+   */
+  200: Array<SkillMarketRequest>
+}
+
+export type KilocodeSkillMarketListResponse = KilocodeSkillMarketListResponses[keyof KilocodeSkillMarketListResponses]
+
+export type KilocodeSkillMarketReplyData = {
+  body?: {
+    result: SkillMarketResult
+  }
+  path: {
+    requestID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/skill-market/{requestID}/reply"
+}
+
+export type KilocodeSkillMarketReplyErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type KilocodeSkillMarketReplyError = KilocodeSkillMarketReplyErrors[keyof KilocodeSkillMarketReplyErrors]
+
+export type KilocodeSkillMarketReplyResponses = {
+  /**
+   * Skill Market reply accepted
+   */
+  200: boolean
+}
+
+export type KilocodeSkillMarketReplyResponse =
+  KilocodeSkillMarketReplyResponses[keyof KilocodeSkillMarketReplyResponses]
+
+export type KilocodeSkillMarketRejectData = {
+  body?: {
+    error: SkillMarketFailure
+  }
+  path: {
+    requestID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/skill-market/{requestID}/reject"
+}
+
+export type KilocodeSkillMarketRejectErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type KilocodeSkillMarketRejectError = KilocodeSkillMarketRejectErrors[keyof KilocodeSkillMarketRejectErrors]
+
+export type KilocodeSkillMarketRejectResponses = {
+  /**
+   * Skill Market rejection accepted
+   */
+  200: boolean
+}
+
+export type KilocodeSkillMarketRejectResponse =
+  KilocodeSkillMarketRejectResponses[keyof KilocodeSkillMarketRejectResponses]
 
 export type KilocodeSessionModelUsageData = {
   body?: never

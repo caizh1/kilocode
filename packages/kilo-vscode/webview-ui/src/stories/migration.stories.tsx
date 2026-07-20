@@ -5,7 +5,7 @@
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
 import { onMount, type Component } from "solid-js"
-import MigrationWizard from "../components/migration/MigrationWizard"
+import { MigrationWizard } from "../components/migration"
 import { StoryProviders } from "./StoryProviders"
 
 const meta: Meta = {

@@ -337,6 +337,12 @@ export class CodeIndexManager {
     }
   }
 
+  private clearErrors(pipeline: keyof IndexingPipelineRecentErrors): void {
+    if (!this._recentErrors[pipeline]?.length) return
+    delete this._recentErrors[pipeline]
+    this._stateManager.notify()
+  }
+
   private async runRecovery(trigger: IndexingTelemetryTrigger, attempt: number): Promise<void> {
     if (this._disposed) return
 
@@ -998,6 +1004,7 @@ export class CodeIndexManager {
         })
         const result = await factory.validateEmbedder(embedder)
         if (!result.valid) throw new Error(result.error || "Embedder configuration validation failed")
+        this.clearErrors("rag")
       },
     )
     const search = new CodeIndexSearchService(

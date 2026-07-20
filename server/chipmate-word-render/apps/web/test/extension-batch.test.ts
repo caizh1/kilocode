@@ -6,6 +6,7 @@ import {
   BATCH_LIMIT,
   FILE_LIMIT,
   materialize,
+  partition,
   scanInputs,
   type BatchItem,
 } from "../src/extension-batch.ts"
@@ -110,7 +111,7 @@ test("ignores encrypted ZIP entries before upload", async () => {
   assert.match(scan.notes[0]?.reason ?? "", /加密 ZIP/)
 })
 
-test("exposes the locked batch boundaries without allocating ten GiB", async () => {
+test("partitions unlimited selections into stable logical batches", async () => {
   const inputs = Array.from({ length: BATCH_LIMIT + 1 }, (_, index) => {
     const file = new File([String(index)], `plugin-${index}.vsix`)
     return { file, path: file.name }
@@ -119,6 +120,35 @@ test("exposes the locked batch boundaries without allocating ten GiB", async () 
   assert.equal(scan.items.length, 21)
   assert.equal(BATCH_LIMIT, 20)
   assert.equal(BATCH_BYTES, 10 * 1024 * 1024 * 1024)
+  const groups = partition(scan.items)
+  assert.deepEqual(groups.map((group) => group.items.length), [20, 1])
+  assert.deepEqual(groups.flatMap((group) => group.items.map((item) => item.id)), scan.items.map((item) => item.id))
+})
+
+test("materializes all logical batches with one pass over each archive source", async () => {
+  const entries = Object.fromEntries(Array.from({ length: 41 }, (_, index) => [`plugins/plugin-${index}.vsix`, strToU8(String(index))]))
+  const file = new CountingFile(zipSync(entries), "many.zip")
+  const scan = await scanInputs([{ file, path: file.name }])
+  const groups = partition(scan.items)
+  assert.equal(groups.length, 3)
+  const before = file.slices
+  const output: string[] = []
+  const memory = { active: 0, maximum: 0 }
+  await materialize(
+    scan,
+    groups.flatMap((group) => group.items),
+    async (_item, blob) => {
+      memory.active += 1
+      memory.maximum = Math.max(memory.maximum, memory.active)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      output.push(await blob.text())
+      memory.active -= 1
+    },
+    (_item, error) => assert.fail(error),
+  )
+  assert.equal(output.length, 41)
+  assert.equal(memory.maximum, 1)
+  assert.ok(file.slices - before <= Math.ceil(file.size / (64 * 1024)) + 1)
 })
 
 test("accepts the 512 MiB boundary and ignores a larger direct VSIX without allocating it", async () => {
@@ -149,6 +179,19 @@ class SizedFile extends File {
 
   override get size() {
     return this.logical
+  }
+}
+
+class CountingFile extends File {
+  slices = 0
+
+  constructor(data: Uint8Array, name: string) {
+    super([data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer], name)
+  }
+
+  override slice(start?: number, end?: number, contentType?: string) {
+    this.slices += 1
+    return super.slice(start, end, contentType)
   }
 }
 

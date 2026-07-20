@@ -9,6 +9,7 @@ const path = require("node:path")
 const { spawn, spawnSync } = require("node:child_process")
 const { pathToFileURL } = require("node:url")
 const JSZip = require("jszip")
+const yauzl = require("yauzl")
 const { PNG } = require("pngjs")
 
 const PORT = Number(process.env.PORT || 6001)
@@ -16,6 +17,13 @@ const PACKAGE_ROOT = process.env.PACKAGE_ROOT || "/packages"
 const SKILL_MARKET_ROOT = process.env.SKILL_MARKET_ROOT || path.join(PACKAGE_ROOT, "skill-market")
 const UPDATE_EXTENSION_ID = "chipmate.chipmate"
 const UPDATE_TARGETS = new Set(["win32-x64-baseline", "linux-x64-baseline", "darwin-x64", "darwin-arm64"])
+const MAX_VSIX_MANIFEST_BYTES = 2 * 1024 * 1024
+const VSIX_MANIFEST_ENTRY = "extension/package.json"
+const packageEntryCache = new Map()
+const packageEntryInflight = new Map()
+const packageManifestCache = new Map()
+const packageManifestInflight = new Map()
+const PACKAGE_FINGERPRINT = Symbol("packageFingerprint")
 const NEW_API_TOKEN_NAME_SUFFIX = process.env.NEW_API_TOKEN_NAME_SUFFIX || "@chipmate"
 const NEW_API_TOKEN_CACHE_TTL_MS = Number(process.env.NEW_API_TOKEN_CACHE_TTL_MS || 5 * 60 * 1000)
 const NEW_API_TOKEN_PAGE_SIZE = Number(process.env.NEW_API_TOKEN_PAGE_SIZE || 100)
@@ -27,6 +35,10 @@ const MAX_DOCX_BYTES = Number(process.env.MAX_DOCX_BYTES || 50 * 1024 * 1024)
 const MAX_MERMAID_SOURCE_BYTES = Number(process.env.MAX_MERMAID_SOURCE_BYTES || 512 * 1024)
 const RENDER_TIMEOUT_MS = Number(process.env.RENDER_TIMEOUT_MS || 120000)
 const MAX_RESPONSE_PAGE_BYTES = Number(process.env.MAX_RESPONSE_PAGE_BYTES || 16 * 1024 * 1024)
+const MAX_WORD_RENDER_PAGES = Number(process.env.MAX_WORD_RENDER_PAGES || 500)
+const MAX_RENDER_PDF_BYTES = Number(process.env.MAX_RENDER_PDF_BYTES || 128 * 1024 * 1024)
+const MAX_RENDER_PAGE_TOTAL_BYTES = Number(process.env.MAX_RENDER_PAGE_TOTAL_BYTES || 256 * 1024 * 1024)
+const MAX_RENDER_RESPONSE_BYTES = Number(process.env.MAX_RENDER_RESPONSE_BYTES || 384 * 1024 * 1024)
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const WEBSOCKET_OPEN = 1
 const WEBSOCKET_CLOSED = 3
@@ -116,18 +128,45 @@ async function handleRenderWord(request, response) {
   if (docxBytes.length > MAX_DOCX_BYTES) throw new Error(`docx exceeds ${MAX_DOCX_BYTES} bytes`)
 
   const timeoutMs = clampNumber(payload.timeoutMs, 5000, RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MS)
+  const maxPages = clampNumber(payload.maxPages, 1, MAX_WORD_RENDER_PAGES, MAX_WORD_RENDER_PAGES)
   const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "chipmate-word-render-"))
   const inDir = path.join(tempRoot, "in")
+  const refreshDir = path.join(tempRoot, "refreshed")
   const outDir = path.join(tempRoot, "out")
   const pagesDir = path.join(tempRoot, "pages")
   const profileDir = path.join(tempRoot, "lo-profile")
+  const refreshProfileDir = path.join(tempRoot, "lo-refresh-profile")
   const homeDir = path.join(tempRoot, "home")
   try {
-    await Promise.all([inDir, outDir, pagesDir, profileDir, homeDir].map((dir) => fsp.mkdir(dir, { recursive: true })))
+    await Promise.all(
+      [inDir, refreshDir, outDir, pagesDir, profileDir, refreshProfileDir, homeDir].map((dir) =>
+        fsp.mkdir(dir, { recursive: true }),
+      ),
+    )
     const docxPath = path.join(inDir, filename)
     await fsp.writeFile(docxPath, docxBytes)
 
     const sofficePath = commandPath("soffice") || commandPath("libreoffice") || "soffice"
+    const refreshedPath = path.join(refreshDir, filename)
+    const source = await inspectWordDocx(docxBytes)
+    if (!source.valid) throw new Error("DOCX does not contain readable word/document.xml and word/styles.xml parts.")
+    const refresh = await refreshWordFields({
+      docxPath,
+      refreshedPath,
+      profileDir: refreshProfileDir,
+      sofficePath,
+      timeoutMs,
+      source,
+    })
+    const renderPath = refresh.ok ? refreshedPath : docxPath
+    const issues = []
+    if (refresh.status === "failed") {
+      issues.push({
+        severity: "warning",
+        code: "word-field-refresh-failed",
+        message: `LibreOffice UNO field refresh failed semantic validation; rendered the original document: ${refresh.diagnostics.join("; ")}`,
+      })
+    }
     const convertResult = await runCommand(
       sofficePath,
       [
@@ -139,7 +178,7 @@ async function handleRenderWord(request, response) {
         "pdf",
         "--outdir",
         outDir,
-        docxPath,
+        renderPath,
       ],
       timeoutMs,
       { HOME: homeDir },
@@ -150,22 +189,54 @@ async function handleRenderWord(request, response) {
     const pdfStat = await fsp.stat(pdfPath).catch(() => undefined)
     if (!pdfStat || pdfStat.size <= 0) throw new Error("LibreOffice did not produce a readable PDF.")
 
+    const pdfinfoPath = commandPath("pdfinfo") || "pdfinfo"
+    const pdfinfo = await runCommand(pdfinfoPath, [pdfPath], timeoutMs)
+    const exactPageCount = pdfinfo.ok ? pdfInfoPageCount(pdfinfo.stdout) : undefined
     const pdftoppmPath = commandPath("pdftoppm") || "pdftoppm"
     const prefix = path.join(pagesDir, "page")
-    const pngResult = await runCommand(pdftoppmPath, ["-png", "-r", "144", pdfPath, prefix], timeoutMs)
+    const upper = exactPageCount ? Math.min(exactPageCount, maxPages) : maxPages + 1
+    const pngResult = await runCommand(
+      pdftoppmPath,
+      ["-png", "-r", "144", "-f", "1", "-l", String(upper), pdfPath, prefix],
+      timeoutMs,
+    )
     if (!pngResult.ok) throw new Error(`pdftoppm failed: ${pngResult.message}`)
 
-    const pageFiles = (await fsp.readdir(pagesDir))
+    const renderedPageFiles = (await fsp.readdir(pagesDir))
       .filter((entry) => /^page-\d+\.png$/i.test(entry))
       .sort((left, right) => pageIndex(left) - pageIndex(right))
-    if (pageFiles.length === 0) throw new Error("pdftoppm completed but produced no page PNG files.")
+    if (renderedPageFiles.length === 0) throw new Error("pdftoppm completed but produced no page PNG files.")
+    const overflow = exactPageCount ? exactPageCount > maxPages : renderedPageFiles.length > maxPages
+    const pageFiles = renderedPageFiles.slice(0, maxPages)
+    const pageCount = exactPageCount ?? (overflow ? maxPages + 1 : pageFiles.length)
+    const pageCountKind = exactPageCount ? "exact" : overflow ? "lower-bound" : "exact"
 
     const pdfBytes = await fsp.readFile(pdfPath)
+    if (pdfBytes.length > MAX_RENDER_PDF_BYTES)
+      throw httpRenderError(413, "word-render-pdf-too-large", `PDF exceeds ${MAX_RENDER_PDF_BYTES} bytes`)
+    const pdftotextPath = commandPath("pdftotext") || "pdftotext"
+    const extracted = await runCommand(pdftotextPath, ["-layout", "-enc", "UTF-8", pdfPath, "-"], timeoutMs)
+    const textQa = wordPdfTextQa(refresh.ok ? refresh.inspection : source, extracted)
+    if (!textQa.ok) {
+      issues.push({
+        severity: "error",
+        code: "word-render-text-loss-suspected",
+        message: textQa.diagnostics.join("; "),
+      })
+    }
     const pages = []
+    let totalPageBytes = 0
     for (const file of pageFiles) {
       const absolute = path.join(pagesDir, file)
       const pngBytes = await fsp.readFile(absolute)
       if (pngBytes.length > MAX_RESPONSE_PAGE_BYTES) throw new Error(`${file} exceeds ${MAX_RESPONSE_PAGE_BYTES} bytes`)
+      totalPageBytes += pngBytes.length
+      if (totalPageBytes > MAX_RENDER_PAGE_TOTAL_BYTES)
+        throw httpRenderError(
+          413,
+          "word-render-pages-too-large",
+          `Page PNG payloads exceed ${MAX_RENDER_PAGE_TOTAL_BYTES} bytes`,
+        )
       const dimensions = pngDimensions(pngBytes)
       const page = pageIndex(file)
       pages.push({
@@ -178,23 +249,449 @@ async function handleRenderWord(request, response) {
       })
     }
 
+    if (overflow)
+      issues.push({
+        severity: "warning",
+        code: "page-count-exceeds-limit",
+        message: `PDF has ${pageCountKind === "exact" ? pageCount : `at least ${pageCount}`} pages; returned the first ${pages.length} because maxPages is ${maxPages}.`,
+      })
+    const responseBytes = base64Size(pdfBytes.length) + base64Size(totalPageBytes) + (refresh.ok ? base64Size(refresh.bytes.length) : 0)
+    if (responseBytes > MAX_RENDER_RESPONSE_BYTES)
+      throw httpRenderError(
+        413,
+        "word-render-response-too-large",
+        `Encoded render response exceeds ${MAX_RENDER_RESPONSE_BYTES} bytes`,
+      )
+
     sendJson(response, 200, {
       ok: true,
-      pageCount: pages.length,
+      pageCount,
+      returnedPageCount: pages.length,
+      pageCountKind,
+      fieldRefreshStatus: refresh.status,
+      fieldRefreshDiagnostics: refresh.diagnostics,
+      tocHeadingCount: source.headingCount,
+      tocEntryCount: refresh.inspection.tocEntryCount,
+      tocPageNumberCount: refresh.inspection.tocPageNumberCount,
+      ...(refresh.ok ? { updatedDocxBase64: refresh.bytes.toString("base64") } : {}),
       pdf: { contentType: "application/pdf", base64: pdfBytes.toString("base64") },
       pages,
-      issues: [],
+      issues,
+      textQa,
       renderer: {
         kind: "remote-opencode",
         docxToPdf: "libreoffice",
         pdfToPng: "pdftoppm",
+        wordFieldRefresh: refresh.ok ? "libreoffice" : refresh.status,
+        fieldRefreshStatus: refresh.status,
         sofficePath,
         pdftoppmPath,
+        pdfinfoPath,
+        pdftotextPath,
       },
     })
   } finally {
     await fsp.rm(tempRoot, { recursive: true, force: true }).catch(() => undefined)
   }
+}
+
+async function refreshWordFields(opts) {
+  if (!opts.source.hasToc) {
+    return {
+      ok: false,
+      status: "not-required",
+      bytes: undefined,
+      diagnostics: ["document has no native TOC field or TOC gallery part"],
+      inspection: opts.source,
+    }
+  }
+
+  const python = process.env.PYTHON_UNO_BIN || commandPath("python3")
+  const script = path.join(__dirname, "scripts", "refresh-word-fields.py")
+  if (!python) return failedRefresh(opts.source, "python3 with python3-uno is unavailable")
+  const scriptStat = await fsp.stat(script).catch(() => undefined)
+  if (!scriptStat?.isFile()) return failedRefresh(opts.source, `UNO refresh script is missing: ${script}`)
+  const result = await runCommand(
+    python,
+    [
+      script,
+      "--input",
+      opts.docxPath,
+      "--output",
+      opts.refreshedPath,
+      "--profile",
+      opts.profileDir,
+      "--soffice",
+      opts.sofficePath,
+      "--timeout",
+      String(Math.max(5, Math.floor(opts.timeoutMs / 1000) - 2)),
+    ],
+    opts.timeoutMs,
+  )
+  if (!result.ok) return failedRefresh(opts.source, result.message)
+  const bytes = await fsp.readFile(opts.refreshedPath).catch(() => undefined)
+  if (!bytes) return failedRefresh(opts.source, "UNO completed without producing a refreshed DOCX")
+  const verified = await verifyRefreshedWordDocx(opts.source, bytes)
+  if (!verified.ok) return { ...verified, status: "failed", bytes: undefined }
+  return { ...verified, status: "completed", bytes }
+}
+
+function failedRefresh(source, message) {
+  return {
+    ok: false,
+    status: "failed",
+    bytes: undefined,
+    diagnostics: [bounded(message)],
+    inspection: source,
+  }
+}
+
+async function verifyRefreshedWordDocx(source, bytes) {
+  const refreshed = await inspectWordDocx(bytes)
+  const diagnostics = []
+  if (!refreshed.valid) diagnostics.push("refreshed DOCX is structurally invalid")
+  if (!refreshed.hasToc) diagnostics.push("native TOC field or TOC gallery part disappeared during refresh")
+  if (source.headingCount <= 0) diagnostics.push("source native TOC has no Heading 1-3 denominator")
+  if (source.titleCount !== 1 || !source.titles[0]) diagnostics.push("source DOCX must contain exactly one non-empty Title")
+  if (!sameJson(source.manifest.body, refreshed.manifest.body))
+    diagnostics.push("non-TOC body paragraph sequence changed during refresh")
+  if (!sameJson(source.manifest.tables, refreshed.manifest.tables))
+    diagnostics.push("table geometry or cell text changed during refresh")
+  if (!sameJson(source.manifest.images, refreshed.manifest.images))
+    diagnostics.push("drawing identity, placement, alt text, or media changed during refresh")
+  if (!sameJson(source.manifest.controls, refreshed.manifest.controls))
+    diagnostics.push("content-control text or identity changed during refresh")
+  if (!sameJson(source.manifest.headers, refreshed.manifest.headers) || !sameJson(source.manifest.footers, refreshed.manifest.footers))
+    diagnostics.push("header or footer semantic text changed during refresh")
+  if (!sameStrings(source.titles, refreshed.titles)) diagnostics.push("title text or order changed during refresh")
+  if (!sameStrings(source.headings, refreshed.headings)) diagnostics.push("Heading 1-3 text or order changed during refresh")
+  if (!sameTocHeadings(source.headings, refreshed.tocEntries.map((item) => item.text)))
+    diagnostics.push("TOC entries do not exactly match Heading 1-3 text and order")
+  if (refreshed.tocEntryCount !== source.headingCount)
+    diagnostics.push(`TOC entry count ${refreshed.tocEntryCount} does not match Heading 1-3 count ${source.headingCount}`)
+  if (refreshed.tocPageNumberCount !== refreshed.tocEntryCount)
+    diagnostics.push(
+      `TOC page-number count ${refreshed.tocPageNumberCount} does not match entry count ${refreshed.tocEntryCount}`,
+    )
+  return { ok: diagnostics.length === 0, diagnostics, inspection: refreshed }
+}
+
+async function inspectWordDocx(bytes) {
+  try {
+    const zip = await JSZip.loadAsync(bytes)
+    const documentPart = zip.file("word/document.xml")
+    const stylesPart = zip.file("word/styles.xml")
+    if (!documentPart || !stylesPart) return invalidWordInspection()
+    const [documentXml, stylesXml] = await Promise.all([documentPart.async("string"), stylesPart.async("string")])
+    const styles = wordStyles(stylesXml)
+    const paragraphs = wordParagraphs(documentXml, styles)
+    const headings = paragraphs.filter((item) => item.kind === "heading").map((item) => item.text)
+    const titles = paragraphs.filter((item) => item.kind === "title").map((item) => item.text)
+    const toc = paragraphs.filter((item) => item.kind === "toc")
+    const tocEntries = toc.map((item) => {
+      const match = item.text.match(/^(.*?)(?:\t|\s)+(\d+)\s*$/u)
+      return { text: normalizeWordText(match?.[1] || item.text), page: match ? Number(match[2]) : 0 }
+    })
+    const manifest = {
+      body: paragraphs
+        .filter((item) => item.kind !== "toc" && item.text && !onlyMutableWordField(item.xml, item.text))
+        .map((item) => ({ kind: item.kind, text: normalizeWordText(item.text) })),
+      tables: wordTables(documentXml),
+      images: await wordImages(zip, documentXml, styles),
+      controls: wordControls(documentXml),
+      headers: await wordPartText(zip, "word/header"),
+      footers: await wordPartText(zip, "word/footer"),
+    }
+    return {
+      valid: true,
+      hasToc:
+        /<w:instrText\b[^>]*>[^<]*\bTOC\b[^<]*<\/w:instrText>/i.test(documentXml) ||
+        /<w:fldSimple\b[^>]*w:instr=(?:"[^"]*\bTOC\b[^"]*"|'[^']*\bTOC\b[^']*')/i.test(documentXml) ||
+        /<w:docPartGallery\b[^>]*w:val=(?:"Table of Contents"|'Table of Contents')/i.test(documentXml),
+      headingCount: headings.length,
+      headings,
+      titles,
+      titleCount: titles.length,
+      drawingCount: manifest.images.length,
+      tocEntryCount: toc.length,
+      tocPageNumberCount: toc.filter((item) => item.hasPageNumber).length,
+      tocEntries,
+      manifest,
+      text: paragraphs.map((item) => item.text).join("\n"),
+    }
+  } catch (error) {
+    return { ...invalidWordInspection(), error: formatError(error) }
+  }
+}
+
+function invalidWordInspection() {
+  return {
+    valid: false,
+    hasToc: false,
+    headingCount: 0,
+    headings: [],
+    titles: [],
+    titleCount: 0,
+    drawingCount: 0,
+    tocEntryCount: 0,
+    tocPageNumberCount: 0,
+    tocEntries: [],
+    manifest: { body: [], tables: [], images: [], controls: [], headers: [], footers: [] },
+    text: "",
+  }
+}
+
+function wordPdfTextQa(source, result) {
+  const pages = cleanPdfTextPages(result.ok ? result.stdout : "")
+  const text = normalizeWordText(pages.join("\n"))
+  const title = source.titles[0] || ""
+  const heading = source.headings[0] || ""
+  const sourceCjkCount = cjkCount(source.text)
+  const pdfCjkCount = cjkCount(text)
+  const cjkCoverage = sourceCjkCount > 0 ? Math.min(1, pdfCjkCount / sourceCjkCount) : 1
+  const titlePresent = source.titleCount === 1 && Boolean(title) && normalizeWordText(pages[0] || "").includes(normalizeWordText(title))
+  const entry = source.tocEntries.find((item) => item.text === heading)
+  const firstHeadingPresent = Boolean(
+    heading && entry?.page && pages[entry.page - 1] && normalizeWordText(pages[entry.page - 1]).includes(normalizeWordText(heading)),
+  )
+  const sentinels = wordQaSentinels(source)
+  const matchedSentinelCount = sentinels.filter((item) => text.includes(item)).length
+  const sentinelCoverage = sentinels.length > 0 ? matchedSentinelCount / sentinels.length : 1
+  const diagnostics = []
+  if (!result.ok) diagnostics.push(`pdftotext failed: ${result.message}`)
+  if (source.titleCount !== 1) diagnostics.push("source DOCX must contain exactly one non-empty Title")
+  if (!titlePresent) diagnostics.push("document title is missing from the first-page body region")
+  if (!entry?.page) diagnostics.push("first Heading has no materialized TOC page mapping")
+  if (!firstHeadingPresent) diagnostics.push("first Heading is missing from its TOC-mapped body page")
+  if (sourceCjkCount >= 10 && cjkCoverage < 0.5)
+    diagnostics.push(`rendered CJK coverage ${cjkCoverage.toFixed(3)} is below 0.500`)
+  if (sentinels.length >= 3 && sentinelCoverage < 0.8)
+    diagnostics.push(`rendered sentinel coverage ${sentinelCoverage.toFixed(3)} is below 0.800`)
+  return {
+    ok: diagnostics.length === 0,
+    titlePresent,
+    firstHeadingPresent,
+    sourceCjkCount,
+    pdfCjkCount,
+    cjkCoverage,
+    sentinelCount: sentinels.length,
+    matchedSentinelCount,
+    sentinelCoverage,
+    diagnostics,
+  }
+}
+
+function cleanPdfTextPages(output) {
+  const pages = String(output).split("\f").filter((page, index, all) => page.trim() || index < all.length - 1)
+  const lines = pages.map((page) => page.split(/\r?\n/).map(normalizeWordText).filter(Boolean))
+  const counts = new Map()
+  for (const page of lines) {
+    const boundary = [...page.slice(0, 2), ...page.slice(-2)]
+    for (const line of new Set(boundary)) counts.set(line, (counts.get(line) || 0) + 1)
+  }
+  const threshold = Math.max(2, Math.ceil(lines.length * 0.6))
+  const repeated = new Set([...counts.entries()].filter(([, count]) => count >= threshold).map(([line]) => line))
+  return lines.map((page) => {
+    const removed = new Set()
+    return page
+      .filter((line) => {
+        if (!repeated.has(line) || removed.has(line)) return true
+        removed.add(line)
+        return false
+      })
+      .join("\n")
+  })
+}
+
+function wordQaSentinels(source) {
+  const body = source.manifest.body.map((item) => item.text).filter((item) => item.length >= 8)
+  const samples = body.length
+    ? [body[0], body[Math.floor(body.length / 2)], body[body.length - 1]].filter(Boolean)
+    : []
+  return [...new Set([...source.headings, ...samples].map(normalizeWordText).filter(Boolean))]
+}
+
+function normalizeWordText(value) {
+  return String(value).normalize("NFKC").replace(/\s+/gu, " ").trim()
+}
+
+function cjkCount(value) {
+  return (String(value).match(/[\u3400-\u4dbf\u4e00-\u9fff]/gu) || []).length
+}
+
+function wordStyles(xml) {
+  const styles = new Map()
+  for (const match of xml.matchAll(/<w:style\b[^>]*w:styleId=(?:"([^"]+)"|'([^']+)')[^>]*>[\s\S]*?<\/w:style>/gi)) {
+    const block = match[0]
+    const id = decodeXml(match[1] || match[2] || "")
+    const name = decodeXml(wordAttribute(block, "name", "val") || id)
+    const outlineValue = wordAttribute(block, "outlineLvl", "val")
+    const outline = outlineValue === "" ? undefined : Number(outlineValue)
+    const label = `${id} ${name}`.trim()
+    const title = /^(?:title|标题)$/i.test(name.trim()) || /^(?:title|标题)$/i.test(id.trim())
+    const tocMatch = label.match(/(?:^|\s)(?:toc|contents|目录)\s*([1-3])(?:\s|$)/i)
+    const headingMatch = label.match(/(?:^|\s)(?:heading|标题)\s*([1-3])(?:\s|$)/i)
+    const level =
+      title || tocMatch
+        ? undefined
+        : headingMatch
+          ? Number(headingMatch[1])
+          : Number.isInteger(outline) && outline >= 0 && outline <= 2
+            ? outline + 1
+            : undefined
+    styles.set(id, { title, toc: Boolean(tocMatch), level })
+  }
+  return styles
+}
+
+function wordParagraphs(xml, styles) {
+  const paragraphs = []
+  for (const match of xml.matchAll(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/gi)) {
+    const block = match[0]
+    const style = wordAttribute(block, "pStyle", "val") || ""
+    const info = styles.get(style) || {}
+    const text = wordText(block).trim()
+    if (!text) continue
+    const hasTab = /<w:(?:tab|ptab)\b/i.test(block)
+    paragraphs.push({
+      xml: block,
+      style,
+      text,
+      kind: info.title ? "title" : info.toc ? "toc" : info.level ? "heading" : "body",
+      hasPageNumber: Boolean(info.toc && hasTab && /(?:^|\s|\t)\d+\s*$/u.test(text)),
+    })
+  }
+  return paragraphs
+}
+
+function wordTables(xml) {
+  return [...xml.matchAll(/<w:tbl\b[\s\S]*?<\/w:tbl>/gi)].map((table) =>
+    [...table[0].matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/gi)].map((row) =>
+      [...row[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/gi)].map((cell) => normalizeWordText(wordText(cell[0]))),
+    ),
+  )
+}
+
+function wordControls(xml) {
+  return [...xml.matchAll(/<w:sdt\b[\s\S]*?<\/w:sdt>/gi)]
+    .filter((match) => !hasNativeTocMarkup(match[0]))
+    .map((match) => ({
+      tag: wordAttribute(match[0], "tag", "val") || undefined,
+      title: wordAttribute(match[0], "alias", "val") || undefined,
+      text: normalizeWordText(wordText(match[0])),
+    }))
+}
+
+function hasNativeTocMarkup(xml) {
+  return (
+    /<w:instrText\b[^>]*>[^<]*\bTOC\b[^<]*<\/w:instrText>/i.test(xml) ||
+    /<w:fldSimple\b[^>]*w:instr=(?:"[^"]*\bTOC\b[^"]*"|'[^']*\bTOC\b[^']*')/i.test(xml) ||
+    /<w:docPartGallery\b[^>]*w:val=(?:"Table of Contents"|'Table of Contents')/i.test(xml)
+  )
+}
+
+function sameTocHeadings(expected, actual) {
+  return expected.length === actual.length && expected.every((value, index) => {
+    const heading = normalizeWordText(value)
+    const entry = normalizeWordText(actual[index] || "")
+    return heading === entry || heading === tocHeadingText(entry)
+  })
+}
+
+function tocHeadingText(value) {
+  return normalizeWordText(value).replace(/^\d+(?:[.\-]\d+)*(?:[.)、．])?\s*/u, "")
+}
+
+async function wordPartText(zip, prefix) {
+  const result = []
+  for (const part of Object.values(zip.files).filter((item) => !item.dir && item.name.startsWith(prefix) && item.name.endsWith(".xml"))) {
+    const xml = await part.async("string")
+    result.push(normalizeWordText(wordText(xml).replace(/\b\d+\b/g, "")))
+  }
+  return result
+}
+
+async function wordImages(zip, xml, styles) {
+  const relsPart = zip.file("word/_rels/document.xml.rels")
+  const relsXml = relsPart ? await relsPart.async("string") : ""
+  const rels = new Map(
+    [...relsXml.matchAll(/<Relationship\b[^>]*Type="[^"]*\/image"[^>]*>/gi)].map((match) => [
+      match[0].match(/\bId="([^"]+)"/)?.[1] || "",
+      match[0].match(/\bTarget="([^"]+)"/)?.[1] || "",
+    ]),
+  )
+  const blocks = [...xml.matchAll(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/gi)].map((match) => {
+    const block = match[0]
+    const style = wordAttribute(block, "pStyle", "val") || ""
+    return { xml: block, text: normalizeWordText(wordText(block)), style, info: styles.get(style) || {} }
+  })
+  const headingPath = []
+  const paths = []
+  for (const block of blocks) {
+    if (block.info.level && block.text) {
+      headingPath[block.info.level - 1] = block.text
+      headingPath.length = block.info.level
+    }
+    paths.push([...headingPath])
+  }
+  const images = []
+  for (const [index, block] of blocks.entries()) {
+    for (const drawing of block.xml.matchAll(/<w:drawing\b(?:[^>]*\/>|[\s\S]*?<\/w:drawing>)/gi)) {
+      const relId = drawing[0].match(/<a:blip\b[^>]*r:embed="([^"]+)"/)?.[1] || ""
+      const target = rels.get(relId) || ""
+      const clean = target.replace(/^\.\.\//, "").replace(/^\//, "")
+      const media = clean.startsWith("word/") ? clean : `word/${clean}`
+      const part = zip.file(media)
+      const bytes = part ? await part.async("nodebuffer") : undefined
+      const alt = drawing[0].match(/<wp:docPr\b[^>]*(?:descr|title)="([^"]*)"/)?.[1]
+      const previous = blocks[index - 1]
+      const next = blocks[index + 1]
+      images.push({
+        headingPath: paths[index],
+        title: previous?.style === "Caption" ? previous.text : undefined,
+        caption: next?.style === "Caption" ? next.text : undefined,
+        altText: alt ? decodeXml(alt) : undefined,
+        sha256: bytes ? crypto.createHash("sha256").update(bytes).digest("hex") : undefined,
+      })
+    }
+  }
+  return images
+}
+
+function onlyMutableWordField(xml, text) {
+  return /<w:instrText\b[^>]*>[^<]*(?:PAGE|NUMPAGES|SEQ)[^<]*<\/w:instrText>/i.test(xml) && /^\d+$/u.test(text)
+}
+
+function sameJson(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function wordAttribute(xml, element, attribute) {
+  const match = xml.match(
+    new RegExp(`<w:${element}\\b[^>]*w:${attribute}=(?:"([^"]*)"|'([^']*)')`, "i"),
+  )
+  return match ? match[1] || match[2] || "" : ""
+}
+
+function wordText(xml) {
+  const parts = []
+  for (const match of xml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:(?:tab|ptab)\b[^>]*\/>/gi)) {
+    parts.push(match[1] === undefined ? "\t" : decodeXml(match[1]))
+  }
+  return parts.join("").replace(/\u00a0/g, " ")
+}
+
+function decodeXml(value) {
+  return String(value)
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+}
+
+function sameStrings(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 async function handleRenderMermaid(request, response) {
@@ -439,38 +936,63 @@ async function handleSkillMarketFile(request, response) {
 
 async function generatePackageManifest(packageRoot = PACKAGE_ROOT, extensionId = UPDATE_EXTENSION_ID) {
   const root = path.resolve(packageRoot)
-  const packages = []
   const entries = await fsp.readdir(root).catch((error) => {
     if (error && error.code === "ENOENT") return []
     throw error
   })
-  for (const entry of entries) {
+  const files = []
+  for (const entry of entries.sort()) {
     if (!entry.toLowerCase().endsWith(".vsix")) continue
     const absolute = path.join(root, entry)
-    const info = await packageEntryFromVsix(absolute, entry).catch((error) => {
-      console.warn(`[packages] skipped ${entry}: ${formatError(error)}`)
-      return undefined
+    const stat = await fsp.stat(absolute).catch((error) => {
+      if (error && error.code === "ENOENT") return undefined
+      throw error
     })
-    if (!info || info.extensionId !== extensionId || !UPDATE_TARGETS.has(info.target)) continue
-    packages.push(info)
+    if (!stat || !stat.isFile()) continue
+    files.push({ absolute, filename: entry, stat, fingerprint: packageFingerprint(stat) })
   }
-  packages.sort((left, right) => {
-    const versionDelta = compareExtensionVersions(right.version, left.version)
-    if (versionDelta !== 0) return versionDelta
-    return right.mtimeMs - left.mtimeMs
-  })
-  const latestByTarget = {}
-  for (const item of packages) {
-    if (!latestByTarget[item.target]) latestByTarget[item.target] = item
-  }
-  return {
-    ok: true,
-    schemaVersion: 2,
-    service: "chipmate-word-render",
-    generatedAt: new Date().toISOString(),
-    latest: packages[0] || null,
-    latestByTarget,
-    packages,
+  prunePackageEntryCache(root, new Set(files.map((item) => item.absolute)))
+  const signature = files.map((item) => `${item.filename}:${item.fingerprint}`).join("|")
+  const key = `${root}\0${extensionId}`
+  const cached = packageManifestCache.get(key)
+  if (cached && cached.signature === signature) return cached.manifest
+  const token = `${key}\0${signature}`
+  const running = packageManifestInflight.get(token)
+  if (running) return running
+
+  const task = (async () => {
+    const packages = []
+    for (const file of files) {
+      const info = await cachedPackageEntry(file)
+      if (!info || info.extensionId !== extensionId || !UPDATE_TARGETS.has(info.target)) continue
+      packages.push(info)
+    }
+    packages.sort((left, right) => {
+      const versionDelta = compareExtensionVersions(right.version, left.version)
+      if (versionDelta !== 0) return versionDelta
+      return right.mtimeMs - left.mtimeMs
+    })
+    const latestByTarget = {}
+    for (const item of packages) {
+      if (!latestByTarget[item.target]) latestByTarget[item.target] = item
+    }
+    const manifest = {
+      ok: true,
+      schemaVersion: 2,
+      service: "chipmate-word-render",
+      generatedAt: new Date().toISOString(),
+      latest: packages[0] || null,
+      latestByTarget,
+      packages,
+    }
+    boundedSet(packageManifestCache, key, { signature, manifest }, 64)
+    return manifest
+  })()
+  packageManifestInflight.set(token, task)
+  try {
+    return await task
+  } finally {
+    packageManifestInflight.delete(token)
   }
 }
 
@@ -608,17 +1130,64 @@ function skillArchiveFilename(content, id) {
   return isSafeSkillArchiveFilename(filename) && filename === pathname.split("/").pop() ? filename : undefined
 }
 
-async function packageEntryFromVsix(absolute, filename) {
-  const [stat, bytes] = await Promise.all([fsp.stat(absolute), fsp.readFile(absolute)])
-  if (!stat.isFile()) throw new Error("not a file")
-  const manifest = await readVsixExtensionManifest(bytes)
+async function cachedPackageEntry(file) {
+  const cached = packageEntryCache.get(file.absolute)
+  if (cached && cached.fingerprint === file.fingerprint) return cached.info
+  const key = `${file.absolute}\0${file.fingerprint}`
+  const running = packageEntryInflight.get(key)
+  if (running) return running
+  const task = packageEntryFromVsix(file.absolute, file.filename, file.stat)
+    .then(async (info) => {
+      const stat = await fsp.stat(file.absolute)
+      const fingerprint = packageFingerprint(stat)
+      if (fingerprint !== info[PACKAGE_FINGERPRINT]) {
+        console.warn(`[packages] skipped ${file.filename}: VSIX changed after validation`)
+        return undefined
+      }
+      boundedSet(packageEntryCache, file.absolute, { fingerprint, info }, 512)
+      return info
+    })
+    .catch(async (error) => {
+      const stat = await fsp.stat(file.absolute).catch(() => file.stat)
+      const fingerprint = packageFingerprint(stat)
+      if (fingerprint !== file.fingerprint) {
+        console.warn(`[packages] skipped ${file.filename}: VSIX changed while validation failed`)
+        return undefined
+      }
+      boundedSet(packageEntryCache, file.absolute, { fingerprint, info: undefined }, 512)
+      console.warn(`[packages] skipped ${file.filename}: ${formatError(error)}`)
+      return undefined
+    })
+  packageEntryInflight.set(key, task)
+  try {
+    return await task
+  } finally {
+    packageEntryInflight.delete(key)
+  }
+}
+
+async function packageEntryFromVsix(absolute, filename, initial) {
+  const first = initial || (await fsp.stat(absolute))
+  if (!first.isFile()) throw new Error("not a file")
+  try {
+    return await packageEntryAttempt(absolute, filename, first)
+  } catch (error) {
+    if (!error || error.code !== "VSIX_CHANGED") throw error
+    const second = await fsp.stat(absolute)
+    if (!second.isFile()) throw new Error("not a file", { cause: error })
+    return packageEntryAttempt(absolute, filename, second)
+  }
+}
+
+async function packageEntryAttempt(absolute, filename, before) {
+  const manifest = await readVsixExtensionManifest(absolute)
   const publisher = requireManifestString(manifest.publisher, "publisher")
   const name = requireManifestString(manifest.name, "name")
   const version = requireManifestString(manifest.version, "version")
   if (!parseExtensionVersion(version))
     throw new Error("extension/package.json version must be a valid semantic version")
   const target = requireManifestString(manifest.chipmatePackageTarget, "chipmatePackageTarget")
-  return {
+  const result = {
     extensionId: `${publisher}.${name}`,
     publisher,
     name,
@@ -626,18 +1195,125 @@ async function packageEntryFromVsix(absolute, filename) {
     target,
     filename,
     url: `/packages/${encodeURIComponent(filename)}`,
-    sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
-    sizeBytes: stat.size,
-    mtimeMs: stat.mtimeMs,
+    sha256: await hashPackageFile(absolute),
+    sizeBytes: before.size,
+    mtimeMs: before.mtimeMs,
+  }
+  const after = await fsp.stat(absolute)
+  if (packageFingerprint(before) !== packageFingerprint(after)) {
+    const error = new Error("VSIX changed while its manifest was being generated")
+    error.code = "VSIX_CHANGED"
+    throw error
+  }
+  Object.defineProperty(result, PACKAGE_FINGERPRINT, { value: packageFingerprint(after) })
+  return result
+}
+
+function readVsixExtensionManifest(file) {
+  return new Promise((resolve, reject) => {
+    yauzl.open(file, { lazyEntries: true, autoClose: true }, (openError, zip) => {
+      if (openError || !zip) {
+        reject(openError || new Error("could not open VSIX archive"))
+        return
+      }
+      let count = 0
+      let raw
+      let settled = false
+      const fail = (error) => {
+        if (settled) return
+        settled = true
+        zip.close()
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+      zip.on("error", fail)
+      zip.on("entry", (entry) => {
+        if (entry.fileName.includes("\\")) {
+          fail(new Error("VSIX contains a backslash entry path"))
+          return
+        }
+        if (entry.fileName !== VSIX_MANIFEST_ENTRY) {
+          zip.readEntry()
+          return
+        }
+        count += 1
+        if (count !== 1) {
+          fail(new Error(`${VSIX_MANIFEST_ENTRY} must appear exactly once`))
+          return
+        }
+        if (entry.uncompressedSize > MAX_VSIX_MANIFEST_BYTES) {
+          fail(new Error(`${VSIX_MANIFEST_ENTRY} is too large`))
+          return
+        }
+        zip.openReadStream(entry, (streamError, stream) => {
+          if (streamError || !stream) {
+            fail(streamError || new Error(`could not read ${VSIX_MANIFEST_ENTRY}`))
+            return
+          }
+          const chunks = []
+          let size = 0
+          stream.on("data", (chunk) => {
+            size += chunk.length
+            if (size > MAX_VSIX_MANIFEST_BYTES) {
+              stream.destroy(new Error(`${VSIX_MANIFEST_ENTRY} is too large`))
+              return
+            }
+            chunks.push(chunk)
+          })
+          stream.on("error", fail)
+          stream.on("end", () => {
+            raw = Buffer.concat(chunks)
+            zip.readEntry()
+          })
+        })
+      })
+      zip.on("end", () => {
+        if (settled) return
+        if (count !== 1 || !raw) {
+          fail(new Error(`${VSIX_MANIFEST_ENTRY} missing`))
+          return
+        }
+        try {
+          const manifest = JSON.parse(raw.toString("utf8"))
+          if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+            fail(new Error(`${VSIX_MANIFEST_ENTRY} must contain a JSON object`))
+            return
+          }
+          settled = true
+          resolve(manifest)
+        } catch (error) {
+          fail(new Error(`${VSIX_MANIFEST_ENTRY} is invalid JSON: ${formatError(error)}`))
+        }
+      })
+      zip.readEntry()
+    })
+  })
+}
+
+function hashPackageFile(file) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256")
+    const stream = fs.createReadStream(file)
+    stream.on("data", (chunk) => hash.update(chunk))
+    stream.on("error", reject)
+    stream.on("end", () => resolve(hash.digest("hex")))
+  })
+}
+
+function packageFingerprint(stat) {
+  return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`
+}
+
+function prunePackageEntryCache(root, files) {
+  const prefix = `${root}${path.sep}`
+  for (const file of packageEntryCache.keys()) {
+    if (file.startsWith(prefix) && !files.has(file)) packageEntryCache.delete(file)
   }
 }
 
-async function readVsixExtensionManifest(bytes) {
-  const zip = await JSZip.loadAsync(bytes)
-  const packageJson = zip.file("extension/package.json")
-  if (!packageJson) throw new Error("extension/package.json missing")
-  const raw = await packageJson.async("string")
-  return JSON.parse(raw)
+function boundedSet(cache, key, value, max) {
+  cache.delete(key)
+  cache.set(key, value)
+  while (cache.size > max) cache.delete(cache.keys().next().value)
 }
 
 function requireManifestString(value, field) {
@@ -666,11 +1342,13 @@ function healthPayload() {
     ],
     tools: {
       node: process.version,
+      pythonUno: commandVersion(process.env.PYTHON_UNO_BIN || "python3"),
       chromium: commandVersion("chromium") || commandVersion("chromium-browser") || commandVersion("google-chrome"),
       mermaid: packageVersion("mermaid"),
       soffice: commandVersion("soffice") || commandVersion("libreoffice"),
       pdftoppm: commandVersion("pdftoppm"),
       pdfinfo: commandVersion("pdfinfo"),
+      microsoftYaHeiMatch: fontMatch("Microsoft YaHei"),
     },
     capabilities: {
       mermaid: {
@@ -1094,9 +1772,11 @@ async function readNewApiResponse(response) {
 
 class NewApiHttpError extends Error {
   constructor(status, message, retryAfter = "") {
-    const suffix = retryAfter ? ` retry-after=${retryAfter}` : ""
+    const retry = normalizeRetryAfter(retryAfter)
+    const suffix = retry ? ` retry-after=${retry}` : ""
     super(`new-api-http-${status || "failed"}: ${message || "request-failed"}${suffix}`)
     this.status = status
+    this.retryAfter = retry
   }
 }
 
@@ -1118,7 +1798,15 @@ function newApiResolverFailure(error, code, status, trace) {
     status,
     error: sanitizeResolverError(error),
   })
-  return { ok: false, code, status }
+  const retryAfter = error instanceof NewApiHttpError ? error.retryAfter : ""
+  return { ok: false, code, status, ...(retryAfter ? { retryAfter } : {}) }
+}
+
+function normalizeRetryAfter(value) {
+  const text = String(value || "").trim()
+  if (/^\d{1,10}$/.test(text)) return text
+  const time = Date.parse(text)
+  return Number.isFinite(time) ? new Date(time).toUTCString() : ""
 }
 
 function normalizeNewApiTokenItem(item) {
@@ -1750,11 +2438,6 @@ async function evaluateString(cdp, sessionId, expression) {
   return String((result.result && result.result.value) || "")
 }
 
-async function evaluateNumber(cdp, sessionId, expression) {
-  const value = Number(await evaluateString(cdp, sessionId, expression))
-  return Number.isFinite(value) ? value : 0
-}
-
 async function evaluateJson(cdp, sessionId, expression) {
   const result = await cdp.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: false }, sessionId)
   return result.result && result.result.value
@@ -1859,7 +2542,7 @@ function runCommand(command, args, timeoutMs, env = {}) {
     let stderr = ""
     const timer = setTimeout(() => {
       child.kill("SIGKILL")
-      resolve({ ok: false, message: `timed out after ${timeoutMs}ms` })
+      resolve({ ok: false, message: `timed out after ${timeoutMs}ms`, stdout, stderr })
     }, timeoutMs)
     child.stdout.on("data", (chunk) => {
       stdout += String(chunk)
@@ -1869,11 +2552,16 @@ function runCommand(command, args, timeoutMs, env = {}) {
     })
     child.on("error", (error) => {
       clearTimeout(timer)
-      resolve({ ok: false, message: error.message })
+      resolve({ ok: false, message: error.message, stdout, stderr })
     })
     child.on("close", (code) => {
       clearTimeout(timer)
-      resolve({ ok: code === 0, message: [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") || `exit ${code}` })
+      resolve({
+        ok: code === 0,
+        message: [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") || `exit ${code}`,
+        stdout,
+        stderr,
+      })
     })
   })
 }
@@ -1898,6 +2586,16 @@ function clampNumber(value, min, max, fallback) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return fallback
   return Math.max(min, Math.min(max, Math.floor(numeric)))
+}
+
+function pdfInfoPageCount(output) {
+  const match = String(output).match(/^Pages:\s+(\d+)\s*$/m)
+  const count = match ? Number(match[1]) : 0
+  return Number.isInteger(count) && count > 0 ? count : undefined
+}
+
+function base64Size(bytes) {
+  return Math.ceil(bytes / 3) * 4
 }
 
 function pageIndex(file) {
@@ -1925,6 +2623,8 @@ function minimalVisualSummary(page, width, height) {
     totalPixels: width * height,
     inkPixels: 0,
     inkRatio: 0,
+    bodyInkPixels: 0,
+    bodyInkRatio: 0,
     edgeInk: { top: false, right: false, bottom: false, left: false },
   }
 }
@@ -1944,17 +2644,21 @@ function pngVisualSummary(page, bytes, fallbackWidth, fallbackHeight) {
 function pixelInkSummary(page, width, height, rgba) {
   const totalPixels = Math.max(0, width * height)
   let inkPixels = 0
+  let bodyInkPixels = 0
   let left = width
   let top = height
   let right = -1
   let bottom = -1
   const edgeSize = Math.max(2, Math.ceil(Math.min(width, height) * 0.02))
   const edgeInk = { top: false, right: false, bottom: false, left: false }
+  const bodyTop = Math.floor(height * 0.08)
+  const bodyBottom = Math.ceil(height * 0.92)
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const offset = (y * width + x) * 4
       if (!isInkPixel(rgba[offset], rgba[offset + 1], rgba[offset + 2], rgba[offset + 3])) continue
       inkPixels += 1
+      if (y >= bodyTop && y < bodyBottom) bodyInkPixels += 1
       if (x < left) left = x
       if (x > right) right = x
       if (y < top) top = y
@@ -1974,6 +2678,10 @@ function pixelInkSummary(page, width, height, rgba) {
     totalPixels,
     inkPixels,
     inkRatio: totalPixels > 0 ? inkPixels / totalPixels : 0,
+    bodyInkPixels,
+    bodyInkRatio: width * Math.max(0, bodyBottom - bodyTop) > 0
+      ? bodyInkPixels / (width * Math.max(0, bodyBottom - bodyTop))
+      : 0,
     contentBounds,
     edgeInk,
   }
@@ -1999,6 +2707,13 @@ function commandVersion(command) {
     encoding: "utf8",
   })
   return [result.stdout, result.stderr].filter(Boolean).join("\n").trim().split("\n")[0] || pathValue
+}
+
+function fontMatch(family) {
+  const fc = commandPath("fc-match")
+  if (!fc) return undefined
+  const result = spawnSync(fc, ["--format", "%{family[0]}\n", family], { encoding: "utf8" })
+  return result.status === 0 ? result.stdout.trim().split("\n")[0] || undefined : undefined
 }
 
 function packageVersion(packageName) {
@@ -2048,6 +2763,12 @@ function pathToFileHref(file) {
 function renderError(code, message) {
   const error = new Error(message)
   error.code = code
+  return error
+}
+
+function httpRenderError(status, code, message) {
+  const error = renderError(code, message)
+  error.status = status
   return error
 }
 
@@ -2189,9 +2910,11 @@ module.exports = {
   skillMarketFilesPayload,
   starSkillMarketItem,
   healthPayload,
+  inspectWordDocx,
   normalizeNewApiKey,
   packageEntryFromVsix,
   readVsixExtensionManifest,
   resolveNewApiUser,
   server,
+  verifyRefreshedWordDocx,
 }

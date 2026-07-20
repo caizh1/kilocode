@@ -39,6 +39,7 @@ import { PtyTicket } from "@opencode-ai/core/pty/ticket"
 import { Question } from "@/question"
 import { Notebook } from "@/kilocode/notebook/service" // kilocode_change
 import { AgentManager } from "@/kilocode/agent-manager/service" // kilocode_change
+import { SkillMarket } from "@/kilocode/skill-market/service" // kilocode_change
 import { KiloViewers } from "@/kilocode/presence/service" // kilocode_change
 import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
@@ -254,6 +255,7 @@ export function createRoutes(
       Question.defaultLayer,
       AgentManager.defaultLayer, // kilocode_change
       Notebook.defaultLayer, // kilocode_change
+      SkillMarket.defaultLayer, // kilocode_change
       KiloViewers.defaultLayer, // kilocode_change
       Ripgrep.defaultLayer,
       RuntimeFlags.defaultLayer,

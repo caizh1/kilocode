@@ -4,6 +4,8 @@ import path from "path"
 import { declareArtifact } from "@/kilocode/documents/artifacts"
 import { insertWordPngImage } from "@/kilocode/documents/word"
 import { Instance } from "@/kilocode/instance"
+import { ProductProfile } from "@/kilocode/product-profile"
+import { userEnv } from "@/kilocode/product-env"
 
 type Photon = typeof import("@silvia-odwyer/photon-node")
 type PhotonLoad = { module: Photon } | { error: unknown }
@@ -13,10 +15,8 @@ const photon = (() => {
   return () => {
     state.value ??= (async () => {
       try {
-        const wasm = (await import("@silvia-odwyer/photon-node/photon_rs_bg.wasm", { with: { type: "file" } }))
-          .default
-        ;(globalThis as typeof globalThis & { __KILOCODE_PHOTON_WASM_PATH?: string }).__KILOCODE_PHOTON_WASM_PATH =
-          wasm
+        const wasm = (await import("@silvia-odwyer/photon-node/photon_rs_bg.wasm", { with: { type: "file" } })).default
+        ;(globalThis as typeof globalThis & { __KILOCODE_PHOTON_WASM_PATH?: string }).__KILOCODE_PHOTON_WASM_PATH = wasm
         return { module: await import("@silvia-odwyer/photon-node") }
       } catch (error) {
         return { error }
@@ -126,6 +126,8 @@ export type InsertMermaidIntoWordInput = {
   remoteEndpoint?: string
   heading?: string
   caption?: string
+  figureTitle?: string
+  altText?: string
   outputFile?: string
   taskSlug?: string
   title?: string
@@ -446,6 +448,8 @@ export async function insertMermaidIntoWord(input: InsertMermaidIntoWordInput): 
     pngBase64,
     heading: input.heading,
     caption: input.caption,
+    figureTitle: input.figureTitle,
+    altText: input.altText,
     outputFile: input.outputFile,
     taskSlug: input.taskSlug,
     title: input.title,
@@ -526,7 +530,7 @@ async function renderWithMmdc(
   const command = process.env["KILO_MERMAID_MMDC"]?.trim() || "mmdc"
   const tmp = path.join(
     Instance.directory,
-    ".kilo",
+    ProductProfile.label(),
     "tmp",
     `mermaid-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   )
@@ -731,13 +735,18 @@ function clampScale(input: number | undefined): number {
 
 function execFileWithTimeout(command: string, args: string[], timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = execFile(command, args, { timeout: timeoutMs, windowsHide: true }, (err, _stdout, stderr) => {
-      if (err) {
-        reject(Object.assign(err, { stderr }))
-        return
-      }
-      resolve()
-    })
+    const child = execFile(
+      command,
+      args,
+      { timeout: timeoutMs, windowsHide: true, env: userEnv(process.env) },
+      (err, _stdout, stderr) => {
+        if (err) {
+          reject(Object.assign(err, { stderr }))
+          return
+        }
+        resolve()
+      },
+    )
     child.on("error", reject)
   })
 }

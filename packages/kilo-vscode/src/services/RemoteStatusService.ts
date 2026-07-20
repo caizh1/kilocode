@@ -19,7 +19,7 @@ export class RemoteStatusService implements vscode.Disposable {
 
   constructor() {
     this.bar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99)
-    this.bar.command = "kilo-code.new.toggleRemote"
+    this.bar.command = "chipmate.v2.toggleRemote"
     this.sync()
   }
 

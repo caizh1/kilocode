@@ -12,6 +12,8 @@ type ProviderInternals = {
   webview: { postMessage: (message: unknown) => Promise<unknown> } | null
   initializeConnection: () => Promise<void>
   handleLoadSessions: () => Promise<void>
+  syncWebviewState: (reason: string) => Promise<void>
+  fetchAndSendIndexingStatus: (options?: { snapshot?: boolean }) => Promise<void>
 }
 
 function createContext(overrides?: Partial<SessionRefreshContext>): SessionRefreshContext & { sent: unknown[] } {
@@ -69,6 +71,7 @@ function createClient() {
 
 function createConnection(client: ReturnType<typeof createClient>) {
   let current: ReturnType<typeof createClient> | null = null
+  let listener: ((state: State, error?: Error) => void | Promise<void>) | undefined
   return {
     connect: async () => {
       current = client
@@ -80,7 +83,13 @@ function createConnection(client: ReturnType<typeof createClient>) {
       return current
     },
     onEventFiltered: () => () => undefined,
-    onStateChange: (_listener: (state: State) => void) => () => undefined,
+    onStateChange: (next: (state: State, error?: Error) => void | Promise<void>) => {
+      listener = next
+      return () => {
+        if (listener === next) listener = undefined
+      }
+    },
+    emit: async (state: State, error?: Error) => listener?.(state, error),
     onNotificationDismissed: () => () => undefined,
     onLanguageChanged: () => () => undefined,
     onProfileChanged: () => () => undefined,
@@ -303,5 +312,25 @@ describe("KiloProvider pending session refresh", () => {
     })
 
     expect(errors).toEqual([])
+  })
+
+  it("refreshes indexing before unrelated reconnect synchronization fails", async () => {
+    const client = createClient()
+    const connection = createConnection(client)
+    const provider = new KiloProvider({} as never, connection as never)
+    const internal = provider as unknown as ProviderInternals
+    const snapshots: Array<boolean | undefined> = []
+
+    await internal.initializeConnection()
+    internal.fetchAndSendIndexingStatus = async (options) => {
+      snapshots.push(options?.snapshot)
+    }
+    internal.syncWebviewState = async () => {
+      throw new Error("sync failed")
+    }
+
+    await connection.emit("connected")
+
+    expect(snapshots).toEqual([true])
   })
 })

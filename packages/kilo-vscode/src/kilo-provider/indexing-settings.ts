@@ -3,7 +3,7 @@ import * as vscode from "vscode"
 type Post = (msg: unknown) => void
 
 export function buildIndexingSettingsMessage() {
-  const config = vscode.workspace.getConfiguration("kilo-code.new.indexing")
+  const config = vscode.workspace.getConfiguration("chipmate.v2.indexing")
   return {
     type: "indexingSettingsLoaded" as const,
     settings: {
@@ -14,7 +14,7 @@ export function buildIndexingSettingsMessage() {
 
 export function watchIndexingConfig(post: Post): vscode.Disposable {
   return vscode.workspace.onDidChangeConfiguration((event) => {
-    if (event.affectsConfiguration("kilo-code.new.indexing")) {
+    if (event.affectsConfiguration("chipmate.v2.indexing")) {
       post(buildIndexingSettingsMessage())
     }
   })

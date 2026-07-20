@@ -1,8 +1,10 @@
 import { createHash, randomUUID } from "crypto"
-import * as os from "os"
+import * as fs from "node:fs/promises"
 import * as path from "path"
 import * as vscode from "vscode"
 import type { LocalSkillRecord } from "./types"
+
+const LOCK_STALE = 30_000
 
 export class LocalImportRegistry {
   constructor(private readonly context: vscode.ExtensionContext) {}
@@ -21,15 +23,37 @@ export class LocalImportRegistry {
   }
 
   async put(item: LocalSkillRecord) {
-    const items = await this.read()
-    items[key(item.skillId, item.scope, item.workspaceId)] = item
-    await this.write(items)
+    await this.locked(async () => {
+      const items = await this.read()
+      items[key(item.skillId, item.scope, item.workspaceId)] = item
+      await this.write(items)
+    })
   }
 
   async remove(skillId: string, scope: "global" | "project", workspaceId?: string) {
-    const items = await this.read()
-    delete items[key(skillId, scope, workspaceId)]
-    await this.write(items)
+    await this.locked(async () => {
+      const items = await this.read()
+      delete items[key(skillId, scope, workspaceId)]
+      await this.write(items)
+    })
+  }
+
+  async cas(
+    skillId: string,
+    scope: "global" | "project",
+    workspaceId: string | undefined,
+    before: LocalSkillRecord | undefined,
+    after: LocalSkillRecord | undefined,
+  ) {
+    return this.locked(async () => {
+      const items = await this.read()
+      const id = key(skillId, scope, workspaceId)
+      if (!equal(items[id], before)) return false
+      if (after) items[id] = after
+      else delete items[id]
+      await this.write(items)
+      return true
+    })
   }
 
   async reconcile(project?: string) {
@@ -39,7 +63,9 @@ export class LocalImportRegistry {
     for (const [id, item] of Object.entries(items)) {
       if (item.scope === "project" && (!project || item.workspaceId !== workspaceId)) continue
       const root =
-        item.scope === "global" ? path.join(os.homedir(), ".kilo", "skills") : path.join(project!, ".kilo", "skills")
+        item.scope === "global"
+          ? path.join(this.context.globalStorageUri.fsPath, "config", "skills")
+          : path.join(project!, ".chipmate-v2", "skills")
       const exists = await vscode.workspace.fs.stat(vscode.Uri.file(path.join(root, item.skillId))).then(
         () => true,
         () => false,
@@ -81,8 +107,47 @@ export class LocalImportRegistry {
   private file() {
     return vscode.Uri.joinPath(this.context.globalStorageUri, "marketplace", "local-imports.json")
   }
+
+  private async locked<T>(run: () => Promise<T>): Promise<T> {
+    const dir = path.join(this.context.globalStorageUri.fsPath, "marketplace")
+    const file = path.join(dir, "local-imports.lock")
+    await fs.mkdir(dir, { recursive: true })
+    const handle = await fs.open(file, "wx").catch(async (err: unknown) => {
+      if ((err as { code?: string }).code !== "EEXIST") throw err
+      const owner = await fs.readFile(file, "utf8").then(
+        (value) => JSON.parse(value) as { pid?: number },
+        () => ({ pid: undefined } as { pid?: number }),
+      )
+      if (owner.pid && alive(owner.pid)) throw err
+      const age = Date.now() - (await fs.stat(file)).mtimeMs
+      if (!owner.pid && age < LOCK_STALE) throw err
+      await fs.rm(file, { force: true })
+      return fs.open(file, "wx")
+    })
+    try {
+      await handle.writeFile(`${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`)
+      await handle.sync()
+      return await run()
+    } finally {
+      await handle.close()
+      await fs.rm(file, { force: true })
+    }
+  }
 }
 
 function key(skillId: string, scope: "global" | "project", workspaceId?: string) {
   return `${scope}|${workspaceId ?? ""}|${skillId}`
+}
+
+function equal(left: LocalSkillRecord | undefined, right: LocalSkillRecord | undefined) {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function alive(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }

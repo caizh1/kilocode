@@ -1,5 +1,5 @@
 import { $ } from "bun"
-import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs"
+import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
 
@@ -8,6 +8,7 @@ const version = "15.1.0"
 type Target = { platform: string; exe: string; archive: "zip" | "tar.gz"; envPrefix: string }
 
 const targets: Record<string, Target> = {
+  "darwin-arm64": { platform: "aarch64-apple-darwin", exe: "rg", archive: "tar.gz", envPrefix: "MACOS" },
   "linux-x64": { platform: "x86_64-unknown-linux-musl", exe: "rg", archive: "tar.gz", envPrefix: "LINUX" },
   "win32-x64": { platform: "x86_64-pc-windows-msvc", exe: "rg.exe", archive: "zip", envPrefix: "WINDOWS" },
   "win32-arm64": { platform: "aarch64-pc-windows-msvc", exe: "rg.exe", archive: "zip", envPrefix: "WINDOWS" },
@@ -18,7 +19,10 @@ export async function ensureRipgrepForTarget(target: string, bin: string): Promi
   if (!cfg) return
 
   const dest = join(bin, cfg.exe)
-  if (existsSync(dest)) return
+  if (existsSync(dest)) {
+    executable(cfg, dest)
+    return
+  }
 
   const tmp = join(bin, ".ripgrep-tmp")
   rmSync(tmp, { recursive: true, force: true })
@@ -27,12 +31,18 @@ export async function ensureRipgrepForTarget(target: string, bin: string): Promi
   try {
     const file = `ripgrep-${version}-${cfg.platform}.${cfg.archive ?? "zip"}`
     const archive = await resolveArchiveOrExecutable(file, cfg.exe, tmp, dest, cfg.envPrefix ?? "WINDOWS")
-    if (archive === "copied") return
-    const member = `ripgrep-${version}-${cfg.platform}/${cfg.exe}`
-    await extract(archive, member, tmp, dest, cfg.archive ?? "zip")
+    if (archive !== "copied") {
+      const member = `ripgrep-${version}-${cfg.platform}/${cfg.exe}`
+      await extract(archive, member, tmp, dest, cfg.archive ?? "zip")
+    }
+    executable(cfg, dest)
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
+}
+
+function executable(cfg: Target, file: string): void {
+  if (cfg.exe === "rg") chmodSync(file, 0o755)
 }
 
 async function resolveArchiveOrExecutable(

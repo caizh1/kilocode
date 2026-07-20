@@ -2,4 +2,4 @@
 "@kilocode/cli": minor
 ---
 
-Expand source-backed detailed designs with complete target-module and submodule chapters, evidence-backed scope variants and document evolution, plus bounded native Word assembly, native tables of contents that preserve cover and first-chapter content, high-DPI cropped diagrams, accurate Mermaid artifact status, standard business formatting, and explicit visual QA evidence.
+Strengthen source-backed detailed designs with context-parent versus target-module resolution, complete evidence-backed content for every confirmed submodule, mandatory five-view coverage, stable ordered Word assembly, readable Chinese output, verified native table-of-contents page numbers, and explicit page-evidence versus visual-review status.

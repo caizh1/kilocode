@@ -96,7 +96,7 @@ async function stop(child: ChildProcess) {
   })
 }
 
-test("an old Kilo-style client installs the Worker-generated latest archive", { timeout: 60_000 }, async () => {
+test("ChipMate installs the Worker-generated archive from the legacy catalog", { timeout: 60_000 }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "chipmate-g3-legacy-"))
   const source = join(dir, "source")
   const skills = join(source, "skills")
@@ -166,7 +166,7 @@ test("an old Kilo-style client installs the Worker-generated latest archive", { 
       workspace,
     )
     assert.equal(installed.success, true, installed.error ?? "actual Kilo installer failed")
-    assert.match(await readFile(join(workspace, ".kilo", "skills", item.id, "SKILL.md"), "utf8"), /source-backed/i)
+    assert.match(await readFile(join(workspace, ".chipmate-v2", "skills", item.id, "SKILL.md"), "utf8"), /source-backed/i)
   } finally {
     if (server.child) await stop(server.child)
     await rm(dir, { recursive: true, force: true })

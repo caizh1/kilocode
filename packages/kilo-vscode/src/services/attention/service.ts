@@ -123,7 +123,7 @@ export class AttentionService implements vscode.Disposable {
   }
 
   private notify(sound: TuiAttentionSoundName) {
-    const config = vscode.workspace.getConfiguration("kilo-code.new.attention")
+    const config = vscode.workspace.getConfiguration("chipmate.v2.attention")
     if (!config.get<boolean>("enabled", false)) return
     const selected = resolveSoundID(config.get<string>("sound", "default"))
     void playSound(sound, selected)

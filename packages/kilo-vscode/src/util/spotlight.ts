@@ -32,7 +32,7 @@ async function directory(dir: string): Promise<boolean> {
 function parent(dir: string): string | undefined {
   const parts = path.resolve(dir).split(path.sep)
   for (let i = 0; i < parts.length - 1; i++) {
-    const hidden = parts[i] === ".kilo" || parts[i] === ".kilocode"
+    const hidden = parts[i] === ".chipmate-v2"
     if (hidden && parts[i + 1] === "worktrees") return parts.slice(0, i + 2).join(path.sep) || path.sep
   }
   return undefined
@@ -42,7 +42,7 @@ export async function markWorkspace(root: string, log: (msg: string) => void): P
   const ancestor = parent(root)
   if (ancestor) await markNoIndex(ancestor, log)
 
-  for (const name of [".kilo", ".kilocode"]) {
+  for (const name of [".chipmate-v2"]) {
     const dir = path.join(root, name, "worktrees")
     if (await directory(dir)) await markNoIndex(dir, log)
   }

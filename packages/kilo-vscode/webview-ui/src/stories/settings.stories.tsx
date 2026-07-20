@@ -852,6 +852,33 @@ export const IndexingProviderBlurRace: Story = {
   },
 }
 
+export const IndexingSimplifiedChinese: Story = {
+  name: "IndexingTab - Simplified Chinese",
+  render: () => {
+    const cfg: Config = {
+      indexing: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "qwen3-embedding-8b",
+        dimension: 2048,
+        vectorStore: "lancedb",
+        documents: {
+          enabled: true,
+          paths: ["docs"],
+          include: ["**/*.pdf", "**/*.md"],
+        },
+      },
+    }
+    return (
+      <StoryProviders config={cfg} locale="zh">
+        <div style={{ width: "460px", "max-height": "900px", overflow: "auto" }}>
+          <IndexingTab />
+        </div>
+      </StoryProviders>
+    )
+  },
+}
+
 export const IndexingScopeSwitch: Story = {
   name: "IndexingTab - global and local scopes",
   render: () => {

@@ -12,7 +12,7 @@ function read(file: string): string {
 describe("language default", () => {
   it("defaults ChipMate UI language to Simplified Chinese while keeping Auto available", () => {
     const pkg = JSON.parse(read("package.json"))
-    const cfg = pkg.contributes.configuration.properties["kilo-code.new.language"]
+    const cfg = pkg.contributes.configuration.properties["chipmate.v2.language"]
 
     expect(cfg.default).toBe("zh")
     expect(cfg.enum).toContain("")

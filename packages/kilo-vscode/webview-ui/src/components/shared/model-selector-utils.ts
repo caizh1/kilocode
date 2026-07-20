@@ -1,6 +1,8 @@
 import type { ModelSelection } from "../../types/messages"
 import type { EnrichedModel } from "../../context/provider"
 import {
+  CHIPMATE_AUTO_FREE_NAME,
+  KILO_AUTO_FREE_ID,
   KILO_PROVIDER_ID as KILO_GATEWAY_ID,
   PROVIDER_PRIORITY as PROVIDER_ORDER,
   providerOrderIndex,
@@ -72,7 +74,8 @@ export function freeDataLabel(_free: string, data: string): string {
 // "Llama 3 (free)" → "Llama 3". A separate "Free" label/tag is rendered
 // elsewhere, so preserve bare trailing "Free" words (e.g. "Kilo Auto Free").
 export function sanitizeName(name: string): string {
-  return name.replace(/[\s:_-]*\(free\)\s*$/i, "").trim()
+  const branded = name === "Kilo Auto Free" ? CHIPMATE_AUTO_FREE_NAME : name
+  return branded.replace(/[\s:_-]*\(free\)\s*$/i, "").trim()
 }
 
 export function stripSubProviderPrefix(name: string): string {
@@ -92,15 +95,19 @@ export function buildTriggerLabel(
   clearLabel: string,
   hasProviders: boolean,
   labels: { select: string; noProviders: string; notSet: string },
+  emptyLabel = "",
 ): string {
   if (resolvedName) {
-    if (providerID === KILO_GATEWAY_ID) return stripSubProviderPrefix(resolvedName)
-    if (providerName) return `${providerName} / ${resolvedName}`
-    return resolvedName
+    const name = sanitizeName(resolvedName)
+    if (providerID === KILO_GATEWAY_ID) return stripSubProviderPrefix(name)
+    if (providerName) return `${providerName} / ${name}`
+    return name
   }
   if (raw?.providerID && raw?.modelID) {
+    if (raw.providerID === KILO_GATEWAY_ID && raw.modelID === KILO_AUTO_FREE_ID) return CHIPMATE_AUTO_FREE_NAME
     return raw.providerID === KILO_GATEWAY_ID ? raw.modelID : `${raw.providerID} / ${raw.modelID}`
   }
+  if (emptyLabel) return emptyLabel
   if (allowClear) return clearLabel || labels.notSet
   return hasProviders ? labels.select : labels.noProviders
 }

@@ -6,6 +6,10 @@ const store = join(root, "node_modules", ".bun", "node_modules")
 const baseModules = ["@lancedb/lancedb", "apache-arrow", "flatbuffers", "reflect-metadata", "tslib"] as const
 
 const nativeModules: Record<string, { module: string; binary: string }> = {
+  "darwin-arm64": {
+    module: "@lancedb/lancedb-darwin-arm64",
+    binary: "lancedb.darwin-arm64.node",
+  },
   "win32-x64": {
     module: "@lancedb/lancedb-win32-x64-msvc",
     binary: "lancedb.win32-x64-msvc.node",

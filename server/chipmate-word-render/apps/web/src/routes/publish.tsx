@@ -1,37 +1,60 @@
-import { ArrowClockwise, CheckCircle, FileArrowUp, MagicWand, ShieldWarning } from "@phosphor-icons/react"
+import {
+  ArrowClockwise,
+  CheckCircle,
+  FileArrowUp,
+  FolderOpen,
+  MagicWand,
+  Package,
+  ShieldWarning,
+} from "@phosphor-icons/react"
 import type { MarketUser, PublicationRun } from "@chipmate/market-contracts"
-import { useState, type FormEvent } from "react"
-import { InlineError } from "../shared"
+import { useState, type DragEvent, type FormEvent } from "react"
+import { bytes, InlineError } from "../shared"
 import { track } from "../analytics"
 import { uuid } from "../id"
+import { dropSkillFolder, packSkillFolder, scanSkillFolder, type SkillFolderScan } from "../skill-folder"
+
+type Input = { kind: "archive"; file: File } | { kind: "folder"; scan: SkillFolderScan }
+type Progress = { stage: "packing" | "uploading" | "validating"; label: string; loaded: number; total: number }
+
+const labels: Record<PublicationRun["status"], string> = {
+  VALIDATING: "正在校验",
+  NEEDS_AUTHOR_FIX: "需要修改后重试",
+  NEEDS_AI_CONFIRMATION: "需要确认修复",
+  SECURITY_REJECTED: "存在严重风险，已阻止发布",
+  PUBLISHING: "正在发布",
+  PUBLISHED: "发布成功",
+  UNPUBLISHED: "已下架",
+  UNCHANGED: "内容未变化",
+  FAILED: "发布失败",
+}
 
 export function PublishPage(props: { user: MarketUser | undefined; csrf: string; requestLogin(): void }) {
-  const [file, setFile] = useState<File>()
+  const [input, setInput] = useState<Input>()
   const [run, setRun] = useState<PublicationRun>()
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<Progress>()
+  const [drag, setDrag] = useState(false)
 
   const publish = async (event: FormEvent) => {
     event.preventDefault()
     if (!props.user) return props.requestLogin()
-    if (!file) return
+    if (!input) return
     setBusy(true)
     setError("")
     track("publication_start", { context: { source: "web" } })
     try {
-      const response = await fetch("/api/v1/publications", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/gzip",
-          "idempotency-key": uuid(),
-          "x-csrf-token": props.csrf,
-        },
-        body: file,
-      })
-      const payload = (await response.json()) as PublicationRun & { message?: string }
-      if (!response.ok) throw new Error(payload.message ?? `发布失败（HTTP ${response.status}）`)
+      const archive =
+        input.kind === "archive"
+          ? input.file
+          : await packSkillFolder(input.scan, (value) =>
+              setProgress({ stage: "packing", label: value.path, loaded: value.loaded, total: value.bytes }),
+            )
+      const result = await upload(archive, props.csrf, (value) => setProgress(value))
+      const payload = result.payload
+      if (result.status < 200 || result.status >= 300)
+        throw new Error(payload.message ?? `发布失败（HTTP ${result.status}）`)
       setRun(payload)
       track("publication_success", {
         ...(payload.skillId ? { skillId: payload.skillId } : {}),
@@ -43,6 +66,24 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
       track("publication_validation_failed", { context: { reason: "request-failed" } })
     } finally {
       setBusy(false)
+    }
+  }
+
+  const folder = (files: Iterable<File>) => {
+    setError("")
+    setRun(undefined)
+    const scan = scanSkillFolder(files)
+    setInput({ kind: "folder", scan })
+    setProgress(undefined)
+  }
+
+  const drop = async (event: DragEvent) => {
+    event.preventDefault()
+    setDrag(false)
+    try {
+      folder(await dropSkillFolder(event.dataTransfer))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -80,29 +121,103 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
         <p>Web 与 ChipMate 使用同一份服务端校验报告；自动修复只作用于上传快照。</p>
       </div>
       <div className="publish-grid">
-        <form className="glass-panel publish-form" onSubmit={(event) => void publish(event)}>
+        <form
+          className={`glass-panel publish-form ${drag ? "dragging" : ""}`}
+          onSubmit={(event) => void publish(event)}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setDrag(true)
+          }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(event) => void drop(event)}
+        >
           <span className="publish-icon">
             <FileArrowUp />
           </span>
           <div>
-            <h2>选择 Skill 归档</h2>
-            <p>支持单个 `.tar.gz`，压缩前请确认根目录内包含 SKILL.md。</p>
+            <h2>选择 Skill 归档或文件夹</h2>
+            <p>支持单个 `.tar.gz` 或根目录含 SKILL.md 的文件夹；文件夹只在浏览器本地打包。</p>
           </div>
-          <label>
-            Skill 归档
-            <input
-              type="file"
-              accept=".tar.gz,application/gzip"
-              onChange={(event) => setFile(event.target.files?.[0])}
-              required
-            />
-          </label>
+          <div className="skill-publish-pickers">
+            <label className="primary-button">
+              <FileArrowUp /> 选择 .tar.gz
+              <input
+                type="file"
+                aria-label="Skill 归档"
+                accept=".tar.gz,application/gzip"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) {
+                    setInput({ kind: "archive", file })
+                    setRun(undefined)
+                    setError("")
+                    setProgress(undefined)
+                  }
+                }}
+              />
+            </label>
+            <label className="secondary-button">
+              <FolderOpen /> 选择文件夹
+              <input
+                type="file"
+                aria-label="Skill 文件夹"
+                multiple
+                {...{ webkitdirectory: "" }}
+                onChange={(event) => {
+                  try {
+                    folder(event.target.files ?? [])
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err))
+                  }
+                }}
+              />
+            </label>
+          </div>
+          {input && (
+            <div className="skill-upload-summary">
+              <Package />
+              <span>
+                <strong>{input.kind === "archive" ? input.file.name : input.scan.root}</strong>
+                <small>
+                  {input.kind === "archive"
+                    ? `${bytes(input.file.size)} · TAR.GZ 归档`
+                    : `${input.scan.files.length} 个文件 · ${bytes(input.scan.bytes)} · 本地忽略 ${input.scan.ignored.length} 项`}
+                </small>
+              </span>
+            </div>
+          )}
+          {progress && (
+            <div className="skill-upload-progress" role="status">
+              <span>
+                <strong>
+                  {progress.stage === "packing"
+                    ? "正在打包文件夹"
+                    : progress.stage === "uploading"
+                      ? "正在上传"
+                      : "服务端正在校验"}
+                </strong>
+                <small>{progress.label}</small>
+              </span>
+              <div>
+                <i
+                  style={{
+                    width: `${progress.total ? Math.min(100, Math.round((progress.loaded / progress.total) * 100)) : 100}%`,
+                  }}
+                />
+              </div>
+              <b>
+                {progress.stage === "validating"
+                  ? "校验中"
+                  : `${progress.total ? Math.min(100, Math.round((progress.loaded / progress.total) * 100)) : 0}%`}
+              </b>
+            </div>
+          )}
           {!props.user && (
             <button type="button" className="secondary-button" onClick={props.requestLogin}>
               先登录市场身份
             </button>
           )}
-          <button className="primary-button" disabled={busy || !file}>
+          <button className="primary-button" disabled={busy || !input}>
             {busy ? "正在执行权威校验…" : "校验并发布"}
           </button>
           <small>不会执行归档内 scripts/，不会保存 New API key，也不会修改你的本地目录。</small>
@@ -117,8 +232,14 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
           {run && (
             <>
               <div className={`publication-status status-${run.status.toLocaleLowerCase()}`}>
-                <strong>{run.status}</strong>
-                <span>{run.stage}</span>
+                <strong>{labels[run.status]}</strong>
+                <span>
+                  {run.status === "SECURITY_REJECTED"
+                    ? "安全校验"
+                    : run.status === "NEEDS_AUTHOR_FIX"
+                      ? "格式校验"
+                      : "发布流程"}
+                </span>
               </div>
               {run.release && (
                 <p>
@@ -137,9 +258,8 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
                   <article key={`${issue.code}-${issue.file ?? ""}`}>
                     <ShieldWarning />
                     <span>
-                      <strong>{issue.code}</strong>
+                      <strong>{issue.message}</strong>
                       <small>{issue.file ?? issue.field ?? "归档"}</small>
-                      <p>{issue.message}</p>
                     </span>
                   </article>
                 ))}
@@ -172,4 +292,30 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
       </div>
     </section>
   )
+}
+
+function upload(file: Blob, csrf: string, progress: (value: Progress) => void) {
+  return new Promise<{ status: number; payload: PublicationRun & { message?: string } }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open("POST", "/api/v1/publications")
+    xhr.setRequestHeader("accept", "application/json")
+    xhr.setRequestHeader("content-type", "application/gzip")
+    xhr.setRequestHeader("idempotency-key", uuid())
+    xhr.setRequestHeader("x-csrf-token", csrf)
+    xhr.upload.onprogress = (event) =>
+      progress({
+        stage: "uploading",
+        label: `${bytes(event.loaded)} / ${bytes(event.total || file.size)}`,
+        loaded: event.loaded,
+        total: event.total || file.size,
+      })
+    xhr.upload.onload = () =>
+      progress({ stage: "validating", label: "上传完成，正在执行权威校验", loaded: file.size, total: file.size })
+    xhr.onerror = () => reject(new Error("上传连接中断，请检查网络后重试。"))
+    xhr.onload = () => {
+      const payload = JSON.parse(xhr.responseText || "{}") as PublicationRun & { message?: string }
+      resolve({ status: xhr.status, payload })
+    }
+    xhr.send(file)
+  })
 }

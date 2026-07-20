@@ -1,4 +1,9 @@
 import type { Provider, ProviderModel, ModelSelection } from "../types/messages"
+import {
+  CHIPMATE_AUTO_FREE_NAME,
+  KILO_AUTO_FREE_ID,
+  KILO_PROVIDER_ID,
+} from "../../../src/shared/provider-model"
 
 export type EnrichedModel = ProviderModel & { providerID: string; providerName: string }
 
@@ -13,6 +18,10 @@ export function flattenModels(providers: Record<string, Provider>): EnrichedMode
       result.push({
         ...provider.models[modelID]!,
         id: modelID,
+        name:
+          providerID === KILO_PROVIDER_ID && modelID === KILO_AUTO_FREE_ID
+            ? CHIPMATE_AUTO_FREE_NAME
+            : provider.models[modelID]!.name,
         providerID,
         providerName: provider.name === "Kilo Gateway" ? "ChipMate Gateway" : provider.name,
       })

@@ -6,7 +6,7 @@ interface VariantSession {
 }
 
 export function initialMessage(ev: AgentManagerSendInitialMessage): SendMessageRequest | undefined {
-  if (!ev.text) return undefined
+  if (!ev.text || !ev.providerID || !ev.modelID) return undefined
   return {
     type: "sendMessage",
     text: ev.text,

@@ -8,7 +8,7 @@ Use `render_mermaid_diagram` or `save_mermaid_artifact` when the user or active 
 
 ## 2. Artifact indexing
 
-The render tool writes `.mmd` and `.png` artifacts under Kilo's artifact location, normally `.kilo/artifacts/diagrams/`. Do not assume the tool writes directly into this skill's requested `04-diagrams/` tree. When the work package requires `04-diagrams/mmd/...` and `04-diagrams/png/...`, create or update `04-diagrams/diagram-index.md` and the coverage CSVs to map the requested logical diagram path to the tool-returned artifact path.
+The render tool writes `.mmd` and `.png` artifacts under the active product profile's artifact location. Do not assume the concrete directory; use the path returned by the tool. When the work package requires `04-diagrams/mmd/...` and `04-diagrams/png/...`, create or update `04-diagrams/diagram-index.md` and the coverage CSVs to map the requested logical diagram path to the tool-returned artifact path.
 
 ## 3. Diagram syntax
 
@@ -16,23 +16,23 @@ Business flow diagrams default to `flowchart TD`; state overview diagrams use `s
 
 ## 4. Word insertion
 
-Before Word creation, maintain `diagramId -> targetSection -> pngPath -> QA status`. For every successful render, place an image block at the exact intended position in the lightweight initial skeleton's target `sections[].blocks[]` array. Prefer `pngPath` over base64 so the skeleton stays bounded:
+Before Word creation, maintain separate `CoverageSlot` and `DiagramRequirement` ledgers. `CoverageSlot` has exactly `5D` base rows for the one target module and every target-owned confirmed submodule, where `D = 1 + confirmedSubmoduleCount`; context parents are excluded. `DiagramRequirement` has one row per actual base or focused figure and records `diagramId -> baseOrFocused -> owningSlot -> complexityInstanceIds -> sourceEvidence -> mmdPath -> sourceStatus -> syntaxValidation -> semanticCoverage -> pngPath -> visibleFigureId -> targetSection -> renderDisposition -> visualQaStatus -> wordInsertionStatus`. Every non-`N/A` base slot needs a unique primary PNG; one PNG cannot satisfy another design unit or view type. A required render failure remains an explicit `MISSING` requirement but does not block creation of a useful partial Word skeleton or rendering the target figures. An optional context-parent orientation figure is additional and satisfies no base slot. Place every successful required render at the exact intended position in the lightweight initial skeleton's target `sections[].blocks[]` array. Prefer `pngPath` over base64 so the skeleton stays bounded:
 
 ```json
 {
   "type": "image",
   "path": "<pngPath returned by render_mermaid_diagram>",
   "contentType": "image/png",
-  "title": "Figure title",
-  "caption": "Figure explanation",
-  "altText": "Accessible description",
+  "title": "中文图题",
+  "caption": "[DU-<designUnitId>/<viewType>/<diagramId>] 中文图注",
+  "altText": "完整的中文可访问性说明，源码符号保持原样",
   "width": 480,
   "height": 280
 }
 ```
 
-Structural `apply_word_document_edits` calls cannot add image blocks. Use them only for non-image chapter content; use `insert_mermaid_into_word` at a unique figure heading when a valid PNG becomes available after initial creation. Raw Mermaid source should not be used as the Word figure body unless the user explicitly asks for Mermaid source as a code block instead of a rendered diagram. If rendering fails and there is no source-mapped, visually reviewed existing PNG, omit the image block and disclose the render gap; do not substitute Mermaid syntax, ASCII art, a text box, or a prose pseudo-diagram as if the figure existed.
+Structural `apply_word_document_edits` calls cannot add image blocks. Use them only for non-image chapter content; use `insert_mermaid_into_word` at a unique figure heading when a valid PNG becomes available after initial creation or when the complete path-only image skeleton exceeds the native call limit. Even when `pngPath` already exists, the insertion call still requires the exact Mermaid text in `source`; also pass the current authoritative `wordPath`, unique `heading`, stable `taskSlug`/`outputFile`, source-mapped `pngPath`, plain Chinese `figureTitle`, complete independent Chinese `altText`, and unique visible caption. Raw Mermaid source should not be used as the Word figure body unless the user explicitly asks for Mermaid source as a code block instead of a rendered diagram. If rendering fails and there is no source-mapped, visually reviewed existing PNG, mark the required slot `MISSING`, disclose the render gap, and keep the full delivery `PARTIAL`; do not substitute Mermaid syntax, ASCII art, a text box, or a prose pseudo-diagram as if the figure existed.
 
 ## 5. Quality checks
 
-For diagrams that are actually produced, keep Mermaid source, PNG output when available, the target section, and evidence/edge notes together. Record dimensions, scale, crop metadata, warnings, and QA issues, and disclose whether each figure was rendered, skipped, or needs owner review. Open every PNG at 100% and inspect node text, edge labels, and arrows at 200%; metadata alone is insufficient. Reject excessive whitespace, clipping, overlaps, missing branches, unreadable labels, unexpected backgrounds, and distorted proportions. After all serial Word chapter and late-image mutations, compare the inspected image count with the successful planned figure count. Reuse an existing PNG with `insert_mermaid_into_word` only when that explicit check finds a missing planned image; do not regenerate unrelated content or trigger a global repair loop.
+For every required diagram, keep Mermaid source, PNG output when available, the owning design unit/view slot, visible figure ID, target section, complexity instance IDs, and evidence/edge notes together. Record dimensions, scale, crop metadata, warnings, and QA issues, and disclose whether each figure was rendered, skipped, or needs owner review. Open every PNG at 100% and inspect node text, edge labels, and arrows at 200%; metadata alone is insufficient. Reject excessive whitespace, clipping, overlaps, missing branches, unreadable labels, unexpected backgrounds and distorted proportions. Track actual image relationship-ID sets for the baseline, skeleton, late insertions, replacements, actual removals, and final document; compare them by set difference. Structural paragraph deletion is not proof of relationship removal, and replacement normally retains the relationship rather than adding one. Treat `inspect_word_document.imageCount` only as a coarse count. The API cannot prove image placement or identity, so call inspection with `maxParagraphs: 1000` and `maxTables: 200`; require `paragraphsTruncated: false` for a complete caption-ID audit and `tablesTruncated: false` for a complete table audit, or fall back to checking every affected item on every rendered page. If neither audit is complete, acceptance remains `PARTIAL`. Reuse an existing PNG only for a specifically identified missing insertion; do not blindly duplicate images, regenerate unrelated content, or trigger a global repair loop.

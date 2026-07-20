@@ -291,7 +291,18 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | ChildProcessSpa
 
       const filepath = yield* Effect.cached(
         Effect.gen(function* () {
-          // kilocode_change start - Git for Windows can expose an MSYS rg.exe that fails when spawned natively
+          // kilocode_change start - prefer the explicit VS Code bundle and avoid incompatible MSYS rg.exe on Windows
+          const configured = process.env.KILO_RIPGREP_PATH?.trim()
+          if (configured) {
+            if (!path.isAbsolute(configured)) {
+              return yield* Effect.fail(new Error(`configured ripgrep path must be absolute: ${configured}`))
+            }
+            if (!(yield* fs.isFile(configured).pipe(Effect.orDie))) {
+              return yield* Effect.fail(new Error(`configured ripgrep executable missing: ${configured}`))
+            }
+            return configured
+          }
+
           const system = yield* Effect.sync(() => (process.platform === "win32" ? undefined : which("rg")))
           if (system && (yield* fs.isFile(system).pipe(Effect.orDie))) return system
           // kilocode_change end

@@ -144,6 +144,53 @@ test("publish page exposes a prominent real XHR upload progress state", async ({
   await expect(page.getByText("1 个发布成功", { exact: true })).toBeVisible()
 })
 
+test("batch publish reauthenticates inline and keeps the prepared queue", async ({ page }) => {
+  const headers: string[] = []
+  await page.route("**/api/v1/auth/session", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    headers: { "x-csrf-token": "csrf-refreshed-e2e" },
+    body: JSON.stringify({ id: "user-extension-reauth", displayName: "重新登录用户", firstSeenAt: new Date().toISOString() }),
+  }))
+  await page.route("**/api/v1/events/batch", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: 1 }) }),
+  )
+  await page.route("**/api/v1/extension-publications", (route) => {
+    const request = route.request()
+    headers.push(request.headers()["x-csrf-token"] ?? "")
+    const stamp = new Date().toISOString()
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: request.headers()["x-publication-run-id"],
+        ownerId: "user-extension-reauth",
+        filename: "reauth.vsix",
+        totalBytes: request.postDataBuffer()?.length ?? 0,
+        idempotencyKey: request.headers()["idempotency-key"],
+        status: "PUBLISHED",
+        stage: "complete",
+        createdAt: stamp,
+        updatedAt: stamp,
+      }),
+    })
+  })
+  await page.goto("/extensions/publish")
+  await page.locator('input[type="file"]').first().setInputFiles({
+    name: "reauth.vsix",
+    mimeType: "application/vnd.microsoft.vscode.vsix",
+    buffer: Buffer.from("reauth"),
+  })
+  await page.getByRole("button", { name: "开始批量上传" }).click()
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "登录 ChipMate Market" })).toBeVisible()
+  await expect(page).toHaveURL(/\/extensions\/publish$/)
+  await page.getByLabel("New API key").fill("new-api-key")
+  await page.getByRole("button", { name: "安全登录" }).click()
+  await expect(page.getByText("1 个发布成功", { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/extensions\/publish$/)
+  expect(headers).toEqual(["csrf-refreshed-e2e"])
+})
+
 test("batch publish extracts VSIX locally and never uploads archives or unrelated files", async ({ page }) => {
   const sent: string[] = []
   const folder = resolve(".runtime/e2e-batch-folder")
@@ -215,6 +262,99 @@ test("batch publish extracts VSIX locally and never uploads archives or unrelate
   await expect(page.getByText("1 个发布成功", { exact: true })).toBeVisible()
   expect(sent.sort()).toEqual(["alpha.vsix", "beta.vsix", "folder-plugin.vsix"])
   await rm(folder, { recursive: true, force: true })
+})
+
+test("batch publish accepts more than twenty VSIX and keeps one request in flight", async ({ page }) => {
+  const state = { active: 0, maximum: 0, sent: 0 }
+  await page.addInitScript(() => {
+    sessionStorage.setItem("chipmate-market-session-active", "1")
+    sessionStorage.setItem("chipmate-market-csrf", "csrf-many-e2e")
+  })
+  await page.route("**/api/v1/auth/me", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ id: "user-extension-many", displayName: "批量上传者", firstSeenAt: new Date().toISOString() }),
+  }))
+  await page.route("**/api/v1/events/batch", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: 1 }) }),
+  )
+  await page.route("**/api/v1/extension-publications", async (route) => {
+    state.active += 1
+    state.maximum = Math.max(state.maximum, state.active)
+    state.sent += 1
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const request = route.request()
+    const stamp = new Date().toISOString()
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: request.headers()["x-publication-run-id"],
+        ownerId: "user-extension-many",
+        filename: decodeURIComponent(request.headers()["x-vsix-filename"] ?? ""),
+        totalBytes: request.postDataBuffer()?.length ?? 0,
+        idempotencyKey: request.headers()["idempotency-key"],
+        status: "PUBLISHED",
+        stage: "complete",
+        createdAt: stamp,
+        updatedAt: stamp,
+      }),
+    })
+    state.active -= 1
+  })
+  await page.goto("/extensions/publish")
+  await page.locator('input[type="file"]').first().setInputFiles(
+    Array.from({ length: 41 }, (_, index) => ({
+      name: `plugin-${index}.vsix`,
+      mimeType: "application/vnd.microsoft.vscode.vsix",
+      buffer: Buffer.from(String(index)),
+    })),
+  )
+  await expect(page.getByText("41 个待上传", { exact: true })).toBeVisible()
+  await expect(page.getByText("3 个逻辑批次", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "开始批量上传" }).click()
+  await expect(page.getByText("41 个发布成功", { exact: true })).toBeVisible()
+  expect(state.sent).toBe(41)
+  expect(state.maximum).toBe(1)
+})
+
+test("stopping a batch aborts the active upload and never starts queued artifacts", async ({ page }) => {
+  const state = { sent: 0 }
+  await page.addInitScript(() => {
+    sessionStorage.setItem("chipmate-market-session-active", "1")
+    sessionStorage.setItem("chipmate-market-csrf", "csrf-cancel-e2e")
+  })
+  await page.route("**/api/v1/auth/me", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ id: "user-extension-cancel", displayName: "取消测试用户", firstSeenAt: new Date().toISOString() }),
+  }))
+  await page.route("**/api/v1/events/batch", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: 1 }) }),
+  )
+  await page.route("**/api/v1/extension-publications/*", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ status: "CANCELLED", stage: "complete" }),
+  }))
+  await page.route("**/api/v1/extension-publications", async (route) => {
+    state.sent += 1
+    await new Promise((resolve) => setTimeout(resolve, 5_000))
+    await route.fulfill({ status: 499, contentType: "application/json", body: JSON.stringify({ code: "UPLOAD_CANCELLED" }) }).catch(() => undefined)
+  })
+  await page.goto("/extensions/publish")
+  await page.locator('input[type="file"]').first().setInputFiles(
+    Array.from({ length: 3 }, (_, index) => ({
+      name: `cancel-${index}.vsix`,
+      mimeType: "application/vnd.microsoft.vscode.vsix",
+      buffer: Buffer.alloc(256 * 1024, index),
+    })),
+  )
+  await page.getByRole("button", { name: "开始批量上传" }).click()
+  await expect.poll(() => state.sent).toBe(1)
+  await page.getByRole("button", { name: "停止剩余上传" }).click()
+  await expect(page.getByText("3 个取消", { exact: true })).toBeVisible({ timeout: 10_000 })
+  expect(state.sent).toBe(1)
 })
 
 test("extension analytics and service status expose public and operational data", async ({ page }) => {

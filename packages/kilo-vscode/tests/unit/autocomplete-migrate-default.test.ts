@@ -40,7 +40,7 @@ function stubConfig(state: State) {
     return fresh
   }
   ;(vscode.workspace as unknown as Stub).getConfiguration = (section?: string) => {
-    if (section !== "kilo-code.new.autocomplete") {
+    if (section !== "chipmate.v2.autocomplete") {
       return {
         get: () => undefined,
         inspect: () => undefined,
@@ -97,7 +97,7 @@ describe("migrateDefaultAutocompleteSettings", () => {
 
     expect(state.get("provider")?.globalValue).toBeUndefined()
     expect(state.get("model")?.globalValue).toBeUndefined()
-    expect(flag.get("kilo.autocomplete.defaultClearMigrationV1")).toBe(true)
+    expect(flag.get("chipmate.v2.autocomplete.defaultClearMigrationV1")).toBe(true)
   })
 
   it("leaves an explicitly chosen non-default model untouched", async () => {
@@ -109,7 +109,7 @@ describe("migrateDefaultAutocompleteSettings", () => {
 
     expect(state.get("provider")?.globalValue).toBe("inception")
     expect(state.get("model")?.globalValue).toBe("mercury-edit-2")
-    expect(flag.get("kilo.autocomplete.defaultClearMigrationV1")).toBe(true)
+    expect(flag.get("chipmate.v2.autocomplete.defaultClearMigrationV1")).toBe(true)
   })
 
   it("leaves a partial match untouched", async () => {
@@ -138,7 +138,7 @@ describe("migrateDefaultAutocompleteSettings", () => {
   it("only runs once per machine", async () => {
     setGlobal(state, "provider", DEFAULT_AUTOCOMPLETE_MODEL.providerID)
     setGlobal(state, "model", DEFAULT_AUTOCOMPLETE_MODEL.modelID)
-    const { context } = makeContext({ "kilo.autocomplete.defaultClearMigrationV1": true })
+    const { context } = makeContext({ "chipmate.v2.autocomplete.defaultClearMigrationV1": true })
 
     await migrateDefaultAutocompleteSettings(context)
 
@@ -152,6 +152,6 @@ describe("migrateDefaultAutocompleteSettings", () => {
 
     await migrateDefaultAutocompleteSettings(context)
 
-    expect(flag.get("kilo.autocomplete.defaultClearMigrationV1")).toBe(true)
+    expect(flag.get("chipmate.v2.autocomplete.defaultClearMigrationV1")).toBe(true)
   })
 })

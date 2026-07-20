@@ -1,5 +1,5 @@
 export const dict = {
-  "kilocode:autocomplete.statusBar.enabled": "$(kilo-logo) Autofuldførelse",
+  "kilocode:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) Autofuldførelse",
   "kilocode:autocomplete.statusBar.snoozed": "udsat",
   "kilocode:autocomplete.statusBar.warning": "$(warning) Autofuldførelse",
   "kilocode:autocomplete.statusBar.tooltip.basic": "Kilo Code autofuldførelse",

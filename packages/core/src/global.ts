@@ -6,6 +6,7 @@ import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
 import { markNoIndex } from "./kilocode/spotlight" // kilocode_change
 import { ensureRealDir } from "./kilocode/global" // kilocode_change
+import { Product } from "./kilocode/product" // kilocode_change
 import { Flag } from "./flag/flag"
 
 const app = "kilo" // kilocode_change
@@ -18,12 +19,13 @@ const app = "kilo" // kilocode_change
 // which breaks every `kilo` invocation at startup (including the SDK
 // regen that runs during `bun run extension`).
 const clean = (p: string | undefined) => p?.replace(/[\r\n]+/g, "")
-const data = path.join(clean(xdgData)!, app)
-const cache = path.join(clean(xdgCache)!, app)
-const config = path.join(clean(xdgConfig)!, app)
-const state = path.join(clean(xdgState)!, app)
+const root = Product.root() // kilocode_change
+const data = root ? path.join(root, "data") : path.join(clean(xdgData)!, app) // kilocode_change
+const cache = root ? path.join(root, "cache") : path.join(clean(xdgCache)!, app) // kilocode_change
+const config = root ? path.join(root, "config") : path.join(clean(xdgConfig)!, app) // kilocode_change
+const state = root ? path.join(root, "state") : path.join(clean(xdgState)!, app) // kilocode_change
 // kilocode_change end
-const tmp = path.join(os.tmpdir(), app)
+const tmp = root ? path.join(root, "tmp") : path.join(os.tmpdir(), app) // kilocode_change
 
 const paths = {
   get home() {

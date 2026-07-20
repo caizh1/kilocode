@@ -1,6 +1,6 @@
 import * as vscode from "vscode"
 
-const CONFIG = "kilo-code.new"
+const CONFIG = "chipmate.v2"
 const KEY = "diff.renderMarkdown"
 
 export function getDiffMarkdownRender(): boolean {

@@ -12,7 +12,10 @@ import {
   indexingPipelineTone,
   indexingButtonVisible,
   indexingTone,
+  localizeIndexingText,
 } from "../../webview-ui/src/context/indexing-utils"
+import { dict as en } from "../../webview-ui/src/i18n/en"
+import { dict as zh } from "../../webview-ui/src/i18n/zh"
 import { mapSSEEventToWebviewMessage } from "../../src/kilo-provider-utils"
 import { configFeatures } from "../../src/features"
 import type { EventIndexingStatus, IndexingStatus } from "@kilocode/sdk/v2/client"
@@ -26,6 +29,11 @@ function makeStatus(overrides: Partial<IndexingStatus> = {}): IndexingStatus {
     percent: 0,
     ...overrides,
   }
+}
+
+function translator(dict: Record<string, string>) {
+  return (key: string, params?: Record<string, string | number | boolean | undefined>) =>
+    (dict[key] ?? key).replace(/\{\{\s*([^}\s]+)\s*\}\}/g, (_, name: string) => String(params?.[name] ?? ""))
 }
 
 describe("indexing button visibility", () => {
@@ -83,6 +91,75 @@ describe("indexing formatting", () => {
     expect(formatIndexingLabel(makeStatus({ state: "Complete" }))).toBe("IDX Complete")
     expect(formatIndexingLabel(makeStatus({ state: "Disabled" }))).toBe("IDX Disabled")
     expect(formatIndexingLabel(makeStatus({ state: "Standby" }))).toBe("IDX Standby")
+  })
+
+  it("localizes public states and known backend messages in Simplified Chinese", () => {
+    const t = translator(zh)
+    expect(formatIndexingLabel(makeStatus({ state: "Complete" }), t)).toBe("索引 已完成")
+    expect(
+      formatIndexingPipelineLabel(
+        "图谱",
+        {
+          state: "In Progress",
+          message: "Indexing in progress.",
+          processedFiles: 0,
+          totalFiles: 0,
+          percent: 0,
+          errorCount: 0,
+          staleCount: 0,
+          skippedCount: 0,
+        },
+        t,
+      ),
+    ).toBe("图谱 进行中")
+    expect(localizeIndexingText("Code Graph needs rebuild.", t)).toBe("代码图谱需要重新构建。")
+    expect(localizeIndexingText("12/20 graph records valid.", t)).toBe("12/20 条代码图谱记录有效。")
+    expect(localizeIndexingText("Indexed document: docs/spec.pdf", t)).toBe("已索引文档：docs/spec.pdf")
+    expect(localizeIndexingText("Document RAG waiting for another document indexing run.", t)).toBe(
+      "文档 RAG 正在等待另一次文档索引完成。",
+    )
+    expect(localizeIndexingText("Code Graph complete. Starting RAG indexing...", t)).toBe(
+      "代码图谱已完成，正在启动代码 RAG 索引……",
+    )
+    expect(localizeIndexingText("Built 3 / 10 code graph files (30%). Current: src/main.cpp", t)).toBe(
+      "已构建 3 / 10 个代码图谱文件（30%）。 当前：src/main.cpp",
+    )
+    expect(localizeIndexingText("Document RAG blocked because Code RAG was cancelled.", t)).toBe(
+      "文档 RAG 已被阻塞，因为代码 RAG 已取消。",
+    )
+    expect(localizeIndexingText("Failed during RAG scan: connection reset by peer", t)).toBe(
+      "代码 RAG 扫描失败：connection reset by peer",
+    )
+  })
+
+  it("preserves unknown status and diagnostic text verbatim", () => {
+    const t = translator(zh)
+    expect(localizeIndexingText("LanceDB failed to initialize", t)).toBe("LanceDB failed to initialize")
+    const status = {
+      state: "Error" as const,
+      message: "RAG unavailable.",
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 0,
+      errorCount: 1,
+      staleCount: 0,
+      skippedCount: 0,
+      recentErrors: [
+        {
+          time: "2026-07-17T00:00:00.000Z",
+          source: "scan",
+          location: "scan:run",
+          message: "Code Graph needs rebuild.",
+        },
+      ],
+    }
+    expect(indexingPipelineDescription(status, t)).toBe("Code Graph needs rebuild.")
+  })
+
+  it("keeps the English localization baseline stable", () => {
+    const t = translator(en)
+    expect(formatIndexingLabel(makeStatus({ state: "Standby" }), t)).toBe("IDX Standby")
+    expect(localizeIndexingText("Document RAG up-to-date.", t)).toBe("Document RAG up-to-date.")
   })
 
   it("maps tones by status", () => {

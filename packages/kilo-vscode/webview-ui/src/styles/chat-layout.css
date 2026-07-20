@@ -367,6 +367,13 @@
   margin-inline: auto;
 }
 
+.chat-view .message-list-content > .message-list-footer {
+  box-sizing: border-box;
+  width: calc(100% - 8px);
+  max-width: var(--chat-readable-width);
+  margin-inline: auto;
+}
+
 .chat-view .prompt-input-container,
 .chat-view .new-task-button-wrapper {
   box-sizing: border-box;

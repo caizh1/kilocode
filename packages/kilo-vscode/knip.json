@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
     "src/extension.ts",
+    "webview-ui/agent-console/index.tsx",
     "webview-ui/agent-manager/index.tsx",
     "webview-ui/diff-viewer/index.tsx",
     "webview-ui/diff-virtual/index.tsx",

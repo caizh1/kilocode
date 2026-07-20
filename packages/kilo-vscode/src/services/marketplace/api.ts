@@ -251,6 +251,7 @@ export class MarketplaceApiClient {
         ...(typeof value.updatedAt === "string" ? { updatedAt: value.updatedAt } : {}),
         ...(typeof value.downloads === "number" ? { downloadCount: value.downloads } : {}),
         ...(typeof value.favorites === "number" ? { stars: value.favorites } : {}),
+        risk: skillRisk(value.risk),
         ...(Array.isArray(value.tags)
           ? { tags: value.tags.filter((tag): tag is string => typeof tag === "string") }
           : {}),
@@ -309,6 +310,26 @@ export class MarketplaceApiClient {
       errors,
       skillsFetched: settled[2].ok,
     }
+  }
+
+  async searchSkills(input: {
+    query: string
+    category?: string
+    author?: string
+    sort?: "updated" | "downloads" | "favorites" | "name"
+    cursor?: string
+    limit: number
+  }): Promise<{ items: SkillMarketplaceItem[]; nextCursor?: string }> {
+    if (!(await this.isAligned())) throw new Error("Skill Market search requires the aligned API")
+    const query = new URLSearchParams({ q: input.query, limit: String(Math.min(20, Math.max(1, input.limit))) })
+    if (input.category) query.set("category", input.category)
+    if (input.author) query.set("author", input.author)
+    if (input.sort) query.set("sort", input.sort)
+    if (input.cursor) query.set("cursor", input.cursor)
+    const value = parseResponse(await fetchWithRetry(`${this.serverBaseUrl()}/api/v1/skills?${query}`, this.fetchText))
+    if (!isObject(value) || !Array.isArray(value.items)) throw new Error("aligned-market-invalid-search")
+    const items = value.items.flatMap((item) => this.alignedSkill(item))
+    return { items, ...(typeof value.nextCursor === "string" ? { nextCursor: value.nextCursor } : {}) }
   }
 
   async resolveUser(apiKey: string): Promise<MarketplaceUser> {
@@ -374,6 +395,16 @@ export class MarketplaceApiClient {
     const value = await requestJson(`${this.serverBaseUrl()}/api/v1/skills/${encodeURIComponent(id)}/unpublish`, {
       method: "POST",
       apiKey,
+    })
+    this.cache.delete("skills")
+    return publication(value)
+  }
+
+  async undoPublication(runId: string, apiKey: string, idempotencyKey: string): Promise<PublicationRun> {
+    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(runId)}/undo`, {
+      method: "POST",
+      apiKey,
+      idempotencyKey,
     })
     this.cache.delete("skills")
     return publication(value)
@@ -523,7 +554,12 @@ export class MarketplaceApiClient {
 
 async function requestJson(
   url: string,
-  opts: { method?: "GET" | "POST" | "PUT" | "DELETE"; apiKey?: string; body?: unknown } = {},
+  opts: {
+    method?: "GET" | "POST" | "PUT" | "DELETE"
+    apiKey?: string
+    idempotencyKey?: string
+    body?: unknown
+  } = {},
 ): Promise<unknown> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT)
@@ -535,6 +571,7 @@ async function requestJson(
         accept: "application/json",
         ...(opts.body === undefined ? {} : { "content-type": "application/json" }),
         ...(opts.apiKey ? { authorization: `Bearer ${opts.apiKey}` } : {}),
+        ...(opts.idempotencyKey ? { "idempotency-key": opts.idempotencyKey } : {}),
       },
       ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
     })
@@ -636,7 +673,23 @@ function skillDetail(value: unknown): SkillDetail {
   ) {
     throw new Error("Invalid Skill detail response")
   }
-  return value as unknown as SkillDetail
+  return {
+    ...value,
+    risk: skillRisk(value.risk),
+  } as unknown as SkillDetail
+}
+
+function skillRisk(value: unknown) {
+  if (!isObject(value)) return { level: "unknown" as const, issueCount: 0 }
+  const levels = new Set(["none", "medium", "critical", "unknown"])
+  if (typeof value.level !== "string" || !levels.has(value.level) || typeof value.issueCount !== "number") {
+    return { level: "unknown" as const, issueCount: 0 }
+  }
+  return {
+    level: value.level as "none" | "medium" | "critical" | "unknown",
+    issueCount: value.issueCount,
+    ...(typeof value.policyVersion === "string" ? { policyVersion: value.policyVersion } : {}),
+  }
 }
 
 function installationState(value: unknown): value is InstallationState {

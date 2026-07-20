@@ -8,47 +8,9 @@
 import { describe, it, expect } from "bun:test"
 import path from "node:path"
 import { Project, SyntaxKind } from "ts-morph"
-import { SessionTerminalManager, type TerminalHost } from "../../src/agent-manager/SessionTerminalManager"
 
 const ROOT = path.resolve(import.meta.dir, "../..")
 const FILE = path.join(ROOT, "src/agent-manager/SessionTerminalManager.ts")
-const COMMAND = "workbench.action.togglePanel"
-
-type Handler = (...args: unknown[]) => Promise<unknown>
-
-function runtime(run: () => Promise<unknown>) {
-  let blocked = false
-  const handlers = new Map<string, Handler>()
-  const host: TerminalHost = {
-    createTerminal() {
-      throw new Error("not used")
-    },
-    activeTerminal: () => undefined,
-    repoPath: () => undefined,
-    showWarning() {},
-    setContext() {},
-    onTerminalClosed: () => ({ dispose() {} }),
-    onActiveTerminalChanged: () => ({ dispose() {} }),
-    registerCommand(id, handler) {
-      if (blocked && id === COMMAND) throw new Error(`command '${id}' already exists`)
-      handlers.set(id, handler)
-      return {
-        dispose() {
-          if (handlers.get(id) === handler) handlers.delete(id)
-        },
-      }
-    },
-    executeCommand() {
-      blocked = true
-      return run()
-    },
-  }
-  const manager = new SessionTerminalManager(() => {}, host)
-  const handler = handlers.get(COMMAND)
-  if (!handler) throw new Error(`command '${COMMAND}' was not registered`)
-  return { manager, handler }
-}
-
 function getClass() {
   const project = new Project({ compilerOptions: { allowJs: true } })
   const source = project.addSourceFileAtPath(FILE)
@@ -76,7 +38,7 @@ describe("SessionTerminalManager structure", () => {
   it("dispose clears the context key, disposes terminals, and clears the map", () => {
     const text = body("dispose")
     // All three are required for clean shutdown — missing any would leak resources
-    expect(text).toContain("kilo-code.agentTerminalFocus")
+    expect(text).toContain("chipmate.v2.agentTerminalFocus")
     expect(text).toContain("terminal.dispose()")
     expect(text).toContain("terminals.clear()")
   })
@@ -111,23 +73,17 @@ describe("SessionTerminalManager structure", () => {
     expect(showIdx, "show must precede updateContextKey").toBeLessThan(contextIdx)
   })
 
-  it("syncOnSessionSwitch only switches when panel is open", () => {
-    const text = body("syncOnSessionSwitch")
-    expect(text).toContain("if (!this.panelOpen)")
-    expect(text).toContain("this.showExisting(sessionId)")
+  it("does not track panel visibility or auto-switch terminals", () => {
+    const text = getClass().getText()
+    expect(text).not.toContain("panelOpen")
+    expect(text).not.toContain("syncOnSessionSwitch")
+    expect(text).not.toContain("syncLocalOnSessionSwitch")
   })
 
-  it("syncLocalOnSessionSwitch only switches when panel is open", () => {
-    const text = body("syncLocalOnSessionSwitch")
-    expect(text).toContain("if (!this.panelOpen)")
-    expect(text).toContain("this.showExistingLocal()")
-  })
-
-  it("panel command registration is best effort", () => {
-    const text = body("tryRegisterCommand")
-    expect(text).toContain("this.host.registerCommand")
-    expect(text).toContain("catch (err)")
-    expect(text).toContain("panel command registration skipped")
+  it("does not wrap built-in VS Code panel commands", () => {
+    const text = getClass().getText()
+    expect(text).not.toContain("registerCommand")
+    expect(text).not.toContain("workbench.action.togglePanel")
   })
 
   it("exposes active terminal state for terminal context routing", () => {
@@ -145,25 +101,5 @@ describe("SessionTerminalManager structure", () => {
     const text = body("prepareContext")
     expect(text).toContain("this.showExisting(sessionId)")
     expect(text).toContain("this.activeSession()")
-  })
-})
-
-describe("SessionTerminalManager command restoration", () => {
-  it("preserves the original command result when re-registration fails", async () => {
-    const expected = { status: "complete" }
-    const state = runtime(async () => expected)
-
-    expect(await state.handler()).toBe(expected)
-    state.manager.dispose()
-  })
-
-  it("preserves the original command error when re-registration fails", async () => {
-    const expected = new Error("panel command failed")
-    const state = runtime(async () => {
-      throw expected
-    })
-
-    await expect(state.handler()).rejects.toBe(expected)
-    state.manager.dispose()
   })
 })

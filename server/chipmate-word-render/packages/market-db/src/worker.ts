@@ -15,6 +15,7 @@ import type {
   SessionInput,
   SessionLookup,
   UnpublishInput,
+  UndoPublicationInput,
   ExtensionArtifactInput,
   ExtensionDownloadInput,
   ExtensionFavoriteInput,
@@ -109,6 +110,8 @@ function execute(msg: DbRequest): unknown {
       return repo.applyPublicationPatches(msg.payload as PublicationApplyInput)
     case "unpublish":
       return repo.unpublish(msg.payload as UnpublishInput)
+    case "undoPublication":
+      return repo.undoPublication(msg.payload as UndoPublicationInput)
     case "events":
       return repo.events(msg.payload as EventInput[])
     case "aggregate":
@@ -149,10 +152,6 @@ function execute(msg: DbRequest): unknown {
     }
     case "extensionPublications":
       return repo.extensionPublications(String(msg.payload))
-    case "extensionUploadCount": {
-      const value = msg.payload as { ownerId: string; since: string }
-      return repo.extensionUploadCount(value.ownerId, value.since)
-    }
     case "extensionFavorite":
       return repo.extensionFavorite(msg.payload as ExtensionFavoriteInput)
     case "extensionFavorites":

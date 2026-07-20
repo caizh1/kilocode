@@ -3,12 +3,9 @@ import type { CliRenderer } from "@opentui/core"
 import path from "path"
 import { Process } from "@/util/process"
 import { splitCommand } from "@/kilocode/util/split-command"
-import {
-  MEMORY_USAGE,
-  parseMemoryCommand,
-  type ParsedMemoryCommand,
-} from "@kilocode/kilo-memory/commands"
+import { MEMORY_USAGE, parseMemoryCommand, type ParsedMemoryCommand } from "@kilocode/kilo-memory/commands"
 import { errorMessage } from "@/util/error"
+import { userOptions } from "@/kilocode/product-env"
 
 export { MEMORY_USAGE }
 export type MemoryCommand = ParsedMemoryCommand
@@ -55,13 +52,16 @@ async function edit(input: { file: string; cwd?: string; renderer?: CliRenderer 
   input.renderer?.suspend()
   input.renderer?.currentRenderBuffer.clear()
   try {
-    const proc = Process.spawn([...splitCommand(editor), input.file], {
-      cwd: input.cwd,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-      shell: process.platform === "win32",
-    })
+    const proc = Process.spawn(
+      [...splitCommand(editor), input.file],
+      userOptions({
+        cwd: input.cwd,
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+        shell: process.platform === "win32",
+      }),
+    )
     const code = await proc.exited
     if (code !== 0) throw new Error(`Editor exited with code ${code}`)
   } finally {

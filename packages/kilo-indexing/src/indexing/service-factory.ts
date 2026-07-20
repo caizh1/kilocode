@@ -40,6 +40,15 @@ import type { IgnoreMatcher } from "./shared/load-ignore"
 
 const log = Log.create({ service: "indexing-factory" })
 
+function product(): string | undefined {
+  return process.env.KILO_PRODUCT_PROFILE === "chipmate-v2" ? "chipmate-v2" : undefined
+}
+
+function isolated(dir: string): string {
+  const profile = product()
+  return profile ? path.join(dir, profile) : dir
+}
+
 function timeout(provider: string): number {
   if (provider === "ollama") return OLLAMA_EMBEDDER_REQUEST_TIMEOUT_MS
   return REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS
@@ -195,7 +204,7 @@ export class CodeIndexServiceFactory {
     }
 
     if (config.vectorStoreProvider === "lancedb") {
-      const dbDir = config.lancedbVectorStoreDirectoryPlaceholder ?? path.join(this.cacheDirectory, "lancedb")
+      const dbDir = isolated(config.lancedbVectorStoreDirectoryPlaceholder ?? path.join(this.cacheDirectory, "lancedb"))
       log.info("creating vector store", {
         provider: config.embedderProvider,
         vectorStore: "lancedb",
@@ -213,7 +222,14 @@ export class CodeIndexServiceFactory {
       model: profile.modelId,
       vectorSize: profile.dimension,
     })
-    return new QdrantVectorStore(workspacePath, config.qdrantUrl, profile.dimension, config.qdrantApiKey, profile)
+    return new QdrantVectorStore(
+      workspacePath,
+      config.qdrantUrl,
+      profile.dimension,
+      config.qdrantApiKey,
+      profile,
+      product(),
+    )
   }
 
   public createDocumentVectorStore(): IVectorStore {
@@ -231,7 +247,9 @@ export class CodeIndexServiceFactory {
 
     if (config.vectorStoreProvider === "lancedb") {
       const base = config.lancedbVectorStoreDirectoryPlaceholder ?? this.cacheDirectory
-      const dbDir = path.join(base, config.lancedbVectorStoreDirectoryPlaceholder ? "documents" : "lancedb-documents")
+      const dbDir = isolated(
+        path.join(base, config.lancedbVectorStoreDirectoryPlaceholder ? "documents" : "lancedb-documents"),
+      )
       log.info("creating document vector store", {
         provider: config.embedderProvider,
         vectorStore: "lancedb",
@@ -255,7 +273,7 @@ export class CodeIndexServiceFactory {
       profile.dimension,
       config.qdrantApiKey,
       profile,
-      "documents",
+      [product(), "documents"].filter(Boolean).join("-"),
     )
   }
 

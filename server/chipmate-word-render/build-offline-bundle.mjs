@@ -42,7 +42,9 @@ mkdirSync(workDir, { recursive: true })
 
 copyFileSync(join(serverDir, "install-render-server.sh"), join(bundleDir, "install-render-server.sh"))
 copyFileSync(archivePath, join(bundleDir, archiveName))
-if (existsSync(archiveShaPath)) copyFileSync(archiveShaPath, join(bundleDir, `${archiveName}.sha256`))
+const archiveSha = sha256File(archivePath)
+writeFileSync(archiveShaPath, archiveSha)
+writeFileSync(join(bundleDir, `${archiveName}.sha256`), archiveSha)
 
 const catalogItems = []
 for (const skill of seedSkills) {

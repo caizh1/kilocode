@@ -1,4 +1,5 @@
 import type { GitContext, FileChange } from "./types"
+import { userEnv } from "../product-env"
 
 const LOCK_FILES = new Set([
   // --- JavaScript / Node.js ---
@@ -134,6 +135,7 @@ export function git(args: string[], cwd: string): string {
     stdout: "pipe",
     stderr: "pipe",
     windowsHide: true, // kilocode_change - prevent cmd.exe flash on Windows
+    env: userEnv(process.env),
   })
   return result.stdout.toString().trimEnd()
 }

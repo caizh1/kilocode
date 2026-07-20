@@ -52,6 +52,12 @@ const InsertMermaidIntoWordParameters = Schema.Struct({
     description: "Optional Word heading after which to insert the rendered PNG.",
   }),
   caption: Schema.optional(Schema.String),
+  figureTitle: Schema.optional(Schema.String).annotate({
+    description: "Optional visible figure title inserted before the drawing.",
+  }),
+  altText: Schema.optional(Schema.String).annotate({
+    description: "Optional independent accessible description for the inserted drawing.",
+  }),
   outputFile: Schema.optional(Schema.String),
   taskSlug: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),

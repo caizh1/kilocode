@@ -41,7 +41,8 @@ export class LocalSkillImporter {
     private readonly registry: Store,
     private readonly managed?: (id: string, scope: "global" | "project", project?: string) => Promise<boolean>,
     private readonly progress?: (value: LocalSkillImportProgress) => void,
-    private readonly home = os.homedir(),
+    home = os.homedir(),
+    private readonly global = path.join(home, ".chipmate-v2"),
   ) {}
 
   async preview(source: string, project: string | undefined): Promise<SkillImportPreview> {
@@ -215,9 +216,9 @@ export class LocalSkillImporter {
   }
 
   private base(scope: "global" | "project", project: string | undefined) {
-    if (scope === "global") return path.join(this.home, ".kilo", "skills")
+    if (scope === "global") return path.join(this.global, "skills")
     if (!project) throw new Error("No workspace is available for project import")
-    return path.join(project, ".kilo", "skills")
+    return path.join(project, ".chipmate-v2", "skills")
   }
 
   private clean() {

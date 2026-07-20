@@ -15740,6 +15740,242 @@
         ]
       }
     },
+    "/kilocode/skill-market": {
+      "get": {
+        "tags": ["kilocode"],
+        "operationId": "kilocode.skillMarket.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending Skill Market host requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SkillMarketRequest"
+                  },
+                  "description": "Pending Skill Market host requests"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List pending Skill Market host requests for the routed workspace.",
+        "summary": "List pending Skill Market requests",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilocode.skillMarket.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/kilocode/skill-market/{requestID}/reply": {
+      "post": {
+        "tags": ["kilocode"],
+        "operationId": "kilocode.skillMarket.reply",
+        "parameters": [
+          {
+            "name": "requestID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Skill Market reply accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "Skill Market reply accepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Complete a pending Skill Market host request with a structured result.",
+        "summary": "Reply to a Skill Market request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "result": {
+                    "$ref": "#/components/schemas/SkillMarketResult"
+                  }
+                },
+                "required": ["result"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilocode.skillMarket.reply({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/kilocode/skill-market/{requestID}/reject": {
+      "post": {
+        "tags": ["kilocode"],
+        "operationId": "kilocode.skillMarket.reject",
+        "parameters": [
+          {
+            "name": "requestID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Skill Market rejection accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "Skill Market rejection accepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Complete a pending Skill Market host request with a structured host error.",
+        "summary": "Reject a Skill Market request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "error": {
+                    "$ref": "#/components/schemas/SkillMarketFailure"
+                  }
+                },
+                "required": ["error"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilocode.skillMarket.reject({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/session/{sessionID}/model-usage": {
       "get": {
         "tags": ["kilocode"],
@@ -22286,6 +22522,12 @@
             "$ref": "#/components/schemas/EventKilocodeNotebookCancelled"
           },
           {
+            "$ref": "#/components/schemas/EventKilocodeSkill_marketRequested"
+          },
+          {
+            "$ref": "#/components/schemas/EventKilocodeSkill_marketCancelled"
+          },
+          {
             "$ref": "#/components/schemas/EventLspClientDiagnostics"
           },
           {
@@ -23256,6 +23498,464 @@
           },
           {
             "$ref": "#/components/schemas/NotebookExecuteRequest"
+          }
+        ]
+      },
+      "SkillMarketRequest": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["search"]
+              },
+              "query": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "category": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "author": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "sort": {
+                "type": "string",
+                "enum": ["updated", "downloads", "favorites", "name"]
+              },
+              "cursor": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "query", "limit"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["begin"]
+              },
+              "skillId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "scope": {
+                "type": "string",
+                "enum": ["global", "project"]
+              },
+              "intents": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["create", "install", "publish"]
+                },
+                "minItems": 1,
+                "maxItems": 3
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "skillId", "scope", "intents"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["prepare_create"]
+              },
+              "transactionId": {
+                "type": "string"
+              },
+              "skillId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 5000
+              },
+              "category": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "maxItems": 50
+              },
+              "scope": {
+                "type": "string",
+                "enum": ["global", "project"]
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "encoding": {
+                      "type": "string",
+                      "enum": ["utf8", "base64"]
+                    },
+                    "content": {
+                      "type": "string",
+                      "maxLength": 14000000
+                    }
+                  },
+                  "required": ["path", "encoding", "content"],
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "maxItems": 500
+              },
+              "replace": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "sessionID",
+              "key",
+              "operation",
+              "skillId",
+              "name",
+              "description",
+              "scope",
+              "files",
+              "replace"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["prepare_install"]
+              },
+              "transactionId": {
+                "type": "string"
+              },
+              "skillId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "scope": {
+                "type": "string",
+                "enum": ["global", "project"]
+              },
+              "replace": {
+                "type": "boolean"
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "skillId", "scope", "replace"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["prepare_publish"]
+              },
+              "transactionId": {
+                "type": "string"
+              },
+              "skillId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "scope": {
+                "type": "string",
+                "enum": ["global", "project"]
+              },
+              "notes": {
+                "type": "string",
+                "maxLength": 5000
+              },
+              "expectedSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "skillId", "scope"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["approve"]
+              },
+              "transactionId": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "transactionId"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["commit"]
+              },
+              "transactionId": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "transactionId"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["abort"]
+              },
+              "transactionId": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "transactionId"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["status"]
+              },
+              "transactionId": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "transactionId"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["list"]
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "limit"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["undo"]
+              },
+              "transactionId": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "transactionId"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 256
+              },
+              "operation": {
+                "type": "string",
+                "enum": ["purge"]
+              },
+              "transactionId": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "sessionID", "key", "operation", "transactionId"],
+            "additionalProperties": false
           }
         ]
       },
@@ -25597,6 +26297,12 @@
               },
               {
                 "$ref": "#/components/schemas/EventKilocodeNotebookCancelled"
+              },
+              {
+                "$ref": "#/components/schemas/EventKilocodeSkill_marketRequested"
+              },
+              {
+                "$ref": "#/components/schemas/EventKilocodeSkill_marketCancelled"
               },
               {
                 "$ref": "#/components/schemas/EventLspClientDiagnostics"
@@ -32509,6 +33215,92 @@
         "required": ["code", "message"],
         "additionalProperties": false
       },
+      "SkillMarketResult": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "transactionId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "PREPARING",
+              "PREPARED",
+              "COMMITTING",
+              "COMMITTED",
+              "REMOTE_UNCERTAIN",
+              "ABORTED",
+              "ROLLING_BACK",
+              "ROLLED_BACK",
+              "UNDOING",
+              "UNDONE",
+              "EXPIRED",
+              "MANUAL_INTERVENTION"
+            ]
+          },
+          "skillId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["global", "project"]
+          },
+          "preview": {
+            "type": "object"
+          },
+          "result": {
+            "type": "object"
+          },
+          "undoUntil": {
+            "type": "string"
+          }
+        },
+        "required": ["operation"],
+        "additionalProperties": false
+      },
+      "SkillMarketFailure": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "intent_required",
+              "host_unavailable",
+              "auth_required",
+              "validation_failed",
+              "security_rejected",
+              "conflict",
+              "stale_target",
+              "locked",
+              "cancelled",
+              "timeout",
+              "remote_uncertain",
+              "rollback_failed",
+              "undo_expired",
+              "undo_conflict",
+              "manual_intervention",
+              "not_found",
+              "host_error"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "transactionId": {
+            "type": "string"
+          }
+        },
+        "required": ["code", "message"],
+        "additionalProperties": false
+      },
       "AnacondaDesktopStatus": {
         "anyOf": [
           {
@@ -33663,6 +34455,55 @@
             "properties": {
               "requestID": {
                 "$ref": "#/components/schemas/NotebookRequestID"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "reason": {
+                "type": "string",
+                "enum": ["cancelled", "disposed", "timeout"]
+              }
+            },
+            "required": ["requestID", "sessionID", "reason"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventKilocodeSkill_marketRequested": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["kilocode.skill_market.requested"]
+          },
+          "properties": {
+            "$ref": "#/components/schemas/SkillMarketRequest"
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventKilocodeSkill_marketCancelled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["kilocode.skill_market.cancelled"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "requestID": {
+                "type": "string"
               },
               "sessionID": {
                 "type": "string",

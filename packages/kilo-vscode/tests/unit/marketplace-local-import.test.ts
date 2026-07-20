@@ -39,7 +39,7 @@ describe("local Skill import transactions", () => {
         project,
       )
       expect(projectResult.items).toEqual([{ id: "portable-skill", status: "installed" }])
-      const target = path.join(project, ".kilo", "skills", "portable-skill")
+      const target = path.join(project, ".chipmate-v2", "skills", "portable-skill")
       expect((await discoverSkillCandidates(target))[0]?.snapshot.valid).toBe(true)
       expect(await fs.readFile(path.join(source, "SKILL.md"))).toEqual(before)
       await expect(fs.access(path.join(source, "skill.json"))).rejects.toThrow()
@@ -56,7 +56,7 @@ describe("local Skill import transactions", () => {
       )
       expect(globalResult.items[0]?.status).toBe("installed")
       expect(
-        (await discoverSkillCandidates(path.join(home, ".kilo", "skills", "portable-skill")))[0]?.snapshot.valid,
+        (await discoverSkillCandidates(path.join(home, ".chipmate-v2", "skills", "portable-skill")))[0]?.snapshot.valid,
       ).toBe(true)
       expect(records.items).toHaveLength(2)
       expect(records.items[0]?.sourceSha256).toHaveLength(64)
@@ -108,10 +108,15 @@ describe("local Skill import transactions", () => {
       )
       expect(installed.items[0]?.status).toBe("installed")
       expect(
-        await fs.readFile(path.join(project, ".kilo", "skills", "portable-skill", "references", "guide.md"), "utf8"),
+        await fs.readFile(
+          path.join(project, ".chipmate-v2", "skills", "portable-skill", "references", "guide.md"),
+          "utf8",
+        ),
       ).toBe("changed guide\n")
       expect(
-        (await fs.readdir(path.join(project, ".kilo", "skills"))).some((name) => name.startsWith(".backup-")),
+        (await fs.readdir(path.join(project, ".chipmate-v2", "skills"))).some((name) =>
+          name.startsWith(".backup-"),
+        ),
       ).toBe(false)
     })
   })
@@ -124,9 +129,9 @@ describe("local Skill import transactions", () => {
       const home = path.join(root, "home")
       await skill(path.join(source, "bad"), "bad-skill", "Bad instructions")
       await skill(path.join(source, "good"), "good-skill", "Good instructions")
-      await fs.mkdir(path.join(project, ".kilo", "skills", "bad-skill"), { recursive: true })
+      await fs.mkdir(path.join(project, ".chipmate-v2", "skills", "bad-skill"), { recursive: true })
       await fs.writeFile(
-        path.join(project, ".kilo", "skills", "bad-skill", "SKILL.md"),
+        path.join(project, ".chipmate-v2", "skills", "bad-skill", "SKILL.md"),
         markdown("bad-skill", "Old managed instructions"),
       )
       const records = new Records()
@@ -149,11 +154,13 @@ describe("local Skill import transactions", () => {
       )
       expect(result.items.find((item) => item.id === "bad-skill")?.status).toBe("failed")
       expect(result.items.find((item) => item.id === "good-skill")?.status).toBe("installed")
-      expect(await fs.readFile(path.join(project, ".kilo", "skills", "bad-skill", "SKILL.md"), "utf8")).toContain(
+      expect(
+        await fs.readFile(path.join(project, ".chipmate-v2", "skills", "bad-skill", "SKILL.md"), "utf8"),
+      ).toContain(
         "Old managed instructions",
       )
       expect(
-        (await discoverSkillCandidates(path.join(project, ".kilo", "skills", "good-skill")))[0]?.snapshot.valid,
+        (await discoverSkillCandidates(path.join(project, ".chipmate-v2", "skills", "good-skill")))[0]?.snapshot.valid,
       ).toBe(true)
     } finally {
       await fs.rm(root, { recursive: true, force: true })

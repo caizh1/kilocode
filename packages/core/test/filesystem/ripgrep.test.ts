@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import * as Stream from "effect/Stream"
 import fs from "fs/promises"
@@ -48,7 +48,77 @@ const withRipgrepConfig = <A, E, R>(value: string, effect: Effect.Effect<A, E, R
       }),
   )
 
+const withRipgrepPath = <A, E>(value: string, effect: Effect.Effect<A, E, Ripgrep.Service>) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const prev = process.env.KILO_RIPGREP_PATH
+      process.env.KILO_RIPGREP_PATH = value
+      return prev
+    }),
+    () => effect.pipe(Effect.provide(Ripgrep.defaultLayer)),
+    (prev) =>
+      Effect.sync(() => {
+        if (prev === undefined) delete process.env.KILO_RIPGREP_PATH
+        else process.env.KILO_RIPGREP_PATH = prev
+      }),
+  )
+
 describe("file.ripgrep", () => {
+  test("prefers and caches the configured ripgrep executable", async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        tmpdir((dir) => write(path.join(dir, "rg"), "bundled ripgrep")).pipe(
+          Effect.flatMap((dir) => {
+            const file = path.join(dir, "rg")
+            return withRipgrepPath(
+              `  ${file}  `,
+              Ripgrep.Service.use((ripgrep) =>
+                Effect.gen(function* () {
+                  const first = yield* ripgrep.filepath
+                  const second = yield* ripgrep.filepath
+                  expect(first).toBe(file)
+                  expect(second).toBe(file)
+                }),
+              ),
+            )
+          }),
+        ),
+      ),
+    )
+  })
+
+  test("rejects a relative configured ripgrep path without downloading", async () => {
+    const err = await Effect.runPromise(
+      withRipgrepPath(
+        path.join("bin", "rg"),
+        Ripgrep.Service.use((ripgrep) => ripgrep.filepath.pipe(Effect.flip)),
+      ),
+    )
+
+    expect(err.message).toBe(`configured ripgrep path must be absolute: ${path.join("bin", "rg")}`)
+  })
+
+  test("rejects a missing configured ripgrep executable without downloading", async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        tmpdir().pipe(
+          Effect.flatMap((dir) => {
+            const file = path.join(dir, "missing-rg")
+            return withRipgrepPath(
+              file,
+              Ripgrep.Service.use((ripgrep) =>
+                ripgrep.filepath.pipe(
+                  Effect.flip,
+                  Effect.tap((err) => Effect.sync(() => expect(err.message).toBe(`configured ripgrep executable missing: ${file}`))),
+                ),
+              ),
+            )
+          }),
+        ),
+      ),
+    )
+  })
+
   it.live("exposes a cached managed executable filepath", () =>
     Effect.gen(function* () {
       const ripgrep = yield* Ripgrep.Service

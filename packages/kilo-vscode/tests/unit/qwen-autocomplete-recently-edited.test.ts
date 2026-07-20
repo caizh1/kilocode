@@ -387,22 +387,20 @@ function configEvents(read: () => QwenAutocompleteConfig) {
   ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (
     section?: string,
   ) => {
-    if (section === "kilo-code.new.autocomplete") {
+    if (section === "chipmate.v2.autocomplete") {
       return {
         get: (key: string, fallback?: unknown) =>
           ({
             provider: read().providerID,
             model: read().model,
             enableAutoTrigger: read().autoTrigger,
-          })[key] ?? fallback,
+          })[key] ??
+          setting(read(), key) ??
+          fallback,
         update: async () => {},
       } as unknown as ReturnType<typeof originalConfig>
     }
-    if (section !== "kilo.autocomplete") return originalConfig(section)
-    return {
-      get: (key: string, fallback?: unknown) => setting(read(), key) ?? fallback,
-      update: async () => {},
-    } as unknown as ReturnType<typeof originalConfig>
+    return originalConfig(section)
   }
   ;(vscode.workspace as unknown as { onDidChangeConfiguration: typeof originalChange }).onDidChangeConfiguration = (
     cb,
@@ -419,7 +417,8 @@ function configEvents(read: () => QwenAutocompleteConfig) {
   })
   return {
     disposed: () => disposed,
-    fire: (target = "kilo.autocomplete") => callback?.({ affectsConfiguration: (section) => section === target }),
+    fire: (target = "chipmate.v2.autocomplete") =>
+      callback?.({ affectsConfiguration: (section) => section === target }),
   }
 }
 

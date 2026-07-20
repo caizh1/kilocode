@@ -64,7 +64,7 @@ business_capability_id,capability_name,capability_description,business_value,sco
 
 要求：
 
-- 每个重要子模块必须覆盖源码确认的全部本地 capability；如果没有可确认的本地能力，应重新判断它是否属于重要子模块；
+- 每个已确认子模块必须覆盖源码确认的全部本地 capability；如果没有可确认的本地能力，应在冻结分解表前重新判断它是否只是 helper/adapter，而不是在画图阶段降级以逃避覆盖；
 - capability_description 必须完整说明该能力处理的对象、触发、动作、结果和边界，不使用固定字数作为质量门槛；
 - business_value 必须说明该能力对模块业务结果的价值；
 - scope_boundary 必须说明该能力的负责范围和不负责范围；
@@ -131,11 +131,11 @@ coverage_status 包括 covered/partial/unverified。unverified 不能进入最�
 item_type,item_name,section_file,has_description,description_chars,has_evidence,diagram_refs,quality_status,notes
 ```
 
-item_type 包括 capability/submodule/parent_flow。quality_status 包括 pass/weak/missing。每个业务能力和每个重要子模块都必须有一行覆盖记录。
+item_type 包括 capability/submodule/target_flow。quality_status 包括 pass/weak/missing。每个业务能力、target module 和每个已确认子模块都必须有一行覆盖记录；context parent 只作为外部参与者或 handoff 证据，不占 target_flow 覆盖行。
 
 ## 4. 子模块业务流程图规则
 
-每个重要业务子模块必须先生成一张 high-level 子模块业务流程图。
+每个已确认子模块必须先生成一张 high-level 子模块业务流程图。
 
 输出位置：
 
@@ -167,7 +167,7 @@ business-submodule-<submodule-name>.png
 
 ## 5. 总模块业务流程图规则
 
-总模块业务流程图必须在所有子模块业务图完成后生成。
+总模块业务流程图必须在所有已确认子模块的业务语义、证据、边覆盖和 Mermaid source 完成后生成。子模块 PNG 渲染失败不能阻塞总模块业务图的生成或渲染，但会使对应子模块槽位保持 `MISSING`。
 
 输出位置：
 
@@ -179,8 +179,8 @@ business-submodule-<submodule-name>.png
 命名建议：
 
 ```text
-business-parent-module-master-flow.mmd
-business-parent-module-master-flow.png
+business-target-module-master-flow.mmd
+business-target-module-master-flow.png
 ```
 
 总模块业务图必须包含：
@@ -196,7 +196,7 @@ business-parent-module-master-flow.png
 9. 等待、重试、错误、终止、成功完成出口；
 10. 每个子模块节点必须能回链到对应子模块业务图。
 
-总模块业务图禁止展开所有函数细节。它只能聚合已通过的子模块业务流程图、核心状态机概览和关键异常路径。
+总模块业务图禁止展开所有函数细节。它只能聚合已完成语义与证据规划的子模块业务流程、核心状态机概览和关键异常路径，不得因某张子模块 PNG 渲染失败而省略整个父图。
 
 ## 6. Mermaid 表达规则
 
@@ -253,7 +253,7 @@ flowchart TD
 - 只有 happy path，没有错误/等待/重试/终止；
 - 关键节点无源码证据；
 - 边没有业务条件；
-- 子模块图未完成就生成总图；
+- 子模块业务语义、证据、边覆盖或 Mermaid source 未完成就生成总图；
 - 总图没有引用子模块图；
 - 图中大量使用函数名、文件名、结构体名作为主流程节点。
 
@@ -263,12 +263,12 @@ flowchart TD
 
 ```text
 05-enhanced-detail-design/02-business-flow-overview.md
-05-enhanced-detail-design/08-submodule-business-flows.md
+05-enhanced-detail-design/08-confirmed-submodules.md
 ```
 
 `02-business-flow-overview.md` 必须引用总模块业务流程 PNG。
 
-`08-submodule-business-flows.md` 必须逐个引用子模块业务流程 PNG，并包含：
+`08-confirmed-submodules.md` 必须在每个已确认子模块自己的连续详细设计单元中逐个引用业务流程 PNG，并包含：
 
 - 子模块简介；
 - 子模块业务职责；
@@ -295,7 +295,7 @@ flowchart TD
 
 ## 11. 子模块简介要求
 
-每个重要子模块在正文中必须有图前简介，不设固定字数。简介必须覆盖：
+每个已确认子模块在正文中必须有图前简介，不设固定字数。简介必须覆盖：
 
 - 子模块在整个模块中的业务定位；
 - 上游触发和进入条件；
@@ -321,11 +321,11 @@ high-level 业务流程图先生成，用于说明“业务上发生了什么”
 - 11-business-flow-edges.csv 非空；
 - 12-business-flow-edge-coverage.csv 非空；
 - 13-business-text-coverage.csv 非空；
-- 每个重要子模块存在 high-level 业务流程 mmd/png；
+- 每个已确认子模块存在 high-level 业务流程 mmd/png；
 - 总模块业务流程 mmd/png 存在；
 - mmd/png 一一对应；
 - 业务图 edge coverage 无 unverified；
 - 正文引用业务总图和子模块业务图；
 - 业务能力纵览表包含 capability_description；
-- 每个重要子模块正文包含图前简介和图后流程解读；
+- 每个已确认子模块正文包含图前简介和图后流程解读；
 - 业务图没有被判定为函数调用图或拓扑图。

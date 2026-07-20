@@ -20,7 +20,7 @@ describe("extension host i18n", () => {
   it("interpolates a single variable", () => {
     const result = t("kilocode:autocomplete.statusBar.tooltip.noUsableProvider", {
       providers: "OpenAI, Anthropic",
-      command: "command:kilo-code.new.settingsButtonClicked",
+      command: "command:chipmate.v2.settingsButtonClicked",
     })
     expect(result).toContain("OpenAI, Anthropic")
     expect(result).not.toContain("{{providers}}")
@@ -82,7 +82,7 @@ describe("extension host i18n", () => {
       env: { language: "en" },
       workspace: {
         getConfiguration: (section: string) => ({
-          get: () => (section === "kilo-code.new" ? "de" : undefined),
+          get: () => (section === "chipmate.v2" ? "de" : undefined),
         }),
       },
     } as unknown as typeof import("vscode")

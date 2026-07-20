@@ -4,6 +4,7 @@ import { parseDocument, YAMLMap } from "yaml"
 import { parseZip } from "./zip.ts"
 
 export const SKILL_SPEC_VERSION = "agent-skills-1"
+export const SKILL_RISK_POLICY_VERSION = "skill-risk-v2"
 export const SKILL_ROOT_FILE = "SKILL.md"
 export const SKILL_METADATA_FILE = "skill.json"
 export const SKILL_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/
@@ -42,6 +43,13 @@ export interface SkillIssue {
   actual?: string
   fixable: boolean
   repairKind: "none" | "deterministic" | "ai"
+  riskLevel: "none" | "medium" | "critical"
+}
+
+export interface SkillRiskSummary {
+  level: "none" | "medium" | "critical"
+  issueCount: number
+  policyVersion: string
 }
 
 export interface SnapshotChange {
@@ -61,6 +69,8 @@ export interface SkillSnapshot {
   valid: boolean
   stage: "format" | "deterministic" | "security" | "semantic" | "complete"
   issues: SkillIssue[]
+  risk: SkillRiskSummary
+  policyVersion: string
   changes: SnapshotChange[]
 }
 
@@ -132,10 +142,7 @@ export function validateSkillArchive(input: Buffer): SkillSnapshot {
   const sourceName = clean(source.fields.name)
   const sourceDescription = clean(source.fields.description)
   const name = slug(sourceName || title(id))
-  const description =
-    sourceDescription ||
-    bodyDescription(source.body) ||
-    "Reusable ChipMate skill."
+  const description = sourceDescription || bodyDescription(source.body) || "Reusable ChipMate skill."
   const category = slug(clean(metadata.category) || clean(source.fields.category) || "general")
   const tags = tagList(metadata.tags ?? source.fields.tags)
   const spec = { id, name, description, category, tags }
@@ -195,9 +202,16 @@ export function validateSkillArchive(input: Buffer): SkillSnapshot {
     return [{ path: file.path, beforeSha256, afterSha256, patch: `replace-base64:${file.data.toString("base64")}` }]
   })
   const valid = !issues.some((item) => item.severity === "error")
+  const critical = issues.filter((item) => item.riskLevel === "critical").length
+  const medium = issues.filter((item) => item.riskLevel === "medium").length
+  const risk: SkillRiskSummary = {
+    level: critical ? "critical" : medium ? "medium" : "none",
+    issueCount: critical + medium,
+    policyVersion: SKILL_RISK_POLICY_VERSION,
+  }
   const stage = valid
     ? "complete"
-    : issues.some((item) => item.code.startsWith("security-"))
+    : critical
       ? "security"
       : issues.some((item) => item.repairKind === "ai")
         ? "semantic"
@@ -212,6 +226,8 @@ export function validateSkillArchive(input: Buffer): SkillSnapshot {
     valid,
     stage,
     issues,
+    risk,
+    policyVersion: SKILL_RISK_POLICY_VERSION,
     changes,
   }
 }
@@ -262,7 +278,8 @@ export function readPortableMetadata(markdown: string): PortableMetadata {
 
 export function repairPortableMetadata(markdown: string, values: { name: string; description: string }) {
   const source = frontmatter(markdown)
-  const doc = source.doc?.errors.length === 0 && source.doc.contents instanceof YAMLMap ? source.doc : parseDocument("{}")
+  const doc =
+    source.doc?.errors.length === 0 && source.doc.contents instanceof YAMLMap ? source.doc : parseDocument("{}")
   doc.set("name", values.name)
   doc.set("description", values.description)
   return `---\n${doc.toString().trimEnd()}\n---\n\n${source.body}`
@@ -434,10 +451,13 @@ function scanDocument(file: Entry, issues: SkillIssue[]) {
 function scanPdf(file: Entry, issues: SkillIssue[]) {
   const value = file.data.toString("latin1")
   if (!value.startsWith("%PDF-") || !/%%EOF\s*$/.test(value) || !/\bxref\b/.test(value) || !/\btrailer\b/.test(value)) {
-    issues.push(issue("security-pdf-invalid", "error", "PDF structure is malformed or unsupported.", { file: file.path }))
+    issues.push(
+      issue("security-pdf-invalid", "error", "PDF structure is malformed or unsupported.", { file: file.path }),
+    )
     return
   }
-  const blocked = /\/(?:Encrypt|ObjStm|XRef|JavaScript|JS|Launch|EmbeddedFile|Filespec|OpenAction|AA|RichMedia|XFA|SubmitForm|GoToR|URI)\b/
+  const blocked =
+    /\/(?:Encrypt|ObjStm|XRef|JavaScript|JS|Launch|EmbeddedFile|Filespec|OpenAction|AA|RichMedia|XFA|SubmitForm|GoToR|URI)\b/
   if (blocked.test(value)) {
     issues.push(
       issue("security-pdf-active-content", "error", "PDF contains encryption, compressed objects, or active content.", {
@@ -464,7 +484,11 @@ function scanOoxml(file: Entry, issues: SkillIssue[]) {
   }
   const names = new Set(entries.map((entry) => entry.path.toLocaleLowerCase()))
   if (!names.has("[content_types].xml") || !names.has("_rels/.rels")) {
-    issues.push(issue("security-office-invalid", "error", "Office document is missing required OOXML files.", { file: file.path }))
+    issues.push(
+      issue("security-office-invalid", "error", "Office document is missing required OOXML files.", {
+        file: file.path,
+      }),
+    )
     return
   }
   const blocked = entries.find((entry) =>
@@ -616,13 +640,67 @@ function pack(id: string, files: Entry[]) {
   return gzipSync(Buffer.concat(chunks), { level: 9 })
 }
 
+const MEDIUM = new Set(["security-secret", "scripts-present", "security-office-external-link"])
+const CRITICAL = new Set([
+  "security-path",
+  "security-link",
+  "security-executable",
+  "security-nested-archive",
+  "security-markdown-xss",
+  "security-office-active-content",
+  "security-pdf-active-content",
+])
+
+const MESSAGES: Record<string, string> = {
+  "skill-file-missing": "Skill 根目录必须包含 SKILL.md。",
+  "skill-filename": "已将根目录技能文件规范化为 SKILL.md。",
+  "invalid-id": "Skill ID 格式无效。",
+  "invalid-semver": "语义版本格式无效。",
+  "frontmatter-normalize": "已规范化名称和描述字段。",
+  "skill-json-create": "已生成缺失的 skill.json。",
+  "metadata-json-invalid": "skill.json 格式无效。",
+  "semantic-body-too-short": "Skill 指令过短，无法形成可执行能力。",
+  "ignored-files-remove": "已从发布快照中移除忽略文件或归档元数据。",
+  "scripts-present": "包含脚本文件；市场服务不会执行这些脚本，使用前请自行审查。",
+  "security-secret": "检测到可能的凭据、密码、令牌或密钥内容，请确认其中不包含真实敏感信息。",
+  "security-office-external-link": "Office 文档包含外部链接，打开时可能访问外部资源。",
+  "security-path": "归档包含不安全路径。",
+  "security-link": "归档包含不允许的链接条目。",
+  "security-executable": "归档包含不允许的可执行二进制内容。",
+  "security-nested-archive": "归档包含无法继续安全扫描的嵌套归档。",
+  "security-markdown-xss": "Markdown 包含不安全的 HTML 或 URL 内容。",
+  "security-office-active-content": "Office 文档包含宏或嵌入式活动内容。",
+  "security-pdf-active-content": "PDF 包含加密、压缩对象或活动内容。",
+  "security-archive-header": "归档头校验失败。",
+  "security-archive-truncated": "归档条目不完整或大小无效。",
+  "security-duplicate-path": "归档包含重复或大小写冲突路径。",
+  "security-entry-type": "归档包含不支持的条目类型。",
+  "security-file-count": "归档文件数量超过限制。",
+  "security-file-size": "归档内单个文件超过大小限制。",
+  "security-file-type": "归档包含不支持的文件类型。",
+  "security-image-invalid": "图片内容损坏或与扩展名不匹配。",
+  "security-image-size": "图片尺寸超过限制。",
+  "security-office-invalid": "Office 文档结构损坏或不受支持。",
+  "security-pdf-invalid": "PDF 结构损坏或不受支持。",
+  "security-text-encoding": "文本文件不是有效的 UTF-8。",
+}
+
 function issue(
   code: string,
   severity: SkillIssue["severity"],
   message: string,
   extra: Partial<SkillIssue> = {},
 ): SkillIssue {
-  return { code, severity, message, fixable: false, repairKind: extra.fixable ? "deterministic" : "none", ...extra }
+  const riskLevel = CRITICAL.has(code) ? "critical" : MEDIUM.has(code) ? "medium" : "none"
+  return {
+    code,
+    severity: riskLevel === "medium" ? "warning" : severity,
+    message: MESSAGES[code] ?? message,
+    fixable: false,
+    repairKind: extra.fixable ? "deterministic" : "none",
+    riskLevel,
+    ...extra,
+  }
 }
 
 function decode(file: Entry, issues: SkillIssue[]) {
@@ -638,7 +716,8 @@ function readJson(file: Entry, issues: SkillIssue[]) {
   const value = decode(file, issues)
   try {
     const parsed: unknown = JSON.parse(value)
-    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) return parsed as Record<string, unknown>
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed))
+      return parsed as Record<string, unknown>
   } catch (err) {
     issues.push(issue("metadata-json-invalid", "error", `skill.json is invalid: ${message(err)}`, { file: file.path }))
   }
@@ -687,7 +766,13 @@ function bodyDescription(body: string) {
 }
 
 function tagList(value: unknown) {
-  const raw = (Array.isArray(value) ? value.map(String) : String(value ?? "").replace(/^\[|\]$/g, "").split(","))
+  const raw = (
+    Array.isArray(value)
+      ? value.map(String)
+      : String(value ?? "")
+          .replace(/^\[|\]$/g, "")
+          .split(",")
+  )
     .map(unquote)
     .map((item) => item.trim())
     .filter(Boolean)

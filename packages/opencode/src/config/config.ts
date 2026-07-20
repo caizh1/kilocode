@@ -41,6 +41,7 @@ import z from "zod" // kilocode_change - Kilo config compatibility schemas
 import { ZodOverride } from "@opencode-ai/core/effect-zod"
 import { KilocodeConfig } from "../kilocode/config/config"
 import { primaryPaths } from "../kilocode/primary-worktree"
+import { ProductProfile } from "../kilocode/product-profile"
 import { Git } from "@/git"
 import { KilocodeDefaultPlugins } from "@/kilocode/config/default-plugins"
 import { KilocodeGlobalConfigStamp } from "@/kilocode/config/global-stamp"
@@ -642,7 +643,7 @@ export const layer = Layer.effect(
         const directories = yield* ConfigPaths.directories(ctx.directory, ctx.worktree)
         const primary = Flag.KILO_DISABLE_PROJECT_CONFIG
           ? []
-          : yield* primaryPaths(ctx.directory, ctx.worktree, [".kilocode", ".kilo"])
+          : yield* primaryPaths(ctx.directory, ctx.worktree, [...ProductProfile.dirs])
         // Load primary fallbacks before active-worktree config, then track them as local.
         directories.splice(1, 0, ...primary)
         const primarySet = new Set(primary)
@@ -666,7 +667,7 @@ export const layer = Layer.effect(
             ? undefined
             : { root: primarySet.has(dir) ? path.dirname(dir) : projectRoot, source: dir }
           if (KilocodeConfig.isConfigDir(dir, Flag.KILO_CONFIG_DIR)) {
-            for (const file of KilocodeConfig.ALL_CONFIG_FILES) {
+            for (const file of KilocodeConfig.ACTIVE_CONFIG_FILES) {
               const source = path.join(dir, file)
               log.debug(`loading config from ${source}`)
               // kilocode_change - untrusted config dirs confine {file:} reads to projectRoot
@@ -807,8 +808,8 @@ export const layer = Layer.effect(
 
         const managedDir = ConfigManaged.managedConfigDir()
         // kilocode_change start - include kilo.json/kilo.jsonc in managed dir loading
-        if (existsSync(managedDir)) {
-          for (const file of KilocodeConfig.ALL_CONFIG_FILES) {
+        if (!ProductProfile.chipmate && existsSync(managedDir)) {
+          for (const file of KilocodeConfig.ACTIVE_CONFIG_FILES) {
             const source = path.join(managedDir, file)
             // kilocode_change - MDM/enterprise-managed config is a trusted source
             yield* merge(source, yield* loadFile(source, undefined, true), "global")
@@ -818,7 +819,9 @@ export const layer = Layer.effect(
 
         // macOS managed preferences (.mobileconfig deployed via MDM) override everything
         // kilocode_change start
-        const managed = yield* Effect.promise(() => ConfigManaged.readManagedPreferences())
+        const managed = ProductProfile.chipmate
+          ? undefined
+          : yield* Effect.promise(() => ConfigManaged.readManagedPreferences())
         if (managed) {
           yield* merge(
             managed.source,

@@ -9,11 +9,13 @@ import { MemoryMarker } from "@/kilocode/memory/marker"
 import type { Provider } from "@/provider/provider"
 import type { InstanceContext } from "@/project/instance-context"
 import * as Log from "@opencode-ai/core/util/log"
+import { ProductProfile } from "@/kilocode/product-profile"
 
 const log = Log.create({ service: "kilocode.system-prompt" })
 
 export namespace KilocodeSystemPrompt {
   export function environment(input: { ctx: InstanceContext; model: Provider.Model; editor?: EditorContext }) {
+    const dir = ProductProfile.label()
     return [
       [
         `You are powered by the model named ${input.model.api.id}. The exact model ID is ${input.model.providerID}/${input.model.api.id}`,
@@ -22,7 +24,7 @@ export namespace KilocodeSystemPrompt {
         `  Is directory a git repo: ${input.ctx.project.vcs === "git" ? "yes" : "no"}`,
         `  Platform: ${process.platform}`,
         `  Today's date: ${new Date().toDateString()}`,
-        `  Project config: .kilo/command/*.md, .kilo/agent/*.md, kilo.json, AGENTS.md. Put new commands and agents in .kilo/. Do not use .kilocode/ or .opencode/.`,
+        `  Project config: ${dir}/command/*.md, ${dir}/agent/*.md, kilo.json, AGENTS.md. Put new commands and agents in ${dir}/.`,
         `  Global config: ${Global.Path.config}/ (same structure)`,
         ...staticEnvLines(input.editor),
         `</env>`,
@@ -74,9 +76,7 @@ export namespace KilocodeSystemPrompt {
         "Do not recall memory for current memory status, sidebar token accounting, or implementation debugging unless the user asks what prior memory says.",
       ].join("\n")
       return {
-        blocks: blocks.length
-          ? [guidance, ...blocks.map((block) => block.text.trim())]
-          : [],
+        blocks: blocks.length ? [guidance, ...blocks.map((block) => block.text.trim())] : [],
         marker: MemoryMarker.fromBlocks(blocks),
       }
     })

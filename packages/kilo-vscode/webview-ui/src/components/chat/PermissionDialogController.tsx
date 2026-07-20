@@ -42,6 +42,7 @@ export const PermissionDialogController: Component<Props> = (props) => {
         >
           <PermissionDock
             request={request}
+            severity="high"
             responding={props.responding(request.id)}
             presentation="dialog"
             onDecide={(response, approved, denied) => {

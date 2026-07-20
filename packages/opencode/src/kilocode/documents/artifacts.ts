@@ -1,8 +1,9 @@
 import fs from "fs/promises"
 import path from "path"
 import { Instance } from "@/kilocode/instance"
+import { ProductProfile } from "@/kilocode/product-profile"
 
-export const DEFAULT_ARTIFACT_ROOT = ".kilo/artifacts"
+export const DEFAULT_ARTIFACT_ROOT = `${ProductProfile.label()}/artifacts`
 
 export type ArtifactQualityStatus = "ok" | "warning" | "failed" | "unknown"
 

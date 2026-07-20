@@ -32,8 +32,8 @@ export interface SendMessageRequest {
   messageID?: string
   sessionID?: string
   draftID?: string
-  providerID?: string
-  modelID?: string
+  providerID: string
+  modelID: string
   agent?: string
   variant?: string
   files?: FileAttachment[]
@@ -115,8 +115,8 @@ export interface ImportAndSendMessage {
   cloudSessionId: string
   text: string
   messageID?: string
-  providerID?: string
-  modelID?: string
+  providerID: string
+  modelID: string
   agent?: string
   variant?: string
   files?: FileAttachment[]
@@ -275,8 +275,8 @@ export interface SendCommandRequest {
   messageID?: string
   sessionID?: string
   draftID?: string
-  providerID?: string
-  modelID?: string
+  providerID: string
+  modelID: string
   agent?: string
   variant?: string
   files?: FileAttachment[]
@@ -758,6 +758,41 @@ export interface AgentManagerTerminalResizeRequest {
   terminalId: string
   cols: number
   rows: number
+}
+
+export interface AgentConsoleTerminalCreateRequest {
+  type: "agentConsole.terminal.create"
+}
+
+export interface AgentConsoleTerminalCloseRequest {
+  type: "agentConsole.terminal.close"
+  terminalId: string
+}
+
+export interface AgentConsoleTerminalResizeRequest {
+  type: "agentConsole.terminal.resize"
+  terminalId: string
+  cols: number
+  rows: number
+}
+
+export interface AgentConsoleShellRestartRequest {
+  type: "agentConsole.shell.restart"
+}
+
+export interface AgentConsoleSessionNewRequest {
+  type: "agentConsole.session.new"
+}
+
+export interface AgentConsoleModeChangedRequest {
+  type: "agentConsole.mode.changed"
+  mode: "agent" | "shell"
+}
+
+export interface AgentConsoleInputRouteRequest {
+  type: "agentConsole.input.route"
+  requestId: string
+  input: string
 }
 
 // Open a file in the selected worktree for a specific session
@@ -1520,6 +1555,13 @@ export type WebviewMessage =
   | MoveSectionRequest
   | OpenContentRequest
   | AgentManagerTerminalCreateRequest
+  | AgentConsoleTerminalCreateRequest
+  | AgentConsoleTerminalCloseRequest
+  | AgentConsoleTerminalResizeRequest
+  | AgentConsoleShellRestartRequest
+  | AgentConsoleSessionNewRequest
+  | AgentConsoleModeChangedRequest
+  | AgentConsoleInputRouteRequest
   | AgentManagerTerminalCloseRequest
   | AgentManagerTerminalResizeRequest
   | RequestImageModelsMessage

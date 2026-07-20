@@ -349,13 +349,6 @@ export class ExtensionRepo {
     return rows.map(publication)
   }
 
-  uploadCount(ownerId: string, since: string): number {
-    const row = this.db
-      .prepare("SELECT COUNT(*) AS count FROM extension_publication_runs WHERE owner_id=? AND created_at>=?")
-      .get(ownerId, since) as unknown as { count: number }
-    return row.count
-  }
-
   favorite(input: ExtensionFavoriteInput): { extensionId: string; favorite: boolean; changedAt: string } {
     const now = new Date().toISOString()
     if (input.value) {

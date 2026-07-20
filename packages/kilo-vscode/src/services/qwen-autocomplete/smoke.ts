@@ -8,7 +8,7 @@ import { autocompleteResource } from "../autocomplete/workspace"
 const SMOKE_TEXT = "int main(void) {\n  \n}\n"
 
 export async function enableDiagnostics(): Promise<void> {
-  const qwenCfg = vscode.workspace.getConfiguration("kilo.autocomplete")
+  const qwenCfg = vscode.workspace.getConfiguration("chipmate.v2.autocomplete")
   const updates: Array<{ key: string; value: unknown }> = []
 
   if (qwenCfg.get("qwen.trace") !== true) {

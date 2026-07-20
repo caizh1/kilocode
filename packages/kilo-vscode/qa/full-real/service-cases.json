@@ -1,0 +1,1712 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-19T05:18:06.352Z",
+  "cases": [
+    {
+      "id": "SVC-HEALTH-01",
+      "suite": "health",
+      "title": "GET /health 返回 ChipMate 服务身份与 ok=true",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /health",
+      "expected": "GET /health 返回 ChipMate 服务身份与 ok=true",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/health",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-HEALTH-02",
+      "suite": "health",
+      "title": "health 报告 Chromium、Mermaid、LibreOffice 与 Poppler 工具",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /health",
+      "expected": "health 报告 Chromium、Mermaid、LibreOffice 与 Poppler 工具",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/health",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-HEALTH-03",
+      "suite": "health",
+      "title": "GET /api/v1/capabilities 返回 aligned-v1 能力",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/capabilities",
+      "expected": "GET /api/v1/capabilities 返回 aligned-v1 能力",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/capabilities",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-HEALTH-04",
+      "suite": "health",
+      "title": "GET /api/v1/status 返回可判定服务状态",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/status",
+      "expected": "GET /api/v1/status 返回可判定服务状态",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/status",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-HEALTH-05",
+      "suite": "health",
+      "title": "真实 Chrome 根页面完成加载且控制台无致命错误",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /",
+      "expected": "真实 Chrome 根页面完成加载且控制台无致命错误",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-HEALTH-06",
+      "suite": "health",
+      "title": "市场 SSE 首次连接返回状态事件",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/market/stream",
+      "expected": "市场 SSE 首次连接返回状态事件",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/market/stream",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-HEALTH-07",
+      "suite": "health",
+      "title": "SSE 使用 Last-Event-ID 重连后补偿目录版本",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/market/stream",
+      "expected": "SSE 使用 Last-Event-ID 重连后补偿目录版本",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/market/stream",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-HEALTH-08",
+      "suite": "health",
+      "title": "legacy 与 aligned 状态中的目录版本相容",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /marketplace/manifest.json",
+      "expected": "legacy 与 aligned 状态中的目录版本相容",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/marketplace/manifest.json",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-PACKAGE-01",
+      "suite": "packages",
+      "title": "更新 manifest 使用 schema v2",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /packages/manifest.json",
+      "expected": "更新 manifest 使用 schema v2",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/packages/manifest.json",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-PACKAGE-02",
+      "suite": "packages",
+      "title": "manifest 包含 darwin-arm64 与 win32-x64-baseline 目标",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /packages/manifest.json",
+      "expected": "manifest 包含 darwin-arm64 与 win32-x64-baseline 目标",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/packages/manifest.json",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-PACKAGE-03",
+      "suite": "packages",
+      "title": "0.0.88 条目的 SHA-256 与冻结 VSIX 一致",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /packages/manifest.json",
+      "expected": "0.0.88 条目的 SHA-256 与冻结 VSIX 一致",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/packages/manifest.json",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-PACKAGE-04",
+      "suite": "packages",
+      "title": "包下载 URL 与 ChipMate Server 同源",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /packages/manifest.json",
+      "expected": "包下载 URL 与 ChipMate Server 同源",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/packages/manifest.json",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-PACKAGE-05",
+      "suite": "packages",
+      "title": "完整下载响应大小和 SHA-256 与 manifest 一致",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /packages/<file>",
+      "expected": "完整下载响应大小和 SHA-256 与 manifest 一致",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/packages/<file>",
+      "sideEffect": "download",
+      "cleanup": [
+        "删除本地下载副本"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-PACKAGE-06",
+      "suite": "packages",
+      "title": "不兼容 target 不出现在当前平台更新候选中",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /packages/manifest.json",
+      "expected": "不兼容 target 不出现在当前平台更新候选中",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/packages/manifest.json",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-AUTH-01",
+      "suite": "auth",
+      "title": "匿名用户可以浏览公开市场",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/skills",
+      "expected": "匿名用户可以浏览公开市场",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/skills",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-AUTH-02",
+      "suite": "auth",
+      "title": "owner QA Key 创建 Web Session",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/auth/session",
+      "expected": "owner QA Key 创建 Web Session",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/auth/session",
+      "sideEffect": "session",
+      "cleanup": [
+        "退出 QA Web Session"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-AUTH-03",
+      "suite": "auth",
+      "title": "owner Session 的 /auth/me 返回 owner 身份",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "GET /api/v1/auth/me",
+      "expected": "owner Session 的 /auth/me 返回 owner 身份",
+      "auth": "owner",
+      "method": "GET",
+      "path": "/api/v1/auth/me",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-AUTH-04",
+      "suite": "auth",
+      "title": "non-owner QA Key 创建独立 Web Session",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "non-owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/auth/session",
+      "expected": "non-owner QA Key 创建独立 Web Session",
+      "auth": "non-owner",
+      "method": "POST",
+      "path": "/api/v1/auth/session",
+      "sideEffect": "session",
+      "cleanup": [
+        "退出 QA Web Session"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-AUTH-05",
+      "suite": "auth",
+      "title": "错误 QA Key 被拒绝且不创建 Session",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "invalid QA 身份可用"
+      ],
+      "action": "POST /api/v1/auth/session",
+      "expected": "错误 QA Key 被拒绝且不创建 Session",
+      "auth": "invalid",
+      "method": "POST",
+      "path": "/api/v1/auth/session",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-AUTH-06",
+      "suite": "auth",
+      "title": "缺失或错误 CSRF 的写请求被拒绝",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "PUT /api/v1/favorites/<id>",
+      "expected": "缺失或错误 CSRF 的写请求被拒绝",
+      "auth": "owner",
+      "method": "PUT",
+      "path": "/api/v1/favorites/<id>",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-AUTH-07",
+      "suite": "auth",
+      "title": "退出登录后旧 Session 不再可用",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "DELETE /api/v1/auth/session",
+      "expected": "退出登录后旧 Session 不再可用",
+      "auth": "owner",
+      "method": "DELETE",
+      "path": "/api/v1/auth/session",
+      "sideEffect": "session",
+      "cleanup": [
+        "退出 QA Web Session"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-AUTH-08",
+      "suite": "auth",
+      "title": "认证与服务日志不包含 QA Key",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "GET server-log",
+      "expected": "认证与服务日志不包含 QA Key",
+      "auth": "owner",
+      "method": "GET",
+      "path": "server-log",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-01",
+      "suite": "skills",
+      "title": "Skill 首页显示远端目录",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /skills",
+      "expected": "Skill 首页显示远端目录",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/skills",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-02",
+      "suite": "skills",
+      "title": "搜索只返回匹配 Skill",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/skills?q=<query>",
+      "expected": "搜索只返回匹配 Skill",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/skills?q=<query>",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-03",
+      "suite": "skills",
+      "title": "分类、排序和游标分页可组合使用",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/skills",
+      "expected": "分类、排序和游标分页可组合使用",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/skills",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-04",
+      "suite": "skills",
+      "title": "Skill 详情显示作者、版本和风险状态",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/skills/<id>",
+      "expected": "Skill 详情显示作者、版本和风险状态",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/skills/<id>",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-05",
+      "suite": "skills",
+      "title": "release 列表与不可变 revision 详情一致",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/skills/<id>/releases",
+      "expected": "release 列表与不可变 revision 详情一致",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/skills/<id>/releases",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-06",
+      "suite": "skills",
+      "title": "文件列表和单文件内容与发布快照一致",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/skills/<id>/files",
+      "expected": "文件列表和单文件内容与发布快照一致",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/skills/<id>/files",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-07",
+      "suite": "skills",
+      "title": "Skill 归档下载成功并记录下载",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /marketplace/skills/<id>.tar.gz",
+      "expected": "Skill 归档下载成功并记录下载",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/marketplace/skills/<id>.tar.gz",
+      "sideEffect": "download",
+      "cleanup": [
+        "删除本地下载副本"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-08",
+      "suite": "skills",
+      "title": "owner 收藏后个人收藏列表立即更新",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "PUT /api/v1/favorites/<id>",
+      "expected": "owner 收藏后个人收藏列表立即更新",
+      "auth": "owner",
+      "method": "PUT",
+      "path": "/api/v1/favorites/<id>",
+      "sideEffect": "favorite",
+      "cleanup": [
+        "恢复收藏前状态"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-09",
+      "suite": "skills",
+      "title": "取消收藏后个人收藏列表恢复",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "DELETE /api/v1/favorites/<id>",
+      "expected": "取消收藏后个人收藏列表恢复",
+      "auth": "owner",
+      "method": "DELETE",
+      "path": "/api/v1/favorites/<id>",
+      "sideEffect": "favorite",
+      "cleanup": [
+        "恢复收藏前状态"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-10",
+      "suite": "skills",
+      "title": "安装 intent 由 Web Session 创建",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/skills/<id>/install-intents",
+      "expected": "安装 intent 由 Web Session 创建",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/skills/<id>/install-intents",
+      "sideEffect": "intent",
+      "cleanup": [
+        "等待 intent 过期或消费"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-11",
+      "suite": "skills",
+      "title": "安装 intent 由同一 owner Bearer 身份消费",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/install-intents/<token>/consume",
+      "expected": "安装 intent 由同一 owner Bearer 身份消费",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/install-intents/<token>/consume",
+      "sideEffect": "installation",
+      "cleanup": [
+        "删除 qa-e2e 安装记录"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-12",
+      "suite": "skills",
+      "title": "相同 intent 重放被拒绝",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/install-intents/<token>/consume",
+      "expected": "相同 intent 重放被拒绝",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/install-intents/<token>/consume",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-13",
+      "suite": "skills",
+      "title": "发布安全 qa-e2e Skill 产生 validation run",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/publications",
+      "expected": "发布安全 qa-e2e Skill 产生 validation run",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/publications",
+      "sideEffect": "publication",
+      "cleanup": [
+        "撤销或下架 qa-e2e 发布"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-14",
+      "suite": "skills",
+      "title": "确定性修复以 patch 形式显示且原始夹具不被改写",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/publications/<runId>/patches",
+      "expected": "确定性修复以 patch 形式显示且原始夹具不被改写",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/publications/<runId>/patches",
+      "sideEffect": "publication",
+      "cleanup": [
+        "撤销或下架 qa-e2e 发布"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-15",
+      "suite": "skills",
+      "title": "应用确认后生成不可变 revision",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/publications/<runId>/apply",
+      "expected": "应用确认后生成不可变 revision",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/publications/<runId>/apply",
+      "sideEffect": "publication",
+      "cleanup": [
+        "撤销或下架 qa-e2e 发布"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-16",
+      "suite": "skills",
+      "title": "相同幂等输入不会生成重复 revision",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/publications",
+      "expected": "相同幂等输入不会生成重复 revision",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/publications",
+      "sideEffect": "publication",
+      "cleanup": [
+        "撤销或下架 qa-e2e 发布"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-17",
+      "suite": "skills",
+      "title": "non-owner 不能下架 owner Skill",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "non-owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/skills/<id>/unpublish",
+      "expected": "non-owner 不能下架 owner Skill",
+      "auth": "non-owner",
+      "method": "POST",
+      "path": "/api/v1/skills/<id>/unpublish",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-18",
+      "suite": "skills",
+      "title": "owner 可以下架测试 Skill 且历史 revision 保留",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/skills/<id>/unpublish",
+      "expected": "owner 可以下架测试 Skill 且历史 revision 保留",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/skills/<id>/unpublish",
+      "sideEffect": "publication",
+      "cleanup": [
+        "撤销或下架 qa-e2e 发布"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-19",
+      "suite": "skills",
+      "title": "撤销发布恢复发布前状态",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/publications/<runId>/undo",
+      "expected": "撤销发布恢复发布前状态",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/publications/<runId>/undo",
+      "sideEffect": "publication",
+      "cleanup": [
+        "撤销或下架 qa-e2e 发布"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-SKILL-20",
+      "suite": "skills",
+      "title": "个人发布页只显示当前 owner 的记录",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "GET /api/v1/me/publications",
+      "expected": "个人发布页只显示当前 owner 的记录",
+      "auth": "owner",
+      "method": "GET",
+      "path": "/api/v1/me/publications",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-01",
+      "suite": "extensions",
+      "title": "Extension Market 首页显示远端目录",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /extensions",
+      "expected": "Extension Market 首页显示远端目录",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/extensions",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-02",
+      "suite": "extensions",
+      "title": "扩展搜索、平台与排序筛选可组合使用",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/extensions",
+      "expected": "扩展搜索、平台与排序筛选可组合使用",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/extensions",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-03",
+      "suite": "extensions",
+      "title": "扩展详情显示版本、target、SHA 和大小",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/extensions/<id>",
+      "expected": "扩展详情显示版本、target、SHA 和大小",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/extensions/<id>",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-04",
+      "suite": "extensions",
+      "title": "扩展完整下载成功且拒绝 Range",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/extensions/<id>/artifacts/<artifactId>/download",
+      "expected": "扩展完整下载成功且拒绝 Range",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/extensions/<id>/artifacts/<artifactId>/download",
+      "sideEffect": "download",
+      "cleanup": [
+        "删除本地下载副本"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-05",
+      "suite": "extensions",
+      "title": "owner 收藏扩展后个人列表更新",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "PUT /api/v1/extension-favorites/<id>",
+      "expected": "owner 收藏扩展后个人列表更新",
+      "auth": "owner",
+      "method": "PUT",
+      "path": "/api/v1/extension-favorites/<id>",
+      "sideEffect": "favorite",
+      "cleanup": [
+        "恢复收藏前状态"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-06",
+      "suite": "extensions",
+      "title": "取消扩展收藏后个人列表恢复",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "DELETE /api/v1/extension-favorites/<id>",
+      "expected": "取消扩展收藏后个人列表恢复",
+      "auth": "owner",
+      "method": "DELETE",
+      "path": "/api/v1/extension-favorites/<id>",
+      "sideEffect": "favorite",
+      "cleanup": [
+        "恢复收藏前状态"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-07",
+      "suite": "extensions",
+      "title": "owner 创建扩展评价",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "PUT /api/v1/extensions/<id>/review",
+      "expected": "owner 创建扩展评价",
+      "auth": "owner",
+      "method": "PUT",
+      "path": "/api/v1/extensions/<id>/review",
+      "sideEffect": "review",
+      "cleanup": [
+        "删除 qa-e2e 评价"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-08",
+      "suite": "extensions",
+      "title": "owner 修改同一扩展评价",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "PUT /api/v1/extensions/<id>/review",
+      "expected": "owner 修改同一扩展评价",
+      "auth": "owner",
+      "method": "PUT",
+      "path": "/api/v1/extensions/<id>/review",
+      "sideEffect": "review",
+      "cleanup": [
+        "删除 qa-e2e 评价"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-09",
+      "suite": "extensions",
+      "title": "owner 删除自己的扩展评价",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "DELETE /api/v1/extensions/<id>/review",
+      "expected": "owner 删除自己的扩展评价",
+      "auth": "owner",
+      "method": "DELETE",
+      "path": "/api/v1/extensions/<id>/review",
+      "sideEffect": "review",
+      "cleanup": [
+        "删除 qa-e2e 评价"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-10",
+      "suite": "extensions",
+      "title": "单个安全测试 VSIX 流式上传并发布",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/extension-publications",
+      "expected": "单个安全测试 VSIX 流式上传并发布",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/extension-publications",
+      "sideEffect": "artifact",
+      "cleanup": [
+        "经动作时确认后删除自有 qa-e2e artifact"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-11",
+      "suite": "extensions",
+      "title": "多文件、文件夹、ZIP 与 TAR.GZ 只提取 VSIX",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/extension-publications",
+      "expected": "多文件、文件夹、ZIP 与 TAR.GZ 只提取 VSIX",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/extension-publications",
+      "sideEffect": "artifact",
+      "cleanup": [
+        "经动作时确认后删除自有 qa-e2e artifact"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-12",
+      "suite": "extensions",
+      "title": "批量上传按最多 20 个逻辑批次串行执行",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/extension-publications",
+      "expected": "批量上传按最多 20 个逻辑批次串行执行",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/extension-publications",
+      "sideEffect": "artifact",
+      "cleanup": [
+        "经动作时确认后删除自有 qa-e2e artifact"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-13",
+      "suite": "extensions",
+      "title": "取消上传后不再开始新 artifact",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/extension-publications",
+      "expected": "取消上传后不再开始新 artifact",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/extension-publications",
+      "sideEffect": "artifact",
+      "cleanup": [
+        "经动作时确认后删除自有 qa-e2e artifact"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-14",
+      "suite": "extensions",
+      "title": "认证恢复后只续传未完成 artifact",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/extension-publications",
+      "expected": "认证恢复后只续传未完成 artifact",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/extension-publications",
+      "sideEffect": "artifact",
+      "cleanup": [
+        "经动作时确认后删除自有 qa-e2e artifact"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-15",
+      "suite": "extensions",
+      "title": "个人上传、收藏、评价和发布列表相互一致",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "GET /api/v1/me/extensions/uploads",
+      "expected": "个人上传、收藏、评价和发布列表相互一致",
+      "auth": "owner",
+      "method": "GET",
+      "path": "/api/v1/me/extensions/uploads",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-16",
+      "suite": "extensions",
+      "title": "non-owner 不能删除 owner artifact",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "non-owner QA 身份可用"
+      ],
+      "action": "DELETE /api/v1/extension-artifacts/<artifactId>",
+      "expected": "non-owner 不能删除 owner artifact",
+      "auth": "non-owner",
+      "method": "DELETE",
+      "path": "/api/v1/extension-artifacts/<artifactId>",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-17",
+      "suite": "extensions",
+      "title": "owner 删除自有 qa-e2e artifact 后目录不再返回",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "DELETE /api/v1/extension-artifacts/<artifactId>",
+      "expected": "owner 删除自有 qa-e2e artifact 后目录不再返回",
+      "auth": "owner",
+      "method": "DELETE",
+      "path": "/api/v1/extension-artifacts/<artifactId>",
+      "sideEffect": "artifact",
+      "cleanup": [
+        "经动作时确认后删除自有 qa-e2e artifact"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-EXT-18",
+      "suite": "extensions",
+      "title": "扩展市场匿名聚合分析不泄露身份",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /api/v1/analytics/extensions/overview",
+      "expected": "扩展市场匿名聚合分析不泄露身份",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/api/v1/analytics/extensions/overview",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-RENDER-01",
+      "suite": "render",
+      "title": "合法 Mermaid 返回 PNG、width 与 height",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "POST /render/mermaid",
+      "expected": "合法 Mermaid 返回 PNG、width 与 height",
+      "auth": "anonymous",
+      "method": "POST",
+      "path": "/render/mermaid",
+      "sideEffect": "render",
+      "cleanup": [
+        "删除本地渲染输出"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-RENDER-02",
+      "suite": "render",
+      "title": "Mermaid PNG 裁剪边界不丢失节点",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "POST /render/mermaid",
+      "expected": "Mermaid PNG 裁剪边界不丢失节点",
+      "auth": "anonymous",
+      "method": "POST",
+      "path": "/render/mermaid",
+      "sideEffect": "render",
+      "cleanup": [
+        "删除本地渲染输出"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-RENDER-03",
+      "suite": "render",
+      "title": "非法 Mermaid 返回可判定错误且服务保持健康",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "POST /render/mermaid",
+      "expected": "非法 Mermaid 返回可判定错误且服务保持健康",
+      "auth": "anonymous",
+      "method": "POST",
+      "path": "/render/mermaid",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-RENDER-04",
+      "suite": "render",
+      "title": "超限 Mermaid 源码在渲染前被拒绝",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "POST /render/mermaid",
+      "expected": "超限 Mermaid 源码在渲染前被拒绝",
+      "auth": "anonymous",
+      "method": "POST",
+      "path": "/render/mermaid",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-RENDER-05",
+      "suite": "render",
+      "title": "真实 DOCX 返回 PDF 和逐页 PNG",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "POST /render/word",
+      "expected": "真实 DOCX 返回 PDF 和逐页 PNG",
+      "auth": "anonymous",
+      "method": "POST",
+      "path": "/render/word",
+      "sideEffect": "render",
+      "cleanup": [
+        "删除本地渲染输出"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-RENDER-06",
+      "suite": "render",
+      "title": "Word 响应报告字段刷新和目录计数",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "POST /render/word",
+      "expected": "Word 响应报告字段刷新和目录计数",
+      "auth": "anonymous",
+      "method": "POST",
+      "path": "/render/word",
+      "sideEffect": "render",
+      "cleanup": [
+        "删除本地渲染输出"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-RENDER-07",
+      "suite": "render",
+      "title": "刷新验证成功时返回 updatedDocxBase64",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "POST /render/word",
+      "expected": "刷新验证成功时返回 updatedDocxBase64",
+      "auth": "anonymous",
+      "method": "POST",
+      "path": "/render/word",
+      "sideEffect": "render",
+      "cleanup": [
+        "删除本地渲染输出"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-RENDER-08",
+      "suite": "render",
+      "title": "updated DOCX 可再次打开并保持中文内容",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "POST /render/word",
+      "expected": "updated DOCX 可再次打开并保持中文内容",
+      "auth": "anonymous",
+      "method": "POST",
+      "path": "/render/word",
+      "sideEffect": "render",
+      "cleanup": [
+        "删除本地渲染输出"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-RENDER-09",
+      "suite": "render",
+      "title": "无目录 DOCX 明确返回 not-required",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "POST /render/word",
+      "expected": "无目录 DOCX 明确返回 not-required",
+      "auth": "anonymous",
+      "method": "POST",
+      "path": "/render/word",
+      "sideEffect": "render",
+      "cleanup": [
+        "删除本地渲染输出"
+      ],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-RENDER-10",
+      "suite": "render",
+      "title": "DOCX、页数或响应超限在预算内失败",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "POST /render/word",
+      "expected": "DOCX、页数或响应超限在预算内失败",
+      "auth": "anonymous",
+      "method": "POST",
+      "path": "/render/word",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-FAIL-01",
+      "suite": "failures",
+      "title": "危险路径和符号链接归档在落盘前被拒绝",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/publications",
+      "expected": "危险路径和符号链接归档在落盘前被拒绝",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/publications",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-FAIL-02",
+      "suite": "failures",
+      "title": "包含疑似密钥的 Skill 进入安全拒绝状态",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/publications",
+      "expected": "包含疑似密钥的 Skill 进入安全拒绝状态",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/publications",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-FAIL-03",
+      "suite": "failures",
+      "title": "超限 Skill 和 VSIX 返回稳定错误码",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST upload limits",
+      "expected": "超限 Skill 和 VSIX 返回稳定错误码",
+      "auth": "owner",
+      "method": "POST",
+      "path": "upload limits",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-FAIL-04",
+      "suite": "failures",
+      "title": "重复幂等键和不同内容返回冲突",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST idempotency",
+      "expected": "重复幂等键和不同内容返回冲突",
+      "auth": "owner",
+      "method": "POST",
+      "path": "idempotency",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-FAIL-05",
+      "suite": "failures",
+      "title": "远端中断时客户端显示错误且恢复后可重试",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "不登录"
+      ],
+      "action": "GET /health",
+      "expected": "远端中断时客户端显示错误且恢复后可重试",
+      "auth": "anonymous",
+      "method": "GET",
+      "path": "/health",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-FAIL-06",
+      "suite": "failures",
+      "title": "429 遵循 Retry-After 且不产生点击风暴",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "POST /api/v1/auth/session",
+      "expected": "429 遵循 Retry-After 且不产生点击风暴",
+      "auth": "owner",
+      "method": "POST",
+      "path": "/api/v1/auth/session",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-FAIL-07",
+      "suite": "failures",
+      "title": "所有证据和服务日志均不包含 QA Key",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "GET evidence scan",
+      "expected": "所有证据和服务日志均不包含 QA Key",
+      "auth": "owner",
+      "method": "GET",
+      "path": "evidence scan",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    },
+    {
+      "id": "SVC-FAIL-08",
+      "suite": "failures",
+      "title": "清理后 qa-e2e 对象不再出现在任何个人或公开列表",
+      "preconditions": [
+        "远端 /health 可在 5 秒内响应",
+        "owner QA 身份可用"
+      ],
+      "action": "GET cleanup audit",
+      "expected": "清理后 qa-e2e 对象不再出现在任何个人或公开列表",
+      "auth": "owner",
+      "method": "GET",
+      "path": "cleanup audit",
+      "sideEffect": "none",
+      "cleanup": [],
+      "evidence": [
+        "screenshot",
+        "http-transcript",
+        "mutation-ledger"
+      ]
+    }
+  ]
+}

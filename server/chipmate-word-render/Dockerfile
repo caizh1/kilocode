@@ -26,8 +26,14 @@ RUN apt-get update \
     fonts-noto-cjk \
     chromium \
     libreoffice-writer \
+    python3 \
+    python3-uno \
     poppler-utils \
   && rm -rf /var/lib/apt/lists/*
+
+COPY fontconfig/99-chipmate-cjk.conf /etc/fonts/conf.d/99-chipmate-cjk.conf
+RUN fc-cache -f \
+  && test "$(fc-match --format '%{family[0]}' 'Microsoft YaHei')" = "Noto Sans CJK SC"
 
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json /app/
@@ -38,6 +44,8 @@ COPY packages/market-db/package.json /app/packages/market-db/package.json
 COPY packages/skill-spec/package.json /app/packages/skill-spec/package.json
 RUN npm ci --omit=dev
 COPY server.js /app/server.js
+COPY scripts/refresh-word-fields.py /app/scripts/refresh-word-fields.py
+COPY scripts/merge-managed-seeds.mjs /app/scripts/merge-managed-seeds.mjs
 COPY apps/api/src /app/apps/api/src
 COPY packages/contracts/src /app/packages/contracts/src
 COPY packages/market-db/src /app/packages/market-db/src
@@ -56,7 +64,12 @@ ENV PORT=6001 \
     MARKET_WEB_ROOT=/app/apps/web/dist \
     MAX_DOCX_BYTES=52428800 \
     MAX_MERMAID_SOURCE_BYTES=524288 \
-    RENDER_TIMEOUT_MS=120000
+    PYTHON_UNO_BIN=/usr/bin/python3 \
+    RENDER_TIMEOUT_MS=120000 \
+    MAX_WORD_RENDER_PAGES=500 \
+    MAX_RENDER_PDF_BYTES=134217728 \
+    MAX_RENDER_PAGE_TOTAL_BYTES=268435456 \
+    MAX_RENDER_RESPONSE_BYTES=402653184
 
 RUN mkdir -p /packages /data/skill-market/extensions/drop /data/skill-market/extensions/artifacts /data/skill-market/extensions/.tmp
 

@@ -6,7 +6,7 @@ import { QWEN_FIM_MODEL_ID } from "../../src/shared/qwen-autocomplete"
 
 describe("autocomplete model enum ↔ AUTOCOMPLETE_MODELS sync", () => {
   const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf8"))
-  const prop = pkg.contributes.configuration.properties["kilo-code.new.autocomplete.model"]
+  const prop = pkg.contributes.configuration.properties["chipmate.v2.autocomplete.model"]
 
   it("package.json enum matches AUTOCOMPLETE_MODELS model IDs", () => {
     const ids = [QWEN_FIM_MODEL_ID, ...AUTOCOMPLETE_MODELS.map((m) => m.modelID)]

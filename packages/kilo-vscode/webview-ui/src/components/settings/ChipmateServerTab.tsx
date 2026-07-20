@@ -9,7 +9,6 @@ import type { LanguageContextValue } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
 import SettingsRow from "./SettingsRow"
 import {
-  CHIPMATE_SERVER_DEFAULT,
   CHIPMATE_SERVER_KEY,
   isCurrentChipmateServerTest,
   normalizeChipmateServerBaseUrl,
@@ -42,9 +41,11 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
   )
   const [result, setResult] = createSignal<ChipmateServerTestResult | undefined>(props.preview?.result)
 
-  const value = () => String(props.preview?.value ?? settings()[CHIPMATE_SERVER_KEY] ?? CHIPMATE_SERVER_DEFAULT)
+  const value = () => String(props.preview?.value ?? settings()[CHIPMATE_SERVER_KEY] ?? state()?.baseUrl ?? "")
+  const ready = () => props.preview?.value !== undefined || settings()[CHIPMATE_SERVER_KEY] !== undefined || Boolean(state())
   const autoInstall = () => settings()[UPDATE_AUTO_INSTALL_KEY] !== false
   const error = createMemo(() => {
+    if (!ready()) return undefined
     try {
       normalizeChipmateServerBaseUrl(value())
       return undefined
@@ -73,7 +74,7 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
   }
 
   const test = () => {
-    if (error() || request()) return
+    if (!ready() || error() || request()) return
     const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
     setRequest(id)
     setResult(undefined)
@@ -131,7 +132,7 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
             class="chipmate-server-test"
             variant="secondary"
             onClick={test}
-            disabled={Boolean(error()) || Boolean(request())}
+            disabled={!ready() || Boolean(error()) || Boolean(request())}
             data-ui="chipmate-server-test"
           >
             {request()

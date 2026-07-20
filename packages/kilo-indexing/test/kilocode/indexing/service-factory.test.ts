@@ -75,6 +75,27 @@ describe("CodeIndexServiceFactory", () => {
     expect(store.dbPath).toContain(path.join(dir, "documents"))
   })
 
+  test("suffixes custom LanceDB and Qdrant storage for ChipMate v2", () => {
+    const previous = process.env.KILO_PRODUCT_PROFILE
+    process.env.KILO_PRODUCT_PROFILE = "chipmate-v2"
+    try {
+      const lance = createFactory({
+        vectorStoreProvider: "lancedb",
+        lancedbVectorStoreDirectory: "/tmp/shared-lancedb",
+      }).createVectorStore() as unknown as { dbPath: string }
+      const qdrant = createFactory({
+        vectorStoreProvider: "qdrant",
+        qdrantUrl: "http://localhost:6333",
+      }).createVectorStore()
+
+      expect(lance.dbPath).toContain(path.join("/tmp/shared-lancedb", "chipmate-v2"))
+      expect(qdrant.getCollectionName?.()).toEndWith("-chipmate-v2")
+    } finally {
+      if (previous === undefined) delete process.env.KILO_PRODUCT_PROFILE
+      else process.env.KILO_PRODUCT_PROFILE = previous
+    }
+  })
+
   test("passes configured dimension to Ollama embed requests", async () => {
     const fn = mock(() =>
       Promise.resolve({

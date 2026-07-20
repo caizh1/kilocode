@@ -90,7 +90,7 @@ test("returns a stable rate-limit code without falling back to admin requests", 
       }),
     )
     const result = recorded.result
-    assert.deepEqual(result, { ok: false, code: "new-api-rate-limited", status: 429 })
+    assert.deepEqual(result, { ok: false, code: "new-api-rate-limited", status: 429, retryAfter: "3" })
     assert.deepEqual(seen, ["GET /api/usage/token/"])
     const logs = recorded.lines.join("\n")
     for (const event of [
@@ -106,6 +106,21 @@ test("returns a stable rate-limit code without falling back to admin requests", 
     assert.match(logs, /"status":429/)
     assert.match(logs, /"retryAfter":"3"/)
     assert.doesNotMatch(logs, /sk-limited|admin-secret|authorization/i)
+  } finally {
+    await api.close()
+  }
+})
+
+test("drops an invalid upstream Retry-After value", async () => {
+  const api = await upstream((_req, res) => {
+    json(res, 429, { message: "too many requests" }, { "retry-after": "not-a-delay" })
+  })
+  try {
+    const result = await resolver.resolveNewApiUser("sk-limited", {
+      env: { NEW_API_BASE_URL: api.origin },
+      state: resolver.createTokenResolverState(),
+    })
+    assert.deepEqual(result, { ok: false, code: "new-api-rate-limited", status: 429 })
   } finally {
     await api.close()
   }

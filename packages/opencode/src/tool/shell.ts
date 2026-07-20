@@ -19,6 +19,7 @@ import { ShellID } from "./shell/id"
 import * as Truncate from "./truncate"
 import { Plugin } from "@/plugin"
 import { normalizeUrls } from "@/kilocode/util/url" // kilocode_change
+import { userEnv } from "@/kilocode/product-env" // kilocode_change
 import { CommandTimeout } from "@/kilocode/command-timeout" // kilocode_change
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -333,7 +334,12 @@ export const ShellPermission = Effect.gen(function* () {
 
   const cygpath = Effect.fn("ShellTool.cygpath")(function* (shell: string, text: string) {
     const lines = yield* spawner
-      .lines(ChildProcess.make(shell, ["-lc", 'cygpath -w -- "$1"', "_", text]))
+      .lines(
+        ChildProcess.make(shell, ["-lc", 'cygpath -w -- "$1"', "_", text], {
+          env: userEnv(process.env),
+          extendEnv: false,
+        }),
+      ) // kilocode_change - helper commands must not inherit backend routing or credentials
       .pipe(Effect.catch(() => Effect.succeed([] as string[])))
     const file = lines[0]?.trim()
     if (!file) return
@@ -434,6 +440,7 @@ function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv
       // kilocode_change end
       cwd,
       env,
+      extendEnv: false, // kilocode_change - env is already sanitized by shellEnv
       stdin: "ignore",
       detached: false,
     })
@@ -443,6 +450,7 @@ function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv
     shell,
     cwd,
     env,
+    extendEnv: false, // kilocode_change - env is already sanitized by shellEnv
     stdin: "ignore",
     detached: process.platform !== "win32",
   })
@@ -491,10 +499,11 @@ export const ShellTool = Tool.define(
         { cwd, sessionID: ctx.sessionID, callID: ctx.callID },
         { env: {} },
       )
-      return {
+      return userEnv({
+        // kilocode_change
         ...process.env,
         ...extra.env,
-      }
+      })
     })
 
     const run = Effect.fn("ShellTool.run")(function* (
@@ -557,7 +566,8 @@ export const ShellTool = Tool.define(
           yield* Effect.addFinalizer(closeSink)
           const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
 
-          const reader = yield* Effect.forkScoped( // kilocode_change - keep the fiber so trailing output can be drained
+          const reader = yield* Effect.forkScoped(
+            // kilocode_change - keep the fiber so trailing output can be drained
             Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
               const size = Buffer.byteLength(chunk, "utf-8")
               list.push({ text: chunk, size })

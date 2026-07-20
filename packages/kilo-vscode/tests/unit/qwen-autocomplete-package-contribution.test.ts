@@ -15,9 +15,9 @@ describe("qwen-direct autocomplete smoke boundary", () => {
     )
     const properties = pkg.contributes?.configuration?.properties ?? {}
 
-    expect(properties["kilo.autocomplete.provider"]?.enum).toContain("qwen-direct")
-    expect(properties["kilo.autocomplete.qwen.model"]?.description).toContain("Qwen Coder")
-    expect(extension).toContain("registerAutocompleteProvider(context, connectionService)")
-    expect(coordinator).toContain("registerQwenAutocompleteProvider(context, connection)")
+    expect(properties["chipmate.v2.autocomplete.provider"]?.examples).toContain("your-connected-provider-id")
+    expect(properties["chipmate.v2.autocomplete.qwen.model"]?.description).toContain("Qwen Coder")
+    expect(extension).toContain("registerAutocompleteProvider(context, connectionService, coexistence)")
+    expect(coordinator).toContain("registerQwenAutocompleteProvider(context, connection, gate)")
   })
 })

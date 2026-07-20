@@ -53,10 +53,10 @@ describe("ChipMate Server package defaults", () => {
 
   it("injects the unified and compatibility defaults together", () => {
     const keys = [
-      "kilo-code.new.chipmateServer.baseUrl",
-      "kilo.marketplace.baseUrl",
-      "kilo.documents.wordRender.remoteEndpoint",
-      "kilo.documents.mermaidRender.remoteEndpoint",
+      "chipmate.v2.chipmateServer.baseUrl",
+      "chipmate.v2.marketplace.baseUrl",
+      "chipmate.v2.documents.wordRender.remoteEndpoint",
+      "chipmate.v2.documents.mermaidRender.remoteEndpoint",
     ]
     const manifest = {
       contributes: {
@@ -67,10 +67,10 @@ describe("ChipMate Server package defaults", () => {
     }
     applyPackagedChipmateServer(manifest, resolvePackagedChipmateServer({ baseUrl: "package.test:6001" }))
     expect(manifest.contributes.configuration.properties).toEqual({
-      "kilo-code.new.chipmateServer.baseUrl": { default: "http://package.test:6001" },
-      "kilo.marketplace.baseUrl": { default: "http://package.test:6001/marketplace" },
-      "kilo.documents.wordRender.remoteEndpoint": { default: "http://package.test:6001/render/word" },
-      "kilo.documents.mermaidRender.remoteEndpoint": { default: "http://package.test:6001/render/mermaid" },
+      "chipmate.v2.chipmateServer.baseUrl": { default: "http://package.test:6001" },
+      "chipmate.v2.marketplace.baseUrl": { default: "http://package.test:6001/marketplace" },
+      "chipmate.v2.documents.wordRender.remoteEndpoint": { default: "http://package.test:6001/render/word" },
+      "chipmate.v2.documents.mermaidRender.remoteEndpoint": { default: "http://package.test:6001/render/mermaid" },
     })
   })
 

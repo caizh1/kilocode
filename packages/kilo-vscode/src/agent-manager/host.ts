@@ -33,7 +33,8 @@ export interface OutputHandle {
 
 export interface SessionProvider {
   setSessionDirectory(id: string, directory: string): void
-  clearSessionDirectory(id: string): void
+  markSessionLocal(id: string): void
+  forgetSessionDirectory(id: string): void
   getSessionDirectories(): ReadonlyMap<string, string>
   getSessionInfo?(id: string): Promise<Session | undefined>
   trackSession(id: string): void

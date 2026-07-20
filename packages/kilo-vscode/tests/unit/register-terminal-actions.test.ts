@@ -65,10 +65,10 @@ describe("registerTerminalActions", () => {
   it("reveals the sidebar before adding terminal output to context", async () => {
     const state = setup()
 
-    await state.commands.get("kilo-code.new.terminalAddToContext")?.({ selection: "bun test" })
+    await state.commands.get("chipmate.v2.terminalAddToContext")?.({ selection: "bun test" })
 
     expect(state.events).toEqual(["focus", "wait", "post", "post"])
-    expect(state.executed).toEqual([["kilo-code.SidebarProvider.focus"]])
+    expect(state.executed).toEqual([["chipmate.v2.SidebarProvider.focus"]])
     expect(state.waits).toEqual(["provider"])
     expect(state.posts).toEqual([
       {
@@ -82,7 +82,7 @@ describe("registerTerminalActions", () => {
   it("adds terminal output to the active Agent Manager without revealing the sidebar", async () => {
     const state = setup(true)
 
-    await state.commands.get("kilo-code.new.terminalAddToContext")?.({ selection: "bun test" })
+    await state.commands.get("chipmate.v2.terminalAddToContext")?.({ selection: "bun test" })
 
     expect(state.events).toEqual(["post", "post"])
     expect(state.executed).toEqual([])

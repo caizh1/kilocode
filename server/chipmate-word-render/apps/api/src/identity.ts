@@ -9,7 +9,7 @@ const legacy = require("../../../server.js") as {
     key: string,
   ): Promise<
     | { ok: true; user: { name: string; tokenName?: string }; status: number }
-    | { ok: false; code: string; status: number }
+    | { ok: false; code: string; status: number; retryAfter?: string }
   >
 }
 
@@ -31,6 +31,7 @@ export class IdentityError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly retryAfter?: string,
   ) {
     super(message)
   }
@@ -45,7 +46,7 @@ export class Identity {
 
   async login(key: string) {
     const result = await this.resolve(key)
-    if (!result.ok) throw new IdentityError(result.status, "AUTH_INVALID", result.code)
+    if (!result.ok) throw failure(result)
     const user = await this.db.identity(identity(result.user.name))
     const token = randomBytes(32).toString("base64url")
     const csrf = randomBytes(32).toString("base64url")
@@ -77,7 +78,7 @@ export class Identity {
     const bearer = authorization(req.headers.authorization)
     if (bearer) {
       const result = await this.resolve(bearer)
-      if (!result.ok) throw new IdentityError(result.status, "AUTH_INVALID", result.code)
+      if (!result.ok) throw failure(result)
       return { user: await this.db.identity(identity(result.user.name)), mode: "bearer" }
     }
     const token = cookies(req.headers.cookie)[COOKIE]
@@ -113,6 +114,7 @@ export class Identity {
 
 export function sendIdentityError(reply: FastifyReply, err: unknown) {
   if (err instanceof IdentityError) {
+    if (err.retryAfter) reply.header("retry-after", err.retryAfter)
     return reply.code(err.status).send({ ok: false, code: err.code, message: err.message })
   }
   throw err
@@ -125,6 +127,20 @@ export function isSecure(req: FastifyRequest) {
 function identity(name: string) {
   const displayName = name.trim()
   return { id: `market-${hash(displayName.toLocaleLowerCase()).slice(0, 40)}`, displayName }
+}
+
+function failure(result: { code: string; status: number; retryAfter?: string }): IdentityError {
+  const limited = result.status === 429 || result.code === "new-api-rate-limited"
+  const retryAfter = limited ? retry(result.retryAfter) : undefined
+  return new IdentityError(result.status, limited ? "RATE_LIMITED" : "AUTH_INVALID", result.code, retryAfter)
+}
+
+function retry(value: string | undefined): string | undefined {
+  const text = value?.trim()
+  if (!text) return undefined
+  if (/^\d{1,10}$/.test(text)) return text
+  const time = Date.parse(text)
+  return Number.isFinite(time) ? new Date(time).toUTCString() : undefined
 }
 
 function authorization(value: string | undefined) {

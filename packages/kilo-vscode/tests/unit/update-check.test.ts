@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import { createHash } from "node:crypto"
+import * as yazl from "yazl"
 import { LAST_AUTO_KEY, UpdateCheckService, compareVersions, resolvePackageUrl } from "../../src/services/update-check"
 
 const INSTALL = "Install Update"
@@ -51,11 +52,11 @@ describe("UpdateCheckService", () => {
     })
 
     await expect(env.service.checkOnStartup()).resolves.toBeUndefined()
-    expect(env.warnings).toEqual(["Failed to read update manifest: network down"])
-    expect(env.logs.warn[0]).toContain("[Kilo New] Update check failed (manifest):")
+    expect(env.warnings).toEqual([])
+    expect(env.logs.warn[0]).toContain("[Kilo New] Update check failed (availability):")
   })
 
-  it("throttles repeated automatic failure warnings inside intervalHours", async () => {
+  it("keeps repeated automatic availability failures silent", async () => {
     const env = await setup()
     env.fetch.mockImplementation(async () => {
       throw new Error("network down")
@@ -66,11 +67,55 @@ describe("UpdateCheckService", () => {
     await env.service.checkAuto()
 
     expect(env.fetch).toHaveBeenCalledTimes(2)
-    expect(env.warnings).toEqual(["Failed to read update manifest: network down"])
+    expect(env.warnings).toEqual([])
+    expect(env.logs.warn).toHaveLength(2)
+  })
+
+  it("keeps transient HTTP failures silent during automatic checks", async () => {
+    const env = await setup()
+    env.fetch.mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+
+    await env.service.checkAuto()
+
+    expect(env.warnings).toEqual([])
+    expect(env.logs.warn[0]).toContain("(availability):")
+  })
+
+  it("warns during automatic checks when the manifest is malformed", async () => {
+    const env = await setup()
+    env.fetch.mockResolvedValueOnce(new Response("not-json", { status: 200 }))
+
+    await env.service.checkAuto()
+
+    expect(env.warnings).toHaveLength(1)
+    expect(env.warnings[0]).toContain("Failed to parse update manifest:")
+  })
+
+  it("aborts a manifest request that does not return headers in time", async () => {
+    const env = await setup({ config: { timeoutMs: 5 } })
+    env.fetch.mockImplementation(async (_input, init) => {
+      await aborted(init?.signal)
+      throw new Error("unreachable")
+    })
+
+    await env.service.checkManual()
+
+    expect(env.warnings).toEqual(["Failed to read update manifest: aborted"])
+  })
+
+  it("aborts and removes a stalled VSIX after the total download deadline", async () => {
+    const env = await setup({ config: { timeoutMs: 1000, downloadTimeoutMs: 5 } })
+    env.fetch.mockResolvedValueOnce(json(manifest({ sizeBytes: 1, sha256: "0".repeat(64) })))
+    env.fetch.mockResolvedValueOnce(new Response(new ReadableStream({ start() {} }), { status: 200 }))
+
+    await env.service.checkManual()
+
+    expect(env.warnings).toEqual(["Failed to download VSIX: VSIX download was aborted."])
+    expect(await exists(env.final("0.0.17"))).toBe(false)
   })
 
   it("automatically downloads, verifies, installs, and only asks the user to reload", async () => {
-    const body = Buffer.from("vsix package")
+    const body = await vsix()
     const env = await setup({ info: [RELOAD] })
     env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length })))
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
@@ -85,14 +130,14 @@ describe("UpdateCheckService", () => {
     expect(env.exec.mock.calls[0]).toEqual([
       "code",
       ["--install-extension", env.final("0.0.17"), "--force"],
-      { timeout: 120000 },
+      { timeout: 300000 },
     ])
     expect(env.info).toEqual([{ message: "ChipMate update installed. Reload Window to finish.", items: [RELOAD] }])
     expect(env.commands).toEqual(["workbench.action.reloadWindow"])
   })
 
   it("offers manual installation when automatic installation is disabled", async () => {
-    const body = Buffer.from("vsix package")
+    const body = await vsix()
     const env = await setup({ config: { autoInstall: false }, info: [INSTALL] })
     env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length })))
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
@@ -140,8 +185,11 @@ describe("UpdateCheckService", () => {
 
   it("deletes temporary files and skips install when sha256 does not match", async () => {
     const env = await setup()
-    env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.18", sha256: "0".repeat(64) })))
-    env.fetch.mockResolvedValueOnce(new Response("not the expected package", { status: 200 }))
+    const body = Buffer.from("not the expected package")
+    env.fetch.mockResolvedValueOnce(
+      json(manifest({ version: "0.0.18", sha256: "0".repeat(64), sizeBytes: body.length })),
+    )
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
 
     await env.service.checkManual()
 
@@ -161,6 +209,25 @@ describe("UpdateCheckService", () => {
     expect(env.fetch).toHaveBeenCalledTimes(1)
   })
 
+  it("selects only the current macOS target when the manifest also contains a newer Windows package", async () => {
+    const target = "darwin-arm64"
+    const env = await setup({ target })
+    const item = manifest({ version: "0.0.99" }).latestByTarget[TARGET]
+    env.fetch.mockResolvedValueOnce(json({
+      schemaVersion: 2,
+      latestByTarget: {
+        [TARGET]: item,
+        [target]: { ...item, version: "0.0.16", target },
+      },
+    }))
+
+    await env.service.checkManual()
+
+    expect(env.info[0]?.message).toBe("ChipMate is already up to date.")
+    expect(env.fetch).toHaveBeenCalledTimes(1)
+    expect(env.exec).not.toHaveBeenCalled()
+  })
+
   it("accepts only same-origin paths below /packages/", () => {
     const base = new URL("http://server.test:6001/packages/manifest.json")
 
@@ -172,6 +239,8 @@ describe("UpdateCheckService", () => {
     )
     expect(() => resolvePackageUrl(base, "https://example.com/chipmate.vsix")).toThrow("same-origin")
     expect(() => resolvePackageUrl(base, "/packages/../chipmate.vsix")).toThrow("stay under")
+    expect(() => resolvePackageUrl(base, "/packages/%2e%2e/chipmate.vsix")).toThrow("stay under")
+    expect(() => resolvePackageUrl(base, "/packages/releases%2fchipmate.vsix")).toThrow("stay under")
   })
 
   it("stops oversized downloads before writing a VSIX", async () => {
@@ -187,8 +256,8 @@ describe("UpdateCheckService", () => {
     expect(env.exec).not.toHaveBeenCalled()
   })
 
-  it("removes the downloaded VSIX and provides a command when installation fails", async () => {
-    const body = Buffer.from("vsix package")
+  it("retains a verified VSIX and provides a command when installation fails", async () => {
+    const body = await vsix({ version: "0.0.20" })
     const cli = "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
     const env = await setup({ config: { codeCliPath: cli } })
     env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.20", sha256: sha(body), sizeBytes: body.length })))
@@ -201,7 +270,92 @@ describe("UpdateCheckService", () => {
     expect(env.warnings[0]).toContain("--install-extension")
     expect(env.warnings[0]).toContain(env.final("0.0.20"))
     expect(env.warnings[0]).toContain("code not found")
-    expect(await exists(env.final("0.0.20"))).toBe(false)
+    expect(await exists(env.final("0.0.20"))).toBe(true)
+  })
+
+  it("rejects an internal VSIX identity mismatch before installation", async () => {
+    const body = await vsix({ name: "other" })
+    const env = await setup()
+    env.fetch.mockResolvedValueOnce(json(manifest({ sha256: sha(body), sizeBytes: body.length })))
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+    await env.service.checkManual()
+
+    expect(env.warnings).toEqual(["VSIX package identity does not match the update manifest."])
+    expect(env.exec).not.toHaveBeenCalled()
+    expect(await exists(env.final("0.0.17"))).toBe(false)
+  })
+
+  it("rejects a body whose exact size differs from the manifest", async () => {
+    const body = await vsix()
+    const env = await setup()
+    env.fetch.mockResolvedValueOnce(json(manifest({ sha256: sha(body), sizeBytes: body.length + 1 })))
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+    await env.service.checkManual()
+
+    expect(env.warnings).toEqual(["VSIX size does not match the manifest."])
+    expect(env.exec).not.toHaveBeenCalled()
+  })
+
+  it("coalesces concurrent checks into one prompt, download, and install", async () => {
+    const body = await vsix()
+    const env = await setup({ config: { autoInstall: false }, info: [INSTALL] })
+    env.fetch.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("manifest.json")) {
+        return json(manifest({ sha256: sha(body), sizeBytes: body.length }))
+      }
+      return new Response(body, { status: 200 })
+    })
+    env.exec.mockResolvedValue({ stdout: "", stderr: "" })
+
+    await Promise.all([env.service.checkManual(), env.service.checkManual()])
+
+    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
+    expect(env.info.filter((item) => item.items.includes(INSTALL))).toHaveLength(1)
+    expect(env.info.filter((item) => item.items.includes(RELOAD))).toHaveLength(1)
+  })
+
+  it("suppresses repeat install attempts while a successful update awaits reload", async () => {
+    const body = await vsix()
+    const env = await setup()
+    env.fetch.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("manifest.json")) {
+        return json(manifest({ sha256: sha(body), sizeBytes: body.length }))
+      }
+      return new Response(body, { status: 200 })
+    })
+
+    await env.service.checkManual()
+    await env.service.checkManual()
+
+    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
+    expect(env.info.at(-1)?.message).toBe("ChipMate update is installed and awaiting reload.")
+  })
+
+  it("retains manual-required state after install failure and never auto-retries it", async () => {
+    const body = await vsix({ version: "0.0.21" })
+    const env = await setup()
+    env.fetch.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("manifest.json")) {
+        return json(manifest({ version: "0.0.21", sha256: sha(body), sizeBytes: body.length }))
+      }
+      return new Response(body, { status: 200 })
+    })
+    env.exec.mockRejectedValue(new Error("code not found"))
+
+    await env.service.checkManual()
+    await env.service.checkManual()
+
+    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
+    expect(env.warnings).toHaveLength(2)
+    expect(await exists(env.final("0.0.21"))).toBe(true)
   })
 })
 
@@ -213,7 +367,7 @@ describe("update-check version comparison", () => {
   })
 })
 
-async function setup(opts: { config?: Config; info?: unknown[] } = {}) {
+async function setup(opts: { config?: Config; info?: unknown[]; target?: string } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-update-check-"))
   roots.push(root)
   const state = memento()
@@ -231,7 +385,7 @@ async function setup(opts: { config?: Config; info?: unknown[] } = {}) {
         publisher: "chipmate",
         name: "chipmate",
         version: "0.0.16",
-        chipmatePackageTarget: TARGET,
+        chipmatePackageTarget: opts.target ?? TARGET,
       },
     },
     subscriptions: [] as vscode.Disposable[],
@@ -304,6 +458,26 @@ function sha(value: Buffer): string {
   return createHash("sha256").update(value).digest("hex")
 }
 
+function vsix(patch: Record<string, unknown> = {}): Promise<Buffer> {
+  const zip = new yazl.ZipFile()
+  const chunks: Buffer[] = []
+  const manifest = {
+    publisher: "chipmate",
+    name: "chipmate",
+    version: "0.0.17",
+    chipmatePackageTarget: TARGET,
+    ...patch,
+  }
+  zip.addBuffer(Buffer.from(JSON.stringify(manifest)), "extension/package.json")
+  zip.addBuffer(Buffer.from("extension payload"), "extension/dist/extension.js")
+  return new Promise((resolve, reject) => {
+    zip.outputStream.on("data", (chunk: Buffer) => chunks.push(chunk))
+    zip.outputStream.on("error", reject)
+    zip.outputStream.on("end", () => resolve(Buffer.concat(chunks)))
+    zip.end()
+  })
+}
+
 function memento() {
   const values = new Map<string, unknown>()
   return {
@@ -319,4 +493,14 @@ async function exists(file: string) {
     () => true,
     () => false,
   )
+}
+
+function aborted(signal: AbortSignal | null | undefined): Promise<void> {
+  return new Promise((_, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("aborted"))
+      return
+    }
+    signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true })
+  })
 }

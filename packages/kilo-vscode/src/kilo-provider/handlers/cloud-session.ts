@@ -10,6 +10,7 @@ import type { CloudSessionData, EditorContext } from "../../services/cli-backend
 import { getErrorMessage, sessionToWebview, mapCloudSessionMessageToWebviewMessage } from "../../kilo-provider-utils"
 import type { MessageFile } from "../message-files"
 import { reviewMetadata, type ReviewMessageData } from "../../shared/review-comments"
+import { modelSelection } from "../../shared/provider-model"
 
 const TIMEOUT = 30_000
 
@@ -124,6 +125,15 @@ export async function handleImportAndSend(
   command?: string,
   commandArgs?: string,
 ): Promise<void> {
+  const model = modelSelection(providerID, modelID)
+  if (!model) {
+    ctx.postMessage({
+      type: "cloudSessionImportFailed",
+      cloudSessionId,
+      error: "Select a model before sending",
+    })
+    return
+  }
   if (!ctx.client) {
     ctx.postMessage({
       type: "cloudSessionImportFailed",
@@ -199,7 +209,7 @@ export async function handleImportAndSend(
             command,
             arguments: commandArgs ?? "",
             messageID,
-            model: providerID && modelID ? `${providerID}/${modelID}` : undefined,
+            model: `${model.providerID}/${model.modelID}`,
             agent,
             variant,
             parts,
@@ -224,7 +234,7 @@ export async function handleImportAndSend(
           directory: dir,
           messageID,
           parts,
-          model: providerID && modelID ? { providerID, modelID } : undefined,
+          model,
           agent,
           variant,
           editorContext,

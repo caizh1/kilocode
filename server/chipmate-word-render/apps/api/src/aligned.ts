@@ -6,6 +6,7 @@ import type {
   MarketCapabilities,
   SkillDetail,
   SkillRelease,
+  SkillRiskSummary,
   SkillSummary,
   ValidationReport,
 } from "@chipmate/market-contracts"
@@ -55,6 +56,12 @@ interface ExtensionStatus {
   artifacts: boolean
   temporary: boolean
   warnings: string[]
+  activeUploads?: number
+  maxActiveUploads?: number
+  reservedBytes?: number
+  freeBytes?: number
+  minimumFreeBytes?: number
+  storagePressure?: boolean
 }
 
 interface InstallationBody {
@@ -262,6 +269,31 @@ export function registerAligned(app: FastifyInstance, db: MarketDb, opts: Aligne
       const principal = await identity.principal(req)
       const run = await db.getPublication({ id: (req.params as { runId: string }).runId, ownerId: principal.user.id })
       if (!run) return missing(reply, "Publication run not found.")
+      return reply.send(publication(run))
+    } catch (err) {
+      return marketError(reply, err)
+    }
+  })
+
+  app.post("/api/v1/publications/:runId/undo", async (req, reply) => {
+    try {
+      const principal = await identity.write(req)
+      const idempotencyKey = header(req.headers["idempotency-key"])
+      if (idempotencyKey.length < 8 || idempotencyKey.length > 128) {
+        return problem(reply, 400, "VALIDATION_FAILED", "A valid Idempotency-Key is required.")
+      }
+      const run = await db.undoPublication({
+        id: `publication-undo-${randomUUID()}`,
+        ownerId: principal.user.id,
+        ownerName: principal.user.displayName,
+        runId: (req.params as { runId: string }).runId,
+        idempotencyKey,
+      })
+      publish("publication.changed", { runId: run.id, skillId: run.skillId, status: run.status })
+      const restored = run.skillId ? await db.get(run.skillId) : undefined
+      if (restored) publish("skill.published", { skillId: run.skillId, revision: restored.latestRevision })
+      else publish("skill.unpublished", { skillId: run.skillId })
+      publish("catalog.invalidated", { catalogVersion: await db.version() })
       return reply.send(publication(run))
     } catch (err) {
       return marketError(reply, err)
@@ -621,6 +653,7 @@ function summary(item: SearchItem): SkillSummary {
     updatedAt: item.updatedAt,
     downloads: item.downloads,
     favorites: item.favorites,
+    risk: risk(item.report),
     ...(item.artwork ? { artwork: item.artwork } : {}),
   }
 }
@@ -639,15 +672,75 @@ function release(item: ReleaseItem): SkillRelease {
 }
 
 function report(item: ReleaseItem): ValidationReport {
-  const valid = item.report.valid === true
+  return validation(item.report, item.sha256)
+}
+
+function validation(value: Record<string, unknown>, fallback: string): ValidationReport {
+  const policyVersion = typeof value.policyVersion === "string" ? value.policyVersion : undefined
+  const current = policyVersion === "skill-risk-v2"
+  const issues =
+    current && Array.isArray(value.issues)
+      ? value.issues.flatMap((entry) => {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) return []
+          const item = entry as Record<string, unknown>
+          if (typeof item.code !== "string" || typeof item.message !== "string") return []
+          const severity =
+            item.severity === "info" || item.severity === "warning" || item.severity === "error"
+              ? item.severity
+              : "warning"
+          const riskLevel = item.riskLevel === "medium" || item.riskLevel === "critical" ? item.riskLevel : "none"
+          return [
+            {
+              code: item.code,
+              severity,
+              ...(typeof item.file === "string" ? { file: item.file } : {}),
+              ...(typeof item.line === "number" ? { line: item.line } : {}),
+              ...(typeof item.field === "string" ? { field: item.field } : {}),
+              message: item.message,
+              ...(typeof item.expected === "string" ? { expected: item.expected } : {}),
+              ...(typeof item.actual === "string" ? { actual: item.actual } : {}),
+              fixable: item.fixable === true,
+              repairKind: item.repairKind === "deterministic" || item.repairKind === "ai" ? item.repairKind : "none",
+              riskLevel,
+            },
+          ]
+        })
+      : []
+  const sourceSha256 =
+    typeof value.sourceSha256 === "string" && /^[a-f0-9]{64}$/.test(value.sourceSha256) ? value.sourceSha256 : fallback
+  const snapshotSha256 =
+    typeof value.snapshotSha256 === "string" && /^[a-f0-9]{64}$/.test(value.snapshotSha256)
+      ? value.snapshotSha256
+      : fallback
   return {
-    valid,
-    stage: "complete",
-    issues: [],
-    sourceSha256: item.sha256,
-    snapshotSha256: item.sha256,
-    changed: false,
+    valid: value.valid === true,
+    stage:
+      value.stage === "format" ||
+      value.stage === "deterministic" ||
+      value.stage === "security" ||
+      value.stage === "semantic"
+        ? value.stage
+        : "complete",
+    issues,
+    sourceSha256,
+    snapshotSha256,
+    changed: value.changed === true,
+    ...(policyVersion ? { policyVersion } : {}),
+    risk: risk(value),
   }
+}
+
+function risk(value: Record<string, unknown>): SkillRiskSummary {
+  if (value.policyVersion !== "skill-risk-v2") return { level: "unknown", issueCount: 0 }
+  const source =
+    value.risk && typeof value.risk === "object" && !Array.isArray(value.risk)
+      ? (value.risk as Record<string, unknown>)
+      : {}
+  const level =
+    source.level === "medium" || source.level === "critical" || source.level === "none" ? source.level : "none"
+  const issueCount =
+    Number.isSafeInteger(source.issueCount) && Number(source.issueCount) >= 0 ? Number(source.issueCount) : 0
+  return { level, issueCount, policyVersion: "skill-risk-v2" }
 }
 
 function cached(reply: FastifyReply, match: string | undefined, payload: unknown, version?: string) {
@@ -673,6 +766,8 @@ function marketError(reply: FastifyReply, err: unknown) {
     return problem(reply, 403, "OWNERSHIP_REQUIRED", "The current user does not own this publication.")
   if (message.includes("IDEMPOTENCY_CONFLICT"))
     return problem(reply, 409, "IDEMPOTENCY_CONFLICT", "Idempotency key was already used for different content.")
+  if (message.includes("STALE_PUBLICATION"))
+    return problem(reply, 409, "STALE_PUBLICATION", "A newer publication already exists.")
   if (message.includes("CONFLICT")) return problem(reply, 409, "CONFLICT", message.replace(/^CONFLICT:\s*/, ""))
   if (message.includes("VALIDATION_FAILED"))
     return problem(reply, 400, "VALIDATION_FAILED", message.replace(/^VALIDATION_FAILED:\s*/, ""))
@@ -687,7 +782,9 @@ function publication(item: PublicationItem) {
     ownerId: item.ownerId,
     status: item.status,
     stage: item.stage,
-    ...(item.report ? { report: item.report } : {}),
+    ...(item.report
+      ? { report: validation(item.report as unknown as Record<string, unknown>, item.report.snapshotSha256) }
+      : {}),
     patches: item.patches,
     ...(item.release ? { release: release(item.release) } : {}),
     createdAt: item.createdAt,

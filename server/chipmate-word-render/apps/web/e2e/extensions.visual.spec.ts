@@ -103,7 +103,7 @@ test("capture extension market design QA evidence in installed Chrome", async ({
   )
   await page.evaluate(() => {
     sessionStorage.setItem("chipmate-market-session-active", "1")
-    sessionStorage.removeItem("chipmate-market-csrf")
+    sessionStorage.setItem("chipmate-market-csrf", "csrf-visual-e2e")
   })
   await page.goto("/extensions/me")
   await expect(page.getByRole("heading", { name: "我的插件中心", exact: true })).toBeVisible()
@@ -143,6 +143,16 @@ test("capture extension market design QA evidence in installed Chrome", async ({
   await shot(page, "09-extension-upload-progress-1484x1060.png")
   await expect(page.getByText("1 个发布成功", { exact: true })).toBeVisible({ timeout: 15_000 })
 
+  const many = Array.from({ length: 41 }, (_, index) => ({
+    name: `plugin-${index}.vsix`,
+    mimeType: "application/vnd.microsoft.vscode.vsix",
+    buffer: Buffer.from(String(index)),
+  }))
+  await page.goto("/extensions/publish")
+  await page.locator('input[type="file"]').first().setInputFiles(many)
+  await expect(page.getByText("3 个逻辑批次", { exact: true })).toBeVisible()
+  await shot(page, "10-extension-upload-many-review-1484x1060.png")
+
   for (const size of [
     { width: 1_440, height: 1_024 },
     { width: 1_050, height: 1_024 },
@@ -154,6 +164,9 @@ test("capture extension market design QA evidence in installed Chrome", async ({
     await page.goto("/extensions/publish")
     await expect(page.getByRole("heading", { name: "上传 VS Code 插件", exact: true })).toBeVisible()
     await shot(page, `extension-upload-idle-${size.width}x${size.height}.png`)
+    await page.locator('input[type="file"]').first().setInputFiles(many)
+    await expect(page.getByText("3 个逻辑批次", { exact: true })).toBeVisible()
+    await shot(page, `extension-upload-many-${size.width}x${size.height}.png`)
   }
 })
 

@@ -35,16 +35,21 @@ import { NotificationsContext } from "../context/notifications"
 import { LanguageContext } from "../context/language"
 import { IndexingProvider } from "../context/indexing"
 import { KiloEmbeddingModelsProvider } from "../context/kilo-embedding-models"
+import { ImageModelsProvider } from "../context/image-models"
 import { MemoryProvider } from "../context/memory"
 import { TranscriptSearchProvider } from "../context/transcript-search"
 import { dict as uiEn } from "@kilocode/kilo-ui/i18n/en"
 import { dict as uiZh } from "@kilocode/kilo-ui/i18n/zh"
+import { dict as uiZht } from "@kilocode/kilo-ui/i18n/zht"
 import { dict as appEn } from "../i18n/en"
 import { dict as appZh } from "../i18n/zh"
+import { dict as appZht } from "../i18n/zht"
 import { dict as amEn } from "../../agent-manager/i18n/en"
 import { dict as amZh } from "../../agent-manager/i18n/zh"
+import { dict as amZht } from "../../agent-manager/i18n/zht"
 import { dict as kiloEn } from "@kilocode/kilo-i18n/en"
 import { dict as kiloZh } from "@kilocode/kilo-i18n/zh"
+import { dict as kiloZht } from "@kilocode/kilo-i18n/zht"
 import { hasIndexingPlugin } from "@kilocode/kilo-indexing/detect"
 import { resolveTemplate } from "../context/language-utils"
 import type {
@@ -57,15 +62,17 @@ import type {
   QuestionRequest,
   SuggestionRequest,
   AgentRequirementResult,
+  Provider,
 } from "../types/messages"
 
 type PluginSpec = string | [string, Record<string, unknown>]
 
 // Merged English dictionary (same merge order as the real LanguageProvider)
-type Locale = "en" | "zh"
+type Locale = "en" | "zh" | "zht"
 const dicts: Record<Locale, Record<string, string>> = {
   en: { ...appEn, ...amEn, ...uiEn, ...kiloEn },
   zh: { ...appZh, ...amZh, ...uiZh, ...kiloZh },
+  zht: { ...appZht, ...amZht, ...uiZht, ...kiloZht },
 }
 
 // ---------------------------------------------------------------------------
@@ -98,17 +105,27 @@ const MOCK_PROVIDERS = {
   },
 }
 
-const MOCK_MODELS = flattenModels(MOCK_PROVIDERS as any)
-
 /** A synchronous mock ProviderContext — provides models without waiting for a postMessage round-trip. */
-const MockProviderProvider: ParentComponent<{ kiloAuth?: boolean }> = (props) => {
+const MockProviderProvider: ParentComponent<{
+  kiloAuth?: boolean
+  providers?: Record<string, Provider>
+  connected?: string[]
+}> = (props) => {
+  const providers = () => props.providers ?? (MOCK_PROVIDERS as Record<string, Provider>)
+  const connected = () => props.connected ?? Object.keys(providers())
+  const models = createMemo(() => flattenModels(providers()))
+  const first = () => models()[0]
   const value = {
-    providers: () => MOCK_PROVIDERS as any,
-    connected: () => ["kilo"],
+    providers,
+    connected,
     defaults: () => ({}),
-    defaultSelection: () => ({ providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" }),
-    models: () => MOCK_MODELS,
-    findModel: (sel: any) => _findModel(MOCK_MODELS, sel),
+    defaultSelection: () => {
+      const model = first()
+      if (!model) return null
+      return { providerID: model.providerID, modelID: model.id }
+    },
+    models,
+    findModel: (sel: any) => _findModel(models(), sel),
     authMethods: () => ({}),
     authStates: () => (props.kiloAuth ? { kilo: "oauth" } : {}) as Record<string, ProviderAuthState>,
     isModelValid: () => true,
@@ -306,12 +323,16 @@ interface StoryProvidersProps {
   saving?: boolean
   canSave?: boolean
   saveError?: SaveError | null
+  saveDelay?: number
   onConfigChange?: (config: Config) => void
   onGlobalConfigChange?: (config: Config) => void
   onProjectConfigChange?: (config: Config) => void
   onOpenDiff?: OpenDiffFn
   onOpenFile?: OpenFileFn
   kiloAuth?: boolean
+  providers?: Record<string, Provider>
+  connected?: string[]
+  session?: Record<string, unknown>
   /** When true, renders children without the default 12px padding wrapper */
   noPadding?: boolean
 }
@@ -326,6 +347,7 @@ const ConfigWrapper: ParentComponent<{
   dirty?: boolean
   saving?: boolean
   saveError?: SaveError | null
+  saveDelay?: number
   onConfigChange?: (config: Config) => void
   onGlobalConfigChange?: (config: Config) => void
   onProjectConfigChange?: (config: Config) => void
@@ -337,6 +359,7 @@ const ConfigWrapper: ParentComponent<{
     const [project, setProject] = createSignal(props.projectConfig ?? props.config)
     const [settings, setSettings] = createSignal<Record<string, unknown>>(props.settings ?? {})
     const [dirty, setDirty] = createSignal(props.dirty ?? false)
+    const [pending, setPending] = createSignal(false)
     const features = createMemo(() => {
       const config = cfg() as Config & {
         plugin?: readonly PluginSpec[] | null
@@ -356,7 +379,7 @@ const ConfigWrapper: ParentComponent<{
       features,
       loading: () => false,
       isDirty: dirty,
-      saving: () => props.saving ?? false,
+      saving: () => props.saving ?? pending(),
       canSave: () => true,
       saveError: () => props.saveError ?? null,
       updateConfig: (partial: Partial<Config>) => {
@@ -393,7 +416,18 @@ const ConfigWrapper: ParentComponent<{
         setSettings((prev) => ({ ...prev, [key]: value }))
         setDirty(true)
       },
-      saveConfig: () => setDirty(false),
+      saveConfig: () => {
+        const delay = props.saveDelay ?? 0
+        if (delay <= 0) {
+          setDirty(false)
+          return
+        }
+        setPending(true)
+        setTimeout(() => {
+          setDirty(false)
+          setPending(false)
+        }, delay)
+      },
       discardConfig: () => setDirty(false),
     }
     return <ConfigContext.Provider value={value}>{props.children}</ConfigContext.Provider>
@@ -403,13 +437,16 @@ const ConfigWrapper: ParentComponent<{
 
 export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
   const data = () => props.data ?? defaultMockData
-  const session = mockSessionValue({
-    id: props.sessionID,
-    permissions: props.permissions,
-    questions: props.questions,
-    suggestions: props.suggestions,
-    status: props.status,
-  })
+  const session = {
+    ...mockSessionValue({
+      id: props.sessionID,
+      permissions: props.permissions,
+      questions: props.questions,
+      suggestions: props.suggestions,
+      status: props.status,
+    }),
+    ...props.session,
+  }
   const notifications = mockNotificationsValue(props.notifications)
   const locale = () => props.locale ?? "en"
   const t = (key: string, params?: Record<string, string | number | boolean | undefined>) =>
@@ -444,12 +481,13 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
             dirty={props.dirty}
             saving={props.saving}
             saveError={props.saveError}
+            saveDelay={props.saveDelay}
             onConfigChange={props.onConfigChange}
             onGlobalConfigChange={props.onGlobalConfigChange}
             onProjectConfigChange={props.onProjectConfigChange}
           >
             <DisplayProvider>
-              <MockProviderProvider kiloAuth={props.kiloAuth}>
+              <MockProviderProvider kiloAuth={props.kiloAuth} providers={props.providers} connected={props.connected}>
                 <DialogProvider>
                   <LanguageContext.Provider
                     value={{
@@ -465,30 +503,32 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
                           <AgentRequirementsContext.Provider value={requirements}>
                             <MemoryProvider>
                               <IndexingProvider>
-                                <KiloEmbeddingModelsProvider>
-                                  <DataProvider
-                                    data={data()}
-                                    directory="/project/"
-                                    onOpenDiff={props.onOpenDiff}
-                                    onOpenFile={props.onOpenFile}
-                                  >
-                                    <DiffComponentProvider component={Diff}>
-                                      <CodeComponentProvider component={Code}>
-                                        <FileComponentProvider component={File}>
-                                          <MarkedProvider>
-                                            <TranscriptSearchProvider>
-                                              {props.noPadding ? (
-                                                props.children
-                                              ) : (
-                                                <div style={{ padding: "12px" }}>{props.children}</div>
-                                              )}
-                                            </TranscriptSearchProvider>
-                                          </MarkedProvider>
-                                        </FileComponentProvider>
-                                      </CodeComponentProvider>
-                                    </DiffComponentProvider>
-                                  </DataProvider>
-                                </KiloEmbeddingModelsProvider>
+                                <ImageModelsProvider>
+                                  <KiloEmbeddingModelsProvider>
+                                    <DataProvider
+                                      data={data()}
+                                      directory="/project/"
+                                      onOpenDiff={props.onOpenDiff}
+                                      onOpenFile={props.onOpenFile}
+                                    >
+                                      <DiffComponentProvider component={Diff}>
+                                        <CodeComponentProvider component={Code}>
+                                          <FileComponentProvider component={File}>
+                                            <MarkedProvider>
+                                              <TranscriptSearchProvider>
+                                                {props.noPadding ? (
+                                                  props.children
+                                                ) : (
+                                                  <div style={{ padding: "12px" }}>{props.children}</div>
+                                                )}
+                                              </TranscriptSearchProvider>
+                                            </MarkedProvider>
+                                          </FileComponentProvider>
+                                        </CodeComponentProvider>
+                                      </DiffComponentProvider>
+                                    </DataProvider>
+                                  </KiloEmbeddingModelsProvider>
+                                </ImageModelsProvider>
                               </IndexingProvider>
                             </MemoryProvider>
                           </AgentRequirementsContext.Provider>

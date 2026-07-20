@@ -76,6 +76,12 @@ const CreateParameters = Schema.Struct({
   title: Schema.String.annotate({ description: "Word document title." }),
   documentType: Schema.optional(Schema.String).annotate({ description: "Optional document type label." }),
   author: Schema.optional(Schema.String).annotate({ description: "Optional document author." }),
+  language: Schema.optional(Schema.Union([Schema.Literal("en-US"), Schema.Literal("zh-CN")])).annotate({
+    description: "Optional language for generated Word boilerplate. Existing behavior defaults to en-US.",
+  }),
+  headingNumbering: Schema.optional(Schema.Union([Schema.Literal("none"), Schema.Literal("decimal")])).annotate({
+    description: "Optional Heading1-3 numbering mode. Defaults to none for backward compatibility.",
+  }),
   artifactTitle: Schema.optional(Schema.String).annotate({ description: "Optional artifact title." }),
   taskSlug: Schema.optional(Schema.String).annotate({ description: "Optional artifact directory slug." }),
   outputFile: Schema.optional(Schema.String).annotate({
@@ -258,6 +264,8 @@ type WordMeta = {
   paragraphCount?: number
   tableCount?: number
   imageCount?: number
+  imageRelationshipCount?: number
+  orphanImageRelationshipCount?: number
   contentControlCount?: number
   sourceCount?: number
   copiedImages?: number
@@ -266,10 +274,25 @@ type WordMeta = {
   jsonPath?: string
   pdfPath?: string
   pageCount?: number
+  expectedPageCount?: number
+  pageCountKind?: "exact" | "lower-bound" | "unknown"
   diagnosticsPath?: string
+  refreshedDocxPath?: string
+  pageEvidenceStatus?: "completed" | "incomplete" | "unavailable"
   visualQaStatus?: "completed" | "skipped"
   visualQaSkipReason?: string
+  fieldRefreshStatus?: "completed" | "failed" | "not-required"
+  fieldRefreshDiagnostics?: string[]
+  tocHeadingCount?: number
+  tocPageNumberCount?: number
+  textQa?: Record<string, unknown>
   truncated?: boolean
+  paragraphsTruncated?: boolean
+  tablesTruncated?: boolean
+  totalParagraphs?: number
+  totalTables?: number
+  tocEntryCount?: number
+  needsLayoutRefresh?: boolean
   failed?: boolean
   error?: string
 }
@@ -360,7 +383,7 @@ export const InspectWordDocumentTool = Tool.define(
   "inspect_word_document",
   Effect.succeed({
     description:
-      "Inspect a Word .docx artifact and return bounded outline, paragraph, table, image, and style summaries. Use for Word edit planning, not for general document QA; use document_search for indexed document questions.",
+      "Inspect a Word .docx artifact and return bounded outline, paragraph, table, actual drawing occurrence, image relationship diagnostic, and style summaries. Use for Word edit planning, not for general document QA; use document_search for indexed document questions.",
     parameters: InspectParameters,
     execute: (
       params: Schema.Schema.Type<typeof InspectParameters>,
@@ -383,7 +406,13 @@ export const InspectWordDocumentTool = Tool.define(
               paragraphCount: inspection.paragraphs.length,
               tableCount: inspection.tables.length,
               imageCount: inspection.images.length,
+              imageRelationshipCount: inspection.imageDiagnostics.relationshipCount,
+              orphanImageRelationshipCount: inspection.imageDiagnostics.orphanRelationshipIds.length,
               contentControlCount: inspection.contentControls.length,
+              totalParagraphs: inspection.totalParagraphs,
+              totalTables: inspection.totalTables,
+              paragraphsTruncated: inspection.paragraphsTruncated,
+              tablesTruncated: inspection.tablesTruncated,
               truncated: inspection.truncated,
             },
             output: JSON.stringify(
@@ -395,6 +424,7 @@ export const InspectWordDocumentTool = Tool.define(
                 tables: inspection.tables,
                 images: inspection.images,
                 imageCount: inspection.images.length,
+                imageDiagnostics: inspection.imageDiagnostics,
                 contentControls: inspection.contentControls,
                 styles: inspection.styles,
                 warnings: inspection.warnings,
@@ -523,6 +553,8 @@ export const MaterializeWordFieldsTool = Tool.define(
               path: result.path,
               artifactDir: result.artifactDir,
               manifestPath: result.manifestPath,
+              tocEntryCount: result.summary.tocEntryCount,
+              needsLayoutRefresh: result.summary.needsLayoutRefresh,
             },
             output: JSON.stringify(result, null, 2),
           }),
@@ -680,9 +712,19 @@ export const RenderWordDocumentTool = Tool.define(
               manifestPath: result.manifestPath,
               pdfPath: result.pdfPath,
               pageCount: result.pageCount,
+              expectedPageCount: result.expectedPageCount,
+              pageCountKind: result.pageCountKind,
               diagnosticsPath: result.diagnosticsPath,
+              refreshedDocxPath: result.refreshedDocxPath,
+              pageEvidenceStatus: result.pageEvidenceStatus,
               visualQaStatus: result.visualQaStatus,
               visualQaSkipReason: result.visualQaSkipReason,
+              fieldRefreshStatus: result.fieldRefreshStatus,
+              fieldRefreshDiagnostics: result.fieldRefreshDiagnostics,
+              tocHeadingCount: result.tocHeadingCount,
+              tocEntryCount: result.tocEntryCount,
+              tocPageNumberCount: result.tocPageNumberCount,
+              textQa: result.textQa,
             },
             output: JSON.stringify(result, null, 2),
           }),

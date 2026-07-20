@@ -15,7 +15,7 @@ export class BrowserAutomationService implements vscode.Disposable {
     // Listen for settings changes
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration("kilo-code.new.browserAutomation")) {
+        if (e.affectsConfiguration("chipmate.v2.browserAutomation")) {
           this.syncWithSettings()
         }
       }),
@@ -27,7 +27,7 @@ export class BrowserAutomationService implements vscode.Disposable {
    * Called on construction and when settings change.
    */
   async syncWithSettings(): Promise<void> {
-    const config = vscode.workspace.getConfiguration("kilo-code.new.browserAutomation")
+    const config = vscode.workspace.getConfiguration("chipmate.v2.browserAutomation")
     const enabled = config.get<boolean>("enabled", false)
 
     if (enabled) {
@@ -42,7 +42,7 @@ export class BrowserAutomationService implements vscode.Disposable {
    * Should be called from the connection state change handler.
    */
   async reregisterIfEnabled(): Promise<void> {
-    const config = vscode.workspace.getConfiguration("kilo-code.new.browserAutomation")
+    const config = vscode.workspace.getConfiguration("chipmate.v2.browserAutomation")
     const enabled = config.get<boolean>("enabled", false)
     if (enabled) {
       await this.register()
@@ -62,7 +62,7 @@ export class BrowserAutomationService implements vscode.Disposable {
       return
     }
 
-    const config = vscode.workspace.getConfiguration("kilo-code.new.browserAutomation")
+    const config = vscode.workspace.getConfiguration("chipmate.v2.browserAutomation")
     const useSystemChrome = config.get<boolean>("useSystemChrome", true)
     const headless = config.get<boolean>("headless", false)
 

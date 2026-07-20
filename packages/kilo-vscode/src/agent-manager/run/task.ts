@@ -22,7 +22,7 @@ export async function startVscodeRunTask(config: RunTaskConfig, done: (exit: Run
     env: config.env,
   })
   const task = new vscode.Task(
-    { type: "kilo-worktree-run" },
+    { type: "chipmate-v2-worktree-run" },
     vscode.TaskScope.Workspace,
     `Run: ${config.branch}`,
     "ChipMate",

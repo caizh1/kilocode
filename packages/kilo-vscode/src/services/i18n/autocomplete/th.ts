@@ -1,5 +1,5 @@
 export const dict = {
-  "kilocode:autocomplete.statusBar.enabled": "$(kilo-logo) เติมข้อความอัตโนมัติ",
+  "kilocode:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) เติมข้อความอัตโนมัติ",
   "kilocode:autocomplete.statusBar.snoozed": "พักไว้",
   "kilocode:autocomplete.statusBar.warning": "$(warning) เติมข้อความอัตโนมัติ",
   "kilocode:autocomplete.statusBar.tooltip.basic": "การเติมข้อความอัตโนมัติของ Kilo Code",

@@ -8,10 +8,18 @@ import type { FastifyInstance, FastifyReply } from "fastify"
 import type { ExtensionArtifactItem, MarketDb } from "@chipmate/market-db"
 import { MarketEvents } from "./events.ts"
 import { Identity, sendIdentityError, type ResolveUser } from "./identity.ts"
+import {
+  UPLOAD_MAX_ACTIVE,
+  UPLOAD_MAX_BYTES,
+  UPLOAD_MIN_FREE_BYTES,
+  UploadAdmissionError,
+  UploadGate,
+} from "./upload-gate.ts"
 import { inspectVsix, safeVsixFilename } from "./vsix.ts"
 
-const MAX = 512 * 1024 * 1024
-const HOURLY_UPLOAD_LIMIT = 100
+const MAX = UPLOAD_MAX_BYTES
+const IDLE_TIMEOUT = 60_000
+const ABSOLUTE_TIMEOUT = 2 * 60 * 60 * 1_000
 const SOURCES = new Set(["home", "search", "detail", "external", "vscode"])
 
 interface Options {
@@ -20,6 +28,10 @@ interface Options {
   resolveUser?: ResolveUser
   now?: () => number
   scanMs?: number
+  activeUploads?: number
+  minimumFreeBytes?: number
+  uploadIdleMs?: number
+  uploadMaxMs?: number
 }
 
 interface Query {
@@ -48,6 +60,7 @@ export class ExtensionRuntime {
     private readonly events: MarketEvents,
     private readonly scanMs = 5_000,
     root = "/data/skill-market/extensions",
+    private readonly gate?: UploadGate,
   ) {
     this.root = root
     this.drop = join(root, "drop")
@@ -60,6 +73,7 @@ export class ExtensionRuntime {
 
   async start(): Promise<void> {
     await Promise.all([mkdir(this.drop, { recursive: true }), mkdir(this.artifacts, { recursive: true }), mkdir(this.tmp, { recursive: true })])
+    await this.gate?.refresh()
     const stale = await readdir(this.tmp, { withFileTypes: true })
     await Promise.all(stale.map((entry) => rm(join(this.tmp, entry.name), { recursive: true, force: true })))
     await this.scan()
@@ -108,6 +122,7 @@ export class ExtensionRuntime {
       artifacts: existsSync(this.artifacts),
       temporary: existsSync(this.tmp),
       warnings: [...this.warnings.entries()].map(([file, warning]) => `${file}: ${warning}`),
+      ...(this.gate?.health() ?? {}),
     }
   }
 
@@ -193,8 +208,12 @@ export class ExtensionRuntime {
 
 export function registerExtensions(app: FastifyInstance, db: MarketDb, opts: Options): ExtensionRuntime {
   const identity = new Identity(db, opts.resolveUser, opts.now)
-  const now = opts.now ?? Date.now
-  const runtime = new ExtensionRuntime(db, opts.events, opts.scanMs, opts.root)
+  const gate = new UploadGate({
+    root: opts.root,
+    active: opts.activeUploads ?? UPLOAD_MAX_ACTIVE,
+    free: opts.minimumFreeBytes ?? UPLOAD_MIN_FREE_BYTES,
+  })
+  const runtime = new ExtensionRuntime(db, opts.events, opts.scanMs, opts.root, gate)
   app.addContentTypeParser("application/vnd.microsoft.vscode.vsix", (_req, payload, done) => done(null, payload))
 
   app.get("/api/v1/extensions", async (req, reply) => {
@@ -239,102 +258,122 @@ export function registerExtensions(app: FastifyInstance, db: MarketDb, opts: Opt
       if (!filename) return problem(reply, 400, "VALIDATION_FAILED", "A valid .vsix filename is required.")
       const total = Number(header(req.headers["content-length"])) || 0
       if (total > MAX) return problem(reply, 413, "VALIDATION_FAILED", "VSIX exceeds 512 MiB.")
-      const since = new Date(now() - 60 * 60 * 1000).toISOString()
       const prior = await db.getExtensionPublication(runId, principal.user.id)
       if (prior) return reply.send(prior)
-      if ((await db.extensionUploadCount(principal.user.id, since)) >= HOURLY_UPLOAD_LIMIT)
-        return problem(reply, 429, "RATE_LIMITED", "Each user may upload at most 100 VSIX files per hour.")
-      await db.extensionPublication({
-        id: runId,
-        ownerId: principal.user.id,
-        filename,
-        totalBytes: total,
-        idempotencyKey: key,
-        status: "UPLOADING",
-        stage: "uploading",
+      const declared = Number(header(req.headers["content-length"]))
+      const reserve = !req.headers["transfer-encoding"] && Number.isSafeInteger(declared) && declared > 0 && declared <= MAX
+        ? declared
+        : MAX
+      const admission = await gate.claim(reserve).catch((err: unknown) => {
+        if (err instanceof UploadAdmissionError) return err
+        throw err
       })
-      opts.events.publish("extension.publication.changed", { runId, status: "UPLOADING", stage: "uploading" })
-      const target = join(runtime.tmp, `${runId}.part`)
-      try {
-        const body = req.body
-        if (!(body instanceof Readable)) throw new Error("INVALID_VSIX: streaming request body is required")
-        const saved = await save(body, target)
-        await db.extensionPublication({
-          id: runId,
-          ownerId: principal.user.id,
-          filename,
-          totalBytes: saved.size,
-          idempotencyKey: key,
-          status: "VALIDATING",
-          stage: "validating",
-          sha256: saved.sha256,
-        })
-        opts.events.publish("extension.publication.changed", { runId, status: "VALIDATING", stage: "validating" })
-        const manifest = await inspectVsix(target)
-        await db.extensionPublication({
-          id: runId,
-          ownerId: principal.user.id,
-          filename,
-          totalBytes: saved.size,
-          idempotencyKey: key,
-          status: "PUBLISHING",
-          stage: "publishing",
-          sha256: saved.sha256,
-        })
-        opts.events.publish("extension.publication.changed", {
-          runId,
-          extensionId: manifest.id,
-          status: "PUBLISHING",
-          stage: "publishing",
-        })
-        const result = await runtime.publish(
-          target,
-          saved.sha256,
-          saved.size,
-          filename,
-          `upload:${runId}`,
-          "web",
-          { id: principal.user.id, name: principal.user.displayName },
+      if (admission instanceof UploadAdmissionError) {
+        if (admission.code === "PUBLICATION_BUSY") reply.header("retry-after", "5")
+        return problem(
+          reply,
+          admission.code === "PUBLICATION_BUSY" ? 503 : 507,
+          admission.code,
+          admission.message,
         )
-        const status = result.duplicate ? "DUPLICATE" : "PUBLISHED"
-        const run = await db.extensionPublication({
-          id: runId,
-          ownerId: principal.user.id,
-          filename,
-          totalBytes: saved.size,
-          idempotencyKey: key,
-          status,
-          stage: "complete",
-          sha256: saved.sha256,
-          artifactId: result.artifact.id,
-        })
-        opts.events.publish("extension.publication.changed", {
-          runId,
-          extensionId: result.artifact.extensionId,
-          artifactId: result.artifact.id,
-          status,
-          stage: "complete",
-        })
-        opts.events.publish("extension.catalog.changed", { extensionId: result.artifact.extensionId })
-        return reply.send({ ...run, artifact: publicArtifact(result.artifact) })
-      } catch (err) {
-        await rm(target, { force: true })
-        const cancelled = req.raw.aborted || message(err).includes("aborted")
-        const status = cancelled ? "CANCELLED" : "FAILED"
+      }
+      try {
         await db.extensionPublication({
           id: runId,
           ownerId: principal.user.id,
           filename,
           totalBytes: total,
           idempotencyKey: key,
-          status,
-          stage: "complete",
-          error: message(err),
+          status: "UPLOADING",
+          stage: "uploading",
         })
-        opts.events.publish("extension.publication.changed", { runId, status, stage: "complete", error: message(err) })
-        if (cancelled) return reply.code(499).send({ ok: false, code: "UPLOAD_CANCELLED", message: "Upload cancelled." })
-        const tooLarge = message(err).includes("512 MiB")
-        return problem(reply, tooLarge ? 413 : 400, "VALIDATION_FAILED", message(err))
+        opts.events.publish("extension.publication.changed", { runId, status: "UPLOADING", stage: "uploading" })
+        const target = join(runtime.tmp, `${runId}.part`)
+        try {
+          const body = req.body
+          if (!(body instanceof Readable)) throw new Error("INVALID_VSIX: streaming request body is required")
+          const saved = await saveExtensionUpload(body, target, opts.uploadIdleMs, opts.uploadMaxMs)
+          await db.extensionPublication({
+            id: runId,
+            ownerId: principal.user.id,
+            filename,
+            totalBytes: saved.size,
+            idempotencyKey: key,
+            status: "VALIDATING",
+            stage: "validating",
+            sha256: saved.sha256,
+          })
+          opts.events.publish("extension.publication.changed", { runId, status: "VALIDATING", stage: "validating" })
+          const manifest = await inspectVsix(target)
+          await db.extensionPublication({
+            id: runId,
+            ownerId: principal.user.id,
+            filename,
+            totalBytes: saved.size,
+            idempotencyKey: key,
+            status: "PUBLISHING",
+            stage: "publishing",
+            sha256: saved.sha256,
+          })
+          opts.events.publish("extension.publication.changed", {
+            runId,
+            extensionId: manifest.id,
+            status: "PUBLISHING",
+            stage: "publishing",
+          })
+          const result = await runtime.publish(
+            target,
+            saved.sha256,
+            saved.size,
+            filename,
+            `upload:${runId}`,
+            "web",
+            { id: principal.user.id, name: principal.user.displayName },
+          )
+          const status = result.duplicate ? "DUPLICATE" : "PUBLISHED"
+          const run = await db.extensionPublication({
+            id: runId,
+            ownerId: principal.user.id,
+            filename,
+            totalBytes: saved.size,
+            idempotencyKey: key,
+            status,
+            stage: "complete",
+            sha256: saved.sha256,
+            artifactId: result.artifact.id,
+          })
+          opts.events.publish("extension.publication.changed", {
+            runId,
+            extensionId: result.artifact.extensionId,
+            artifactId: result.artifact.id,
+            status,
+            stage: "complete",
+          })
+          opts.events.publish("extension.catalog.changed", { extensionId: result.artifact.extensionId })
+          return reply.send({ ...run, artifact: publicArtifact(result.artifact) })
+        } catch (err) {
+          await rm(target, { force: true })
+          const timedout = err instanceof UploadTimeoutError
+          const cancelled = !timedout && (req.raw.aborted || message(err).includes("aborted"))
+          const status = cancelled ? "CANCELLED" : "FAILED"
+          await db.extensionPublication({
+            id: runId,
+            ownerId: principal.user.id,
+            filename,
+            totalBytes: total,
+            idempotencyKey: key,
+            status,
+            stage: "complete",
+            error: message(err),
+          })
+          opts.events.publish("extension.publication.changed", { runId, status, stage: "complete", error: message(err) })
+          if (cancelled) return reply.code(499).send({ ok: false, code: "UPLOAD_CANCELLED", message: "Upload cancelled." })
+          if (timedout) return problem(reply, 408, "UPLOAD_TIMEOUT", message(err))
+          const tooLarge = message(err).includes("512 MiB")
+          return problem(reply, tooLarge ? 413 : 400, "VALIDATION_FAILED", message(err))
+        }
+      } finally {
+        await admission.release()
       }
     },
   )
@@ -485,18 +524,46 @@ export function registerExtensions(app: FastifyInstance, db: MarketDb, opts: Opt
   return runtime
 }
 
-async function save(input: Readable, path: string): Promise<{ sha256: string; size: number }> {
+class UploadTimeoutError extends Error {}
+
+export async function saveExtensionUpload(
+  input: Readable,
+  path: string,
+  idleMs = IDLE_TIMEOUT,
+  maxMs = ABSOLUTE_TIMEOUT,
+): Promise<{ sha256: string; size: number }> {
   const digest = createHash("sha256")
   const size = { value: 0 }
+  const abort = new AbortController()
+  const state: { idle?: NodeJS.Timeout; absolute?: NodeJS.Timeout; reason: string } = { reason: "" }
+  const timeout = (reason: string) => {
+    state.reason = reason
+    abort.abort()
+  }
+  const refresh = () => {
+    if (state.idle) clearTimeout(state.idle)
+    state.idle = setTimeout(() => timeout("Upload was idle for longer than 60 seconds."), idleMs)
+  }
+  refresh()
+  state.absolute = setTimeout(() => timeout("Upload exceeded the two hour time limit."), maxMs)
   const meter = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
+      refresh()
       size.value += chunk.length
       if (size.value > MAX) return callback(new Error("VSIX exceeds 512 MiB"))
       digest.update(chunk)
       callback(null, chunk)
     },
   })
-  await pipeline(input, meter, createWriteStream(path, { flags: "wx" }))
+  try {
+    await pipeline(input, meter, createWriteStream(path, { flags: "wx" }), { signal: abort.signal })
+  } catch (err) {
+    if (state.reason) throw new UploadTimeoutError(state.reason)
+    throw err
+  } finally {
+    if (state.idle) clearTimeout(state.idle)
+    if (state.absolute) clearTimeout(state.absolute)
+  }
   return { sha256: digest.digest("hex"), size: size.value }
 }
 

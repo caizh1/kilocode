@@ -2,7 +2,7 @@
 // Source: src/i18n/locales/en/kilocode.json → "autocomplete" section
 
 export const dict = {
-  "kilocode:autocomplete.statusBar.enabled": "$(kilo-logo) Autocomplete",
+  "kilocode:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) Autocomplete",
   "kilocode:autocomplete.statusBar.snoozed": "snoozed",
   "kilocode:autocomplete.statusBar.warning": "$(warning) Autocomplete",
   "kilocode:autocomplete.statusBar.tooltip.basic": "ChipMate Autocomplete",

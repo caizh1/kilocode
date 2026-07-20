@@ -1,34 +1,38 @@
-# 09 Parent Module Assembly Rules
+# 09 Target Module Assembly and Context Parent Rules
 
-父模块必须具备五类视图：
+文件名为兼容现有 reference 集合而保留；这里的 mandatory assembly owner 是解析后的 target module，不是其 context parent。完整交付中，target module 必须具备五类视图：
 
-1. parent-module-architecture：架构边界、组件、上下游和共享资源；
-2. business-parent-module-master-flow：high-level 业务总流程图；
-3. parent-module-code-flow：入口、调用层、分支、回调和清理；
-4. parent-module-state-machine：状态、事件、guard/action 和恢复；
-5. parent-module-data-lifecycle：数据创建、所有权、传递、并发访问和释放。
+1. target-module-architecture：架构边界、组件、上下游和共享资源；
+2. business-target-module-master-flow：high-level 业务总流程图；
+3. target-module-code-flow：入口、调用层、分支、回调和清理；
+4. target-module-state-machine：状态、事件、guard/action 和恢复；若目标模块不存在持久控制状态转换关系则证据化 `N/A`；
+5. target-module-data-lifecycle：数据创建、所有权、传递、并发访问和释放。
 
-business-parent-module-master-flow 必须先于 parent-module-code-flow 完成。业务总图聚合子模块业务图；代码父图聚合代码级子模块图、状态机图和异常路径图。
+business-target-module-master-flow 必须先于 target-module-code-flow 完成。业务总图聚合 target 内部子模块业务图；target 代码图聚合代码级子模块图、状态机图和异常路径图。
 
-父模块总图必须最后生成。前置条件：存在源码支持的 entry-to-main-flow；每个重要子模块的五类视图已完成或状态机已给出证据化 `N/A`；error/retry/wait/timeout 路径已绘制或说明源码无相关路径；edge coverage 覆盖子图关键边。
+Target 五类 source 必须在子模块语义、证据、复杂度实例以及全部 base/focused Mermaid source 已完成语法与语义验证后生成。前置条件：存在源码支持的 entry-to-main-flow；每个已确认子模块的五类槽位已有证据、经过验证的 source 或状态机证据化 `N/A`；error/retry/wait/timeout 路径已规划或说明源码无相关路径；edge coverage 已映射关键边。具体子模块 source blocker、PNG 渲染或 Word 插入失败只影响对应槽位状态并使完整验收保持 `PARTIAL`，不得阻塞 target 图的生成和渲染。
 
 业务总图前置条件：
 
-- business-capability-map 非空；
+- target business-capability-map 非空；
 - business-flow-steps 非空；
 - business-flow-edges 非空；
-- 每个重要子模块 high-level 业务流程图已生成；
+- 每个已确认子模块 high-level 业务流程的语义、证据、边和 Mermaid source 已完成；
 - 子模块业务图 edge coverage 无 unverified；
 - 总图只聚合业务子模块，不展开函数内部。
 
 五类父图合计必须覆盖外部入口、对外 API、子模块边界、核心数据结构、关键状态机、主要状态转换、下游依赖、error/wait/retry/complete 出口、数据所有权和指向子图的节点说明。单张图只承担自己的语义，不要求把全部信息塞入一张总图。
 
-父图不能展开所有函数内部细节。函数内部细节必须在子图中表达。父图每个子模块节点应在 `diagram-index.md` 对应到具体子图文件。
+Target 汇总图不能展开所有函数内部细节。函数内部细节必须在子图中表达。Target 图的每个子模块节点应在 `diagram-index.md` 对应到具体子图文件。
 
-代码/架构视角父图不得替代 business-parent-module-master-flow。最终正文必须同时引用 high-level 业务总图和代码/架构视角父图。
+代码/架构视角 target 图不得替代 business-target-module-master-flow。最终正文必须同时引用 high-level 业务总图和代码/架构视角 target 图。
+
+## Context parent 定位
+
+Context parent 只在第 3 章说明 target 在父系统中的角色、进入/退出接口、关键 handoff 和边界。必要时可以生成一张 source-backed context architecture 或 interaction figure，但该图不属于 DesignUnit、不占 `5D`、不建立 FsmAudit，也不能替代 target 的任何五类图。例如源码确认 `Platform -> Worker` 时，Platform 位于本节，Worker 才进入后续 target assembly。
 
 ## 内部架构与子模块分解
 
-目标模块正文必须在父/目标架构与详细主业务流程之后、重要子模块实现之前提供子模块分解表。表格至少包含源码位置、业务定位、职责、输入输出、上下游、关键状态或生命周期对象、重要性依据、详细章节、证据和置信度。
+Target module 正文的第 4 至第 8 章共同组成唯一 root target DesignUnit：第 4 章放架构基础图，第 6 章放唯一业务流程基础图，第 7 章只分解 target 内部候选并放闭环后的子模块分解表且不占五视图槽位，第 8 章放数据/生命周期、代码流程、状态机或 `N/A` 以及其他实现细节。第 8 章只引用第 6 章业务主图，不重复插入或计数。第 9 章开始逐个放 target-owned confirmed submodule 的连续本地章节。分解表至少包含 Discovery Signal IDs、Candidate ID、源码位置、业务定位、职责、输入输出、上下游、关键状态或生命周期对象、确认结论与依据、排除原因或合并归属、重要性/深挖依据、详细章节、证据和置信度。表旁必须同时报告 discovery signal 和 candidate 的 mapped/unmapped 数量，且两者 `unmapped=0`。每个 `confirmed_submodule` 行都必须进入本地章节和五视图覆盖账本；context parent 不得出现在此表中伪装为 target 子模块。
 
-父级汇总节点必须链接到对应的重要子模块连续章节。父级代码图、状态图、对象索引或性能汇总只能表达跨单元关系，不能替代子模块本地架构、业务、数据、代码、状态和异常恢复说明。
+Target 汇总节点必须链接到对应的已确认子模块连续章节。Target 代码图、状态图、对象索引或性能汇总只能表达跨单元关系，不能替代子模块本地架构、业务、数据、代码、状态和异常恢复说明。Context-parent 图同样不能替代 target 或子模块本地内容。

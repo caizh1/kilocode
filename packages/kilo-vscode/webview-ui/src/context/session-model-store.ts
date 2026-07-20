@@ -31,12 +31,13 @@ function resolveModel(
   agentName: string,
   override?: ModelSelection | null,
   recents?: ModelSelection[],
+  remembered?: ModelSelection | null,
 ): ModelSelection | null {
   return resolveModelSelection({
     providers: env.providers,
     connected: env.connected,
     override,
-    mode: env.getModeModel(agentName),
+    mode: remembered ?? env.getModeModel(agentName),
     global: env.getGlobalModel(),
     recent: recents,
     fallback: env.fallback,
@@ -55,8 +56,8 @@ export function getSessionModel(
   defaultAgent: string,
 ): ModelSelection | null {
   const override = store.sessionOverrides[sessionID]
-  if (override) return override
   const agentName = store.agentSelections[sessionID] ?? defaultAgent
+  if (override) return resolveModel(env, agentName, override, store.recentModels, store.modelSelections[agentName])
   return resolveModel(env, agentName, store.modelSelections[agentName], store.recentModels)
 }
 
@@ -73,7 +74,7 @@ export function getSelected(
 ): ModelSelection | null {
   if (sessionID) {
     const session = store.sessionOverrides[sessionID]
-    if (session) return session
+    if (session) return resolveModel(env, agentName, session, store.recentModels, store.modelSelections[agentName])
   }
   return resolveModel(env, agentName, store.modelSelections[agentName], store.recentModels)
 }

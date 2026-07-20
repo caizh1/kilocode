@@ -631,6 +631,141 @@ describe("CodeIndexManager", () => {
     }
   })
 
+  test("clears prior RAG diagnostics after live embedder validation recovers", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kilo-rag-diagnostics-recovery-"))
+    const workspace = join(root, "workspace")
+    const cache = join(root, "cache")
+    const requests: Array<string | null> = []
+    await Bun.write(join(workspace, ".gitkeep"), "")
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(req) {
+        const auth = req.headers.get("authorization")
+        requests.push(auth)
+        if (auth !== "Bearer valid-key") {
+          return Response.json(
+            { error: { message: "Invalid API key", type: "invalid_request_error", code: "invalid_api_key" } },
+            { status: 401 },
+          )
+        }
+        return Response.json({
+          object: "list",
+          data: [{ object: "embedding", index: 0, embedding: [0.1, 0.2, 0.3] }],
+          model: "fixture-model",
+          usage: { prompt_tokens: 1, total_tokens: 1 },
+        })
+      },
+    })
+
+    try {
+      const script = `
+        import { CodeIndexManager } from "./src/indexing/manager.ts"
+        const mgr = new CodeIndexManager(${JSON.stringify(workspace)}, ${JSON.stringify(cache)})
+        const data = mgr as unknown as {
+          _retryMaxAttempts: number
+          handleTelemetry(event: {
+            type: "error"
+            source: "scan"
+            location: string
+            error: string
+            provider: "openai-compatible"
+            vectorStore: "lancedb"
+            modelId: string
+            pipeline: "codeGraph" | "documents"
+          }): void
+        }
+        data._retryMaxAttempts = 0
+        const input = (apiKey?: string) => ({
+          enabled: true,
+          embedderProvider: "openai-compatible" as const,
+          vectorStoreProvider: "lancedb" as const,
+          modelId: "fixture-model",
+          modelDimension: 3,
+          openAiCompatibleBaseUrl: ${JSON.stringify(`http://127.0.0.1:${server.port}/v1`)},
+          openAiCompatibleApiKey: apiKey,
+        })
+        const wait = async (check: () => boolean, message: string) => {
+          const deadline = Date.now() + 10_000
+          while (!check() && Date.now() < deadline) await Bun.sleep(10)
+          if (!check()) throw new Error(message)
+        }
+        try {
+          await mgr.initialize(input())
+          await wait(
+            () => mgr.state === "Error" && (mgr.getRecentErrors().rag?.length ?? 0) > 0,
+            "Initial authentication failure was not recorded",
+          )
+          const count = mgr.getRecentErrors().rag?.length ?? 0
+          if (!mgr.getRecentErrors().rag?.[0]?.message.includes("Authentication failed")) {
+            throw new Error("Initial RAG diagnostic did not preserve the authentication failure")
+          }
+
+          await mgr.handleSettingsChange(input("wrong-key"))
+          await wait(
+            () => mgr.state === "Error" && (mgr.getRecentErrors().rag?.length ?? 0) > count,
+            "Failed revalidation cleared or failed to append RAG diagnostics",
+          )
+
+          data.handleTelemetry({
+            type: "error",
+            source: "scan",
+            location: "test:codeGraph",
+            error: "graph failure",
+            provider: "openai-compatible",
+            vectorStore: "lancedb",
+            modelId: "fixture-model",
+            pipeline: "codeGraph",
+          })
+          data.handleTelemetry({
+            type: "error",
+            source: "scan",
+            location: "test:documents",
+            error: "document failure",
+            provider: "openai-compatible",
+            vectorStore: "lancedb",
+            modelId: "fixture-model",
+            pipeline: "documents",
+          })
+
+          await mgr.handleSettingsChange(input("valid-key"))
+          await wait(
+            () => (mgr.getRecentErrors().rag?.length ?? 0) === 0,
+            "Successful live validation did not clear prior RAG diagnostics",
+          )
+          const errors = mgr.getRecentErrors()
+          if ((errors.codeGraph?.length ?? 0) !== 1) throw new Error("Code Graph diagnostics were cleared")
+          if ((errors.documents?.length ?? 0) !== 1) throw new Error("Document diagnostics were cleared")
+        } finally {
+          await mgr.dispose()
+        }
+      `
+      const child = Bun.spawn([process.execPath, "-e", script], {
+        cwd: join(import.meta.dir, "../../.."),
+        stdout: "pipe",
+        stderr: "pipe",
+        windowsHide: true,
+      })
+      const gate = Promise.withResolvers<never>()
+      const timeout = setTimeout(() => {
+        child.kill()
+        gate.reject(new Error("Indexing recovery subprocess timed out"))
+      }, 20_000)
+      const [exit, stderr] = await Promise.race([
+        Promise.all([child.exited, new Response(child.stderr).text()]),
+        gate.promise,
+      ]).finally(() => clearTimeout(timeout))
+      if (exit !== 0) throw new Error(stderr)
+
+      expect(requests).toContain(null)
+      expect(requests).toContain("Bearer wrong-key")
+      expect(requests).toContain("Bearer valid-key")
+    } finally {
+      server.stop(true)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("cancels active indexing when configuration is removed", async () => {
     const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
     let stop = 0

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createRequire } from "node:module"
+import { createHash } from "node:crypto"
 import test from "node:test"
 import JSZip from "jszip"
 
@@ -63,7 +64,69 @@ test("package manifest exposes only validated internal targets and selects the l
     assert.equal(manifest.latestByTarget["linux-x64-baseline"]?.version, "0.0.11")
     assert.match(manifest.latestByTarget["win32-x64-baseline"]?.filename ?? "", /0\.0\.10/)
     assert.match(manifest.packages[0]?.sha256 ?? "", /^[a-f0-9]{64}$/)
+    const linux = await readFile(join(root, "chipmate-0.0.11-linux-x64-baseline.vsix"))
+    assert.equal(manifest.packages[0]?.sha256, createHash("sha256").update(linux).digest("hex"))
   } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("package manifest coalesces cold scans and reuses the fingerprint cache", async () => {
+  const root = await mkdtemp(join(tmpdir(), "chipmate-packages-cache-"))
+  try {
+    await vsix(root, "chipmate-0.0.20-win32-x64-baseline.vsix", {
+      version: "0.0.20",
+      chipmatePackageTarget: "win32-x64-baseline",
+    })
+
+    const [first, second, third] = await Promise.all([
+      generatePackageManifest(root, "chipmate.chipmate"),
+      generatePackageManifest(root, "chipmate.chipmate"),
+      generatePackageManifest(root, "chipmate.chipmate"),
+    ])
+    const cached = await generatePackageManifest(root, "chipmate.chipmate")
+
+    assert.strictEqual(first, second)
+    assert.strictEqual(second, third)
+    assert.strictEqual(third, cached)
+    assert.equal(first.latestByTarget["win32-x64-baseline"]?.version, "0.0.20")
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("package manifest invalidates cached entries when a VSIX fingerprint changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "chipmate-packages-invalidate-"))
+  const file = "chipmate-current-win32-x64-baseline.vsix"
+  try {
+    await vsix(root, file, { version: "0.0.21", chipmatePackageTarget: "win32-x64-baseline" })
+    const first = await generatePackageManifest(root, "chipmate.chipmate")
+
+    await vsix(root, file, { version: "0.0.222", chipmatePackageTarget: "win32-x64-baseline" })
+    const second = await generatePackageManifest(root, "chipmate.chipmate")
+
+    assert.notStrictEqual(first, second)
+    assert.equal(second.latestByTarget["win32-x64-baseline"]?.version, "0.0.222")
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("package manifest logs an invalid unchanged VSIX only once", async () => {
+  const root = await mkdtemp(join(tmpdir(), "chipmate-packages-negative-"))
+  const original = console.warn
+  const warnings: string[] = []
+  console.warn = (...parts: unknown[]) => warnings.push(parts.join(" "))
+  try {
+    await writeFile(join(root, "broken.vsix"), "not a VSIX")
+
+    await generatePackageManifest(root, "chipmate.chipmate")
+    await generatePackageManifest(root, "chipmate.chipmate")
+
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0] ?? "", /skipped broken\.vsix/)
+  } finally {
+    console.warn = original
     await rm(root, { recursive: true, force: true })
   }
 })

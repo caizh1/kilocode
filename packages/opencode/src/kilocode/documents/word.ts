@@ -1,11 +1,13 @@
 import fs from "fs/promises"
 import { execFile as execFileCallback } from "child_process"
+import { createHash } from "node:crypto"
 import os from "os"
 import path from "path"
 import { promisify } from "util"
 import { TextReader, TextWriter, Uint8ArrayReader, Uint8ArrayWriter, ZipReader, ZipWriter } from "@zip.js/zip.js"
 import { declareArtifact } from "@/kilocode/documents/artifacts"
 import { Instance } from "@/kilocode/instance"
+import { userEnv } from "@/kilocode/product-env"
 
 const execFile = promisify(execFileCallback)
 
@@ -20,6 +22,27 @@ const TABLE_CELL_MARGIN_Y_DXA = 80
 const MAX_FIGURE_WIDTH_PX = 624
 const MAX_FIGURE_HEIGHT_PX = 720
 const EMU_PER_CSS_PIXEL = 9_525
+const CJK_FONT = "Microsoft YaHei"
+const NEAR_BLANK_INK_RATIO = 0.0005
+
+type Photon = typeof import("@silvia-odwyer/photon-node")
+type PhotonLoad = { module: Photon } | { error: unknown }
+
+const photon = (() => {
+  const state: { value?: Promise<PhotonLoad> } = {}
+  return () => {
+    state.value ??= (async () => {
+      try {
+        const wasm = (await import("@silvia-odwyer/photon-node/photon_rs_bg.wasm", { with: { type: "file" } })).default
+        ;(globalThis as typeof globalThis & { __KILOCODE_PHOTON_WASM_PATH?: string }).__KILOCODE_PHOTON_WASM_PATH = wasm
+        return { module: await import("@silvia-odwyer/photon-node") }
+      } catch (error) {
+        return { error }
+      }
+    })()
+    return state.value
+  }
+})()
 
 export type WordBlock =
   | { type: "heading"; level?: 1 | 2 | 3; text: string }
@@ -55,6 +78,8 @@ export type CreateWordDocumentSpec = {
   title: string
   documentType?: string
   author?: string
+  language?: "en-US" | "zh-CN"
+  headingNumbering?: "none" | "decimal"
   artifactTitle?: string
   taskSlug?: string
   outputFile?: string
@@ -167,6 +192,8 @@ export type MaterializedWordFields = {
     seqFields: number
     captions: number
     toc: "none" | "preserved" | "materialized" | "removed"
+    tocEntryCount: number
+    needsLayoutRefresh: boolean
   }
   warnings: string[]
 }
@@ -247,6 +274,7 @@ export type WordRenderDiagnostic = {
     | "word-render-endpoint-not-configured"
     | "word-render-remote-failed"
     | "word-render-local-failed"
+    | "word-render-local-field-refresh-failed"
     | "word-render-local-page-renderer-not-configured"
     | "pdf-missing"
     | "pdf-invalid"
@@ -255,7 +283,16 @@ export type WordRenderDiagnostic = {
     | "page-count-exceeds-limit"
     | "page-count-incomplete"
     | "blank-page"
+    | "near-blank-page"
+    | "page-summary-failed"
     | "image-loss-suspected"
+    | "word-render-field-refresh-failed"
+    | "word-render-text-qa-failed"
+    | "word-render-refreshed-docx-invalid"
+    | "word-render-response-invalid"
+    | "word-render-page-sequence-invalid"
+    | "word-render-page-duplicate"
+    | "word-render-pdf-page-count-mismatch"
   severity: "warning" | "error"
   message: string
 }
@@ -273,6 +310,19 @@ export type WordRenderPageQa = {
   visualSummary?: Record<string, unknown>
 }
 
+export type WordRenderTextQa = {
+  ok: boolean
+  titlePresent: boolean
+  firstHeadingPresent: boolean
+  sourceCjkCount: number
+  pdfCjkCount: number
+  cjkCoverage: number
+  sentinelCount: number
+  matchedSentinelCount: number
+  sentinelCoverage: number
+  diagnostics: string[]
+}
+
 export type RenderedWordDocument = {
   artifactDir: string
   manifestPath: string
@@ -280,18 +330,30 @@ export type RenderedWordDocument = {
   pagePngPaths: string[]
   diagnosticsPath: string
   pageCount: number
+  expectedPageCount?: number
+  returnedPageCount?: number
+  pageCountKind: "exact" | "lower-bound" | "unknown"
   warnings: string[]
   diagnostics: WordRenderDiagnostic[]
   issues?: WordRenderIssue[]
   renderer?: Record<string, unknown>
   pageQa?: WordRenderPageQa[]
+  textQa?: WordRenderTextQa
+  pageEvidenceStatus: "completed" | "incomplete" | "unavailable"
   visualQaStatus: "completed" | "skipped"
+  fieldRefreshStatus?: "completed" | "failed" | "not-required"
+  fieldRefreshDiagnostics?: string[]
+  tocHeadingCount?: number
+  tocEntryCount?: number
+  tocPageNumberCount?: number
+  refreshedDocxPath?: string
   visualQaSkipReason?:
     | "renderer-unavailable"
     | "render-failed"
     | "page-images-missing"
     | "page-count-incomplete"
     | "invalid-page-image"
+    | "page-quality-failed"
 }
 
 export type InsertWordPngImageInput = {
@@ -300,6 +362,7 @@ export type InsertWordPngImageInput = {
   pngBase64?: string
   heading?: string
   caption?: string
+  figureTitle?: string
   altText?: string
   outputFile?: string
   taskSlug?: string
@@ -320,6 +383,7 @@ export type InsertedWordPngImage = {
 export type WordDocumentInspection = {
   path: string
   title?: string
+  firstHeading?: string
   paragraphs: Array<{
     index: number
     text: string
@@ -343,7 +407,22 @@ export type WordDocumentInspection = {
     relId: string
     target: string
     contentType?: string
+    headingPath: string[]
+    title?: string
+    caption?: string
+    visibleId?: string
+    altText?: string
+    mediaPath?: string
+    sha256?: string
   }>
+  imageDiagnostics: {
+    drawingCount: number
+    relationshipCount: number
+    orphanRelationshipIds: string[]
+    missingRelationshipIds: string[]
+    missingMediaTargets: string[]
+    duplicateMediaHashes: Array<{ sha256: string; relIds: string[] }>
+  }
   contentControls: Array<{
     index: number
     tag?: string
@@ -352,6 +431,10 @@ export type WordDocumentInspection = {
   }>
   styles: string[]
   warnings: string[]
+  totalParagraphs: number
+  totalTables: number
+  paragraphsTruncated: boolean
+  tablesTruncated: boolean
   truncated: boolean
 }
 
@@ -441,9 +524,13 @@ export async function inspectWordDocument(input: {
         })
       }
     }
+    const paragraphsTruncated = paragraphs.length > inspectedParagraphs.length
+    const tablesTruncated = tables.length > maxTables
+    const imageInspection = await inspectImages(documentXml, relsXml ?? "", byName)
     return {
       path: normalizePortable(path.relative(Instance.directory, absolute)),
-      title: outline[0]?.title,
+      title: paragraphs.find((paragraph) => paragraph.styleId === "Title")?.text,
+      firstHeading: outline[0]?.title,
       paragraphs: inspectedParagraphs,
       outline,
       tables: tables.slice(0, maxTables).map((table, index) => ({
@@ -451,7 +538,8 @@ export async function inspectWordDocument(input: {
         rows: table,
         headingPath: [],
       })),
-      images: parseImages(relsXml ?? "", byName),
+      images: imageInspection.images,
+      imageDiagnostics: imageInspection.diagnostics,
       contentControls: parseContentControls(documentXml).map((item) => ({
         index: item.index,
         tag: item.tag,
@@ -460,7 +548,11 @@ export async function inspectWordDocument(input: {
       })),
       styles: parseStyles(stylesXml ?? ""),
       warnings: [],
-      truncated: paragraphs.length > inspectedParagraphs.length || tables.length > maxTables,
+      totalParagraphs: paragraphs.length,
+      totalTables: tables.length,
+      paragraphsTruncated,
+      tablesTruncated,
+      truncated: paragraphsTruncated || tablesTruncated,
     }
   } finally {
     await zip.close()
@@ -807,6 +899,7 @@ export async function renderWordDocument(input: RenderWordDocumentInput): Promis
         docxBase64: Buffer.from(docxBytes).toString("base64"),
         output: { pdf: true, pngPages: true },
         timeoutMs: input.timeoutMs,
+        maxPages,
       },
       timeoutMs,
     )
@@ -853,6 +946,8 @@ async function writeSkippedWordRender(
         diagnostics,
         warnings,
         pageCount: 0,
+        pageCountKind: "unknown",
+        pageEvidenceStatus: "unavailable",
         pagePngPaths: [],
         visualQaStatus: "skipped",
         visualQaSkipReason: reason,
@@ -868,8 +963,10 @@ async function writeSkippedWordRender(
     diagnosticsPath: normalizePortable(path.relative(Instance.directory, diagnosticsPath)),
     pagePngPaths: [],
     pageCount: 0,
+    pageCountKind: "unknown",
     warnings,
     diagnostics,
+    pageEvidenceStatus: "unavailable",
     visualQaStatus: "skipped",
     visualQaSkipReason: reason,
   }
@@ -884,7 +981,8 @@ async function writeRenderedWordArtifacts(
   diagnosticsFile: string,
 ): Promise<RenderedWordDocument> {
   const warnings: string[] = []
-  const sourceInspection = await inspectWordDocument({ path: input.sourcePath, maxParagraphs: 1, maxTables: 1 })
+  const sourceInspection = await inspectWordDocument({ path: input.sourcePath, maxParagraphs: 1_000, maxTables: 200 })
+  const sourceBytes = new Uint8Array(await fs.readFile(source))
   for (const issue of response.issues ?? []) {
     diagnostics.push({
       code: "word-render-remote-failed",
@@ -895,6 +993,18 @@ async function writeRenderedWordArtifacts(
   for (const warning of response.warnings ?? []) {
     diagnostics.push({ code: "word-render-remote-failed", severity: "warning", message: warning })
   }
+  if (response.textQa?.ok !== true)
+    diagnostics.push({
+      code: "word-render-text-qa-failed",
+      severity: "warning",
+      message: `Rendered PDF text QA did not pass: ${(response.textQa?.diagnostics ?? ["renderer did not return textQa evidence"]).join("; ")}`,
+    })
+  if (response.fieldRefreshStatus === "failed")
+    diagnostics.push({
+      code: "word-render-field-refresh-failed",
+      severity: "warning",
+      message: `Native Word field refresh failed: ${(response.fieldRefreshDiagnostics ?? ["no diagnostic supplied"]).join("; ")}`,
+    })
   const pdf = response.pdfBase64?.trim() || response.pdf?.base64?.trim()
   const pdfBytes = pdf ? Buffer.from(pdf, "base64") : undefined
   if (!pdfBytes?.length)
@@ -911,6 +1021,9 @@ async function writeRenderedWordArtifacts(
     })
   const pagePayloads = response.pages ?? []
   const expectedPages = Math.max(0, response.pageCount ?? pagePayloads.length)
+  const returnedPages = response.returnedPageCount ?? pagePayloads.length
+  const pageCountKind: RenderedWordDocument["pageCountKind"] =
+    response.pageCountKind ?? (typeof response.pageCount === "number" ? "exact" : "unknown")
   if (pagePayloads.length === 0)
     diagnostics.push({ code: "page-count-zero", severity: "warning", message: "Renderer returned zero page PNGs." })
   if (pagePayloads.length > maxPages || expectedPages > maxPages)
@@ -919,12 +1032,37 @@ async function writeRenderedWordArtifacts(
       severity: "warning",
       message: `Renderer reported ${expectedPages || pagePayloads.length} pages, exceeding maxPages ${maxPages}.`,
     })
-  if (expectedPages > pagePayloads.length)
+  if (expectedPages > pagePayloads.length || pageCountKind !== "exact")
     diagnostics.push({
       code: "page-count-incomplete",
       severity: "warning",
-      message: `Renderer reported ${expectedPages} pages but returned ${pagePayloads.length} page payloads.`,
+      message: `Renderer page count is ${pageCountKind}: reported ${expectedPages} and returned ${pagePayloads.length} page payloads.`,
     })
+  if (returnedPages !== pagePayloads.length)
+    diagnostics.push({
+      code: "word-render-page-sequence-invalid",
+      severity: "error",
+      message: `Renderer returnedPageCount ${returnedPages} does not match ${pagePayloads.length} page payloads.`,
+    })
+  const pageNumbers = pagePayloads.map((page, index) => page.page ?? index + 1)
+  if (
+    new Set(pageNumbers).size !== pageNumbers.length ||
+    pageNumbers.some((page, index) => !Number.isInteger(page) || page !== index + 1)
+  )
+    diagnostics.push({
+      code: "word-render-page-sequence-invalid",
+      severity: "error",
+      message: `Renderer page identifiers must be the unique ordered sequence 1..N; received ${pageNumbers.join(", ")}.`,
+    })
+  if (pdfBytes?.length && isPdf(pdfBytes)) {
+    const pdfPages = await pdfPageCount(pdfBytes, input.timeoutMs ?? 120_000)
+    if (!pdfPages || pdfPages !== expectedPages)
+      diagnostics.push({
+        code: "word-render-pdf-page-count-mismatch",
+        severity: "error",
+        message: `PDF page count ${pdfPages ?? "unknown"} does not match renderer pageCount ${expectedPages}.`,
+      })
+  }
   if (typeof response.detectedImageCount === "number" && response.detectedImageCount < sourceInspection.images.length) {
     diagnostics.push({
       code: "image-loss-suspected",
@@ -933,7 +1071,8 @@ async function writeRenderedWordArtifacts(
     })
   }
   const pdfName = safePdfName(input.outputFile ?? `${path.basename(input.sourcePath, ".docx")}.pdf`)
-  const pngEntries: Array<{ name: string; bytes: Buffer }> = []
+  const pngEntries: Array<{ name: string; bytes: Buffer; qa: WordRenderPageQa }> = []
+  const pageHashes = new Set<string>()
   for (const [index, page] of pagePayloads.slice(0, maxPages).entries()) {
     const pageBytes =
       page.pngBase64 || page.base64 ? Buffer.from(page.pngBase64 ?? page.base64 ?? "", "base64") : undefined
@@ -946,16 +1085,74 @@ async function writeRenderedWordArtifacts(
       })
       continue
     }
-    if (page.blank || page.visualSummary?.inkPixels === 0)
+    const hash = createHash("sha256").update(pageBytes).digest("hex")
+    if (pageHashes.has(hash))
+      diagnostics.push({
+        code: "word-render-page-duplicate",
+        severity: "error",
+        message: `Renderer returned duplicate PNG content for page ${page.page ?? index + 1}.`,
+      })
+    pageHashes.add(hash)
+    const scanned = await summarizePagePng(pageBytes)
+    const visualSummary = scanned.summary
+    const summaryError =
+      scanned.error ?? (typeof visualSummary?.["summaryError"] === "string" ? visualSummary["summaryError"] : undefined)
+    if (summaryError)
+      diagnostics.push({
+        code: "page-summary-failed",
+        severity: "error",
+        message: `Could not summarize renderer page ${index + 1}: ${summaryError}`,
+      })
+    const inkPixels = numberField(visualSummary, "bodyInkPixels")
+    const inkRatio = numberField(visualSummary, "bodyInkRatio")
+    if (page.blank || inkPixels === 0)
       diagnostics.push({
         code: "blank-page",
         severity: "warning",
         message: `Renderer marked page ${index + 1} as blank.`,
       })
-    pngEntries.push({ name, bytes: pageBytes })
+    else if (inkRatio !== undefined && inkRatio < NEAR_BLANK_INK_RATIO)
+      diagnostics.push({
+        code: "near-blank-page",
+        severity: "warning",
+        message: `Renderer page ${index + 1} has an ink ratio of ${inkRatio.toFixed(6)} and requires review.`,
+      })
+    pngEntries.push({
+      name,
+      bytes: pageBytes,
+      qa: {
+        page: page.page ?? index + 1,
+        width: page.width ?? numberField(visualSummary, "width"),
+        height: page.height ?? numberField(visualSummary, "height"),
+        visualSummary,
+      },
+    })
   }
+  const refreshed = response.fieldRefreshStatus === "completed" ? response.updatedDocxBase64?.trim() : undefined
+  const refreshedBytes = refreshed ? Buffer.from(refreshed, "base64") : undefined
+  const refresh = refreshedBytes?.length
+    ? await verifyRefreshedDocx(sourceBytes, refreshedBytes, response)
+    : { ok: false, diagnostics: ["Renderer did not return a refreshed DOCX payload."] }
+  const validRefreshed = Boolean(refreshedBytes?.length && refresh.ok)
+  const fieldRefreshStatus: RenderedWordDocument["fieldRefreshStatus"] =
+    response.fieldRefreshStatus === "completed" && !validRefreshed ? "failed" : response.fieldRefreshStatus
+  const fieldRefreshDiagnostics =
+    response.fieldRefreshStatus === "completed" && !validRefreshed
+      ? [...(response.fieldRefreshDiagnostics ?? []), ...refresh.diagnostics]
+      : response.fieldRefreshDiagnostics
+  if (response.fieldRefreshStatus === "completed" && !validRefreshed)
+    diagnostics.push({
+      code: "word-render-refreshed-docx-invalid",
+      severity: "error",
+      message: `Renderer claimed completed field refresh, but client verification failed: ${refresh.diagnostics.join("; ")}`,
+    })
   warnings.push(...diagnostics.map((item) => `${item.code}: ${item.message}`))
-  const derivedFiles = [...pngEntries.map((item) => item.name), diagnosticsFile]
+  const refreshedName = `refreshed/${safeDocxName(path.basename(input.sourcePath))}`
+  const derivedFiles = [
+    ...pngEntries.map((item) => item.name),
+    ...(validRefreshed ? [refreshedName] : []),
+    diagnosticsFile,
+  ]
   const artifact = await declareArtifact({
     kind: "word-render",
     title: input.title ?? `Render ${path.basename(input.sourcePath)}`,
@@ -986,19 +1183,48 @@ async function writeRenderedWordArtifacts(
     await fs.writeFile(output, entry.bytes)
     pagePngPaths.push(normalizePortable(path.relative(Instance.directory, output)))
   }
+  let refreshedDocxPath: string | undefined
+  if (validRefreshed && refreshedBytes) {
+    const output = path.join(artifactDir, refreshedName)
+    assertInside(artifactDir, output, "refreshedDocx")
+    await fs.mkdir(path.dirname(output), { recursive: true })
+    await fs.writeFile(output, refreshedBytes)
+    refreshedDocxPath = normalizePortable(path.relative(Instance.directory, output))
+  }
   const diagnosticsPath = path.join(artifactDir, diagnosticsFile)
   const invalidPages = diagnostics.some((item) => item.code === "png-invalid")
-  const completePages = expectedPages > 0 && pngEntries.length === expectedPages && expectedPages <= maxPages
+  const defectivePages = diagnostics.some((item) =>
+    ["blank-page", "near-blank-page", "page-summary-failed"].includes(item.code),
+  )
+  const defectiveText =
+    response.textQa?.ok !== true || response.issues?.some((item) => item.code === "word-render-text-loss-suspected")
+  const pageIntegrityFailure = diagnostics.some((item) =>
+    [
+      "word-render-page-sequence-invalid",
+      "word-render-page-duplicate",
+      "word-render-pdf-page-count-mismatch",
+    ].includes(item.code),
+  )
+  const completePages =
+    pageCountKind === "exact" &&
+    expectedPages > 0 &&
+    pngEntries.length === expectedPages &&
+    returnedPages === expectedPages &&
+    expectedPages <= maxPages &&
+    !pageIntegrityFailure
+  const pageEvidenceStatus: RenderedWordDocument["pageEvidenceStatus"] = completePages ? "completed" : "incomplete"
   const visualQaStatus: RenderedWordDocument["visualQaStatus"] =
-    completePages && !invalidPages ? "completed" : "skipped"
+    completePages && !invalidPages && !defectivePages && !defectiveText ? "completed" : "skipped"
   const visualQaSkipReason: RenderedWordDocument["visualQaSkipReason"] | undefined =
     visualQaStatus === "completed"
       ? undefined
       : invalidPages
         ? "invalid-page-image"
-        : expectedPages === 0
-          ? "page-images-missing"
-          : "page-count-incomplete"
+        : defectivePages || defectiveText
+          ? "page-quality-failed"
+          : expectedPages === 0
+            ? "page-images-missing"
+            : "page-count-incomplete"
   await fs.writeFile(
     diagnosticsPath,
     `${JSON.stringify(
@@ -1007,18 +1233,23 @@ async function writeRenderedWordArtifacts(
         warnings,
         issues: response.issues ?? [],
         renderer: response.renderer,
-        pageQa: pagePayloads.map((page) => ({
-          page: page.page,
-          width: page.width,
-          height: page.height,
-          visualSummary: page.visualSummary,
-        })),
+        pageQa: pngEntries.map((entry) => entry.qa),
+        textQa: response.textQa,
         pdfPath,
+        refreshedDocxPath,
         pagePngPaths,
         pageCount: pngEntries.length,
         expectedPageCount: expectedPages,
+        returnedPageCount: returnedPages,
+        pageCountKind,
+        pageEvidenceStatus,
         visualQaStatus,
         visualQaSkipReason,
+        fieldRefreshStatus,
+        fieldRefreshDiagnostics,
+        tocHeadingCount: response.tocHeadingCount,
+        tocEntryCount: response.tocEntryCount,
+        tocPageNumberCount: response.tocPageNumberCount,
       },
       null,
       2,
@@ -1029,21 +1260,27 @@ async function writeRenderedWordArtifacts(
     artifactDir: artifact.artifactDir,
     manifestPath: artifact.manifestPath,
     pdfPath,
+    refreshedDocxPath,
     pagePngPaths,
     diagnosticsPath: normalizePortable(path.relative(Instance.directory, diagnosticsPath)),
     pageCount: pngEntries.length,
+    expectedPageCount: expectedPages,
+    returnedPageCount: returnedPages,
+    pageCountKind,
     warnings,
     diagnostics,
     issues: response.issues ?? [],
     renderer: response.renderer,
-    pageQa: pagePayloads.map((page) => ({
-      page: page.page,
-      width: page.width,
-      height: page.height,
-      visualSummary: page.visualSummary,
-    })),
+    pageQa: pngEntries.map((entry) => entry.qa),
+    textQa: response.textQa,
+    pageEvidenceStatus,
     visualQaStatus,
     visualQaSkipReason,
+    fieldRefreshStatus,
+    fieldRefreshDiagnostics,
+    tocHeadingCount: response.tocHeadingCount,
+    tocEntryCount: response.tocEntryCount,
+    tocPageNumberCount: response.tocPageNumberCount,
   }
 }
 
@@ -1071,7 +1308,7 @@ export async function insertWordPngImage(input: InsertWordPngImageInput): Promis
     mediaName,
   )
   contentTypes = ensureImageContentType(contentTypes, mediaName)
-  const imageXml = `${imageXmlFromRel(relId, input.altText ?? input.caption ?? "Inserted image", positive(input.width, 640), positive(input.height, 360), Boolean(input.caption))}${input.caption ? paragraph(input.caption, "Caption", { keepLines: true }) : ""}`
+  const imageXml = `${input.figureTitle ? paragraph(input.figureTitle, "Caption", { keepNext: true, keepLines: true }) : ""}${imageXmlFromRel(relId, input.altText ?? input.caption ?? input.figureTitle ?? "Inserted image", positive(input.width, 640), positive(input.height, 360), Boolean(input.caption))}${input.caption ? paragraph(input.caption, "Caption", { keepLines: true }) : ""}`
   const blocks = parseTopLevelBlocks(documentXml)
   let nextDocumentXml: string
   if (input.heading?.trim()) {
@@ -1112,8 +1349,8 @@ async function buildDocx(spec: CreateWordDocumentSpec, context: RenderContext): 
   await writer.add("docProps/core.xml", new TextReader(coreXml(spec)))
   await writer.add("docProps/app.xml", new TextReader(appXml()))
   await writer.add("word/_rels/document.xml.rels", new TextReader(documentRelationshipsXml(context)))
-  await writer.add("word/styles.xml", new TextReader(stylesXml()))
-  await writer.add("word/numbering.xml", new TextReader(numberingXml()))
+  await writer.add("word/styles.xml", new TextReader(stylesXml(spec)))
+  await writer.add("word/numbering.xml", new TextReader(numberingXml(spec)))
   await writer.add("word/header1.xml", new TextReader(headerXml(spec)))
   await writer.add("word/footer1.xml", new TextReader(footerXml()))
   await writer.add("word/settings.xml", new TextReader(settingsXml()))
@@ -1340,9 +1577,10 @@ async function buildContext(spec: CreateWordDocumentSpec): Promise<RenderContext
 
 function documentXml(spec: CreateWordDocumentSpec, context: RenderContext): string {
   const body: string[] = []
+  const zh = spec.language === "zh-CN"
   body.push(paragraph(spec.title, "Title"))
-  body.push(paragraph(spec.documentType ?? "Detailed Design", "Subtitle"))
-  if (spec.author) body.push(paragraph(`Author: ${spec.author}`, "Normal"))
+  body.push(paragraph(spec.documentType ?? (zh ? "详细设计" : "Detailed Design"), "Subtitle"))
+  if (spec.author) body.push(paragraph(zh ? `作者：${spec.author}` : `Author: ${spec.author}`, "Normal"))
   for (const item of spec.summary ?? []) body.push(paragraph(item, "Normal"))
   for (const section of spec.sections) {
     body.push(paragraph(section.title, `Heading${section.level ?? 1}`))
@@ -1556,15 +1794,33 @@ function documentRelationshipsXml(context: RenderContext): string {
   )
 }
 
-function stylesXml(): string {
-  return xml(
-    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:color w:val="24292F"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Subtitle"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="160"/><w:keepNext/></w:pPr><w:rPr><w:b/><w:color w:val="17324D"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="180"/><w:keepNext/></w:pPr><w:rPr><w:color w:val="3A6EA5"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="320" w:after="160"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="160" w:after="80"/><w:outlineLvl w:val="2"/></w:pPr><w:rPr><w:b/><w:color w:val="1F4D78"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="0" w:after="160"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="Caption"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="60" w:after="80"/><w:keepLines/></w:pPr><w:rPr><w:i/><w:color w:val="667085"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="80" w:after="80" w:line="240" w:lineRule="auto"/><w:shd w:val="clear" w:color="auto" w:fill="F3F4F6"/><w:keepLines/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="Courier New"/><w:color w:val="1F2937"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TableHeader"><w:name w:val="Table Header"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:b/><w:color w:val="24292F"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style></w:styles>',
-  )
+function stylesXml(spec: Pick<CreateWordDocumentSpec, "headingNumbering" | "language"> = {}): string {
+  const eastAsia = spec.language === "zh-CN" ? CJK_FONT : "Calibri"
+  const base = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="${eastAsia}" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="${eastAsia}" w:cs="Calibri"/><w:color w:val="24292F"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Subtitle"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="160"/><w:keepNext/></w:pPr><w:rPr><w:b/><w:color w:val="17324D"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="180"/><w:keepNext/></w:pPr><w:rPr><w:color w:val="3A6EA5"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="320" w:after="160"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="160" w:after="80"/><w:outlineLvl w:val="2"/></w:pPr><w:rPr><w:b/><w:color w:val="1F4D78"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="0" w:after="160"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="Caption"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="60" w:after="80"/><w:keepLines/></w:pPr><w:rPr><w:i/><w:color w:val="667085"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="80" w:after="80" w:line="240" w:lineRule="auto"/><w:shd w:val="clear" w:color="auto" w:fill="F3F4F6"/><w:keepLines/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="${eastAsia}"/><w:color w:val="1F2937"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TableHeader"><w:name w:val="Table Header"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:b/><w:color w:val="24292F"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="0"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9360"/></w:tabs></w:pPr></w:style><w:style w:type="paragraph" w:styleId="TOC2"><w:name w:val="toc 2"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="360"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9360"/></w:tabs></w:pPr></w:style><w:style w:type="paragraph" w:styleId="TOC3"><w:name w:val="toc 3"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="720"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9360"/></w:tabs></w:pPr></w:style></w:styles>`
+  if (spec.headingNumbering !== "decimal") return xml(base)
+  const numbered = base
+    .replace(
+      '<w:outlineLvl w:val="0"/>',
+      '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr><w:outlineLvl w:val="0"/>',
+    )
+    .replace(
+      '<w:outlineLvl w:val="1"/>',
+      '<w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr><w:outlineLvl w:val="1"/>',
+    )
+    .replace(
+      '<w:outlineLvl w:val="2"/>',
+      '<w:numPr><w:ilvl w:val="2"/><w:numId w:val="3"/></w:numPr><w:outlineLvl w:val="2"/>',
+    )
+  return xml(numbered)
 }
 
-function numberingXml(): string {
+function numberingXml(spec: Pick<CreateWordDocumentSpec, "headingNumbering"> = {}): string {
+  const headings =
+    spec.headingNumbering === "decimal"
+      ? '<w:abstractNum w:abstractNumId="3"><w:multiLevelType w:val="multilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="0" w:hanging="0"/></w:pPr></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="0" w:hanging="0"/></w:pPr></w:lvl><w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2.%3"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="0" w:hanging="0"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="3"><w:abstractNumId w:val="3"/></w:num>'
+      : ""
   return xml(
-    '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/><w:lvlJc w:val="left"/><w:pPr><w:tabs><w:tab w:val="num" w:pos="720"/></w:tabs><w:ind w:left="720" w:hanging="360"/><w:spacing w:after="160" w:line="280" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="2"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:tabs><w:tab w:val="num" w:pos="720"/></w:tabs><w:ind w:left="720" w:hanging="360"/><w:spacing w:after="160" w:line="280" w:lineRule="auto"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="2"/></w:num></w:numbering>',
+    `<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/><w:lvlJc w:val="left"/><w:pPr><w:tabs><w:tab w:val="num" w:pos="720"/></w:tabs><w:ind w:left="720" w:hanging="360"/><w:spacing w:after="160" w:line="280" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="2"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:tabs><w:tab w:val="num" w:pos="720"/></w:tabs><w:ind w:left="720" w:hanging="360"/><w:spacing w:after="160" w:line="280" w:lineRule="auto"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="2"/></w:num>${headings}</w:numbering>`,
   )
 }
 
@@ -1576,7 +1832,7 @@ function headerXml(spec: CreateWordDocumentSpec): string {
 
 function footerXml(): string {
   return xml(
-    '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="right"/><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:color w:val="667085"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">Page </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>',
+    '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="right"/><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:color w:val="667085"/><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>',
   )
 }
 
@@ -1614,19 +1870,122 @@ function parseTables(documentXml: string): string[][][] {
   )
 }
 
-function parseImages(relsXml: string, byName: Map<string, { filename: string }>): WordDocumentInspection["images"] {
-  return matchAll(
+async function inspectImages(
+  documentXml: string,
+  relsXml: string,
+  byName: Map<string, { filename: string; getData?: (writer: Uint8ArrayWriter) => Promise<Uint8Array> }>,
+): Promise<Pick<WordDocumentInspection, "images"> & { diagnostics: WordDocumentInspection["imageDiagnostics"] }> {
+  const rels = matchAll(
     relsXml,
     /<Relationship\b[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image"[^>]*>/g,
-  ).map((relationship, index) => {
-    const target = attr(relationship, /\bTarget="([^"]+)"/) ?? ""
-    return {
-      index: index + 1,
-      relId: attr(relationship, /\bId="([^"]+)"/) ?? `rIdImage${index + 1}`,
-      target,
-      contentType: byName.has(`word/${target}`) ? contentTypeFor(target) : undefined,
+  ).map((relationship, index) => ({
+    relId: attr(relationship, /\bId="([^"]+)"/) ?? `rIdImage${index + 1}`,
+    target: unescapeXml(attr(relationship, /\bTarget="([^"]+)"/) ?? ""),
+  }))
+  const byId = new Map(rels.map((rel) => [rel.relId, rel]))
+  const hashes = new Map<string, { sha256?: string; mediaPath?: string }>()
+  const missingMediaTargets = new Set<string>()
+  for (const rel of rels) {
+    const mediaPath = wordTarget(rel.target)
+    const entry = mediaPath ? byName.get(mediaPath) : undefined
+    const bytes = await entry?.getData?.(new Uint8ArrayWriter())
+    if (!bytes) {
+      missingMediaTargets.add(rel.target)
+      hashes.set(rel.relId, { mediaPath })
+      continue
     }
-  })
+    hashes.set(rel.relId, {
+      mediaPath,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    })
+  }
+
+  const paragraphs = matchAll(documentXml, /<w:p\b[\s\S]*?<\/w:p>/g).map((xml, index) => ({
+    index,
+    xml,
+    text: textFromXml(xml).trim(),
+    styleId: attr(xml, /<w:pStyle\b[^>]*w:val="([^"]+)"/),
+  }))
+  const headingPath: string[] = []
+  const paths = new Map<number, string[]>()
+  for (const paragraph of paragraphs) {
+    const level = headingLevelFromStyle(paragraph.styleId)
+    if (level && paragraph.text) {
+      headingPath[level - 1] = paragraph.text
+      headingPath.length = level
+    }
+    paths.set(paragraph.index, [...headingPath])
+  }
+
+  const images: WordDocumentInspection["images"] = []
+  const used = new Set<string>()
+  const missingRelationshipIds = new Set<string>()
+  for (const paragraph of paragraphs) {
+    const drawings = matchAll(paragraph.xml, /<w:drawing\b[\s\S]*?<\/w:drawing>/g)
+    for (const drawing of drawings) {
+      const relId = attr(drawing, /<a:blip\b[^>]*r:embed="([^"]+)"/)
+      if (!relId) continue
+      used.add(relId)
+      const rel = byId.get(relId)
+      if (!rel) missingRelationshipIds.add(relId)
+      const previous = paragraphs[paragraph.index - 1]
+      const next = paragraphs[paragraph.index + 1]
+      const title = previous?.styleId === "Caption" && previous.text ? previous.text : undefined
+      const caption = next?.styleId === "Caption" && next.text ? next.text : undefined
+      const rawAlt =
+        attr(drawing, /<wp:docPr\b[^>]*\bdescr="([^"]*)"/) ??
+        attr(drawing, /<wp:docPr\b[^>]*\btitle="([^"]*)"/) ??
+        attr(drawing, /<pic:cNvPr\b[^>]*\bdescr="([^"]*)"/)
+      const altText = rawAlt ? unescapeXml(rawAlt) : undefined
+      const target = rel?.target ?? ""
+      const hash = hashes.get(relId)
+      const visible = [title, caption, altText].filter(Boolean).join(" ")
+      const visibleId =
+        visible.match(/\bDG-[A-Za-z0-9._-]+\b/i)?.[0] ?? visible.match(/\b(?:FIG|DU)-[A-Za-z0-9._-]+\b/i)?.[0]
+      images.push({
+        index: images.length + 1,
+        relId,
+        target,
+        contentType: rel && hash?.mediaPath ? contentTypeFor(rel.target) : undefined,
+        headingPath: paths.get(paragraph.index) ?? [],
+        title,
+        caption,
+        visibleId,
+        altText,
+        mediaPath: hash?.mediaPath,
+        sha256: hash?.sha256,
+      })
+    }
+  }
+
+  const duplicates = new Map<string, Set<string>>()
+  for (const rel of rels) {
+    const hash = hashes.get(rel.relId)?.sha256
+    if (!hash) continue
+    const ids = duplicates.get(hash) ?? new Set<string>()
+    ids.add(rel.relId)
+    duplicates.set(hash, ids)
+  }
+  return {
+    images,
+    diagnostics: {
+      drawingCount: images.length,
+      relationshipCount: rels.length,
+      orphanRelationshipIds: rels.filter((rel) => !used.has(rel.relId)).map((rel) => rel.relId),
+      missingRelationshipIds: [...missingRelationshipIds],
+      missingMediaTargets: [...missingMediaTargets],
+      duplicateMediaHashes: [...duplicates.entries()]
+        .filter(([, ids]) => ids.size > 1)
+        .map(([sha256, ids]) => ({ sha256, relIds: [...ids] })),
+    },
+  }
+}
+
+function wordTarget(target: string): string | undefined {
+  const value = target.replace(/^\//, "")
+  if (!value || value.includes("\\") || value.split("/").some((part) => part === ".." || part === "." || !part))
+    return undefined
+  return value.startsWith("word/") ? value : `word/${value}`
 }
 
 function parseStyles(stylesXml: string): string[] {
@@ -1756,6 +2115,194 @@ function isPng(bytes: Uint8Array): boolean {
   )
 }
 
+function hasNativeToc(xml: string): boolean {
+  return (
+    /<w:instrText\b[^>]*>[^<]*\bTOC\b[^<]*<\/w:instrText>/i.test(xml) ||
+    /<w:fldSimple\b[^>]*w:instr=(?:"[^"]*\bTOC\b[^"]*"|'[^']*\bTOC\b[^']*')/i.test(xml) ||
+    /<w:docPartGallery\b[^>]*w:val=(?:"Table of Contents"|'Table of Contents')/i.test(xml)
+  )
+}
+
+async function verifyRefreshedDocx(
+  source: Uint8Array,
+  bytes: Uint8Array,
+  response: RemoteWordRenderResponse,
+): Promise<{ ok: boolean; diagnostics: string[] }> {
+  const diagnostics: string[] = []
+  const original = await wordSemanticManifest(source).catch((error) => {
+    diagnostics.push(`could not inspect source DOCX semantics: ${error instanceof Error ? error.message : String(error)}`)
+    return undefined
+  })
+  const refreshed = await wordSemanticManifest(bytes).catch((error) => {
+    diagnostics.push(`payload is not a structurally valid DOCX: ${error instanceof Error ? error.message : String(error)}`)
+    return undefined
+  })
+  if (!original || !refreshed) return { ok: false, diagnostics }
+  if (!refreshed.hasToc) diagnostics.push("refreshed DOCX has no native TOC field")
+  if (original.titleCount !== 1 || !original.title) diagnostics.push("source DOCX must contain exactly one non-empty Title")
+  if (original.headings.length === 0) diagnostics.push("source native TOC has no Heading 1-3 denominator")
+  if (!sameJson(original.body, refreshed.body)) diagnostics.push("non-TOC body paragraph sequence changed during field refresh")
+  if (!sameJson(original.tables, refreshed.tables)) diagnostics.push("table geometry or cell text changed during field refresh")
+  if (!sameJson(original.images, refreshed.images)) diagnostics.push("drawing identity, placement, alt text, or media changed")
+  if (!sameJson(original.controls, refreshed.controls)) diagnostics.push("content-control text or identity changed")
+  if (!sameJson(original.headers, refreshed.headers) || !sameJson(original.footers, refreshed.footers))
+    diagnostics.push("header or footer semantic text changed during field refresh")
+  const expected = original.headings.map((item) => item.text)
+  const actual = refreshed.toc.map((item) => item.text)
+  if (!sameTocHeadings(expected, actual))
+    diagnostics.push(
+      `materialized TOC entries do not exactly match Heading 1-3 text and order: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
+    )
+  if (refreshed.toc.some((item) => !Number.isInteger(item.page) || item.page <= 0))
+    diagnostics.push("materialized TOC contains a missing or invalid page number")
+  if (
+    response.tocHeadingCount !== expected.length ||
+    response.tocEntryCount !== refreshed.toc.length ||
+    response.tocPageNumberCount !== refreshed.toc.filter((item) => item.page > 0).length
+  )
+    diagnostics.push("renderer TOC counts do not match the refreshed DOCX contents")
+  return { ok: diagnostics.length === 0, diagnostics }
+}
+
+type WordSemanticManifest = {
+  hasToc: boolean
+  title?: string
+  titleCount: number
+  headings: Array<{ level: number; text: string }>
+  toc: Array<{ text: string; page: number }>
+  body: Array<{ kind: string; text: string }>
+  tables: string[][][]
+  images: Array<{
+    headingPath: string[]
+    visibleId?: string
+    title?: string
+    caption?: string
+    altText?: string
+    sha256?: string
+  }>
+  controls: Array<{ tag?: string; title?: string; text: string }>
+  headers: string[]
+  footers: string[]
+}
+
+async function wordSemanticManifest(bytes: Uint8Array): Promise<WordSemanticManifest> {
+  const zip = new ZipReader(new Uint8ArrayReader(new Uint8Array(bytes)))
+  try {
+    const entries = await zip.getEntries()
+    const byName = new Map(entries.map((entry) => [entry.filename, entry]))
+    const documentXml = await readEntryText(byName, "word/document.xml")
+    const stylesXml = await readEntryText(byName, "word/styles.xml")
+    const relsXml = await readEntryText(byName, "word/_rels/document.xml.rels")
+    if (!documentXml || !stylesXml) throw new Error("DOCX is missing document.xml or styles.xml")
+    const styles = semanticWordStyles(stylesXml)
+    const paragraphs = matchAll(documentXml, /<w:p\b[\s\S]*?<\/w:p>/g).map((xml) => {
+      const style = attr(xml, /<w:pStyle\b[^>]*w:val="([^"]+)"/) ?? ""
+      const text = normalizeWordText(textFromXml(xml))
+      const configured = styles.get(style) ?? {}
+      const direct = style.match(/^(?:Heading|标题)\s*([1-3])$/i)
+      const info = {
+        title: configured.title || /^(?:Title|标题)$/i.test(style),
+        toc: configured.toc || /^(?:TOC|Contents|目录)\s*[1-3]$/i.test(style),
+        level: configured.level ?? (direct ? Number(direct[1]) as 1 | 2 | 3 : undefined),
+      }
+      return { xml, style, text, info }
+    })
+    const titles = paragraphs.filter((item) => item.info.title && item.text)
+    const headings = paragraphs
+      .filter((item) => item.info.level && item.text)
+      .map((item) => ({ level: item.info.level!, text: item.text }))
+    const toc = paragraphs
+      .filter((item) => item.info.toc && item.text)
+      .map((item) => {
+        const match = item.text.match(/^(.*?)(\d+)$/u)
+        return { text: normalizeWordText(match?.[1] ?? item.text), page: match ? Number(match[2]) : 0 }
+      })
+    const body = paragraphs
+      .filter((item) => !item.info.toc && !hasNativeToc(item.xml))
+      .filter((item) => item.text && !onlyMutableFieldResult(item.xml, item.text))
+      .map((item) => ({ kind: item.info.title ? "title" : item.info.level ? `heading-${item.info.level}` : "body", text: item.text }))
+    const inspected = await inspectImages(documentXml, relsXml ?? "", byName)
+    const images = inspected.images.map((item) => ({
+      headingPath: item.headingPath,
+      visibleId: item.visibleId,
+      title: item.title,
+      caption: item.caption,
+      altText: item.altText,
+      sha256: item.sha256,
+    }))
+    const parts = async (prefix: string) => {
+      const result: string[] = []
+      for (const entry of entries.filter((item) => item.filename.startsWith(`word/${prefix}`) && item.filename.endsWith(".xml"))) {
+        const xml = await readEntryText(byName, entry.filename)
+        if (!xml) continue
+        const text = normalizeWordText(textFromXml(xml).replace(/\b\d+\b/g, ""))
+        result.push(text)
+      }
+      return result
+    }
+    return {
+      hasToc: hasNativeToc(documentXml),
+      title: titles[0]?.text,
+      titleCount: titles.length,
+      headings,
+      toc,
+      body,
+      tables: parseTables(documentXml).map((table) => table.map((row) => row.map(normalizeWordText))),
+      images,
+      controls: parseContentControls(documentXml)
+        .filter((item) => !hasNativeToc(item.xml))
+        .map((item) => ({
+          tag: item.tag,
+          title: item.title,
+          text: normalizeWordText(item.text),
+        })),
+      headers: await parts("header"),
+      footers: await parts("footer"),
+    }
+  } finally {
+    await zip.close()
+  }
+}
+
+function semanticWordStyles(xml: string) {
+  const styles = new Map<string, { title?: boolean; toc?: boolean; level?: 1 | 2 | 3 }>()
+  for (const block of matchAll(xml, /<w:style\b[^>]*>[\s\S]*?<\/w:style>/g)) {
+    const id = attr(block, /<w:style\b[^>]*w:styleId="([^"]+)"/) ?? ""
+    const name = attr(block, /<w:name\b[^>]*w:val="([^"]+)"/) ?? id
+    const label = `${id} ${name}`
+    const title = /(?:^|\s)(?:title|标题)(?:\s|$)/i.test(label)
+    const toc = /(?:^|\s)(?:toc|contents|目录)\s*[1-3](?:\s|$)/i.test(label)
+    const direct = label.match(/(?:^|\s)(?:heading|标题)\s*([1-3])(?:\s|$)/i)
+    const outline = attr(block, /<w:outlineLvl\b[^>]*w:val="([0-2])"/)
+    const level = title || toc ? undefined : direct ? Number(direct[1]) : outline ? Number(outline) + 1 : undefined
+    styles.set(id, { title, toc, level: level as 1 | 2 | 3 | undefined })
+  }
+  return styles
+}
+
+function onlyMutableFieldResult(xml: string, text: string): boolean {
+  return /<w:instrText\b[^>]*>[^<]*(?:PAGE|NUMPAGES|SEQ)[^<]*<\/w:instrText>/i.test(xml) && /^\d+$/u.test(text)
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function sameTocHeadings(expected: string[], actual: string[]): boolean {
+  return (
+    expected.length === actual.length &&
+    expected.every((value, index) => {
+      const heading = normalizeWordText(value)
+      const entry = normalizeWordText(actual[index] ?? "")
+      return heading === entry || heading === tocHeadingText(entry)
+    })
+  )
+}
+
+function tocHeadingText(value: string): string {
+  return normalizeWordText(value).replace(/^\d+(?:[.\-]\d+)*(?:[.)、．])?\s*/u, "")
+}
+
 function escapeXml(input: string): string {
   return input.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
@@ -1822,6 +2369,14 @@ type DocxSnapshot = {
 type RemoteWordRenderResponse = {
   ok?: boolean
   pageCount?: number
+  returnedPageCount?: number
+  pageCountKind?: "exact" | "lower-bound" | "unknown"
+  fieldRefreshStatus?: "completed" | "failed" | "not-required"
+  fieldRefreshDiagnostics?: string[]
+  tocHeadingCount?: number
+  tocEntryCount?: number
+  tocPageNumberCount?: number
+  updatedDocxBase64?: string
   pdfBase64?: string
   pdf?: {
     contentType?: string
@@ -1839,6 +2394,7 @@ type RemoteWordRenderResponse = {
     blank?: boolean
   }>
   detectedImageCount?: number
+  textQa?: WordRenderTextQa
   warnings?: string[]
   issues?: WordRenderIssue[]
   renderer?: Record<string, unknown>
@@ -2035,10 +2591,26 @@ async function tryLocalWordRenderer(
   const diagnostics: WordRenderDiagnostic[] = []
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-word-render-"))
   try {
+    const snapshot = await readDocxSnapshot(source)
+    const documentXml = requiredSnapshotText(snapshot, "word/document.xml", source)
+    const hasToc = hasNativeToc(documentXml)
+    const fieldRefreshStatus: NonNullable<RemoteWordRenderResponse["fieldRefreshStatus"]> = hasToc
+      ? "failed"
+      : "not-required"
+    const fieldRefreshDiagnostics = hasToc
+      ? ["Local fallback does not run the verified LibreOffice UNO field-update workflow; rendered the original DOCX."]
+      : ["Document has no native TOC field requiring layout refresh."]
+    if (hasToc)
+      diagnostics.push({
+        code: "word-render-local-field-refresh-failed",
+        severity: "warning",
+        message: fieldRefreshDiagnostics[0],
+      })
     try {
       await execFile(soffice, ["--headless", "--convert-to", "pdf", "--outdir", temp, source], {
         timeout: timeoutMs,
         windowsHide: true,
+        env: userEnv(process.env),
       })
     } catch (err) {
       diagnostics.push({
@@ -2062,8 +2634,11 @@ async function tryLocalWordRenderer(
       return { response: { warnings: [] }, diagnostics }
     }
 
+    const textQa = await localWordTextQa(source, pdfPath, timeoutMs)
+
     const pdftoppm = await findExecutable(process.env["KILO_WORD_RENDER_PDFTOPPM"], "pdftoppm")
     const pages: NonNullable<RemoteWordRenderResponse["pages"]> = []
+    let pageCountKind: NonNullable<RemoteWordRenderResponse["pageCountKind"]> = "unknown"
     if (!pdftoppm) {
       diagnostics.push({
         code: "word-render-local-page-renderer-not-configured",
@@ -2074,20 +2649,26 @@ async function tryLocalWordRenderer(
     } else {
       const prefix = path.join(temp, "page")
       try {
-        await execFile(pdftoppm, ["-png", "-f", "1", "-l", String(maxPages), pdfPath, prefix], {
+        await execFile(pdftoppm, ["-png", "-f", "1", "-l", String(maxPages + 1), pdfPath, prefix], {
           timeout: timeoutMs,
           windowsHide: true,
+          env: userEnv(process.env),
         })
         const entries = await fs.readdir(temp)
         const pageFiles = entries
           .filter((entry) => /^page-\d+\.png$/.test(entry))
           .sort((left, right) => pageNumber(left) - pageNumber(right))
-          .slice(0, maxPages)
+        pageCountKind = pageFiles.length > maxPages ? "lower-bound" : "exact"
         for (const [index, file] of pageFiles.entries()) {
           const bytes = await fs.readFile(path.join(temp, file))
+          const scanned = await summarizePagePng(bytes)
           pages.push({
+            page: index + 1,
             fileName: `rendered/page-${String(index + 1).padStart(3, "0")}.png`,
             pngBase64: Buffer.from(bytes).toString("base64"),
+            width: numberField(scanned.summary, "width"),
+            height: numberField(scanned.summary, "height"),
+            visualSummary: scanned.summary ?? { summaryError: scanned.error ?? "unknown PNG summary failure" },
           })
         }
       } catch (err) {
@@ -2102,14 +2683,130 @@ async function tryLocalWordRenderer(
     return {
       response: {
         pdfBase64: pdfBytes.toString("base64"),
+        fieldRefreshStatus,
+        fieldRefreshDiagnostics,
+        textQa,
         pages,
         pageCount: pages.length,
+        returnedPageCount: pages.length,
+        pageCountKind,
       },
       diagnostics,
     }
   } finally {
     await fs.rm(temp, { recursive: true, force: true })
   }
+}
+
+async function localWordTextQa(source: string, pdf: string, timeoutMs: number): Promise<WordRenderTextQa> {
+  const executable = await findExecutable(process.env["KILO_WORD_RENDER_PDFTOTEXT"], "pdftotext")
+  if (!executable) return failedWordTextQa("pdftotext is unavailable for local rendered-text QA")
+  const inspection = await inspectWordDocument({ path: source, maxParagraphs: 1_000, maxTables: 200 })
+  try {
+    const result = await execFile(executable, ["-layout", "-enc", "UTF-8", pdf, "-"], {
+      timeout: timeoutMs,
+      windowsHide: true,
+      encoding: "utf8",
+      env: userEnv(process.env),
+    })
+    return evaluateWordTextQa(inspection, String(result.stdout ?? ""))
+  } catch (error) {
+    return failedWordTextQa(error instanceof Error ? error.message : String(error))
+  }
+}
+
+function failedWordTextQa(message: string): WordRenderTextQa {
+  return {
+    ok: false,
+    titlePresent: false,
+    firstHeadingPresent: false,
+    sourceCjkCount: 0,
+    pdfCjkCount: 0,
+    cjkCoverage: 0,
+    sentinelCount: 0,
+    matchedSentinelCount: 0,
+    sentinelCoverage: 0,
+    diagnostics: [message],
+  }
+}
+
+function evaluateWordTextQa(source: WordDocumentInspection, rendered: string): WordRenderTextQa {
+  const text = normalizeWordText(rendered)
+  const title = normalizeWordText(source.title ?? "")
+  const heading = normalizeWordText(source.firstHeading ?? "")
+  const sourceText = source.paragraphs.map((item) => item.text).join("\n")
+  const sourceCjkCount = wordCjkCount(sourceText)
+  const pdfCjkCount = wordCjkCount(text)
+  const cjkCoverage = sourceCjkCount > 0 ? Math.min(1, pdfCjkCount / sourceCjkCount) : 1
+  const sentinels = wordSentinels(source)
+  const matchedSentinelCount = sentinels.filter((item) => text.includes(item)).length
+  const sentinelCoverage = sentinels.length > 0 ? matchedSentinelCount / sentinels.length : 1
+  const diagnostics: string[] = []
+  if (!title || !text.includes(title)) diagnostics.push("document title is missing from rendered PDF text")
+  if (!heading || !text.includes(heading)) diagnostics.push("first Heading is missing from rendered PDF text")
+  if (sourceCjkCount >= 10 && cjkCoverage < 0.5)
+    diagnostics.push(`rendered CJK coverage ${cjkCoverage.toFixed(3)} is below 0.500`)
+  if (sentinels.length >= 3 && sentinelCoverage < 0.8)
+    diagnostics.push(`rendered sentinel coverage ${sentinelCoverage.toFixed(3)} is below 0.800`)
+  return {
+    ok: diagnostics.length === 0,
+    titlePresent: Boolean(title && text.includes(title)),
+    firstHeadingPresent: Boolean(heading && text.includes(heading)),
+    sourceCjkCount,
+    pdfCjkCount,
+    cjkCoverage,
+    sentinelCount: sentinels.length,
+    matchedSentinelCount,
+    sentinelCoverage,
+    diagnostics,
+  }
+}
+
+function wordSentinels(source: WordDocumentInspection): string[] {
+  const values = [
+    ...source.outline.map((item) => item.title),
+    ...source.tables.flatMap((table) => table.rows.flat()).filter((item) => item.trim().length >= 4),
+    ...source.paragraphs
+      .filter((item) => !item.headingLevel && item.text.trim().length >= 12)
+      .filter((_, index, items) => index === 0 || index === Math.floor(items.length / 2) || index === items.length - 1)
+      .map((item) => item.text),
+  ]
+  return [...new Set(values.map(normalizeWordText).filter(Boolean))]
+}
+
+function normalizeWordText(value: string): string {
+  return value.normalize("NFKC").replace(/\s+/gu, " ").trim()
+}
+
+function wordCjkCount(value: string): number {
+  return value.match(/[\u3400-\u4dbf\u4e00-\u9fff]/gu)?.length ?? 0
+}
+
+async function pdfPageCount(bytes: Uint8Array, timeoutMs: number): Promise<number | undefined> {
+  const executable = await findExecutable(process.env["KILO_WORD_RENDER_PDFINFO"], "pdfinfo")
+  if (executable) {
+    const dir = await fs.mkdtemp(path.join(Instance.directory, ".kilo-pdf-info-"))
+    const file = path.join(dir, "rendered.pdf")
+    try {
+      await fs.writeFile(file, bytes)
+      const result = await execFile(executable, [file], {
+        timeout: timeoutMs,
+        windowsHide: true,
+        encoding: "utf8",
+        env: userEnv(process.env),
+      })
+      const match = String(result.stdout ?? "").match(/^Pages:\s+(\d+)\s*$/m)
+      const count = match ? Number(match[1]) : 0
+      return Number.isInteger(count) && count > 0 ? count : undefined
+    } catch {
+      return undefined
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  }
+  const raw = Buffer.from(bytes).toString("latin1")
+  const count = [...raw.matchAll(/\/Type\s*\/Page\b/g)].length
+  return count > 0 ? count : undefined
 }
 
 async function findExecutable(configured: string | undefined, name: string): Promise<string | undefined> {
@@ -2136,6 +2833,57 @@ function pageNumber(file: string): number {
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
 }
 
+async function summarizePagePng(bytes: Uint8Array): Promise<{ summary?: Record<string, unknown>; error?: string }> {
+  const loaded = await photon()
+  if ("error" in loaded) return { error: loaded.error instanceof Error ? loaded.error.message : String(loaded.error) }
+  try {
+    const image = loaded.module.PhotonImage.new_from_byteslice(bytes)
+    try {
+      const width = image.get_width()
+      const height = image.get_height()
+      const pixels = image.get_raw_pixels()
+      let inkPixels = 0
+      let bodyInkPixels = 0
+      const bodyTop = Math.floor(height * 0.08)
+      const bodyBottom = Math.ceil(height * 0.92)
+      for (let index = 0; index < pixels.length; index += 4) {
+        const alpha = pixels[index + 3] ?? 0
+        if (alpha === 0) continue
+        const red = pixels[index] ?? 255
+        const green = pixels[index + 1] ?? 255
+        const blue = pixels[index + 2] ?? 255
+        if (red < 250 || green < 250 || blue < 250) {
+          inkPixels += 1
+          const y = Math.floor(index / 4 / width)
+          if (y >= bodyTop && y < bodyBottom) bodyInkPixels += 1
+        }
+      }
+      const totalPixels = width * height
+      const bodyPixels = width * Math.max(0, bodyBottom - bodyTop)
+      return {
+        summary: {
+          width,
+          height,
+          totalPixels,
+          inkPixels,
+          inkRatio: totalPixels > 0 ? inkPixels / totalPixels : 0,
+          bodyInkPixels,
+          bodyInkRatio: bodyPixels > 0 ? bodyInkPixels / bodyPixels : 0,
+        },
+      }
+    } finally {
+      image.free()
+    }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function numberField(value: Record<string, unknown> | undefined, field: string): number | undefined {
+  const item = value?.[field]
+  return typeof item === "number" && Number.isFinite(item) ? item : undefined
+}
+
 async function callWordRenderer(
   endpoint: string,
   payload: unknown,
@@ -2152,12 +2900,64 @@ async function callWordRenderer(
     })
     const body = (await response.json()) as RemoteWordRenderResponse
     if (!body || typeof body !== "object") throw new Error("renderer returned an invalid JSON body")
-    if (!response.ok && body.ok !== false && !body.issues?.length)
-      throw new Error(`renderer returned HTTP ${response.status}`)
+    if (!response.ok || body.ok !== true) {
+      const issues = body.issues
+        ?.map((item) => `${item.code ?? "renderer-error"}: ${item.message ?? "failed"}`)
+        .join("; ")
+      throw new Error(`renderer returned HTTP ${response.status}${issues ? `: ${issues}` : ""}`)
+    }
+    const invalid = validateRemoteWordRenderResponse(body)
+    if (invalid.length) throw new Error(`renderer returned an invalid success payload: ${invalid.join("; ")}`)
     return body
   } finally {
     clearTimeout(timer)
   }
+}
+
+function validateRemoteWordRenderResponse(body: RemoteWordRenderResponse): string[] {
+  const invalid: string[] = []
+  const integer = (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0
+  if (!integer(body.pageCount)) invalid.push("pageCount must be a non-negative integer")
+  if (!integer(body.returnedPageCount)) invalid.push("returnedPageCount must be a non-negative integer")
+  if (!body.pageCountKind || !["exact", "lower-bound", "unknown"].includes(body.pageCountKind))
+    invalid.push("pageCountKind is required")
+  if (!body.fieldRefreshStatus || !["completed", "failed", "not-required"].includes(body.fieldRefreshStatus))
+    invalid.push("fieldRefreshStatus is required")
+  if (!Array.isArray(body.fieldRefreshDiagnostics)) invalid.push("fieldRefreshDiagnostics is required")
+  if (!Array.isArray(body.issues)) invalid.push("issues is required")
+  if (!body.renderer || typeof body.renderer !== "object") invalid.push("renderer is required")
+  if (!body.pdf?.base64?.trim() && !body.pdfBase64?.trim()) invalid.push("PDF payload is required")
+  if (!Array.isArray(body.pages)) invalid.push("pages are required")
+  if (Array.isArray(body.pages) && body.returnedPageCount !== body.pages.length)
+    invalid.push("returnedPageCount does not match pages.length")
+  const qa = body.textQa
+  if (!qa || typeof qa !== "object") invalid.push("textQa is required")
+  if (qa) {
+    for (const field of ["ok", "titlePresent", "firstHeadingPresent"] as const) {
+      if (typeof qa[field] !== "boolean") invalid.push(`textQa.${field} must be boolean`)
+    }
+    for (const field of [
+      "sourceCjkCount",
+      "pdfCjkCount",
+      "cjkCoverage",
+      "sentinelCount",
+      "matchedSentinelCount",
+      "sentinelCoverage",
+    ] as const) {
+      if (typeof qa[field] !== "number" || !Number.isFinite(qa[field]) || qa[field] < 0)
+        invalid.push(`textQa.${field} must be a finite non-negative number`)
+    }
+    if (typeof qa.cjkCoverage === "number" && qa.cjkCoverage > 1) invalid.push("textQa.cjkCoverage exceeds 1")
+    if (typeof qa.sentinelCoverage === "number" && qa.sentinelCoverage > 1)
+      invalid.push("textQa.sentinelCoverage exceeds 1")
+    if (!Array.isArray(qa.diagnostics)) invalid.push("textQa.diagnostics is required")
+  }
+  for (const field of ["tocHeadingCount", "tocEntryCount", "tocPageNumberCount"] as const) {
+    if (!integer(body[field])) invalid.push(`${field} must be a non-negative integer`)
+  }
+  if (body.fieldRefreshStatus === "completed" && !body.updatedDocxBase64?.trim())
+    invalid.push("completed field refresh requires updatedDocxBase64")
+  return invalid
 }
 
 function snapshotText(snapshot: DocxSnapshot, name: string): string | undefined {
@@ -2279,28 +3079,54 @@ function materializeFieldsInDocument(
     if (tocMode === "preserve") {
       toc = "preserved"
       warnings.push("TOC placeholder preserved; use tocMode materialize to create a native Word TOC field")
-      return { xml, summary: { seqFields, captions, toc }, warnings }
+      return { xml, summary: { seqFields, captions, toc, tocEntryCount: 0, needsLayoutRefresh: false }, warnings }
     }
     if (placeholders.length !== 1)
-      throw new Error(`materialize_word_fields requires exactly one standalone {{TOC}} paragraph, found ${placeholders.length}`)
+      throw new Error(
+        `materialize_word_fields requires exactly one standalone {{TOC}} paragraph, found ${placeholders.length}`,
+      )
     const placeholder = placeholders[0]!
     if (placeholder.kind !== "paragraph" || placeholder.text.trim() !== "{{TOC}}")
       throw new Error("materialize_word_fields requires {{TOC}} to be the only text in a standalone paragraph")
     toc = tocMode === "remove" ? "removed" : "materialized"
-    xml = splice(xml, placeholder.start, placeholder.end, tocMode === "remove" ? "" : nativeTocXml(usesCjk(documentXml)))
+    const headings = parseTopLevelBlocks(xml).filter((block): block is TopLevelBlock & { headingLevel: 1 | 2 | 3 } =>
+      Boolean(block.headingLevel && block.text.trim()),
+    )
+    xml = splice(
+      xml,
+      placeholder.start,
+      placeholder.end,
+      tocMode === "remove" ? "" : nativeTocXml(usesCjk(documentXml), headings),
+    )
+    return {
+      xml,
+      summary: {
+        seqFields,
+        captions,
+        toc,
+        tocEntryCount: tocMode === "remove" ? 0 : headings.length,
+        needsLayoutRefresh: tocMode === "materialize",
+      },
+      warnings,
+    }
   }
-  return { xml, summary: { seqFields, captions, toc }, warnings }
+  return { xml, summary: { seqFields, captions, toc, tocEntryCount: 0, needsLayoutRefresh: false }, warnings }
 }
 
-function nativeTocXml(cjk: boolean): string {
+function nativeTocXml(cjk: boolean, headings: Array<TopLevelBlock & { headingLevel: 1 | 2 | 3 }>): string {
   const title = cjk ? "目录" : "Table of Contents"
-  const hint = cjk ? "请在 Word 中更新目录" : "Update table of contents in Word"
-  const heading =
-    `<w:p><w:pPr><w:pStyle w:val="TOCHeading"/><w:pageBreakBefore/><w:keepNext/><w:keepLines/></w:pPr><w:r><w:t xml:space="preserve">${title}</w:t></w:r></w:p>`
-  const field =
-    `<w:p><w:fldSimple w:instr="TOC \\o &quot;1-3&quot; \\h \\z \\u" w:dirty="true"><w:r><w:t xml:space="preserve">${hint}</w:t></w:r></w:fldSimple></w:p>`
+  const heading = `<w:p><w:pPr><w:pStyle w:val="TOCHeading"/><w:pageBreakBefore/><w:keepNext/><w:keepLines/></w:pPr><w:r><w:t xml:space="preserve">${title}</w:t></w:r></w:p>`
+  const start =
+    '<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>'
+  const entries = headings
+    .map(
+      (item) =>
+        `<w:p><w:pPr><w:pStyle w:val="TOC${item.headingLevel}"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(item.text.trim())}</w:t></w:r></w:p>`,
+    )
+    .join("")
+  const end = '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
   const page = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
-  return `${heading}${field}${page}`
+  return `${heading}${start}${entries}${end}${page}`
 }
 
 function usesCjk(documentXml: string): boolean {

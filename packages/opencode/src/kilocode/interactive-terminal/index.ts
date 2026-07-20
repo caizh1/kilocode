@@ -7,6 +7,7 @@ import { Identifier } from "@/id/id"
 import { Instance, type InstanceContext } from "@/kilocode/instance"
 import { SessionID } from "@/session/schema"
 import { Shell } from "@/shell/shell"
+import { userEnv } from "@/kilocode/product-env"
 import { NonNegativeInt, PositiveInt, optionalOmitUndefined, withStatics } from "@opencode-ai/core/schema"
 import { zod, ZodOverride } from "@opencode-ai/core/effect-zod"
 import * as Log from "@opencode-ai/core/util/log"
@@ -221,7 +222,7 @@ export namespace InteractiveTerminal {
 
   function environment(input: NodeJS.ProcessEnv) {
     const env = Object.fromEntries(
-      Object.entries(input).filter((entry): entry is [string, string] => entry[1] !== undefined),
+      Object.entries(userEnv(input)).filter((entry): entry is [string, string] => entry[1] !== undefined),
     )
     env.TERM = "xterm-256color"
     env.KILO_TERMINAL = "1"

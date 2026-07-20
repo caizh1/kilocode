@@ -19,7 +19,6 @@ import { PromptInput } from "./PromptInput"
 import { PermissionDock } from "./PermissionDock"
 import { PermissionDialogController } from "./PermissionDialogController"
 import { editPermission, permissionPresentation } from "./permission-presentation"
-import { AgentConsoleInput, type AgentConsoleInputMode } from "./AgentConsoleInput"
 import { StartupErrorBanner } from "./StartupErrorBanner"
 import { SessionTabStrip } from "./SessionTabStrip"
 import { useSession } from "../../context/session"
@@ -44,12 +43,6 @@ interface ChatViewProps {
   promptBoxId?: string
   pendingSessionID?: string
   emptyState?: () => JSX.Element
-  consoleInput?: {
-    mode: () => AgentConsoleInputMode
-    setMode: (mode: AgentConsoleInputMode) => void
-    pending: () => boolean
-    onShell: (command: string) => void
-  }
 }
 
 export const ChatView: Component<ChatViewProps> = (props) => {
@@ -155,7 +148,6 @@ export const ChatView: Component<ChatViewProps> = (props) => {
       session.respondingPermissions().has(request.id),
       () => session.respondToPermission(request.id, "reject", [], []),
       (text) => {
-        props.consoleInput?.setMode("agent")
         window.dispatchEvent(new CustomEvent("prefillPrompt", { detail: { text } }))
         window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { restore: true } }))
       },
@@ -420,37 +412,14 @@ export const ChatView: Component<ChatViewProps> = (props) => {
               {renderActions(hasMessages())}
             </Show>
             <Show when={!props.readonly}>
-              <Show
-                when={props.consoleInput}
-                fallback={
-                  <PromptInput
-                    blocked={blocked}
-                    blockedReason={requirementReason}
-                    suggesting={suggesting}
-                    questioning={questioning}
-                    boxId={props.promptBoxId}
-                    pendingSessionID={pendingSessionID()}
-                  />
-                }
-              >
-                {(input) => (
-                  <AgentConsoleInput
-                    mode={input().mode}
-                    setMode={input().setMode}
-                    pending={input().pending}
-                    onShell={input().onShell}
-                  >
-                    <PromptInput
-                      blocked={blocked}
-                      blockedReason={requirementReason}
-                      suggesting={suggesting}
-                      questioning={questioning}
-                      boxId={props.promptBoxId}
-                      pendingSessionID={pendingSessionID()}
-                    />
-                  </AgentConsoleInput>
-                )}
-              </Show>
+              <PromptInput
+                blocked={blocked}
+                blockedReason={requirementReason}
+                suggesting={suggesting}
+                questioning={questioning}
+                boxId={props.promptBoxId}
+                pendingSessionID={pendingSessionID()}
+              />
             </Show>
           </div>
         </Show>

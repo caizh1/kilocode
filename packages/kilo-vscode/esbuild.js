@@ -282,6 +282,12 @@ async function main() {
     "dist/agent-manager.js",
   )
 
+  // Build Agent Console webview (standalone Agent/Shell hybrid terminal)
+  const agentConsoleCtx = await createBrowserWebviewContext(
+    "webview-ui/agent-console/index.tsx",
+    "dist/agent-console.js",
+  )
+
   // Build KiloClaw webview (SolidJS, standalone chat panel)
   const kiloClawCtx = await createBrowserWebviewContext("webview-ui/kiloclaw/index.tsx", "dist/kiloclaw.js")
 
@@ -305,6 +311,7 @@ async function main() {
       extensionCtx.watch(),
       webviewCtx.watch(),
       agentManagerCtx.watch(),
+      agentConsoleCtx.watch(),
       diffViewerCtx.watch(),
       diffVirtualCtx.watch(),
       kiloClawCtx.watch(),
@@ -316,6 +323,7 @@ async function main() {
       extensionCtx.rebuild(),
       webviewCtx.rebuild(),
       agentManagerCtx.rebuild(),
+      agentConsoleCtx.rebuild(),
       kiloClawCtx.rebuild(),
       marketplaceCtx.rebuild(),
       diffViewerCtx.rebuild(),
@@ -327,6 +335,7 @@ async function main() {
       extensionCtx.dispose(),
       webviewCtx.dispose(),
       agentManagerCtx.dispose(),
+      agentConsoleCtx.dispose(),
       diffViewerCtx.dispose(),
       diffVirtualCtx.dispose(),
       kiloClawCtx.dispose(),

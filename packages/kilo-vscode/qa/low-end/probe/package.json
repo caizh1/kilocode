@@ -1,0 +1,13 @@
+{
+  "name": "chipmate-low-end-probe",
+  "displayName": "ChipMate Low-End Probe",
+  "publisher": "chipmate-qa",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./extension.js"
+}

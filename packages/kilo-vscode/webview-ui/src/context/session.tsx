@@ -73,7 +73,7 @@ import { PartStash } from "./part-stash"
 import { mergeParts, sameParts } from "./session-parts"
 import { state as todoState } from "./todo-revert"
 import { getVariant, sessionVariantKeys, transferVariants, variantKey } from "./session-variant-store"
-import { KILO_AUTO, KILO_PROVIDER_ID, parseModelString } from "../../../src/shared/provider-model"
+import { KILO_PROVIDER_ID, parseModelString } from "../../../src/shared/provider-model"
 import { reviewMetadata, type ReviewMessageData } from "../../../src/shared/review-comments"
 import { visibleMessages as filterVisibleMessages } from "./session-queue"
 import { clearSessionDraftDiscarded, deleteDraftsForSession } from "../utils/draft-store"
@@ -270,8 +270,8 @@ interface SessionContextValue {
   unrevertSession: () => void
   sendMessage: (
     text: string,
-    providerID?: string,
-    modelID?: string,
+    providerID: string,
+    modelID: string,
     files?: FileAttachment[],
     draftID?: string,
     context?: string,
@@ -281,8 +281,8 @@ interface SessionContextValue {
   sendCommand: (
     command: string,
     args: string,
-    providerID?: string,
-    modelID?: string,
+    providerID: string,
+    modelID: string,
     files?: FileAttachment[],
     draftID?: string,
     context?: string,
@@ -595,18 +595,22 @@ export const SessionProvider: ParentComponent = (props) => {
 
   /** Global default model from config (config.model). */
   function getGlobalModel(): ModelSelection | null {
-    return parseModelString(config().model)
+    return parseModelString(config().model) ?? provider.defaultSelection()
   }
 
-  function resolveModel(agentName: string, override?: ModelSelection | null): ModelSelection | null {
+  function resolveModel(
+    agentName: string,
+    override?: ModelSelection | null,
+    remembered?: ModelSelection | null,
+  ): ModelSelection | null {
     return resolveModelSelection({
       providers: provider.providers(),
       connected: provider.connected(),
       override,
-      mode: getModeModel(agentName),
+      mode: remembered ?? getModeModel(agentName),
       global: getGlobalModel(),
       recent: store.recentModels,
-      fallback: KILO_AUTO,
+      fallback: null,
     })
   }
 
@@ -623,7 +627,10 @@ export const SessionProvider: ParentComponent = (props) => {
     const sid = currentSessionID()
     if (sid) {
       const session = store.sessionOverrides[sid]
-      if (session) return session
+      if (session) {
+        const agentName = agentForScope(sid)
+        return resolveModel(agentName, session, store.modelSelections[agentName])
+      }
     }
     const agentName = selectedAgentName()
     return resolveModel(agentName, store.modelSelections[agentName])
@@ -633,7 +640,10 @@ export const SessionProvider: ParentComponent = (props) => {
   function selected(sessionID?: string): ModelSelection | null {
     if (!sessionID) return currentSelected()
     const session = store.sessionOverrides[sessionID]
-    if (session) return session
+    if (session) {
+      const agentName = agentForScope(sessionID)
+      return resolveModel(agentName, session, store.modelSelections[agentName])
+    }
     const agentName = agentForScope(sessionID)
     return resolveModel(agentName, store.modelSelections[agentName])
   }
@@ -2273,8 +2283,8 @@ export const SessionProvider: ParentComponent = (props) => {
 
   function sendMessage(
     text: string,
-    providerID?: string,
-    modelID?: string,
+    providerID: string,
+    modelID: string,
     files?: FileAttachment[],
     draftID?: string,
     context?: string,
@@ -2283,6 +2293,10 @@ export const SessionProvider: ParentComponent = (props) => {
   ) {
     if (!server.isConnected()) {
       console.warn("[Kilo New] Cannot send message: not connected")
+      return
+    }
+    if (!providerID || !modelID) {
+      console.warn("[Kilo New] Cannot send message: no model selected")
       return
     }
 
@@ -2351,8 +2365,8 @@ export const SessionProvider: ParentComponent = (props) => {
   function sendCommand(
     command: string,
     args: string,
-    providerID?: string,
-    modelID?: string,
+    providerID: string,
+    modelID: string,
     files?: FileAttachment[],
     draftID?: string,
     context?: string,
@@ -2360,6 +2374,10 @@ export const SessionProvider: ParentComponent = (props) => {
   ) {
     if (!server.isConnected()) {
       console.warn("[Kilo New] Cannot send command: not connected")
+      return
+    }
+    if (!providerID || !modelID) {
+      console.warn("[Kilo New] Cannot send command: no model selected")
       return
     }
 

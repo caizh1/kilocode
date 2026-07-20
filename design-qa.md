@@ -56,6 +56,46 @@ final result: passed
 
 ---
 
+# ChipMate 插件市场 G10 无限批量上传 Design QA
+
+Source visual truth paths:
+
+- `/Users/archer/Work/kilocode/.runtime/design-qa/references/extension-market/06-upload-progress-corrected.png`
+- `/Users/archer/Work/kilocode/.runtime/design-qa/references/extension-market/05-upload-idle.png`
+
+Implementation screenshot paths:
+
+- 41 项扫描清单，`1484 × 1060`：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/10-extension-upload-many-review-1484x1060.png`
+- 41 项扫描清单，`1440 × 1024`：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/extension-upload-many-1440x1024.png`
+- 41 项扫描清单，`1050 × 1024`：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/extension-upload-many-1050x1024.png`
+- 显著上传进度，`1484 × 1060`：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/09-extension-upload-progress-1484x1060.png`
+
+Comparison evidence:
+
+- 进度状态全视图并排：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-progress-side-by-side.png`
+- 大清单全视图并排：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-many-side-by-side.png`
+- 进度区域聚焦对比：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-progress-focus.png`
+
+**Findings**
+
+- No actionable P0/P1/P2 findings remain.
+- 批量页保留批准稿的 Liquid Glass 材质、蓝色强调层、柔和边界、高光和阴影；41 项清单按生产需求提升信息密度，但没有改变上传状态层级或主操作焦点。
+- 字体、间距、颜色、文案、图标、进度条、按钮与状态标签均逐项检查。图标位于正常 flex/grid 文档流中，没有使用绝对定位对齐。
+- 首轮 `1050 × 1024` 截图中第 5 个汇总卡发生换行；将汇总区稳定为五列后重新截图，三个批准视口均无遮挡、重叠或水平溢出。
+- 功能 Playwright 对 console error 进行断言并保持干净；视觉捕获仅在页面退出阶段看到已知分析发送失败警告，不影响页面状态或交互。
+
+**Primary States and Interactions Checked**
+
+- 41 个 VSIX 自动拆分为 3 个逻辑批次，清单窗口化渲染且总数、大小和批次摘要保持正确。
+- ZIP、TAR.GZ、文件夹和无关文件混合输入只上传最终 VSIX；无关字节不进入网络请求。
+- 当前项真实 XHR 进度、批次总进度、速度、ETA、暂停、恢复、取消与终态汇总。
+- 会话失效后的页内重新登录保持当前路由和清单，并使用新 CSRF 继续。
+- `503` 自动退避重试、`507` 暂停待恢复，以及已进入校验/发布后的取消边界。
+
+final result: passed
+
+---
+
 # ChipMate VS Code 插件市场 Design QA
 
 Approved reference directory: `/Users/archer/Work/kilocode/.runtime/design-qa/references/extension-market/`
@@ -151,7 +191,7 @@ Real package: `chipmate.chipmate@0.0.67`, installed into an isolated profile of 
 **Package and runtime checks**
 
 - The isolated VS Code Extension Host started the packaged `chipmate.chipmate-0.0.67` extension and its bundled CLI; the main VS Code profile was upgraded only after the isolated layout checks passed.
-- Both VSIX manifests keep `publisher=chipmate`, `name=chipmate`, version `0.0.67`, and their matching `chipmatePackageTarget`. Packaged ChipMate Server defaults resolve from `http://10.10.5.23:6001`; tracked source defaults were restored after packaging.
+- Both VSIX manifests keep `publisher=chipmate`, `name=chipmate`, version `0.0.67`, and their matching `chipmatePackageTarget`. Packaged ChipMate Server defaults resolve from the ignored local packaging configuration; tracked source defaults were restored after packaging.
 - The update service generated `schemaVersion: 2` with matching `latestByTarget` entries, SHA-256 values, and byte sizes for `darwin-arm64` and `linux-x64-baseline`.
 - Linux validation is static only: packaged CLI and Indexer are Linux x86-64 ELF files, the Linux LanceDB native runtime and required offline resources are present, and FFmpeg/source maps are absent. No Linux target-machine runtime claim is made.
 

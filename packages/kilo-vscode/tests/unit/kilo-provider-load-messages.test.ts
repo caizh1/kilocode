@@ -382,7 +382,7 @@ describe("KiloProvider.handleAbort", () => {
     const { provider, internal, sent } = makeProvider(client)
     internal.gatherEditorContext = () => context.promise
 
-    const sending = internal.handleSendMessage("hello", "msg-1", undefined, "pending:1")
+    const sending = internal.handleSendMessage("hello", "msg-1", undefined, "pending:1", "openai", "gpt-4.1")
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(sent).toContainEqual(expect.objectContaining({ type: "sessionCreated" }))
 
@@ -406,6 +406,21 @@ describe("KiloProvider.handleAbort", () => {
     await provider.abortSessions(["pending:1"])
 
     expect(client.aborted).toEqual([])
+  })
+})
+
+describe("KiloProvider missing model guard", () => {
+  it("rejects a prompt before creating a session", async () => {
+    const client = createClient()
+    const { internal, sent } = makeProvider(client)
+
+    await internal.handleSendMessage("hello", "msg-1", undefined, "draft-1")
+
+    expect(client.created).toEqual([])
+    expect(client.prompted).toEqual([])
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: "sendMessageFailed", error: "Select a model before sending" }),
+    )
   })
 })
 
@@ -469,7 +484,7 @@ describe("KiloProvider sandbox toggle", () => {
     internal.gatherEditorContext = async () => ({})
 
     const toggle = internal.handleSetSandboxDefault(true, "sandbox-1")
-    const send = internal.handleSendMessage("hello", "message-1", undefined, "draft-1")
+    const send = internal.handleSendMessage("hello", "message-1", undefined, "draft-1", "openai", "gpt-4.1")
     await Promise.resolve()
     expect(client.created).toHaveLength(0)
 
@@ -489,7 +504,7 @@ describe("KiloProvider sandbox toggle", () => {
     internal.gatherEditorContext = async () => ({})
 
     const toggle = internal.handleSetSandboxDefault(true, "sandbox-1")
-    const send = internal.handleSendMessage("hello", "message-1", undefined, "draft-1")
+    const send = internal.handleSendMessage("hello", "message-1", undefined, "draft-1", "openai", "gpt-4.1")
     await Promise.resolve()
     expect(client.created).toHaveLength(0)
     support.resolve({ data: { available: false, reason: "unsupported" } })
@@ -523,7 +538,7 @@ describe("KiloProvider sandbox toggle", () => {
     internal.gatherEditorContext = async () => ({})
 
     await internal.handleSetSandboxDefault(true, "sandbox-1")
-    await internal.handleSendMessage("hello", "message-1", undefined, "draft-1")
+    await internal.handleSendMessage("hello", "message-1", undefined, "draft-1", "openai", "gpt-4.1")
 
     expect(client.created).toEqual([
       expect.objectContaining({
@@ -544,9 +559,9 @@ describe("KiloProvider sidebar tabs", () => {
     const { internal } = makeProvider(client)
     internal.gatherEditorContext = async () => ({})
 
-    await internal.handleSendMessage("first", "m1", undefined, "draft-1")
-    await internal.handleSendMessage("second", "m2", undefined, "draft-2")
-    await internal.handleSendMessage("second follow-up", "m3", undefined, "draft-2")
+    await internal.handleSendMessage("first", "m1", undefined, "draft-1", "openai", "gpt-4.1")
+    await internal.handleSendMessage("second", "m2", undefined, "draft-2", "openai", "gpt-4.1")
+    await internal.handleSendMessage("second follow-up", "m3", undefined, "draft-2", "openai", "gpt-4.1")
 
     expect(client.created).toHaveLength(2)
     expect(client.prompted.map((call) => call.sessionID)).toEqual(["s1", "s2", "s2"])
@@ -598,7 +613,7 @@ describe("KiloProvider revert ordering", () => {
     internal.gatherEditorContext = async () => ({})
 
     internal.checkpoint("s1", () => internal.handleRevertSession("s1", "m1"))
-    const send = internal.handleSendMessage("replacement", "m2", "s1")
+    const send = internal.handleSendMessage("replacement", "m2", "s1", undefined, "openai", "gpt-4.1")
     await Promise.resolve()
     await Promise.resolve()
 
@@ -620,7 +635,7 @@ describe("KiloProvider revert ordering", () => {
     internal.currentSession = mkSession()
     internal.gatherEditorContext = () => context.promise
 
-    const send = internal.handleSendMessage("replacement", "m2", "s1")
+    const send = internal.handleSendMessage("replacement", "m2", "s1", undefined, "openai", "gpt-4.1")
     await Promise.resolve()
     internal.checkpoint("s1", () => internal.handleRevertSession("s1", "m1"))
     context.resolve({})
@@ -644,7 +659,7 @@ describe("KiloProvider revert ordering", () => {
     internal.gatherEditorContext = async () => ({})
 
     internal.checkpoint("s1", () => internal.handleRevertSession("s1", "m1"))
-    const send = internal.handleSendMessage("replacement", "m2", "s1")
+    const send = internal.handleSendMessage("replacement", "m2", "s1", undefined, "openai", "gpt-4.1")
     await Promise.resolve()
     revert.resolve({ error: new Error("revert failed") })
     await send
@@ -1173,7 +1188,7 @@ describe("KiloProvider.handleLoadMessages / slim payload", () => {
     internal.currentSession = { ...mkSession(), cost: 2 }
     internal.gatherEditorContext = async () => ({})
 
-    await internal.handleSendMessage("hello", "m1", "s1")
+    await internal.handleSendMessage("hello", "m1", "s1", undefined, "openai", "gpt-4.1")
 
     expect(client.prompted).toHaveLength(1)
   })

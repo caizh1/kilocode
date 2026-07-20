@@ -147,8 +147,7 @@ async function removeLegacyMcp(
 ): Promise<boolean> {
   const files: vscode.Uri[] = []
   if (project && scope !== "global") {
-    files.push(vscode.Uri.file(path.join(project, ".kilo", "mcp.json")))
-    files.push(vscode.Uri.file(path.join(project, ".kilocode", "mcp.json")))
+    files.push(vscode.Uri.file(path.join(project, ".chipmate-v2", "mcp.json")))
   }
 
   if (ctx.storage && scope !== "project") files.push(vscode.Uri.joinPath(ctx.storage, "settings", "mcp_settings.json"))

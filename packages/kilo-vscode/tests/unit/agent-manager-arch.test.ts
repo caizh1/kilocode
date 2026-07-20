@@ -20,7 +20,6 @@ const CSS_FILES = [
 ]
 const TSX_FILES = [
   path.join(ROOT, "webview-ui/agent-manager/AgentManagerApp.tsx"),
-  path.join(ROOT, "webview-ui/agent-manager/AgentConsoleSurface.tsx"),
   path.join(ROOT, "webview-ui/agent-manager/NewWorktreeDialog.tsx"),
   path.join(ROOT, "webview-ui/agent-manager/sortable-tab.tsx"),
   path.join(ROOT, "webview-ui/agent-manager/DiffPanel.tsx"),
@@ -342,10 +341,10 @@ describe("Agent Manager Provider — onMessage routing", () => {
     }
   })
 
-  it("session routing handles loadMessages for terminal switching", () => {
+  it("session routing changes sessions without revealing a terminal", () => {
     const text = body("onSessionMessage")
     expect(text).toContain("loadMessages")
-    expect(text).toContain("syncOnSessionSwitch")
+    expect(text).not.toContain("syncOnSessionSwitch")
   })
 
   it("terminal context reveals the terminal associated with the originating session", () => {
@@ -381,7 +380,7 @@ describe("Agent Manager Provider — onMessage routing", () => {
     const text = body("onDeleteWorktree")
     expect(text).toContain("manager.removeWorktree")
     expect(text).toContain("state.removeWorktree")
-    expect(text).toContain("clearSessionDirectory")
+    expect(text).toContain("markSessionLocal")
     expect(text).toContain("this.pushState()")
   })
 

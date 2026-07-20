@@ -7,12 +7,14 @@ import { BackgroundProcessTool } from "./background-process"
 import { GenerateImageTool } from "./generate-image"
 import { InteractiveTerminalTool } from "./interactive-terminal"
 import { NotebookEditTool, NotebookExecuteTool, NotebookReadTool } from "./notebook-host"
+import { SkillMarketTools } from "./skill-market"
 import { MemoryRecallTool } from "./memory-recall"
 import { MemorySaveTool } from "./memory-save"
 import * as Tool from "../../tool/tool"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Effect } from "effect"
 import { Notebook } from "@/kilocode/notebook/service"
+import { SkillMarket, HostError as SkillMarketHostError } from "@/kilocode/skill-market/service"
 import { AgentManager, HostError } from "@/kilocode/agent-manager/service"
 import * as Log from "@opencode-ai/core/util/log"
 import type { Config } from "@/config/config"
@@ -97,7 +99,20 @@ export namespace KiloToolRegistry {
     reject: () => Effect.die(new Error("Agent Manager orchestration is unavailable in this runtime")),
   })
 
-  export function infos(host?: AgentManager.Interface, notebook?: Notebook.Interface) {
+  const unavailableMarket = SkillMarket.Service.of({
+    request: () =>
+      Effect.fail(
+        new SkillMarketHostError({
+          code: "host_unavailable",
+          detail: "Skill Market operations are unavailable in this runtime",
+        }),
+      ),
+    list: () => Effect.succeed([]),
+    reply: () => Effect.die(new Error("Skill Market operations are unavailable in this runtime")),
+    reject: () => Effect.die(new Error("Skill Market operations are unavailable in this runtime")),
+  })
+
+  export function infos(host?: AgentManager.Interface, notebook?: Notebook.Interface, market?: SkillMarket.Interface) {
     return Effect.gen(function* () {
       const codebase = yield* CodebaseSearchTool
       const recall = yield* RecallTool
@@ -108,13 +123,16 @@ export namespace KiloToolRegistry {
       const process = yield* BackgroundProcessTool
       const image = yield* GenerateImageTool
       const terminal = yield* InteractiveTerminalTool
-      if (!notebook) return { codebase, recall, managerModels, memory, save, manager, process, image, terminal }
+      const markets = yield* SkillMarketTools.pipe(
+        Effect.provideService(SkillMarket.Service, market ?? unavailableMarket),
+      )
+      if (!notebook) return { codebase, recall, managerModels, memory, save, manager, process, image, terminal, markets }
       const tools = yield* Effect.all({
         notebookRead: NotebookReadTool,
         notebookEdit: NotebookEditTool,
         notebookExecute: NotebookExecuteTool,
       }).pipe(Effect.provideService(Notebook.Service, notebook))
-      return { codebase, recall, managerModels, memory, save, manager, process, image, terminal, ...tools }
+      return { codebase, recall, managerModels, memory, save, manager, process, image, terminal, markets, ...tools }
     })
   }
 
@@ -134,6 +152,13 @@ export namespace KiloToolRegistry {
       notebookRead?: Tool.Info
       notebookEdit?: Tool.Info
       notebookExecute?: Tool.Info
+      markets?: {
+        search: Tool.Info
+        install: Tool.Info
+        create: Tool.Info
+        publish: Tool.Info
+        transaction: Tool.Info
+      }
     },
     deps: Deps,
     loaders: Loaders = {},
@@ -158,6 +183,15 @@ export namespace KiloToolRegistry {
               notebookExecute: Tool.init(tools.notebookExecute),
             })
           : {}
+      const markets = tools.markets
+        ? yield* Effect.all({
+            search: Tool.init(tools.markets.search),
+            install: Tool.init(tools.markets.install),
+            create: Tool.init(tools.markets.create),
+            publish: Tool.init(tools.markets.publish),
+            transaction: Tool.init(tools.markets.transaction),
+          })
+        : undefined
       const ready =
         (deps.internal ?? internal())
           ? { analysis: true, semantic: true, document: true }
@@ -168,7 +202,7 @@ export namespace KiloToolRegistry {
       const artifacts = yield* artifactTools(deps, loaders)
       const word = yield* wordTools(deps, loaders)
       const mermaid = yield* mermaidTools(deps, loaders)
-      return { ...base, terminal, ...notebooks, analysis, semantic, document, artifacts, word, mermaid }
+      return { ...base, terminal, ...notebooks, markets, analysis, semantic, document, artifacts, word, mermaid }
     })
   }
 
@@ -380,8 +414,16 @@ export namespace KiloToolRegistry {
       notebookRead?: Tool.Def
       notebookEdit?: Tool.Def
       notebookExecute?: Tool.Def
+      markets?: {
+        search: Tool.Def
+        install: Tool.Def
+        create: Tool.Def
+        publish: Tool.Def
+        transaction: Tool.Def
+      }
     },
     cfg: { experimental?: { codebase_search?: boolean; image_generation?: boolean; native_notebook_tools?: boolean } },
+    opts: { market?: boolean } = {},
   ): Tool.Def[] {
     return [
       ...(cfg.experimental?.codebase_search === true ? [tools.codebase] : []),
@@ -399,6 +441,9 @@ export namespace KiloToolRegistry {
       ...(Flag.KILO_CLIENT === "cli" && tools.terminal ? [tools.terminal] : []),
       // Agent Manager tools are useful only when the extension can create and display their sessions.
       ...(Flag.KILO_CLIENT === "vscode" ? [tools.managerModels, tools.manager] : []),
+      ...(Flag.KILO_CLIENT === "vscode" && opts.market !== false && tools.markets
+        ? Object.values(tools.markets)
+        : []),
       ...(Flag.KILO_CLIENT === "vscode" &&
       cfg.experimental?.native_notebook_tools === true &&
       tools.notebookRead &&

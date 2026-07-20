@@ -34,13 +34,13 @@ export function formatKeybinding(raw: string, mac: boolean): string {
 }
 
 /** Agent Manager command prefix for keybinding extraction. */
-const AM_PREFIX = "kilo-code.new.agentManager."
+const AM_PREFIX = "chipmate.v2.agentManager."
 
 /** Global commands whose keybindings are forwarded to the webview. */
 const GLOBAL_KEYBINDINGS: Record<string, string> = {
-  "kilo-code.new.agentManagerOpen": "agentManagerOpen",
-  "kilo-code.new.cycleAgentMode": "cycleAgentMode",
-  "kilo-code.new.cyclePreviousAgentMode": "cyclePreviousAgentMode",
+  "chipmate.v2.agentManagerOpen": "agentManagerOpen",
+  "chipmate.v2.cycleAgentMode": "cycleAgentMode",
+  "chipmate.v2.cyclePreviousAgentMode": "cyclePreviousAgentMode",
 }
 
 /**

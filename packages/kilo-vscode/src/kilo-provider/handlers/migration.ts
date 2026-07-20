@@ -101,7 +101,7 @@ function postSessionProgress(
  * Uses a state-based approach (migrationState message) instead of navigate
  * to avoid race conditions with SettingsEditorProvider's view navigation.
  */
-export async function checkAndShowMigrationWizard(ctx: MigrationContext): Promise<void> {
+async function checkAndShowMigrationWizard(ctx: MigrationContext): Promise<void> {
   if (!ctx.extensionContext) return
   if (ctx.migrationCheckInFlight) return
   // MigrationService.getMigrationStatus accepts the full ExtensionContext shape
@@ -272,7 +272,7 @@ export async function handleStartMigration(
   }
 }
 
-export async function handleFinalizeLegacyMigration(ctx: MigrationContext): Promise<void> {
+async function handleFinalizeLegacyMigration(ctx: MigrationContext): Promise<void> {
   if (!ctx.extensionContext) return
   await ctx.disposeGlobal()
   await MigrationService.setMigrationStatus(
@@ -284,7 +284,7 @@ export async function handleFinalizeLegacyMigration(ctx: MigrationContext): Prom
 }
 
 /** Record that the user skipped migration and broadcast to all instances. */
-export async function handleSkipLegacyMigration(ctx: MigrationContext): Promise<void> {
+async function handleSkipLegacyMigration(ctx: MigrationContext): Promise<void> {
   if (!ctx.extensionContext) return
   await MigrationService.setMigrationStatus(
     ctx.extensionContext as Parameters<typeof MigrationService.setMigrationStatus>[0],
@@ -294,7 +294,7 @@ export async function handleSkipLegacyMigration(ctx: MigrationContext): Promise<
 }
 
 /** Clear legacy data from SecretStorage and globalState after user opts in. */
-export async function handleClearLegacyData(ctx: MigrationContext): Promise<void> {
+async function handleClearLegacyData(ctx: MigrationContext): Promise<void> {
   if (!ctx.extensionContext) return
   await MigrationService.clearLegacyData(ctx.extensionContext as Parameters<typeof MigrationService.clearLegacyData>[0])
 }

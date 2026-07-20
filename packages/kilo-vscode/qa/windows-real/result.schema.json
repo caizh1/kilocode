@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chipmate.local/qa/windows-real/result.schema.json",
+  "title": "ChipMate regression result",
+  "type": "object",
+  "required": ["generatedAt", "results", "atomicResults"],
+  "properties": {
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "lane": { "type": "string" },
+    "platform": { "type": "string" },
+    "artifact": { "type": "object" },
+    "results": { "type": "array", "items": { "$ref": "#/$defs/result" } },
+    "atomicResults": { "type": "array", "items": { "$ref": "#/$defs/result" } }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "result": {
+      "type": "object",
+      "required": ["id", "title", "status", "summary"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["PASS", "FAIL", "FLAKY", "REVIEW", "BLOCKED", "SKIP"] },
+        "summary": { "type": "string" },
+        "evidence": {},
+        "assertions": { "type": "array" },
+        "error": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  }
+}

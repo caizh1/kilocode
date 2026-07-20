@@ -7,7 +7,7 @@ import JSZip from "jszip"
 import { MarketDb } from "@chipmate/market-db"
 import { build } from "../src/index.ts"
 
-async function fixture() {
+async function fixture(opts: { active?: number; free?: number; idle?: number; maximum?: number } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "chipmate-extension-market-"))
   const db = new MarketDb({ dir: join(dir, "db") })
   const resolveUser = async (key: string) =>
@@ -23,6 +23,10 @@ async function fixture() {
     extensionMarket: true,
     extensionRoot: join(dir, "extensions"),
     extensionScanMs: 60_000,
+    ...(opts.active === undefined ? {} : { extensionActiveUploads: opts.active }),
+    ...(opts.free === undefined ? {} : { extensionMinimumFreeBytes: opts.free }),
+    ...(opts.idle === undefined ? {} : { extensionUploadIdleMs: opts.idle }),
+    ...(opts.maximum === undefined ? {} : { extensionUploadMaxMs: opts.maximum }),
   })
   return { app, db, dir }
 }
@@ -253,7 +257,7 @@ test("VSIX validation rejects missing, unsafe, bomb, and invalid-version archive
   }
 })
 
-test("extension upload rate limiting counts failed structural submissions", async () => {
+test("extension uploads are not limited by a per-user rolling-hour quota", async () => {
   const data = await fixture()
   try {
     const auth = await login(data.app)
@@ -261,12 +265,39 @@ test("extension upload rate limiting counts failed structural submissions", asyn
       const response = await upload(data.app, auth, Buffer.from("not-a-vsix"), `limit-${String(index).padStart(8, "0")}`)
       assert.equal(response.statusCode, 400)
     }
-    const limited = await upload(data.app, auth, Buffer.from("not-a-vsix"), "limit-00000100")
-    assert.equal(limited.statusCode, 429)
+    const next = await upload(data.app, auth, Buffer.from("not-a-vsix"), "limit-00000100")
+    assert.equal(next.statusCode, 400)
+    assert.equal(next.json().code, "VALIDATION_FAILED")
   } finally {
     await data.app.close()
     await data.db.close()
     await rm(data.dir, { recursive: true, force: true })
+  }
+})
+
+test("extension upload admission reports busy slots and storage pressure before creating a run", async () => {
+  for (const item of [
+    { opts: { active: 0 }, status: 503, code: "PUBLICATION_BUSY", retry: "5" },
+    { opts: { free: Number.MAX_SAFE_INTEGER }, status: 507, code: "STORAGE_PRESSURE", retry: undefined },
+  ]) {
+    const data = await fixture(item.opts)
+    try {
+      const auth = await login(data.app)
+      const response = await upload(data.app, auth, await vsix(), `admission-${item.status}-00000000`)
+      assert.equal(response.statusCode, item.status, response.body)
+      assert.equal(response.json().code, item.code)
+      assert.equal(response.headers["retry-after"], item.retry)
+      const runs = await data.app.inject({
+        method: "GET",
+        url: "/api/v1/me/extensions/publications",
+        headers: { cookie: auth.cookie },
+      })
+      assert.deepEqual(runs.json(), [])
+    } finally {
+      await data.app.close()
+      await data.db.close()
+      await rm(data.dir, { recursive: true, force: true })
+    }
   }
 })
 

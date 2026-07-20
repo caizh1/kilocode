@@ -1,5 +1,35 @@
 import { describe, expect, it } from "bun:test"
-import { validateModelSelections, validateRecents, validateFavorites } from "../../src/provider-actions"
+import {
+  computeDefaultSelection,
+  validateModelSelections,
+  validateRecents,
+  validateFavorites,
+} from "../../src/provider-actions"
+
+describe("computeDefaultSelection", () => {
+  it("returns null without CLI or explicit VS Code model settings", () => {
+    expect(computeDefaultSelection(null, "", "")).toBeNull()
+  })
+
+  it("prefers the CLI global model over explicit VS Code settings", () => {
+    expect(computeDefaultSelection({ config: { model: "openai/gpt-4.1" } }, "anthropic", "claude-sonnet-4")).toEqual({
+      providerID: "openai",
+      modelID: "gpt-4.1",
+    })
+  })
+
+  it("uses a complete explicit VS Code selection", () => {
+    expect(computeDefaultSelection(null, "anthropic", "claude-sonnet-4")).toEqual({
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4",
+    })
+  })
+
+  it("rejects partial VS Code selections", () => {
+    expect(computeDefaultSelection(null, "anthropic", "")).toBeNull()
+    expect(computeDefaultSelection(null, "", "claude-sonnet-4")).toBeNull()
+  })
+})
 
 describe("validateModelSelections", () => {
   it("returns empty object for null", () => {

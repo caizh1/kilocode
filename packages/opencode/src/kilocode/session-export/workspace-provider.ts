@@ -6,6 +6,7 @@ import { formatPatch, structuredPatch } from "diff"
 import { Config } from "./config"
 import type { CaptureMetadata, DeltaEntry, FileEntry } from "./events"
 import { isHighRiskPath } from "./worker/scrub"
+import { userEnv } from "../product-env"
 
 type File = {
   path: string
@@ -155,6 +156,7 @@ async function repository(root: string): Promise<string | undefined> {
     stdout: "pipe",
     stderr: "pipe",
     windowsHide: true,
+    env: userEnv(process.env),
   })
   const [text, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
   if (code !== 0) return
@@ -169,6 +171,7 @@ async function tracked(root: string): Promise<string[]> {
     stdout: "pipe",
     stderr: "pipe",
     windowsHide: true,
+    env: userEnv(process.env),
   })
   const [text, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
   if (code !== 0) return []

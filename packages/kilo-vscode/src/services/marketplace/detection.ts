@@ -23,47 +23,69 @@ export class InstallationDetector {
   /**
    * Detect installed marketplace items.
    *
-   * Agents are detected from .kilo/agents/*.md files.
+   * Agents are detected from .chipmate-v2/agents/*.md files.
    * MCP servers and modes are detected from kilo.json config files.
    * Skills come from the CLI backend (via GET /skill), which is the
    * authoritative source — it scans all skill directories.
    */
   async detect(workspace?: string, skills?: CliSkill[]): Promise<MarketplaceInstalledMetadata> {
+    const root = workspace ? await this.canonical(workspace) : undefined
+    const entries = await this.skillEntries(skills, root)
     const project = workspace
       ? Object.fromEntries([
           ...(await this.detectAgentFiles("project", workspace)),
           ...(await this.detectFromConfig(this.paths.configPath("project", workspace))),
-          ...this.skillEntries(skills, workspace, true),
+          ...entries.project,
         ])
       : {}
 
     const global = Object.fromEntries([
       ...(await this.detectAgentFiles("global")),
       ...(await this.detectFromConfig(this.paths.configPath("global"))),
-      ...this.skillEntries(skills, workspace, false),
+      ...entries.global,
     ])
 
     return { project, global }
   }
 
+  private async canonical(value: string): Promise<string> {
+    try {
+      return await fs.realpath(value)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return path.resolve(value)
+      throw err
+    }
+  }
+
   private isProjectSkill(location: string, workspace: string): boolean {
-    const prefix = workspace.endsWith(path.sep) ? workspace : workspace + path.sep
-    return location.startsWith(prefix)
+    const relative = path.relative(workspace, location)
+    return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
   }
 
-  private skillEntries(skills: CliSkill[] | undefined, workspace: string | undefined, project: boolean): Entry[] {
-    if (!skills) return []
-    return skills
-      .filter((s) =>
-        project
-          ? !!workspace && this.isProjectSkill(s.location, workspace)
-          : !workspace || !this.isProjectSkill(s.location, workspace),
-      )
-      .map((s): Entry => [normalizeSkillKey(s.name), { type: "skill" }])
-      .filter(([id]) => Boolean(id))
+  private async skillEntries(
+    skills: CliSkill[] | undefined,
+    workspace: string | undefined,
+  ): Promise<{ project: Entry[]; global: Entry[] }> {
+    if (!skills) return { project: [], global: [] }
+    const resolved = await Promise.all(
+      skills.map(async (skill) => ({
+        skill,
+        location: skill.location === "builtin" ? skill.location : await this.canonical(skill.location),
+      })),
+    )
+    const map = (project: boolean) =>
+      resolved
+        .filter(({ location }) =>
+          project
+            ? location !== "builtin" && !!workspace && this.isProjectSkill(location, workspace)
+            : location === "builtin" || !workspace || !this.isProjectSkill(location, workspace),
+        )
+        .map(({ skill }): Entry => [normalizeSkillKey(skill.name), { type: "skill" }])
+        .filter(([id]) => Boolean(id))
+    return { project: map(true), global: map(false) }
   }
 
-  /** Scan .kilo/agents/*.md files to detect installed marketplace agents. */
+  /** Scan .chipmate-v2/agents/*.md files to detect installed marketplace agents. */
   private async detectAgentFiles(scope: "project" | "global", workspace?: string): Promise<Entry[]> {
     const dir = this.paths.agentsDir(scope, workspace)
     try {

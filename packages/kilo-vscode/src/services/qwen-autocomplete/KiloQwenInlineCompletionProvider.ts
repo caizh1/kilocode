@@ -1180,7 +1180,7 @@ export class KiloQwenInlineCompletionProvider implements vscode.InlineCompletion
 
   private emit(cfg: QwenAutocompleteConfig, input: Omit<Parameters<typeof emitQwenDiagnostic>[0], "cfg">): void {
     try {
-      const config = vscode.workspace.getConfiguration("kilo-code.new.autocomplete", input.document.uri)
+      const config = vscode.workspace.getConfiguration("chipmate.v2.autocomplete", input.document.uri)
       emitQwenDiagnostic({
         ...input,
         cfg,

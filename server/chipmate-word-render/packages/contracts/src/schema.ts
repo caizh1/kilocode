@@ -13,6 +13,7 @@ export const PUBLICATION_STATUSES = [
   "PUBLISHING",
   "PUBLISHED",
   "UNPUBLISHED",
+  "UNDONE",
   "UNCHANGED",
   "FAILED",
 ] as const
@@ -25,6 +26,7 @@ export const PUBLICATION_LABELS = {
   PUBLISHING: "正在发布",
   PUBLISHED: "已发布",
   UNPUBLISHED: "已下架",
+  UNDONE: "已撤销",
   UNCHANGED: "版本无变化",
   CAPABILITY_UNSUPPORTED: "服务器能力不支持",
 } as const
@@ -34,6 +36,7 @@ export const MARKET_ERROR_CODES = [
   "AUTH_REQUIRED",
   "AUTH_INVALID",
   "SESSION_EXPIRED",
+  "STALE_PUBLICATION",
   "CSRF_INVALID",
   "ORIGIN_INVALID",
   "NOT_FOUND",
@@ -61,6 +64,19 @@ export type PublicationStatus = Static<typeof PublicationStatusSchema>
 export const MarketErrorCodeSchema = literals(MARKET_ERROR_CODES)
 export type MarketErrorCode = Static<typeof MarketErrorCodeSchema>
 
+export const SkillRiskLevelSchema = literals(["unknown", "none", "medium", "critical"] as const)
+export type SkillRiskLevel = Static<typeof SkillRiskLevelSchema>
+
+export const SkillRiskSummarySchema = Type.Object(
+  {
+    level: SkillRiskLevelSchema,
+    issueCount: Type.Integer({ minimum: 0 }),
+    policyVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  },
+  { $id: "SkillRiskSummary", additionalProperties: false },
+)
+export type SkillRiskSummary = Static<typeof SkillRiskSummarySchema>
+
 export const ValidationIssueSchema = Type.Object(
   {
     code: Type.String({ minLength: 1 }),
@@ -73,6 +89,7 @@ export const ValidationIssueSchema = Type.Object(
     actual: Type.Optional(Type.String()),
     fixable: Type.Boolean(),
     repairKind: literals(["none", "deterministic", "ai"] as const),
+    riskLevel: literals(["none", "medium", "critical"] as const),
   },
   { $id: "ValidationIssue", additionalProperties: false },
 )
@@ -86,6 +103,8 @@ export const ValidationReportSchema = Type.Object(
     sourceSha256: sha,
     snapshotSha256: sha,
     changed: Type.Boolean(),
+    policyVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+    risk: Type.Ref(SkillRiskSummarySchema),
   },
   { $id: "ValidationReport", additionalProperties: false },
 )
@@ -223,6 +242,7 @@ export const SkillSummarySchema = Type.Object(
     favorite: Type.Optional(Type.Boolean()),
     installation: Type.Optional(Type.Ref(InstallationStateSchema)),
     artwork: Type.Optional(Type.Ref(SkillArtworkSchema)),
+    risk: Type.Ref(SkillRiskSummarySchema),
   },
   { $id: "SkillSummary", additionalProperties: false },
 )
@@ -321,7 +341,15 @@ export const ExtensionPublicationRunSchema = Type.Object(
     id: Type.String({ minLength: 16, maxLength: 128 }),
     ownerId: Type.String({ minLength: 16, maxLength: 128 }),
     artifactId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-    status: literals(["UPLOADING", "VALIDATING", "PUBLISHING", "PUBLISHED", "DUPLICATE", "CANCELLED", "FAILED"] as const),
+    status: literals([
+      "UPLOADING",
+      "VALIDATING",
+      "PUBLISHING",
+      "PUBLISHED",
+      "DUPLICATE",
+      "CANCELLED",
+      "FAILED",
+    ] as const),
     stage: Type.String({ minLength: 1, maxLength: 32 }),
     filename: Type.String({ minLength: 6, maxLength: 180 }),
     totalBytes: Type.Integer({ minimum: 0, maximum: 536870912 }),
@@ -360,9 +388,17 @@ export const ExtensionAnalyticsSchema = Type.Object(
       active: Type.Integer({ minimum: 0 }),
       growth30d: Type.Number(),
     }),
-    trend: Type.Array(Type.Object({ date: Type.String({ format: "date" }), downloads: Type.Integer({ minimum: 0 }), favorites: Type.Integer({ minimum: 0 }) })),
+    trend: Type.Array(
+      Type.Object({
+        date: Type.String({ format: "date" }),
+        downloads: Type.Integer({ minimum: 0 }),
+        favorites: Type.Integer({ minimum: 0 }),
+      }),
+    ),
     downloads: Type.Array(Type.Object({ id: extensionId, name: Type.String(), value: Type.Integer({ minimum: 0 }) })),
-    ratings: Type.Array(Type.Object({ id: extensionId, name: Type.String(), value: Type.Number({ minimum: 0, maximum: 5 }) })),
+    ratings: Type.Array(
+      Type.Object({ id: extensionId, name: Type.String(), value: Type.Number({ minimum: 0, maximum: 5 }) }),
+    ),
     targets: Type.Array(Type.Object({ target: Type.String(), value: Type.Integer({ minimum: 0 }) })),
     activity: Type.Array(
       Type.Object({
@@ -503,6 +539,7 @@ export const SCHEMAS = {
   SkillDetail: SkillDetailSchema,
   SkillFile: SkillFileSchema,
   SkillRelease: SkillReleaseSchema,
+  SkillRiskSummary: SkillRiskSummarySchema,
   SkillSummary: SkillSummarySchema,
   ValidationIssue: ValidationIssueSchema,
   ValidationReport: ValidationReportSchema,

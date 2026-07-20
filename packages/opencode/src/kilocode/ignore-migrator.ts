@@ -3,12 +3,15 @@ import os from "os"
 import * as Log from "@opencode-ai/core/util/log"
 import type { Config } from "../config/config"
 import type { ConfigPermissionV1 as ConfigPermission } from "@opencode-ai/core/v1/config/permission"
+import { ProductProfile } from "./product-profile"
 
 export namespace IgnoreMigrator {
   const log = Log.create({ service: "kilocode.ignore-migrator" })
 
-  const KILOCODEIGNORE_FILE = ".kilocodeignore"
-  const GLOBAL_KILOCODEIGNORE = path.join(os.homedir(), ".kilocode", KILOCODEIGNORE_FILE)
+  const IGNORE_FILE = ProductProfile.chipmate ? ".chipmate-v2ignore" : ".kilocodeignore"
+  const GLOBAL_IGNORE = ProductProfile.chipmate
+    ? path.join(ProductProfile.config()!, IGNORE_FILE)
+    : path.join(os.homedir(), ".kilocode", IGNORE_FILE)
 
   export interface IgnorePattern {
     pattern: string
@@ -155,21 +158,21 @@ export namespace IgnoreMigrator {
 
     // 1. Load global .kilocodeignore (lower priority)
     if (!options.skipGlobalPaths) {
-      const globalPatterns = await loadIgnoreFile(GLOBAL_KILOCODEIGNORE, "global")
+      const globalPatterns = await loadIgnoreFile(GLOBAL_IGNORE, "global")
       allPatterns.push(...globalPatterns)
 
       if (globalPatterns.length > 0) {
-        log.debug("loaded global .kilocodeignore", { count: globalPatterns.length })
+        log.debug("loaded global ignore file", { file: IGNORE_FILE, count: globalPatterns.length })
       }
     }
 
     // 2. Load project .kilocodeignore (higher priority - added last)
-    const projectIgnorePath = path.join(options.projectDir, KILOCODEIGNORE_FILE)
+    const projectIgnorePath = path.join(options.projectDir, IGNORE_FILE)
     const projectPatterns = await loadIgnoreFile(projectIgnorePath, "project")
     allPatterns.push(...projectPatterns)
 
     if (projectPatterns.length > 0) {
-      log.debug("loaded project .kilocodeignore", { count: projectPatterns.length })
+      log.debug("loaded project ignore file", { file: IGNORE_FILE, count: projectPatterns.length })
     }
 
     // 3. Build permission rules
@@ -208,7 +211,8 @@ export namespace IgnoreMigrator {
       const result = await migrate({ projectDir, skipGlobalPaths })
 
       if (result.patternCount > 0) {
-        log.info("loaded .kilocodeignore patterns", {
+        log.info("loaded ignore patterns", {
+          file: IGNORE_FILE,
           count: result.patternCount,
         })
       }
@@ -219,7 +223,7 @@ export namespace IgnoreMigrator {
 
       return result.permission
     } catch (err) {
-      log.warn("failed to load .kilocodeignore", { error: err })
+      log.warn("failed to load ignore file", { file: IGNORE_FILE, error: err })
       return {}
     }
   }

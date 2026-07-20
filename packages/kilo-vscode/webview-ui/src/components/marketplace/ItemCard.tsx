@@ -4,7 +4,12 @@ import { Card } from "@kilocode/kilo-ui/card"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Tag } from "@kilocode/kilo-ui/tag"
-import type { MarketplaceItem, MarketplaceInstalledMetadata, SkillMarketplaceItem } from "../../types/marketplace"
+import type {
+  MarketplaceItem,
+  MarketplaceInstalledMetadata,
+  SkillMarketplaceItem,
+  SkillRiskSummary,
+} from "../../types/marketplace"
 import { useVSCode } from "../../context/vscode"
 import { useLanguage } from "../../context/language"
 import { installedScopes } from "./utils"
@@ -106,6 +111,9 @@ export const ItemCard = (props: Props) => {
           <Show when={origin()}>{(label) => <Tag>{label()}</Tag>}</Show>
           <Show when={overridden()}>{(label) => <Tag>{label()}</Tag>}</Show>
           <Show when={published()}>{(label) => <Tag>{label()}</Tag>}</Show>
+          <Show when={skill() && !local()}>
+            <MarketplaceRiskBadge risk={skill()?.risk} />
+          </Show>
           {props.footer}
         </div>
         <div class="marketplace-card-actions">
@@ -188,5 +196,25 @@ export const ItemCard = (props: Props) => {
         </div>
       </div>
     </Card>
+  )
+}
+
+function MarketplaceRiskBadge(props: { risk?: SkillRiskSummary }) {
+  const { t } = useLanguage()
+  const risk = () => props.risk ?? { level: "unknown" as const, issueCount: 0 }
+  const label = () => {
+    if (risk().level === "none") return t("marketplace.risk.none")
+    if (risk().level === "medium") return t("marketplace.risk.medium", { count: risk().issueCount })
+    if (risk().level === "critical") return t("marketplace.risk.critical")
+    return t("marketplace.risk.unknown")
+  }
+  return (
+    <Tag class={`marketplace-risk-badge risk-${risk().level}`}>
+      <span
+        class={`codicon codicon-${risk().level === "none" ? "pass-filled" : risk().level === "unknown" ? "question" : "warning"}`}
+        aria-hidden="true"
+      />
+      {label()}
+    </Tag>
   )
 }

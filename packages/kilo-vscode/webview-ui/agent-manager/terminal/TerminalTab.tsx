@@ -41,6 +41,10 @@ interface Props {
   active: boolean
   focus?: boolean
   bind?: (writer: TerminalWriter) => () => void
+  resizeType?: "agentManager.terminal.resize" | "agentConsole.terminal.resize"
+  fontType?: "agentManager.terminal.fontChanged" | "agentConsole.terminal.fontChanged"
+  shortcuts?: boolean
+  output?: (data: string) => void
 }
 
 /** How long the ResizeObserver waits after the last size change before
@@ -189,7 +193,7 @@ export const TerminalTab: Component<Props> = (props) => {
 
     // Pass agent-manager hotkeys through to the parent key handler so
     // ⌘T / ⌘W / ⌘⌥← etc. still work while the terminal is focused.
-    term.attachCustomKeyEventHandler((event) => !isAgentManagerShortcut(event))
+    term.attachCustomKeyEventHandler((event) => props.shortcuts === false || !isAgentManagerShortcut(event))
 
     const ws = new WebSocket(props.wsUrl)
     ws.binaryType = "arraybuffer"
@@ -210,12 +214,14 @@ export const TerminalTab: Component<Props> = (props) => {
       // are control metadata (cursor position). See pty/index.ts:46.
       if (typeof event.data === "string") {
         term.write(event.data)
+        props.output?.(event.data)
         return
       }
       if (event.data instanceof ArrayBuffer) {
         const bytes = new Uint8Array(event.data)
         if (bytes.length > 0 && bytes[0] === 0x00) return
         term.write(bytes)
+        props.output?.(new TextDecoder().decode(bytes))
       }
     }
     ws.onerror = () => {
@@ -239,7 +245,7 @@ export const TerminalTab: Component<Props> = (props) => {
       lastCols = term.cols
       lastRows = term.rows
       vscode.postMessage({
-        type: "agentManager.terminal.resize",
+        type: props.resizeType ?? "agentManager.terminal.resize",
         terminalId: props.terminalId,
         cols: term.cols,
         rows: term.rows,
@@ -304,7 +310,7 @@ export const TerminalTab: Component<Props> = (props) => {
         return
       }
 
-      if (message.type === "agentManager.terminal.fontChanged") {
+      if (message.type === (props.fontType ?? "agentManager.terminal.fontChanged")) {
         term.options.fontFamily = message.font.fontFamily
         term.options.fontSize = message.font.fontSize
         scheduleRepaint()

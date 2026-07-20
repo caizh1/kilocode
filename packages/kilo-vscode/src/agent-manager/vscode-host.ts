@@ -41,7 +41,7 @@ export class VscodeHost implements Host {
     worktreeDirectories?: () => string[]
   }): PanelContext {
     const panel = vscode.window.createWebviewPanel(
-      "kilo-code.new.AgentManagerPanel",
+      "chipmate.v2.AgentManagerPanel",
       "Agent Manager",
       vscode.ViewColumn.One,
       {
@@ -113,7 +113,8 @@ export class VscodeHost implements Host {
 
     const sessions: SessionProvider = {
       setSessionDirectory: (id, dir) => provider.setSessionDirectory(id, dir),
-      clearSessionDirectory: (id) => provider.clearSessionDirectory(id),
+      markSessionLocal: (id) => provider.markSessionLocal(id),
+      forgetSessionDirectory: (id) => provider.forgetSessionDirectory(id),
       getSessionDirectories: () => provider.getSessionDirectories(),
       getSessionInfo: (id) => provider.getSessionInfo(id),
       trackSession: (id) => provider.trackSession(id),
@@ -174,10 +175,10 @@ export class VscodeHost implements Host {
   }
 
   autoBranchNaming(): { enabled: boolean; prefix: string } {
-    const cfg = vscode.workspace.getConfiguration("kilo-code.new.agentManager")
+    const cfg = vscode.workspace.getConfiguration("chipmate.v2.agentManager")
     return {
       enabled: cfg.get("autoBranchNaming", true),
-      prefix: cfg.get("branchPrefix", ""),
+      prefix: cfg.get("branchPrefix", "chipmate/"),
     }
   }
 

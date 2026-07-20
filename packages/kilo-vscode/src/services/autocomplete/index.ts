@@ -14,8 +14,9 @@ import {
   updateAutocompleteSelection,
 } from "./settings"
 import { autocompleteDirectory } from "./workspace"
+import type { Coexistence } from "../../chipmate/coexistence"
 
-const LAST_TARGET = "kilo.autocomplete.lastBuiltinTarget"
+const LAST_TARGET = "chipmate.v2.autocomplete.lastBuiltinTarget"
 const LEGACY_QWEN_FIM_MODEL_ID = QWEN_FIM_MODEL_ID.replace(/^qwen-/, "qwen3-")
 
 type Target = { providerID: string; modelID: string }
@@ -38,6 +39,7 @@ type Options = {
   internal?: boolean
   notify?: (message: string) => void
   log?: (message: string, err?: unknown) => void
+  gate?: Pick<Coexistence, "autocomplete">
 }
 
 type Resolution = {
@@ -94,6 +96,7 @@ export class Coordinator implements vscode.Disposable {
   private readonly internal: boolean
   private readonly notify: (message: string) => void
   private readonly log: (message: string, err?: unknown) => void
+  private readonly gate: Pick<Coexistence, "autocomplete">
   private readonly selectionListener: vscode.Disposable
   private manager: Manager | undefined
   private active: Target | undefined
@@ -114,6 +117,7 @@ export class Coordinator implements vscode.Disposable {
     this.internal = options.internal ?? isInternalOfflineBuild()
     this.notify = options.notify ?? ((message) => void vscode.window.showInformationMessage?.(message))
     this.log = options.log ?? ((message, err) => console.warn(message, err ?? ""))
+    this.gate = options.gate ?? { autocomplete: () => true }
     this.selectionListener = onDidUpdateAutocompleteSelection((event) =>
       this.selection(event.automatic, event.scope),
     ) ?? {
@@ -154,6 +158,22 @@ export class Coordinator implements vscode.Disposable {
     this.schedule()
   }
 
+  gateChanged(enabled: boolean): void {
+    if (enabled) {
+      this.schedule()
+      return
+    }
+    this.pending = false
+    void Promise.all(
+      [
+        "chipmate.v2.autocomplete.hasSuggestions",
+        "chipmate.v2.autocomplete.enableSmartInlineTaskKeybinding",
+        "chipmate.v2.nextEdit.hasPendingSuggestion",
+      ].map((key) => vscode.commands.executeCommand("setContext", key, false)),
+    ).catch((err) => this.log("[Autocomplete] unable to clear disabled suggestion contexts", err))
+    this.disposeManager()
+  }
+
   async flush(): Promise<void> {
     while (this.task) await this.task
   }
@@ -173,6 +193,10 @@ export class Coordinator implements vscode.Disposable {
   }
 
   private async reconcile(): Promise<void> {
+    if (!this.gate.autocomplete()) {
+      this.disposeManager()
+      return
+    }
     const cfg = autocompleteConfig()
     const providerID = cfg.get<string>("provider")
     const modelID = cfg.get<string>("model")
@@ -263,8 +287,11 @@ export class Coordinator implements vscode.Disposable {
   }
 
   private async resolve(providerID?: string): Promise<Resolution> {
+    if (!this.gate.autocomplete()) return { ok: false }
     try {
-      return { ok: true, target: await this.resolver(providerID, this.directory()) }
+      const target = await this.resolver(providerID, this.directory())
+      if (!this.gate.autocomplete()) return { ok: false }
+      return { ok: true, target }
     } catch (err) {
       this.log("[Autocomplete] unable to resolve Qwen autocomplete target", err)
       return { ok: false }
@@ -272,9 +299,10 @@ export class Coordinator implements vscode.Disposable {
   }
 
   private async canFallback(): Promise<boolean> {
-    if (this.internal) return false
+    if (this.internal || !this.gate.autocomplete()) return false
     try {
-      return await this.gateway()
+      const result = await this.gateway()
+      return this.gate.autocomplete() && result
     } catch (err) {
       this.log("[Autocomplete] unable to verify ChipMate Gateway authentication", err)
       return false
@@ -282,6 +310,7 @@ export class Coordinator implements vscode.Disposable {
   }
 
   private async write(target: Target, automatic: boolean, scope?: AutocompleteScope): Promise<void> {
+    if (!this.gate.autocomplete()) return
     await updateAutocompleteSelection(this.context, { ...target, automatic, scope })
     this.origin = automatic
     this.scope = scope
@@ -289,6 +318,7 @@ export class Coordinator implements vscode.Disposable {
   }
 
   private async clear(): Promise<void> {
+    if (!this.gate.autocomplete()) return
     const cfg = autocompleteConfig()
     if (cfg.get<string>("provider") === undefined && cfg.get<string>("model") === undefined) return
     await updateAutocompleteSelection(this.context, { automatic: true })
@@ -297,6 +327,7 @@ export class Coordinator implements vscode.Disposable {
   }
 
   private tell(message: string): void {
+    if (!this.gate.autocomplete()) return
     this.log(`[Autocomplete] ${message}`)
     if (this.notice === message) return
     this.notice = message
@@ -304,7 +335,12 @@ export class Coordinator implements vscode.Disposable {
   }
 
   private async activate(target: Target): Promise<void> {
+    if (!this.gate.autocomplete()) {
+      this.disposeManager()
+      return
+    }
     await this.context.globalState.update(LAST_TARGET, target)
+    if (!this.gate.autocomplete()) return
     if (!this.manager) {
       this.manager = this.managerFactory()
       this.active = target
@@ -322,42 +358,50 @@ export class Coordinator implements vscode.Disposable {
   }
 }
 
-export const registerAutocompleteProvider = (context: vscode.ExtensionContext, connection: KiloConnectionService) => {
-  registerQwenAutocompleteProvider(context, connection)
-  const coordinator = new Coordinator(context, connection)
+export const registerAutocompleteProvider = (
+  context: vscode.ExtensionContext,
+  connection: KiloConnectionService,
+  gate?: Coexistence,
+) => {
+  registerQwenAutocompleteProvider(context, connection, gate)
+  const coordinator = new Coordinator(context, connection, { gate })
   const watcher = vscode.workspace.onDidChangeConfiguration((event) => {
-    if (!event.affectsConfiguration("kilo-code.new.autocomplete")) return
+    if (!event.affectsConfiguration("chipmate.v2.autocomplete")) return
     if (autocompleteSelectionUpdating()) return
     coordinator.change()
   })
   const state = connection.onStateChange(() => coordinator.state())
+  const coexistence = gate?.onDidChangeAutocomplete((enabled) => coordinator.gateChanged(enabled))
   coordinator.schedule()
-  context.subscriptions.push(watcher, coordinator, { dispose: state })
+  context.subscriptions.push(watcher, coordinator, { dispose: state }, ...(coexistence ? [coexistence] : []))
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("kilo-code.new.autocomplete.reload", () => {
+    vscode.commands.registerCommand("chipmate.v2.autocomplete.reload", () => {
+      if (gate && !gate.autocomplete()) return
       void vscode.commands.executeCommand("editor.action.inlineSuggest.trigger")
     }),
-    vscode.commands.registerCommand("kilo-code.new.autocomplete.codeActionQuickFix", () => {
+    vscode.commands.registerCommand("chipmate.v2.autocomplete.codeActionQuickFix", () => {
       return
     }),
-    vscode.commands.registerCommand("kilo-code.new.autocomplete.cancelSuggestions", () => {
+    vscode.commands.registerCommand("chipmate.v2.autocomplete.cancelSuggestions", () => {
+      if (gate && !gate.autocomplete()) return
       void vscode.commands.executeCommand("editor.action.inlineSuggest.hide")
-      void vscode.commands.executeCommand("setContext", "kilo-code.new.autocomplete.hasSuggestions", false)
+      void vscode.commands.executeCommand("setContext", "chipmate.v2.autocomplete.hasSuggestions", false)
     }),
-    vscode.commands.registerCommand("kilo-code.new.autocomplete.generateSuggestions", () => {
+    vscode.commands.registerCommand("chipmate.v2.autocomplete.generateSuggestions", () => {
+      if (gate && !gate.autocomplete()) return
       void vscode.commands.executeCommand("editor.action.inlineSuggest.trigger")
     }),
-    vscode.commands.registerCommand("kilo-code.new.autocomplete.showIncompatibilityExtensionPopup", () => {
+    vscode.commands.registerCommand("chipmate.v2.autocomplete.showIncompatibilityExtensionPopup", () => {
       return
     }),
-    vscode.commands.registerCommand("kilo-code.new.autocomplete.disable", () => {
+    vscode.commands.registerCommand("chipmate.v2.autocomplete.disable", () => {
       return
     }),
-    vscode.commands.registerCommand("kilo-code.new.autocomplete.nextEdit.acceptOrJump", () => {
+    vscode.commands.registerCommand("chipmate.v2.autocomplete.nextEdit.acceptOrJump", () => {
       return
     }),
-    vscode.commands.registerCommand("kilo-code.new.autocomplete.nextEdit.dismiss", () => {
+    vscode.commands.registerCommand("chipmate.v2.autocomplete.nextEdit.dismiss", () => {
       return
     }),
   )

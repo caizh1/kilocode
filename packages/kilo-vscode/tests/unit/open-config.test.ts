@@ -102,51 +102,32 @@ afterEach(async () => {
 })
 
 describe("config file discovery", () => {
-  it("discovers global, env, legacy, and virtual config sources", async () => {
+  it("exposes only the ChipMate v2 global config target", async () => {
     reset()
     const root = await temp()
-    const home = path.join(root, "home")
-    const xdg = path.join(root, "xdg")
-    const extra = path.join(root, "extra")
-    const envfile = path.join(root, "env.jsonc")
-    const spy = spyOn(os, "homedir").mockReturnValue(home)
-    process.env.HOME = home
-    process.env.XDG_CONFIG_HOME = xdg
-    process.env.KILO_CONFIG = envfile
-    process.env.KILO_CONFIG_DIR = extra
-    process.env.KILO_CONFIG_CONTENT = "{}"
-    await file(path.join(xdg, "kilo", "kilo.json"))
-    await file(path.join(home, ".kilocode", "opencode.json"))
-    await file(path.join(home, ".opencode", "kilo.jsonc"))
-    await file(envfile)
+    const storage = path.join(root, "global-storage", "v2")
+    const list = globalFiles(storage)
 
-    const list = globalFiles()
-    const sources = list.map((item) => item.source)
-
-    expect(sources).toContain("sourceXdg")
-    expect(sources).toContain("sourceHomeKilocode")
-    expect(sources).toContain("sourceHomeOpencode")
-    expect(sources).toContain("sourceEnvFile")
-    expect(sources).toContain("sourceEnvDir")
-    expect(sources).toContain("sourceEnvContent")
-    expect(list.find((item) => item.source === "sourceEnvDir")?.recommended).toBe(true)
-    expect(list.find((item) => item.source === "sourceEnvContent")?.virtual).toBe(true)
-    spy.mockRestore()
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({
+      file: path.join(storage, "config", "kilo.jsonc"),
+      source: "sourceXdg",
+      recommended: true,
+    })
   })
 
   it("marks project files unloaded when project config is disabled", async () => {
     reset()
     const root = await temp()
     process.env.KILO_DISABLE_PROJECT_CONFIG = "1"
-    await file(path.join(root, "kilo.json"))
-    await file(path.join(root, ".opencode", "opencode.json"))
+    await file(path.join(root, ".chipmate-v2", "kilo.jsonc"))
 
     const list = localFiles(root)
 
     expect(list.every((item) => !item.loaded)).toBe(true)
-    expect(list.some((item) => item.source === "sourceProjectRoot" && item.exists)).toBe(true)
-    expect(list.some((item) => item.source === "sourceProjectOpencode" && item.legacy)).toBe(true)
-    expect(list.find((item) => item.recommended)?.file).toBe(path.join(root, ".kilo", "kilo.jsonc"))
+    expect(list).toHaveLength(1)
+    expect(list[0]?.exists).toBe(true)
+    expect(list[0]?.file).toBe(path.join(root, ".chipmate-v2", "kilo.jsonc"))
   })
 })
 
@@ -163,7 +144,7 @@ describe("openConfig", () => {
   it("opens the only editable config without showing the picker", async () => {
     reset()
     const root = await temp()
-    const cfg = path.join(root, ".kilo", "kilo.jsonc")
+    const cfg = path.join(root, ".chipmate-v2", "kilo.jsonc")
     await file(cfg)
 
     await openConfig("local", labels, root)
@@ -178,18 +159,14 @@ describe("openConfig", () => {
     )
   })
 
-  it("uses the picker for multiple editable configs and creates the selected recommended file", async () => {
+  it("creates the missing ChipMate v2 config without scanning other product files", async () => {
     reset()
     const root = await temp()
-    const cfg = path.join(root, ".kilo", "kilo.jsonc")
+    const cfg = path.join(root, ".chipmate-v2", "kilo.jsonc")
     await file(path.join(root, ".opencode", "opencode.json"))
-    win.showQuickPick = mock(async (items: Array<{ item: { recommended?: boolean } }>) =>
-      items.find((item) => item.item.recommended),
-    )
-
     await openConfig("local", labels, root)
 
-    expect(win.showQuickPick).toHaveBeenCalled()
+    expect(win.showQuickPick).not.toHaveBeenCalled()
     expect(await Bun.file(cfg).text()).toBe(`{
   "$schema": "https://app.kilo.ai/config.json"
 }
@@ -200,7 +177,7 @@ describe("openConfig", () => {
   it("shows a localized error when opening the selected config fails", async () => {
     reset()
     const root = await temp()
-    const cfg = path.join(root, ".kilo", "kilo.jsonc")
+    const cfg = path.join(root, ".chipmate-v2", "kilo.jsonc")
     const spy = spyOn(console, "error").mockImplementation(() => {})
     await file(cfg)
     workspace.openTextDocument = mock(async () => {

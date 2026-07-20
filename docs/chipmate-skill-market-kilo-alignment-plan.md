@@ -1,12 +1,12 @@
 # ChipMate Skill Market 与 Kilo Code 完全对齐开发计划
 
-Status: `G10.7_COMPLETE`
+Status: `G12_PARTIAL_WITH_BASELINE_BLOCKERS`
 
-Current Gate: `G10.7_COMPLETE`
+Current Gate: `G12_PARTIAL`
 
 Completion allowed: `no`
 
-Last updated: `2026-07-15`
+Last updated: `2026-07-17`
 
 ## 1. 执行与跟踪规则
 
@@ -1432,6 +1432,186 @@ Next Recommended Gate:
 
 - 在不混入 G10.7 和用户其他修改的前提下，单独清理或隔离现有 annotation/AppRuntime guard 与 Word visual-QA 断言基线，再恢复仓库总 `Completion allowed: yes`。
 
+### G11 Update — 2026-07-17
+
+Status: `COMPLETE`
+
+Scope:
+
+- 将 Skill 风险分为无风险、中风险、严重风险和历史未评估；中风险允许发布，严重风险继续阻断。
+- 所有凭据命中（包括真实私钥文本）按用户明确决策归为中风险，不再单独阻断发布。
+- Web 与 VS Code 卡片显示风险标记，详情显示中文扫描结果；下载、安装或更新风险版本前必须确认。
+- 历史版本不后台重扫，统一显示“未评估”，继续下载或安装前显示中性确认。
+- Web 发布页新增“一个文件夹即一个 Skill”的本地打包入口；根目录必须包含 `SKILL.md`，不新增 ZIP、TGZ 或多 Skill 文件夹发布协议。
+
+Implementation Ledger:
+
+- [x] 扫描器增加 `skill-risk-v2`、风险级别、中文问题说明和中风险不阻断策略。
+- [x] aligned-v1 契约、SQLite 查询映射、OpenAPI 与生成客户端携带风险摘要和逐项风险级别。
+- [x] Web 卡片、详情、下载与安装深链前增加风险提示和确认。
+- [x] Web 文件夹选择、单目录拖放、本地 USTAR + Gzip 确定性打包和真实 XHR 上传进度。
+- [x] VS Code 卡片、详情与安装弹窗增加原生主题风险标记、中文详情和确认门禁。
+- [x] 单元和 API 测试覆盖私钥/凭据可发布、中风险中文报告、严重风险阻断和历史未评估。
+- [x] 完成服务端全量 check、Web 生产构建、VS Code lint/compile/targeted tests/knip/guard。
+- [x] 完成真实 Chrome 三视口交互与视觉签收，并记录截图证据。
+
+Known Baseline:
+
+- 本轮开始时工作区已有大量与 G11 无关的 tracked/untracked 修改；G11 只记录本节列出的服务端市场、Web、VS Code Marketplace、i18n、契约、测试和 changeset 文件，不覆盖其他用户修改。
+- 仓库总 `Completion allowed` 继续为 `no`，直到既有 annotation/AppRuntime 与 Word visual-QA 基线阻塞被单独处理；该状态不否定 G11 的 scoped 验收。
+
+Changed Files:
+
+- Skill 规范与契约：`packages/skill-spec/src/index.ts`、`packages/contracts/src/schema.ts`、OpenAPI、生成客户端及对应测试。
+- 服务端市场：`apps/api/src/aligned.ts`、`packages/market-db/src/model.ts`、`packages/market-db/src/repo.ts` 及 API/数据库测试。
+- Web 市场：`risk.tsx`、`skill-folder.ts`、首页/详情/发布页、Liquid Glass 样式、单元测试和 Chrome E2E。
+- VS Code Marketplace：共享类型/API、卡片、详情、安装弹窗、VS Code 主题样式、i18n、stories 与定向测试。
+- 发布记录：`.changeset/publish-skill-risk-guidance.md`。
+
+Design Summary:
+
+- `skill-risk-v2` 将自动扫描结论稳定映射为 `none`、`medium`、`critical`、`unknown`；只有严重风险阻断发布，凭据、脚本和 Office 外部链接作为中风险随版本保存并持续提示。
+- 旧报告不使用遗留英文问题推断当前安全状态，统一归一为“未评估”；Web 与 VS Code 客户端均对滚动升级期间缺失 `risk` 字段的旧响应安全降级。
+- Web 卡片使用绿色/黄色/中性标记；详情展示中文逐项风险；中风险下载、安装和更新必须勾选确认，未评估版本使用中性确认。
+- 文件夹上传只读取一个根目录，要求根目录存在 `SKILL.md`，忽略本地噪声，浏览器按排序、零时间戳和固定权限生成确定性 USTAR + Gzip；网络仍只发送最终归档到既有发布 API。
+- VS Code 侧继续使用 Codicons、主题 token 和正常文档流，没有增加自定义彩色工具栏图标或绝对定位图标布局。
+
+Commands Run:
+
+- `server/chipmate-word-render: npm run check`
+  - Result: `PASS`；41 API、23 Web、6 contracts、3 database、12 skill-spec tests。
+- `server/chipmate-word-render: npm run build`
+  - Result: `PASS`；生成契约无 drift，API/Web/contracts/database/skill-spec 生产构建完成。
+- `server/chipmate-word-render: npm run test:e2e:web:chrome`
+  - Result: `PASS`；真实安装版 macOS Chrome 24/24，通过风险确认、文件夹本地打包、无障碍、性能和既有插件市场回归。
+- `packages/kilo-vscode: bun run typecheck && bun run lint`
+  - Result: `PASS`。
+- `packages/kilo-vscode: bun test tests/unit/marketplace-api.test.ts tests/unit/marketplace-panel-arch.test.ts`
+  - Result: `PASS`；17 tests、104 assertions。
+- `packages/kilo-vscode: bun run compile && bun run knip && bun run check-kilocode-change`
+  - Result: `PASS`；强制重建当前 macOS CLI、SDK、扩展与 Webview bundle，未发现 unused export 或非法 marker。
+- `bun run script/check-md-table-padding.ts`、`git diff --check`
+  - Result: `PASS`。
+
+Test Results:
+
+- 真实私钥/凭据文本、scripts 和 Office 外链均返回中文中风险报告且状态为 `PUBLISHED`；Markdown XSS、危险路径、链接、可执行内容、嵌套归档和主动文档仍返回严重风险并阻断。
+- Web 与 VS Code 对新报告显示绿色/黄色风险标记，对旧报告显示“未评估”；中风险继续按钮在确认前保持 disabled。
+- Chrome 验证文件夹输入只上传浏览器生成的 Gzip 字节，归档包含 `SKILL.md` 和子目录文件且不包含 `.DS_Store`；原有 `.tar.gz` 发布入口保持可用。
+- 风险弹窗在 `1484×1060`、`1440×1024`、`1050×1024` 无横向溢出，遮罩覆盖完整视口，关闭图标和操作按钮处于正常文档流。
+
+Runtime Evidence:
+
+- Environment: macOS，真实安装版 Google Chrome、真实 Vite/Fastify/SQLite 预览服务、真实目录输入和真实 XHR。
+- Risk dialog: `.runtime/design-qa/g11/risk-dialog-1484x1060-real-chrome.png`、`risk-dialog-1440x1024-real-chrome.png`、`risk-dialog-1050x1024-real-chrome.png`。
+- Folder upload: `.runtime/design-qa/g11/folder-upload-1440x1024-real-chrome.png`。
+- Result: `G11_COMPLETE`；应用内浏览器检查额外发现并修复了旧能力缓存响应导致的风险字段缺失白屏，以及风险弹窗遮罩未覆盖视口的问题。
+
+Known Limitations:
+
+- 历史版本按已锁定决策不重扫，显示“未评估”；只有再次发布后才获得 `skill-risk-v2` 结论。
+- 自动扫描不是安全背书；所有凭据命中均按用户明确决策作为中风险提示，不阻断公开发布。
+- 文件夹入口不接收 ZIP、TGZ、嵌套多 Skill 或多个根目录；单文件 `.tar.gz` 入口保持原协议。
+- 本 Gate 未生成 Render Service Linux 包或新 VSIX；用户当前请求只包含实现和验证。
+- 工作区已有的大量无关修改保持原状；仓库级 annotation/AppRuntime 与 Word visual-QA 基线 blocker 不属于 G11，因此总 `Completion allowed` 仍为 `no`。
+
+Next Recommended Gate:
+
+- 如需交付部署，下一步单独打包 Render Service Linux 归档和目标平台 VSIX，并在真实部署目录执行覆盖升级与下载/安装风险提示验收。
+
+### G11.1 Offline Linux Package Update — 2026-07-17
+
+Status: `READY_FOR_OFFLINE_LINUX_VALIDATION`
+
+Changed Files:
+
+- `server/chipmate-word-render/package.json`、`package-lock.json`：Render Service 版本从 `0.1.12` 升级为 `0.1.13`。
+- 本执行账本：记录原生 linux/amd64 构建、容器冒烟、离线归档与校验证据。
+- 本地交付物（不纳入 Git）：`server/chipmate-word-render/out/chipmate-server-offline-0.1.13-linux-amd64.tar.gz` 及 SHA-256 sidecar。
+
+Design Summary:
+
+- 使用 x86_64 Colima Docker 守护进程执行 `--platform linux/amd64 --pull --no-cache` 全新构建，不复用 0.1.12 镜像或归档。
+- 完整离线包包含 0.1.13 Docker 镜像、安装脚本、Skill Market catalog 和两个托管 Skill 种子；服务器默认仍保持 `EXTENSION_MARKET_ENABLED=0`，部署时可显式启用。
+- 归档继续由 `build-offline-bundle.mjs` 的 Python `tarfile` 路径生成，清空 pax header，避免 macOS extended attribute 被写入 Linux 交付包。
+
+Commands Run:
+
+- `npm run generate:check`、`node --check server.js`、`node --check build-offline-bundle.mjs`、`bash -n install-render-server.sh`
+  - Result: `PASS`。
+- `docker build --pull --no-cache --platform linux/amd64 -t chipmate-word-render:0.1.13 .`
+  - Result: `PASS`；镜像 `sha256:88bfaadf7dd873d5532dbfed81e9a0d300f2390f1489475aa10672f8a2179768`，架构 `linux/amd64`。
+- 独立临时容器启动并请求 `/health`、`/api/v1/capabilities`、`/`、`/publish`
+  - Result: `PASS`；健康检查正常，启用开关后 `features.extensions=true`，两个 Web 页面均为 HTTP 200。
+- 镜像内生产 Web bundle 文案检查
+  - Result: `PASS`；包含“选择 Skill 归档或文件夹”“此 Skill 存在风险隐患”“严重风险”。
+- `docker save`、`build-offline-bundle.mjs`、两层 `shasum -a 256 -c`、`gzip -t`
+  - Result: `PASS`。
+- 使用 0.1.13 Linux 容器执行完整包 `tar -xzf`、内层镜像 SHA、`bash -n install-render-server.sh`、执行位和 Skill 种子检查
+  - Result: `PASS`。
+- 外层包、Docker 归档和两个嵌套 Skill 归档执行 Apple xattr/AppleDouble/归档路径扫描
+  - Result: `PASS`；未发现 `com.apple`、`LIBARCHIVE.xattr`、`SCHILY.xattr`、`AppleDouble`、`__MACOSX` 或 `._` 归档条目。
+
+Runtime Evidence:
+
+- Environment: macOS host + 原生 x86_64 Colima VM + Docker `linux/amd64` 容器。
+- Complete bundle: `server/chipmate-word-render/out/chipmate-server-offline-0.1.13-linux-amd64.tar.gz`，约 624 MiB，SHA-256 `bab7751d351dfb95639888baa31a47fc759801c0314975e743d3c986d471da73`。
+- Raw image archive: `server/chipmate-word-render/chipmate-word-render-0.1.13-linux-amd64.docker.tar.gz`，约 624 MiB，SHA-256 `72e3d919c5bc68e207be62ef7bedc87c5aa643a922975013b60fc34d5f0e4432`。
+- Result: `READY_FOR_OFFLINE_LINUX_VALIDATION`。
+
+Known Limitations:
+
+- 当前证据证明原生 linux/amd64 构建、Linux 容器运行与 Linux 解包通过；用户目标离线 Linux 主机的 Docker 版本、挂载目录、身份变量、真实 Skill 上传/下载仍需在目标环境验收。
+- 仓库总 `Completion allowed` 继续为 `no`；既有 annotation/AppRuntime 与 Word visual-QA 基线不属于本交付包范围。
+
+Next Recommended Gate:
+
+- 在目标离线 Linux 主机校验外层 SHA，解包并执行 `install-render-server.sh` 覆盖升级；使用真实中风险、严重风险和文件夹 Skill 验证发布、详情和下载确认闭环。
+
+### G12 Model Skill Market Tools and Atomic Transactions — 2026-07-17
+
+Status: `PARTIAL`
+
+Scope:
+
+- 新增 `skill_market_search`、`skill_market_install`、`skill_create`、`skill_market_publish` 和 `skill_transaction` 五个 VS Code Host 工具。
+- 普通 QA 不暴露上述工具 schema，不触发市场网络、审批、事务恢复或市场上下文注入。
+- 单 Skill 写操作使用持久化 staging/backup 日志，支持失败回滚、崩溃恢复、七天或最近二十笔成功后撤销。
+- 多工具创建和发布使用父事务；发布撤销恢复发布前目录指针，保留不可变 revision 和审计。
+
+Implementation Ledger:
+
+- [x] 纯本地 Skill Market 意图分类、逐工具可见性与执行入口二次门禁。
+- [x] CLI `SkillMarketHost` request/list/reply/reject 协议、SDK 和五个模型工具。
+- [x] VS Code `SkillMarketBridge`、持久化事务管理器、跨进程 Skill 锁、恢复和保留策略。
+- [x] verified install、创建、本地导入记录、CLI invalidation 与父事务接线。
+- [x] 服务端 publication baseline、幂等精确 undo 和兼容迁移。
+- [ ] 普通 QA 零 schema/零网络/零状态回归测试与事务故障注入测试。
+- [x] 受影响 typecheck、lint、unit、compile、SDK/市场契约生成和可运行 CI guard。
+
+Hard Gates:
+
+- 普通 QA、RAG QA、文档 QA、Review、Plan 和 Completion 不得收到任何 G12 工具定义。
+- 隐藏工具即使被异常直接调用，也必须在 Host 请求前返回 `intent_required`。
+- 自动回滚不得覆盖事务提交后被用户或其他进程修改的 Skill；此类情况进入 `MANUAL_INTERVENTION` 并保留快照。
+- 当前工作树已有大量与 G12 无关修改；G12 不覆盖、不格式化、不提交这些既有文件。
+
+Evidence:
+
+- `packages/opencode`: `bun test ./test/kilocode/skill-market-intent.test.ts`，13/13 通过；新增“上轮市场搜索后分析包含 install skill 的代码”仍保持零市场工具回归；`bun run typecheck` 通过。
+- `packages/kilo-vscode`: G12 transaction targeted tests 4/4 通过；覆盖本地 commit/undo、用户后改冲突、远端响应不确定恢复，以及 `COMMITTING` 在首次目录 rename 前崩溃且遗留锁时不删除原 Skill；typecheck、lint、compile、knip 和 `check-kilocode-change` 通过。
+- Linux baseline VSIX 于 2026-07-18 从当前源码 fresh build：`chipmate-0.0.89-linux-x64-baseline.vsix`，SHA-256 `04ab493a17588e53d70fd389693d05d6ce1992944be0d9c54fa6cc9bcb6d85e8`；包内版本 `0.0.89`、`TargetPlatform=linux-x64`、`chipmatePackageTarget=linux-x64-baseline`，包含当前 Skill Market Host Bridge、Linux CLI、ripgrep、LanceDB 和 Tree-sitter，且无 FFmpeg、无 `dist/*.map`。
+- `server/chipmate-word-render`: contract generation check、全 workspace typecheck、lint、Market DB 3/3、Market API 41/41 通过。
+- 根级 `check-opencode-promise-facades` 与 Markdown table guard 通过；annotation guard 因当前工作树已检测到 upstream merge 而按脚本规则跳过。
+- 扩展 compile 重新构建并 smoke-test 当前 macOS CLI；Linux baseline VSIX 已打包并完成静态成员校验，但尚未在真实 Linux VS Code Profile 安装，也未完成目标离线 Linux 运行验收。
+
+Known Limitations:
+
+- 尚未完成“每一个提交/补偿步骤”故障注入、每个状态 Extension Host kill/restart、两个真实 VS Code 窗口并发和七天时钟推进/二十笔淘汰的完整系统矩阵；当前证据覆盖本地创建 commit/undo、用户后改冲突、父事务远端响应不确定恢复、服务端幂等撤销和 stale revision 拒绝。
+- 安装归档在解压前执行共享 Skill Spec 校验和 50 MiB 压缩包上限；事务锁与本地导入注册表锁记录进程所有者，可回收崩溃进程遗留锁，活跃进程锁不会被覆盖。
+- 市场 `installations` 远端镜像仍沿用既有 Marketplace 同步/恢复链路；G12 事务已原子维护 Skill 目录与本地导入记录，但尚未把远端安装镜像的逐键 before/after 补偿纳入同一事务记录。
+- 既有 `tool-registry-indexing.test.ts` 当前有 3 个与本 Gate 无关且互相矛盾的 baseline 断言失败（同一结果同时要求包含和不包含 `semantic_search`，以及重复预期项）；G12 自有测试、类型检查和构建均通过，因此仓库总 `Completion allowed` 保持 `no`。
+
 ## 17. 测试计划
 
 ### 17.1 契约和后端
@@ -1594,14 +1774,17 @@ Status: PARTIAL | COMPLETE | BLOCKED
 | 2026-07-15 | G10 采用共享 Agent Skills 规范、本地快照导入和卡片后续发布 | 同时保证 Kilo 立即可用、ChipMate Server 权威复验和 Codex/Claude/OpenCode 往返保真 | 项目默认 scope，支持文件夹/SKILL.md/ZIP/TAR.GZ、批量候选、原子替换、离线导入和仅指纹 provenance |
 | 2026-07-15 | G10.6 删除采用宿主 token、CLI marker tombstone 和双缓存复读 | 修复磁盘已删但 Skill 被旧缓存重新推回 UI，同时阻止 Webview 任意路径删除 | Settings 与 Marketplace 共用删除闭环；旧 CLI 使用 instance dispose fallback；registry 自动对账 |
 | 2026-07-15 | G10.7 上传 progress 只包围规范快照准备和服务端权威请求 | 服务端已返回并更新卡片后，后台刷新或用户 diff 选择不得继续占用原生上传通知 | 发布结果、analytics、后台对账和本地修复全部在 progress promise 结束后执行 |
+| 2026-07-17 | G11 使用 `skill-risk-v2` 分离中风险提示与严重风险阻断 | 旧规则把脚本、凭据和外部链接全部当成发布失败，无法承载需用户知情但可正常使用的 Skill | 中风险发布后在卡片、详情、下载和安装处持续提示；严重风险仍拒绝公开；历史版本显示未评估 |
+| 2026-07-17 | Web 文件夹发布只在浏览器本地生成确定性 TAR.GZ | 文件夹是作者输入便利能力，不应扩展服务端上传协议或上传无关本地内容 | 一个文件夹对应一个 Skill，根目录必须有 SKILL.md；仍复用单次归档发布 API |
+| 2026-07-17 | G11.1 使用 0.1.13 原生 linux/amd64 全量离线包交付 | 目标是让用户在真实离线 Linux 环境验证 G11 风险分级与文件夹上传，不能复用旧镜像或只交付源码 | 完整包通过 Linux 容器解包、两层 SHA、安装脚本、种子与 Apple xattr 检查；目标主机验收仍待用户执行 |
 
 ## 22. 当前状态摘要
 
-- Plan document: `G10.7_COMPLETE`
-- Overall status: `G10.7_COMPLETE_WITH_BASELINE_BLOCKERS`
-- Current Gate: `G10.7_COMPLETE`
+- Plan document: `G11.1_READY_FOR_OFFLINE_LINUX_VALIDATION`
+- Overall status: `G11.1_READY_FOR_OFFLINE_LINUX_VALIDATION_WITH_BASELINE_BLOCKERS`
+- Current Gate: `G11.1_READY_FOR_OFFLINE_LINUX_VALIDATION`
 - Implementation started: `yes`
 - Runtime validation started: `yes`
 - Docker runtime available on current machine: `yes`（aarch64 默认 profile 与 x86_64 G9 验证 profile）。
-- Completion allowed: `no`（G10.7 scoped implementation 已完成；当前分支既有 annotation/AppRuntime guard 和 Word visual-QA 断言基线仍失败）。
-- Next action: 隔离或修复与 G10.7 无关的既有 guard/Word 断言失败后，再恢复仓库总完成许可。
+- Completion allowed: `no`（G11 scoped 验收已完成；当前分支既有 annotation/AppRuntime guard 和 Word visual-QA 断言基线仍失败）。
+- Next action: 在目标离线 Linux 主机校验并部署 0.1.13 完整包，执行真实风险 Skill 与文件夹上传验收；仓库总签收仍需另行处理既有 guard/Word 基线。

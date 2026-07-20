@@ -41,7 +41,5 @@ export function createTerminalHost(): TerminalHost {
     onTerminalClosed: (cb) => vscode.window.onDidCloseTerminal((terminal) => cb(wrap(terminal))),
     onActiveTerminalChanged: (cb) =>
       vscode.window.onDidChangeActiveTerminal((terminal) => cb(terminal ? wrap(terminal) : undefined)),
-    registerCommand: (id, handler) => vscode.commands.registerCommand(id, handler),
-    executeCommand: (id, ...args) => Promise.resolve(vscode.commands.executeCommand(id, ...args)),
   }
 }

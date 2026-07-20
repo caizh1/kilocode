@@ -68,6 +68,7 @@ export interface SkillMarketplaceItem extends MarketplaceItemBase {
   favorite?: boolean
   revision?: number
   sha256?: string
+  risk?: SkillRiskSummary
   localOnly?: boolean
   uploadable?: boolean
   origin?: "market" | "local-import" | "builtin"
@@ -139,6 +140,8 @@ export interface LocalSkillConflict {
 
 export interface SkillValidationReport {
   valid: boolean
+  policyVersion?: string
+  risk?: SkillRiskSummary
   issues: Array<{
     code: string
     severity: "info" | "warning" | "error"
@@ -150,7 +153,16 @@ export interface SkillValidationReport {
     actual?: string
     fixable: boolean
     repairKind: "none" | "deterministic" | "ai"
+    riskLevel: "none" | "medium" | "critical"
   }>
+}
+
+export type SkillRiskLevel = "none" | "medium" | "critical" | "unknown"
+
+export interface SkillRiskSummary {
+  level: SkillRiskLevel
+  issueCount: number
+  policyVersion?: string
 }
 
 export interface SkillImportCandidate extends SkillValidationReport {
@@ -219,7 +231,7 @@ export interface SkillRelease {
   sha256: string
   size: number
   notes?: string
-  report: Record<string, unknown>
+  report: SkillValidationReport
   archiveUrl: string
   publishedAt: string
 }
@@ -246,6 +258,7 @@ export interface SkillDetail {
   updatedAt: string
   downloads: number
   favorites: number
+  risk: SkillRiskSummary
   markdown: string
   releases: SkillRelease[]
   files: SkillFile[]
@@ -275,7 +288,16 @@ export interface PublicationRun {
   report?: {
     valid: boolean
     changed: boolean
-    issues: Array<{ code: string; severity: string; file?: string; field?: string; message: string }>
+    policyVersion?: string
+    risk?: SkillRiskSummary
+    issues: Array<{
+      code: string
+      severity: string
+      file?: string
+      field?: string
+      message: string
+      riskLevel: "none" | "medium" | "critical"
+    }>
   }
   patches: Array<{ id: string; kind: "deterministic" | "ai"; expiresAt: string }>
   release?: {

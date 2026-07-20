@@ -10,7 +10,7 @@ import { createSignal } from "solid-js"
 import type { Accessor } from "solid-js"
 
 export const MAX = 100
-const STORAGE_KEY = "kilo.prompt-history.v1"
+const STORAGE_KEY = "chipmate.v2.prompt-history.v1"
 
 function load(): string[] {
   try {

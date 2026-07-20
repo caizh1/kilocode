@@ -87,6 +87,12 @@ const internalTargets: Target[] = [
 ]
 const extras: Target[] = [
   {
+    target: "darwin-arm64",
+    cliDir: "@kilocode/cli-darwin-arm64",
+    binary: "kilo",
+    internal: true,
+  },
+  {
     target: "linux-x64",
     cliDir: "@kilocode/cli-linux-x64",
     binary: "kilo",
@@ -140,7 +146,7 @@ await $`node ${join(import.meta.dir, "..", "esbuild.js")} ${esbuildArgs}`.env({
       KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL: indexing.openaiCompatibleBaseUrl,
     }),
 })
-if (internal) removeMaps(distDir)
+removeMaps(distDir)
 
 try {
   if (hasLocalPackagedDefaults) {
@@ -214,6 +220,7 @@ try {
       npm_config_ignore_scripts: "true",
     })
     await verifyPackageTarget(vsixPath, config.target)
+    if (chipmate.baseUrl) await verifyChipmateServer(vsixPath, chipmate)
     if (config.internal) {
       await verifyInternalVsix(vsixPath, config)
       await verifyInternalModelsSnapshot(vsixPath)
@@ -351,7 +358,7 @@ function applyIndexingDefaults(pkg: typeof packageJson, indexing: IndexingDefaul
   if (!props)
     throw new Error("Cannot inject local indexing defaults: package.json configuration properties are missing.")
   if (indexing.openaiCompatibleBaseUrl) {
-    props["kilo.indexing.openaiCompatible.baseUrl"].default = indexing.openaiCompatibleBaseUrl
+    props["chipmate.v2.indexing.openaiCompatible.baseUrl"].default = indexing.openaiCompatibleBaseUrl
   }
 }
 
@@ -360,8 +367,8 @@ function applyMarketplaceDefaults(pkg: typeof packageJson, marketplace: Marketpl
   if (!props)
     throw new Error("Cannot inject local marketplace defaults: package.json configuration properties are missing.")
   if (marketplace.baseUrl) {
-    props["kilo.marketplace.baseUrl"].default = marketplace.baseUrl
-    if (internal) props["kilo.marketplace.skillsOnly"].default = true
+    props["chipmate.v2.marketplace.baseUrl"].default = marketplace.baseUrl
+    if (internal) props["chipmate.v2.marketplace.skillsOnly"].default = true
   }
 }
 
@@ -424,6 +431,7 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     "extension/dist/extension.js",
     "extension/dist/webview.js",
     "extension/dist/agent-manager.js",
+    "extension/dist/agent-console.js",
     "extension/dist/diff-viewer.js",
     "extension/dist/diff-virtual.js",
   ]
@@ -438,6 +446,12 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     required.push(
       "extension/bin/rg",
       "extension/bin/lancedb/node_modules/@lancedb/lancedb-linux-x64-gnu/lancedb.linux-x64-gnu.node",
+    )
+  }
+  if ((config.vsceTarget ?? config.target) === "darwin-arm64") {
+    required.push(
+      "extension/bin/rg",
+      "extension/bin/lancedb/node_modules/@lancedb/lancedb-darwin-arm64/lancedb.darwin-arm64.node",
     )
   }
   for (const file of required) {
@@ -488,13 +502,15 @@ async function verifyInternalMarketplaceManifest(vsix: string): Promise<void> {
     }
   }
   const props = manifestConfigurationProperties(manifest)
-  const baseUrl = props["kilo.marketplace.baseUrl"]?.default
-  const skillsOnly = props["kilo.marketplace.skillsOnly"]?.default
+  const baseUrl = props["chipmate.v2.marketplace.baseUrl"]?.default
+  const skillsOnly = props["chipmate.v2.marketplace.skillsOnly"]?.default
   if (typeof baseUrl !== "string" || !baseUrl.trim()) {
-    throw new Error("Internal VSIX marketplace manifest must contain a non-empty kilo.marketplace.baseUrl default.")
+    throw new Error(
+      "Internal VSIX marketplace manifest must contain a non-empty chipmate.v2.marketplace.baseUrl default.",
+    )
   }
   if (skillsOnly !== true) {
-    throw new Error("Internal VSIX marketplace manifest must set kilo.marketplace.skillsOnly.default to true.")
+    throw new Error("Internal VSIX marketplace manifest must set chipmate.v2.marketplace.skillsOnly.default to true.")
   }
 }
 
@@ -505,6 +521,31 @@ async function verifyPackageTarget(vsix: string, target: string): Promise<void> 
   const manifest = JSON.parse(out.text()) as { chipmatePackageTarget?: unknown }
   if (manifest.chipmatePackageTarget !== target) {
     throw new Error(`VSIX package target must be ${target}.`)
+  }
+}
+
+async function verifyChipmateServer(vsix: string, expected: PackagedChipmateServerDefaults): Promise<void> {
+  const unzip = Bun.which("unzip")
+  if (!unzip) throw new Error("Cannot verify packaged ChipMate Server defaults because unzip is not available.")
+  const out = await $`${unzip} -p ${vsix} extension/package.json`.quiet()
+  const manifest = JSON.parse(out.text()) as {
+    contributes?: {
+      configuration?:
+        | { properties?: Record<string, { default?: unknown }> }
+        | Array<{ properties?: Record<string, { default?: unknown }> }>
+    }
+  }
+  const props = manifestConfigurationProperties(manifest)
+  const values = {
+    "chipmate.v2.chipmateServer.baseUrl": expected.baseUrl,
+    "chipmate.v2.marketplace.baseUrl": expected.marketplace,
+    "chipmate.v2.documents.wordRender.remoteEndpoint": expected.word,
+    "chipmate.v2.documents.mermaidRender.remoteEndpoint": expected.mermaid,
+  }
+  for (const [key, value] of Object.entries(values)) {
+    if (props[key]?.default !== value) {
+      throw new Error(`Packaged ChipMate Server default mismatch for ${key}.`)
+    }
   }
 }
 

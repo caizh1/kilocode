@@ -4,6 +4,8 @@
 // Registered before all discovery phases so user skills with the same name override.
 
 import KILO_CONFIG from "./kilo-config.md" with { type: "text" }
+import CHIPMATE_CONFIG from "./chipmate-config.md" with { type: "text" }
+import { ProductProfile } from "../product-profile"
 import DOCUMENTS from "../../../../../.kilo/skills/documents/SKILL.md" with { type: "text" }
 import SOURCE_BACKED_DETAIL_DESIGN from "../../../../../.kilo/skills/source-backed-detail-design/SKILL.md" with { type: "text" }
 import SOURCE_BACKED_DETAIL_DESIGN_REF_01 from "../../../../../.kilo/skills/source-backed-detail-design/references/01-core-principles.md" with { type: "text" }
@@ -38,9 +40,10 @@ export const BUILTIN_SKILLS: BuiltinSkill[] = [
   },
   {
     name: "kilo-config",
-    description:
-      "Guide for Kilo configuration: config paths, kilo.json fields, commands, agents, skills, permissions, MCPs, providers, TUI settings, plus Agent Manager worktree setup/run scripts, workflows, and state. Use for Kilo config questions, locating loaded config, changing settings, or Agent Manager questions about run/setup scripts, worktree setup/workflows, apply/merge/PR/conflicts, missing sessions/worktrees, and agent-manager.json recovery.",
-    content: KILO_CONFIG,
+    description: ProductProfile.chipmate
+      ? "Safety guide for isolated ChipMate v2 configuration, storage, agents, skills, permissions, MCPs, and artifacts."
+      : "Guide for Kilo configuration: config paths, kilo.json fields, commands, agents, skills, permissions, MCPs, providers, TUI settings, plus Agent Manager worktree setup/run scripts, workflows, and state. Use for Kilo config questions, locating loaded config, changing settings, or Agent Manager questions about run/setup scripts, worktree setup/workflows, apply/merge/PR/conflicts, missing sessions/worktrees, and agent-manager.json recovery.",
+    content: ProductProfile.chipmate ? CHIPMATE_CONFIG : KILO_CONFIG,
   },
   {
     name: "source-backed-detail-design",

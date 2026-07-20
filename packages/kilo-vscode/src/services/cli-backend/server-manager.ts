@@ -4,13 +4,14 @@ import * as crypto from "crypto"
 import * as fs from "fs"
 import * as path from "path"
 import * as vscode from "vscode"
+import { PRODUCT } from "../../chipmate/identity"
 import { resolveLanceDBEnv, resolveLocalBwrapEnv, resolveTreeSitterEnv } from "./cli-resources"
 import { t } from "./i18n"
 import { parseServerPort } from "./server-utils"
 import { internalOfflineEnv } from "../../shared/internal-offline"
 import { appendIndexingStderr, indexingOutput } from "../indexing-output"
 import * as MemoryDebug from "../memory-debug"
-import { chipmateServerEndpoints, legacyChipmateServerEndpoints } from "../chipmate-server"
+import { chipmateServerEndpoints } from "../chipmate-server"
 export { isIndexingDiagnosticLine } from "../indexing-output"
 
 export interface ServerInstance {
@@ -55,6 +56,7 @@ export function buildBundledToolEnv(root: string, base: NodeJS.ProcessEnv = proc
   const prefix = `${poppler}${path.delimiter}${bin}`
   return {
     [key]: value ? `${prefix}${path.delimiter}${value}` : prefix,
+    KILO_VSCODE_BUNDLED_BIN: bin,
     ...(base.KILO_RIPGREP_PATH ? {} : { KILO_RIPGREP_PATH: rg }),
   }
 }
@@ -64,8 +66,31 @@ function pathKey(base: NodeJS.ProcessEnv): string {
   return Object.keys(base).find((key) => key.toLowerCase() === "path") ?? "Path"
 }
 
-export function resolveManagedServerEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return { ...env, KILO_DISABLE_CHANNEL_DB: "true" }
+export function resolveManagedServerEnv(env: NodeJS.ProcessEnv, storage: string): NodeJS.ProcessEnv {
+  const blocked = new Set([
+    "KILO_ACP_PROFILE",
+    "KILO_AUTH_CONTENT",
+    "KILO_CONFIG",
+    "KILO_CONFIG_CONTENT",
+    "KILO_CONFIG_DIR",
+    "KILO_DB",
+    "KILO_DEV_CWD",
+    "KILO_DEV_REPO",
+    "KILO_MEMORY_DEBUG_DIR",
+    "KILO_PLUGIN_META_FILE",
+    "KILO_TUI_CONFIG",
+    "KILO_ZED_DB",
+  ])
+  const clean = Object.fromEntries(
+    Object.entries(env).filter(([key]) => !blocked.has(key) && !key.startsWith("KILO_TEST_")),
+  )
+  return {
+    ...clean,
+    KILO_DISABLE_CHANNEL_DB: "true",
+    KILO_PRODUCT_PROFILE: PRODUCT,
+    KILO_STORAGE_ROOT: storage,
+    KILO_VSCODE_GLOBAL_STORAGE: storage,
+  }
 }
 
 export class ServerManager {
@@ -128,7 +153,7 @@ export class ServerManager {
 
     return new Promise((resolve, reject) => {
       console.log("[Kilo New] ServerManager: 🎬 Spawning CLI process:", cliPath, ["serve", "--port", "0"])
-      const cfg = vscode.workspace.getConfiguration("kilo-code.new")
+      const cfg = vscode.workspace.getConfiguration("chipmate.v2")
       const render = renderEnv()
       console.log("[Kilo New] ServerManager: 🖼️ Mermaid render endpoint:", mermaidEndpoint(render))
       const internal = internalOfflineEnv()
@@ -149,7 +174,7 @@ export class ServerManager {
       //     trust store (Windows cert store, macOS keychain, Linux /etc/ssl).
       //     Mirrors VS Code's `http.systemCertificates` default (true).
       //   - Allow users behind MITM proxies to point at a custom CA bundle via
-      //     `kilo-code.new.extraCaCerts` (NODE_EXTRA_CA_CERTS).
+      //     `chipmate.v2.extraCaCerts` (NODE_EXTRA_CA_CERTS).
       //   - Honor VS Code's `http.proxyStrictSSL=false` as an explicit opt-out
       //     from verification, matching what VS Code already does for its own
       //     requests. Users explicitly set that; we don't flip it ourselves.
@@ -162,7 +187,7 @@ export class ServerManager {
           NODE_USE_SYSTEM_CA: "1",
           ...(extraCaCerts && { NODE_EXTRA_CA_CERTS: extraCaCerts }),
           ...(!proxyStrictSSL && { NODE_TLS_REJECT_UNAUTHORIZED: "0" }),
-          ...resolveManagedServerEnv(process.env),
+          ...resolveManagedServerEnv(process.env, this.context.globalStorageUri.fsPath),
           ...render,
           // VS Code's http.proxy / http.noProxy settings are not reflected in
           // process.env, so spawned children bypass the user's configured proxy
@@ -365,9 +390,8 @@ export class ServerManager {
 
 export function renderEnv(): Record<string, string> {
   const unified = chipmateServerEndpoints()
-  const legacy = legacyChipmateServerEndpoints()
-  const word = unified.endpoints?.word ?? (unified.state.source === "conflict" ? legacy.word : "")
-  const mermaid = unified.endpoints?.mermaid ?? (unified.state.source === "conflict" ? legacy.mermaid : "")
+  const word = unified.endpoints?.word ?? ""
+  const mermaid = unified.endpoints?.mermaid ?? ""
   return {
     ...(word && !process.env.KILO_WORD_RENDER_ENDPOINT ? { KILO_WORD_RENDER_ENDPOINT: word } : {}),
     ...(mermaid && !process.env.KILO_MERMAID_RENDER_ENDPOINT ? { KILO_MERMAID_RENDER_ENDPOINT: mermaid } : {}),
@@ -403,7 +427,7 @@ function redactEndpoint(value: string): string {
 }
 
 function indexingControlEnv(internal: Record<string, string>): Record<string, string> {
-  const cfg = vscode.workspace.getConfiguration("kilo.indexing")
+  const cfg = vscode.workspace.getConfiguration("chipmate.v2.indexing")
   const openAICompatibleBaseUrl = cfg.get<string>("openaiCompatible.baseUrl", "").trim()
   return {
     ...(Object.keys(internal).length > 0 &&

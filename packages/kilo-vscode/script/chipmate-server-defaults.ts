@@ -52,10 +52,10 @@ export function applyPackagedChipmateServer(manifest: Manifest, defaults: Packag
   const props = manifest.contributes?.configuration?.properties
   if (!props)
     throw new Error("Cannot inject ChipMate Server defaults: package.json configuration properties are missing.")
-  if (defaults.baseUrl) props["kilo-code.new.chipmateServer.baseUrl"].default = defaults.baseUrl
-  if (defaults.marketplace) props["kilo.marketplace.baseUrl"].default = defaults.marketplace
-  if (defaults.word) props["kilo.documents.wordRender.remoteEndpoint"].default = defaults.word
-  if (defaults.mermaid) props["kilo.documents.mermaidRender.remoteEndpoint"].default = defaults.mermaid
+  if (defaults.baseUrl) props["chipmate.v2.chipmateServer.baseUrl"].default = defaults.baseUrl
+  if (defaults.marketplace) props["chipmate.v2.marketplace.baseUrl"].default = defaults.marketplace
+  if (defaults.word) props["chipmate.v2.documents.wordRender.remoteEndpoint"].default = defaults.word
+  if (defaults.mermaid) props["chipmate.v2.documents.mermaidRender.remoteEndpoint"].default = defaults.mermaid
 }
 
 export async function restorePackagedManifest(path: string, source: string) {

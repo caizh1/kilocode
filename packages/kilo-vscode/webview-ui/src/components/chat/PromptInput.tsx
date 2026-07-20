@@ -32,6 +32,7 @@ import { useGitChangesContext } from "../../hooks/useGitChangesContext"
 import { hasTerminalMention } from "../../hooks/terminal-context-utils"
 import { hasGitChangesMention } from "../../hooks/git-changes-context-utils"
 import { useSlashCommand } from "../../hooks/useSlashCommand"
+import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 import { useGhostText } from "../../hooks/useGhostText"
 import { useSpeechToText } from "../speech-to-text/useSpeechToText"
 import { useImageAttachments, type ImageAttachment } from "../../hooks/useImageAttachments"
@@ -376,7 +377,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     scroll = textareaRef?.scrollTop ?? scrollDrafts.get(key) ?? 0,
   ) => savePromptDraft(key, next, comments, imgs, scroll)
   const readDraft = () => ({
-    text: text().trim(),
+    text: text(),
     comments: reviewComments(),
     images: imageAttach.images(),
     scroll: textareaRef?.scrollTop ?? scrollDrafts.get(draftKey()) ?? 0,
@@ -449,6 +450,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const hidden = new Set<string>()
       if (session.variantList(sid()).length === 0) hidden.add("variant")
       if (!sandboxVisible()) hidden.add("sandbox")
+      if (isInternalOfflineBuild()) hidden.add("kiloclaw")
       return hidden
     },
   )
@@ -472,6 +474,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   let enhanceCounter = 0
   let preEnhanceText: string | null = null
+  let handoff: ReturnType<typeof readDraft> | undefined
 
   createEffect(() => {
     const sessionID = sandboxID()
@@ -515,15 +518,24 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // Uses `on()` to track only draftKey — avoids re-running on every keystroke.
   createEffect(
     on(draftKey, (key, prev) => {
-      if (prev !== undefined && prev !== key) {
+      const next = handoff
+      handoff = undefined
+      if (next && prev !== undefined && prev !== key) {
+        saveDraft(prev, next.text, next.comments, next.images, next.scroll)
+        movePromptDraft({ text: drafts, comments: reviewDrafts, images: imageDrafts, scrolls: scrollDrafts }, prev, key)
+      } else if (prev !== undefined && prev !== key) {
         saveDraft(prev, untrack(text), untrack(reviewComments), untrack(imageAttach.images))
       }
-      const draft = drafts.get(key) ?? ""
-      const pending = reviewDrafts.get(key) ?? []
-      const scroll = scrollDrafts.get(key) ?? 0
+      if (next && (prev === undefined || prev === key)) {
+        saveDraft(key, next.text, next.comments, next.images, next.scroll)
+      }
+      const draft = next?.text ?? drafts.get(key) ?? ""
+      const pending = next?.comments ?? reviewDrafts.get(key) ?? []
+      const images = next?.images ?? imageDrafts.get(key) ?? []
+      const scroll = next?.scroll ?? scrollDrafts.get(key) ?? 0
       setText(draft)
       setReviewComments(pending)
-      imageAttach.replace(imageDrafts.get(key) ?? [])
+      imageAttach.replace(images)
       setEnhancing(false)
       preEnhanceText = null
       history.reset()
@@ -583,14 +595,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   // Start a new task, carrying over the current prompt text (without auto-sending it)
   const onNewTaskRequest = () => {
-    const draft = text().trim()
-    const comments = reviewComments()
-    const imgs = imageAttach.images()
-    const scroll = textareaRef?.scrollTop ?? 0
-    const id = tabs?.add()
-    if (!id) session.clearCurrentSession()
-    const key = id ? scopeDraftKey(boxKey(), pendingDraftKey(id) ?? "new") : draftKey()
-    saveDraft(key, draft, comments, imgs, scroll)
+    const before = draftKey()
+    handoff = readDraft()
+    if (tabs?.add()) return
+    session.clearCurrentSession()
+    if (draftKey() === before) handoff = undefined
   }
   window.addEventListener("newTaskRequest", onNewTaskRequest)
   onCleanup(() => window.removeEventListener("newTaskRequest", onNewTaskRequest))
@@ -651,11 +660,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       globalConfig(),
     )
   const isDisabled = () => !server.isConnected()
+  const hasModel = () => !!session.selected(sid())
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates())
   const speechModel = () => selectedSpeechToTextModel(config())
   const hasInput = () => text().trim().length > 0 || imageAttach.images().length > 0 || reviewComments().length > 0
   const canSend = () =>
     !isDisabled() &&
+    hasModel() &&
     !terminal.pending() &&
     !git.pending() &&
     !props.blocked?.() &&
@@ -664,6 +675,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const reason = props.blockedReason?.()
     if (reason) return reason
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
+    if (!hasModel()) return language.t("prompt.action.send.selectModel")
     if (speech.state() === "recording") return language.t("prompt.action.send.recording")
     return language.t("prompt.action.send")
   }
@@ -859,7 +871,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const empty = !text().trim() && reviewComments().length === 0 && imageAttach.images().length === 0
       const merged = mergeReviewComments(reviewComments(), message.comments)
       replaceReviewComments(merged)
-      if (message.autoSend && empty && !isDisabled() && !props.blocked?.()) {
+      if (message.autoSend && empty && !isDisabled() && hasModel() && !props.blocked?.()) {
         void handleSend()
       } else {
         textareaRef?.focus()
@@ -869,7 +881,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (message.type === "triggerTask") {
       if (isDisabled()) return
       const sel = session.selected(sid())
-      session.sendMessage(message.text, sel?.providerID, sel?.modelID, undefined, undefined, ctx())
+      if (!sel) {
+        showToast({ variant: "default", title: language.t("prompt.action.send.selectModel") })
+        return
+      }
+      session.sendMessage(message.text, sel.providerID, sel.modelID, undefined, undefined, ctx())
     }
 
     if (message.type === "sendMessageFailed") {
@@ -1267,8 +1283,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const origin = session.currentSessionID()
     const pendingId = props.pendingSessionID ?? (!origin ? session.draftSessionID() : undefined)
     const id = origin ?? pendingId
-    beginPending(pendingId)
     const sel = session.selected(id)
+    if (!sel) {
+      showToast({ variant: "default", title: language.t("prompt.action.send.selectModel") })
+      return
+    }
+    beginPending(pendingId)
     const context = ctx()
     const key = draftKey()
 
@@ -1309,15 +1329,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       session.sendCommand(
         matched.name,
         args,
-        sel?.providerID,
-        sel?.modelID,
+        sel.providerID,
+        sel.modelID,
         attachments,
         pendingId,
         context,
         origin ?? null,
       )
     } else {
-      session.sendMessage(message, sel?.providerID, sel?.modelID, attachments, pendingId, context, data, origin ?? null)
+      session.sendMessage(message, sel.providerID, sel.modelID, attachments, pendingId, context, data, origin ?? null)
     }
 
     drafts.delete(key)

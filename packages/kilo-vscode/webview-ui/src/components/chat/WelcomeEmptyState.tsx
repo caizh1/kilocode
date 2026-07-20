@@ -13,19 +13,6 @@ interface WelcomeEmptyStateProps {
   onShowHistory?: () => void
 }
 
-export const KiloLogo = () => {
-  const icons = (window as { ICONS_BASE_URI?: string }).ICONS_BASE_URI || ""
-  const light =
-    document.body.classList.contains("vscode-light") || document.body.classList.contains("vscode-high-contrast-light")
-  const file = light ? "kilo-light.svg" : "kilo-dark.svg"
-
-  return (
-    <div class="kilo-logo">
-      <img src={`${icons}/${file}`} alt="Kilo Code" />
-    </div>
-  )
-}
-
 export const WelcomeEmptyState: Component<WelcomeEmptyStateProps> = (props) => {
   const session = useSession()
   const language = useLanguage()

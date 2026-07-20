@@ -30,7 +30,7 @@ export function getChatAutocompleteModel(provider?: string, model?: string) {
  * Chat textarea autocomplete with cached per-request objects.
  *
  * Caches FileIgnoreController (refreshed when workspace changes or when
- * .kilocodeignore / .gitignore files are modified) and shares a single
+ * .chipmate-v2ignore / .gitignore files are modified) and shares a single
  * AutocompleteTelemetry instance across requests so that request and
  * acceptance events correlate.
  */
@@ -44,7 +44,7 @@ export class ChatTextAreaAutocomplete {
   constructor(connectionService: KiloConnectionService, telemetry?: AutocompleteTelemetry) {
     this.connection = connectionService
     this.telemetry = telemetry ?? new AutocompleteTelemetry("chat-textarea")
-    this.watcher = vscode.workspace.createFileSystemWatcher("**/{.kilocodeignore,.gitignore}")
+    this.watcher = vscode.workspace.createFileSystemWatcher("**/{.chipmate-v2ignore,.gitignore}")
     const invalidate = () => {
       // Don't dispose — an in-flight request may still hold a reference.
       // The old instance will be garbage collected once no longer referenced.
@@ -82,7 +82,7 @@ export class ChatTextAreaAutocomplete {
   }
 
   async getCompletion(userText: string, visibleCodeContext?: VisibleCodeContext): Promise<{ suggestion: string }> {
-    const cfg = vscode.workspace.getConfiguration("kilo-code.new.autocomplete")
+    const cfg = vscode.workspace.getConfiguration("chipmate.v2.autocomplete")
     const entry = getChatAutocompleteModel(cfg.get<string>("provider"), cfg.get<string>("model"))
     const startTime = Date.now()
 

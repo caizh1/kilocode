@@ -21,6 +21,7 @@ const word = Type.Object(
     filename: Type.Optional(Type.String()),
     docxBase64: Type.String(),
     timeoutMs: Type.Optional(Type.Number()),
+    maxPages: Type.Optional(Type.Number()),
   },
   { additionalProperties: true },
 )
@@ -33,14 +34,54 @@ const mermaid = Type.Object(
   },
   { additionalProperties: true },
 )
-const rendered = Type.Object(
+const textQa = Type.Object({
+  ok: Type.Boolean(),
+  titlePresent: Type.Boolean(),
+  firstHeadingPresent: Type.Boolean(),
+  sourceCjkCount: Type.Number({ minimum: 0 }),
+  pdfCjkCount: Type.Number({ minimum: 0 }),
+  cjkCoverage: Type.Number({ minimum: 0, maximum: 1 }),
+  sentinelCount: Type.Number({ minimum: 0 }),
+  matchedSentinelCount: Type.Number({ minimum: 0 }),
+  sentinelCoverage: Type.Number({ minimum: 0, maximum: 1 }),
+  diagnostics: Type.Array(Type.String()),
+})
+const page = Type.Object(
   {
-    ok: Type.Boolean(),
+    page: Type.Number({ minimum: 1 }),
+    contentType: Type.Literal("image/png"),
+    base64: Type.String({ minLength: 1 }),
+    width: Type.Number({ minimum: 1 }),
+    height: Type.Number({ minimum: 1 }),
+    visualSummary: Type.Object({}, { additionalProperties: true }),
+  },
+  { additionalProperties: true },
+)
+const wordRendered = Type.Object(
+  {
+    ok: Type.Literal(true),
+    pageCount: Type.Number({ minimum: 1 }),
+    returnedPageCount: Type.Number({ minimum: 1 }),
+    pageCountKind: Type.Union([Type.Literal("exact"), Type.Literal("lower-bound"), Type.Literal("unknown")]),
+    fieldRefreshStatus: Type.Union([
+      Type.Literal("completed"),
+      Type.Literal("failed"),
+      Type.Literal("not-required"),
+    ]),
+    fieldRefreshDiagnostics: Type.Array(Type.String()),
+    tocHeadingCount: Type.Number({ minimum: 0 }),
+    tocEntryCount: Type.Number({ minimum: 0 }),
+    tocPageNumberCount: Type.Number({ minimum: 0 }),
+    updatedDocxBase64: Type.Optional(Type.String()),
+    pdf: Type.Object({ contentType: Type.Literal("application/pdf"), base64: Type.String({ minLength: 1 }) }),
+    pages: Type.Array(page),
+    textQa,
     issues: Type.Array(issue),
     renderer: Type.Object({}, { additionalProperties: true }),
   },
   { additionalProperties: true },
 )
+const rendered = Type.Object({ ok: Type.Boolean() }, { additionalProperties: true })
 
 export interface LegacyRoute {
   method: "GET" | "POST"
@@ -54,7 +95,7 @@ export interface LegacyRoute {
 export const LEGACY_ROUTES: readonly LegacyRoute[] = [
   { method: "GET", url: "/", schema: { response: { 200: Type.Object({}, { additionalProperties: true }) } } },
   { method: "GET", url: "/health", schema: { response: { 200: Type.Object({}, { additionalProperties: true }) } } },
-  { method: "POST", url: "/render/word", schema: { body: word, response: { 200: rendered, 500: error } } },
+  { method: "POST", url: "/render/word", schema: { body: word, response: { 200: wordRendered, 413: error, 422: error, 500: error } } },
   {
     method: "POST",
     url: "/render/mermaid",

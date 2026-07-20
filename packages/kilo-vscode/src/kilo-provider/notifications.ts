@@ -2,7 +2,7 @@ import * as vscode from "vscode"
 import type { KiloClient } from "@kilocode/sdk/v2/client"
 import { retry } from "../services/cli-backend/retry"
 
-const KEY = "kilo.dismissedNotificationIds"
+const KEY = "chipmate.v2.dismissedNotificationIds"
 
 interface NotificationAction {
   actionText: string

@@ -245,22 +245,20 @@ function stubConfig(values: Record<string, unknown>) {
   ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (
     section?: string,
   ) => {
-    if (section === "kilo-code.new.autocomplete") {
+    if (section === "chipmate.v2.autocomplete") {
       return {
-        get: (key: string, fallback?: unknown) =>
-          ({
+        get: (key: string, fallback?: unknown) => {
+          const selected = ({
             provider: values.providerID,
             model: values.model,
             enableAutoTrigger: values.enableAutoTrigger ?? values.enabled,
-          })[key] ?? fallback,
+          } as Record<string, unknown>)[key]
+          return selected ?? values[key] ?? fallback
+        },
         update: async () => {},
       } as unknown as ReturnType<typeof originalConfig>
     }
-    if (section !== "kilo.autocomplete") return originalConfig(section)
-    return {
-      get: (key: string, fallback?: unknown) => values[key] ?? fallback,
-      update: async () => {},
-    } as unknown as ReturnType<typeof originalConfig>
+    return originalConfig(section)
   }
 }
 
@@ -302,7 +300,7 @@ async function tempWorkspace(): Promise<string> {
 }
 
 describe("qwen autocomplete config and prompt", () => {
-  it("reads defaults from the kilo.autocomplete namespace", async () => {
+  it("reads defaults from the chipmate.v2.autocomplete namespace", async () => {
     stubConfig({})
     const { readQwenAutocompleteConfig } = await import("../../src/services/qwen-autocomplete/config")
 
@@ -511,6 +509,37 @@ describe("qwen autocomplete config and prompt", () => {
 })
 
 describe("qwen autocomplete registration", () => {
+  it("follows the official Kilo coexistence gate at runtime", async () => {
+    const calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }> = []
+    stubConfig({ enabled: true, providerID: "qwen", model: "qwen-coder-30b0" })
+    const events = stubRegistration(calls)
+    let enabled = false
+    let listener: ((value: boolean) => void) | undefined
+    const gate = {
+      autocomplete: () => enabled,
+      onDidChangeAutocomplete: (callback: (value: boolean) => void) => {
+        listener = callback
+        return { dispose: () => undefined }
+      },
+      dispose: () => undefined,
+    }
+    const { registerQwenAutocompleteProvider } = await import("../../src/services/qwen-autocomplete")
+    const reg = registerQwenAutocompleteProvider(
+      { subscriptions: [] } as unknown as vscode.ExtensionContext,
+      connection(),
+      gate as never,
+    )
+
+    expect(calls).toHaveLength(0)
+    enabled = true
+    listener?.(true)
+    expect(calls).toHaveLength(1)
+    enabled = false
+    listener?.(false)
+    expect(events.disposed()).toBe(1)
+    reg.dispose()
+  })
+
   it("does not register an inline completion provider by default", async () => {
     const calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }> = []
     stubConfig({})
@@ -570,23 +599,23 @@ describe("qwen autocomplete registration", () => {
     )
 
     values.providerID = "qwen"
-    events.fire("kilo-code.new.autocomplete")
+    events.fire("chipmate.v2.autocomplete")
     expect(calls).toHaveLength(0)
 
     values.model = "qwen-coder-30b0"
-    events.fire("kilo-code.new.autocomplete")
+    events.fire("chipmate.v2.autocomplete")
     expect(calls).toHaveLength(1)
 
-    events.fire("kilo.autocomplete")
+    events.fire("chipmate.v2.autocomplete")
     expect(calls).toHaveLength(1)
 
     values.enabled = false
-    events.fire("kilo-code.new.autocomplete")
+    events.fire("chipmate.v2.autocomplete")
     expect(calls).toHaveLength(1)
     expect(events.disposed()).toBe(0)
 
     values.model = undefined
-    events.fire("kilo-code.new.autocomplete")
+    events.fire("chipmate.v2.autocomplete")
     expect(events.disposed()).toBe(1)
     reg.dispose()
   })
@@ -1166,9 +1195,9 @@ describe("KiloQwenInlineCompletionProvider", () => {
     expect(calls).toBe(0)
   })
 
-  it("does not call Qwen or construct a prompt for .kilocodeignore matches", async () => {
+  it("does not call Qwen or construct a prompt for .chipmate-v2ignore matches", async () => {
     const root = await tempWorkspace()
-    await writeFile(path.join(root, ".kilocodeignore"), "ignored/**\n")
+    await writeFile(path.join(root, ".chipmate-v2ignore"), "ignored/**\n")
     let calls = 0
     const provider = new KiloQwenInlineCompletionProvider({
       read: () => cfg,

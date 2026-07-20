@@ -22,6 +22,12 @@ import {
   RequestID as NotebookRequestID,
   Result as NotebookResult,
 } from "@/kilocode/notebook/protocol"
+import {
+  Failure as SkillMarketFailure,
+  Request as SkillMarketRequest,
+  RequestID as SkillMarketRequestID,
+  Result as SkillMarketResult,
+} from "@/kilocode/skill-market/protocol"
 import { ModelUsage } from "@/kilocode/session/model-usage"
 import { SessionID } from "@/session/schema"
 
@@ -43,6 +49,8 @@ export const NotebookReplyPayload = Schema.Struct({ result: NotebookResult })
 export const NotebookRejectPayload = Schema.Struct({ error: NotebookFailure })
 export const AgentManagerReplyPayload = Schema.Struct({ result: AgentManagerResult })
 export const AgentManagerRejectPayload = Schema.Struct({ error: AgentManagerFailure })
+export const SkillMarketReplyPayload = Schema.Struct({ result: SkillMarketResult })
+export const SkillMarketRejectPayload = Schema.Struct({ error: SkillMarketFailure })
 
 export const KilocodePaths = {
   heapSnapshot: `${root}/heap/snapshot`,
@@ -55,6 +63,9 @@ export const KilocodePaths = {
   agentManagerList: `${root}/agent-manager`,
   agentManagerReply: `${root}/agent-manager/:requestID/reply`,
   agentManagerReject: `${root}/agent-manager/:requestID/reject`,
+  skillMarketList: `${root}/skill-market`,
+  skillMarketReply: `${root}/skill-market/:requestID/reply`,
+  skillMarketReject: `${root}/skill-market/:requestID/reject`,
   sessionModelUsage: `/session/:sessionID/model-usage`,
 } as const
 
@@ -178,6 +189,42 @@ export const KilocodeApi = HttpApi.make("kilocode")
             identifier: "kilocode.agentManager.reject",
             summary: "Reject an Agent Manager request",
             description: "Complete a pending Agent Manager orchestration request with a structured host error.",
+          }),
+        ),
+        HttpApiEndpoint.get("skillMarketList", KilocodePaths.skillMarketList, {
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(SkillMarketRequest), "Pending Skill Market host requests"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "kilocode.skillMarket.list",
+            summary: "List pending Skill Market requests",
+            description: "List pending Skill Market host requests for the routed workspace.",
+          }),
+        ),
+        HttpApiEndpoint.post("skillMarketReply", KilocodePaths.skillMarketReply, {
+          params: { requestID: SkillMarketRequestID },
+          query: WorkspaceRoutingQuery,
+          payload: SkillMarketReplyPayload,
+          success: described(Schema.Boolean, "Skill Market reply accepted"),
+          error: HttpApiError.NotFound,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "kilocode.skillMarket.reply",
+            summary: "Reply to a Skill Market request",
+            description: "Complete a pending Skill Market host request with a structured result.",
+          }),
+        ),
+        HttpApiEndpoint.post("skillMarketReject", KilocodePaths.skillMarketReject, {
+          params: { requestID: SkillMarketRequestID },
+          query: WorkspaceRoutingQuery,
+          payload: SkillMarketRejectPayload,
+          success: described(Schema.Boolean, "Skill Market rejection accepted"),
+          error: HttpApiError.NotFound,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "kilocode.skillMarket.reject",
+            summary: "Reject a Skill Market request",
+            description: "Complete a pending Skill Market host request with a structured host error.",
           }),
         ),
         HttpApiEndpoint.get("sessionModelUsage", KilocodePaths.sessionModelUsage, {

@@ -15,6 +15,10 @@ export function build(
     extensionMarket?: boolean
     extensionRoot?: string
     extensionScanMs?: number
+    extensionActiveUploads?: number
+    extensionMinimumFreeBytes?: number
+    extensionUploadIdleMs?: number
+    extensionUploadMaxMs?: number
   } = {},
 ) {
   const app = Fastify({ logger: false, bodyLimit: 50 * 1024 * 1024 })
@@ -40,6 +44,10 @@ export function build(
             : Number.isFinite(scan) && scan >= 1_000
               ? { scanMs: scan }
               : {}),
+          activeUploads: opts.extensionActiveUploads ?? number(process.env.EXTENSION_UPLOAD_MAX_ACTIVE, 20),
+          minimumFreeBytes: opts.extensionMinimumFreeBytes ?? number(process.env.EXTENSION_UPLOAD_MIN_FREE_BYTES, 2 * 1024 * 1024 * 1024),
+          uploadIdleMs: opts.extensionUploadIdleMs ?? number(process.env.EXTENSION_UPLOAD_IDLE_MS, 60_000),
+          uploadMaxMs: opts.extensionUploadMaxMs ?? number(process.env.EXTENSION_UPLOAD_MAX_MS, 2 * 60 * 60 * 1_000),
         })
       : undefined
     registerAligned(app, db, {
@@ -57,4 +65,9 @@ export function build(
     }),
   )
   return app
+}
+
+function number(value: string | undefined, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
 }

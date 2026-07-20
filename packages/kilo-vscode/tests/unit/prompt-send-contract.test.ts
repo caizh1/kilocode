@@ -21,6 +21,7 @@ const CHATVIEW_FILE = path.join(ROOT, "webview-ui/src/components/chat/ChatView.t
 const PROMPT_UTILS_FILE = path.join(ROOT, "webview-ui/src/components/chat/prompt-input-utils.ts")
 const PROMPT_FILE = path.join(ROOT, "webview-ui/src/components/chat/PromptInput.tsx")
 const KILOPROVIDER_FILE = path.join(ROOT, "src/KiloProvider.ts")
+const CLOUD_SESSION_FILE = path.join(ROOT, "src/kilo-provider/handlers/cloud-session.ts")
 const CONNECTION_SERVICE_FILE = path.join(ROOT, "src/services/cli-backend/connection-service.ts")
 
 function readFile(filePath: string): string {
@@ -76,6 +77,61 @@ describe("sendCommand dismisses pending tool requests", () => {
 
   it("rejects questions before sending", () => {
     expect(body).toContain("dismissQuestion")
+  })
+})
+
+describe("missing model send guards", () => {
+  const session = readFile(SESSION_FILE)
+  const prompt = readFile(PROMPT_FILE)
+  const host = readFile(KILOPROVIDER_FILE)
+  const cloud = readFile(CLOUD_SESSION_FILE)
+
+  it("rejects session sends before optimistic message or cloud import dispatch", () => {
+    for (const name of ["sendMessage", "sendCommand"]) {
+      const body = extractFunctionBody(session, name)
+      const guard = body.indexOf("if (!providerID || !modelID)")
+      expect(guard).toBeGreaterThan(-1)
+      expect(guard).toBeLessThan(body.indexOf("addOptimistic"))
+      expect(guard).toBeLessThan(body.indexOf('type: "importAndSend"'))
+    }
+  })
+
+  it("keeps review auto-send and triggerTask behind a selected model", () => {
+    expect(prompt).toContain("message.autoSend && empty && !isDisabled() && hasModel()")
+    const start = prompt.indexOf('if (message.type === "triggerTask")')
+    const end = prompt.indexOf('if (message.type === "sendMessageFailed")', start)
+    const body = prompt.slice(start, end)
+    expect(body.indexOf("if (!sel)")).toBeGreaterThan(-1)
+    expect(body.indexOf("if (!sel)")).toBeLessThan(body.indexOf("session.sendMessage"))
+  })
+
+  it("checks the selected model before starting pending attachment work", () => {
+    const start = prompt.indexOf("const handleSend = async () =>")
+    const select = prompt.indexOf("const sel = session.selected(id)", start)
+    const guard = prompt.indexOf("if (!sel)", select)
+    const pending = prompt.indexOf("beginPending(pendingId)", select)
+    expect(select).toBeGreaterThan(start)
+    expect(guard).toBeGreaterThan(select)
+    expect(pending).toBeGreaterThan(guard)
+  })
+
+  it("rejects missing models in the extension host before session creation", () => {
+    for (const name of ["handleSendMessage", "handleSendCommand"]) {
+      const start = host.indexOf(`private async ${name}(`)
+      const guard = host.indexOf("const model = modelSelection(providerID, modelID)", start)
+      const resolve = host.indexOf("this.resolveSession", start)
+      expect(start).toBeGreaterThan(-1)
+      expect(guard).toBeGreaterThan(start)
+      expect(resolve).toBeGreaterThan(guard)
+    }
+  })
+
+  it("rejects missing models before importing a cloud session", () => {
+    const start = cloud.indexOf("export async function handleImportAndSend(")
+    const guard = cloud.indexOf("const model = modelSelection(providerID, modelID)", start)
+    const request = cloud.indexOf("ctx.client.kilo.cloud.session.import", start)
+    expect(guard).toBeGreaterThan(start)
+    expect(request).toBeGreaterThan(guard)
   })
 })
 
@@ -323,6 +379,34 @@ describe("PromptInput send origin contract", () => {
     expect(append).toBeGreaterThan(send)
     expect(append).toBeLessThan(guard)
     expect(body.indexOf('setText("")', guard)).toBeGreaterThan(guard)
+  })
+})
+
+describe("new-task draft handoff contract", () => {
+  const source = readFile(PROMPT_FILE)
+
+  it("captures the complete draft before a new tab changes the draft key", () => {
+    const start = source.indexOf("const onNewTaskRequest = () =>")
+    const end = source.indexOf("window.addEventListener(\"newTaskRequest\"", start)
+    const body = source.slice(start, end)
+
+    const capture = body.indexOf("handoff = readDraft()")
+    const add = body.indexOf("tabs?.add()")
+    expect(capture).toBeGreaterThan(-1)
+    expect(add).toBeGreaterThan(capture)
+    expect(source).toMatch(/const readDraft = \(\) => \(\{\s*text: text\(\),/)
+  })
+
+  it("moves the handoff into the new draft key instead of saving it under the previous tab", () => {
+    const start = source.indexOf("on(draftKey, (key, prev) =>")
+    const end = source.indexOf("// Seed prompt history", start)
+    const body = source.slice(start, end)
+
+    expect(body).toContain("const next = handoff")
+    expect(body).toContain("movePromptDraft(")
+    expect(body.indexOf("movePromptDraft(")).toBeLessThan(body.indexOf("const draft = next?.text"))
+    expect(body).toContain("const images = next?.images")
+    expect(body).toContain("const scroll = next?.scroll")
   })
 })
 

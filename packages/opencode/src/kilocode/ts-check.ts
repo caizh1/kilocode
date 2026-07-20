@@ -4,6 +4,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import { Filesystem } from "../util/filesystem"
 import path from "path"
 import fs from "fs/promises"
+import { userEnv } from "./product-env"
 
 export namespace TsCheck {
   const log = Log.create({ service: "ts-check" })
@@ -30,7 +31,7 @@ export namespace TsCheck {
       stdout: "pipe",
       stderr: "pipe",
       windowsHide: true,
-      env: { ...process.env },
+      env: userEnv(process.env),
     })
 
     const TIMEOUT = 30_000

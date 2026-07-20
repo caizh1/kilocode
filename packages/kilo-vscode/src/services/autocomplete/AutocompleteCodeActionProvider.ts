@@ -17,7 +17,7 @@ export class AutocompleteCodeActionProvider implements vscode.CodeActionProvider
       this.providedCodeActionKinds["quickfix"],
     )
     action.command = {
-      command: "kilo-code.new.autocomplete.generateSuggestions",
+      command: "chipmate.v2.autocomplete.generateSuggestions",
       title: "",
       arguments: [document.uri, range],
     }

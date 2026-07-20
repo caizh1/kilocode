@@ -17,8 +17,8 @@ import type { MarketplaceItem } from "../../webview-ui/src/types/marketplace"
 
 const project = "/repo"
 const storage = vscode.Uri.file("/storage")
-const local = `${project}/.kilo/mcp.json`
-const legacy = `${project}/.kilocode/mcp.json`
+const local = `${project}/.chipmate-v2/mcp.json`
+const legacy = `${project}/.kilo/mcp.json`
 const global = `${storage.fsPath}/settings/mcp_settings.json`
 const item: McpMarketplaceItem = {
   id: "memory",
@@ -157,7 +157,7 @@ describe("Marketplace legacy MCP cleanup", () => {
     await removeMarketplaceItem(ctx, item, "project", project, project)
 
     expect(has(files, local)).toBe(false)
-    expect(has(files, legacy)).toBe(false)
+    expect(has(files, legacy)).toBe(true)
     expect(has(files, global)).toBe(true)
   })
 
@@ -176,7 +176,7 @@ describe("Marketplace legacy MCP cleanup", () => {
     expect(has(files, global)).toBe(false)
   })
 
-  it("removes project and global legacy config during sidebar cleanup", async () => {
+  it("removes ChipMate v2 project and global config without touching official Kilo", async () => {
     const files = setup()
     const ctx = {
       connection: connection(),
@@ -187,7 +187,7 @@ describe("Marketplace legacy MCP cleanup", () => {
     await removeMarketplaceItemFromAllScopes(ctx, item, project, project)
 
     expect(has(files, local)).toBe(false)
-    expect(has(files, legacy)).toBe(false)
+    expect(has(files, legacy)).toBe(true)
     expect(has(files, global)).toBe(false)
   })
 })

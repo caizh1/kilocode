@@ -4,7 +4,7 @@ import type { KiloConnectionService } from "../cli-backend"
 /** Start the shared CLI backend when autocomplete is enabled for a workspace. */
 export function ensureBackendForAutocomplete(connection: KiloConnectionService): void {
   const enabled =
-    vscode.workspace.getConfiguration("kilo-code.new.autocomplete").get<boolean>("enableAutoTrigger") ?? true
+    vscode.workspace.getConfiguration("chipmate.v2.autocomplete").get<boolean>("enableAutoTrigger") ?? true
   const dir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
   if (!enabled || !dir) return
   connection.connect(dir).catch((err) => {

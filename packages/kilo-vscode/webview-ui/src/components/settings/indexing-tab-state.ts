@@ -1,8 +1,11 @@
 import type { IndexingConfig } from "@kilocode/kilo-indexing/config"
+import type { UiI18nParams } from "@kilocode/kilo-ui/context"
 
 export type IndexingScope = "global" | "project"
 export type IndexingInheritance = "none" | "inherited" | "partial"
 export type IndexingSource = "none" | "global" | "local" | "mixed" | "default"
+
+type Translate = (key: string, params?: UiI18nParams) => string
 
 function record(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input)
@@ -78,7 +81,13 @@ export function indexingInheritance(
   return "none"
 }
 
-export function indexingDescription(description: string, inheritance: IndexingInheritance) {
+export function indexingDescription(description: string, inheritance: IndexingInheritance, t?: Translate) {
+  if (inheritance === "inherited" && t) {
+    return t("settings.indexing.inheritance.inherited", { description })
+  }
+  if (inheritance === "partial" && t) {
+    return t("settings.indexing.inheritance.partial", { description })
+  }
   if (inheritance === "inherited") return `${description} Inherited from global config.`
   if (inheritance === "partial") return `${description} Some values are inherited from global config.`
   return description

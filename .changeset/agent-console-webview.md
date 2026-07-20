@@ -2,4 +2,4 @@
 "chipmate": patch
 ---
 
-Present Agent Terminal as an interactive Agent Manager console with a real terminal, visual command approvals, high-risk confirmation dialogs, and a direct shortcut in the ChipMate sidebar toolbar.
+Open Agent Console as an independent hybrid terminal that routes Linux commands directly to the local PTY, sends natural language to the Agent, and keeps replies, output, and approvals in one timeline.

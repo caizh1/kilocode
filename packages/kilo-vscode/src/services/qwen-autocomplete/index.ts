@@ -14,20 +14,22 @@ import {
   QWEN_DEFAULT_STATE,
 } from "../autocomplete/settings"
 import { autocompleteResource } from "../autocomplete/workspace"
+import type { Coexistence } from "../../chipmate/coexistence"
 
 export function registerQwenAutocompleteProvider(
   context: vscode.ExtensionContext,
   connection: KiloConnectionService,
+  gate?: Coexistence,
 ): QwenAutocompleteRegistration {
-  const reg = new QwenAutocompleteRegistration(context, connection)
+  const reg = new QwenAutocompleteRegistration(context, connection, gate)
   context.subscriptions.push(reg)
   context.subscriptions.push(
-    vscode.commands.registerCommand("kilo-code.new.qwenAutocomplete.showLogs", showQwenAutocompleteLogs),
+    vscode.commands.registerCommand("chipmate.v2.qwenAutocomplete.showLogs", showQwenAutocompleteLogs),
     vscode.commands.registerCommand(
-      "kilo-code.new.qwenAutocomplete.exportDiagnostics",
+      "chipmate.v2.qwenAutocomplete.exportDiagnostics",
       exportQwenAutocompleteDiagnostics,
     ),
-    vscode.commands.registerCommand("kilo-code.new.qwenAutocomplete.smokeDiagnostics", () =>
+    vscode.commands.registerCommand("chipmate.v2.qwenAutocomplete.smokeDiagnostics", () =>
       qwenDiagnosticSmoke(connection),
     ),
   )
@@ -41,21 +43,25 @@ export class QwenAutocompleteRegistration implements vscode.Disposable {
   private registration: vscode.Disposable | null = null
   private readonly watcher: vscode.Disposable
   private readonly selection: vscode.Disposable
+  private readonly coexistence: vscode.Disposable
+  private readonly gate: Pick<Coexistence, "autocomplete">
   private edited = false
   private opened = false
   private imports = false
   private root = false
 
-  constructor(context: vscode.ExtensionContext, connection: KiloConnectionService) {
+  constructor(context: vscode.ExtensionContext, connection: KiloConnectionService, gate?: Coexistence) {
     this.connection = connection
+    this.gate = gate ?? { autocomplete: () => true }
     this.origin = () => (context.globalState?.get<boolean>(QWEN_DEFAULT_STATE, false) ? "automatic" : "explicit")
     this.watcher = vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration("kilo.autocomplete") || event.affectsConfiguration("kilo-code.new.autocomplete")) {
+      if (event.affectsConfiguration("chipmate.v2.autocomplete")) {
         if (autocompleteSelectionUpdating()) return
         this.sync()
       }
     })
     this.selection = onDidUpdateAutocompleteSelection(() => this.sync()) ?? { dispose: () => undefined }
+    this.coexistence = gate?.onDidChangeAutocomplete(() => this.sync()) ?? { dispose: () => undefined }
     this.sync()
   }
 
@@ -63,9 +69,14 @@ export class QwenAutocompleteRegistration implements vscode.Disposable {
     this.disposeProvider()
     this.watcher.dispose()
     this.selection.dispose()
+    this.coexistence.dispose()
   }
 
   private sync(): void {
+    if (!this.gate.autocomplete()) {
+      this.disposeProvider()
+      return
+    }
     const cfg = readQwenAutocompleteConfig(autocompleteResource())
     const enabled = qwenAutocompleteEnabled(cfg)
     const edited = enabled && cfg.recentlyEditedEnabled

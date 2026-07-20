@@ -7,7 +7,7 @@ type Manager = {
   panel: {
     sessions: {
       getSessionDirectories: () => ReadonlyMap<string, string>
-      clearSessionDirectory: (id: string) => void
+      forgetSessionDirectory: (id: string) => void
       abortSessions: (ids: readonly string[]) => Promise<void>
     }
   }
@@ -46,7 +46,7 @@ function createManager(options?: { dir?: string; panelDir?: string; state?: bool
   manager.panel = {
     sessions: {
       getSessionDirectories: () => new Map(options?.panelDir ? [["s1", options.panelDir]] : []),
-      clearSessionDirectory: (id) => cleared.push(id),
+      forgetSessionDirectory: (id) => cleared.push(id),
       abortSessions: async (ids) => {
         aborted.push([...ids])
         events.push("abort")

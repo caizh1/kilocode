@@ -13,7 +13,7 @@ const original = vscode.workspace.getConfiguration
 
 function stubConfig(state: Map<string, unknown>) {
   ;(vscode.workspace as unknown as Stub).getConfiguration = (section?: string) => {
-    if (section !== "kilo-code.new.autocomplete") {
+    if (section !== "chipmate.v2.autocomplete") {
       return { get: <T>(_key: string, fallback?: T) => fallback }
     }
     return {

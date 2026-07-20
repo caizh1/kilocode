@@ -252,9 +252,9 @@ describe("qwen autocomplete diagnostics", () => {
     const { registerQwenAutocompleteProvider } = await import("../../src/services/qwen-autocomplete")
     registerQwenAutocompleteProvider({ subscriptions: [] } as unknown as vscode.ExtensionContext, connection())
 
-    expect(calls).toContain("kilo-code.new.qwenAutocomplete.showLogs")
-    expect(calls).toContain("kilo-code.new.qwenAutocomplete.exportDiagnostics")
-    expect(calls).toContain("kilo-code.new.qwenAutocomplete.smokeDiagnostics")
+    expect(calls).toContain("chipmate.v2.qwenAutocomplete.showLogs")
+    expect(calls).toContain("chipmate.v2.qwenAutocomplete.exportDiagnostics")
+    expect(calls).toContain("chipmate.v2.qwenAutocomplete.smokeDiagnostics")
     const root = path.join(__dirname, "../..")
     const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as {
       contributes: {
@@ -264,12 +264,12 @@ describe("qwen autocomplete diagnostics", () => {
     }
     expect(
       manifest.contributes.commands.find(
-        (command) => command.command === "kilo-code.new.qwenAutocomplete.smokeDiagnostics",
+        (command) => command.command === "chipmate.v2.qwenAutocomplete.smokeDiagnostics",
       )?.title,
     ).toBe("ChipMate: Test qwen-direct Transport")
     expect(
       manifest.contributes.menus?.commandPalette?.find(
-        (item) => item.command === "kilo-code.new.qwenAutocomplete.exportDiagnostics",
+        (item) => item.command === "chipmate.v2.qwenAutocomplete.exportDiagnostics",
       )?.when,
     ).toBeUndefined()
     const source = readFileSync(path.join(root, "src/services/qwen-autocomplete/diagnostics.ts"), "utf8")
@@ -357,7 +357,7 @@ function stubConfig(values: QwenAutocompleteConfig): void {
   ;(vscode.workspace as unknown as { getConfiguration: typeof originalConfig }).getConfiguration = (
     section?: string,
   ) => {
-    if (section === "kilo-code.new.autocomplete") {
+    if (section === "chipmate.v2.autocomplete") {
       return {
         get: (key: string, fallback?: unknown) =>
           ({
@@ -368,7 +368,7 @@ function stubConfig(values: QwenAutocompleteConfig): void {
         update: async () => {},
       } as unknown as ReturnType<typeof originalConfig>
     }
-    if (section !== "kilo.autocomplete") return originalConfig(section)
+    if (section !== "chipmate.v2.autocomplete") return originalConfig(section)
     return {
       get: (key: string, fallback?: unknown) => {
         const map: Record<string, unknown> = {

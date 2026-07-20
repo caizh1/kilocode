@@ -19,7 +19,7 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if [[ -z "$ARCHIVE" ]]; then
-  ARCHIVE="$(find . -maxdepth 1 \( -name 'chipmate-word-render-*-linux-amd64.docker.tar.gz' -o -name 'chipmate-word-render-*-linux-amd64.docker.tar' \) | sort | tail -n 1)"
+  ARCHIVE="$(find . -maxdepth 1 \( -name 'chipmate-word-render-*-linux-amd64.docker.tar.gz' -o -name 'chipmate-word-render-*-linux-amd64.docker.tar' \) -print | sort -V | tail -n 1)"
 fi
 
 if [[ -z "$ARCHIVE" || ! -f "$ARCHIVE" ]]; then
@@ -58,7 +58,7 @@ docker load -i "$image_tar" | tee "$workdir/docker-load.out"
 IMAGE_REF="$(awk -F': ' '/Loaded image:/ { value=$2 } END { print value }' "$workdir/docker-load.out")"
 
 if [[ -z "$IMAGE_REF" ]]; then
-  IMAGE_REF="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^chipmate-word-render:' | head -n 1 || true)"
+  IMAGE_REF="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^chipmate-word-render:' | sort -t: -k2,2V | tail -n 1 || true)"
 fi
 
 if [[ -z "$IMAGE_REF" ]]; then
@@ -92,20 +92,12 @@ if [[ "$market_exists" == "1" ]]; then
 fi
 
 if [[ -d "$SKILL_MARKET_SEED_ROOT" ]]; then
-  echo "[chipmate-render] seeding skill market from $SKILL_MARKET_SEED_ROOT"
-  if [[ -f "$SKILL_MARKET_SEED_ROOT/skills.json" && ! -f "$SKILL_MARKET_ROOT_ON_HOST/skills.json" ]]; then
-    cp "$SKILL_MARKET_SEED_ROOT/skills.json" "$SKILL_MARKET_ROOT_ON_HOST/skills.json"
-  fi
-  if [[ -d "$SKILL_MARKET_SEED_ROOT/skills" ]]; then
-    while IFS= read -r -d '' seed_file; do
-      rel="${seed_file#"$SKILL_MARKET_SEED_ROOT/skills/"}"
-      target="$SKILL_MARKET_ROOT_ON_HOST/skills/$rel"
-      if [[ ! -f "$target" ]]; then
-        mkdir -p "$(dirname "$target")"
-        cp "$seed_file" "$target"
-      fi
-    done < <(find "$SKILL_MARKET_SEED_ROOT/skills" -type f -print0)
-  fi
+  echo "[chipmate-render] merging managed skill seeds from $SKILL_MARKET_SEED_ROOT"
+  docker run --rm \
+    -v "$SKILL_MARKET_SEED_ROOT:/seed:ro" \
+    -v "$SKILL_MARKET_ROOT_ON_HOST:/market:rw" \
+    "$IMAGE_REF" \
+    node /app/scripts/merge-managed-seeds.mjs /seed /market
 fi
 
 if [[ ! -f "$SKILL_MARKET_ROOT_ON_HOST/skills.json" ]]; then
@@ -117,7 +109,7 @@ runtime_env_file="$ENV_FILE"
 if [[ -z "$runtime_env_file" ]] && docker inspect "$SERVICE_NAME" >/dev/null 2>&1; then
   preserved_env="$workdir/preserved.env"
   docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$SERVICE_NAME" \
-    | awk '/^NEW_API_[A-Z0-9_]+=/ || /^EXTENSION_MARKET_ROOT=/ || /^EXTENSION_DROP_[A-Z0-9_]+=/ { print }' > "$preserved_env"
+    | awk '/^NEW_API_[A-Z0-9_]+=/ || /^EXTENSION_MARKET_ROOT=/ || /^EXTENSION_DROP_[A-Z0-9_]+=/ || /^EXTENSION_UPLOAD_[A-Z0-9_]+=/ { print }' > "$preserved_env"
   if [[ -s "$preserved_env" ]]; then
     chmod 600 "$preserved_env"
     runtime_env_file="$preserved_env"

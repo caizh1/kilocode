@@ -1,0 +1,86 @@
+const fs = require("node:fs")
+const path = require("node:path")
+const vscode = require("vscode")
+
+const required = [
+  "chipmate.v2.plusButtonClicked",
+  "chipmate.v2.agentManagerOpen",
+  "chipmate.v2.sidebarTitle.agentTerminalOpen",
+  "chipmate.v2.settingsButtonClicked",
+  "chipmate.v2.openInTab",
+  "chipmate.v2.documents.openArtifact",
+  "chipmate.v2.documents.openArtifactFolder",
+  "chipmate.v2.documents.exportDiagnostics",
+  "chipmate.v2.agentTerminal.open",
+  "chipmate.v2.autocomplete.generateSuggestions",
+  "chipmate.v2.autocomplete.cancelSuggestions",
+  "chipmate.v2.qwenAutocomplete.showLogs",
+  "chipmate.v2.qwenAutocomplete.exportDiagnostics",
+  "chipmate.v2.generateTerminalCommand",
+  "chipmate.v2.terminalFixCommand",
+]
+
+async function activate() {
+  const out = process.env.CHIPMATE_QA_PROBE_OUT
+  if (!out) return
+  const result = {
+    at: new Date().toISOString(),
+    status: "FAIL",
+    extension: {},
+    commands: {},
+    configuration: {},
+    errors: [],
+  }
+  try {
+    const extension = vscode.extensions.getExtension("chipmate.chipmate")
+    if (!extension) throw new Error("installed chipmate.chipmate extension is not discoverable")
+    await extension.activate()
+    result.extension = {
+      id: extension.id,
+      version: extension.packageJSON.version,
+      path: extension.extensionPath,
+      active: extension.isActive,
+      development: extension.extensionMode === vscode.ExtensionMode.Development,
+    }
+    if (result.extension.development) result.errors.push("subject extension must not run in development mode")
+    const expected = process.env.CHIPMATE_QA_EXPECTED_VERSION
+    if (expected && result.extension.version !== expected)
+      result.errors.push(`expected version ${expected}, got ${result.extension.version}`)
+
+    const commands = new Set(await vscode.commands.getCommands(true))
+    result.commands.required = Object.fromEntries(required.map((id) => [id, commands.has(id)]))
+    for (const [id, present] of Object.entries(result.commands.required)) {
+      if (!present) result.errors.push(`missing command ${id}`)
+    }
+
+    const config = vscode.workspace.getConfiguration()
+    const keys = [
+      "chipmate.v2.documents.artifacts.root",
+      "chipmate.v2.documents.tools.enabled",
+      "chipmate.v2.autocomplete.enabled",
+      "chipmate.v2.autocomplete.provider",
+      "chipmate.v2.autocomplete.qwen.model",
+      "chipmate.v2.documents.wordRender.remoteEndpoint",
+    ]
+    result.configuration = Object.fromEntries(keys.map((key) => [key, config.get(key)]))
+    const contributes = extension.packageJSON.contributes ?? {}
+    const views = contributes.views?.["chipmate-v2-activitybar"] ?? []
+    if (!views.some((item) => item.id === "chipmate.v2.SidebarProvider"))
+      result.errors.push("missing chipmate.v2.SidebarProvider view")
+    const profiles = contributes.terminal?.profiles ?? []
+    if (profiles.some((item) => item.id === "chipmate.v2.agentTerminal"))
+      result.errors.push("legacy chipmate.v2.agentTerminal profile must be absent")
+    result.status = result.errors.length ? "FAIL" : "PASS"
+  } catch (err) {
+    result.errors.push(err instanceof Error ? (err.stack ?? err.message) : String(err))
+  }
+  fs.mkdirSync(path.dirname(out), { recursive: true })
+  fs.writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`)
+  if (process.env.CHIPMATE_QA_PROBE_QUIT === "1") {
+    setTimeout(() => vscode.commands.executeCommand("workbench.action.quit"), 300)
+  }
+}
+
+function deactivate() {}
+
+module.exports = { activate, deactivate }

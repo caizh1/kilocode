@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { userEnv } from "../product-env"
 
 type Diff = {
   file?: string
@@ -62,6 +63,7 @@ function apply(dir: string, diff: Diff) {
       stdout: "pipe",
       stderr: "pipe",
       windowsHide: true,
+      env: userEnv(process.env),
     })
     return proc.exitCode === 0
   } finally {

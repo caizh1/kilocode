@@ -73,7 +73,11 @@ function sanitizeBranchName(name: string): string {
     .join("/")
 }
 
-export const NewWorktreeDialog: Component<{ onClose: () => void; defaultBaseBranch?: string }> = (props) => {
+export const NewWorktreeDialog: Component<{
+  onClose: () => void
+  defaultBaseBranch?: string
+  allowPR?: boolean
+}> = (props) => {
   const { t } = useLanguage()
   const vscode = useVSCode()
   const server = useServer()
@@ -442,6 +446,7 @@ export const NewWorktreeDialog: Component<{ onClose: () => void; defaultBaseBran
   })
 
   const handlePRSubmit = () => {
+    if (props.allowPR === false) return
     const url = prUrl().trim()
     if (!url || isPending()) return
     setPrPending(true)
@@ -892,41 +897,43 @@ export const NewWorktreeDialog: Component<{ onClose: () => void; defaultBaseBran
       {/* Import tab */}
       <Show when={tab() === "import"}>
         <div class="am-import-tab">
-          {/* Pull Request section */}
-          <div class="am-import-section">
-            <span class="am-nv-config-label">{t("agentManager.import.pullRequest")}</span>
-            <div class="am-pr-row">
-              <div class="am-pr-input-wrapper">
-                <Icon name="branch" size="small" />
-                <input
-                  class="am-pr-input"
-                  type="text"
-                  placeholder={t("agentManager.import.pastePrUrl")}
-                  value={prUrl()}
-                  onInput={(e) => setPrUrl(e.currentTarget.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault()
-                      handlePRSubmit()
-                    }
-                  }}
-                  disabled={isPending()}
-                />
+          <Show when={props.allowPR !== false}>
+            {/* Pull Request section */}
+            <div class="am-import-section">
+              <span class="am-nv-config-label">{t("agentManager.import.pullRequest")}</span>
+              <div class="am-pr-row">
+                <div class="am-pr-input-wrapper">
+                  <Icon name="branch" size="small" />
+                  <input
+                    class="am-pr-input"
+                    type="text"
+                    placeholder={t("agentManager.import.pastePrUrl")}
+                    value={prUrl()}
+                    onInput={(e) => setPrUrl(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        handlePRSubmit()
+                      }
+                    }}
+                    disabled={isPending()}
+                  />
+                </div>
+                <Button
+                  variant="secondary"
+                  size="small"
+                  onClick={click("import_pull_request", "configure_worktree_dialog", handlePRSubmit)}
+                  disabled={!prUrl().trim() || isPending()}
+                >
+                  <Show when={prPending()} fallback={t("agentManager.import.open")}>
+                    <Spinner class="am-nv-spinner" />
+                  </Show>
+                </Button>
               </div>
-              <Button
-                variant="secondary"
-                size="small"
-                onClick={click("import_pull_request", "configure_worktree_dialog", handlePRSubmit)}
-                disabled={!prUrl().trim() || isPending()}
-              >
-                <Show when={prPending()} fallback={t("agentManager.import.open")}>
-                  <Spinner class="am-nv-spinner" />
-                </Show>
-              </Button>
             </div>
-          </div>
 
-          <div class="am-import-divider" />
+            <div class="am-import-divider" />
+          </Show>
 
           {/* Branches section */}
           <div class="am-import-section">
@@ -969,8 +976,10 @@ export const NewWorktreeDialog: Component<{ onClose: () => void; defaultBaseBran
           <Show when={!branchesLoading() && branches().length === 0}>
             <div class="am-import-empty">
               {t("agentManager.import.noBranchesFound")}
-              <br />
-              {t("agentManager.import.noBranchesHint")}
+              <Show when={props.allowPR !== false}>
+                <br />
+                {t("agentManager.import.noBranchesHint")}
+              </Show>
             </div>
           </Show>
         </div>

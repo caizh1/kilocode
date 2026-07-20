@@ -19,6 +19,7 @@ import { RulesMigrator } from "../rules-migrator"
 import { WorkflowsMigrator } from "../workflows-migrator"
 import { McpMigrator } from "../mcp-migrator"
 import { IgnoreMigrator } from "../ignore-migrator"
+import { ProductProfile } from "../product-profile"
 
 export namespace KilocodeConfig {
   const log = Log.create({ service: "kilocode.config" })
@@ -43,19 +44,21 @@ export namespace KilocodeConfig {
   /** All config file names in precedence order (kilo + opencode). */
   export const ALL_CONFIG_FILES = ["kilo.jsonc", "kilo.json", "opencode.jsonc", "opencode.json"] as const
 
+  /** Config files available to the active product profile. */
+  export const ACTIVE_CONFIG_FILES = ProductProfile.chipmate ? (["kilo.jsonc"] as const) : ALL_CONFIG_FILES
+
   /** Config directory suffixes in update-target preference order. */
-  export const KILO_DIR_SUFFIXES = [".kilo", ".kilocode"] as const
+  export const KILO_DIR_SUFFIXES = ProductProfile.chipmate ? ProductProfile.dirs : ([".kilo", ".kilocode"] as const)
 
   /** Path patterns for resolving kilo agent names from file paths. */
-  export const AGENT_PATTERNS = ["/.kilo/agent/", "/.kilo/agents/", "/.kilocode/agent/", "/.kilocode/agents/"] as const
+  export const AGENT_PATTERNS = ProductProfile.chipmate
+    ? (["/.chipmate-v2/agent/", "/.chipmate-v2/agents/"] as const)
+    : (["/.kilo/agent/", "/.kilo/agents/", "/.kilocode/agent/", "/.kilocode/agents/"] as const)
 
   /** Path patterns for resolving kilo command names from file paths. */
-  export const COMMAND_PATTERNS = [
-    "/.kilo/command/",
-    "/.kilo/commands/",
-    "/.kilocode/command/",
-    "/.kilocode/commands/",
-  ] as const
+  export const COMMAND_PATTERNS = ProductProfile.chipmate
+    ? (["/.chipmate-v2/command/", "/.chipmate-v2/commands/"] as const)
+    : (["/.kilo/command/", "/.kilo/commands/", "/.kilocode/command/", "/.kilocode/commands/"] as const)
 
   /**
    * Choose the project config file that Config.update should patch.
@@ -72,11 +75,13 @@ export namespace KilocodeConfig {
     const dirs = yield* input.fs
       .up({ targets: [...KILO_DIR_SUFFIXES], start: input.directory, stop: input.worktree })
       .pipe(Effect.orDie)
-    const roots = yield* input.fs
-      .up({ targets: [...ALL_CONFIG_FILES], start: input.directory, stop: input.worktree })
-      .pipe(Effect.orDie)
-    const files = [...dirs.flatMap((dir) => ALL_CONFIG_FILES.map((file) => path.join(dir, file))), ...roots]
-    return files.find((file) => existsSync(file)) ?? path.join(input.directory, ".kilo", "kilo.jsonc")
+    const roots = ProductProfile.chipmate
+      ? []
+      : yield* input.fs
+          .up({ targets: [...ALL_CONFIG_FILES], start: input.directory, stop: input.worktree })
+          .pipe(Effect.orDie)
+    const files = [...dirs.flatMap((dir) => ACTIVE_CONFIG_FILES.map((file) => path.join(dir, file))), ...roots]
+    return files.find((file) => existsSync(file)) ?? path.join(input.directory, KILO_DIR_SUFFIXES[0], "kilo.jsonc")
   })
 
   export const updateProjectConfig = Effect.fn("KilocodeConfig.updateProjectConfig")(function* (input: {
@@ -227,6 +232,11 @@ export namespace KilocodeConfig {
     projectDir: string
     merge: MergeFn
   }): Promise<{ config: Config.Info; warnings: Config.Warning[] }> {
+    if (ProductProfile.chipmate) {
+      const permission = await IgnoreMigrator.loadIgnoreConfig(input.projectDir)
+      const config = Object.keys(permission).length > 0 ? input.merge({}, { permission }) : {}
+      return { config, warnings: [] }
+    }
     const warnings: Config.Warning[] = []
     let result: Config.Info = {}
 
@@ -444,7 +454,7 @@ export namespace KilocodeConfig {
 
   /** Check whether a directory path should be treated as a config directory (for loading config files). */
   export function isConfigDir(dir: string, flagDir?: string): boolean {
-    return dir.endsWith(".kilo") || dir.endsWith(".kilocode") || dir === flagDir
+    return ProductProfile.isDir(dir, flagDir)
   }
 
   // ── Opencode config migration notice ─────────────────────────────────
@@ -460,7 +470,12 @@ export namespace KilocodeConfig {
    * opencode configuration but no longer reads `.opencode` directories.
    * Returns the existing `.opencode` locations (global + project), highest first.
    */
-  export function detectOpencodeConfig(input: { directory: string; worktree?: string; scanProject: boolean }): string[] {
+  export function detectOpencodeConfig(input: {
+    directory: string
+    worktree?: string
+    scanProject: boolean
+  }): string[] {
+    if (ProductProfile.chipmate) return []
     const found: string[] = []
 
     // Global opencode config dir (sibling of the kilo global config dir, e.g. ~/.config/opencode).

@@ -24,6 +24,7 @@ import { EffectBridge } from "@/effect/bridge"
 import * as SandboxPolicy from "@/kilocode/sandbox/policy" // kilocode_change
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { SkillMarketIntent } from "@/kilocode/skill-market/intent" // kilocode_change
 // kilocode_change start
 import { SwePruner } from "@/kilocode/swe-pruner"
 import { Config } from "@/config/config"
@@ -84,12 +85,16 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   })
   // kilocode_change end
 
-  for (const item of yield* registry.tools({
+  // kilocode_change start - Skill Market tools are absent from ordinary QA provider schemas
+  const registered = yield* registry.tools({
     modelID: ModelV2.ID.make(input.model.api.id),
     providerID: input.model.providerID,
-    family: input.model.family, // kilocode_change
+    family: input.model.family,
     agent: input.agent,
-  })) {
+  })
+  const visible = SkillMarketIntent.filter(registered, input.messages)
+  for (const item of visible) {
+    // kilocode_change end
     // kilocode_change start - SWE-Pruner (experimental): advertise the focus parameter on prunable tools
     const pruner = swe && SwePruner.prunable(item.id)
     const base = ToolJsonSchema.fromTool(item)

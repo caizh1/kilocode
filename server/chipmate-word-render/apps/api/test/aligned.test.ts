@@ -86,6 +86,7 @@ test("aligned-v1 catalog serves capabilities, detail, versions, files, status, a
     assert.equal(catalog.statusCode, 200)
     assert.equal(catalog.json().items[0].id, "source-backed-detail-design")
     assert.equal(catalog.json().items[0].artwork.type, "icon")
+    assert.deepEqual(catalog.json().items[0].risk, { level: "unknown", issueCount: 0 })
     const etag = catalog.headers.etag
     assert.ok(etag)
     const unchanged = await app.inject({
@@ -106,6 +107,7 @@ test("aligned-v1 catalog serves capabilities, detail, versions, files, status, a
     assert.match(detail.json().markdown, /source-backed/i)
     assert.equal(detail.json().gallery.length, 1)
     assert.equal(detail.json().releases[0].report.sourceSha256.length, 64)
+    assert.equal(detail.json().risk.level, "unknown")
     assert.ok(detail.json().files.some((file: { path: string }) => file.path === "SKILL.md"))
 
     const releases = await app.inject({ method: "GET", url: "/api/v1/skills/source-backed-detail-design/releases" })
@@ -285,6 +287,54 @@ test("web session and Kilo bearer resolve to one user with protected favorites a
       headers: { cookie },
     })
     assert.deepEqual(installations.json(), [installed.json()])
+  } finally {
+    await app.close()
+    await data.db.close()
+    await rm(data.dir, { recursive: true, force: true })
+  }
+})
+
+test("identity rate limits preserve Retry-After and use the public rate-limit code", async () => {
+  const data = await fixture()
+  const resolveUser = async (key: string) => {
+    if (key === "limited")
+      return { ok: false, code: "new-api-rate-limited", status: 429, retryAfter: "3" } as const
+    if (key === "unsafe")
+      return { ok: false, code: "new-api-rate-limited", status: 429, retryAfter: "invalid\nvalue" } as const
+    return { ok: false, code: "token-not-found", status: 404 } as const
+  }
+  const app = build(data.db, { resolveUser })
+  try {
+    const login = await app.inject({ method: "POST", url: "/api/v1/auth/session", payload: { apiKey: "limited" } })
+    assert.equal(login.statusCode, 429)
+    assert.equal(login.json().code, "RATE_LIMITED")
+    assert.equal(login.headers["retry-after"], "3")
+
+    const bearer = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/me",
+      headers: { authorization: "Bearer limited" },
+    })
+    assert.equal(bearer.statusCode, 429)
+    assert.equal(bearer.json().code, "RATE_LIMITED")
+    assert.equal(bearer.headers["retry-after"], "3")
+
+    const unsafe = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/me",
+      headers: { authorization: "Bearer unsafe" },
+    })
+    assert.equal(unsafe.statusCode, 429)
+    assert.equal(unsafe.json().code, "RATE_LIMITED")
+    assert.equal(unsafe.headers["retry-after"], undefined)
+
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/me",
+      headers: { authorization: "Bearer invalid" },
+    })
+    assert.equal(invalid.statusCode, 404)
+    assert.equal(invalid.json().code, "AUTH_INVALID")
   } finally {
     await app.close()
     await data.db.close()
@@ -506,6 +556,7 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     assert.equal(created.json().release.revision, 1)
     assert.equal(created.json().release.semver, "1.0.0")
     assert.equal(created.json().report.valid, true)
+    assert.equal(created.json().report.risk.level, "none")
     assert.ok(created.json().patches.some((patch: { kind: string }) => patch.kind === "deterministic"))
 
     const retried = await app.inject({ method: "POST", url: "/api/v1/publications", headers, payload: archive })
@@ -558,7 +609,29 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     })
     assert.equal(unsafe.statusCode, 200, unsafe.body)
     assert.equal(unsafe.json().status, "SECURITY_REJECTED")
+    assert.equal(unsafe.json().report.risk.level, "critical")
     assert.ok(unsafe.json().report.issues.some((issue: { code: string }) => issue.code === "security-markdown-xss"))
+
+    const riskyArchive = await publicationArchive(
+      data.dir,
+      "risky-skill",
+      "---\nname: Risky\ndescription: Publishable warnings\n---\n\n# Risky\n\nUse this Skill only after reviewing its scripts.\n",
+      {
+        "README.md": "password=abcdefghijklmnop\n",
+        "scripts/connect.sh": "-----BEGIN OPENSSH PRIVATE KEY-----\nexample\n",
+      },
+    )
+    const risky = await app.inject({
+      method: "POST",
+      url: "/api/v1/publications",
+      headers: { ...headers, "idempotency-key": "publication-key-risky" },
+      payload: riskyArchive,
+    })
+    assert.equal(risky.statusCode, 200)
+    assert.equal(risky.json().status, "PUBLISHED")
+    assert.equal(risky.json().report.risk.level, "medium")
+    assert.ok(risky.json().report.issues.some((issue: { code: string }) => issue.code === "security-secret"))
+    assert.ok(risky.json().report.issues.every((issue: { message: string }) => /[\u4e00-\u9fff]/.test(issue.message)))
 
     const tinyArchive = await publicationArchive(
       data.dir,
@@ -662,6 +735,21 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     assert.equal(republished.json().status, "PUBLISHED")
     assert.equal(republished.json().release.revision, 2)
     assert.equal((await app.inject({ method: "GET", url: "/api/v1/skills/new-skill" })).statusCode, 200)
+    const undone = await app.inject({
+      method: "POST",
+      url: `/api/v1/publications/${republished.json().id}/undo`,
+      headers: { ...headers, "idempotency-key": "publication-undo-republish" },
+    })
+    assert.equal(undone.statusCode, 200)
+    assert.equal(undone.json().status, "UNDONE")
+    assert.equal((await app.inject({ method: "GET", url: "/api/v1/skills/new-skill" })).statusCode, 404)
+    const replay = await app.inject({
+      method: "POST",
+      url: `/api/v1/publications/${republished.json().id}/undo`,
+      headers: { ...headers, "idempotency-key": "publication-undo-republish" },
+    })
+    assert.equal(replay.statusCode, 200)
+    assert.equal(replay.json().status, "UNDONE")
   } finally {
     await app.close()
     await data.db.close()
@@ -702,12 +790,17 @@ test("authenticated analytics overview returns Worker-aggregated series", async 
   }
 })
 
-async function publicationArchive(root: string, id: string, markdown: string) {
+async function publicationArchive(root: string, id: string, markdown: string, files: Record<string, string> = {}) {
   const source = join(root, `publication-${id}`)
   const dir = join(source, id)
   const archive = join(source, `${id}.tar.gz`)
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, "skill.md"), markdown)
+  for (const [path, content] of Object.entries(files)) {
+    const target = join(dir, path)
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, content)
+  }
   execFileSync("tar", ["-czf", archive, "-C", source, id], { env: { ...process.env, COPYFILE_DISABLE: "1" } })
   return readFile(archive)
 }

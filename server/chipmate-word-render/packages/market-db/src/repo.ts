@@ -41,6 +41,7 @@ import type {
   SessionItem,
   SessionLookup,
   UnpublishInput,
+  UndoPublicationInput,
   ExtensionArtifactInput,
   ExtensionDownloadInput,
   ExtensionFavoriteInput,
@@ -80,6 +81,7 @@ interface SearchRow {
   download_count: number
   favorite_count: number
   legacy_json: string
+  validation_report_json: string
 }
 
 interface ReleaseRow {
@@ -111,6 +113,8 @@ interface PublicationRow {
   created_at: string
   updated_at: string
   source_sha256: string
+  previous_status: string | null
+  previous_revision: number | null
 }
 
 interface TarEntry {
@@ -333,7 +337,7 @@ export class MarketRepo {
     values.push(limit, offset)
     const rows = this.db
       .prepare(
-        `SELECT s.id,s.name,s.description,s.category,s.tags_json,s.author_id,u.display_name AS author,s.latest_revision,r.semver,r.sha256,r.archive_path,s.updated_at,s.download_count,s.favorite_count,s.legacy_json
+        `SELECT s.id,s.name,s.description,s.category,s.tags_json,s.author_id,u.display_name AS author,s.latest_revision,r.semver,r.sha256,r.archive_path,r.validation_report_json,s.updated_at,s.download_count,s.favorite_count,s.legacy_json
          FROM skills s ${join} JOIN users u ON u.id=s.author_id JOIN releases r ON r.skill_id=s.id AND r.revision=s.latest_revision
          WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ? OFFSET ?`,
       )
@@ -344,7 +348,7 @@ export class MarketRepo {
   get(id: string): SearchItem | undefined {
     const row = this.db
       .prepare(
-        `SELECT s.id,s.name,s.description,s.category,s.tags_json,s.author_id,u.display_name AS author,s.latest_revision,r.semver,r.sha256,r.archive_path,s.updated_at,s.download_count,s.favorite_count,s.legacy_json
+        `SELECT s.id,s.name,s.description,s.category,s.tags_json,s.author_id,u.display_name AS author,s.latest_revision,r.semver,r.sha256,r.archive_path,r.validation_report_json,s.updated_at,s.download_count,s.favorite_count,s.legacy_json
          FROM skills s JOIN users u ON u.id=s.author_id JOIN releases r ON r.skill_id=s.id AND r.revision=s.latest_revision
          WHERE s.id=? AND s.status='published'`,
       )
@@ -507,7 +511,7 @@ export class MarketRepo {
   favorites(userId: string): SearchItem[] {
     const rows = this.db
       .prepare(
-        `SELECT s.id,s.name,s.description,s.category,s.tags_json,s.author_id,u.display_name AS author,s.latest_revision,r.semver,r.sha256,r.archive_path,s.updated_at,s.download_count,s.favorite_count,s.legacy_json
+        `SELECT s.id,s.name,s.description,s.category,s.tags_json,s.author_id,u.display_name AS author,s.latest_revision,r.semver,r.sha256,r.archive_path,r.validation_report_json,s.updated_at,s.download_count,s.favorite_count,s.legacy_json
          FROM favorites x JOIN skills s ON s.id=x.skill_id JOIN users u ON u.id=s.author_id JOIN releases r ON r.skill_id=s.id AND r.revision=s.latest_revision
          WHERE x.user_id=? ORDER BY x.created_at DESC`,
       )
@@ -659,6 +663,9 @@ export class MarketRepo {
     const report = publicationReport(snapshot)
     const patches = deterministicPatches(input.id, snapshot, now)
     const created: string[] = []
+    const previous = this.db
+      .prepare("SELECT status,latest_revision FROM skills WHERE id=?")
+      .get(snapshot.spec.id) as unknown as { status: string; latest_revision: number } | undefined
 
     this.db.exec("BEGIN IMMEDIATE")
     try {
@@ -668,8 +675,8 @@ export class MarketRepo {
       const stage = snapshot.valid ? "complete" : snapshot.stage
       this.db
         .prepare(
-          `INSERT INTO publication_runs(id,owner_id,skill_id,status,stage,snapshot_path,snapshot_sha256,report_json,result_revision,created_at,updated_at,idempotency_key,source_sha256,patches_json)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO publication_runs(id,owner_id,skill_id,status,stage,snapshot_path,snapshot_sha256,report_json,result_revision,created_at,updated_at,idempotency_key,source_sha256,patches_json,previous_status,previous_revision)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.id,
@@ -686,6 +693,8 @@ export class MarketRepo {
           input.idempotencyKey,
           source,
           JSON.stringify(patches),
+          previous?.status ?? null,
+          previous?.latest_revision ?? null,
         )
       this.db.exec("COMMIT")
       return this.publicationItem(input.id)!
@@ -767,13 +776,16 @@ export class MarketRepo {
     const report = publicationReport(snapshot)
     const now = new Date().toISOString()
     const created: string[] = []
+    const previous = this.db
+      .prepare("SELECT status,latest_revision FROM skills WHERE id=?")
+      .get(snapshot.spec.id) as unknown as { status: string; latest_revision: number } | undefined
     writeFileSync(row.snapshot_path, snapshot.archive)
     this.db.exec("BEGIN IMMEDIATE")
     try {
       const result = snapshot.valid ? this.publishSnapshot(input.ownerId, snapshot, report, created) : undefined
       this.db
         .prepare(
-          `UPDATE publication_runs SET skill_id=?,status=?,stage=?,snapshot_sha256=?,report_json=?,result_revision=?,updated_at=? WHERE id=?`,
+          `UPDATE publication_runs SET skill_id=?,status=?,stage=?,snapshot_sha256=?,report_json=?,result_revision=?,updated_at=?,previous_status=COALESCE(previous_status,?),previous_revision=COALESCE(previous_revision,?) WHERE id=?`,
         )
         .run(
           result ? snapshot.spec.id : null,
@@ -783,6 +795,8 @@ export class MarketRepo {
           JSON.stringify(report),
           result?.revision ?? null,
           now,
+          previous?.status ?? null,
+          previous?.latest_revision ?? null,
           input.id,
         )
       this.db.exec("COMMIT")
@@ -826,6 +840,96 @@ export class MarketRepo {
         )
       this.db.exec("COMMIT")
       return this.publicationItem(input.id)!
+    } catch (err) {
+      this.db.exec("ROLLBACK")
+      throw err
+    }
+  }
+
+  undoPublication(input: UndoPublicationInput): PublicationItem {
+    const replay = this.db
+      .prepare("SELECT run_id FROM publication_undos WHERE owner_id=? AND idempotency_key=?")
+      .get(input.ownerId, input.idempotencyKey) as unknown as { run_id: string } | undefined
+    if (replay) {
+      if (replay.run_id !== input.runId) throw new Error("IDEMPOTENCY_CONFLICT")
+      return this.publicationItem(input.runId)!
+    }
+    const run = this.db
+      .prepare(
+        "SELECT id,owner_id,skill_id,status,result_revision,previous_status,previous_revision FROM publication_runs WHERE id=?",
+      )
+      .get(input.runId) as unknown as
+      | {
+          id: string
+          owner_id: string
+          skill_id: string | null
+          status: PublicationItem["status"]
+          result_revision: number | null
+          previous_status: string | null
+          previous_revision: number | null
+        }
+      | undefined
+    if (!run) throw new Error("NOT_FOUND")
+    if (run.owner_id !== input.ownerId) throw new Error("OWNERSHIP_REQUIRED")
+    if (run.status === "UNDONE") return this.publicationItem(run.id)!
+    if (run.status !== "PUBLISHED" && run.status !== "UNCHANGED") {
+      throw new Error("CONFLICT: only successful publications can be undone")
+    }
+    if (!run.skill_id || !run.result_revision) throw new Error("CONFLICT: publication has no result revision")
+    const now = new Date().toISOString()
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      this.user(input.ownerId, input.ownerName, now)
+      if (run.status === "PUBLISHED") {
+        const current = this.db
+          .prepare("SELECT latest_revision,status FROM skills WHERE id=?")
+          .get(run.skill_id) as unknown as { latest_revision: number; status: string } | undefined
+        if (!current || current.latest_revision !== run.result_revision || current.status !== "published") {
+          throw new Error("STALE_PUBLICATION")
+        }
+        if (run.previous_revision === null) {
+          this.db.prepare("UPDATE skills SET status='unpublished',updated_at=? WHERE id=?").run(now, run.skill_id)
+        } else {
+          const prior = this.db
+            .prepare("SELECT metadata_json FROM releases WHERE skill_id=? AND revision=?")
+            .get(run.skill_id, run.previous_revision) as unknown as { metadata_json: string } | undefined
+          if (!prior) throw new Error("STALE_PUBLICATION")
+          const spec = parseObject(prior.metadata_json)
+          this.db
+            .prepare(
+              "UPDATE skills SET name=?,description=?,category=?,tags_json=?,status=?,latest_revision=?,updated_at=?,legacy_json=? WHERE id=?",
+            )
+            .run(
+              string(spec.name) ?? run.skill_id,
+              string(spec.description) ?? "",
+              string(spec.category) ?? "general",
+              JSON.stringify(Array.isArray(spec.tags) ? spec.tags.map(String) : []),
+              run.previous_status ?? "published",
+              run.previous_revision,
+              now,
+              JSON.stringify(spec),
+              run.skill_id,
+            )
+        }
+      }
+      this.db.prepare("UPDATE publication_runs SET status='UNDONE',undone_at=?,updated_at=? WHERE id=?").run(now, now, run.id)
+      this.db
+        .prepare("INSERT INTO publication_undos(id,owner_id,run_id,idempotency_key,created_at) VALUES(?,?,?,?,?)")
+        .run(input.id, input.ownerId, run.id, input.idempotencyKey, now)
+      this.db
+        .prepare(
+          "INSERT INTO audit_events(user_id,action,skill_id,revision,details_json,occurred_at) VALUES(?,?,?,?,?,?)",
+        )
+        .run(
+          input.ownerId,
+          "publication.undo",
+          run.skill_id,
+          run.result_revision,
+          JSON.stringify({ runId: run.id, previousRevision: run.previous_revision }),
+          now,
+        )
+      this.db.exec("COMMIT")
+      return this.publicationItem(run.id)!
     } catch (err) {
       this.db.exec("ROLLBACK")
       throw err
@@ -944,10 +1048,6 @@ export class MarketRepo {
 
   extensionPublications(ownerId: string) {
     return this.extensions.publications(ownerId)
-  }
-
-  extensionUploadCount(ownerId: string, since: string) {
-    return this.extensions.uploadCount(ownerId, since)
   }
 
   extensionFavorite(input: ExtensionFavoriteInput) {
@@ -1093,7 +1193,10 @@ export class MarketRepo {
           snapshot.spec.id,
         )
     }
-    const revision = Number(current?.latest_revision ?? 0) + 1
+    const latest = this.db
+      .prepare("SELECT COALESCE(MAX(revision),0) AS revision FROM releases WHERE skill_id=?")
+      .get(snapshot.spec.id) as unknown as { revision: number }
+    const revision = Number(latest.revision) + 1
     const dir = join(this.dir, "releases", snapshot.spec.id)
     const path = join(dir, `${revision}.tar.gz`)
     mkdirSync(dir, { recursive: true })
@@ -1123,7 +1226,7 @@ export class MarketRepo {
   private publicationItem(id: string): PublicationItem | undefined {
     const row = this.db
       .prepare(
-        `SELECT id,owner_id,skill_id,status,stage,report_json,patches_json,result_revision,created_at,updated_at,source_sha256
+        `SELECT id,owner_id,skill_id,status,stage,report_json,patches_json,result_revision,created_at,updated_at,source_sha256,previous_status,previous_revision
          FROM publication_runs WHERE id=?`,
       )
       .get(id) as unknown as PublicationRow | undefined
@@ -1182,6 +1285,8 @@ function publicationReport(snapshot: SkillSnapshot): PublicationReport {
     sourceSha256: snapshot.sourceSha256,
     snapshotSha256: snapshot.snapshotSha256,
     changed: snapshot.changed,
+    policyVersion: snapshot.policyVersion,
+    risk: snapshot.risk,
   }
 }
 
@@ -1275,6 +1380,7 @@ function mapSearch(row: SearchRow): SearchItem {
     updatedAt: row.updated_at,
     downloads: Number(row.download_count),
     favorites: Number(row.favorite_count),
+    report: parseObject(row.validation_report_json),
     ...(artwork ? { artwork } : {}),
     ...(gallery.length > 0 ? { gallery } : {}),
   }

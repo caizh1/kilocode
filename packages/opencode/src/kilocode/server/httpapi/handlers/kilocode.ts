@@ -10,6 +10,8 @@ import type { RequestID as AgentManagerRequestID } from "@/kilocode/agent-manage
 import { AgentManager } from "@/kilocode/agent-manager/service"
 import type { RequestID as NotebookRequestID } from "@/kilocode/notebook/protocol"
 import { Notebook } from "@/kilocode/notebook/service"
+import type { RequestID as SkillMarketRequestID } from "@/kilocode/skill-market/protocol"
+import { SkillMarket } from "@/kilocode/skill-market/service"
 import { ModelUsage } from "@/kilocode/session/model-usage"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
@@ -22,6 +24,8 @@ import {
   NotebookReplyPayload,
   RemoveAgentPayload,
   RemoveSkillPayload,
+  SkillMarketRejectPayload,
+  SkillMarketReplyPayload,
 } from "../groups/kilocode"
 
 export const kilocodeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilocode", (handlers) =>
@@ -32,6 +36,7 @@ export const kilocodeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilocode"
     const store = yield* InstanceStore.Service
     const manager = yield* AgentManager.Service
     const notebook = yield* Notebook.Service
+    const market = yield* SkillMarket.Service
 
     const heapSnapshot = Effect.fn("KilocodeHttpApi.heapSnapshot")(function* () {
       return yield* Effect.promise(() => HeapSnapshot.write())
@@ -125,6 +130,30 @@ export const kilocodeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilocode"
       return true
     })
 
+    const skillMarketList = Effect.fn("KilocodeHttpApi.skillMarketList")(function* () {
+      return yield* market.list()
+    })
+
+    const skillMarketReply = Effect.fn("KilocodeHttpApi.skillMarketReply")(function* (ctx: {
+      params: { requestID: SkillMarketRequestID }
+      payload: typeof SkillMarketReplyPayload.Type
+    }) {
+      yield* market
+        .reply({ requestID: ctx.params.requestID, result: ctx.payload.result })
+        .pipe(Effect.catchTag("SkillMarket.NotFoundError", () => Effect.fail(new HttpApiError.NotFound({}))))
+      return true
+    })
+
+    const skillMarketReject = Effect.fn("KilocodeHttpApi.skillMarketReject")(function* (ctx: {
+      params: { requestID: SkillMarketRequestID }
+      payload: typeof SkillMarketRejectPayload.Type
+    }) {
+      yield* market
+        .reject({ requestID: ctx.params.requestID, error: ctx.payload.error })
+        .pipe(Effect.catchTag("SkillMarket.NotFoundError", () => Effect.fail(new HttpApiError.NotFound({}))))
+      return true
+    })
+
     const sessionModelUsage = Effect.fn("KilocodeHttpApi.sessionModelUsage")(function* (ctx: {
       params: { sessionID: SessionID }
     }) {
@@ -144,6 +173,9 @@ export const kilocodeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilocode"
       .handle("agentManagerList", agentManagerList)
       .handle("agentManagerReply", agentManagerReply)
       .handle("agentManagerReject", agentManagerReject)
+      .handle("skillMarketList", skillMarketList)
+      .handle("skillMarketReply", skillMarketReply)
+      .handle("skillMarketReject", skillMarketReject)
       .handle("sessionModelUsage", sessionModelUsage)
   }),
 )

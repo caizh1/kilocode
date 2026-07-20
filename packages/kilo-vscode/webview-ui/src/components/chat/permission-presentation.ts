@@ -1,4 +1,5 @@
 import { permissionSeverity, type PermissionSeverity } from "../../../../src/shared/command-risk"
+export type { PermissionSeverity }
 import type { PermissionRequest } from "../../types/messages"
 
 export function permissionCommand(request: PermissionRequest): string | undefined {

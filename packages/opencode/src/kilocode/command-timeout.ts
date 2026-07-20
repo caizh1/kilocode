@@ -3,6 +3,7 @@ import { Shell } from "@/shell/shell"
 import { Effect, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import type { ChildProcessHandle } from "effect/unstable/process/ChildProcessSpawner"
+import { userEnv, userOptions } from "./product-env"
 
 function max() {
   const value = process.env.KILO_COMMAND_TIMEOUT_MAX_MS
@@ -66,6 +67,8 @@ export namespace CommandTimeout {
   function make(cmd: string, shell: string) {
     if (process.platform === "win32" && Shell.ps(shell)) {
       return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", cmd], {
+        env: userEnv(process.env),
+        extendEnv: false,
         stdin: "ignore",
         detached: false,
       })
@@ -73,6 +76,8 @@ export namespace CommandTimeout {
 
     return ChildProcess.make(cmd, [], {
       shell,
+      env: userEnv(process.env),
+      extendEnv: false,
       stdin: "ignore",
       detached: process.platform !== "win32",
     })
@@ -80,7 +85,8 @@ export namespace CommandTimeout {
 
   export function text(cmd: string, shell: string) {
     const limit = env()
-    if (!limit) return Effect.promise(async () => (await Process.text([cmd], { shell, nothrow: true })).text)
+    if (!limit)
+      return Effect.promise(async () => (await Process.text([cmd], userOptions({ shell, nothrow: true }))).text)
 
     return Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner

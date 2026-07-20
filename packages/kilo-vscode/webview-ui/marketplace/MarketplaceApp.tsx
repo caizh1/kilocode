@@ -1,6 +1,7 @@
 import { type Component } from "solid-js"
 import { ThemeProvider } from "@kilocode/kilo-ui/theme"
 import { DialogProvider } from "@kilocode/kilo-ui/context/dialog"
+import { MarkedProvider } from "@kilocode/kilo-ui/context/marked"
 import { Toast } from "@kilocode/kilo-ui/toast"
 import { MarketplaceView } from "../src/components/marketplace"
 import { MarketplaceSessionProvider } from "../src/context/marketplace-session"
@@ -16,9 +17,11 @@ export const MarketplaceApp: Component = () => {
         <VSCodeProvider>
           <ServerProvider>
             <LanguageBridge>
-              <MarketplaceSessionProvider>
-                <MarketplaceView />
-              </MarketplaceSessionProvider>
+              <MarkedProvider>
+                <MarketplaceSessionProvider>
+                  <MarketplaceView />
+                </MarketplaceSessionProvider>
+              </MarkedProvider>
             </LanguageBridge>
           </ServerProvider>
         </VSCodeProvider>

@@ -1,4 +1,4 @@
-import { Unzip, UnzipInflate } from "fflate"
+import { Unzip, UnzipInflate, type UnzipFile } from "fflate"
 
 export const FILE_LIMIT = 512 * 1024 * 1024
 export const BATCH_LIMIT = 20
@@ -46,9 +46,29 @@ export interface BatchScan {
   errors: BatchNote[]
 }
 
+export interface LogicalBatch {
+  index: number
+  items: BatchItem[]
+  bytes: number
+}
+
 export type BatchProgress = (path: string, loaded: number, total: number) => void
 export type BatchEmit = (item: BatchItem, blob: Blob) => Promise<void>
 export type BatchFail = (item: BatchItem, error: string) => Promise<void> | void
+
+export function partition(items: BatchItem[]): LogicalBatch[] {
+  const groups: LogicalBatch[] = []
+  for (const item of items) {
+    const current = groups.at(-1)
+    if (!current || current.items.length >= BATCH_LIMIT || current.bytes + item.size > BATCH_BYTES) {
+      groups.push({ index: groups.length + 1, items: [item], bytes: item.size })
+      continue
+    }
+    current.items.push(item)
+    current.bytes += item.size
+  }
+  return groups
+}
 
 interface Handle {
   kind: "file" | "directory"
@@ -145,9 +165,15 @@ export async function materialize(
   progress?: BatchProgress,
   stop?: () => boolean,
 ): Promise<void> {
+  const grouped = new Map<string, BatchItem[]>()
+  for (const item of items) {
+    const current = grouped.get(item.sourceId) ?? []
+    current.push(item)
+    grouped.set(item.sourceId, current)
+  }
   for (const source of scan.sources) {
     if (stop?.()) return
-    const matches = items.filter((item) => item.sourceId === source.id)
+    const matches = grouped.get(source.id) ?? []
     if (!matches.length) continue
     if (source.kind === "file" || source.kind === "folder") {
       const item = matches[0]
@@ -253,49 +279,79 @@ async function materializeZip(
 ) {
   const wanted = new Map(items.map((item) => [item.entry, item]))
   const done = new Set<string>()
-  const ready: Array<{ item: BatchItem; blob?: Blob; error?: string }> = []
+  const pending: ZipTask[] = []
+  const state: { active: ZipTask | undefined } = { active: undefined }
   const issue = { error: "", entries: 0, expanded: 0 }
   const archive = new Unzip()
   archive.register(UnzipInflate)
   archive.onfile = (file) => {
     const index = issue.entries++
     const item = wanted.get(index)
-    if (!item) return
-    const chunks: Uint8Array[] = []
-    const size = { value: 0 }
+    if (!item) {
+      file.terminate()
+      return
+    }
+    const task: ZipTask = { item, file, chunks: [], size: 0, done: false, error: "" }
     file.ondata = (error, data, final) => {
       if (error) {
-        ready.push({ item, error: error.message })
+        task.error = error.message
+        task.done = true
         return
       }
-      size.value += data.length
+      task.size += data.length
       issue.expanded += data.length
-      if (size.value > FILE_LIMIT || issue.expanded > BATCH_BYTES) {
-        ready.push({ item, error: "解包大小超过限制" })
+      if (task.size > FILE_LIMIT || issue.expanded > BATCH_BYTES) {
+        task.error = "解包大小超过限制"
+        task.done = true
         file.terminate()
         return
       }
-      chunks.push(data.slice())
-      if (final) ready.push({ item, blob: new Blob([join(chunks).buffer as ArrayBuffer], { type: "application/vnd.microsoft.vscode.vsix" }) })
+      task.chunks.push(data.slice())
+      task.done = final
     }
-    try {
-      file.start()
-    } catch (error) {
-      ready.push({ item, error: message(error) })
+    pending.push(task)
+  }
+  const pump = async () => {
+    if (!state.active) {
+      const next = pending.shift()
+      if (!next) return
+      state.active = next
+      try {
+        next.file.start()
+      } catch (error) {
+        next.error = message(error)
+        next.done = true
+      }
     }
+    const active = state.active
+    if (!active?.done) return
+    state.active = undefined
+    done.add(active.item.id)
+    if (active.error) await fail(active.item, active.error)
+    else await emit(active.item, new Blob([join(active.chunks).buffer as ArrayBuffer], { type: "application/vnd.microsoft.vscode.vsix" }))
+    await pump()
   }
   await feed(
     source.file,
     (data, final) => archive.push(data, final),
     async (loaded) => {
       progress?.(source.path, loaded, source.file.size)
-      await drain(ready, done, emit, fail)
+      await pump()
     },
     issue,
     stop,
   )
-  await drain(ready, done, emit, fail)
+  await pump()
   for (const item of items) if (!done.has(item.id)) await fail(item, issue.error || "未能从 ZIP 读取该 VSIX")
+}
+
+interface ZipTask {
+  item: BatchItem
+  file: UnzipFile
+  chunks: Uint8Array[]
+  size: number
+  done: boolean
+  error: string
 }
 
 async function scanTar(source: BatchSource, state: BatchScan, progress?: BatchProgress) {
@@ -478,24 +534,6 @@ async function feed(
     if (issue.error) throw new Error(issue.error)
   }
   if (!file.size) push(new Uint8Array(), true)
-}
-
-async function drain(
-  ready: Array<{ item: BatchItem; blob?: Blob; error?: string }>,
-  done: Set<string>,
-  emit: BatchEmit,
-  fail: BatchFail,
-) {
-  while (ready.length) {
-    const next = ready.shift()!
-    if (done.has(next.item.id)) continue
-    done.add(next.item.id)
-    if (next.error || !next.blob) {
-      await fail(next.item, next.error || "解包失败")
-      continue
-    }
-    await emit(next.item, next.blob)
-  }
 }
 
 async function walkHandle(handle: Handle, parent: string, result: BatchInput[]) {

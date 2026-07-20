@@ -14,13 +14,13 @@ interface Labels extends Record<Source, string> {
   openFailed: string
 }
 
-export async function openConfig(scope: Scope, labels: Labels, root?: string): Promise<void> {
+export async function openConfig(scope: Scope, labels: Labels, root?: string, storage?: string): Promise<void> {
   if (scope === "local" && !root) {
     void vscode.window.showWarningMessage(labels.noWorkspace)
     return
   }
 
-  const list = scope === "global" ? globalFiles() : localFiles(root!)
+  const list = scope === "global" ? globalFiles(storage) : localFiles(root!)
   const picked = await pick(list, labels)
   if (!picked?.file) return
 

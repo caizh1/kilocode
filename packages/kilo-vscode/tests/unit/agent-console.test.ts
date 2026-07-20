@@ -9,6 +9,7 @@ import {
   permissionPresentation,
 } from "../../webview-ui/src/components/chat/permission-presentation"
 import type { PermissionRequest } from "../../webview-ui/src/types/messages"
+import { routeAgentConsoleInput } from "../../src/agent-console/input"
 
 const request = (command: string): PermissionRequest => ({
   id: "permission-1",
@@ -20,6 +21,26 @@ const request = (command: string): PermissionRequest => ({
 })
 
 describe("agent console command presentation", () => {
+  test("routes real commands to the shell and natural language to the agent", async () => {
+    expect(await routeAgentConsoleInput("pwd", { PATH: "" })).toEqual({ route: "shell", input: "pwd" })
+    expect(await routeAgentConsoleInput("echo hello", { PATH: "" })).toEqual({
+      route: "shell",
+      input: "echo hello",
+    })
+    expect(await routeAgentConsoleInput("帮我分析当前错误", { PATH: "" })).toEqual({
+      route: "agent",
+      input: "帮我分析当前错误",
+    })
+    expect(await routeAgentConsoleInput("/agent explain ls output", { PATH: "" })).toEqual({
+      route: "agent",
+      input: "explain ls output",
+    })
+    expect(await routeAgentConsoleInput("!unknown-internal-command", { PATH: "" })).toEqual({
+      route: "shell",
+      input: "unknown-internal-command",
+    })
+  })
+
   test("classifies safe, review, and high-risk shell commands", () => {
     expect(classifyCommand("df -h").level).toBe("safe")
     expect(classifyCommand("git push origin main").level).toBe("review")
@@ -27,7 +48,7 @@ describe("agent console command presentation", () => {
     expect(permissionSeverity("sudo rm -rf /tmp/example")).toBe("high")
   })
 
-  test("uses a modal only for dangerous bash permissions and preserves edit text", () => {
+  test("marks dangerous bash permissions as high risk and preserves edit text", () => {
     const safe = request("df -h")
     const danger = request("sudo rm -rf /tmp/example")
 

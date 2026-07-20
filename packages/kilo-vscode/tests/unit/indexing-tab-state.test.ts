@@ -8,6 +8,10 @@ import {
   indexingSource,
   indexingUpdate,
 } from "../../webview-ui/src/components/settings/indexing-tab-state"
+import { dict as zh } from "../../webview-ui/src/i18n/zh"
+
+const t = (key: string, params?: Record<string, string | number | boolean | undefined>) =>
+  (zh[key] ?? key).replace(/\{\{\s*([^}\s]+)\s*\}\}/g, (_, name: string) => String(params?.[name] ?? ""))
 
 describe("indexing tab scope state", () => {
   it("uses the global value when project enablement is inherited", () => {
@@ -101,6 +105,8 @@ describe("indexing tab scope state", () => {
     expect(indexingDescription("Configure this value.", "inherited")).toBe(
       "Configure this value. Inherited from global config.",
     )
+    expect(indexingDescription("配置此值。", "inherited", t)).toBe("配置此值。 当前继承自全局配置。")
+    expect(indexingDescription("配置此值。", "partial", t)).toBe("配置此值。 部分值继承自全局配置。")
   })
 
   it("merges inherited values with project overrides", () => {

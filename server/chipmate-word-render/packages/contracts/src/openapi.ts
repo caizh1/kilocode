@@ -11,6 +11,11 @@ const ok = (schema: Json, description = "OK") => ({
   "403": { description: "Forbidden", content: json(ref("ApiError")) },
   "404": { description: "Not found", content: json(ref("ApiError")) },
   "409": { description: "Conflict", content: json(ref("ApiError")) },
+  "429": {
+    description: "Rate limited",
+    headers: { "Retry-After": { schema: { type: "string" } } },
+    content: json(ref("ApiError")),
+  },
   "500": { description: "Internal error", content: json(ref("ApiError")) },
 })
 const body = (schema: Json) => ({ required: true, content: json(schema) })
@@ -366,6 +371,15 @@ export const openapi = {
         responses: ok(ref("PublicationRun")),
       },
     },
+    "/api/v1/publications/{runId}/undo": {
+      post: {
+        operationId: "undoPublication",
+        tags: ["publications"],
+        security: [{ cookieSession: [] }, { bearerKey: [] }],
+        parameters: [run, param("Idempotency-Key", "header", true), param("X-CSRF-Token", "header")],
+        responses: ok(ref("PublicationRun")),
+      },
+    },
     "/api/v1/skills/{id}/unpublish": {
       post: {
         operationId: "unpublishSkill",
@@ -437,7 +451,7 @@ export const openapi = {
       post: {
         operationId: "publishExtension",
         tags: ["extensions"],
-        description: "Upload one VSIX file. Web clients extract folders and archives locally; each user may submit at most 100 VSIX files per rolling hour.",
+        description: "Upload one VSIX file. Web clients extract folders and archives locally, split unlimited selections into logical groups, and submit one VSIX per request. The service applies instance-wide concurrency and storage admission controls.",
         security: [{ cookieSession: [] }],
         parameters: [
           param("Idempotency-Key", "header", true),
@@ -449,7 +463,12 @@ export const openapi = {
           required: true,
           content: { "application/vnd.microsoft.vscode.vsix": { schema: { type: "string", format: "binary" } } },
         },
-        responses: ok(ref("ExtensionPublicationRun")),
+        responses: {
+          ...ok(ref("ExtensionPublicationRun")),
+          "408": { description: "Upload idle or absolute timeout", content: json(ref("ApiError")) },
+          "503": { description: "All publication slots are busy; retry after the response Retry-After interval", content: json(ref("ApiError")) },
+          "507": { description: "Extension artifact storage is under pressure", content: json(ref("ApiError")) },
+        },
       },
     },
     "/api/v1/extension-publications/{runId}": {
@@ -587,6 +606,26 @@ export const openapi = {
             render: { enum: ["ready", "degraded", "unavailable"] },
             market: { enum: ["ready", "degraded", "unavailable"] },
             packages: { enum: ["ready", "degraded", "unavailable"] },
+            extensions: {
+              type: "object",
+              additionalProperties: false,
+              required: ["enabled", "database", "scanner", "drop", "artifacts", "temporary", "warnings"],
+              properties: {
+                enabled: { type: "boolean" },
+                database: { enum: ["ready", "degraded"] },
+                scanner: { enum: ["starting", "scanning", "ready"] },
+                drop: { type: "boolean" },
+                artifacts: { type: "boolean" },
+                temporary: { type: "boolean" },
+                warnings: { type: "array", items: { type: "string" } },
+                activeUploads: { type: "integer", minimum: 0 },
+                maxActiveUploads: { type: "integer", minimum: 1 },
+                reservedBytes: { type: "integer", minimum: 0 },
+                freeBytes: { type: "integer", minimum: 0 },
+                minimumFreeBytes: { type: "integer", minimum: 0 },
+                storagePressure: { type: "boolean" },
+              },
+            },
             warnings: { type: "array", items: { type: "string" } },
           },
         }),

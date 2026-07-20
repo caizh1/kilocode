@@ -23,6 +23,7 @@ import { PermissionDiff } from "./PermissionDiff"
 import { permissionDiffs } from "./permission-diff-utils"
 import { normalizeUrls } from "../../../../../opencode/src/kilocode/util/url"
 import type { PermissionRequest } from "../../types/messages"
+import type { PermissionSeverity } from "./permission-presentation"
 import { isEnterKeyCommitNotIme } from "../../utils/ime-enter"
 
 let rulesExpandedPreference = false
@@ -31,6 +32,9 @@ export const PermissionDock: Component<{
   request: PermissionRequest
   responding: boolean
   presentation?: "dock" | "dialog"
+  severity?: PermissionSeverity
+  directory?: string
+  labels?: { once: string; edit: string; reject: string }
   onDecide: (response: "once" | "reject", approvedAlways: string[], deniedAlways: string[]) => void
   onEdit?: () => void
 }> = (props) => {
@@ -55,6 +59,14 @@ export const PermissionDock: Component<{
   const cmdDescription = () => {
     const val = props.request.args?.description
     return typeof val === "string" && val.length > 0 ? val : undefined
+  }
+  const directory = () => {
+    if (!props.directory) return undefined
+    for (const key of ["workdir", "cwd", "directory"]) {
+      const value = props.request.args?.[key]
+      if (typeof value === "string" && value.length > 0) return value
+    }
+    return props.directory
   }
   const description = createMemo(() =>
     command() ? null : describePatterns(props.request.toolName, props.request.patterns, language.t),
@@ -197,6 +209,7 @@ export const PermissionDock: Component<{
       ref={root}
       data-component="permission-shortcuts"
       data-presentation={props.presentation ?? "dock"}
+      data-severity={props.severity ?? "standard"}
       onKeyDown={onRoot}
     >
       <DockPrompt
@@ -276,6 +289,12 @@ export const PermissionDock: Component<{
         }
       >
         <Show when={cmdDescription()}>{(desc) => <div data-slot="permission-hint">{desc()}</div>}</Show>
+        <Show when={command() && directory()}>
+          <div data-slot="permission-workdir">
+            <span>{language.t("agentConsole.permission.directory")}</span>
+            <code>{directory()}</code>
+          </div>
+        </Show>
         <Show when={command()}>{(cmd) => <PermissionCommand command={cmd()} />}</Show>
 
         {(() => {
@@ -316,11 +335,11 @@ export const PermissionDock: Component<{
             }}
             disabled={props.responding}
           >
-            {language.t("ui.permission.allowOnce")}
+            {props.labels?.once ?? language.t("ui.permission.allowOnce")}
           </Button>
           <Show when={command() && props.onEdit}>
             <Button variant="secondary" size="small" onClick={() => props.onEdit?.()} disabled={props.responding}>
-              {language.t("common.edit")}
+              {props.labels?.edit ?? language.t("common.edit")}
             </Button>
           </Show>
           <Button
@@ -332,7 +351,7 @@ export const PermissionDock: Component<{
             }}
             disabled={props.responding}
           >
-            {language.t("ui.permission.deny")}
+            {props.labels?.reject ?? language.t("ui.permission.deny")}
           </Button>
         </div>
       </DockPrompt>

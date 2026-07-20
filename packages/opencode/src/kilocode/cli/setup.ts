@@ -19,6 +19,7 @@ import { DevSetupCommand, DevAliasCommand } from "@/kilocode/cli/dev-setup"
 import { RemoteCommand } from "@/cli/cmd/remote"
 import { ConfigCommand as ConfigCLICommand } from "@/cli/cmd/config"
 import { JsonMigration } from "@/kilocode/storage/json-migration"
+import { ProductProfile } from "@/kilocode/product-profile"
 
 const log = Log.create({ service: "kilocode.cli" })
 
@@ -67,11 +68,13 @@ export namespace KiloCli {
       enabled: cfg.experimental?.openTelemetry !== false,
     })
 
-    // Migrate legacy Kilo CLI auth (~/.kilocode/cli/config.json) into auth.json if present.
-    await migrateLegacyKiloAuth(
-      async () => (await AppRuntime.runPromise(Auth.Service.use((s) => s.get("kilo")))) !== undefined,
-      async (auth) => AppRuntime.runPromise(Auth.Service.use((s) => s.set("kilo", auth))),
-    )
+    // ChipMate v2 must never inspect or import the native Kilo credential store.
+    if (ProductProfile.allowsLegacyAuthMigration()) {
+      await migrateLegacyKiloAuth(
+        async () => (await AppRuntime.runPromise(Auth.Service.use((s) => s.get("kilo")))) !== undefined,
+        async (auth) => AppRuntime.runPromise(Auth.Service.use((s) => s.set("kilo", auth))),
+      )
+    }
 
     const auth = await AppRuntime.runPromise(Auth.Service.use((s) => s.get("kilo")))
     if (auth) {

@@ -56,6 +56,7 @@ export const InstallModal = (props: Props) => {
     method?: string
   } | null>(null)
   const [params, setParams] = createSignal<Record<string, string>>({})
+  const [riskAccepted, setRiskAccepted] = createSignal(false)
   const [pending, setPending] = createSignal<{
     scope: "project" | "global"
     path: string
@@ -64,11 +65,10 @@ export const InstallModal = (props: Props) => {
   } | null>(null)
 
   const destination = (target = scope().value) => {
-    const base = target === "project" ? ".kilo" : "~/.config/kilo"
+    const base = target === "project" ? ".chipmate-v2" : "ChipMate global storage"
     if (props.item.type === "mcp") return `${base}/kilo.json`
     if (props.item.type === "agent") return `${base}/agents/${props.item.id}.md`
-    if (target === "project") return `.kilo/skills/${props.item.id}/`
-    return `~/.kilo/skills/${props.item.id}/`
+    return `${base}/skills/${props.item.id}/`
   }
   const about = () => t(`marketplace.install.about.${props.item.type}`)
   const scopeDescription = () => t(`marketplace.install.scope.${scope().value}.description`)
@@ -96,6 +96,7 @@ export const InstallModal = (props: Props) => {
   }
 
   const valid = () => {
+    if (props.item.type === "skill" && props.item.risk?.level !== "none" && !riskAccepted()) return false
     for (const param of parameters()) {
       if (!param.optional && !params()[param.key]?.trim()) return false
     }
@@ -112,7 +113,7 @@ export const InstallModal = (props: Props) => {
         const request = pending()
         setInstalling(false)
         if (!request) return
-        setResult({ success: msg.success, error: msg.error, ...request })
+        setResult({ success: msg.success, error: msg.error, ...request, path: msg.filePath ?? request.path })
         props.onInstallResult(msg.success, request.scope, {
           hasParameters: request.hasParameters,
           installationMethodName: request.method,
@@ -207,6 +208,35 @@ export const InstallModal = (props: Props) => {
               <Show when={scope().value === "project"}>
                 <p>{t("marketplace.install.project.warning")}</p>
               </Show>
+            </div>
+          </Show>
+
+          <Show when={props.item.type === "skill" && props.item.risk?.level !== "none"}>
+            <div
+              class={`install-modal-risk risk-${props.item.type === "skill" ? (props.item.risk?.level ?? "unknown") : "unknown"}`}
+              role="note"
+            >
+              <div>
+                <span class="codicon codicon-warning" aria-hidden="true" />
+                <strong>
+                  {props.item.type === "skill" && props.item.risk?.level === "medium"
+                    ? t("marketplace.risk.installTitle")
+                    : t("marketplace.risk.unknownTitle")}
+                </strong>
+              </div>
+              <p>
+                {props.item.type === "skill" && props.item.risk?.level === "medium"
+                  ? t("marketplace.risk.installMedium", { count: props.item.risk.issueCount })
+                  : t("marketplace.risk.installUnknown")}
+              </p>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={riskAccepted()}
+                  onChange={(event) => setRiskAccepted(event.currentTarget.checked)}
+                />
+                <span>{t("marketplace.risk.accept")}</span>
+              </label>
             </div>
           </Show>
 

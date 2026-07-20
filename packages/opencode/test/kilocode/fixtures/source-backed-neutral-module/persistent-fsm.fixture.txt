@@ -1,0 +1,19 @@
+// @unit DU-FSM | PRESENT | SRC-ACTUAL-PERSISTENT-FSM
+// @complexity SIG-FSM-001 | DU-FSM | state | transition-detail | advance
+
+export enum Phase {
+  Idle = "idle",
+  Running = "running",
+  Recovering = "recovering",
+  Complete = "complete",
+}
+
+export type Event = "start" | "fail" | "retry" | "finish"
+
+export function advance(phase: Phase, event: Event): Phase {
+  if (phase === Phase.Idle && event === "start") return Phase.Running
+  if (phase === Phase.Running && event === "fail") return Phase.Recovering
+  if (phase === Phase.Recovering && event === "retry") return Phase.Running
+  if (phase === Phase.Running && event === "finish") return Phase.Complete
+  return phase
+}

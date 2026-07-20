@@ -20,7 +20,7 @@ import type {
   MarketplaceUser,
   PublicationPatch,
 } from "./types"
-import { chipmateServerEndpoints, legacyChipmateServerEndpoints } from "../chipmate-server"
+import { chipmateServerEndpoints } from "../chipmate-server"
 
 export class MarketplaceService {
   private api: MarketplaceApiClient
@@ -29,8 +29,8 @@ export class MarketplaceService {
   private installer: MarketplaceInstaller
   private scans = new Map<string, Promise<MarketplaceRelevanceMetadata>>()
 
-  constructor() {
-    this.paths = new MarketplacePaths()
+  constructor(root?: string) {
+    this.paths = new MarketplacePaths(root)
     this.api = new MarketplaceApiClient(marketplaceApiOptions())
     this.detector = new InstallationDetector(this.paths)
     this.installer = new MarketplaceInstaller(this.paths)
@@ -103,13 +103,21 @@ export class MarketplaceService {
     return this.api.resolveUser(apiKey)
   }
 
+  searchSkills(input: Parameters<MarketplaceApiClient["searchSkills"]>[0]) {
+    return this.api.searchSkills(input)
+  }
+
   starSkill(id: string, apiKey: string): Promise<{ stars?: number }> {
     return this.api.starSkill(id, apiKey)
   }
 
-  async uploadSkill(payload: MarketplaceUploadPayload, apiKey: string) {
+  async uploadSkill(payload: MarketplaceUploadPayload, apiKey: string, idempotencyKey?: string) {
     if (!(await this.api.alignedMode())) return this.api.uploadSkill(payload, apiKey)
-    return this.api.publishArchive(createSkillArchive(payload.id, payload.files), apiKey, `kilo-${randomUUID()}`)
+    return this.api.publishArchive(
+      createSkillArchive(payload.id, payload.files),
+      apiKey,
+      idempotencyKey ?? `kilo-${randomUUID()}`,
+    )
   }
 
   getPublication(id: string, apiKey: string) {
@@ -196,6 +204,10 @@ export class MarketplaceService {
     return this.api.unpublishSkill(id, apiKey)
   }
 
+  undoPublication(runId: string, apiKey: string, idempotencyKey: string) {
+    return this.api.undoPublication(runId, apiKey, idempotencyKey)
+  }
+
   analytics(apiKey: string) {
     return this.api.analytics(apiKey)
   }
@@ -239,10 +251,9 @@ export type {
 } from "./types"
 
 export function marketplaceApiOptions() {
-  const config = vscode.workspace.getConfiguration("kilo.marketplace")
+  const config = vscode.workspace.getConfiguration("chipmate.v2.marketplace")
   const unified = chipmateServerEndpoints()
-  const legacy = legacyChipmateServerEndpoints()
-  const baseUrl = unified.endpoints?.marketplace ?? (unified.state.source === "conflict" ? legacy.market : "")
+  const baseUrl = unified.endpoints?.marketplace ?? ""
   const configuredSkillsOnly = config.get<boolean>("skillsOnly", false)
   const skillsOnly = configuredSkillsOnly || (isInternalOfflineBuild() && Boolean(baseUrl))
   return {

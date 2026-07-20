@@ -1,6 +1,8 @@
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Page } from "@playwright/test"
+import { mkdir, rm, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
+import { gunzipSync } from "node:zlib"
 
 const clean = new WeakMap<Page, string[]>()
 const pattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
@@ -184,7 +186,7 @@ test("desktop carousel geometry stays safe for all Top 10 cards", async ({ page 
           )
         const card = rect(node.querySelector(".featured-card"))
         const title = rect(node.querySelector(".featured-card .title-row h3"))
-        const label = rect(node.querySelector(".featured-card .verified"))
+        const label = rect(node.querySelector(".featured-card .skill-risk-badge"))
         const copy = rect(node.querySelector(".featured-card .feature-copy > p"))
         const meta = node.querySelector<HTMLElement>(".featured-card .meta-row")
         const cta = rect(node.querySelector(".featured-card .primary-button"))
@@ -350,7 +352,7 @@ test("search, filter, sort, detail, version, preview, and status form a read-onl
   await expect(page).toHaveURL(/\/skills\/source-backed-detail-design$/)
   await expect(page.getByRole("heading", { name: "Source-backed Detail Design", exact: true })).toBeVisible()
   await page.getByRole("combobox", { name: "选择版本" }).selectOption("1")
-  await page.getByRole("button", { name: "SKILL.md 16.0 KB", exact: true }).click()
+  await page.getByRole("button", { name: /^SKILL\.md \d+(\.\d+)? KB$/ }).click()
   await expect(page.getByRole("heading", { name: "SKILL.md", exact: true })).toBeVisible()
 
   await page.locator(".topbar").getByRole("button", { name: "服务状态", exact: true }).click()
@@ -542,9 +544,166 @@ test("publish page shows the shared validation report without changing local fil
     .getByLabel("Skill 归档")
     .setInputFiles(resolve("../../docs/chipmate-skill-market-alignment-evidence/g0/source-backed-detail-design.tar.gz"))
   await page.getByRole("button", { name: "校验并发布" }).click()
-  await expect(page.getByText("PUBLISHED", { exact: true })).toBeVisible()
+  await expect(page.getByText("发布成功", { exact: true })).toBeVisible()
   await expect(page.getByText(/确定性修复仅应用到上传快照/)).toBeVisible()
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+})
+
+test("skill detail warns before downloading a medium-risk release", async ({ page }) => {
+  const evidence = resolve(".runtime/design-qa/g11")
+  await mkdir(evidence, { recursive: true })
+  await page.route("**/api/v1/skills/source-backed-detail-design", async (route) => {
+    const response = await route.fetch()
+    const detail = (await response.json()) as {
+      latestRevision: number
+      releases: Array<{
+        revision: number
+        report: {
+          issues: Array<Record<string, unknown>>
+          risk?: Record<string, unknown>
+          policyVersion?: string
+        }
+      }>
+      risk?: Record<string, unknown>
+    }
+    const issue = {
+      code: "security-secret",
+      riskLevel: "medium",
+      severity: "warning",
+      message: "检测到可能的凭据或私钥，请在使用前确认内容和权限范围。",
+      file: "README.md",
+    }
+    detail.risk = { level: "medium", issueCount: 1, policyVersion: "skill-risk-v2" }
+    detail.releases = detail.releases.map((release) =>
+      release.revision === detail.latestRevision
+        ? {
+            ...release,
+            report: {
+              ...release.report,
+              issues: [issue],
+              risk: { level: "medium", issueCount: 1, policyVersion: "skill-risk-v2" },
+              policyVersion: "skill-risk-v2",
+            },
+          }
+        : release,
+    )
+    await route.fulfill({ response, json: detail })
+  })
+
+  await page.goto("/skills/source-backed-detail-design")
+  await expect(page.getByText("存在风险 · 1 项", { exact: true })).toBeVisible()
+  await expect(page.getByText("检测到可能的凭据或私钥，请在使用前确认内容和权限范围。", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "下载归档", exact: true }).click()
+
+  const dialog = page.getByRole("dialog", { name: "此 Skill 存在风险隐患" })
+  await expect(dialog).toBeVisible()
+  const action = dialog.getByRole("button", { name: "继续下载", exact: true })
+  await expect(action).toBeDisabled()
+  await dialog.getByLabel("我已了解上述风险，并决定继续").check()
+  await expect(action).toBeEnabled()
+  const backdrop = await page.locator(".dialog-backdrop").boundingBox()
+  expect(backdrop?.width).toBe(1_440)
+  expect(backdrop?.height).toBe(1_024)
+  expect((await new AxeBuilder({ page }).include(".skill-risk-dialog").analyze()).violations).toEqual([])
+  for (const size of [
+    { width: 1_484, height: 1_060 },
+    { width: 1_440, height: 1_024 },
+    { width: 1_050, height: 1_024 },
+  ]) {
+    await page.setViewportSize(size)
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    ).toBe(true)
+    await page.screenshot({ path: resolve(evidence, `risk-dialog-${size.width}x${size.height}-real-chrome.png`) })
+  }
+})
+
+test("skill folder is packed locally before the existing publication request", async ({ page }) => {
+  const root = resolve(".runtime/e2e-skill-folder")
+  const folder = resolve(root, "folder-skill")
+  await rm(root, { recursive: true, force: true })
+  await mkdir(resolve(folder, "references"), { recursive: true })
+  await writeFile(
+    resolve(folder, "SKILL.md"),
+    "---\nname: Folder Skill\ndescription: Browser packed\n---\n# Folder Skill\n",
+  )
+  await writeFile(resolve(folder, "references", "guide.md"), "# Guide\n")
+  await writeFile(resolve(folder, ".DS_Store"), "ignored")
+  await page.addInitScript(() => {
+    sessionStorage.setItem("chipmate-market-csrf", "csrf-for-folder")
+    sessionStorage.setItem("chipmate-market-session-active", "1")
+  })
+  await page.route("**/api/v1/auth/me", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "market-alice-123456",
+        displayName: "Alice",
+        firstSeenAt: "2026-07-12T00:00:00.000Z",
+        lastSeenAt: "2026-07-12T00:00:00.000Z",
+      }),
+    }),
+  )
+  await page.route("**/api/v1/events/batch", (route) =>
+    route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ accepted: 1 }) }),
+  )
+  await page.route("**/api/v1/publications", async (route) => {
+    expect(route.request().headers()["content-type"]).toBe("application/gzip")
+    expect(route.request().headers()["x-csrf-token"]).toBe("csrf-for-folder")
+    const body = route.request().postDataBuffer()
+    expect(body?.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]))
+    const archive = gunzipSync(body!)
+    expect(archive.includes(Buffer.from("SKILL.md"))).toBe(true)
+    expect(archive.includes(Buffer.from("references/guide.md"))).toBe(true)
+    expect(archive.includes(Buffer.from(".DS_Store"))).toBe(false)
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "folder-publication-12345678-1234-1234-1234-123456789012",
+        skillId: "folder-skill",
+        ownerId: "market-alice-123456",
+        status: "PUBLISHED",
+        stage: "complete",
+        report: {
+          valid: true,
+          stage: "complete",
+          issues: [],
+          sourceSha256: "c".repeat(64),
+          snapshotSha256: "d".repeat(64),
+          changed: false,
+          policyVersion: "skill-risk-v2",
+          risk: { level: "none", issueCount: 0, policyVersion: "skill-risk-v2" },
+        },
+        patches: [],
+        release: {
+          skillId: "folder-skill",
+          revision: 1,
+          sha256: "d".repeat(64),
+          archiveUrl: "/api/v1/skills/folder-skill/archive?revision=1",
+          report: { valid: true },
+          publishedAt: "2026-07-17T00:00:00.000Z",
+        },
+        createdAt: "2026-07-17T00:00:00.000Z",
+        updatedAt: "2026-07-17T00:00:00.000Z",
+      }),
+    })
+  })
+
+  try {
+    await page.goto("/publish")
+    await expect(page.getByRole("button", { name: "Alice", exact: true })).toBeVisible()
+    await page.locator("input[webkitdirectory]").setInputFiles(folder)
+    await expect(page.getByText("folder-skill", { exact: true })).toBeVisible()
+    await expect(page.getByText(/2 个文件 .* 本地忽略 1 项/)).toBeVisible()
+    await mkdir(resolve(".runtime/design-qa/g11"), { recursive: true })
+    await page.screenshot({ path: resolve(".runtime/design-qa/g11/folder-upload-1440x1024-real-chrome.png") })
+    await page.getByRole("button", { name: "校验并发布", exact: true }).click()
+    await expect(page.getByText("发布成功", { exact: true })).toBeVisible()
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test("authors can confirm unpublishing from their publication history", async ({ page }) => {

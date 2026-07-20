@@ -2,9 +2,9 @@ import fs from "fs/promises"
 import path from "path"
 import * as vscode from "vscode"
 
-const DEFAULT_ARTIFACT_ROOT = ".kilo/artifacts"
-const ARTIFACT_ROOT_CONFIG = "kilo.documents.artifacts.root"
-const DOCUMENT_TOOLS_ENABLED_CONFIG = "kilo.documents.tools.enabled"
+const DEFAULT_ARTIFACT_ROOT = ".chipmate-v2/artifacts"
+const ARTIFACT_ROOT_CONFIG = "chipmate.v2.documents.artifacts.root"
+const DOCUMENT_TOOLS_ENABLED_CONFIG = "chipmate.v2.documents.tools.enabled"
 
 export type ArtifactManifest = {
   kind: string
@@ -33,14 +33,14 @@ export type DocumentArtifactCard = {
 
 export function registerDocumentArtifactCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand("kilo-code.new.documents.openArtifact", async (input?: string | vscode.Uri) => {
+    vscode.commands.registerCommand("chipmate.v2.documents.openArtifact", async (input?: string | vscode.Uri) => {
       if (!(await ensureDocumentToolsEnabled())) return
       const uri = await resolveInput(input, "Artifact file or folder path")
       if (!uri) return
       await vscode.commands.executeCommand("vscode.open", uri)
     }),
     vscode.commands.registerCommand(
-      "kilo-code.new.documents.openArtifactFolder",
+      "chipmate.v2.documents.openArtifactFolder",
       async (input?: string | vscode.Uri) => {
         if (!(await ensureDocumentToolsEnabled())) return
         const uri = await resolveInput(input, "Artifact file or folder path")
@@ -52,7 +52,7 @@ export function registerDocumentArtifactCommands(context: vscode.ExtensionContex
         )
       },
     ),
-    vscode.commands.registerCommand("kilo-code.new.documents.exportDiagnostics", async () => {
+    vscode.commands.registerCommand("chipmate.v2.documents.exportDiagnostics", async () => {
       if (!(await ensureDocumentToolsEnabled())) return
       const root = artifactRoot()
       await fs.mkdir(root, { recursive: true })
@@ -229,7 +229,7 @@ async function ensureDocumentToolsEnabled(): Promise<boolean> {
   const enabled = vscode.workspace.getConfiguration().get<boolean>(DOCUMENT_TOOLS_ENABLED_CONFIG, true)
   if (enabled) return true
   await vscode.window.showInformationMessage(
-    "Kilo document artifact commands are disabled by kilo.documents.tools.enabled.",
+    "Kilo document artifact commands are disabled by chipmate.v2.documents.tools.enabled.",
   )
   return false
 }

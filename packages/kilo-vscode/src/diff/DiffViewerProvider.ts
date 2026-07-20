@@ -21,7 +21,7 @@ export interface DiffViewerProviderOptions {
  * DiffSource.
  */
 export class DiffViewerProvider implements vscode.Disposable {
-  public static readonly viewType = "kilo-code.new.DiffViewerPanel"
+  public static readonly viewType = "chipmate.v2.DiffViewerPanel"
 
   private panel: vscode.WebviewPanel | undefined
   private ctx: PanelContext | undefined
@@ -62,7 +62,7 @@ export class DiffViewerProvider implements vscode.Disposable {
   }
 
   /**
-   * Entry point for the `kilo-code.new.showChanges` command. Composes the
+   * Entry point for the `chipmate.v2.showChanges` command. Composes the
    * PanelContext from the arg + injected session/workspace lookups so
    * callers don't have to know about it.
    *
@@ -210,7 +210,7 @@ export class DiffViewerProvider implements vscode.Disposable {
     void this.panel.webview.postMessage({
       type: "ready",
       vscodeLanguage: vscode.env.language,
-      languageOverride: vscode.workspace.getConfiguration("kilo-code.new").get<string>("language"),
+      languageOverride: vscode.workspace.getConfiguration("chipmate.v2").get<string>("language"),
       fontSize: getWebviewFontSize(),
       workspaceDirectory: getWorkspaceRoot(),
     })

@@ -7,7 +7,6 @@ import {
   FileCode,
   Heart,
   Package,
-  ShieldCheck,
 } from "@phosphor-icons/react"
 import type {
   FavoriteState,
@@ -20,6 +19,7 @@ import { useEffect, useState } from "react"
 import { bytes, compact, date, InlineError, mutate, request, Skeleton, useApi } from "../shared"
 import { image, repair } from "../icons"
 import { track } from "../analytics"
+import { riskOf, RiskBadge, RiskDialog, RiskPanel } from "../risk"
 
 interface FilePreview {
   file: SkillDetail["files"][number]
@@ -42,6 +42,7 @@ export function Detail(props: {
   const [favorite, setFavorite] = useState(false)
   const [installation, setInstallation] = useState<InstallationState>()
   const [busy, setBusy] = useState<"favorite" | "install">()
+  const [pending, setPending] = useState<"install" | "archive">()
 
   useEffect(() => {
     track("skill_open", { skillId: props.id })
@@ -103,7 +104,7 @@ export function Detail(props: {
     }
   }
 
-  const install = async () => {
+  const performInstall = async () => {
     if (!props.user) return props.requestLogin()
     setBusy("install")
     setError("")
@@ -125,6 +126,29 @@ export function Detail(props: {
     }
   }
 
+  const selected = () =>
+    detail.data?.releases.find((entry) => entry.revision === Number(revision || detail.data?.latestRevision))
+  const acquire = (action: "install" | "archive") => {
+    if (action === "install" && !props.user) return props.requestLogin()
+    const item = selected()
+    if (!item) return
+    if (riskOf(item.report).level !== "none") {
+      setPending(action)
+      return
+    }
+    if (action === "install") void performInstall()
+    else location.href = item.archiveUrl
+  }
+
+  const confirm = () => {
+    const action = pending
+    const item = selected()
+    setPending(undefined)
+    if (!action || !item) return
+    if (action === "install") void performInstall()
+    else location.href = item.archiveUrl
+  }
+
   if (detail.loading)
     return (
       <section className="page-width detail-page">
@@ -139,6 +163,8 @@ export function Detail(props: {
     )
   if (!detail.data) return null
   const item = detail.data
+  const active =
+    item.releases.find((entry) => entry.revision === Number(revision || item.latestRevision)) ?? item.releases[0]!
 
   return (
     <section className="page-width detail-page">
@@ -150,9 +176,7 @@ export function Detail(props: {
         <div className="detail-copy">
           <div className="title-row">
             <h1>{item.name}</h1>
-            <span className="verified">
-              <ShieldCheck /> 已验证
-            </span>
+            <RiskBadge risk={riskOf(active.report)} />
           </div>
           <p>{item.description}</p>
           <div className="meta-row">
@@ -174,7 +198,7 @@ export function Detail(props: {
           </div>
         </div>
         <div className="detail-actions">
-          <button className="primary-button" disabled={busy === "install"} onClick={() => void install()}>
+          <button className="primary-button" disabled={busy === "install"} onClick={() => acquire("install")}>
             <DownloadSimple />{" "}
             {busy === "install"
               ? "正在创建安装请求…"
@@ -189,13 +213,9 @@ export function Detail(props: {
           >
             <Heart weight={favorite ? "fill" : "regular"} /> {favorite ? "已收藏" : "收藏"}
           </button>
-          <a
-            className="secondary-button"
-            href={item.releases.find((entry) => entry.revision === Number(revision || item.latestRevision))?.archiveUrl}
-            download
-          >
+          <button className="secondary-button" onClick={() => acquire("archive")}>
             <DownloadSimple /> 下载归档
-          </a>
+          </button>
           <small className="install-help">
             若浏览器未能打开 ChipMate，请下载归档并在 Marketplace 中选择同一安装范围。
           </small>
@@ -207,6 +227,8 @@ export function Detail(props: {
           <span>SHA {item.sha256.slice(0, 12)}…</span>
         </div>
       </div>
+
+      <RiskPanel report={active.report} />
 
       {item.gallery.length > 0 && (
         <div className="gallery-strip" aria-label="作者素材">
@@ -294,6 +316,14 @@ export function Detail(props: {
           {preview?.dataUrl && <img src={preview.dataUrl} alt={`${preview.file.path} 预览`} />}
           {preview && !preview.text && !preview.dataUrl && <p>该二进制文件不支持在线预览。</p>}
         </section>
+      )}
+      {pending && (
+        <RiskDialog
+          report={active.report}
+          action={pending === "install" ? "安装" : "下载"}
+          close={() => setPending(undefined)}
+          confirm={confirm}
+        />
       )}
     </section>
   )

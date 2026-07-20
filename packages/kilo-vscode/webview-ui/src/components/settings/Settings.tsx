@@ -28,13 +28,11 @@ import * as Sandboxing from "./sandboxing"
 import { useServer } from "../../context/server"
 import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 import { ChipMateLogo } from "../shared/ChipMateLogo"
-import type { MigrationSource } from "../../types/messages"
 
 export interface SettingsProps {
   tab?: string
   onTabChange?: (tab: string) => void
   onClose?: () => void
-  onMigrationClick?: (source: MigrationSource) => void // legacy-migration
   chipmatePreview?: ChipmateServerTabProps["preview"]
   navPreview?: string
 }
@@ -328,7 +326,6 @@ const Settings: Component<SettingsProps> = (props) => {
                   port={server.serverInfo()?.port ?? null}
                   connectionState={server.connectionState()}
                   extensionVersion={server.extensionVersion()}
-                  onMigrationClick={props.onMigrationClick}
                 />
               </Panel>
             </Tabs.Content>

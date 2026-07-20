@@ -32,11 +32,10 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, t
 import { bytes, compact, date, InlineError, mutate, Skeleton, useApi } from "../shared"
 import { uuid } from "../id"
 import {
-  BATCH_BYTES,
-  BATCH_LIMIT,
   dropInputs,
   listInputs,
   materialize,
+  partition,
   scanInputs,
   type BatchInput,
   type BatchItem,
@@ -331,55 +330,114 @@ export function ExtensionDetail(props: Shared & { id: string }) {
   )
 }
 
-type UploadState = "READY" | "EXTRACTING" | ExtensionPublicationRun["status"]
-type UploadItem = BatchItem & { selected: boolean; status: UploadState; loaded: number; error: string | undefined; runId: string | undefined }
+type UploadState = "READY" | "EXTRACTING" | "PAUSED" | ExtensionPublicationRun["status"]
+type UploadItem = BatchItem & { selected: boolean; status: UploadState; loaded: number; error: string | undefined; runId: string | undefined; batch: number | undefined }
+type Auth = { user: MarketUser; csrf: string }
+type Counts = Record<UploadState, number>
 
-export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestLogin">) {
+const TERMINAL = new Set<UploadState>(["PUBLISHED", "DUPLICATE", "FAILED", "CANCELLED"])
+const ROW = 112
+const AUTH_ERRORS = new Set(["AUTH_REQUIRED", "AUTH_INVALID", "SESSION_EXPIRED", "CSRF_INVALID"])
+
+export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestLogin"> & { reauthenticate(): Promise<Auth | undefined> }) {
   const [scan, setScan] = useState<BatchScan>()
-  const [items, setItems] = useState<UploadItem[]>([])
-  const [status, setStatus] = useState<"idle" | "scanning" | "ready" | "uploading" | "complete">("idle")
+  const [status, setStatus] = useState<"idle" | "scanning" | "ready" | "uploading" | "paused" | "complete">("idle")
   const [progress, setProgress] = useState({ path: "", loaded: 0, total: 0, percent: 0, speed: 0, eta: 0 })
+  const [selection, setSelection] = useState({ count: 0, bytes: 0 })
+  const [counts, setCounts] = useState<Partial<Counts>>({})
   const [error, setError] = useState("")
   const [drag, setDrag] = useState(false)
-  const request = useRef<XMLHttpRequest | undefined>(undefined)
+  const [, setRevision] = useState(0)
+  const [scroll, setScroll] = useState(0)
+  const [groups, setGroups] = useState(0)
+  const [planned, setPlanned] = useState(0)
+  const table = useRef(new Map<string, UploadItem>())
+  const order = useRef<string[]>([])
   const runs = useRef(new Map<string, string>())
+  const queue = useRef(new Set<string>())
+  const request = useRef<XMLHttpRequest | undefined>(undefined)
+  const current = useRef<{ id: string; body: boolean; reconciling: boolean } | undefined>(undefined)
   const cancelled = useRef(false)
-  const selected = items.filter((item) => item.selected)
-  const total = selected.reduce((sum, item) => sum + item.size, 0)
-  const blocked = selected.length > BATCH_LIMIT || total > BATCH_BYTES
-  const active = status === "uploading"
-  const terminal = new Set<UploadState>(["PUBLISHED", "DUPLICATE", "FAILED", "CANCELLED"])
-  const completed = items.filter((item) => item.selected && terminal.has(item.status))
-  const counts = (value: UploadState) => items.filter((item) => item.selected && item.status === value).length
+  const resume = useRef<(() => void) | undefined>(undefined)
+  const auth = useRef<{ user: MarketUser | undefined; csrf: string }>({ user: props.user, csrf: props.csrf })
+  const frame = useRef<number | undefined>(undefined)
+  const pending = useRef<typeof progress | undefined>(undefined)
+  const active = status === "uploading" || status === "paused"
+  const completed = (counts.PUBLISHED ?? 0) + (counts.DUPLICATE ?? 0) + (counts.FAILED ?? 0) + (counts.CANCELLED ?? 0)
+  const start = Math.max(0, Math.floor(scroll / ROW) - 4)
+  const end = Math.min(order.current.length, start + 16)
+  const visible = order.current.slice(start, end).map((id) => table.current.get(id)).filter((item): item is UploadItem => Boolean(item))
+
+  useEffect(() => {
+    auth.current = { user: props.user, csrf: props.csrf }
+  }, [props.csrf, props.user])
+
+  const render = () => setRevision((value) => value + 1)
+  const update = (id: string, patch: Partial<UploadItem>) => {
+    const item = table.current.get(id)
+    if (!item) return
+    const previous = item.status
+    Object.assign(item, patch)
+    if (patch.status && patch.status !== previous && item.selected) {
+      setCounts((value) => ({
+        ...value,
+        ...(TERMINAL.has(previous) ? { [previous]: Math.max(0, (value[previous] ?? 0) - 1) } : {}),
+        ...(TERMINAL.has(patch.status!) ? { [patch.status!]: (value[patch.status!] ?? 0) + 1 } : {}),
+      }))
+    }
+    render()
+  }
 
   useEffect(() => {
     const stream = new EventSource("/api/v1/market/stream")
-    const update = (event: Event) => {
+    const receive = (event: Event) => {
       const data = JSON.parse((event as MessageEvent<string>).data) as ExtensionPublicationRun & { runId?: string }
       const id = data.runId ? runs.current.get(data.runId) : undefined
       if (!id) return
-      setItems((current) => current.map((item) => item.id === id ? { ...item, status: data.status as UploadState, error: data.error } : item))
+      if (data.status === "VALIDATING" || data.status === "PUBLISHING") {
+        if (current.current?.id === id) current.current.body = false
+      }
+      update(id, { status: data.status, error: data.error })
+      if (TERMINAL.has(data.status)) runs.current.delete(data.runId!)
     }
-    stream.addEventListener("extension.publication.changed", update)
+    stream.addEventListener("extension.publication.changed", receive)
     return () => {
       stream.close()
       request.current?.abort()
+      if (frame.current) cancelAnimationFrame(frame.current)
     }
   }, [])
+
+  const report = (value: typeof progress) => {
+    pending.current = value
+    if (frame.current) return
+    frame.current = requestAnimationFrame(() => {
+      frame.current = undefined
+      if (pending.current) setProgress(pending.current)
+    })
+  }
 
   const prepare = async (inputs: BatchInput[]) => {
     setError("")
     setScan(undefined)
-    setItems([])
+    table.current.clear()
+    order.current = []
+    setSelection({ count: 0, bytes: 0 })
+    setPlanned(0)
+    setCounts({})
     setStatus("scanning")
     setProgress({ path: "", loaded: 0, total: 0, percent: 0, speed: 0, eta: 0 })
     try {
       const result = await scanInputs(inputs, (path, loaded, size) => {
-        setProgress({ path, loaded, total: size, percent: size ? Math.min(100, Math.round((loaded / size) * 100)) : 0, speed: 0, eta: 0 })
+        report({ path, loaded, total: size, percent: size ? Math.min(100, Math.round((loaded / size) * 100)) : 0, speed: 0, eta: 0 })
       })
+      for (const item of result.items) table.current.set(item.id, { ...item, selected: true, status: "READY", loaded: 0, error: undefined, runId: undefined, batch: undefined })
+      order.current = result.items.map((item) => item.id)
       setScan(result)
-      setItems(result.items.map((item) => ({ ...item, selected: true, status: "READY", loaded: 0, error: undefined, runId: undefined })))
+      setSelection({ count: result.items.length, bytes: result.items.reduce((sum, item) => sum + item.size, 0) })
+      setPlanned(partition(result.items).length)
       setStatus("ready")
+      render()
       if (!result.items.length) setError("所选内容中没有可上传的 VSIX。")
     } catch (reason) {
       setStatus("ready")
@@ -387,26 +445,73 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
     }
   }
 
-  const uploadOne = (item: UploadItem, blob: Blob, clock: { time: number; loaded: number; speed: number }, batch: number) =>
-    new Promise<void>((resolve) => {
-      if (!props.user || cancelled.current) {
-        setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "CANCELLED" } : entry))
-        resolve()
-        return
+  const credentials = async () => {
+    if (auth.current.user && auth.current.csrf) return auth.current as Auth
+    const next = await props.reauthenticate()
+    if (next) auth.current = next
+    return next
+  }
+
+  const reconcile = async (id: string, runId: string) => {
+    const state = { missing: 0 }
+    while (true) {
+      try {
+        const response = await fetch(`/api/v1/extension-publications/${encodeURIComponent(runId)}`, {
+          credentials: "same-origin",
+          headers: { accept: "application/json" },
+        })
+        const payload = parseRun(await response.text())
+        if (response.status === 404) {
+          state.missing += 1
+          if (state.missing < 30) {
+            await delay(1_000)
+            continue
+          }
+          update(id, { status: "CANCELLED", error: "上传在服务器创建发布任务前已取消" })
+          runs.current.delete(runId)
+          return
+        }
+        if (AUTH_ERRORS.has(payload.code ?? "")) {
+          const next = await props.reauthenticate()
+          if (next) {
+            auth.current = next
+            continue
+          }
+          update(id, { status: "FAILED", error: "无法登录以核对服务器最终状态" })
+          runs.current.delete(runId)
+          return
+        }
+        if (!response.ok || !payload.status) {
+          update(id, { status: "PAUSED", error: "暂时无法核对服务器最终状态，正在重试" })
+          await delay(1_000)
+          continue
+        }
+        state.missing = 0
+        update(id, { status: payload.status, error: payload.error })
+        if (TERMINAL.has(payload.status)) {
+          runs.current.delete(runId)
+          return
+        }
+      } catch {
+        update(id, { status: "PAUSED", error: "网络中断，正在核对服务器最终状态" })
       }
-      const id = uuid()
-      const key = uuid()
+      await delay(1_000)
+    }
+  }
+
+  const send = (item: UploadItem, blob: Blob, runId: string, key: string, clock: { time: number; completed: number; high: number; speed: number }, total: number) =>
+    new Promise<{ status: number; payload: ReturnType<typeof parseRun>; aborted: boolean }>((resolve) => {
       const xhr = new XMLHttpRequest()
       const local = { loaded: 0 }
-      runs.current.set(id, item.id)
       request.current = xhr
-      setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "UPLOADING", loaded: 0, runId: id, error: undefined } : entry))
+      current.current = { id: item.id, body: true, reconciling: false }
       xhr.open("POST", "/api/v1/extension-publications")
       xhr.setRequestHeader("content-type", "application/vnd.microsoft.vscode.vsix")
-      xhr.setRequestHeader("x-csrf-token", props.csrf)
-      xhr.setRequestHeader("x-publication-run-id", id)
+      xhr.setRequestHeader("x-csrf-token", auth.current.csrf)
+      xhr.setRequestHeader("x-publication-run-id", runId)
       xhr.setRequestHeader("idempotency-key", key)
       xhr.setRequestHeader("x-vsix-filename", encodeURIComponent(item.name))
+      xhr.upload.onload = () => { if (current.current?.id === item.id) current.current.body = false }
       xhr.upload.onprogress = (event) => {
         const time = performance.now()
         const seconds = Math.max(0.001, (time - clock.time) / 1_000)
@@ -414,62 +519,162 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
         const speed = delta / seconds
         clock.speed = clock.speed ? clock.speed * 0.7 + speed * 0.3 : speed
         clock.time = time
-        clock.loaded += delta
+        clock.high = Math.max(clock.high, event.loaded)
         local.loaded = event.loaded
-        const percent = batch ? Math.min(100, Math.round((clock.loaded / batch) * 100)) : 0
-        setProgress({ path: item.path, loaded: clock.loaded, total: batch, percent, speed: clock.speed, eta: clock.speed ? Math.max(0, (batch - clock.loaded) / clock.speed) : 0 })
-        setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, loaded: event.loaded } : entry))
+        const loaded = clock.completed + clock.high
+        report({ path: item.path, loaded, total, percent: total ? Math.min(100, Math.round((loaded / total) * 100)) : 0, speed: clock.speed, eta: clock.speed ? Math.max(0, (total - loaded) / clock.speed) : 0 })
       }
-      const finish = (next: UploadState, issue?: string) => {
-        request.current = undefined
-        runs.current.delete(id)
-        setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: next, loaded: next === "CANCELLED" ? entry.loaded : item.size, error: issue } : entry))
-        resolve()
-      }
-      xhr.onload = () => {
-        const payload = parseRun(xhr.responseText)
-        if (xhr.status < 200 || xhr.status >= 300) {
-          finish("FAILED", payload.message ?? `上传失败（HTTP ${xhr.status}）`)
-          return
-        }
-        finish(payload.status)
-      }
-      xhr.onerror = () => finish("FAILED", "上传连接中断，请检查网络后重试。")
-      xhr.onabort = () => finish("CANCELLED", "上传已取消")
+      xhr.onload = () => resolve({ status: xhr.status, payload: parseRun(xhr.responseText), aborted: false })
+      xhr.onerror = () => resolve({ status: 0, payload: { message: "上传连接中断，请检查网络后重试。" }, aborted: false })
+      xhr.onabort = () => resolve({ status: 0, payload: {}, aborted: true })
       xhr.send(blob)
     })
 
+  const uploadOne = async (item: UploadItem, blob: Blob, clock: { time: number; completed: number; high: number; speed: number }, total: number) => {
+    const runId = uuid()
+    const key = uuid()
+    runs.current.set(runId, item.id)
+    update(item.id, { status: "UPLOADING", loaded: 0, runId, error: undefined })
+    clock.high = 0
+    while (!cancelled.current) {
+      const result = await send(item, blob, runId, key, clock, total)
+      request.current = undefined
+      if (result.aborted) {
+        if (current.current?.id === item.id) current.current.reconciling = true
+        await reconcile(item.id, runId)
+        return
+      }
+      if (result.status === 0) {
+        if (current.current?.id === item.id) current.current.reconciling = true
+        update(item.id, { status: "PAUSED", error: result.payload.message ?? "连接中断，正在核对服务器最终状态" })
+        await reconcile(item.id, runId)
+        return
+      }
+      if (result.status === 503 && result.payload.code === "PUBLICATION_BUSY") {
+        update(item.id, { status: "PAUSED", error: "服务繁忙，5 秒后自动重试" })
+        await delay(5_000 + Math.floor(Math.random() * 1_001))
+        if (!cancelled.current) update(item.id, { status: "UPLOADING", error: undefined })
+        continue
+      }
+      if (result.status === 507 && result.payload.code === "STORAGE_PRESSURE") {
+        update(item.id, { status: "PAUSED", error: "存储空间不足，清理服务端空间后手动继续" })
+        setStatus("paused")
+        await new Promise<void>((resolve) => { resume.current = resolve })
+        resume.current = undefined
+        if (!cancelled.current) {
+          setStatus("uploading")
+          update(item.id, { status: "UPLOADING", error: undefined })
+        }
+        continue
+      }
+      if (AUTH_ERRORS.has(result.payload.code ?? "")) {
+        update(item.id, { status: "PAUSED", error: "会话已失效，请重新登录后继续" })
+        const next = await props.reauthenticate()
+        if (next) {
+          auth.current = next
+          update(item.id, { status: "UPLOADING", error: undefined })
+          continue
+        }
+        update(item.id, { status: "FAILED", error: "登录已取消" })
+        cancelled.current = true
+        return
+      }
+      if (result.payload.code === "ORIGIN_INVALID") {
+        update(item.id, { status: "FAILED", error: result.payload.message ?? "请求来源校验失败" })
+        setError("请求来源校验失败，批量上传已停止。")
+        cancelled.current = true
+        return
+      }
+      if (result.status < 200 || result.status >= 300) {
+        update(item.id, { status: "FAILED", error: result.payload.message ?? `上传失败（HTTP ${result.status}）` })
+        return
+      }
+      update(item.id, { status: result.payload.status ?? "FAILED", loaded: item.size, error: result.payload.error })
+      clock.completed += item.size
+      clock.high = 0
+      return
+    }
+  }
+
+  const cancelFuture = (issue: string) => {
+    for (const id of queue.current) {
+      if (id === current.current?.id) continue
+      const item = table.current.get(id)
+      if (item && (item.status === "READY" || item.status === "EXTRACTING")) update(id, { status: "CANCELLED", error: issue })
+    }
+  }
+
   const upload = async (only?: UploadItem[]) => {
-    if (!props.user) return props.requestLogin()
-    if (!scan) return
-    const queue = only ?? selected
-    if (!queue.length || (!only && blocked)) return
+    if (!scan || !(await credentials())) return
+    const items = only ?? scan.items.map((item) => table.current.get(item.id)).filter((item): item is UploadItem => Boolean(item?.selected))
+    if (!items.length) return
+    const batches = partition(items)
+    for (const batch of batches) for (const item of batch.items) update(item.id, { batch: batch.index, status: "READY", loaded: 0, error: undefined })
+    queue.current = new Set(items.map((item) => item.id))
     cancelled.current = false
+    setGroups(batches.length)
     setError("")
     setStatus("uploading")
-    setItems((current) => current.map((item) => queue.some((entry) => entry.id === item.id) ? { ...item, status: "READY", loaded: 0, error: undefined } : item))
-    const clock = { time: performance.now(), loaded: 0, speed: 0 }
-    const size = queue.reduce((sum, item) => sum + item.size, 0)
-    setProgress({ path: "", loaded: 0, total: size, percent: 0, speed: 0, eta: 0 })
+    const total = items.reduce((sum, item) => sum + item.size, 0)
+    const clock = { time: performance.now(), completed: 0, high: 0, speed: 0 }
+    const sources = new Map(scan.sources.map((source) => [source.path, source.id]))
+    const members = new Map<string, UploadItem[]>()
+    const extracting = new Set<string>()
+    for (const item of items) {
+      const group = members.get(item.sourceId) ?? []
+      group.push(item)
+      members.set(item.sourceId, group)
+    }
+    setProgress({ path: "", loaded: 0, total, percent: 0, speed: 0, eta: 0 })
     await materialize(
       scan,
-      queue,
+      items,
       async (entry, blob) => {
-        const item = queue.find((value) => value.id === entry.id)
-        if (item) await uploadOne(item, blob, clock, size)
+        const item = table.current.get(entry.id)
+        if (item) await uploadOne(item, blob, clock, total)
+        current.current = undefined
       },
-      (entry, issue) => setItems((current) => current.map((item) => item.id === entry.id ? { ...item, status: "FAILED", error: issue } : item)),
-      (path) => setItems((current) => current.map((item) => item.selected && item.path.startsWith(path) && item.status === "READY" ? { ...item, status: "EXTRACTING" } : item)),
+      (entry, issue) => update(entry.id, { status: "FAILED", error: issue }),
+      (path) => {
+        const source = sources.get(path)
+        if (!source || extracting.has(source)) return
+        extracting.add(source)
+        for (const item of members.get(source) ?? []) if (item.status === "READY") update(item.id, { status: "EXTRACTING" })
+      },
       () => cancelled.current,
     )
+    if (cancelled.current) cancelFuture("批量上传已停止")
     setStatus("complete")
-    setProgress((current) => ({ ...current, percent: cancelled.current ? current.percent : 100, loaded: cancelled.current ? current.loaded : current.total, eta: 0 }))
+    current.current = undefined
+    setProgress((value) => ({ ...value, percent: cancelled.current ? value.percent : 100, loaded: cancelled.current ? value.loaded : value.total, eta: 0 }))
   }
 
   const cancel = () => {
     cancelled.current = true
-    request.current?.abort()
-    setItems((current) => current.map((item) => item.selected && ["READY", "EXTRACTING"].includes(item.status) ? { ...item, status: "CANCELLED", error: "批次已取消" } : item))
+    cancelFuture("批量上传已取消")
+    const item = current.current ? table.current.get(current.current.id) : undefined
+    if (item?.status === "PAUSED") {
+      if (current.current?.reconciling) {
+        setError("仍在核对服务器最终状态，不能提前把当前文件标记为取消。")
+        return
+      }
+      update(item.id, { status: "CANCELLED", error: "批量上传已取消" })
+      resume.current?.()
+      return
+    }
+    if (current.current?.body) {
+      setError("正在终止当前文件并向服务器核对最终状态…")
+      request.current?.abort()
+      return
+    }
+    setError("当前文件已进入校验或发布阶段；完成当前文件后停止剩余队列。")
+  }
+
+  const toggle = (item: UploadItem, selected: boolean) => {
+    item.selected = selected
+    setSelection((value) => ({ count: value.count + (selected ? 1 : -1), bytes: value.bytes + (selected ? item.size : -item.size) }))
+    setPlanned(partition(scan?.items.filter((entry) => table.current.get(entry.id)?.selected) ?? []).length)
+    render()
   }
 
   const drop = async (event: DragEvent) => {
@@ -480,13 +685,13 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
 
   return (
     <section className="extension-publish page-width">
-      <div className="page-heading"><span className="eyebrow">VS CODE 插件发布</span><h1>上传 VS Code 插件</h1><p>可批量选择 VSIX、文件夹、ZIP 或 TAR.GZ；浏览器只上传筛选出的 VSIX。</p></div>
+      <div className="page-heading"><span className="eyebrow">VS CODE 插件发布</span><h1>上传 VS Code 插件</h1><p>可一次选择任意数量的 VSIX、文件夹、ZIP 或 TAR.GZ；系统自动拆成每组最多 20 个的上传队列。</p></div>
       {(active || status === "complete") && <div className="glass-panel extension-progress-card extension-batch-progress">
-        <div className="extension-progress-heading"><span className="upload-file-mark"><Code weight="duotone" /></span><div><h2>{active ? "正在批量发布" : "批量发布完成"}</h2><p>{completed.length} / {selected.length} 个已处理 · {bytes(total)}</p></div></div>
+        <div className="extension-progress-heading"><span className="upload-file-mark"><Code weight="duotone" /></span><div><h2>{status === "paused" ? "批量上传已暂停" : active ? "正在批量发布" : "批量发布完成"}</h2><p>{completed} / {selection.count} 个已处理 · {groups} 个逻辑批次 · {bytes(selection.bytes)}</p></div></div>
         <div className="prominent-progress"><div style={{ width: `${progress.percent}%` }}><strong>{progress.percent}%</strong></div></div>
-        <div className="progress-metrics"><span><Package /> {bytes(progress.loaded)} / {bytes(progress.total || total)}</span><span><ChartLineUp /> {progress.speed ? `${bytes(progress.speed)}/s` : "等待数据"}</span><span><Clock /> {progress.eta ? `预计剩余 ${Math.ceil(progress.eta)} 秒` : active ? stateLabel(items.find((item) => ["EXTRACTING", "UPLOADING", "VALIDATING", "PUBLISHING"].includes(item.status))?.status ?? "READY") : "处理完成"}</span></div>
-        {active && <div className="progress-footer"><p><Warning /> 当前文件取消后，尚未开始的项目也会停止。</p><button className="danger-outline" onClick={cancel}>取消整批</button></div>}
-        {status === "complete" && <div className="batch-result"><span className="publication-success"><CheckCircle weight="fill" /><strong>{counts("PUBLISHED")} 个发布成功</strong></span><span>{counts("DUPLICATE")} 个已存在</span><span>{counts("FAILED")} 个失败</span><span>{counts("CANCELLED")} 个取消</span><span>{scan?.ignored ?? 0} 个忽略</span></div>}
+        <div className="progress-metrics"><span><Package /> {bytes(progress.loaded)} / {bytes(progress.total || selection.bytes)}</span><span><ChartLineUp /> {progress.speed ? `${bytes(progress.speed)}/s` : "等待数据"}</span><span><Clock /> {progress.eta ? `预计剩余 ${Math.ceil(progress.eta)} 秒` : current.current ? `第 ${table.current.get(current.current.id)?.batch ?? 1} / ${groups} 组` : "处理完成"}</span></div>
+        {active && <div className="progress-footer"><p><Warning /> 上传中的文件会终止并核对服务端状态；已进入校验的文件会完成后再停止。</p><div>{status === "paused" && <button className="secondary-button" onClick={() => resume.current?.()}>重新检查并继续</button>}<button className="danger-outline" onClick={cancel}>停止剩余上传</button></div></div>}
+        {status === "complete" && <div className="batch-result"><span className="publication-success"><CheckCircle weight="fill" /><strong>{counts.PUBLISHED ?? 0} 个发布成功</strong></span><span>{counts.DUPLICATE ?? 0} 个已存在</span><span>{counts.FAILED ?? 0} 个失败</span><span>{counts.CANCELLED ?? 0} 个取消</span><span>{scan?.ignored ?? 0} 个忽略</span></div>}
       </div>}
       <div className="extension-upload-grid">
         <div className={`glass-panel extension-drop ${drag ? "dragging" : ""}`} onDragOver={(event) => { event.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={(event) => void drop(event)}>
@@ -495,18 +700,21 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
             <label className="primary-button extension-file-button"><UploadSimple /> 选择文件<input type="file" multiple accept=".vsix,.zip,.tar.gz,.tgz" onChange={(event) => void prepare(listInputs(event.target.files ?? []))} /></label>
             <label className="secondary-button extension-file-button"><Package /> 选择文件夹<input type="file" multiple {...{ webkitdirectory: "" }} onChange={(event) => void prepare(listInputs(event.target.files ?? []))} /></label>
           </div>
-          <small><ShieldWarning /> 每批最多 20 个 VSIX、合计 10 GiB；单个最大 512 MiB</small>
+          <small><ShieldWarning /> 选择总数不限；自动按最多 20 个 / 10 GiB 分组，单个 VSIX 最大 512 MiB</small>
           {status === "scanning" && <div className="extension-scan-progress"><strong>正在本地扫描</strong><span>{progress.path || "正在读取所选内容"}</span><div><i style={{ width: `${progress.percent}%` }} /></div></div>}
           {error && <InlineError message={error} />}
           {scan && status !== "scanning" && <div className="extension-batch-review">
-            <div className="batch-summary"><span><strong>{selected.length}</strong> 个待上传</span><span><strong>{bytes(total)}</strong> 合计</span><span><strong>{scan.ignored}</strong> 个已忽略</span><span><strong>{scan.errors.length}</strong> 个扫描错误</span></div>
-            {blocked && <p className="batch-limit-warning"><Warning /> 已超过 20 个或 10 GiB，请取消选择部分 VSIX。</p>}
-            <div className="extension-batch-list">{items.map((item) => <div key={item.id} className={`batch-item ${item.status.toLocaleLowerCase()}`}><input type="checkbox" aria-label={`选择 ${item.name}`} checked={item.selected} disabled={active} onChange={(event) => setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, selected: event.target.checked } : entry))} /><span><strong>{item.name}</strong><small>{item.path}</small><small>{bytes(item.size)} · {sourceLabel(item.kind)}</small>{item.error && <em>{item.error}</em>}</span><b>{stateLabel(item.status)}</b>{item.status === "FAILED" && item.selected && !active && <button type="button" onClick={() => void upload([item])}>重试</button>}</div>)}</div>
+            <div className="batch-summary"><span><strong>{selection.count}</strong> 个待上传</span><span><strong>{bytes(selection.bytes)}</strong> 合计</span><span><strong>{planned}</strong> 个逻辑批次</span><span><strong>{scan.ignored}</strong> 个已忽略</span><span><strong>{scan.errors.length}</strong> 个扫描错误</span></div>
+            <div className="extension-batch-list virtual-batch-list" onScroll={(event) => setScroll(event.currentTarget.scrollTop)}>
+              <div style={{ paddingTop: start * ROW, paddingBottom: Math.max(0, (order.current.length - end) * ROW) }}>
+                {visible.map((item) => <div key={item.id} className={`batch-item ${item.status.toLocaleLowerCase()}`}><input type="checkbox" aria-label={`选择 ${item.name}`} checked={item.selected} disabled={active} onChange={(event) => toggle(item, event.target.checked)} /><span><strong>{item.name}</strong><small>{item.path}</small><small>{bytes(item.size)} · {sourceLabel(item.kind)}{item.batch ? ` · 第 ${item.batch} 组` : ""}</small>{item.error && <em>{item.error}</em>}</span><b>{stateLabel(item.status)}</b>{item.status === "FAILED" && item.selected && !active && <button type="button" onClick={() => void upload([item])}>重试</button>}</div>)}
+              </div>
+            </div>
             {(scan.notes.length > 0 || scan.errors.length > 0) && <details className="batch-notes"><summary>查看忽略与扫描明细</summary>{[...scan.errors, ...scan.notes].map((item, index) => <p key={`${item.path}-${index}`}><strong>{item.path}</strong><span>{item.reason}</span></p>)}</details>}
-            {!active && status !== "complete" && <button className="primary-button publish-vsix" disabled={!selected.length || blocked} onClick={() => void upload()}>开始批量上传</button>}
+            {!active && status !== "complete" && <button className="primary-button publish-vsix" disabled={!selection.count} onClick={() => void upload()}>开始批量上传</button>}
           </div>}
         </div>
-        <div className="glass-panel extension-upload-rules"><h2>上传说明</h2><Rule icon={<Package />} title="仅上传 VSIX">文件夹和归档只在浏览器本地扫描，其他内容不会进入网络请求。</Rule><Rule icon={<CheckCircle />} title="逐项校验并上架">单项失败不阻断后续文件，不执行扩展代码或病毒审计。</Rule><Rule icon={<UserCircle />} title="上传者公开可见">你的市场身份会显示为每个新构建的上传者。</Rule><Rule icon={<Clock />} title="每小时最多 100 次">批次最多 20 个，单个 VSIX 最大 512 MiB。</Rule></div>
+        <div className="glass-panel extension-upload-rules"><h2>上传说明</h2><Rule icon={<Package />} title="仅上传 VSIX">文件夹和归档只在浏览器本地扫描，其他内容不会进入网络请求。</Rule><Rule icon={<CheckCircle />} title="自动分组并逐项上架">一次可选择任意数量，系统按最多 20 个 / 10 GiB 分组，单项失败不阻断后续文件。</Rule><Rule icon={<UserCircle />} title="上传者公开可见">你的市场身份会显示为每个新构建的上传者。</Rule><Rule icon={<Clock />} title="服务资源保护">服务端同时最多接收 20 个上传；繁忙时队列会自动等待，不限制用户每小时总数。</Rule></div>
       </div>
     </section>
   )
@@ -514,15 +722,17 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
 
 function Rule(props: { icon: ReactNode; title: string; children: ReactNode }) { return <div className="upload-rule"><span>{props.icon}</span><div><strong>{props.title}</strong><p>{props.children}</p></div></div> }
 function sourceLabel(value: BatchItem["kind"]) { return value === "folder" ? "文件夹" : value === "zip" ? "ZIP" : value === "tar" ? "TAR.GZ" : "本地文件" }
-function stateLabel(value: UploadState) { return value === "READY" ? "等待上传" : value === "EXTRACTING" ? "正在提取" : value === "UPLOADING" ? "上传中" : value === "VALIDATING" ? "校验中" : value === "PUBLISHING" ? "发布中" : value === "PUBLISHED" ? "已发布" : value === "DUPLICATE" ? "已存在" : value === "CANCELLED" ? "已取消" : "失败" }
-function parseRun(value: string): ExtensionPublicationRun & { message?: string } {
+function stateLabel(value: UploadState) { return value === "READY" ? "等待上传" : value === "EXTRACTING" ? "正在提取" : value === "PAUSED" ? "已暂停" : value === "UPLOADING" ? "上传中" : value === "VALIDATING" ? "校验中" : value === "PUBLISHING" ? "发布中" : value === "PUBLISHED" ? "已发布" : value === "DUPLICATE" ? "已存在" : value === "CANCELLED" ? "已取消" : "失败" }
+function parseRun(value: string): Partial<ExtensionPublicationRun> & { code?: string; message?: string } {
   try {
-    return JSON.parse(value || "{}") as ExtensionPublicationRun & { message?: string }
+    return JSON.parse(value || "{}") as Partial<ExtensionPublicationRun> & { code?: string; message?: string }
   } catch (err) {
     console.error("Invalid extension publication response", err)
-    return {} as ExtensionPublicationRun
+    return {}
   }
 }
+
+function delay(ms: number) { return new Promise<void>((resolve) => setTimeout(resolve, ms)) }
 
 export function ExtensionMe(props: Shared) {
   const [tab, setTab] = useState<"uploads" | "favorites" | "reviews">("uploads")

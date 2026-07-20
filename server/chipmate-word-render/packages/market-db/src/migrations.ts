@@ -366,4 +366,22 @@ export const MIGRATIONS: readonly Migration[] = [
       END;
     `,
   },
+  {
+    version: 7,
+    name: "publication-precise-undo",
+    sql: `
+      ALTER TABLE publication_runs ADD COLUMN previous_status TEXT;
+      ALTER TABLE publication_runs ADD COLUMN previous_revision INTEGER;
+      ALTER TABLE publication_runs ADD COLUMN undone_at TEXT;
+      CREATE TABLE publication_undos (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users(id),
+        run_id TEXT NOT NULL REFERENCES publication_runs(id),
+        idempotency_key TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(owner_id, idempotency_key)
+      );
+      CREATE INDEX idx_publication_undos_run ON publication_undos(run_id);
+    `,
+  },
 ]

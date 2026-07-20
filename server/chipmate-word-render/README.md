@@ -10,7 +10,7 @@
 
 | 能力 | 用途 | 关键依赖 |
 |---|---|---|
-| Word 渲染 | 把调用方提交的 DOCX 转为 PDF 和逐页 PNG，供聊天预览或文档检查使用。 | LibreOffice、Poppler |
+| Word 渲染 | 通过受控 UNO 刷新原生目录字段，再把 DOCX 转为 PDF 和逐页 PNG，供聊天预览或文档检查使用。 | LibreOffice、python3-uno、Poppler |
 | Mermaid 渲染 | 在 Chromium 中离线加载 Mermaid，将图表导出为裁剪后的 PNG。 | Chromium、Mermaid |
 | 离线包分发 | 从挂载的 `/packages` 目录提供 VSIX 下载，并扫描生成更新清单。 | Node、JSZip |
 | 内部 Skill Market | 读取、分发或写入 skill 压缩包和目录清单；可选地通过 New API key 识别上传者。 | Node、本地卷、可选 New API |
@@ -26,6 +26,7 @@ server/chipmate-word-render/
 ├── apps/api/                    # Fastify API、身份、SQLite 启动和 Web 静态托管
 ├── apps/web/                    # React + Vite Skill Market Web
 ├── packages/                    # contracts、market-db Worker 与 Skill validator
+├── scripts/refresh-word-fields.py # 禁止宏和外部链接更新的 LibreOffice UNO 字段刷新器
 ├── server.js                    # 冻结的 Word/Mermaid/legacy compatibility core
 ├── Dockerfile                   # 多阶段 linux/amd64 构建与运行镜像定义
 ├── package.json                 # Node 运行时依赖和服务版本
@@ -41,7 +42,7 @@ server/chipmate-word-render/
 | 方法和路径 | 说明 |
 |---|---|
 | `GET /health` | 返回工具探测结果、可用接口和能力状态；这是部署后的首要检查。 |
-| `POST /render/word` | 接收 `filename`、`docxBase64` 和可选 `timeoutMs`，返回 PDF、逐页 PNG 与渲染信息。文件名必须以 `.docx` 结尾。 |
+| `POST /render/word` | 接收 `filename`、`docxBase64` 和可选 `timeoutMs`，返回 PDF、逐页 PNG、字段刷新状态和目录计数。仅在 UNO 刷新后标题、Heading、drawing、目录条目及数字页码全部验证通过时返回 `updatedDocxBase64`；无目录返回 `not-required`。 |
 | `POST /render/mermaid` | 接收 `source`、可选 `filename`、`scale`（1–4）和 `timeoutMs`，返回裁剪后的 PNG 和尺寸信息。 |
 | `GET /packages/manifest.json` | 扫描包目录内的 VSIX，生成 schema v2 更新清单；按内部发行目标返回版本、SHA-256、大小、下载 URL 与 `latestByTarget`。 |
 | `GET /packages/<file>` | 下载包目录中的文件，路径越界会被拒绝。 |
@@ -60,15 +61,17 @@ server/chipmate-word-render/
 | `GET /api/v1/analytics/skills/:id` | 仅向 Skill 作者返回自己的漏斗。 |
 | `GET /api/v1/market/stream` | SSE 状态同步，支持 `Last-Event-ID` 与 `catalogVersion` 补偿。 |
 | `GET /api/v1/extensions`、`GET /api/v1/extensions/:id` | 浏览 VS Code 插件目录与版本、平台、SHA 构建详情。 |
-| `POST /api/v1/extension-publications` | 使用 Web Session、CSRF 和幂等键流式上传单个 VSIX；单包上限 512 MiB，每用户滚动一小时最多 100 次。 |
+| `POST /api/v1/extension-publications` | 使用 Web Session、CSRF 和幂等键流式上传单个 VSIX；单包上限 512 MiB，使用实例级并发、磁盘预留和超时保护，不设用户小时限额。 |
 | `GET /api/v1/extensions/:id/artifacts/:artifactId/download` | 手动下载指定构建；拒绝 Range，仅在完整响应结束后计数。 |
 | `GET /api/v1/analytics/extensions/overview` | 返回公开、匿名的插件市场聚合分析。 |
 | `GET /`、`/skills`、`/publish`、`/me`、`/analytics`、`/status` | 同源 Web 应用与安全响应头。 |
 | `GET /extensions`、`/extensions/:id`、`/extensions/publish`、`/extensions/me`、`/extensions/analytics` | VS Code 插件市场 Web 路由。 |
 
-默认限制包括 50 MiB DOCX、512 KiB Mermaid 源码、50 MiB 总 skill 上传量和 120 秒渲染超时。不要仅靠客户端限制来放宽这些边界；如有必要，应审查 `server.js` 中的对应环境变量和资源风险后再改。
+默认限制包括 50 MiB DOCX、512 KiB Mermaid 源码、最多 500 页 Word、128 MiB PDF、256 MiB 页面 PNG、384 MiB JSON 响应、50 MiB 总 skill 上传量和 120 秒渲染超时。不要仅靠客户端限制来放宽这些边界；如有必要，应审查 `server.js` 中的对应环境变量和资源风险后再改。
 
-插件发布页可一次选择多文件、文件夹、ZIP、TAR.GZ 或 TGZ。浏览器先在本地递归扫描，并只把其中的 VSIX 逐个发送到上述发布接口；归档本身和无关文件不会上传。每批最多选择 20 个 VSIX、合计不超过 10 GiB，嵌套归档不会递归展开。
+Word 字段刷新以 `MacroExecutionMode=NEVER_EXECUTE` 和 `UpdateDocMode=NO_UPDATE` 隐藏打开文档，不更新外部链接，并跳过 DDE、数据库和脚本字段。Docker 镜像通过 fontconfig 将 `Microsoft YaHei` 映射到 `Noto Sans CJK SC`；`GET /health` 的 `microsoftYaHeiMatch` 必须显示该实际匹配字体。
+
+插件发布页可一次选择任意数量的多文件、文件夹、ZIP、TAR.GZ 或 TGZ。浏览器先在本地递归扫描，并只把其中的 VSIX 逐个发送到上述发布接口；归档本身和无关文件不会上传。清单自动拆成每组最多 20 个、合计不超过 10 GiB 的逻辑批次并串行上传，嵌套归档不会递归展开。
 
 ## 本地开发
 
@@ -96,7 +99,8 @@ Word 接口需要 Base64 编码的真实 `.docx`，示例负载为：
 {
   "filename": "example.docx",
   "docxBase64": "<base64-encoded-docx>",
-  "timeoutMs": 120000
+  "timeoutMs": 120000,
+  "maxPages": 500
 }
 ```
 
@@ -111,7 +115,7 @@ VERSION="$(node -p \"require('./package.json').version\")"
 IMAGE="chipmate-word-render:${VERSION}"
 ARCHIVE="chipmate-word-render-${VERSION}-linux-amd64.docker.tar.gz"
 
-docker build --platform linux/amd64 -t "$IMAGE" .
+docker build --pull --no-cache --platform linux/amd64 -t "$IMAGE" .
 docker save "$IMAGE" | gzip -9 > "$ARCHIVE"
 shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
 ```
@@ -134,7 +138,7 @@ gzip -t "$ARCHIVE"
 
 ## 生成包含预置 skills 的完整离线交付包
 
-`build-offline-bundle.mjs` 会把已生成的 Docker 归档、安装脚本，以及 Kilo 仓库 `.kilo/skills/` 中的 `source-backed-detail-design` 和 `documents` 组合到 `out/chipmate-server-offline-<version>-linux-amd64.tar.gz`。执行前必须已经完成上一节的镜像归档构建：
+`build-offline-bundle.mjs` 会把已生成的 Docker 归档、安装脚本，以及 Kilo 仓库 `.kilo/skills/` 中的 `source-backed-detail-design` 和 `documents` 组合到 `out/chipmate-server-offline-<version>-linux-amd64.tar.gz`。脚本总是按当前 Docker 归档重新计算内外层校验文件，不会复制可能过期的旁车哈希。执行前必须已经完成上一节的镜像归档构建：
 
 ```bash
 node build-offline-bundle.mjs
@@ -168,7 +172,7 @@ chmod +x install-render-server.sh
 curl -fsS http://127.0.0.1:6001/health
 ```
 
-安装脚本会先校验同目录 `.sha256`（如存在），再导入镜像并以 `--restart unless-stopped` 启动容器。默认把宿主机 `/home/share/chipmate/packages` 只读挂载为 `/packages`，把 `/home/share/chipmate/data/skill-market` 单独可写挂载为 `/data/skill-market`，避免只读父挂载与可写子挂载互相遮蔽。升级前会把现有 `skills.json`、归档、SQLite、legacy-latest 和整个 `extensions/` 复制到带 UTC 时间戳的备份目录。可按部署环境覆盖服务名、端口和宿主机目录：
+安装脚本会先校验同目录 `.sha256`（如存在），再导入镜像并以 `--restart unless-stopped` 启动容器。默认把宿主机 `/home/share/chipmate/packages` 只读挂载为 `/packages`，把 `/home/share/chipmate/data/skill-market` 单独可写挂载为 `/data/skill-market`，避免只读父挂载与可写子挂载互相遮蔽。升级前会把现有 `skills.json`、归档、SQLite、legacy-latest 和整个 `extensions/` 复制到带 UTC 时间戳的备份目录。预置 `source-backed-detail-design` 与 `documents` 只替换其受管归档和元数据，同时保留用户自建 skill、现有下载数与收藏数。可按部署环境覆盖服务名、端口和宿主机目录：
 
 ```bash
 PORT=6001 \
@@ -181,7 +185,7 @@ BACKUP_ROOT_ON_HOST=/srv/kilo/backups \
 
 如需启用 New API 身份解析，将配置放入目标机受限权限的环境文件并用 `ENV_FILE=/path/to/render.env` 传入。至少需要 `NEW_API_BASE_URL`；服务优先使用当前用户 key 调用 New API 只读 token usage 接口。旧 New API 不支持该接口时，才使用 `NEW_API_ADMIN_ACCESS_TOKEN` 和 `NEW_API_USER_ID` 进入管理接口兼容回退。安装脚本不会把环境文件复制进镜像或交付包；覆盖升级未显式传 `ENV_FILE` 时，会从旧容器继承 `NEW_API_*`、`EXTENSION_MARKET_*` 和 `EXTENSION_DROP_*`，不会输出这些值。
 
-插件市场在镜像和安装脚本中默认关闭。首次升级保持 `EXTENSION_MARKET_ENABLED=0`，完成 `/health`、`/api/v1/status` 和既有 Skill/渲染回归后，再以 `EXTENSION_MARKET_ENABLED=1 ./install-render-server.sh <同一归档>` 重启启用；默认扫描周期为 `EXTENSION_DROP_SCAN_MS=5000`。安装脚本不会从旧容器继承已启用状态，因此升级不会意外提前开放插件路由。默认宿主机目录如下：
+插件市场在镜像和安装脚本中默认关闭。首次升级保持 `EXTENSION_MARKET_ENABLED=0`，完成 `/health`、`/api/v1/status` 和既有 Skill/渲染回归后，再以 `EXTENSION_MARKET_ENABLED=1 ./install-render-server.sh <同一归档>` 重启启用；默认扫描周期为 `EXTENSION_DROP_SCAN_MS=5000`。上传资源保护默认值为 `EXTENSION_UPLOAD_MAX_ACTIVE=20`、`EXTENSION_UPLOAD_MIN_FREE_BYTES=2147483648`、`EXTENSION_UPLOAD_IDLE_MS=60000`、`EXTENSION_UPLOAD_MAX_MS=7200000`，可在受限权限的 `ENV_FILE` 中调整。安装脚本不会从旧容器继承已启用状态，因此升级不会意外提前开放插件路由。默认宿主机目录如下：
 
 ```text
 /home/share/chipmate/data/skill-market/extensions/
@@ -196,8 +200,8 @@ BACKUP_ROOT_ON_HOST=/srv/kilo/backups \
 
 部署成功后，将 Kilo Code 的如下设置指向服务基础地址，例如 `http://<server-ip>:6001`：
 
-- `kilo.documents.wordRender.remoteEndpoint`
-- `kilo.documents.mermaidRender.remoteEndpoint`
+- `chipmate.v2.documents.wordRender.remoteEndpoint`
+- `chipmate.v2.documents.mermaidRender.remoteEndpoint`
 
 内网 VSIX 更新使用 `GET /packages/manifest.json`；把已验证的完整 VSIX 原子放入宿主机包目录即可：先上传为临时文件，再校验并重命名为 `.vsix`。服务每次请求都会扫描目录，不需要重启容器或维护手写 `latest.json`。它只会纳入 `extension/package.json` 中扩展 ID 为固定值 `chipmate.chipmate`、并带有有效 `chipmatePackageTarget` 的内部发行包：`win32-x64-baseline`、`linux-x64-baseline`、`darwin-x64` 或 `darwin-arm64`。
 
@@ -236,9 +240,10 @@ Skill Market 的宿主机目录结构如下：
 
 ## 常见问题
 
-- `/health` 失败：先查看容器日志 `docker logs --tail 100 chipmate-word-render`，确认 Chromium、LibreOffice 和 Poppler 已在镜像中。
+- `/health` 失败：先查看容器日志 `docker logs --tail 100 chipmate-word-render`，确认 Chromium、LibreOffice、python3-uno、Poppler 和 CJK 字体映射已在镜像中。
 - Mermaid 返回 `mermaid-runtime-missing`：检查镜像内的 `npm install --omit=dev` 是否成功，及 `node_modules/mermaid` 是否存在。
 - Word 渲染超时：确认 DOCX 大小、`RENDER_TIMEOUT_MS`、LibreOffice 和 `pdftoppm` 可用性；不要无上限提高超时或响应大小。
+- Word 返回 `fieldRefreshStatus: failed`：查看 `fieldRefreshDiagnostics`。服务会继续渲染原始 DOCX，但不会返回一个未经标题、Heading、drawing 和真实目录页码验证的 `updatedDocxBase64`。
 - `/packages/manifest.json` 未发现包：确认 VSIX 位于挂载的包根目录，且其 `publisher.name` 为 `chipmate.chipmate`，并且包内 `chipmatePackageTarget` 是允许的内部目标。
 - Skill Market 为空：检查 `skill-market/skills.json` 的 JSON 格式、归档是否位于 `skill-market/skills/`，再访问 `/marketplace/manifest.json` 查看告警。
 - 登录或上传返回 `token-resolver-disabled`：`NEW_API_BASE_URL` 未设置；如果目标 New API 不支持直接 token usage 接口，还需要补齐 admin fallback 的另外两项配置。

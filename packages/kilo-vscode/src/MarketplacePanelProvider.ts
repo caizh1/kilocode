@@ -83,7 +83,7 @@ function phaseLabel(phase: PublicationPhase, status?: string) {
 }
 
 export class MarketplacePanelProvider implements vscode.Disposable {
-  public static readonly viewType = "kilo-code.new.marketplacePanel"
+  public static readonly viewType = "chipmate.v2.marketplacePanel"
 
   private panel: vscode.WebviewPanel | undefined
   private project: string | null = null
@@ -95,7 +95,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
   private pendingInstall: MarketplaceItem | undefined
   private disposables: vscode.Disposable[] = []
   private subscriptions: Array<() => void> = []
-  private readonly marketplace = new MarketplaceService()
+  private readonly marketplace: MarketplaceService
   private readonly registry: InstallRegistry
   private readonly localRegistry: LocalImportRegistry
   private readonly importer: LocalSkillImporter
@@ -112,6 +112,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     private readonly connection: KiloConnectionService,
     private readonly context: vscode.ExtensionContext,
   ) {
+    this.marketplace = new MarketplaceService(path.join(context.globalStorageUri.fsPath, "config"))
     this.registry = new InstallRegistry(context)
     this.localRegistry = new LocalImportRegistry(context)
     this.removal = new LocalSkillRemoval(connection, context)
@@ -123,6 +124,8 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         return Boolean(await this.registry.get(origin, id, scope, workspaceId))
       },
       (progress) => this.post({ type: "localSkillImportProgress", progress }),
+      os.homedir(),
+      path.join(context.globalStorageUri.fsPath, "config"),
     )
     this.analytics = new MarketplaceAnalytics(
       (items, key) => this.marketplace.events(items, key),
@@ -395,7 +398,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     if (!this.ready) return
     const info = this.connection.getServerInfo()
     if (info) {
-      const cfg = vscode.workspace.getConfiguration("kilo-code.new")
+      const cfg = vscode.workspace.getConfiguration("chipmate.v2")
       this.post({
         type: "ready",
         serverInfo: info,
@@ -444,7 +447,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         if (msg.mpItem) await this.remove(msg.mpItem, msg.mpInstallOptions?.target ?? "project")
         return
       case "dismissAgentMigrationBanner":
-        await this.context.globalState.update("kilo.agentMigrationBannerDismissed", true)
+        await this.context.globalState.update("chipmate.v2.agentMigrationBannerDismissed", true)
         return
       case "openExternal":
         this.openExternal(msg.url)
@@ -531,7 +534,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
           .map((item) => item.id),
       )
       if (generation !== this.generation) return
-      const dismissed = this.context.globalState.get<boolean>("kilo.agentMigrationBannerDismissed") ?? false
+      const dismissed = this.context.globalState.get<boolean>("chipmate.v2.agentMigrationBannerDismissed") ?? false
       this.post({
         type: "marketplaceData",
         ...data,
@@ -1100,7 +1103,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
   }
 
   private directory(): string {
-    return this.project ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
+    return this.project ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? this.context.globalStorageUri.fsPath
   }
 
   private relevanceRoots(): vscode.Uri[] {

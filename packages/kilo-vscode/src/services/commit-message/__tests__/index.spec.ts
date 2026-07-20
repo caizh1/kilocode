@@ -66,11 +66,11 @@ describe("commit-message service", () => {
       expect(disposables.length).toBeGreaterThan(0)
     })
 
-    it("registers the kilo-code.new.generateCommitMessage command", () => {
+    it("registers the chipmate.v2.generateCommitMessage command", () => {
       registerCommitMessageService(mockContext, mockConnectionService)
 
       expect(vscode.commands.registerCommand).toHaveBeenCalledWith(
-        "kilo-code.new.generateCommitMessage",
+        "chipmate.v2.generateCommitMessage",
         expect.any(Function),
       )
     })

@@ -81,6 +81,8 @@ describe("Settings UI alignment", () => {
     expect(messages).toContain("| ClosePanelRequest")
     expect(editor).toContain('if (msg.type === "closePanel")')
     expect(editor).toContain("panel.dispose()")
+    expect(editor).toContain("/^chipmate\\.v2\\.(\\w+)Panel$/")
+    expect(editor).not.toContain("/^kilo-code\\.new\\.")
     expect(zh).toContain('"settings.openLocalConfig": "打开项目配置"')
     expect(zh).toContain('"settings.openGlobalConfig": "打开全局配置"')
   })

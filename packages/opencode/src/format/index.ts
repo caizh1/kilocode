@@ -10,6 +10,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { errorMessage } from "@/util/error"
 import * as Log from "@opencode-ai/core/util/log"
 import * as Formatter from "./formatter"
+import { userEnv } from "@/kilocode/product-env" // kilocode_change
 
 const log = Log.create({ service: "format" })
 
@@ -91,8 +92,10 @@ export const layer = Layer.effect(
                 .run(
                   ChildProcess.make(replaced[0]!, replaced.slice(1), {
                     cwd: dir,
-                    env: item.environment,
-                    extendEnv: true,
+                    // kilocode_change start - formatter commands are project-controlled user children
+                    env: userEnv({ ...process.env, ...item.environment }),
+                    extendEnv: false,
+                    // kilocode_change end
                     stdin: "ignore",
                     stdout: "ignore",
                     stderr: "ignore",

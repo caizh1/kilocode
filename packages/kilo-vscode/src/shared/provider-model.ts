@@ -1,5 +1,6 @@
 export const KILO_PROVIDER_ID = "kilo"
-export const KILO_AUTO = { providerID: KILO_PROVIDER_ID, modelID: "kilo-auto/free" } as const
+export const KILO_AUTO_FREE_ID = "kilo-auto/free"
+export const CHIPMATE_AUTO_FREE_NAME = "ChipMate Auto Free"
 export const CUSTOM_PROVIDER_PACKAGES = ["@ai-sdk/openai-compatible", "@ai-sdk/openai", "@ai-sdk/anthropic"] as const
 export type CustomProviderPackage = (typeof CUSTOM_PROVIDER_PACKAGES)[number]
 export const CUSTOM_PROVIDER_PACKAGE: CustomProviderPackage = "@ai-sdk/openai-compatible"
@@ -25,6 +26,11 @@ export function parseModelString(raw: string | undefined | null) {
   const slash = raw.indexOf("/")
   if (slash <= 0 || slash >= raw.length - 1) return null
   return { providerID: raw.slice(0, slash), modelID: raw.slice(slash + 1) }
+}
+
+export function modelSelection(providerID: string | undefined, modelID: string | undefined) {
+  if (!providerID || !modelID) return null
+  return { providerID, modelID }
 }
 
 export function providerOrderIndex(providerID: string, order = PROVIDER_PRIORITY) {

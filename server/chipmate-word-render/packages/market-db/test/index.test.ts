@@ -15,10 +15,10 @@ const archive = resolve(repo, "docs/chipmate-skill-market-alignment-evidence/g0/
 const source = resolve(repo, ".kilo/skills/source-backed-detail-design")
 
 test("database schema uses ordered migrations", () => {
-  assert.equal(MARKET_DB_SCHEMA_VERSION, 6)
+  assert.equal(MARKET_DB_SCHEMA_VERSION, 7)
   assert.deepEqual(
     MIGRATIONS.map((migration) => migration.version),
-    [1, 2, 3, 4, 5, 6],
+    [1, 2, 3, 4, 5, 6, 7],
   )
 })
 
@@ -45,7 +45,7 @@ test("worker owns import, revisions, FTS, state, metrics, and legacy export", { 
         foreignKeys: health.foreignKeys,
         busyTimeout: health.busyTimeout,
       },
-      { available: true, schemaVersion: 6, journalMode: "wal", foreignKeys: true, busyTimeout: 5000 },
+      { available: true, schemaVersion: 7, journalMode: "wal", foreignKeys: true, busyTimeout: 5000 },
     )
 
     const first = await db.importLegacy(legacy)
@@ -370,6 +370,68 @@ test("worker validates, repairs, publishes, deduplicates, versions, and unpublis
     })
     assert.equal(republished.status, "PUBLISHED")
     assert.equal(republished.release?.revision, 3)
+    const undone = await db.undoPublication({
+      id: "publication-undo-6",
+      ownerId: input.ownerId,
+      ownerName: input.ownerName,
+      runId: republished.id,
+      idempotencyKey: "undo-idempotency-0006",
+    })
+    assert.equal(undone.status, "UNDONE")
+    assert.equal(await db.get("new-skill"), undefined)
+    assert.equal((await db.release("new-skill"))?.revision, 3)
+    assert.equal(
+      (
+        await db.undoPublication({
+          id: "publication-undo-replay",
+          ownerId: input.ownerId,
+          ownerName: input.ownerName,
+          runId: republished.id,
+          idempotencyKey: "undo-idempotency-0006",
+        })
+      ).status,
+      "UNDONE",
+    )
+    await writeFile(
+      join(source, "skill.md"),
+      "---\nname: New Skill\ndescription: Fourth release\nversion: 1.3.0\n---\n\n# New Skill\n\nFourth body.\n",
+    )
+    await writeFile(
+      join(source, "skill.json"),
+      `${JSON.stringify({ id: "new-skill", semver: "1.3.0", category: "general", tags: ["portable"] })}\n`,
+    )
+    pack()
+    const fourth = await db.startPublication({
+      ...input,
+      id: "publication-7",
+      idempotencyKey: "idempotency-0007",
+      archive: await readFile(archive),
+    })
+    await writeFile(
+      join(source, "skill.md"),
+      "---\nname: New Skill\ndescription: Fifth release\nversion: 1.4.0\n---\n\n# New Skill\n\nFifth body.\n",
+    )
+    await writeFile(
+      join(source, "skill.json"),
+      `${JSON.stringify({ id: "new-skill", semver: "1.4.0", category: "general", tags: ["portable"] })}\n`,
+    )
+    pack()
+    await db.startPublication({
+      ...input,
+      id: "publication-8",
+      idempotencyKey: "idempotency-0008",
+      archive: await readFile(archive),
+    })
+    await assert.rejects(
+      db.undoPublication({
+        id: "publication-undo-stale",
+        ownerId: input.ownerId,
+        ownerName: input.ownerName,
+        runId: fourth.id,
+        idempotencyKey: "undo-idempotency-stale",
+      }),
+      /STALE_PUBLICATION/,
+    )
   } finally {
     await db.close()
     await rm(root, { recursive: true, force: true })

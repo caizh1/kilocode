@@ -1,6 +1,7 @@
 import * as path from "path"
 import os from "os"
 import { Filesystem } from "../util/filesystem"
+import { ProductProfile } from "./product-profile"
 
 export namespace KilocodePaths {
   const home = () => process.env.HOME || process.env.USERPROFILE || os.homedir()
@@ -12,6 +13,8 @@ export namespace KilocodePaths {
    * - Linux: ~/.config/Code/User/globalStorage/kilocode.kilo-code
    */
   export function vscodeGlobalStorage(): string {
+    const storage = ProductProfile.storage()
+    if (storage) return path.join(storage, "config")
     const home = os.homedir()
     switch (process.platform) {
       case "darwin":
@@ -31,6 +34,8 @@ export namespace KilocodePaths {
 
   /** Global Kilo directories in user home: ~/.kilocode and ~/.kilo (legacy first, .kilo wins later) */
   export function globalDirs(): string[] {
+    const config = ProductProfile.config()
+    if (config) return [config]
     return [path.join(home(), ".kilocode"), path.join(home(), ".kilo")]
   }
 
@@ -73,7 +78,7 @@ export namespace KilocodePaths {
     // Returns parent directories (not skills/) because
     // the glob pattern "skills/[*]/SKILL.md" is applied from the parent
     // Loaded last so project-level skills take precedence over global
-    for (const target of [".kilocode", ".kilo"] as const) {
+    for (const target of ProductProfile.dirs) {
       const projectDirs = await Array.fromAsync(
         Filesystem.up({
           targets: [target],

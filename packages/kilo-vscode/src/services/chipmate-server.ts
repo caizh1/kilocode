@@ -4,61 +4,30 @@ import {
   CHIPMATE_SERVER_KEY,
   ChipmateServerUrlError,
   deriveChipmateServerEndpoints,
-  extractChipmateServerOrigin,
   normalizeChipmateServerBaseUrl,
   type ChipmateServerState,
   type ChipmateServerTestResult,
 } from "../shared/chipmate-server"
 
-const LEGACY = [
-  { section: "kilo.marketplace", key: "baseUrl", suffix: "/marketplace" },
-  { section: "kilo.documents", key: "wordRender.remoteEndpoint", suffix: "/render/word" },
-  { section: "kilo.documents", key: "mermaidRender.remoteEndpoint", suffix: "/render/mermaid" },
-] as const
-
 const REQUIRED = ["chromium", "mermaid", "soffice", "pdftoppm", "pdfinfo"] as const
 
 export function resolveChipmateServer(): ChipmateServerState {
-  const config = vscode.workspace.getConfiguration("kilo-code.new.chipmateServer")
-  const saved = config.inspect<string>("baseUrl")?.globalValue
-  if (saved !== undefined) {
-    try {
-      return { baseUrl: normalizeChipmateServerBaseUrl(saved), source: "saved" }
-    } catch (err) {
-      return {
-        baseUrl: saved,
-        source: "invalid",
-        error: err instanceof Error ? err.message : String(err),
-      }
+  const config = vscode.workspace.getConfiguration("chipmate.v2.chipmateServer")
+  const values = config.inspect<string>("baseUrl")
+  const saved = values?.globalValue
+  const baseUrl = saved ?? values?.defaultValue ?? CHIPMATE_SERVER_DEFAULT
+  try {
+    return {
+      baseUrl: normalizeChipmateServerBaseUrl(baseUrl),
+      source: saved === undefined ? "default" : "saved",
+    }
+  } catch (err) {
+    return {
+      baseUrl,
+      source: "invalid",
+      error: err instanceof Error ? err.message : String(err),
     }
   }
-
-  const values = LEGACY.flatMap((item) => {
-    const value = vscode.workspace.getConfiguration(item.section).inspect<string>(item.key)?.globalValue
-    if (value === undefined) return []
-    const origin = extractChipmateServerOrigin(value, item.suffix)
-    return [{ value, origin }]
-  })
-  if (values.length === 0) return { baseUrl: CHIPMATE_SERVER_DEFAULT, source: "default" }
-  const origins = new Set(values.flatMap((item) => (item.origin ? [item.origin] : [])))
-  if (origins.size === 1 && values.every((item) => item.origin !== undefined)) {
-    return { baseUrl: [...origins][0]!, source: "legacy" }
-  }
-  return {
-    baseUrl: CHIPMATE_SERVER_DEFAULT,
-    source: "conflict",
-    warning:
-      "Legacy remote service settings do not share one server address. Save a unified address to switch them together.",
-  }
-}
-
-export async function migrateChipmateServer(): Promise<ChipmateServerState> {
-  const state = resolveChipmateServer()
-  if (state.source !== "legacy") return state
-  await vscode.workspace
-    .getConfiguration("kilo-code.new.chipmateServer")
-    .update("baseUrl", state.baseUrl, vscode.ConfigurationTarget.Global)
-  return { ...state, source: "migrated" }
 }
 
 export async function promptChipmateServerReload() {
@@ -74,14 +43,6 @@ export function chipmateServerEndpoints() {
   const state = resolveChipmateServer()
   if (state.source === "conflict" || state.source === "invalid") return { state }
   return { state, endpoints: deriveChipmateServerEndpoints(state.baseUrl) }
-}
-
-export function legacyChipmateServerEndpoints() {
-  const market = vscode.workspace.getConfiguration("kilo.marketplace").get<string>("baseUrl", "").trim()
-  const docs = vscode.workspace.getConfiguration("kilo.documents")
-  const word = docs.get<string>("wordRender.remoteEndpoint", "").trim()
-  const mermaid = docs.get<string>("mermaidRender.remoteEndpoint", "").trim()
-  return { market, word, mermaid }
 }
 
 export async function testChipmateServer(value: string, timeout = 5000): Promise<ChipmateServerTestResult> {

@@ -1,6 +1,6 @@
 {
   "name": "chipmate-word-render",
-  "version": "0.1.10",
+  "version": "0.1.13",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -32,7 +32,8 @@
     "mermaid": "^11.15.0",
     "pngjs": "^7.0.0",
     "tsx": "4.23.0",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

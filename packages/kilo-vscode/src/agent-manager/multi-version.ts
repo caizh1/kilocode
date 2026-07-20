@@ -51,6 +51,16 @@ export function resolveVersionModels(
   }
 }
 
+export function hasVersionModels(
+  models: Array<ModelRef | undefined>,
+  fallback: ModelRef | undefined,
+  versions: number,
+): boolean {
+  return Array.from({ length: versions }, (_, index) => models[index] ?? fallback).every(
+    (model) => !!model?.providerID && !!model.modelID,
+  )
+}
+
 export interface CreatedVersion {
   worktreeId: string
   sessionId: string

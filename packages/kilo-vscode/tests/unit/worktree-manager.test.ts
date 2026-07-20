@@ -317,13 +317,13 @@ describe("WorktreeManager.createWorktree", () => {
     await expect(mgr.createWorktree({ prompt: "test" })).rejects.toThrow("not a git repository")
   })
 
-  it("creates worktrees directory under .kilo/worktrees/", async () => {
+  it("creates worktrees directory under .chipmate-v2/worktrees/", async () => {
     const root = await createTempRepo()
     const mgr = createManager(root)
 
     const result = await mgr.createWorktree({ prompt: "test" })
 
-    expect(result.path).toContain(path.join(".kilo", "worktrees"))
+    expect(result.path).toContain(path.join(".chipmate-v2", "worktrees"))
   })
 
   it("records parentBranch as default branch", async () => {
@@ -364,7 +364,7 @@ describe("WorktreeManager.removeWorktree", () => {
     const mgr = createManager(root)
 
     // Should not throw
-    await mgr.removeWorktree(path.join(root, ".kilo", "worktrees", "nonexistent"))
+    await mgr.removeWorktree(path.join(root, ".chipmate-v2", "worktrees", "nonexistent"))
   })
 
   it("removes orphaned directory that git does not know about", async () => {
@@ -372,7 +372,7 @@ describe("WorktreeManager.removeWorktree", () => {
     const mgr = createManager(root)
 
     // Create an orphaned directory (not a real worktree)
-    const orphanPath = path.join(root, ".kilo", "worktrees", "orphan")
+    const orphanPath = path.join(root, ".chipmate-v2", "worktrees", "orphan")
     await fs.mkdir(orphanPath, { recursive: true })
     await fs.writeFile(path.join(orphanPath, "file.txt"), "orphan")
 
@@ -476,7 +476,7 @@ describe("WorktreeManager.removeWorktree", () => {
       await mgr.removeWorktree(result.path)
 
       // Poll until background rm finishes (up to 5s)
-      const worktreesDir = path.join(root, ".kilo", "worktrees")
+      const worktreesDir = path.join(root, ".chipmate-v2", "worktrees")
       const deadline = Date.now() + 5000
       while (Date.now() < deadline) {
         const entries = await fs.readdir(worktreesDir)
@@ -506,7 +506,7 @@ describe("WorktreeManager.discoverWorktrees orphan cleanup", () => {
     const wt = await mgr.createWorktree({ prompt: "real-wt" })
 
     // Simulate an orphaned temp dir from an interrupted deletion
-    const orphan = path.join(root, ".kilo", "worktrees", ".kilo-delete-fake-uuid")
+    const orphan = path.join(root, ".chipmate-v2", "worktrees", ".kilo-delete-fake-uuid")
     await fs.mkdir(orphan, { recursive: true })
     await fs.writeFile(path.join(orphan, "leftover.txt"), "stale")
 
@@ -588,8 +588,8 @@ describe("WorktreeManager metadata", () => {
 
     await mgr.writeMetadata(result.path, "sess-clean-123", "feature-branch", "origin")
 
-    expect(existsSync(path.join(result.path, ".kilo", "session-id"))).toBe(false)
-    expect(existsSync(path.join(result.path, ".kilo", "metadata.json"))).toBe(false)
+    expect(existsSync(path.join(result.path, ".chipmate-v2", "session-id"))).toBe(false)
+    expect(existsSync(path.join(result.path, ".chipmate-v2", "metadata.json"))).toBe(false)
     expect(await changedFiles(result.path)).toEqual([])
   })
 
@@ -608,7 +608,7 @@ describe("WorktreeManager metadata", () => {
     const result = await mgr.createWorktree({ prompt: "legacy-test" })
 
     // Write only the legacy session-id file (no metadata.json)
-    const dir = path.join(result.path, ".kilo")
+    const dir = path.join(result.path, ".chipmate-v2")
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(path.join(dir, "session-id"), "legacy-sess-456", "utf-8")
 
@@ -681,21 +681,6 @@ describe("WorktreeManager.discoverWorktrees", () => {
     expect(found!.parentBranch).toBe("feature/my-branch")
   })
 
-  it("repairs stale gitdir refs when .kilo/worktrees already exists", async () => {
-    const root = await createTempRepo()
-    const mgr = createManager(root)
-
-    const worktree = path.join(root, ".kilo", "worktrees", "partial")
-    const gitdir = path.join(root, ".git", "worktrees", "partial", "gitdir")
-    await fs.mkdir(worktree, { recursive: true })
-    await fs.mkdir(path.dirname(gitdir), { recursive: true })
-    await fs.writeFile(gitdir, path.join(root, ".kilocode", "worktrees", "partial", ".git"), "utf-8")
-
-    await mgr.discoverWorktrees()
-
-    const fixed = await fs.readFile(gitdir, "utf-8")
-    expect(fixed).toContain(path.join(root, ".kilo", "worktrees", "partial", ".git"))
-  })
 })
 
 // ---------------------------------------------------------------------------
@@ -710,21 +695,19 @@ describe("WorktreeManager.ensureGitExclude", () => {
     await mgr.ensureGitExclude()
 
     const content = await fs.readFile(path.join(root, ".git", "info", "exclude"), "utf-8")
-    expect(content).toContain(".kilo/worktrees/")
-    expect(content).toContain(".kilo/agent-manager.json")
+    expect(content).toContain(".chipmate-v2/worktrees/")
+    expect(content).toContain(".chipmate-v2/agent-manager.json")
   })
 
-  it("adds only specific legacy Agent Manager paths", async () => {
+  it("does not add official Kilo Agent Manager paths", async () => {
     const root = await createTempRepo()
     const mgr = createManager(root)
 
     await mgr.ensureGitExclude()
 
     const content = await fs.readFile(path.join(root, ".git", "info", "exclude"), "utf-8")
-    expect(content).toContain(".kilocode/worktrees/")
-    expect(content).toContain(".kilocode/agent-manager.json")
-    expect(content).toContain(".kilocode/setup-script")
-    expect(content).not.toContain("\n.kilocode/\n")
+    expect(content).not.toContain(".kilo/worktrees/")
+    expect(content).not.toContain(".kilocode/worktrees/")
   })
 
   it("is idempotent -- does not duplicate entries", async () => {
@@ -736,7 +719,7 @@ describe("WorktreeManager.ensureGitExclude", () => {
     await mgr.ensureGitExclude()
 
     const content = await fs.readFile(path.join(root, ".git", "info", "exclude"), "utf-8")
-    const count = content.split(".kilo/worktrees/").length - 1
+    const count = content.split(".chipmate-v2/worktrees/").length - 1
     expect(count).toBe(1)
   })
 })

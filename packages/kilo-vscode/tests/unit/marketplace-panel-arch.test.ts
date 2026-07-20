@@ -17,6 +17,7 @@ const aligned = fs.readFileSync(
   path.join(root, "webview-ui/src/components/marketplace/AlignedSkillMarket.tsx"),
   "utf-8",
 )
+const install = fs.readFileSync(path.join(root, "webview-ui/src/components/marketplace/InstallModal.tsx"), "utf-8")
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8")) as {
   contributes: { commands: Array<{ command: string; title: string }> }
 }
@@ -56,8 +57,8 @@ describe("standalone Marketplace architecture", () => {
     expect(panel).toContain("正在验证市场用户...")
     expect(panel).toContain("市场用户验证失败：")
     expect(list).toContain('t("marketplace.aligned.user")')
-    expect(commandTitle("kilo-code.new.marketplaceButtonClicked")).toBe("市场")
-    expect(commandTitle("kilo-code.new.sidebarTitle.marketplaceButtonClicked")).toBe("市场")
+    expect(commandTitle("chipmate.v2.marketplaceButtonClicked")).toBe("市场")
+    expect(commandTitle("chipmate.v2.sidebarTitle.marketplaceButtonClicked")).toBe("市场")
   })
 
   it("uses icon actions for Skill stars and confirmed removal", () => {
@@ -65,6 +66,17 @@ describe("standalone Marketplace architecture", () => {
     expect(card).toContain('icon="trash"')
     expect(card).not.toContain("🌟")
     expect(view).toContain("<RemoveDialog")
+  })
+
+  it("shows aligned Skill risk badges and requires confirmation before risky installation", () => {
+    expect(card).toContain("marketplace-risk-badge")
+    expect(card).toContain('risk().level === "none"')
+    expect(aligned).toContain("<SkillRiskPanel")
+    expect(aligned).toContain('item.riskLevel !== "none"')
+    expect(install).toContain("riskAccepted")
+    expect(install).toContain('props.item.risk?.level !== "none"')
+    expect(install).toContain('type="checkbox"')
+    expect(install).not.toContain("position: absolute")
   })
 
   it("publishes installed Skill snapshots from their cards and uses native local source pickers", () => {

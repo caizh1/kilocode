@@ -209,7 +209,7 @@ function config(
   const values = { ...initial }
   const updates: Array<[string, string | undefined, vscode.ConfigurationTarget]> = []
   const detail = (name: "provider" | "model") => ({
-    key: `kilo-code.new.autocomplete.${name}`,
+    key: `chipmate.v2.autocomplete.${name}`,
     globalValue: scope === "global" ? values[name] : undefined,
     workspaceValue: scope === "workspace" ? values[name] : undefined,
     workspaceFolderValue: scope === "workspace-folder" ? values[name] : undefined,

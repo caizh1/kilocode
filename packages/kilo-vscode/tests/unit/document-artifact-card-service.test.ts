@@ -54,7 +54,7 @@ describe("artifactManifestToCard", () => {
     const value = state()
     install(value)
     const card = artifactManifestToCard({
-      artifactDir: ".kilo/artifacts/render-1",
+      artifactDir: ".chipmate-v2/artifacts/render-1",
       webview: {
         asWebviewUri: (uri: { fsPath: string }) => ({ toString: () => `vscode-webview://safe${uri.fsPath}` }),
       } as never,
@@ -69,11 +69,13 @@ describe("artifactManifestToCard", () => {
     })
 
     expect(card.quality).toBe("warning")
-    expect(card.links.some((link) => link.kind === "pdf" && link.path === ".kilo/artifacts/render-1/design.pdf")).toBe(
+    expect(
+      card.links.some((link) => link.kind === "pdf" && link.path === ".chipmate-v2/artifacts/render-1/design.pdf"),
+    ).toBe(
       true,
     )
     expect(card.links.find((link) => link.kind === "page-png")?.webviewUri).toBe(
-      "vscode-webview://safe/workspace/.kilo/artifacts/render-1/rendered/page-001.png",
+      "vscode-webview://safe/workspace/.chipmate-v2/artifacts/render-1/rendered/page-001.png",
     )
     expect(card.links.some((link) => link.kind === "diagnostics")).toBe(true)
   })
@@ -83,7 +85,7 @@ describe("artifactManifestToCard", () => {
     value.workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-document-artifacts-"))
     install(value)
 
-    const artifactDir = path.join(value.workspaceRoot, ".kilo", "artifacts", "sample")
+    const artifactDir = path.join(value.workspaceRoot, ".chipmate-v2", "artifacts", "sample")
     await fs.mkdir(artifactDir, { recursive: true })
     await fs.writeFile(
       path.join(artifactDir, "artifact.json"),
@@ -93,15 +95,15 @@ describe("artifactManifestToCard", () => {
 
     const context = { subscriptions: [] as Array<{ dispose: () => void }> }
     registerDocumentArtifactCommands(context as never)
-    await value.registeredCommands.get("kilo-code.new.documents.exportDiagnostics")?.()
+    await value.registeredCommands.get("chipmate.v2.documents.exportDiagnostics")?.()
 
-    const artifactRoot = path.join(value.workspaceRoot, ".kilo", "artifacts")
+    const artifactRoot = path.join(value.workspaceRoot, ".chipmate-v2", "artifacts")
     const diagnosticsFile = (await fs.readdir(artifactRoot)).find((entry) =>
       /^artifact-diagnostics-.*\.json$/.test(entry),
     )
     expect(diagnosticsFile).toBeDefined()
     const diagnostics = JSON.parse(await fs.readFile(path.join(artifactRoot, diagnosticsFile!), "utf8"))
-    expect(diagnostics.root).toBe(".kilo/artifacts")
+    expect(diagnostics.root).toBe(".chipmate-v2/artifacts")
     expect(diagnostics.artifacts[0].manifest.title).toBe("Sample")
     expect(value.executedCommands).toContainEqual({
       command: "vscode.open",
@@ -123,7 +125,7 @@ describe("artifactManifestToCard", () => {
     value.workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-document-artifacts-repeat-"))
     install(value)
 
-    const artifactRoot = path.join(value.workspaceRoot, ".kilo", "artifacts")
+    const artifactRoot = path.join(value.workspaceRoot, ".chipmate-v2", "artifacts")
     const artifactDir = path.join(artifactRoot, "sample")
     await fs.mkdir(artifactDir, { recursive: true })
     await fs.writeFile(
@@ -135,7 +137,7 @@ describe("artifactManifestToCard", () => {
 
     const context = { subscriptions: [] as Array<{ dispose: () => void }> }
     registerDocumentArtifactCommands(context as never)
-    await value.registeredCommands.get("kilo-code.new.documents.exportDiagnostics")?.()
+    await value.registeredCommands.get("chipmate.v2.documents.exportDiagnostics")?.()
 
     const diagnosticsFiles = (await fs.readdir(artifactRoot)).filter((entry) =>
       /^artifact-diagnostics-.*\.json$/.test(entry),
@@ -144,6 +146,6 @@ describe("artifactManifestToCard", () => {
     expect(generated).toBeDefined()
     const diagnostics = JSON.parse(await fs.readFile(path.join(artifactRoot, generated!), "utf8"))
     expect(diagnostics.artifacts).toHaveLength(1)
-    expect(diagnostics.artifacts[0].artifactDir).toBe(".kilo/artifacts/sample")
+    expect(diagnostics.artifacts[0].artifactDir).toBe(".chipmate-v2/artifacts/sample")
   })
 })

@@ -16,6 +16,7 @@ import PROMPT_ORCHESTRATOR from "../../agent/prompt/orchestrator.txt"
 import PROMPT_ASK from "../../agent/prompt/ask.txt"
 import PROMPT_EXPLORE from "../../agent/prompt/explore.txt"
 import { applyInternalIndexingDefaults, isInternalOffline } from "../internal-offline"
+import { ProductProfile } from "../product-profile"
 
 export const bash: Record<string, "allow" | "ask" | "deny"> = {
   "*": "ask",
@@ -186,7 +187,7 @@ function askEditGuard() {
 function planEditRules(worktree: string) {
   return {
     "*": "deny" as const,
-    [path.join(".kilo", "plans", "*.md")]: "allow" as const,
+    [path.join(ProductProfile.label(), "plans", "*.md")]: "allow" as const,
     [path.join("plans", "*.md")]: "allow" as const,
     [path.join(".plans", "*.md")]: "allow" as const,
     [path.join(".opencode", "plans", "*.md")]: "allow" as const,
@@ -578,6 +579,11 @@ export async function remove(input: { name: string; agent?: AgentInfo; dirs: str
 
   if (await removeConfigAgent(input.name, input.directory)) found = true
 
+  if (ProductProfile.chipmate) {
+    if (!found) throw new RemoveError({ name: input.name, message: "no agent file found on disk" })
+    return
+  }
+
   // 2. Remove from legacy .kilocodemodes YAML files (read by ModesMigrator)
   const { ModesMigrator } = await import("@/kilocode/modes-migrator")
   const { KilocodePaths } = await import("@/kilocode/paths")
@@ -612,10 +618,7 @@ export async function remove(input: { name: string; agent?: AgentInfo; dirs: str
 
 async function removeConfigAgent(name: string, directory: string) {
   const { KilocodeConfigOverlay } = await import("@/kilocode/config/overlay")
-  const files = [
-    KilocodeConfigOverlay.globalTarget(),
-    await KilocodeConfigOverlay.projectTarget({ directory }),
-  ]
+  const files = [KilocodeConfigOverlay.globalTarget(), await KilocodeConfigOverlay.projectTarget({ directory })]
   let found = false
 
   for (const file of new Set(files)) {
@@ -629,9 +632,8 @@ async function removeConfigAgent(name: string, directory: string) {
     const opts = { formattingOptions: { insertSpaces: true, tabSize: 2 } }
     const next = applyEdits(text, modify(text, ["agent", name], undefined, opts))
     const parsed = parseJsonc(next)
-    const final = parsed.default_agent === name
-      ? applyEdits(next, modify(next, ["default_agent"], undefined, opts))
-      : next
+    const final =
+      parsed.default_agent === name ? applyEdits(next, modify(next, ["default_agent"], undefined, opts)) : next
     await Bun.write(file, final)
     found = true
   }

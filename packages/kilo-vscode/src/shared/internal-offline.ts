@@ -1,6 +1,8 @@
 declare const __CHIPMATE_INTERNAL_OFFLINE__: boolean
 declare const __CHIPMATE_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL__: string | undefined
 
+export const INTERNAL_OFFLINE_CONTEXT = "chipmate.v2.internalOffline"
+
 export const INTERNAL_OFFLINE_INDEXING_DEFAULTS = {
   provider: "openai-compatible",
   model: "qwen3-embedding-8b",

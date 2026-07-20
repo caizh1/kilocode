@@ -1,4 +1,4 @@
-import * as os from "os"
+import * as path from "path"
 import * as vscode from "vscode"
 import { MarketplaceService } from "."
 import { fetchMarketplaceData, type MarketplaceActionContext } from "./actions"
@@ -6,7 +6,7 @@ import { selectSuggestions, showSuggestionNotification, suggestionSlug } from ".
 import type { KiloConnectionService } from "../cli-backend"
 import type { MarketplaceItem } from "./types"
 
-const DISMISSED_KEY = "kilo.marketplace.dismissedSuggestions"
+const DISMISSED_KEY = "chipmate.v2.marketplace.dismissedSuggestions"
 const DEBOUNCE = 1500
 
 /** Opens the marketplace install flow for a suggested item. */
@@ -18,7 +18,7 @@ export type InstallHandler = (item: MarketplaceItem) => void
  * install. Runs in the background, independent of the marketplace panel.
  */
 export class MarketplaceNotifier implements vscode.Disposable {
-  private readonly marketplace = new MarketplaceService()
+  private readonly marketplace: MarketplaceService
   private disposables: vscode.Disposable[] = []
   private timer: ReturnType<typeof setTimeout> | undefined
   private generation = 0
@@ -31,6 +31,7 @@ export class MarketplaceNotifier implements vscode.Disposable {
     private readonly context: vscode.ExtensionContext,
     private readonly install: InstallHandler,
   ) {
+    this.marketplace = new MarketplaceService(path.join(context.globalStorageUri.fsPath, "config"))
     this.disposables.push(
       vscode.workspace.onDidChangeWorkspaceFolders(() => this.schedule()),
       vscode.extensions.onDidChange(() => this.schedule()),
@@ -75,10 +76,6 @@ export class MarketplaceNotifier implements vscode.Disposable {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
   }
 
-  private directory(): string {
-    return this.project() ?? os.homedir()
-  }
-
   private roots(): vscode.Uri[] {
     return vscode.workspace.workspaceFolders?.map((folder) => folder.uri) ?? []
   }
@@ -89,12 +86,12 @@ export class MarketplaceNotifier implements vscode.Disposable {
 
   private async scan(): Promise<void> {
     const generation = ++this.generation
-    const data = await fetchMarketplaceData(this.ctx, this.project(), this.directory(), this.roots()).catch(
-      (err: unknown) => {
-        console.warn("[Kilo New] Marketplace suggestion scan failed:", err)
-        return undefined
-      },
-    )
+    const project = this.project()
+    if (!project) return
+    const data = await fetchMarketplaceData(this.ctx, project, project, this.roots()).catch((err: unknown) => {
+      console.warn("[Kilo New] Marketplace suggestion scan failed:", err)
+      return undefined
+    })
     if (!data || generation !== this.generation) return
 
     const installed = new Set([

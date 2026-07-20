@@ -35,7 +35,6 @@ import type {
   RunStatus,
   PRStatus,
   AgentManagerPRStatusMessage,
-  AgentManagerMode,
   ManagedSessionState,
   SectionState,
   SessionInfo,
@@ -105,8 +104,6 @@ import { DiffPanel } from "./DiffPanel"
 import { createRevertFile } from "./revert-file"
 import { FullScreenDiffView } from "../diff-viewer/FullScreenDiffView"
 import { ApplyDialog } from "./ApplyDialog"
-import { AgentConsoleSurface } from "./AgentConsoleSurface"
-import { createConsoleController } from "./console-controller"
 import { groupApplyConflicts } from "./apply-conflicts"
 import type { ReviewComment } from "../diff-viewer/review-comments"
 import { clearReviewComposer, createReviewComposer } from "../diff-viewer/review-annotations"
@@ -136,6 +133,7 @@ import { createSidebarCollapse } from "./sidebar-collapse"
 import { SidebarToggleButton } from "./SidebarToggleButton"
 import { setTabWidths } from "./tab-widths"
 import { buildShortcutCategories } from "./shortcuts"
+import { isInternalOfflineBuild } from "../../src/shared/internal-offline"
 import { tracker } from "./telemetry"
 import "./agent-manager.css"
 import "./agent-manager-review.css"
@@ -197,6 +195,7 @@ const defaultBindings: Record<string, string> = {
 import { parseBindingTokens } from "./keybind-tokens"
 
 export const AgentManagerContent: Component = () => {
+  const internal = isInternalOfflineBuild()
   const { t } = useLanguage()
   const session = useSession()
   const vscode = useVSCode()
@@ -286,11 +285,6 @@ export const AgentManagerContent: Component = () => {
   // of the focused terminal tab, if any — takes precedence over
   // session/pending/review when deriving the visible tab.
   const terms = createTerminalState(selection)
-  const [mode, setMode] = createSignal<AgentManagerMode>("manager")
-  const consoleMode = () => mode() === "console"
-  const [consoleInputMode, setConsoleInputMode] = createSignal<"agent" | "shell">("agent")
-  const [shellPending, setShellPending] = createSignal(false)
-
   // Inline delete confirmation: tracks which worktree is awaiting a second click/press
   const [pendingDelete, setPendingDelete] = createSignal<string | null>(null)
   let pendingDeleteTimer: ReturnType<typeof setTimeout> | undefined
@@ -511,6 +505,7 @@ export const AgentManagerContent: Component = () => {
   const openWindow = metrics.click("open_worktree_window", "tab_toolbar", openWorktreeDirectory)
 
   const openSelectedPR = () => {
+    if (internal) return
     const sel = selection()
     if (!sel || sel === LOCAL || !prStatuses()[sel]) return
     metrics.track("open_pull_request", "keyboard_shortcut")
@@ -1084,7 +1079,7 @@ export const AgentManagerContent: Component = () => {
       else if (msg.action === "closeTab") closeActiveTab()
       else if (msg.action === "newWorktree") handleNewWorktreeOrPromote()
       else if (msg.action === "openWorktree") openWorktreeDirectory()
-      else if (msg.action === "openPR") openSelectedPR()
+      else if (msg.action === "openPR" && !internal) openSelectedPR()
       else if (msg.action === "runScript") runSelected()
       else if (msg.action === "advancedWorktree") showAdvancedWorktreeDialog()
       else if (msg.action === "closeWorktree") closeSelectedWorktree()
@@ -1214,12 +1209,7 @@ export const AgentManagerContent: Component = () => {
       onCreated: (contextKey, terminalId) => appendToTabOrder(contextKey, terminalId),
     })
     const unsubTerminals = vscode.onMessage((msg) => {
-      ctl.terminal(msg.type)
       terminalDispatch(msg)
-    })
-
-    const unsubMode = vscode.onMessage((msg) => {
-      if (msg.type === "agentManager.openMode") ctl.open(msg.mode)
     })
 
     const unsub = vscode.onMessage((msg) => {
@@ -1518,7 +1508,6 @@ export const AgentManagerContent: Component = () => {
       unsubSessions()
       unsubRun()
       unsubTerminals()
-      unsubMode()
       unsub()
     })
   })
@@ -1791,7 +1780,7 @@ export const AgentManagerContent: Component = () => {
   }
 
   const handleShowKeyboardShortcuts = () => {
-    const categories = buildShortcutCategories(kb(), t)
+    const categories = buildShortcutCategories(kb(), t, !internal)
     dialog.show(() => (
       <Dialog title={t("agentManager.shortcuts.title")} fit>
         <div class="am-shortcuts">
@@ -1834,7 +1823,9 @@ export const AgentManagerContent: Component = () => {
   const showAdvancedWorktreeDialog = () => {
     if (!loaded()) return
     expandSidebar()
-    dialog.show(() => <NewWorktreeDialog onClose={() => dialog.close()} defaultBaseBranch={repoDefaultBranch()} />)
+    dialog.show(() => (
+      <NewWorktreeDialog onClose={() => dialog.close()} defaultBaseBranch={repoDefaultBranch()} allowPR={!internal} />
+    ))
   }
 
   const confirmDeleteWorktree = (worktreeId: string) => {
@@ -2025,27 +2016,6 @@ export const AgentManagerContent: Component = () => {
     getSelection: selection,
     LOCAL,
     REVIEW_TAB_ID,
-  })
-
-  const ctl = createConsoleController({
-    state: terms,
-    pending: shellPending,
-    setPending: setShellPending,
-    setMode,
-    reset: () => {
-      setSelection(LOCAL)
-      setHistory(false)
-      setReviewActive(false)
-      setSidePanel(null)
-    },
-    current: () => localSessions()[0],
-    isPending,
-    select: session.selectSession,
-    selectPending: setActivePendingId,
-    clear: session.clearCurrentSession,
-    post: (message) => vscode.postMessage(message as never),
-    focus: () => window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { restore: true } })),
-    local: LOCAL,
   })
 
   const handleReviewTabMouseDown = (e: MouseEvent) => {
@@ -2462,12 +2432,18 @@ export const AgentManagerContent: Component = () => {
                                   closeKeybind={kb().closeWorktree ?? ""}
                                   openKeybind={kb().openWorktree ?? ""}
                                   pr={
-                                    prStatuses()[wt.id] !== undefined ? (prStatuses()[wt.id] ?? undefined) : undefined
+                                    !internal && prStatuses()[wt.id] !== undefined
+                                      ? (prStatuses()[wt.id] ?? undefined)
+                                      : undefined
                                   }
                                   runStatus={runStatuses()[wt.id]}
-                                  onOpenPR={metrics.click("open_pull_request", "worktree_menu", () =>
-                                    vscode.postMessage({ type: "agentManager.openPR", worktreeId: wt.id }),
-                                  )}
+                                  onOpenPR={
+                                    internal
+                                      ? undefined
+                                      : metrics.click("open_pull_request", "worktree_menu", () =>
+                                          vscode.postMessage({ type: "agentManager.openPR", worktreeId: wt.id }),
+                                        )
+                                  }
                                   sections={sections()}
                                   currentSectionId={wt.sectionId}
                                   onMoveToSection={(secId) => moveToSection([wt.id], secId)}
@@ -3003,15 +2979,9 @@ export const AgentManagerContent: Component = () => {
             <div
               class={`am-detail-content ${sidePanel() !== null ? "am-detail-split" : ""} ${reviewActive() ? "am-detail-content-hidden" : ""}`}
             >
-              <AgentConsoleSurface
-                console={consoleMode}
-                terminalActive={() => terms.activeId() !== undefined}
-                terminal={renderTerminalLayer({
-                  state: terms,
-                  console: consoleMode,
-                  focus: () => consoleInputMode() === "shell",
-                })}
-              >
+              <div class={`am-main-pane ${terms.activeId() ? "am-main-pane-terminal-active" : ""}`}>
+                {/* Keep terminal tabs mounted so output streams across worktree switches. */}
+                {renderTerminalLayer({ state: terms })}
                 <div class="am-chat-wrapper">
                   <ChatView
                     onSelectSession={(id) => {
@@ -3040,16 +3010,6 @@ export const AgentManagerContent: Component = () => {
                     continueInWorktree={selection() === LOCAL}
                     promptBoxId={`agent-manager:${selection() ?? "unassigned"}`}
                     pendingSessionID={selection() === LOCAL ? activePendingId() : undefined}
-                    consoleInput={
-                      consoleMode()
-                        ? {
-                            mode: consoleInputMode,
-                            setMode: setConsoleInputMode,
-                            pending: shellPending,
-                            onShell: ctl.send,
-                          }
-                        : undefined
-                    }
                   />
                   <Show when={readOnly()}>
                     <div class="am-readonly-banner">
@@ -3084,7 +3044,7 @@ export const AgentManagerContent: Component = () => {
                     </div>
                   </Show>
                 </div>
-              </AgentConsoleSurface>
+              </div>
               <Show when={sidePanel() !== null}>
                 <div class="am-diff-resize" style={{ width: `${diffWidth()}px` }}>
                   <ResizeHandle

@@ -1,0 +1,69 @@
+{
+  "cases": [
+    {
+      "name": "ancestor-descendant-compact-prompt",
+      "prompt": "生成 Platform Worker 模块详细设计",
+      "explicitSubjects": [],
+      "namedModules": ["Platform", "Worker"],
+      "relations": [{"ancestor": "Platform", "descendant": "Worker", "evidenceIds": ["SRC-HIER-001"]}],
+      "expected": {
+        "status": "resolved",
+        "contextParents": ["Platform"],
+        "target": "Worker",
+        "reason": "deepest-confirmed-descendant"
+      }
+    },
+    {
+      "name": "single-module-prompt",
+      "prompt": "生成 Worker 模块详细设计",
+      "explicitSubjects": [],
+      "namedModules": ["Worker"],
+      "relations": [],
+      "expected": {
+        "status": "resolved",
+        "contextParents": [],
+        "target": "Worker",
+        "reason": "single-named-module"
+      }
+    },
+    {
+      "name": "ancestor-as-explicit-subject",
+      "prompt": "以 Platform 为主体生成详细设计",
+      "explicitSubjects": ["Platform"],
+      "namedModules": ["Platform", "Worker"],
+      "relations": [{"ancestor": "Platform", "descendant": "Worker", "evidenceIds": ["SRC-HIER-001"]}],
+      "expected": {
+        "status": "resolved",
+        "contextParents": [],
+        "target": "Platform",
+        "reason": "explicit-subject"
+      }
+    },
+    {
+      "name": "sibling-modules-ambiguous",
+      "prompt": "生成 Reader Writer 模块详细设计",
+      "explicitSubjects": [],
+      "namedModules": ["Reader", "Writer"],
+      "relations": [],
+      "expected": {
+        "status": "clarification_required",
+        "contextParents": [],
+        "target": null,
+        "reason": "multiple-deepest-candidates"
+      }
+    },
+    {
+      "name": "explicit-multiple-subjects",
+      "prompt": "分别生成 Platform 和 Worker 模块的详细设计",
+      "explicitSubjects": ["Platform", "Worker"],
+      "namedModules": ["Platform", "Worker"],
+      "relations": [{"ancestor": "Platform", "descendant": "Worker", "evidenceIds": ["SRC-HIER-001"]}],
+      "expected": {
+        "status": "clarification_required",
+        "contextParents": [],
+        "target": null,
+        "reason": "multiple-explicit-subjects-require-delivery-split"
+      }
+    }
+  ]
+}

@@ -9,28 +9,32 @@ describe("update-check manifest contributions", () => {
 
   it("declares the manual check command", () => {
     expect(commands).toContainEqual({
-      command: "kilo-code.new.checkForUpdates",
+      command: "chipmate.v2.checkForUpdates",
       title: "Kilo: Check for Updates",
     })
   })
 
   it("declares internal VSIX update-check settings", () => {
-    expect(props["kilo.updateCheck.enabled"]).toMatchObject({ type: "boolean", default: true })
-    expect(props["kilo.updateCheck.autoInstall"]).toMatchObject({ type: "boolean", default: true })
-    expect(props["kilo.updateCheck.baseUrl"]).toMatchObject({
+    expect(props["chipmate.v2.updateCheck.enabled"]).toMatchObject({ type: "boolean", default: true })
+    expect(props["chipmate.v2.updateCheck.autoInstall"]).toMatchObject({ type: "boolean", default: true })
+    expect(props["chipmate.v2.updateCheck.baseUrl"]).toMatchObject({
       type: "string",
       default: "",
       deprecationMessage: expect.any(String),
     })
-    expect(props["kilo.updateCheck.manifestFile"]).toMatchObject({
+    expect(props["chipmate.v2.updateCheck.manifestFile"]).toMatchObject({
       type: "string",
       default: "latest.json",
       deprecationMessage: expect.any(String),
     })
-    expect(props["kilo.updateCheck.checkOnStartup"]).toMatchObject({ type: "boolean", default: true })
-    expect(props["kilo.updateCheck.intervalHours"]).toMatchObject({ type: "number", default: 24 })
-    expect(props["kilo.updateCheck.timeoutMs"]).toMatchObject({ type: "number", default: 10000 })
-    expect(props["kilo.updateCheck.codeCliPath"]).toMatchObject({ type: "string", default: "code" })
-    expect(props["kilo.updateCheck.maxDownloadBytes"]).toMatchObject({ type: "number", default: 209715200 })
+    expect(props["chipmate.v2.updateCheck.checkOnStartup"]).toMatchObject({ type: "boolean", default: true })
+    expect(props["chipmate.v2.updateCheck.intervalHours"]).toMatchObject({ type: "number", default: 24 })
+    expect(props["chipmate.v2.updateCheck.timeoutMs"]).toMatchObject({ type: "number", default: 30000 })
+    expect(props["chipmate.v2.updateCheck.downloadTimeoutMs"]).toMatchObject({
+      type: "number",
+      default: 900000,
+    })
+    expect(props["chipmate.v2.updateCheck.codeCliPath"]).toMatchObject({ type: "string", default: "code" })
+    expect(props["chipmate.v2.updateCheck.maxDownloadBytes"]).toMatchObject({ type: "number", default: 268435456 })
   })
 })

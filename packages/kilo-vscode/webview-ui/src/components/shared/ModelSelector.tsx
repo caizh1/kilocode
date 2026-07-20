@@ -122,6 +122,8 @@ export interface ModelSelectorBaseProps {
   allowClear?: boolean
   /** Label shown for the clear option */
   clearLabel?: string
+  /** Label shown when no model is selected without enabling a clear option. */
+  emptyLabel?: string
   /** Include the kilo-auto/small model in the list — defaults to false */
   includeAutoSmall?: boolean
   /** Override the provider catalog for constrained selectors. */
@@ -737,6 +739,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         noProviders: language.t("dialog.model.noProviders"),
         notSet: language.t("dialog.model.notSet"),
       },
+      props.emptyLabel,
     )
   const label = () => props.label ?? language.t("dialog.model.select.title")
   const controlLabel = () => `${label()}: ${triggerLabel()}`
@@ -1119,6 +1122,7 @@ interface ModelSelectorProps {
 export const ModelSelector: Component<ModelSelectorProps> = (props) => {
   const session = useSession()
   const config = useConfig()
+  const language = useLanguage()
   const id = () => props.sessionID?.()
   const custom = createMemo(() => {
     if (config.loading()) return
@@ -1130,6 +1134,7 @@ export const ModelSelector: Component<ModelSelectorProps> = (props) => {
   return (
     <ModelSelectorBase
       value={session.selected(id())}
+      emptyLabel={language.t("dialog.model.noneSelected")}
       onSelect={(providerID, modelID) => {
         session.selectModel(providerID, modelID, id())
       }}

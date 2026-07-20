@@ -2,11 +2,11 @@ import path from "node:path"
 import fs from "node:fs"
 import ignore, { type Ignore } from "ignore"
 
-const KILOCODEIGNORE = ".kilocodeignore"
+const KILOCODEIGNORE = ".chipmate-v2ignore"
 const GITIGNORE = ".gitignore"
 
 /**
- * Patterns for sensitive environment files, applied only when no .kilocodeignore exists.
+ * Patterns for sensitive environment files, applied only when no .chipmate-v2ignore exists.
  */
 const SENSITIVE_PATTERNS = [".env", ".env.*"]
 
@@ -37,7 +37,7 @@ export class FileIgnoreController {
       return
     }
 
-    // Try .kilocodeignore first — if it exists, use only that.
+    // Try .chipmate-v2ignore first — if it exists, use only that.
     // Use existsSync to distinguish "missing" from "unreadable" — permission
     // errors on readFileSync will propagate instead of being silently swallowed.
     const kilocodeignorePath = path.join(this.workspacePath, KILOCODEIGNORE)

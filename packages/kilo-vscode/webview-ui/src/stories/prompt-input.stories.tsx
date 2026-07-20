@@ -138,13 +138,19 @@ const PromptProviders: ParentComponent<{
   speech?: boolean
   sandbox?: boolean
   busy?: boolean
+  none?: boolean
+  autoFree?: boolean
+  locale?: "en" | "zh" | "zht"
   index?: IndexingStatus
   variant?: string
 }> = (props) => {
   const base = mockSessionValue({ status: props.busy ? "busy" : "idle" })
   const [variant, setVariant] = createSignal(props.variant ?? "medium")
-  const selected = () =>
-    props.longModel ? longSelection : { providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" }
+  const selected = () => {
+    if (props.none) return null
+    if (props.autoFree) return { providerID: "kilo", modelID: "kilo-auto/free" }
+    return props.longModel ? longSelection : { providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" }
+  }
   const session = {
     ...base,
     agents: () => agents,
@@ -160,6 +166,7 @@ const PromptProviders: ParentComponent<{
   return (
     <StoryProviders
       noPadding
+      locale={props.locale}
       config={props.sandbox ? denseConfig : props.indexing ? indexingConfig : undefined}
       features={props.sandbox ? { sandboxControls: true } : undefined}
       kiloAuth={props.speech}
@@ -217,6 +224,60 @@ export const Default200: Story = {
   name: "Default — 200px",
   render: () => (
     <PromptProviders>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const NoModel420: Story = {
+  name: "No model selected — 420px",
+  render: () => (
+    <PromptProviders none>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const NoModel300: Story = {
+  name: "No model selected — 300px",
+  render: () => (
+    <PromptProviders none>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const NoModel200: Story = {
+  name: "No model selected — 200px",
+  render: () => (
+    <PromptProviders none>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const LegacyAutoFree420: Story = {
+  name: "ChipMate Auto Free compatibility — 420px",
+  render: () => (
+    <PromptProviders autoFree>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const NoModelZh420: Story = {
+  name: "No model selected — Simplified Chinese — 420px",
+  render: () => (
+    <PromptProviders none locale="zh">
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const NoModelZht420: Story = {
+  name: "No model selected — Traditional Chinese — 420px",
+  render: () => (
+    <PromptProviders none locale="zht">
       <PromptInput />
     </PromptProviders>
   ),

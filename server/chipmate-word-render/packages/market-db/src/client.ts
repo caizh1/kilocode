@@ -32,6 +32,7 @@ import type {
   SessionItem,
   SessionLookup,
   UnpublishInput,
+  UndoPublicationInput,
   ExtensionAnalyticsItem,
   ExtensionArtifactInput,
   ExtensionArtifactItem,
@@ -192,6 +193,11 @@ export class MarketDb {
     return this.call<PublicationItem>("unpublish", input)
   }
 
+  undoPublication(input: UndoPublicationInput) {
+    this.catalog = undefined
+    return this.call<PublicationItem>("undoPublication", input)
+  }
+
   events(items: EventInput[]) {
     return this.call<{ accepted: number }>("events", items)
   }
@@ -254,10 +260,6 @@ export class MarketDb {
 
   extensionPublications(ownerId: string) {
     return this.call<ExtensionPublicationItem[]>("extensionPublications", ownerId)
-  }
-
-  extensionUploadCount(ownerId: string, since: string) {
-    return this.call<number>("extensionUploadCount", { ownerId, since })
   }
 
   extensionFavorite(input: ExtensionFavoriteInput) {
