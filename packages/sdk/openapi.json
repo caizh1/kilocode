@@ -18358,6 +18358,9 @@
                         "autoConsolidate": {
                           "type": "boolean"
                         },
+                        "verbose": {
+                          "type": "boolean"
+                        },
                         "capture": {
                           "type": "object",
                           "properties": {
@@ -18479,6 +18482,7 @@
                         "scope",
                         "autoInject",
                         "autoConsolidate",
+                        "verbose",
                         "capture",
                         "limits",
                         "stats"
@@ -18613,6 +18617,9 @@
                         "autoConsolidate": {
                           "type": "boolean"
                         },
+                        "verbose": {
+                          "type": "boolean"
+                        },
                         "capture": {
                           "type": "object",
                           "properties": {
@@ -18734,6 +18741,7 @@
                         "scope",
                         "autoInject",
                         "autoConsolidate",
+                        "verbose",
                         "capture",
                         "limits",
                         "stats"
@@ -18867,6 +18875,9 @@
                         "autoConsolidate": {
                           "type": "boolean"
                         },
+                        "verbose": {
+                          "type": "boolean"
+                        },
                         "capture": {
                           "type": "object",
                           "properties": {
@@ -18988,6 +18999,7 @@
                         "scope",
                         "autoInject",
                         "autoConsolidate",
+                        "verbose",
                         "capture",
                         "limits",
                         "stats"
@@ -19112,6 +19124,9 @@
                         "autoConsolidate": {
                           "type": "boolean"
                         },
+                        "verbose": {
+                          "type": "boolean"
+                        },
                         "capture": {
                           "type": "object",
                           "properties": {
@@ -19233,6 +19248,7 @@
                         "scope",
                         "autoInject",
                         "autoConsolidate",
+                        "verbose",
                         "capture",
                         "limits",
                         "stats"
@@ -19338,6 +19354,9 @@
                         "autoConsolidate": {
                           "type": "boolean"
                         },
+                        "verbose": {
+                          "type": "boolean"
+                        },
                         "capture": {
                           "type": "object",
                           "properties": {
@@ -19459,6 +19478,7 @@
                         "scope",
                         "autoInject",
                         "autoConsolidate",
+                        "verbose",
                         "capture",
                         "limits",
                         "stats"
@@ -19510,6 +19530,9 @@
                 "type": "object",
                 "properties": {
                   "autoConsolidate": {
+                    "type": "boolean"
+                  },
+                  "verbose": {
                     "type": "boolean"
                   }
                 },
@@ -19579,6 +19602,9 @@
                         "autoConsolidate": {
                           "type": "boolean"
                         },
+                        "verbose": {
+                          "type": "boolean"
+                        },
                         "capture": {
                           "type": "object",
                           "properties": {
@@ -19700,6 +19726,7 @@
                         "scope",
                         "autoInject",
                         "autoConsolidate",
+                        "verbose",
                         "capture",
                         "limits",
                         "stats"

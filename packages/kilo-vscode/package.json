@@ -439,6 +439,11 @@
         "category": "ChipMate"
       },
       {
+        "command": "chipmate.v2.toggleChatSearch",
+        "title": "Toggle Chat Search",
+        "category": "ChipMate"
+      },
+      {
         "command": "chipmate.v2.cycleAgentMode",
         "title": "Cycle Agent Mode",
         "category": "ChipMate"

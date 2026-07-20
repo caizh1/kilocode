@@ -9084,6 +9084,7 @@ export class Memory extends HeyApiClient {
       directory?: string
       workspace?: string
       autoConsolidate?: boolean
+      verbose?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -9095,6 +9096,7 @@ export class Memory extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "autoConsolidate" },
+            { in: "body", key: "verbose" },
           ],
         },
       ],

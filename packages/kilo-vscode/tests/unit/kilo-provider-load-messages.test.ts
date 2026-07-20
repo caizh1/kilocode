@@ -592,7 +592,7 @@ describe("KiloProvider revert ordering", () => {
         id: "evt_clear",
         seq: 0,
         aggregateID: "sessionID",
-        data: { sessionID: "s1", info: { revert: null } },
+        data: { sessionID: "s1", info: mkSession() },
       },
     })
 
@@ -601,7 +601,7 @@ describe("KiloProvider revert ordering", () => {
       id: "evt_clear",
       seq: 0,
       type: "session.updated",
-      properties: { sessionID: "s1", info: { revert: null } },
+      properties: { sessionID: "s1", info: mkSession() },
     })
   })
 
@@ -669,7 +669,7 @@ describe("KiloProvider revert ordering", () => {
     error.mockRestore()
   })
 
-  it("does not restore a stale revert boundary after a newer clear update", () => {
+  it("clears a stale revert boundary from a full snapshot that omits revert", () => {
     const client = createClient()
     const { internal, sent } = makeProvider(client)
     internal.currentSession = mkSession({ messageID: "m1" })
@@ -680,7 +680,12 @@ describe("KiloProvider revert ordering", () => {
       id: "evt_000000000002",
       seq: 0,
       type: "session.updated",
-      properties: { sessionID: "s1", info: { revert: null } },
+      properties: { sessionID: "s1", info: mkSession() },
+    })
+    internal.handleEvent({
+      id: "evt_000000000003",
+      type: "message.updated",
+      properties: { sessionID: "s1", info: mkMessage("m2", "user", 2).info },
     })
     const count = sent.length
 
@@ -689,7 +694,7 @@ describe("KiloProvider revert ordering", () => {
       id: "evt_000000000001",
       seq: 0,
       type: "session.updated",
-      properties: { sessionID: "s1", info: { revert: { messageID: "m1" } } },
+      properties: { sessionID: "s1", info: mkSession({ messageID: "m1" }) },
     })
     internal.handleEvent({
       id: "evt_000000000001",
@@ -700,7 +705,10 @@ describe("KiloProvider revert ordering", () => {
     expect(internal.currentSession?.revert).toBeUndefined()
     expect(internal.revisions.get("s1")).toEqual({ id: "evt_000000000002", seq: 0 })
     expect(sent).toHaveLength(count)
-    expect(sent.at(-1)).toMatchObject({ type: "sessionUpdated", session: { id: "s1", revert: null } })
+    expect(sent.slice(-2)).toEqual([
+      expect.objectContaining({ type: "sessionUpdated", session: expect.objectContaining({ id: "s1", revert: null }) }),
+      expect.objectContaining({ type: "messageCreated", message: expect.objectContaining({ id: "m2" }) }),
+    ])
   })
 
   it("uses sequence ordering for workspace-replayed session updates", () => {
@@ -714,14 +722,14 @@ describe("KiloProvider revert ordering", () => {
       id: "evt_ffffffffffff",
       seq: 1,
       type: "session.updated",
-      properties: { sessionID: "s1", info: { revert: { messageID: "m1" } } },
+      properties: { sessionID: "s1", info: mkSession({ messageID: "m1" }) },
     })
     internal.handleEvent({
       source: "sync",
       id: "evt_000000000001",
       seq: 2,
       type: "session.updated",
-      properties: { sessionID: "s1", info: { revert: null } },
+      properties: { sessionID: "s1", info: mkSession() },
     })
 
     expect(internal.currentSession?.revert).toBeUndefined()
@@ -763,7 +771,7 @@ describe("KiloProvider revert ordering", () => {
       id: "evt_000000000001",
       seq: 0,
       type: "session.updated",
-      properties: { sessionID: "s1", info: { title: "updated" } },
+      properties: { sessionID: "s1", info: { ...mkSession(), title: "updated" } },
     })
     first.resolve({ data: mkSession() })
     await Bun.sleep(0)

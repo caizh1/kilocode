@@ -82,7 +82,7 @@ const Settings: Component<SettingsProps> = (props) => {
   const server = useServer()
   const language = useLanguage()
   const vscode = useVSCode()
-  const { isDirty, saving, canSave, saveError, saveConfig, discardConfig, features } = useConfig()
+  const { loading, isDirty, saving, canSave, saveError, saveConfig, discardConfig, features } = useConfig()
   const session = useSession()
   const [active, setActive] = createSignal(props.tab ?? "models")
   const [errorExpanded, setErrorExpanded] = createSignal(false)
@@ -168,7 +168,7 @@ const Settings: Component<SettingsProps> = (props) => {
   })
 
   createEffect(() => {
-    if (sandboxing() || active() !== "sandboxing") return
+    if (loading() || sandboxing() || active() !== "sandboxing") return
     onTabChange("experimental")
   })
 

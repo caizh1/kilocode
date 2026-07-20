@@ -66,7 +66,7 @@ describe("PromptInput sandbox toggle", () => {
 
   it("restores each prompt draft's textarea and highlight scroll positions", () => {
     expect(src).toContain("scrollDrafts")
-    expect(src).toContain("const scroll = scrollDrafts.get(key) ?? 0")
+    expect(src).toContain("const scroll = next?.scroll ?? scrollDrafts.get(key) ?? 0")
     expect(src).toContain("textareaRef.scrollTop = scroll")
     expect(src).toContain("if (highlightRef) highlightRef.scrollTop = scroll")
     expect(src).toContain("scrollDrafts.set(draftKey(), textareaRef.scrollTop)")

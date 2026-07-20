@@ -76,6 +76,7 @@ import {
   nextSelectionAfterDelete,
   adjacentHint,
   filterUnassignedSessions,
+  focusChatSearch,
   LOCAL,
 } from "./navigate"
 import {
@@ -1085,6 +1086,8 @@ export const AgentManagerContent: Component = () => {
       else if (msg.action === "closeWorktree") closeSelectedWorktree()
       else if (msg.action === "showShortcuts") handleShowKeyboardShortcuts()
       else if (msg.action === "focusInput") window.dispatchEvent(new Event("focusPrompt"))
+      else if (msg.action === "focusSearch")
+        focusChatSearch({ history: setHistory, review: setReviewActive, terminal: () => terms.setActiveId(undefined) })
       else if (msg.action === "newTerminal") termHandlers.requestNew()
       else if (msg.action === "cycleAgentMode" && document.hasFocus()) cycleAgent(1)
       else if (msg.action === "cyclePreviousAgentMode" && document.hasFocus()) cycleAgent(-1)

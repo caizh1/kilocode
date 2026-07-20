@@ -25,7 +25,7 @@ describe("agent terminal package contributions", () => {
     expect(contributes.configuration?.properties?.["chipmate.v2.agentTerminal.enabled"]).toBeUndefined()
   })
 
-  test("adds Agent Console to the sidebar title without changing existing toolbar commands", async () => {
+  test("adds Agent Console while preserving the internal-offline toolbar gates", async () => {
     const pkg = JSON.parse(await fs.readFile(packagePath, "utf8"))
     const contributes = pkg.contributes ?? {}
     const commands = contributes.commands ?? []
@@ -45,6 +45,7 @@ describe("agent terminal package contributions", () => {
     }
 
     const title = contributes.menus?.["view/title"] ?? []
+    const gated = new Set(["chipmate.v2.sidebarTitle.kiloClawOpen", "chipmate.v2.sidebarTitle.profileButtonClicked"])
     expect(
       title
         .filter((item: { when?: string }) => item.when === "view == chipmate.v2.SidebarProvider")
@@ -54,12 +55,26 @@ describe("agent terminal package contributions", () => {
           when: item.when,
         })),
     ).toEqual(
-      toolbar.map((item, index) => ({
-        command: item[0],
-        group: `navigation@${index}`,
-        when: "view == chipmate.v2.SidebarProvider",
-      })),
+      toolbar
+        .filter((item) => !gated.has(item[0]))
+        .map((item) => {
+          const position = toolbar.findIndex((entry) => entry[0] === item[0])
+          return {
+            command: item[0],
+            group: `navigation@${position}`,
+            when: "view == chipmate.v2.SidebarProvider",
+          }
+        }),
     )
+
+    for (const command of gated) {
+      const position = toolbar.findIndex((item) => item[0] === command)
+      expect(title).toContainEqual({
+        command,
+        group: `navigation@${position}`,
+        when: "view == chipmate.v2.SidebarProvider && !chipmate.v2.internalOffline",
+      })
+    }
 
     expect(contributes.menus?.commandPalette).toContainEqual({
       command: "chipmate.v2.sidebarTitle.agentTerminalOpen",
