@@ -119,6 +119,17 @@ export const dict = {
   "ui.mermaid.copyPng": "複製 PNG",
   "ui.mermaid.downloadSvg": "下載 SVG",
   "ui.mermaid.downloadPng": "下載 PNG",
+  "ui.mermaid.zoomOut": "Zoom out",
+  "ui.mermaid.zoomIn": "Zoom in",
+  "ui.mermaid.fit": "Fit diagram",
+  "ui.mermaid.openViewer": "Open diagram viewer",
+  "ui.mermaid.viewerTitle": "Mermaid diagram",
+  "ui.mermaid.viewerControls": "Diagram viewer controls",
+  "ui.mermaid.showSource": "Show Mermaid source",
+  "ui.mermaid.hideSource": "Hide Mermaid source",
+  "ui.mermaid.prepareRepair": "Prepare repair",
+  "ui.mermaid.repairPrompt":
+    "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
   // kilocode_change end
   "ui.scrollView.ariaLabel": "可捲動內容",
 

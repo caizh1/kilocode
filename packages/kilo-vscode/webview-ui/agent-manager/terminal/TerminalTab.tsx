@@ -45,6 +45,7 @@ interface Props {
   fontType?: "agentManager.terminal.fontChanged" | "agentConsole.terminal.fontChanged"
   shortcuts?: boolean
   output?: (data: string) => void
+  connection?: (state: "open" | "error" | "closed") => void
 }
 
 /** How long the ResizeObserver waits after the last size change before
@@ -205,6 +206,7 @@ export const TerminalTab: Component<Props> = (props) => {
         ws.send(data)
         return true
       })
+      props.connection?.("open")
     }
     const disposeData = term.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(data)
@@ -226,11 +228,13 @@ export const TerminalTab: Component<Props> = (props) => {
     }
     ws.onerror = () => {
       if (closed) return
+      props.connection?.("error")
       term.writeln(`\r\n\x1b[90m[${t("agentManager.terminal.connectionError")}]\x1b[0m`)
     }
     ws.onclose = () => {
       if (closed) return
       closed = true
+      props.connection?.("closed")
       term.writeln(`\r\n\x1b[90m[${t("agentManager.terminal.ended")}]\x1b[0m`)
     }
 
@@ -376,6 +380,7 @@ export const TerminalTab: Component<Props> = (props) => {
       clearTimeout(resizeTimer)
       ro.disconnect()
       disposeData.dispose()
+      closed = true
       try {
         ws.close()
       } catch (err) {

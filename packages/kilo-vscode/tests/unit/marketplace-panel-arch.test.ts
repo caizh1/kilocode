@@ -9,6 +9,10 @@ const remove = fs.readFileSync(path.join(root, "src/kilo-provider/remove-config-
 const card = fs.readFileSync(path.join(root, "webview-ui/src/components/marketplace/ItemCard.tsx"), "utf-8")
 const list = fs.readFileSync(path.join(root, "webview-ui/src/components/marketplace/MarketplaceListView.tsx"), "utf-8")
 const view = fs.readFileSync(path.join(root, "webview-ui/src/components/marketplace/MarketplaceView.tsx"), "utf-8")
+const runtime = fs.readFileSync(
+  path.join(root, "webview-ui/src/components/marketplace/MarketplaceRuntimeCard.tsx"),
+  "utf-8",
+)
 const importer = fs.readFileSync(
   path.join(root, "webview-ui/src/components/marketplace/LocalSkillImportDialog.tsx"),
   "utf-8",
@@ -28,6 +32,7 @@ describe("standalone Marketplace architecture", () => {
   it("keeps Marketplace webview cases out of KiloProvider", () => {
     for (const type of [
       "fetchMarketplaceData",
+      "verifyMarketplaceUser",
       "installMarketplaceItem",
       "removeInstalledMarketplaceItem",
       "uploadMarketplaceSkill",
@@ -43,20 +48,23 @@ describe("standalone Marketplace architecture", () => {
     }
   })
 
-  it("resolves the Marketplace user from the current provider without a manual verification flow", () => {
+  it("automatically resolves the Marketplace user and keeps a manual recovery flow", () => {
     expect(panel).toContain("await this.refreshMarketplaceUser()")
     expect(panel).toContain("this.getCurrentProviderApiKey()")
-    expect(panel).not.toContain('case "verifyMarketplaceUser"')
+    expect(panel).toContain('case "verifyMarketplaceUser"')
+    expect(panel).toContain("client.auth")
+    expect(panel).toContain(".get({ providerID: selectedProvider }")
     expect(panel).not.toContain("showInputBox")
     expect(panel).not.toContain("MARKETPLACE_API_KEY_SECRET")
-    expect(list).not.toContain("验证用户")
+    expect(runtime).toContain('t("marketplace.runtime.reverify")')
+    expect(runtime).toContain("disabled={verifying()}")
   })
 
   it("uses Chinese Market labels in the panel, identity bar, and QA toolbar", () => {
     expect(panel).toContain('"ChipMate 市场"')
     expect(panel).toContain("正在验证市场用户...")
     expect(panel).toContain("市场用户验证失败：")
-    expect(list).toContain('t("marketplace.aligned.user")')
+    expect(view).toContain("<MarketplaceRuntimeCard")
     expect(commandTitle("chipmate.v2.marketplaceButtonClicked")).toBe("市场")
     expect(commandTitle("chipmate.v2.sidebarTitle.marketplaceButtonClicked")).toBe("市场")
   })
@@ -114,6 +122,15 @@ describe("standalone Marketplace architecture", () => {
     expect(aligned).toContain("props.onUnpublish")
     expect(panel).toContain("showWarningMessage(")
     expect(panel).toContain('confirm !== "确认下架"')
+  })
+
+  it("keeps protocol details in diagnostics and exposes safe abnormal-state tooltips", () => {
+    expect(aligned).not.toContain("marketplace-identity-url")
+    expect(runtime).toContain("@kilocode/kilo-ui/tooltip")
+    expect(runtime).toContain("props.issue?.requestId")
+    expect(runtime).toContain("tabIndex={props.issue ? 0 : undefined}")
+    expect(runtime).not.toContain("position: absolute")
+    expect(view).toContain('protocol="legacy"')
   })
 
   it("keeps sidebar removal behind a narrow adapter", () => {

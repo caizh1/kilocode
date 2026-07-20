@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { createServer } from "http"
 
 import { MarketplaceApiClient } from "../../src/services/marketplace/api"
+import { MarketplaceApiError } from "../../src/services/marketplace/errors"
 
 describe("MarketplaceApiClient", () => {
   it("uses a configured skill market baseUrl in skills-only mode", async () => {
@@ -93,6 +94,110 @@ describe("MarketplaceApiClient", () => {
 
     expect(client.marketplaceBaseUrl()).toBe("http://market.test/marketplace")
     expect(client.serverBaseUrl()).toBe("http://market.test")
+  })
+
+  it("preserves safe resolver diagnostics from newer servers", async () => {
+    const server = createServer((_req, res) => {
+      res.statusCode = 502
+      res.setHeader("content-type", "application/json")
+      res.end(
+        JSON.stringify({
+          ok: false,
+          code: "new-api-error",
+          reason: "invalid-url",
+          requestId: "f00dbabe",
+        }),
+      )
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("test server did not start")
+    try {
+      const client = new MarketplaceApiClient({ baseUrl: `http://127.0.0.1:${address.port}/marketplace` })
+      const err = await client.resolveUser("sk-test-key").catch((value: unknown) => value)
+
+      expect(err).toBeInstanceOf(MarketplaceApiError)
+      expect(err).toMatchObject({
+        status: 502,
+        code: "new-api-error",
+        reason: "invalid-url",
+        requestId: "f00dbabe",
+      })
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it("keeps legacy resolver failures compatible when diagnostics are absent", async () => {
+    const err = await resolverError(502, { ok: false, code: "new-api-error" })
+
+    expect(err).toMatchObject({ status: 502, code: "new-api-error" })
+    expect(err.reason).toBeUndefined()
+    expect(err.requestId).toBeUndefined()
+  })
+
+  it("keeps the aligned catalog when favorites are unavailable and reports degradation", async () => {
+    const server = createServer((_req, res) => {
+      res.statusCode = 502
+      res.setHeader("content-type", "application/json")
+      res.end(JSON.stringify({ code: "favorites-unavailable" }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("test server did not start")
+    try {
+      const origin = `http://127.0.0.1:${address.port}`
+      const client = new MarketplaceApiClient({
+        baseUrl: `${origin}/marketplace`,
+        skillsOnly: true,
+        fetchText: async (url) => {
+          if (url.endsWith("/api/v1/capabilities")) return JSON.stringify(capabilities())
+          return JSON.stringify({
+            items: [
+              {
+                id: "documents",
+                name: "Documents",
+                description: "Document skill",
+                category: "documents",
+                latestRevision: 1,
+              },
+            ],
+          })
+        },
+      })
+
+      const result = await client.fetchAll("key")
+
+      expect(result.items).toHaveLength(1)
+      expect(result.errors).toEqual(["获取市场收藏失败：favorites-unavailable"])
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it("preserves rate limit retry metadata", async () => {
+    const err = await resolverError(429, {
+      ok: false,
+      code: "new-api-rate-limited",
+      reason: "rate-limited",
+      requestId: "rate-1",
+      retryAfter: "30",
+      upstreamStatus: 429,
+    })
+
+    expect(err).toMatchObject({
+      status: 429,
+      reason: "rate-limited",
+      requestId: "rate-1",
+      retryAfter: "30",
+      upstreamStatus: 429,
+    })
+  })
+
+  it("retains HTTP status when the resolver returns invalid JSON", async () => {
+    const err = await resolverError(502, "<html>bad gateway</html>")
+
+    expect(err).toMatchObject({ status: 502, code: "invalid-json", reason: "invalid-json" })
   })
 
   it("uses the aligned revision-pinned catalog when capabilities advertise aligned-v1", async () => {
@@ -344,5 +449,24 @@ function capabilities() {
       analytics: true,
       events: true,
     },
+  }
+}
+
+async function resolverError(status: number, body: unknown): Promise<MarketplaceApiError> {
+  const server = createServer((_req, res) => {
+    res.statusCode = status
+    res.setHeader("content-type", "application/json")
+    res.end(typeof body === "string" ? body : JSON.stringify(body))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("test server did not start")
+  try {
+    const client = new MarketplaceApiClient({ baseUrl: `http://127.0.0.1:${address.port}/marketplace` })
+    const err = await client.resolveUser("sk-test-key").catch((value: unknown) => value)
+    if (!(err instanceof MarketplaceApiError)) throw new Error("expected MarketplaceApiError")
+    return err
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 }

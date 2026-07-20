@@ -43,6 +43,7 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
       data-row-key={props.row.key}
       data-row-index={props.index}
       data-turn={props.row.turn}
+      data-session-id={props.row.message.sessionID}
       data-live={props.row.live ? "" : undefined}
       data-search-active={props.activeSearch ? "" : undefined}
     >

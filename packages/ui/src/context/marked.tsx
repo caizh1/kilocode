@@ -305,7 +305,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
             // chars, so "c++" doesn't become "c" (wrong language highlight).
             const normalized = lang ? (LANG_ALIASES[lang] ?? lang) : ""
             const safe = normalized ? normalized.replace(/[^a-zA-Z0-9_-]/g, "") : ""
-            const data = safe.toLowerCase() === "mermaid" ? "mermaid" : safe
+            const data = ["mermaid", "mmd"].includes(safe.toLowerCase()) ? "mermaid" : safe
             const attr = data ? ` class="language-${data}" data-lang="${data}"` : ' data-lang="text"'
             return `<pre><code${attr}>${escaped}</code></pre>`
           },

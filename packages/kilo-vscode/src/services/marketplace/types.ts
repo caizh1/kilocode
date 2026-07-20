@@ -130,11 +130,46 @@ export interface MarketplaceDataResponse {
   marketplacePublications?: PublicationRun[]
   marketplaceStatus?: MarketStatus
   marketplaceAnalytics?: AnalyticsSeries[]
+  marketplaceServerState?: MarketplaceServerState
+  marketplaceIdentityState?: MarketplaceIdentityState
 }
 
 export interface MarketplaceUser {
   name: string
   tokenName?: string
+}
+
+export type MarketplaceErrorReason =
+  | "invalid-url"
+  | "timeout"
+  | "invalid-json"
+  | "empty-response"
+  | "rate-limited"
+  | "upstream-http"
+  | "network"
+  | "unknown"
+
+export interface MarketplaceIssue {
+  summary: string
+  status?: number
+  code?: string
+  reason?: MarketplaceErrorReason
+  requestId?: string
+  retryAfter?: string
+  upstreamStatus?: number
+}
+
+export interface MarketplaceServerState {
+  status: "connecting" | "connected" | "degraded" | "failed"
+  checkedAt: string
+  issue?: MarketplaceIssue
+}
+
+export interface MarketplaceIdentityState {
+  status: "verifying" | "verified" | "unverified" | "failed"
+  checkedAt: string
+  user?: MarketplaceUser
+  issue?: MarketplaceIssue
 }
 
 export interface MarketCapabilities {

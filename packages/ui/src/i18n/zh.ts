@@ -119,6 +119,17 @@ export const dict = {
   "ui.mermaid.copyPng": "复制 PNG",
   "ui.mermaid.downloadSvg": "下载 SVG",
   "ui.mermaid.downloadPng": "下载 PNG",
+  "ui.mermaid.zoomOut": "缩小",
+  "ui.mermaid.zoomIn": "放大",
+  "ui.mermaid.fit": "适配图表",
+  "ui.mermaid.openViewer": "打开图表查看器",
+  "ui.mermaid.viewerTitle": "Mermaid 图表",
+  "ui.mermaid.viewerControls": "图表查看器控制",
+  "ui.mermaid.showSource": "显示 Mermaid 源码",
+  "ui.mermaid.hideSource": "隐藏 Mermaid 源码",
+  "ui.mermaid.prepareRepair": "准备修复",
+  "ui.mermaid.repairPrompt":
+    "请修复下面的 Mermaid 语法错误，并保持图表原意不变。只返回一个有效的 Mermaid fenced code block，不要添加其他解释。\n\n解析错误：\n{{error}}\n\n源码：\n```mermaid\n{{source}}\n```",
   // kilocode_change end
   "ui.scrollView.ariaLabel": "可滚动内容",
 

@@ -1,21 +1,28 @@
 [data-component="markdown"] {
   [data-component="markdown-code"][data-kind="mermaid"] {
     border: 0.5px solid var(--border-weak-base);
-    border-radius: 6px;
-    background: var(--surface-base);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--surface-base) 92%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-strong) 8%, transparent);
     overflow: hidden;
 
     > [data-slot="markdown-copy-button"] {
       display: none;
     }
+
+    > pre {
+      border-top: 0.5px solid var(--border-weak-base);
+      margin: 0;
+      max-height: 280px;
+      overflow: auto;
+    }
   }
 
   [data-component="markdown-mermaid"] {
     margin: 0;
-    padding: 12px;
     border: 0;
     background: transparent;
-    overflow: auto;
+    min-width: 0;
   }
 
   [data-component="markdown-mermaid"][data-state="rendered"] {
@@ -26,47 +33,145 @@
     align-items: center;
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 10px;
-    padding-right: 32px;
+    justify-content: space-between;
+    gap: 6px 12px;
+    padding: 8px;
+    border-bottom: 0.5px solid var(--border-weak-base);
+    background: color-mix(in srgb, var(--surface-raised-base) 82%, transparent);
   }
 
-  [data-slot="markdown-mermaid-menu-chevron"] {
+  [data-slot="markdown-mermaid-zoom-actions"],
+  [data-slot="markdown-mermaid-file-actions"],
+  [data-slot="markdown-mermaid-error-actions"],
+  [data-slot="markdown-mermaid-viewer-toolbar"] {
     align-items: center;
-    color: var(--text-weak);
     display: inline-flex;
-    flex: 0 0 12px;
-    height: 12px;
-    justify-content: center;
-    transform: rotate(0deg);
-    transition: transform 0.15s ease;
-    width: 12px;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
   }
 
-  [data-slot="markdown-mermaid-menu-chevron"] > svg {
+  [data-slot="markdown-mermaid-zoom-value"] {
+    color: var(--text-weak);
+    flex: 0 0 42px;
+    font-size: var(--font-size-small);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+
+  [data-slot="markdown-mermaid-canvas"] {
+    align-items: flex-start;
+    cursor: grab;
+    display: flex;
+    max-height: min(56vh, 520px);
+    min-height: 120px;
+    overflow: auto;
+    padding: 12px;
+    scrollbar-width: thin;
+    touch-action: none;
+  }
+
+  [data-slot="markdown-mermaid-canvas"][data-dragging],
+  [data-slot="markdown-mermaid-viewer-canvas"][data-dragging] {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  [data-slot="markdown-mermaid-surface"] {
+    flex: 0 0 auto;
+    margin: auto;
+    min-height: 1px;
+    min-width: 1px;
+  }
+
+  [data-slot="markdown-mermaid-surface"] > svg,
+  [data-slot="markdown-mermaid-viewer-surface"] > svg {
     display: block;
-    height: 12px;
-    width: 12px;
-  }
-
-  [data-expanded] [data-slot="markdown-mermaid-menu-chevron"] {
-    transform: rotate(180deg);
-  }
-
-  [data-component="markdown-mermaid"][data-state="rendered"] > svg {
-    display: block;
-    margin: 0 auto;
-    max-width: 100%;
-    height: auto;
+    height: 100%;
+    max-height: none;
+    max-width: none;
+    width: 100%;
   }
 
   [data-component="markdown-mermaid"][data-state="rendering"] {
     color: var(--text-weak);
     font-style: italic;
+    padding: 12px;
   }
 
   [data-component="markdown-mermaid"][data-state="error"] {
-    color: var(--text-danger, var(--text-strong));
+    color: var(--text-strong);
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  [data-slot="markdown-mermaid-error-message"] {
+    color: var(--text-danger, var(--vscode-errorForeground, var(--text-strong)));
+    overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+
+  [data-slot="markdown-mermaid-error-actions"] {
+    justify-content: flex-start;
+  }
+}
+
+[data-slot="dialog-content"].markdown-mermaid-viewer {
+  height: min(92vh, 900px);
+  max-height: 92vh;
+  max-width: 96vw;
+  width: min(96vw, 1280px);
+
+  > [data-slot="dialog-body"] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+  }
+}
+
+[data-slot="markdown-mermaid-viewer-toolbar"] {
+  border-bottom: 0.5px solid var(--border-weak-base);
+  justify-content: center;
+  padding: 8px;
+}
+
+[data-slot="markdown-mermaid-viewer-canvas"] {
+  align-items: flex-start;
+  background: var(--background-base);
+  cursor: grab;
+  display: flex;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  touch-action: none;
+}
+
+[data-slot="markdown-mermaid-viewer-surface"] {
+  flex: 0 0 auto;
+  margin: auto;
+  min-height: 1px;
+  min-width: 1px;
+}
+
+[data-slot="markdown-mermaid-viewer-surface"] > svg {
+  display: block;
+  height: 100%;
+  max-height: none;
+  max-width: none;
+  width: 100%;
+}
+
+@media (max-width: 420px) {
+  [data-component="markdown"] [data-slot="markdown-mermaid-actions"] {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  [data-component="markdown"] [data-slot="markdown-mermaid-zoom-actions"],
+  [data-component="markdown"] [data-slot="markdown-mermaid-file-actions"] {
+    justify-content: flex-start;
+    width: 100%;
   }
 }

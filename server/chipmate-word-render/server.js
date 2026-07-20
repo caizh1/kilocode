@@ -815,7 +815,16 @@ async function handleResolveNewApiUser(request, response) {
   sendJson(
     response,
     result.status || (result.ok ? 200 : 404),
-    result.ok ? { ok: true, user: result.user } : { ok: false, code: result.code },
+    result.ok
+      ? { ok: true, user: result.user }
+      : {
+          ok: false,
+          code: result.code,
+          ...(result.reason ? { reason: result.reason } : {}),
+          ...(result.requestId ? { requestId: result.requestId } : {}),
+          ...(result.retryAfter ? { retryAfter: result.retryAfter } : {}),
+          ...(result.upstreamStatus ? { upstreamStatus: result.upstreamStatus } : {}),
+        },
   )
 }
 
@@ -1430,7 +1439,7 @@ async function resolveNewApiUser(apiKey, options = {}) {
   const normalizedApiKey = normalizeNewApiKey(apiKey)
   resolverLog("info", "resolve.start", { requestId: trace.id, keyPresent: Boolean(normalizedApiKey) })
   if (!normalizedApiKey) {
-    const result = { ok: false, code: "invalid-api-key", status: 400 }
+    const result = { ok: false, code: "invalid-api-key", status: 400, requestId: trace.id }
     resolverFinish(trace, result, "validation")
     return result
   }
@@ -1441,7 +1450,7 @@ async function resolveNewApiUser(apiKey, options = {}) {
     adminFallbackEnabled: config.adminEnabled,
   })
   if (!config.enabled) {
-    const result = { ok: false, code: "token-resolver-disabled", status: 503 }
+    const result = { ok: false, code: "token-resolver-disabled", status: 503, requestId: trace.id }
     resolverFinish(trace, result, "configuration")
     return result
   }
@@ -1481,7 +1490,7 @@ async function resolveNewApiUserFresh(apiKey, config, state, fetchImpl, now, key
   try {
     const user = await fetchNewApiTokenUser(config, apiKey, fetchImpl, trace)
     resolverLog("info", "direct.identity.result", { requestId: trace.id, matched: Boolean(user) })
-    if (!user) return { ok: false, code: "token-not-found", status: 404 }
+    if (!user) return { ok: false, code: "token-not-found", status: 404, requestId: trace.id }
     writeCacheEntry(state.userByKeyHash, keyHash, user, now + config.cacheTtlMs)
     return { ok: true, user, status: 200, cache: "token-usage" }
   } catch (error) {
@@ -1492,14 +1501,15 @@ async function resolveNewApiUserFresh(apiKey, config, state, fetchImpl, now, key
       fallbackEligible: status === 404 || status === 405,
       error: sanitizeResolverError(error),
     })
-    if (status === 401 || status === 403) return { ok: false, code: "token-not-found", status: 404 }
+    if (status === 401 || status === 403)
+      return { ok: false, code: "token-not-found", status: 404, requestId: trace.id }
     if (status === 429) return newApiResolverFailure(error, "new-api-rate-limited", 429, trace)
     if (status !== 404 && status !== 405) return newApiResolverFailure(error, "new-api-error", 502, trace)
   }
 
   if (!config.adminEnabled) {
     resolverLog("warn", "admin.fallback.unavailable", { requestId: trace.id })
-    return { ok: false, code: "token-resolver-disabled", status: 503 }
+    return { ok: false, code: "token-resolver-disabled", status: 503, requestId: trace.id }
   }
   resolverLog("info", "admin.fallback.start", { requestId: trace.id })
 
@@ -1534,7 +1544,7 @@ async function resolveNewApiUserFresh(apiKey, config, state, fetchImpl, now, key
       }
     }
 
-    return { ok: false, code: "token-not-found", status: 404 }
+    return { ok: false, code: "token-not-found", status: 404, requestId: trace.id }
   } catch (error) {
     if (newApiHttpStatus(error) === 429) return newApiResolverFailure(error, "new-api-rate-limited", 429, trace)
     return newApiResolverFailure(error, "new-api-error", 502, trace)
@@ -1792,6 +1802,7 @@ function newApiResponseMessage(payload) {
 }
 
 function newApiResolverFailure(error, code, status, trace) {
+  const reason = newApiResolverReason(error)
   resolverLog("warn", "resolve.failure", {
     requestId: trace.id,
     code,
@@ -1799,7 +1810,28 @@ function newApiResolverFailure(error, code, status, trace) {
     error: sanitizeResolverError(error),
   })
   const retryAfter = error instanceof NewApiHttpError ? error.retryAfter : ""
-  return { ok: false, code, status, ...(retryAfter ? { retryAfter } : {}) }
+  const upstreamStatus = newApiHttpStatus(error)
+  return {
+    ok: false,
+    code,
+    status,
+    reason,
+    requestId: trace.id,
+    ...(retryAfter ? { retryAfter } : {}),
+    ...(upstreamStatus ? { upstreamStatus } : {}),
+  }
+}
+
+function newApiResolverReason(error) {
+  const message = formatError(error)
+  if (/invalid[ -]?url|err_invalid_url/i.test(message)) return "invalid-url"
+  if (/aborted|aborterror|timed? ?out|timeout/i.test(message)) return "timeout"
+  if (/invalid-json|unexpected token|json/i.test(message)) return "invalid-json"
+  if (/empty-response|no-response/i.test(message)) return "empty-response"
+  if (newApiHttpStatus(error) === 429) return "rate-limited"
+  if (error instanceof NewApiHttpError) return "upstream-http"
+  if (/fetch failed|econnrefused|enotfound|eai_again|network/i.test(message)) return "network"
+  return "unknown"
 }
 
 function normalizeRetryAfter(value) {
@@ -1876,6 +1908,8 @@ function sanitizeResolverError(error) {
   return message
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>")
     .replace(/sk-[A-Za-z0-9._~+/=-]{6,}/gi, "sk-<redacted>")
+    .replace(/https?:\/\/[^\s]+/gi, "<url>")
+    .replace(/(?:admin|access)[-_ ]?token\s*[=:]\s*[^\s,;]+/gi, "admin-token=<redacted>")
     .slice(0, 300)
 }
 

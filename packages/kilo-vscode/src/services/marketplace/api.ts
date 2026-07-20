@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml"
+import { MarketplaceApiError, safeMarketplaceErrorText } from "./errors"
 import type {
   MarketplaceItem,
   McpMarketplaceItem,
@@ -14,6 +15,7 @@ import type {
   PublicationPatch,
   PublicationRun,
   SkillDetail,
+  MarketplaceErrorReason,
 } from "./types"
 import type { MarketEvent } from "./analytics"
 
@@ -109,8 +111,19 @@ async function defaultFetchText(url: string): Promise<string> {
   try {
     const response = await fetch(url, { signal: controller.signal })
     clearTimeout(timer)
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    if (!response.ok) {
+      throw new MarketplaceApiError(`HTTP ${response.status}: ${response.statusText}`, { status: response.status })
+    }
     return await response.text()
+  } catch (err) {
+    if (err instanceof MarketplaceApiError) throw err
+    const message = err instanceof Error ? err.message : String(err)
+    const reason = /aborted|aborterror|timed? ?out/i.test(message)
+      ? "timeout"
+      : /invalid[ -]?url|err_invalid_url/i.test(message)
+        ? "invalid-url"
+        : "network"
+    throw new MarketplaceApiError(safeMarketplaceErrorText(message) || "marketplace-network-error", { reason })
   } finally {
     clearTimeout(timer)
   }
@@ -192,11 +205,16 @@ export class MarketplaceApiClient {
     return result
   }
 
-  private async fetchSkills(apiKey?: string): Promise<SkillMarketplaceItem[]> {
+  private async fetchSkills(apiKey?: string, warn?: (message: string) => void): Promise<SkillMarketplaceItem[]> {
     const cached = this.getCached("skills")
     const items = cached ? (cached as SkillMarketplaceItem[]) : await this.loadSkills()
     if (!apiKey || !(await this.isAligned())) return items
-    const favorites = await requestJson(`${this.serverBaseUrl()}/api/v1/me/favorites`, { apiKey }).catch(() => [])
+    const favorites = await requestJson(`${this.serverBaseUrl()}/api/v1/me/favorites`, { apiKey }).catch(
+      (err: unknown) => {
+        warn?.(`获取市场收藏失败：${fetchErrorMessage(err)}`)
+        return []
+      },
+    )
     const ids = new Set(
       Array.isArray(favorites)
         ? favorites.flatMap((item) => (isObject(item) && typeof item.id === "string" ? [item.id] : []))
@@ -276,7 +294,7 @@ export class MarketplaceApiClient {
     const errors: string[] = []
 
     if (this.skillsOnly) {
-      const skills = await this.fetchSkills(apiKey).then(
+      const skills = await this.fetchSkills(apiKey, (message) => errors.push(message)).then(
         (items) => ({ items, ok: true }),
         (err: unknown) => {
           errors.push(`获取技能市场失败：${fetchErrorMessage(err)}`)
@@ -286,7 +304,7 @@ export class MarketplaceApiClient {
       return { items: skills.items, errors, skillsFetched: skills.ok }
     }
 
-    const skills = this.fetchSkills(apiKey).then(
+    const skills = this.fetchSkills(apiKey, (message) => errors.push(message)).then(
       (items) => ({ items, ok: true }),
       (err: unknown) => {
         errors.push(`获取技能市场失败：${fetchErrorMessage(err)}`)
@@ -576,10 +594,9 @@ async function requestJson(
       ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
     })
     const text = await response.text()
-    const parsed = text ? JSON.parse(text) : {}
+    const parsed = parseJson(text, response.status)
     if (!response.ok) {
-      const code = isObject(parsed) && typeof parsed.code === "string" ? parsed.code : `HTTP ${response.status}`
-      throw new Error(code)
+      throw apiError(response, parsed)
     }
     return parsed
   } finally {
@@ -736,15 +753,55 @@ async function postJson(url: string, body?: unknown, apiKey?: string): Promise<u
       body: JSON.stringify(body ?? {}),
     })
     const text = await response.text()
-    const parsed = text ? JSON.parse(text) : {}
+    const parsed = parseJson(text, response.status)
     if (!response.ok) {
-      const code = isObject(parsed) && typeof parsed.code === "string" ? parsed.code : undefined
-      throw new Error(code || `HTTP ${response.status}: ${response.statusText}`)
+      throw apiError(response, parsed)
     }
     return parsed
   } finally {
     clearTimeout(timer)
   }
+}
+
+function apiError(response: Response, value: unknown): MarketplaceApiError {
+  const data = isObject(value) ? value : {}
+  const code = typeof data.code === "string" && data.code.trim() ? data.code.trim() : `HTTP ${response.status}`
+  const reason = errorReason(data.reason)
+  const requestId = typeof data.requestId === "string" ? data.requestId : undefined
+  const retryAfter =
+    typeof data.retryAfter === "string" ? data.retryAfter : response.headers.get("retry-after") || undefined
+  const upstreamStatus = typeof data.upstreamStatus === "number" ? data.upstreamStatus : undefined
+  return new MarketplaceApiError(code, {
+    status: response.status,
+    reason,
+    requestId,
+    retryAfter,
+    upstreamStatus,
+  })
+}
+
+function parseJson(text: string, status: number): unknown {
+  if (!text) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new MarketplaceApiError("invalid-json", { status, reason: "invalid-json" })
+  }
+}
+
+function errorReason(value: unknown): MarketplaceErrorReason | undefined {
+  if (
+    value === "invalid-url" ||
+    value === "timeout" ||
+    value === "invalid-json" ||
+    value === "empty-response" ||
+    value === "rate-limited" ||
+    value === "upstream-http" ||
+    value === "network" ||
+    value === "unknown"
+  )
+    return value
+  return undefined
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

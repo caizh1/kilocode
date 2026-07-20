@@ -718,6 +718,109 @@ export const QAAlignedConversationSurface: Story = {
   },
 }
 
+const mermaidUserID = "user-msg-mermaid-001"
+const mermaidAssistantID = "asst-msg-mermaid-001"
+const mermaidNow = 1_700_000_300_000
+const mermaidMessages = [
+  {
+    id: mermaidUserID,
+    sessionID: SESSION_ID,
+    role: "user",
+    time: { created: mermaidNow },
+  },
+  {
+    id: mermaidAssistantID,
+    sessionID: SESSION_ID,
+    role: "assistant",
+    parentID: mermaidUserID,
+    time: { created: mermaidNow + 1000, completed: mermaidNow + 2000 },
+    modelID: "deepseek-v4-flash",
+    providerID: "myprovider",
+    mode: "default",
+    agent: "code",
+    path: { cwd: "/project", root: "/project" },
+  },
+]
+const mermaidParts = {
+  [mermaidUserID]: [
+    {
+      id: "part-user-mermaid-001",
+      sessionID: SESSION_ID,
+      messageID: mermaidUserID,
+      type: "text",
+      text: "请画一张包含正常图、mmd 别名和错误示例的 Mermaid 图。",
+    },
+  ],
+  [mermaidAssistantID]: [
+    {
+      id: "part-text-mermaid-001",
+      sessionID: SESSION_ID,
+      messageID: mermaidAssistantID,
+      type: "text",
+      text: `正常图：
+
+\`\`\`mermaid
+flowchart LR
+  A[QA response] --> B{Valid Mermaid?}
+  B -->|Yes| C[Render inline]
+  B -->|No| D[Keep source]
+\`\`\`
+
+mmd 别名：
+
+\`\`\`mmd
+sequenceDiagram
+  User->>QA: Draw diagram
+  QA-->>User: Rendered SVG
+\`\`\`
+
+错误图：
+
+\`\`\`mermaid
+flowchart TD
+  Broken -->
+\`\`\``,
+    },
+  ],
+}
+const mermaidData = {
+  ...defaultMockData,
+  message: { [SESSION_ID]: mermaidMessages },
+  part: mermaidParts,
+}
+
+function renderMermaidChat(streaming = false) {
+  const messages = streaming
+    ? [mermaidMessages[0], { ...mermaidMessages[1], time: { created: mermaidNow + 1000 } }]
+    : mermaidMessages
+  const session = {
+    ...mockSessionValue({ id: SESSION_ID, status: streaming ? "busy" : "idle" }),
+    messages: () => messages,
+    visibleMessages: () => messages,
+    userMessages: () => messages.filter((message) => message?.role === "user"),
+    getParts: (id: string) => mermaidParts[id as keyof typeof mermaidParts] ?? [],
+  }
+  return (
+    <StoryProviders data={mermaidData} sessionID={SESSION_ID} status={streaming ? "busy" : "idle"} noPadding>
+      <SessionContext.Provider value={session as any}>
+        <div style={{ height: "760px", display: "flex", "flex-direction": "column" }}>
+          <ChatView />
+        </div>
+      </SessionContext.Provider>
+    </StoryProviders>
+  )
+}
+
+export const QAMermaidComplete: Story = {
+  name: "QA — Mermaid rendered, aliased, and invalid",
+  render: () => renderMermaidChat(false),
+}
+
+export const QAMermaidStreaming: Story = {
+  name: "QA — Mermaid remains source while streaming",
+  render: () => renderMermaidChat(true),
+}
+
 export const QAUserMessageLengths: Story = {
   name: "QA — user message length states",
   render: () => {

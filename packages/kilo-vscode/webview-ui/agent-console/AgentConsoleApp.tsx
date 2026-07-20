@@ -17,6 +17,7 @@ import type { TerminalFont } from "../src/types/messages/agent-manager"
 import type { PermissionRequest } from "../src/types/messages"
 import { HybridPrompt } from "./HybridPrompt"
 import { HybridTimeline, type ShellEntry } from "./HybridTimeline"
+import { queue } from "./queue"
 
 type Mode = "agent" | "shell"
 
@@ -50,9 +51,12 @@ export const AgentConsoleContent: Component<Props> = (props) => {
   const [error, setError] = createSignal<string>()
   const [entries, setEntries] = createSignal<ShellEntry[]>(props.initialEntries ?? [])
   const [inputError, setInputError] = createSignal<string>()
-  let writer: TerminalWriter | undefined
   let active: string | undefined
   let quiet: ReturnType<typeof setTimeout> | undefined
+
+  const bridge = queue((id, message) => {
+    setEntries((items) => items.map((item) => (item.id === id ? { ...item, state: "error", output: message } : item)))
+  })
 
   const create = () => {
     if (props.shell || terminal() || pending()) return
@@ -82,6 +86,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
 
   const reset = () => {
     session.clearCurrentSession()
+    bridge.clear()
     setEntries([])
     setInputError(undefined)
     vscode.postMessage({ type: "agentConsole.session.new" })
@@ -93,10 +98,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
   })
 
   const bind = (next: TerminalWriter) => {
-    writer = next
-    return () => {
-      if (writer === next) writer = undefined
-    }
+    return bridge.bind(next)
   }
 
   const settle = () => {
@@ -128,13 +130,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
     const entry: ShellEntry = { id, command, output: "", created: Date.now(), state: "running" }
     setEntries((items) => [...items, entry])
     active = id
-    if (writer?.(`${command}\r`)) return
-    active = undefined
-    setEntries((items) =>
-      items.map((item) =>
-        item.id === id ? { ...item, state: "error", output: "Shell 尚未连接，请稍后重试。" } : item,
-      ),
-    )
+    bridge.send(id, `${command}\r`)
   }
 
   const agent = (input: string) => {
@@ -149,8 +145,31 @@ export const AgentConsoleContent: Component<Props> = (props) => {
   }
 
   const interrupt = () => {
-    writer?.("\x03")
+    bridge.write("\x03")
     finish()
+  }
+
+  const fail = (message: string) => {
+    bridge.reject(message)
+    if (!active) return
+    const id = active
+    active = undefined
+    setEntries((items) =>
+      items.map((item) => (item.id === id ? { ...item, state: "error", output: item.output || message } : item)),
+    )
+  }
+
+  const connection = (next: "open" | "error" | "closed") => {
+    if (next === "open") {
+      setError(undefined)
+      return
+    }
+    if (next === "closed" && error()) return
+    const message = language.t(
+      next === "error" ? "agentManager.terminal.connectionError" : "agentManager.terminal.ended",
+    )
+    setError(message)
+    fail(message)
   }
 
   const permissions = createMemo(() => session.scopedPermissions(session.currentSessionID()))
@@ -210,11 +229,13 @@ export const AgentConsoleContent: Component<Props> = (props) => {
       if (message.type === "agentConsole.terminal.closed") {
         if (terminal()?.id === message.terminalId) setTerminal(undefined)
         setPending(false)
+        fail(language.t("agentManager.terminal.ended"))
         return
       }
       if (message.type === "agentConsole.terminal.error") {
         setPending(false)
         setError(message.message)
+        fail(message.message)
         return
       }
       if (message.type !== "agentConsole.terminal.fontChanged") return
@@ -351,6 +372,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
                       shortcuts={false}
                       bind={bind}
                       output={output}
+                      connection={connection}
                     />
                   )
                 })()}

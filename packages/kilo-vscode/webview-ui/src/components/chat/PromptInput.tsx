@@ -11,6 +11,7 @@ import { DropdownMenu } from "@kilocode/kilo-ui/dropdown-menu"
 import { FileIcon } from "@kilocode/kilo-ui/file-icon"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { showToast } from "@kilocode/kilo-ui/toast"
+import { useI18n } from "@kilocode/kilo-ui/context/i18n"
 import { useSession } from "../../context/session"
 import { useLocalTabs } from "../../context/local-tabs"
 import { useServer } from "../../context/server"
@@ -315,6 +316,8 @@ interface PromptInputProps {
   pendingSessionID?: string
 }
 
+type MermaidRepairEvent = CustomEvent<{ sessionID: string; source: string; error: string }>
+
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const session = useSession()
   const tabs = useLocalTabs()
@@ -323,6 +326,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const { config, globalConfig, settings, features } = useConfig()
   const provider = useProvider()
   const language = useLanguage()
+  const i18n = useI18n()
   const vscode = useVSCode()
   const projectMemory = useMemory()
   const sid = () => session.currentSessionID() ?? props.pendingSessionID ?? session.draftSessionID() ?? undefined
@@ -841,6 +845,30 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return true
   }
 
+  const appendPrompt = (value: string) => {
+    const current = text()
+    const separator = current && !current.endsWith("\n") ? "\n\n" : ""
+    const next = current + separator + value
+    setText(next)
+    if (!textareaRef) return
+    textareaRef.value = next
+    adjustHeight()
+    textareaRef.focus()
+    textareaRef.scrollTop = textareaRef.scrollHeight
+    syncHighlightScroll()
+  }
+
+  const prepareMermaid = (event: Event) => {
+    if (!(event instanceof CustomEvent)) return
+    const detail = (event as MermaidRepairEvent).detail
+    if (!detail?.source?.trim() || !detail.error?.trim()) return
+    if (!detail.sessionID || detail.sessionID !== sid()) return
+    event.preventDefault()
+    appendPrompt(i18n.t("ui.mermaid.repairPrompt", { source: detail.source, error: detail.error }))
+  }
+  window.addEventListener("kilo:prepare-mermaid-repair", prepareMermaid)
+  onCleanup(() => window.removeEventListener("kilo:prepare-mermaid-repair", prepareMermaid))
+
   const unsubscribe = vscode.onMessage((message) => {
     if (handleSandboxMessage(message)) return
 
@@ -854,17 +882,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
 
     if (message.type === "appendChatBoxMessage") {
-      const current = text()
-      const separator = current && !current.endsWith("\n") ? "\n\n" : ""
-      const next = current + separator + message.text
-      setText(next)
-      if (textareaRef) {
-        textareaRef.value = next
-        adjustHeight()
-        textareaRef.focus()
-        textareaRef.scrollTop = textareaRef.scrollHeight
-        syncHighlightScroll()
-      }
+      appendPrompt(message.text)
     }
 
     if (message.type === "appendReviewComments") {

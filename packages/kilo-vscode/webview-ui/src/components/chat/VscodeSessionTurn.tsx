@@ -118,7 +118,7 @@ export const VscodeSessionTurn: Component<VscodeSessionTurnProps> = (props) => {
   return (
     <Show when={message()}>
       {(msg) => (
-        <div class="vscode-session-turn" data-message={msg().id}>
+        <div class="vscode-session-turn" data-message={msg().id} data-session-id={msg().sessionID}>
           {/* User message */}
           <Show when={!props.turn.partial}>
             <div

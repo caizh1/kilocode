@@ -15,6 +15,8 @@ import { ItemCard } from "../components/marketplace/ItemCard"
 import { AlignedSkillMarket } from "../components/marketplace/AlignedSkillMarket"
 import { LocalSkillImportDialog } from "../components/marketplace/LocalSkillImportDialog"
 import { InstallModal } from "../components/marketplace/InstallModal"
+import { MarketplaceDiagnostics } from "../components/marketplace/MarketplaceDiagnostics"
+import { MarketplaceRuntimeCard } from "../components/marketplace/MarketplaceRuntimeCard"
 import { MarketplaceSessionProvider } from "../context/marketplace-session"
 import type {
   SkillMarketplaceItem,
@@ -466,6 +468,62 @@ export const InstallMcpModal: Story = {
 // ---------------------------------------------------------------------------
 // Mode Stories
 // ---------------------------------------------------------------------------
+
+export const RuntimeConnected: Story = {
+  name: "Runtime status — connected and verified",
+  render: () => (
+    <StoryProviders locale="zh">
+      <div style={{ width: "760px", padding: "12px" }}>
+        <MarketplaceRuntimeCard
+          server={{ status: "connected", checkedAt: "2026-07-20T08:00:00.000Z" }}
+          identity={{
+            status: "verified",
+            checkedAt: "2026-07-20T08:00:01.000Z",
+            user: { name: "Alice", tokenName: "workstation" },
+          }}
+          onVerify={noop}
+        />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+export const RuntimeInvalidUrlNarrow: Story = {
+  name: "Runtime status — invalid URL at 320px",
+  render: () => (
+    <StoryProviders locale="zh">
+      <div style={{ width: "320px", padding: "8px" }}>
+        <MarketplaceRuntimeCard
+          server={{
+            status: "degraded",
+            checkedAt: "2026-07-20T08:05:00.000Z",
+            issue: { summary: "目录可用，但服务状态检查失败。", code: "marketplace-degraded" },
+          }}
+          identity={{
+            status: "failed",
+            checkedAt: "2026-07-20T08:05:02.000Z",
+            issue: {
+              summary:
+                "New API 地址格式无效，请检查 NEW_API_BASE_URL 是否包含 http:// 或 https://，并移除多余引号、空格。",
+              status: 502,
+              code: "new-api-error",
+              reason: "invalid-url",
+              requestId: "resolve-7d9a",
+            },
+          }}
+          onVerify={noop}
+          diagnostics={
+            <MarketplaceDiagnostics
+              protocol="aligned-v1"
+              mode="skills-only"
+              baseUrl="https://chipmate.example.com/marketplace"
+            />
+          }
+        />
+      </div>
+    </StoryProviders>
+  ),
+}
 
 export const SingleAgentCard: Story = {
   name: "ItemCard — single agent not installed",

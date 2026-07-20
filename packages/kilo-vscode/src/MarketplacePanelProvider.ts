@@ -11,13 +11,14 @@ import { seedSessionStatuses } from "./session-status"
 import type { KiloConnectionService } from "./services/cli-backend"
 import { MarketplaceService } from "./services/marketplace"
 import type { CliSkill } from "./services/marketplace/detection"
-import { marketplaceIdentityErrorMessage } from "./services/marketplace/errors"
+import { marketplaceIdentityErrorMessage, marketplaceIssue } from "./services/marketplace/errors"
 import { pickInstallScope } from "./services/marketplace/install-ui"
 import { applyLocalRepairs } from "./services/marketplace/local-repair"
 import { MarketplaceAnalytics } from "./services/marketplace/analytics"
 import { InstallRegistry } from "./services/marketplace/registry"
 import { LocalImportRegistry } from "./services/marketplace/local-import-registry"
 import { LocalSkillImporter } from "./services/marketplace/local-import"
+import { identityState, serverFailure, serverState as resolvedServerState } from "./services/marketplace/runtime"
 import {
   LocalSkillRemoval,
   type IssuedSkillRemoveTarget,
@@ -43,6 +44,8 @@ import type {
   InstallMarketplaceItemOptions,
   SkillImportSelection,
   MarketplaceItem,
+  MarketplaceIdentityState,
+  MarketplaceServerState,
   MarketplaceUser,
   SkillMarketplaceItem,
 } from "./services/marketplace/types"
@@ -104,6 +107,10 @@ export class MarketplacePanelProvider implements vscode.Disposable {
   private uploadableSkillIds = new Set<string>()
   private readonly blockedSkillIds = new Set<string>()
   private marketplaceUser: MarketplaceUser | undefined
+  private serverState: MarketplaceServerState = { status: "connecting", checkedAt: new Date().toISOString() }
+  private identityState: MarketplaceIdentityState = { status: "verifying", checkedAt: new Date().toISOString() }
+  private identityRun: Promise<string | undefined> | undefined
+  private identityNotify = false
   private readonly extensionVersion =
     vscode.extensions.getExtension("chipmate.chipmate")?.packageJSON?.version ?? "unknown"
 
@@ -332,6 +339,9 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     this.project = project
     this.ready = false
     this.restored = false
+    this.marketplaceUser = undefined
+    this.serverState = { status: "connecting", checkedAt: new Date().toISOString() }
+    this.identityState = { status: "verifying", checkedAt: new Date().toISOString() }
     panel.iconPath = {
       light: vscode.Uri.joinPath(this.extensionUri, "assets", "icons", "kilo-light.svg"),
       dark: vscode.Uri.joinPath(this.extensionUri, "assets", "icons", "kilo-dark.svg"),
@@ -424,6 +434,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     switch (msg.type) {
       case "webviewReady":
         this.ready = true
+        this.postRuntime()
         if (this.connection.getConnectionState() === "connected") await this.sync(true)
         else await this.connect()
         await this.refreshMarketplaceUser()
@@ -433,12 +444,17 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         this.flushPendingInstall()
         return
       case "retryConnection":
+        this.serverState = { status: "connecting", checkedAt: new Date().toISOString() }
+        this.postRuntime()
         await this.connect()
         await this.refreshMarketplaceUser()
         await this.fetchData()
         return
       case "fetchMarketplaceData":
         await this.fetchData()
+        return
+      case "verifyMarketplaceUser":
+        if (await this.refreshMarketplaceUser(true)) await this.fetchData()
         return
       case "installMarketplaceItem":
         if (msg.mpItem && msg.mpInstallOptions) await this.install(msg.mpItem, msg.mpInstallOptions)
@@ -535,6 +551,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       )
       if (generation !== this.generation) return
       const dismissed = this.context.globalState.get<boolean>("chipmate.v2.agentMigrationBannerDismissed") ?? false
+      this.serverState = resolvedServerState(data.marketplaceStatus, data.errors)
       this.post({
         type: "marketplaceData",
         ...data,
@@ -542,12 +559,15 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         marketplaceBaseUrl: this.marketplace.marketplaceBaseUrl(),
         marketplaceSkillsOnly: this.marketplace.marketplaceSkillsOnly(),
         marketplaceMode: this.marketplace.marketplaceMode(),
+        marketplaceServerState: this.serverState,
+        marketplaceIdentityState: this.identityState,
         showAgentMigrationBanner: !dismissed,
       })
     } catch (err) {
       this.uploadableSkillIds.clear()
       const error = marketplaceDataErrorMessage(err)
       if (generation !== this.generation) return
+      this.serverState = serverFailure(err)
       console.warn("[Kilo New] Marketplace data fetch failed:", err)
       this.post({
         type: "marketplaceData",
@@ -557,6 +577,8 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         marketplaceBaseUrl: this.marketplace.marketplaceBaseUrl(),
         marketplaceSkillsOnly: this.marketplace.marketplaceSkillsOnly(),
         marketplaceMode: this.marketplace.marketplaceMode(),
+        marketplaceServerState: this.serverState,
+        marketplaceIdentityState: this.identityState,
         marketplaceRelevance: {},
         errors: [error],
       })
@@ -897,23 +919,26 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     )
   }
 
-  private async refreshMarketplaceUser(): Promise<void> {
-    const apiKey = await this.getCurrentProviderApiKey()
-    if (!apiKey) {
-      this.marketplaceUser = undefined
-      return
-    }
-    await this.resolveMarketplaceUser(apiKey, false)
+  private refreshMarketplaceUser(notify = false): Promise<string | undefined> {
+    if (notify) this.identityNotify = true
+    if (this.identityRun) return this.identityRun
+    const run = this.authenticateMarketplaceUser().finally(() => {
+      if (this.identityRun === run) this.identityRun = undefined
+      this.identityNotify = false
+    })
+    this.identityRun = run
+    return run
   }
 
   private async marketplaceApiKey(action: string): Promise<string | undefined> {
-    const apiKey = await this.getCurrentProviderApiKey()
+    const apiKey = await this.refreshMarketplaceUser(true)
     if (!apiKey) {
-      vscode.window.showWarningMessage(`当前提供商未配置 API Key，无法${action}。`)
+      if (this.identityState.status === "unverified") {
+        vscode.window.showWarningMessage(`当前提供商未配置 API Key，无法${action}。`)
+      }
       return undefined
     }
-    if (await this.resolveMarketplaceUser(apiKey, true)) return apiKey
-    return undefined
+    return apiKey
   }
 
   private async getCurrentProviderApiKey(): Promise<string | undefined> {
@@ -936,11 +961,27 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       const client = this.connection.getClient()
       if (!client) return undefined
       const directory = this.directory()
-      const [{ data: config }, { data: providers }] = await Promise.all([
-        client.config.get({ directory }, { throwOnError: true }),
-        client.provider.list({ directory }, { throwOnError: true }),
-      ])
+      const { data: config } = await client.config.get({ directory }, { throwOnError: true })
       const selectedProvider = providerIdFromModel(config?.model)
+
+      if (selectedProvider) {
+        const saved = await client.auth
+          .get({ providerID: selectedProvider }, { throwOnError: true })
+          .then((result) => authApiKey(result.data))
+          .catch((err: unknown) => {
+            console.warn("[Kilo New] Marketplace failed to read current provider auth:", err)
+            return undefined
+          })
+        if (saved) return saved
+      }
+
+      const providers = await client.provider
+        .list({ directory }, { throwOnError: true })
+        .then((result) => result.data)
+        .catch((err: unknown) => {
+          console.warn("[Kilo New] Marketplace failed to read provider fallbacks:", err)
+          return undefined
+        })
       const keyed = (providers?.all ?? [])
         .map((provider) => {
           const raw = provider as Record<string, unknown>
@@ -965,17 +1006,43 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     return undefined
   }
 
-  private async resolveMarketplaceUser(apiKey: string, notify: boolean): Promise<boolean> {
+  private async authenticateMarketplaceUser(): Promise<string | undefined> {
+    this.identityState = identityState("verifying", { user: this.marketplaceUser })
+    this.postRuntime()
+    const apiKey = await this.getCurrentProviderApiKey()
+    if (!apiKey) {
+      this.marketplaceUser = undefined
+      this.identityState = identityState("unverified", {
+        issue: { summary: "当前提供商未配置 API Key。", code: "provider-api-key-missing" },
+      })
+      this.postRuntime()
+      if (this.identityNotify) vscode.window.showWarningMessage("当前提供商未配置 API Key，无法验证市场身份。")
+      return undefined
+    }
     try {
       this.marketplaceUser = await this.marketplace.resolveUser(apiKey)
-      if (notify) vscode.window.showInformationMessage(`市场用户：${this.marketplaceUser.name}`)
-      return true
+      this.identityState = identityState("verified", { user: this.marketplaceUser })
+      this.postRuntime()
+      if (this.identityNotify) vscode.window.showInformationMessage(`市场用户：${this.marketplaceUser.name}`)
+      return apiKey
     } catch (err) {
       this.marketplaceUser = undefined
-      if (notify) vscode.window.showWarningMessage(`市场用户验证失败：${marketplaceIdentityErrorMessage(err)}`)
+      const message = marketplaceIdentityErrorMessage(err)
+      this.identityState = identityState("failed", { issue: marketplaceIssue(err, message) })
+      this.postRuntime()
+      if (this.identityNotify) vscode.window.showWarningMessage(`市场用户验证失败：${message}`)
       else console.warn("[Kilo New] Marketplace provider API key did not resolve to a user:", err)
-      return false
+      return undefined
     }
+  }
+
+  private postRuntime(): void {
+    if (!this.ready) return
+    this.post({
+      type: "marketplaceRuntimeState",
+      marketplaceServerState: this.serverState,
+      marketplaceIdentityState: this.identityState,
+    })
   }
 
   private async install(item: MarketplaceItem, opts: InstallMarketplaceItemOptions): Promise<void> {
@@ -1189,6 +1256,14 @@ function configApiKey(config: unknown): string | undefined {
   if (!options || typeof options !== "object" || Array.isArray(options)) return undefined
   const key = (options as Record<string, unknown>).apiKey
   return typeof key === "string" && key.trim() ? key.trim() : undefined
+}
+
+function authApiKey(auth: unknown): string | undefined {
+  if (!auth || typeof auth !== "object" || Array.isArray(auth)) return undefined
+  const record = auth as Record<string, unknown>
+  if (record.type !== "api") return undefined
+  const key = typeof record.key === "string" ? record.key.trim() : ""
+  return key || undefined
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: () => T): Promise<T> {

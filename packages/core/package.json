@@ -111,7 +111,7 @@
     "@opencode-ai/effect-sqlite-node": "workspace:*",
     "@opencode-ai/llm": "workspace:*",
     "@parcel/watcher": "2.5.1",
-    "bun-pty": "0.4.8",
+    "bun-pty": "0.4.10",
     "drizzle-orm": "catalog:",
     "fuzzysort": "3.1.0",
     "gray-matter": "4.0.3",

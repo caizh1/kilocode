@@ -9,7 +9,16 @@ const resolver = require("../../../server.js") as {
   resolveNewApiUser(
     key: string,
     opts: { env: Record<string, string>; state: unknown },
-  ): Promise<{ ok: boolean; code?: string; status: number; user?: { name: string; tokenName?: string } }>
+  ): Promise<{
+    ok: boolean
+    code?: string
+    status: number
+    user?: { name: string; tokenName?: string }
+    reason?: string
+    requestId?: string
+    retryAfter?: string
+    upstreamStatus?: number
+  }>
 }
 
 async function upstream(handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>) {
@@ -90,7 +99,13 @@ test("returns a stable rate-limit code without falling back to admin requests", 
       }),
     )
     const result = recorded.result
-    assert.deepEqual(result, { ok: false, code: "new-api-rate-limited", status: 429, retryAfter: "3" })
+    assert.equal(result.ok, false)
+    assert.equal(result.code, "new-api-rate-limited")
+    assert.equal(result.status, 429)
+    assert.equal(result.reason, "rate-limited")
+    assert.equal(result.retryAfter, "3")
+    assert.equal(result.upstreamStatus, 429)
+    assert.match(result.requestId || "", /^[a-f0-9]{8}$/)
     assert.deepEqual(seen, ["GET /api/usage/token/"])
     const logs = recorded.lines.join("\n")
     for (const event of [
@@ -120,10 +135,33 @@ test("drops an invalid upstream Retry-After value", async () => {
       env: { NEW_API_BASE_URL: api.origin },
       state: resolver.createTokenResolverState(),
     })
-    assert.deepEqual(result, { ok: false, code: "new-api-rate-limited", status: 429 })
+    assert.equal(result.code, "new-api-rate-limited")
+    assert.equal(result.reason, "rate-limited")
+    assert.equal(result.retryAfter, undefined)
   } finally {
     await api.close()
   }
+})
+
+test("returns a safe invalid-url reason and request id without exposing credentials", async () => {
+  const recorded = await capture(() =>
+    resolver.resolveNewApiUser("sk-invalid-url", {
+      env: {
+        NEW_API_BASE_URL: "https://exa mple.com/?token=query-secret",
+        NEW_API_ADMIN_ACCESS_TOKEN: "admin-secret",
+        NEW_API_USER_ID: "7",
+      },
+      state: resolver.createTokenResolverState(),
+    }),
+  )
+
+  assert.equal(recorded.result.ok, false)
+  assert.equal(recorded.result.code, "new-api-error")
+  assert.equal(recorded.result.status, 502)
+  assert.equal(recorded.result.reason, "invalid-url")
+  assert.match(recorded.result.requestId || "", /^[a-f0-9]{8}$/)
+  assert.doesNotMatch(JSON.stringify(recorded.result), /sk-invalid-url|admin-secret/)
+  assert.doesNotMatch(recorded.lines.join("\n"), /sk-invalid-url|admin-secret|query-secret/)
 })
 
 test("falls back to one shared admin catalog request for older New API servers", async () => {

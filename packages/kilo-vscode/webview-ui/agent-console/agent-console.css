@@ -49,6 +49,14 @@
   flex: 0 0 auto;
 }
 
+[data-slot="agent-console-mode"][data-component="tabs"] {
+  width: auto;
+  height: auto;
+  flex: 0 0 auto;
+  overflow: visible;
+  background: transparent;
+}
+
 [data-slot="agent-console-mode"] [data-slot="tabs-list"] {
   display: inline-flex;
   align-items: center;
@@ -60,11 +68,25 @@
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
 }
 
+[data-slot="agent-console-mode"] [data-slot="tabs-list"]::after {
+  display: none;
+}
+
+[data-slot="agent-console-mode"] [data-slot="tabs-trigger-wrapper"] {
+  height: auto;
+  max-width: none;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  background: transparent;
+}
+
 [data-slot="agent-console-mode"] [data-slot="tabs-trigger"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  height: 27px;
   min-height: 27px;
   padding: 0 10px;
   border: 1px solid transparent;
@@ -183,12 +205,7 @@
   font-family: var(--vscode-editor-font-family, monospace);
 }
 
-[data-slot="agent-console-timeline-content"]
-  [data-row="user"]
-  .vscode-session-turn-user
-  > div
-  > div
-  > div {
+[data-slot="agent-console-timeline-content"] [data-row="user"] .vscode-session-turn-user > div > div > div {
   justify-content: flex-start !important;
   align-items: flex-start !important;
 }
@@ -198,14 +215,7 @@
   align-items: flex-start !important;
 }
 
-[data-slot="agent-console-timeline-content"]
-  [data-row="user"]
-  .vscode-session-turn-user
-  > div
-  > div
-  > div
-  > div
-  > div {
+[data-slot="agent-console-timeline-content"] [data-row="user"] .vscode-session-turn-user > div > div > div > div > div {
   display: flex;
   gap: 9px;
   padding: 0 !important;
@@ -264,7 +274,7 @@
   max-width: 100%;
   margin: 0;
   overflow-x: auto;
-  color: inherit;
+  color: #fff;
   font: inherit;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -276,7 +286,7 @@
 }
 
 [data-component="agent-console-shell-entry"][data-state="error"] pre {
-  color: var(--vscode-errorForeground);
+  color: var(--vscode-errorForeground, #f14c4c);
 }
 
 [data-component="agent-console-prompt"] {

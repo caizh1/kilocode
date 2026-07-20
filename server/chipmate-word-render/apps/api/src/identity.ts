@@ -9,7 +9,15 @@ const legacy = require("../../../server.js") as {
     key: string,
   ): Promise<
     | { ok: true; user: { name: string; tokenName?: string }; status: number }
-    | { ok: false; code: string; status: number; retryAfter?: string }
+    | {
+        ok: false
+        code: string
+        status: number
+        reason?: string
+        requestId?: string
+        retryAfter?: string
+        upstreamStatus?: number
+      }
   >
 }
 

@@ -86,6 +86,13 @@ const shellEntries: ShellEntry[] = [
     created: now - 2000,
     state: "complete",
   },
+  {
+    id: "agent-console-shell-error",
+    command: "false",
+    output: "terminal connection error",
+    created: now - 1000,
+    state: "error",
+  },
 ]
 
 const data = {

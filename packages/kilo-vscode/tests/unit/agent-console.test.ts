@@ -10,6 +10,7 @@ import {
 } from "../../webview-ui/src/components/chat/permission-presentation"
 import type { PermissionRequest } from "../../webview-ui/src/types/messages"
 import { routeAgentConsoleInput } from "../../src/agent-console/input"
+import { queue } from "../../webview-ui/agent-console/queue"
 
 const request = (command: string): PermissionRequest => ({
   id: "permission-1",
@@ -101,5 +102,33 @@ describe("agent console terminal bridge", () => {
       expect(sent).toEqual(["df -h\r", "pwd\r"])
       dispose()
     })
+  })
+
+  test("queues shell input until the websocket binds without duplicate sends", () => {
+    const sent: string[] = []
+    const failed: Array<{ id: string; message: string }> = []
+    const bridge = queue((id, message) => failed.push({ id, message }))
+
+    expect(bridge.send("first", "test\r")).toBe(false)
+    expect(bridge.send("second", "printf ok\r")).toBe(false)
+    expect(bridge.send("first", "test\r")).toBe(false)
+    const dispose = bridge.bind((data) => {
+      sent.push(data)
+      return true
+    })
+
+    expect(sent).toEqual(["test\r", "printf ok\r"])
+    expect(bridge.send("third", "pwd\r")).toBe(true)
+    expect(sent).toEqual(["test\r", "printf ok\r", "pwd\r"])
+    dispose()
+    expect(bridge.send("fourth", "uname -a\r")).toBe(false)
+    bridge.reject("terminal connection error")
+    bridge.bind((data) => {
+      sent.push(data)
+      return true
+    })
+
+    expect(sent).toEqual(["test\r", "printf ok\r", "pwd\r"])
+    expect(failed).toEqual([{ id: "fourth", message: "terminal connection error" }])
   })
 })

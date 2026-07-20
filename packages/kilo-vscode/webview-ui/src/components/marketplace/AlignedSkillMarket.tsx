@@ -18,6 +18,7 @@ import type {
   SkillDetail,
   SkillMarketplaceItem,
 } from "../../types/marketplace"
+import { MarketplaceDiagnostics } from "./MarketplaceDiagnostics"
 import { MarketplaceListView } from "./MarketplaceListView"
 
 type Section = "home" | "favorites" | "installed" | "publications" | "analytics" | "diagnostics"
@@ -28,6 +29,7 @@ interface Props {
   fetching: boolean
   user?: MarketplaceUser
   baseUrl?: string
+  mode?: "skills-only" | "full"
   capabilities?: MarketCapabilities
   installations: InstallationState[]
   publications: PublicationRun[]
@@ -68,12 +70,6 @@ export const AlignedSkillMarket = (props: Props) => {
   const favorites = createMemo(() => props.items.filter((item) => item.favorite))
   const detailItem = createMemo(() => props.items.find((item) => item.id === props.detailId))
 
-  const openStatus = () => {
-    if (!props.baseUrl) return
-    const root = props.baseUrl.replace(/\/marketplace\/?$/i, "")
-    vscode.postMessage({ type: "openExternal", url: `${root}/status` })
-  }
-
   const browse = () => {
     if (!props.baseUrl) return
     const root = props.baseUrl.replace(/\/marketplace\/?$/i, "")
@@ -88,7 +84,6 @@ export const AlignedSkillMarket = (props: Props) => {
       type="skill"
       searchPlaceholder={t("marketplace.search")}
       emptyMessage={empty}
-      showIdentity={false}
       onInstall={(item) => {
         if (item.type === "skill") props.onInstall(item)
       }}
@@ -106,14 +101,6 @@ export const AlignedSkillMarket = (props: Props) => {
   return (
     <div class="aligned-marketplace">
       <div class="aligned-marketplace-header">
-        <div class="marketplace-identity-copy">
-          <span class="marketplace-identity-label">{t("marketplace.aligned.user")}:</span>
-          <strong class="marketplace-identity-value">{props.user?.name ?? t("marketplace.aligned.unverified")}</strong>
-          <span class="marketplace-identity-url">{t("marketplace.aligned.protocol")}: aligned-v1</span>
-          <Show when={props.capabilities}>
-            <span class="marketplace-identity-url">API {props.capabilities!.apiVersion}</span>
-          </Show>
-        </div>
         <nav class="aligned-marketplace-nav" aria-label={t("marketplace.tab.skills")}>
           <Show when={props.capabilities?.features.extensions && props.baseUrl}>
             <Button size="small" variant="secondary" onClick={browse}>
@@ -192,7 +179,13 @@ export const AlignedSkillMarket = (props: Props) => {
           </Show>
         </Show>
         <Show when={section() === "diagnostics"}>
-          <Diagnostics status={props.status} capabilities={props.capabilities} open={openStatus} />
+          <MarketplaceDiagnostics
+            status={props.status}
+            capabilities={props.capabilities}
+            baseUrl={props.baseUrl}
+            protocol="aligned-v1"
+            mode={props.mode}
+          />
         </Show>
       </Show>
     </div>
@@ -400,50 +393,6 @@ function SkillRiskPanel(props: { detail: SkillDetail }) {
         )}
       </For>
     </Card>
-  )
-}
-
-function Diagnostics(props: { status?: MarketStatus; capabilities?: MarketCapabilities; open(): void }) {
-  const { t } = useLanguage()
-  return (
-    <div class="aligned-diagnostics">
-      <Card>
-        <div class="aligned-diagnostic-heading">
-          <Icon name="server" />
-          <strong>{t("marketplace.aligned.serviceStatus")}</strong>
-          <Tag>{props.status?.ok ? "READY" : "DEGRADED"}</Tag>
-        </div>
-        <Show when={props.status} fallback={<p>{t("marketplace.aligned.legacy")}</p>}>
-          <div class="aligned-status-grid">
-            <span>Render</span>
-            <strong>{props.status!.render}</strong>
-            <span>Market</span>
-            <strong>{props.status!.market}</strong>
-            <span>Packages</span>
-            <strong>{props.status!.packages}</strong>
-            <span>Transport</span>
-            <strong>{props.status!.transport}</strong>
-          </div>
-          <For each={props.status!.warnings}>{(warning) => <p class="aligned-diagnostic-warning">{warning}</p>}</For>
-        </Show>
-        <Button size="small" variant="ghost" onClick={props.open}>
-          {t("marketplace.aligned.openWebStatus")}
-        </Button>
-      </Card>
-      <Card>
-        <strong>{t("marketplace.aligned.capabilities")}</strong>
-        <div class="aligned-capability-list">
-          <For each={Object.entries(props.capabilities?.features ?? {})}>
-            {([name, enabled]) => (
-              <span>
-                <Icon name={enabled ? "check" : "close"} size="small" />
-                {name}
-              </span>
-            )}
-          </For>
-        </div>
-      </Card>
-    </div>
   )
 }
 

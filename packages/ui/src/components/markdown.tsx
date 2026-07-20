@@ -8,7 +8,7 @@ import { ComponentProps, createEffect, createResource, createSignal, onCleanup, 
 import { isServer } from "solid-js/web"
 import { stream } from "./markdown-stream"
 import { tryFastRender } from "../kilocode/markdown-fast-path" // kilocode_change
-import { hasMermaid, preserveMermaid, renderMermaid, type MermaidLabels } from "../kilocode/markdown-mermaid" // kilocode_change
+import { disposeMermaid, hasMermaid, preserveMermaid, renderMermaid, type MermaidLabels } from "../kilocode/markdown-mermaid" // kilocode_change
 import { preserveStreamingHighlight } from "../kilocode/markdown-stream-highlight" // kilocode_change
 import { createIncrementalMarkdown, type MarkdownBlock } from "../kilocode/markdown-incremental-dom" // kilocode_change
 
@@ -354,6 +354,7 @@ export function Markdown(
       }
       // kilocode_change end
       incremental.reset() // kilocode_change
+      disposeMermaid(container) // kilocode_change
       container.innerHTML = ""
       // kilocode_change start: Mermaid diagram rendering
       mermaidState.signal.aborted = true
@@ -381,6 +382,16 @@ export function Markdown(
       copyPng: i18n.t("ui.mermaid.copyPng"),
       downloadSvg: i18n.t("ui.mermaid.downloadSvg"),
       downloadPng: i18n.t("ui.mermaid.downloadPng"),
+      zoomOut: i18n.t("ui.mermaid.zoomOut"),
+      zoomIn: i18n.t("ui.mermaid.zoomIn"),
+      fit: i18n.t("ui.mermaid.fit"),
+      openViewer: i18n.t("ui.mermaid.openViewer"),
+      viewerTitle: i18n.t("ui.mermaid.viewerTitle"),
+      viewerControls: i18n.t("ui.mermaid.viewerControls"),
+      showSource: i18n.t("ui.mermaid.showSource"),
+      hideSource: i18n.t("ui.mermaid.hideSource"),
+      prepareRepair: i18n.t("ui.mermaid.prepareRepair"),
+      repairPrompt: (source: string, error: string) => i18n.t("ui.mermaid.repairPrompt", { source, error }),
     }
     // kilocode_change end
 
@@ -403,6 +414,7 @@ export function Markdown(
     }
     // kilocode_change end
 
+    if (local.streaming && hasMermaid(container)) disposeMermaid(container) // kilocode_change
     if (incremental.render(local.streaming ?? false, container, rendered.blocks, labels, mermaid)) return // kilocode_change
     incremental.reset() // kilocode_change
 
@@ -430,6 +442,9 @@ export function Markdown(
       // it would revert already-highlighted <pre> blocks back to plain code.
       morphdom(container, temp, {
         childrenOnly: true,
+        onNodeDiscarded: (node) => {
+          if (node instanceof HTMLElement) disposeMermaid(node)
+        },
         onBeforeElUpdated: (fromEl, toEl) => {
           if (
             fromEl instanceof HTMLButtonElement &&
@@ -529,6 +544,8 @@ export function Markdown(
     // kilocode_change start: Mermaid diagram rendering
     mermaidState.signal.aborted = true
     mermaidState.gen++
+    const container = root()
+    if (container) disposeMermaid(container)
     // kilocode_change end
     // kilocode_change: cancel any queued rAF parse so it doesn't touch the
     // unmounted DOM after dispose.

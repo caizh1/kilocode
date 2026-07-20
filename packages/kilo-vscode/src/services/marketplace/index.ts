@@ -18,9 +18,33 @@ import type {
   RemoveResult,
   MarketplaceUploadPayload,
   MarketplaceUser,
+  MarketStatus,
   PublicationPatch,
 } from "./types"
 import { chipmateServerEndpoints } from "../chipmate-server"
+import { safeMarketplaceErrorText } from "./errors"
+
+async function fetchStatus(api: MarketplaceApiClient): Promise<{ value?: MarketStatus; error?: string }> {
+  return api
+    .status()
+    .then((value) => ({ value }))
+    .catch((err) => ({ error: `服务状态检查失败：${safeMarketplaceErrorText(err)}` }))
+}
+
+async function fetchList<T>(
+  key: string | undefined,
+  load: (key: string) => Promise<T[]>,
+  label: string,
+): Promise<{ value: T[]; error?: string }> {
+  if (!key) return { value: [] as T[] }
+  return load(key)
+    .then((value) => ({ value }))
+    .catch((err) => ({ value: [] as T[], error: `${label}：${safeMarketplaceErrorText(err)}` }))
+}
+
+function fetchErrors(...results: Array<{ error?: string } | undefined>): string[] {
+  return results.flatMap((result) => (result?.error ? [result.error] : []))
+}
 
 export class MarketplaceService {
   private api: MarketplaceApiClient
@@ -56,28 +80,29 @@ export class MarketplaceService {
       aligned && details
         ? await Promise.all([
             this.api.capabilities(),
-            this.api.status().catch(() => undefined),
-            apiKey ? this.api.installations(apiKey).catch(() => []) : Promise.resolve([]),
-            apiKey ? this.api.publications(apiKey).catch(() => []) : Promise.resolve([]),
-            apiKey ? this.api.analytics(apiKey).catch(() => []) : Promise.resolve([]),
+            fetchStatus(this.api),
+            fetchList(apiKey, (key) => this.api.installations(key), "获取市场安装记录失败"),
+            fetchList(apiKey, (key) => this.api.publications(key), "获取市场发布记录失败"),
+            fetchList(apiKey, (key) => this.api.analytics(key), "获取市场分析数据失败"),
           ])
         : []
+    const errors = [...fetched.errors, ...fetchErrors(state[1], state[2], state[3], state[4])]
     return {
       marketplaceItems: merged.marketplaceItems,
       marketplaceInstalledMetadata: merged.marketplaceInstalledMetadata,
-      errors: fetched.errors.length > 0 ? fetched.errors : undefined,
+      errors: errors.length > 0 ? errors : undefined,
       marketplaceBaseUrl: this.api.marketplaceBaseUrl(),
       marketplaceSkillsOnly: this.api.isSkillsOnly(),
       marketplaceMode: this.api.marketplaceMode(),
       marketplaceProtocol: aligned ? "aligned-v1" : "legacy",
       marketplaceRelevance: matches,
       ...(state[0] ? { marketplaceCapabilities: state[0] } : {}),
-      ...(state[1] ? { marketplaceStatus: state[1] } : {}),
+      ...(state[1]?.value ? { marketplaceStatus: state[1].value } : {}),
       ...(aligned && details
         ? {
-            marketplaceInstallations: state[2] ?? [],
-            marketplacePublications: state[3] ?? [],
-            marketplaceAnalytics: state[4] ?? [],
+            marketplaceInstallations: state[2]?.value ?? [],
+            marketplacePublications: state[3]?.value ?? [],
+            marketplaceAnalytics: state[4]?.value ?? [],
           }
         : {}),
     }

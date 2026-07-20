@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify"
 import { fnv1a } from "../context/marked"
-import { mountMermaidActions } from "./markdown-mermaid-actions"
+import { mountMermaidActions, mountMermaidErrorActions } from "./markdown-mermaid-actions"
+import { clampMermaidZoom, fitMermaidZoom } from "./markdown-mermaid-zoom"
 
 // DOMPurify >= 3.1.7 dropped foreignObject from the default HTML integration
 // points, which caused the inner <div> / <span> / <p> labels Mermaid renders
@@ -30,6 +31,16 @@ export type MermaidLabels = {
   copyPng: string
   downloadSvg: string
   downloadPng: string
+  zoomOut: string
+  zoomIn: string
+  fit: string
+  openViewer: string
+  viewerTitle: string
+  viewerControls: string
+  showSource: string
+  hideSource: string
+  prepareRepair: string
+  repairPrompt: (source: string, error: string) => string
 }
 
 const labels: MermaidLabels = {
@@ -45,6 +56,17 @@ const labels: MermaidLabels = {
   copyPng: "Copy PNG",
   downloadSvg: "Download SVG",
   downloadPng: "Download PNG",
+  zoomOut: "Zoom out",
+  zoomIn: "Zoom in",
+  fit: "Fit diagram",
+  openViewer: "Open diagram viewer",
+  viewerTitle: "Mermaid diagram",
+  viewerControls: "Diagram viewer controls",
+  showSource: "Show Mermaid source",
+  hideSource: "Hide Mermaid source",
+  prepareRepair: "Prepare repair",
+  repairPrompt: (source, error) =>
+    `Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n${error}\n\nSource:\n\`\`\`mermaid\n${source}\n\`\`\``,
 }
 
 const cache: { promise?: Promise<Mermaid>; id: number; queue: Promise<void> } = {
@@ -226,12 +248,27 @@ function panel(wrapper: HTMLElement) {
   return el
 }
 
-function fail(wrapper: HTMLElement, pre: HTMLPreElement, err: unknown, labels: MermaidLabels) {
+function fail(wrapper: HTMLElement, pre: HTMLPreElement, err: unknown, labels: MermaidLabels, source?: string) {
   const el = panel(wrapper)
+  cleanupActions(el)
+  const detail = message(err, labels)
   el.setAttribute("data-state", "error")
-  el.textContent = labels.renderError(message(err, labels))
+  el.replaceChildren()
+  const text = document.createElement("div")
+  text.setAttribute("data-slot", "markdown-mermaid-error-message")
+  text.textContent = labels.renderError(detail)
+  el.appendChild(text)
   wrapper.setAttribute("data-mermaid-state", "error")
   pre.hidden = false
+  const value = source ?? pre.querySelector("code")?.textContent ?? ""
+  actions.set(
+    el,
+    mountMermaidErrorActions(el, {
+      labels,
+      onCopySource: () => copyText(value),
+      onPrepare: () => prepare(wrapper, value, detail, labels),
+    }),
+  )
 }
 
 function cleanupActions(el: HTMLElement) {
@@ -241,9 +278,20 @@ function cleanupActions(el: HTMLElement) {
   actions.delete(el)
 }
 
+export function disposeMermaid(root: HTMLElement) {
+  const nodes = root.matches('[data-component="markdown-mermaid"]')
+    ? [root, ...root.querySelectorAll<HTMLElement>('[data-component="markdown-mermaid"]')]
+    : Array.from(root.querySelectorAll<HTMLElement>('[data-component="markdown-mermaid"]'))
+  for (const node of nodes) cleanupActions(node)
+}
+
 function serialize(svg: SVGSVGElement) {
   const clone = svg.cloneNode(true) as SVGSVGElement
+  const dims = size(svg)
   clone.setAttribute("xmlns", "http://www.w3.org/2000/svg")
+  clone.setAttribute("width", String(dims.width))
+  clone.setAttribute("height", String(dims.height))
+  if (!clone.getAttribute("viewBox")) clone.setAttribute("viewBox", `0 0 ${dims.width} ${dims.height}`)
   return new XMLSerializer().serializeToString(clone)
 }
 
@@ -259,6 +307,25 @@ function size(svg: SVGSVGElement) {
   return { width, height }
 }
 
+function opaque(color: string) {
+  if (!color || color === "transparent") return false
+  return !/^rgba\([^,]+,[^,]+,[^,]+,\s*0(?:\.0+)?\)$/i.test(color)
+}
+
+function background(svg: SVGSVGElement) {
+  const roots = [
+    svg.closest('[data-slot="markdown-mermaid-canvas"]'),
+    svg.closest('[data-component="markdown-mermaid"]'),
+    svg.closest('[data-component="markdown-code"]'),
+    document.body,
+  ]
+  for (const root of roots) {
+    if (!(root instanceof Element)) continue
+    const color = getComputedStyle(root).backgroundColor
+    if (opaque(color)) return color
+  }
+}
+
 async function png(svg: SVGSVGElement) {
   const source = serialize(svg)
   const url = dataUrl("image/svg+xml", source)
@@ -271,10 +338,17 @@ async function png(svg: SVGSVGElement) {
   })
 
   const canvas = document.createElement("canvas")
-  canvas.width = dims.width
-  canvas.height = dims.height
+  const scale = Math.min(3, Math.max(1, window.devicePixelRatio || 1))
+  canvas.width = Math.max(Math.ceil(dims.width * scale), 1)
+  canvas.height = Math.max(Math.ceil(dims.height * scale), 1)
   const ctx = canvas.getContext("2d")
   if (!ctx) throw new Error("Unable to export Mermaid diagram.")
+  ctx.setTransform(scale, 0, 0, scale, 0, 0)
+  const color = background(svg)
+  if (color) {
+    ctx.fillStyle = color
+    ctx.fillRect(0, 0, dims.width, dims.height)
+  }
   ctx.drawImage(img, 0, 0, dims.width, dims.height)
   return canvas.toDataURL("image/png")
 }
@@ -313,6 +387,106 @@ async function copyPng(svg: SVGSVGElement) {
   await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
 }
 
+type Viewport = {
+  zoom: number
+  set: (value: number) => number
+  fit: () => number
+  dispose: () => void
+}
+
+function viewport(el: HTMLDivElement, svg: SVGSVGElement): Viewport {
+  const dims = size(svg)
+  const canvas = document.createElement("div")
+  const surface = document.createElement("div")
+  const state = { zoom: 1, fitted: true }
+  const drag = { active: false, x: 0, y: 0, left: 0, top: 0 }
+  canvas.setAttribute("data-slot", "markdown-mermaid-canvas")
+  canvas.setAttribute("tabindex", "0")
+  surface.setAttribute("data-slot", "markdown-mermaid-surface")
+  surface.appendChild(svg)
+  canvas.appendChild(surface)
+  el.appendChild(canvas)
+
+  const apply = () => {
+    surface.style.width = `${Math.max(dims.width * state.zoom, 1)}px`
+    surface.style.height = `${Math.max(dims.height * state.zoom, 1)}px`
+    el.style.setProperty("--markdown-mermaid-zoom", String(state.zoom))
+  }
+  const set = (value: number) => {
+    state.fitted = false
+    state.zoom = clampMermaidZoom(value)
+    apply()
+    return state.zoom
+  }
+  const fit = () => {
+    state.fitted = true
+    state.zoom = fitMermaidZoom(
+      { width: Math.max(canvas.clientWidth - 24, 1), height: Math.max(canvas.clientHeight - 24, 1) },
+      dims,
+    )
+    apply()
+    canvas.scrollLeft = 0
+    canvas.scrollTop = 0
+    return state.zoom
+  }
+  const start = (event: PointerEvent) => {
+    if (event.button !== 0) return
+    drag.active = true
+    drag.x = event.clientX
+    drag.y = event.clientY
+    drag.left = canvas.scrollLeft
+    drag.top = canvas.scrollTop
+    canvas.setPointerCapture(event.pointerId)
+    canvas.setAttribute("data-dragging", "")
+  }
+  const move = (event: PointerEvent) => {
+    if (!drag.active) return
+    canvas.scrollLeft = drag.left - (event.clientX - drag.x)
+    canvas.scrollTop = drag.top - (event.clientY - drag.y)
+  }
+  const stop = (event: PointerEvent) => {
+    if (!drag.active) return
+    drag.active = false
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
+    canvas.removeAttribute("data-dragging")
+  }
+  canvas.addEventListener("pointerdown", start)
+  canvas.addEventListener("pointermove", move)
+  canvas.addEventListener("pointerup", stop)
+  canvas.addEventListener("pointercancel", stop)
+  const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => state.fitted && fit())
+  observer?.observe(canvas)
+  apply()
+
+  return {
+    get zoom() {
+      return state.zoom
+    },
+    set,
+    fit,
+    dispose: () => {
+      observer?.disconnect()
+      canvas.removeEventListener("pointerdown", start)
+      canvas.removeEventListener("pointermove", move)
+      canvas.removeEventListener("pointerup", stop)
+      canvas.removeEventListener("pointercancel", stop)
+    },
+  }
+}
+
+async function prepare(wrapper: HTMLElement, source: string, error: string, labels: MermaidLabels) {
+  const parent = wrapper.closest("[data-session-id]")
+  const sessionID = parent?.getAttribute("data-session-id") ?? ""
+  const event = new CustomEvent("kilo:prepare-mermaid-repair", {
+    bubbles: true,
+    cancelable: true,
+    detail: { sessionID, source, error },
+  })
+  wrapper.dispatchEvent(event)
+  if (event.defaultPrevented) return
+  await copyText(labels.repairPrompt(source, error))
+}
+
 function renderActions(el: HTMLDivElement, pre: HTMLPreElement, source: string, labels: MermaidLabels) {
   const svg = el.querySelector("svg")
   if (!(svg instanceof SVGSVGElement)) return
@@ -321,6 +495,9 @@ function renderActions(el: HTMLDivElement, pre: HTMLPreElement, source: string, 
   const old = el.querySelector('[data-slot="markdown-mermaid-actions-root"]')
   old?.remove()
   const sourceText = pre.querySelector("code")?.textContent ?? source
+  const dims = size(svg)
+  const view = viewport(el, svg)
+  const initial = view.fit()
   const sourceSvg = () => serialize(svg)
   const sourceSvgUrl = () => dataUrl("image/svg+xml", sourceSvg())
 
@@ -328,6 +505,16 @@ function renderActions(el: HTMLDivElement, pre: HTMLPreElement, source: string, 
     el,
     mountMermaidActions(el, {
       labels,
+      svg: sourceSvg(),
+      size: dims,
+      zoom: initial,
+      onZoom: view.set,
+      onFit: view.fit,
+      onSource: () => {
+        pre.hidden = !pre.hidden
+        el.parentElement?.toggleAttribute("data-source-visible", !pre.hidden)
+        return !pre.hidden
+      },
       onCopySource: () => copyText(sourceText),
       onCopySvg: () => copyText(sourceSvg()),
       onCopyPng: () => copyPng(svg),
@@ -335,6 +522,13 @@ function renderActions(el: HTMLDivElement, pre: HTMLPreElement, source: string, 
       onDownloadPng: async () => save(await png(svg), "mermaid-diagram.png"),
     }),
   )
+  const dispose = actions.get(el)
+  if (dispose) {
+    actions.set(el, () => {
+      view.dispose()
+      dispose()
+    })
+  }
 }
 
 export function preserveMermaid(fromEl: Element, toEl: Element) {
@@ -442,7 +636,7 @@ export async function renderMermaid(
       pre.hidden = true
     } catch (err) {
       if (signal.aborted || !root.isConnected || !wrapper.isConnected) return
-      fail(wrapper, pre, err, label)
+      fail(wrapper, pre, err, label, source)
     }
   }
 }

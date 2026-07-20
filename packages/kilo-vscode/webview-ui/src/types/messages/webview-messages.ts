@@ -1274,6 +1274,10 @@ export interface FetchMarketplaceDataMessage {
   type: "fetchMarketplaceData"
 }
 
+export interface VerifyMarketplaceUserMessage {
+  type: "verifyMarketplaceUser"
+}
+
 export interface FetchMarketplaceSkillDetailMessage {
   type: "fetchMarketplaceSkillDetail"
   mpSkillId: string
@@ -1511,6 +1515,7 @@ export type WebviewMessage =
   | SetSandboxDefaultMessage
   | ToggleSandboxMessage
   | FetchMarketplaceDataMessage
+  | VerifyMarketplaceUserMessage
   | FetchMarketplaceSkillDetailMessage
   | PickLocalSkillsMessage
   | InstallLocalSkillsMessage

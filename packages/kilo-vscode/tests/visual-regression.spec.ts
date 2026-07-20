@@ -63,7 +63,11 @@ async function settle(page: Page) {
   await page.waitForFunction(
     () => {
       const root = document.querySelector("#storybook-root")
-      return root && !root.querySelector('pre > code[data-lang]:not([data-lang="mermaid"])')
+      return (
+        root &&
+        !root.querySelector('pre > code[data-lang]:not([data-lang="mermaid"])') &&
+        !root.querySelector('[data-mermaid-state="rendering"]')
+      )
     },
     undefined,
     { timeout: 5_000 },

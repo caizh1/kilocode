@@ -29,6 +29,43 @@ test("Agent Console exposes explicit Agent and Shell input modes", async ({ page
   await expect(input).toHaveValue("printf 'still mounted'")
 })
 
+test("Agent Console aligns compact tabs and renders readable shell output", async ({ page }) => {
+  await page.setViewportSize({ width: 1510, height: 614 })
+  await load(page, "agentconsole--approval")
+
+  const shell = page.getByRole("tab", { name: "Shell" })
+  const agent = page.getByRole("tab", { name: "Agent" })
+  const workspace = page.locator('[data-slot="agent-console-workspace"]')
+  const output = page.getByText("/project\nLinux 6.8.0 x86_64", { exact: true })
+  const error = page.getByText("terminal connection error", { exact: true })
+  const [shellBox, agentBox, workspaceBox] = await Promise.all([
+    shell.boundingBox(),
+    agent.boundingBox(),
+    workspace.boundingBox(),
+  ])
+
+  expect(shellBox).not.toBeNull()
+  expect(agentBox).not.toBeNull()
+  expect(workspaceBox).not.toBeNull()
+  expect(shellBox!.height).toBe(agentBox!.height)
+  expect(Math.abs(shellBox!.y - agentBox!.y)).toBeLessThanOrEqual(1)
+  expect(
+    Math.abs(shellBox!.y + shellBox!.height / 2 - (workspaceBox!.y + workspaceBox!.height / 2)),
+  ).toBeLessThanOrEqual(1)
+  await expect(output).toHaveCSS("color", "rgb(255, 255, 255)")
+  await expect(error).toHaveCSS("color", "rgb(241, 76, 76)")
+  expect(
+    await page
+      .locator('[data-slot="agent-console-mode"] [data-slot="tabs-list"]')
+      .evaluate((node) => getComputedStyle(node, "::after").display),
+  ).toBe("none")
+
+  await page.setViewportSize({ width: 640, height: 614 })
+  const narrow = await workspace.boundingBox()
+  expect(narrow).not.toBeNull()
+  expect(narrow!.x + narrow!.width).toBeLessThanOrEqual(640)
+})
+
 test("high-risk permission edit rejects the original surface and prefills the Agent prompt", async ({ page }) => {
   await load(page, "agentconsole--approval")
 
@@ -39,5 +76,5 @@ test("high-risk permission edit rejects the original surface and prefills the Ag
   await card.getByRole("button", { name: "修改" }).click()
 
   await expect(card).toBeHidden()
-  await expect(page.locator("textarea.prompt-input")).toHaveValue("sudo rm -rf /tmp/example")
+  await expect(page.getByRole("textbox", { name: "Agent Console 输入" })).toHaveValue("sudo rm -rf /tmp/example")
 })

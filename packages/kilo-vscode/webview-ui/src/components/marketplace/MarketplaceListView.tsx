@@ -9,7 +9,6 @@ import type {
   McpMarketplaceItem,
   SkillMarketplaceItem,
   MarketplaceInstalledMetadata,
-  MarketplaceUser,
   MarketplaceRelevanceMetadata,
 } from "../../types/marketplace"
 import { useLanguage } from "../../context/language"
@@ -34,14 +33,9 @@ interface Props {
   initialRelevant?: boolean
   onInstall: (item: MarketplaceItem) => void
   onRemove: (item: MarketplaceItem, scope: "project" | "global") => void
-  marketplaceUser?: MarketplaceUser
-  marketplaceBaseUrl?: string
-  marketplaceSkillsOnly?: boolean
-  marketplaceMode?: "skills-only" | "full"
   onUploadMarketplaceSkill?: (item: SkillMarketplaceItem) => void
   onStarMarketplaceSkill?: (item: MarketplaceItem) => void
   onOpenSkill?: (item: SkillMarketplaceItem) => void
-  showIdentity?: boolean
 }
 
 export const MarketplaceListView = (props: Props) => {
@@ -86,25 +80,6 @@ export const MarketplaceListView = (props: Props) => {
 
   return (
     <div class="marketplace-list">
-      <Show when={props.type === "skill" && props.showIdentity !== false}>
-        <div class="marketplace-identity-bar">
-          <div class="marketplace-identity-copy">
-            <span class="marketplace-identity-label">{t("marketplace.aligned.user")}:</span>
-            <span class="marketplace-identity-value">
-              {props.marketplaceUser?.name ?? t("marketplace.aligned.unverified")}
-            </span>
-            <Show when={props.marketplaceBaseUrl}>
-              <span class="marketplace-identity-url">{props.marketplaceBaseUrl}</span>
-            </Show>
-            <span class="marketplace-identity-url">
-              {t("marketplace.aligned.mode")}:{" "}
-              {props.marketplaceMode === "skills-only" || props.marketplaceSkillsOnly
-                ? t("marketplace.aligned.skillsOnlyMode")
-                : t("marketplace.aligned.fullMode")}
-            </span>
-          </div>
-        </div>
-      </Show>
       <div class="marketplace-filters">
         <div class="marketplace-search-field">
           <TextField

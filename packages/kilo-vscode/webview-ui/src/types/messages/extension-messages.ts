@@ -9,8 +9,10 @@ import type {
   LocalSkillImportProgress,
   MarketCapabilities,
   MarketplaceItem,
+  MarketplaceIdentityState,
   MarketplaceInstalledMetadata,
   MarketplaceRelevanceMetadata,
+  MarketplaceServerState,
   MarketplaceUser,
   MarketStatus,
   PublicationRun,
@@ -1088,8 +1090,16 @@ export interface MarketplaceDataMessage {
   marketplacePublications?: PublicationRun[]
   marketplaceStatus?: MarketStatus
   marketplaceAnalytics?: AnalyticsSeries[]
+  marketplaceServerState?: MarketplaceServerState
+  marketplaceIdentityState?: MarketplaceIdentityState
   errors?: string[]
   showAgentMigrationBanner?: boolean
+}
+
+export interface MarketplaceRuntimeStateMessage {
+  type: "marketplaceRuntimeState"
+  marketplaceServerState?: MarketplaceServerState
+  marketplaceIdentityState?: MarketplaceIdentityState
 }
 
 export interface MarketplaceSyncMessage {
@@ -1377,6 +1387,7 @@ export type ExtensionMessage =
   | DiffViewerNoticeMessage
   | DiffViewerBranchesLoadedMessage
   | MarketplaceDataMessage
+  | MarketplaceRuntimeStateMessage
   | MarketplaceSyncMessage
   | MarketplaceCatalogMessage
   | MarketplaceInstallResultMessage

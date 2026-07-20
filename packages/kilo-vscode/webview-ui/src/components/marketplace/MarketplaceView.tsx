@@ -12,6 +12,8 @@ import type {
   AgentMarketplaceItem,
   SkillMarketplaceItem,
   MarketplaceInstalledMetadata,
+  MarketplaceIdentityState,
+  MarketplaceServerState,
   MarketplaceUser,
   MarketCapabilities,
   MarketStatus,
@@ -27,6 +29,8 @@ import { InstallModal } from "./InstallModal"
 import { RemoveDialog } from "./RemoveDialog"
 import { AlignedSkillMarket } from "./AlignedSkillMarket"
 import { LocalSkillImportDialog } from "./LocalSkillImportDialog"
+import { MarketplaceDiagnostics } from "./MarketplaceDiagnostics"
+import { MarketplaceRuntimeCard } from "./MarketplaceRuntimeCard"
 import "./marketplace.css"
 
 const EMPTY_METADATA: MarketplaceInstalledMetadata = { project: {}, global: {} }
@@ -63,6 +67,14 @@ export const MarketplaceView = () => {
   const [detailId, setDetailId] = createSignal<string>()
   const [detail, setDetail] = createSignal<SkillDetail>()
   const [detailError, setDetailError] = createSignal<string>()
+  const [runtimeServer, setRuntimeServer] = createSignal<MarketplaceServerState>({
+    status: "connecting",
+    checkedAt: new Date().toISOString(),
+  })
+  const [runtimeIdentity, setRuntimeIdentity] = createSignal<MarketplaceIdentityState>({
+    status: "verifying",
+    checkedAt: new Date().toISOString(),
+  })
 
   const skills = createMemo(() => items().filter((i): i is SkillMarketplaceItem => i.type === "skill"))
   const mcps = createMemo(() => items().filter((i): i is McpMarketplaceItem => i.type === "mcp"))
@@ -71,6 +83,25 @@ export const MarketplaceView = () => {
   const fetchData = () => {
     setFetching(true)
     vscode.postMessage({ type: "fetchMarketplaceData" })
+  }
+
+  const applyRuntime = (msg: {
+    marketplaceServerState?: MarketplaceServerState
+    marketplaceIdentityState?: MarketplaceIdentityState
+  }) => {
+    if (msg.marketplaceServerState) setRuntimeServer(msg.marketplaceServerState)
+    if (msg.marketplaceIdentityState) {
+      setRuntimeIdentity(msg.marketplaceIdentityState)
+      setMarketplaceUser(msg.marketplaceIdentityState.user)
+    }
+    const issues = [
+      msg.marketplaceServerState?.status === "degraded" || msg.marketplaceServerState?.status === "failed"
+        ? msg.marketplaceServerState.issue?.summary
+        : undefined,
+      msg.marketplaceIdentityState?.status === "failed" ? msg.marketplaceIdentityState.issue?.summary : undefined,
+    ].filter((item): item is string => Boolean(item))
+    if (issues.length === 0) return
+    setErrors((items) => [...items, ...issues.filter((issue) => !items.includes(issue))])
   }
 
   const handleLocalRemoveMessage = (msg: ExtensionMessage) => {
@@ -89,10 +120,15 @@ export const MarketplaceView = () => {
     setLocalRemove({ requestId: msg.requestId, error: msg.error ?? t("settings.agentBehaviour.removeSkill.failed") })
   }
 
+  const handleRuntimeMessage = (msg: ExtensionMessage) => {
+    if (msg.type === "marketplaceRuntimeState") applyRuntime(msg)
+  }
+
   // Listen for messages
   createEffect(() => {
     const unsub = vscode.onMessage((msg) => {
       handleLocalRemoveMessage(msg)
+      handleRuntimeMessage(msg)
       if (msg.type === "marketplaceData") {
         setItems(msg.marketplaceItems ?? [])
         setMetadata(msg.marketplaceInstalledMetadata ?? EMPTY_METADATA)
@@ -109,6 +145,7 @@ export const MarketplaceView = () => {
         setPublications(msg.marketplacePublications ?? [])
         setStatus(msg.marketplaceStatus)
         setAnalytics(msg.marketplaceAnalytics ?? [])
+        applyRuntime(msg)
         if (msg.marketplaceSkillsOnly) setTab("skill")
       }
       if (msg.type === "marketplacePublicationResult") {
@@ -269,6 +306,15 @@ export const MarketplaceView = () => {
     setDetailError(undefined)
   }
 
+  const verifyUser = () => {
+    setRuntimeIdentity({
+      status: "verifying",
+      checkedAt: new Date().toISOString(),
+      user: marketplaceUser(),
+    })
+    vscode.postMessage({ type: "verifyMarketplaceUser" })
+  }
+
   const openLocalImport = () => {
     dialog.show(() => <LocalSkillImportDialog onClose={() => dialog.close()} />)
   }
@@ -377,54 +423,68 @@ export const MarketplaceView = () => {
           </Tabs.Content>
 
           <Tabs.Content value="skill">
-            <Show
-              when={protocol() === "aligned-v1"}
-              fallback={
-                <>
-                  <Card variant="info" class="marketplace-legacy-notice">
-                    {t("marketplace.aligned.legacy")}
-                  </Card>
-                  <MarketplaceListView
-                    items={skills()}
-                    metadata={metadata()}
-                    fetching={fetching()}
-                    type="skill"
-                    searchPlaceholder={t("marketplace.search")}
-                    emptyMessage={t("marketplace.empty")}
-                    onInstall={handleInstall}
-                    onRemove={handleRemove}
-                    marketplaceUser={marketplaceUser()}
-                    marketplaceBaseUrl={marketplaceBaseUrl()}
-                    marketplaceSkillsOnly={marketplaceSkillsOnly()}
-                    marketplaceMode={marketplaceMode()}
-                    onStarMarketplaceSkill={starMarketplaceSkill}
-                  />
-                </>
-              }
-            >
-              <AlignedSkillMarket
-                items={skills()}
-                metadata={metadata()}
-                fetching={fetching()}
-                user={marketplaceUser()}
-                baseUrl={marketplaceBaseUrl()}
-                capabilities={capabilities()}
-                installations={installations()}
-                publications={publications()}
-                status={status()}
-                analytics={analytics()}
-                detail={detail()}
-                detailId={detailId()}
-                detailError={detailError()}
-                onOpen={openSkill}
-                onCloseDetail={closeSkill}
-                onInstall={handleInstall}
-                onRemove={handleRemove}
-                onStar={starMarketplaceSkill}
-                onUpload={capabilities()?.features.publications ? uploadMarketplaceSkill : undefined}
-                onUnpublish={unpublishMarketplaceSkill}
+            <div class="marketplace-skill-content">
+              <MarketplaceRuntimeCard
+                server={runtimeServer()}
+                identity={runtimeIdentity()}
+                onVerify={verifyUser}
+                diagnostics={
+                  protocol() === "legacy" ? (
+                    <MarketplaceDiagnostics
+                      status={status()}
+                      baseUrl={marketplaceBaseUrl()}
+                      protocol="legacy"
+                      mode={marketplaceMode()}
+                    />
+                  ) : undefined
+                }
               />
-            </Show>
+              <Show
+                when={protocol() === "aligned-v1"}
+                fallback={
+                  <>
+                    <Card variant="info" class="marketplace-legacy-notice">
+                      {t("marketplace.aligned.legacy")}
+                    </Card>
+                    <MarketplaceListView
+                      items={skills()}
+                      metadata={metadata()}
+                      fetching={fetching()}
+                      type="skill"
+                      searchPlaceholder={t("marketplace.search")}
+                      emptyMessage={t("marketplace.empty")}
+                      onInstall={handleInstall}
+                      onRemove={handleRemove}
+                      onStarMarketplaceSkill={starMarketplaceSkill}
+                    />
+                  </>
+                }
+              >
+                <AlignedSkillMarket
+                  items={skills()}
+                  metadata={metadata()}
+                  fetching={fetching()}
+                  user={marketplaceUser()}
+                  baseUrl={marketplaceBaseUrl()}
+                  mode={marketplaceMode()}
+                  capabilities={capabilities()}
+                  installations={installations()}
+                  publications={publications()}
+                  status={status()}
+                  analytics={analytics()}
+                  detail={detail()}
+                  detailId={detailId()}
+                  detailError={detailError()}
+                  onOpen={openSkill}
+                  onCloseDetail={closeSkill}
+                  onInstall={handleInstall}
+                  onRemove={handleRemove}
+                  onStar={starMarketplaceSkill}
+                  onUpload={capabilities()?.features.publications ? uploadMarketplaceSkill : undefined}
+                  onUnpublish={unpublishMarketplaceSkill}
+                />
+              </Show>
+            </div>
           </Tabs.Content>
         </div>
       </Tabs>
