@@ -72,12 +72,18 @@ export class TerminalManager {
     worktreeId: string | null
     cwd: string
     title: string
-  }): Promise<{ terminalId: string; worktreeId: string | null; title: string; wsUrl: string }> {
+    command?: string
+    args?: string[]
+    env?: Record<string, string>
+  }): Promise<{ terminalId: string; ptyID: string; worktreeId: string | null; title: string; wsUrl: string }> {
     const client = this.deps.getClient()
     const { data, error } = await client.pty.create({
       directory: params.cwd,
       cwd: params.cwd,
       title: params.title,
+      command: params.command,
+      args: params.args,
+      env: params.env,
     })
     if (error || !data) {
       const err = error instanceof Error ? error.message : String(error ?? "unknown error")
@@ -93,8 +99,25 @@ export class TerminalManager {
     }
     this.entries.set(terminalId, entry)
     const wsUrl = this.deps.buildWsUrl(entry.ptyID, entry.cwd)
-    this.deps.log(`Terminal created: ${terminalId} -> pty ${entry.ptyID} cwd=${entry.cwd}`)
-    return { terminalId, worktreeId: entry.worktreeId, title: entry.title, wsUrl }
+    this.deps.log(
+      `Terminal created: ${terminalId} -> pty ${entry.ptyID} pid=${data.pid} status=${data.status} command=${data.command} cwd=${entry.cwd}`,
+    )
+    return { terminalId, ptyID: entry.ptyID, worktreeId: entry.worktreeId, title: entry.title, wsUrl }
+  }
+
+  /** Associate a persistent PTY with the real backend session before its first prompt. */
+  async associate(terminalId: string, sessionID: string): Promise<void> {
+    const entry = this.entries.get(terminalId)
+    if (!entry) throw new Error("Agent Console terminal is no longer available")
+    const client = this.deps.getClient()
+    const { error } = await client.pty.update({
+      directory: entry.cwd,
+      ptyID: entry.ptyID,
+      sessionID,
+    })
+    if (!error) return
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to bind Agent Console PTY: ${message}`)
   }
 
   /** Forward a resize event to the backend PTY. Missing terminals are a no-op. */

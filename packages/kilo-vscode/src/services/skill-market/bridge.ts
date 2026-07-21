@@ -70,7 +70,8 @@ export class SkillMarketBridge {
   }
 
   private start(request: SkillMarketRequest, directory: string) {
-    if (this.disposed || this.active.has(request.id) || !this.connection.getKnownDirectories().includes(directory)) return
+    if (this.disposed || this.active.has(request.id) || !this.connection.getKnownDirectories().includes(directory))
+      return
     const controller = new AbortController()
     this.active.set(request.id, controller)
     void this.run(request, directory, controller).finally(() => this.active.delete(request.id))
@@ -80,13 +81,13 @@ export class SkillMarketBridge {
     try {
       const value = await this.service().execute(request, directory)
       if (controller.signal.aborted || this.disposed) return
-      await this.reply(request.id, directory, value)
       if (request.operation === "commit" || request.operation === "undo") {
         await this.connection
           .getClient()
-          .instance.dispose({ directory })
+          .kilocode.refreshSkills({ directory, scope: value.scope ?? "global" })
           .catch((error: unknown) => console.warn("[Kilo New] SkillMarketBridge: Skill cache refresh failed:", error))
       }
+      await this.reply(request.id, directory, value)
     } catch (error) {
       if (controller.signal.aborted || this.disposed) return
       await this.reject(request.id, directory, failure(error))

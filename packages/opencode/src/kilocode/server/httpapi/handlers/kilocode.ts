@@ -1,7 +1,6 @@
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import * as KiloAgent from "@/kilocode/agent"
-import * as KiloSkill from "@/kilocode/skill-remove"
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
@@ -22,6 +21,7 @@ import {
   AgentManagerReplyPayload,
   NotebookRejectPayload,
   NotebookReplyPayload,
+  RefreshSkillsPayload,
   RemoveAgentPayload,
   RemoveSkillPayload,
   SkillMarketRejectPayload,
@@ -51,13 +51,16 @@ export const kilocodeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilocode"
     const removeSkill = Effect.fn("KilocodeHttpApi.removeSkill")(function* (ctx: {
       payload: typeof RemoveSkillPayload.Type
     }) {
-      const instance = yield* InstanceState.context
-      const entries = yield* skills.all()
-      yield* Effect.tryPromise({
-        try: () => KiloSkill.remove(ctx.payload.location, entries),
-        catch: () => new HttpApiError.BadRequest({}),
-      })
-      yield* store.dispose(instance)
+      yield* skills
+        .remove(ctx.payload.location, ctx.payload.scope ?? "project")
+        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+      return true
+    })
+
+    const refreshSkills = Effect.fn("KilocodeHttpApi.refreshSkills")(function* (ctx: {
+      payload: typeof RefreshSkillsPayload.Type
+    }) {
+      yield* skills.refresh(ctx.payload.scope)
       return true
     })
 
@@ -166,6 +169,7 @@ export const kilocodeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilocode"
       .handle("heapSnapshot", heapSnapshot)
       .handle("agentRequirements", agentRequirements)
       .handle("removeSkill", removeSkill)
+      .handle("refreshSkills", refreshSkills)
       .handle("removeAgent", removeAgent)
       .handle("notebookList", notebookList)
       .handle("notebookReply", notebookReply)

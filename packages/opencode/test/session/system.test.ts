@@ -55,6 +55,7 @@ const it = testEffect(
           all: () => Effect.succeed(skills),
           dirs: () => Effect.succeed([]),
           available: () => Effect.succeed(skills),
+          refresh: () => Effect.void, // kilocode_change
           remove: () => Effect.void, // kilocode_change
         }),
       ),

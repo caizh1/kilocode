@@ -32,9 +32,10 @@ async function merge(seedRoot, marketRoot) {
       const target = path.join(stage, `${id}.tar.gz`)
       const info = await stat(source)
       if (!info.isFile() || info.size <= 0) throw new Error(`managed seed archive is empty: ${source}`)
-      const listing = execFileSync("tar", ["-tzf", source], { encoding: "utf8" }).split(/\r?\n/)
-      if (!listing.includes("./SKILL.md") && !listing.includes("SKILL.md"))
-        throw new Error(`managed seed archive has no root SKILL.md: ${source}`)
+      const listing = execFileSync("tar", ["-tzf", source], { encoding: "utf8" }).split(/\r?\n/).filter(Boolean)
+      if (!listing.includes(`${id}/SKILL.md`) || !listing.every((entry) => safe(entry, id))) {
+        throw new Error(`managed seed archive must use ${id}/ as its only root: ${source}`)
+      }
       await cp(source, target)
       item.sha256 = await sha256(target)
     }
@@ -92,6 +93,13 @@ function safeArchive(value, id) {
   const expected = `skills/${id}.tar.gz`
   if (value !== expected) throw new Error(`managed seed ${id} must use ${expected}`)
   return value
+}
+
+function safe(entry, id) {
+  const normalized = entry.replace(/\/+$/, "")
+  if (!normalized || normalized.startsWith("/") || normalized.includes("\\")) return false
+  const parts = normalized.split("/")
+  return parts[0] === id && !parts.some((part) => !part || part === "." || part === "..")
 }
 
 async function sha256(file) {

@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, mock } from "bun:test"
 import * as vscode from "vscode"
 import {
+  installMarketplaceItem,
   removeMarketplaceItem,
   removeMarketplaceItemFromAllScopes,
   type MarketplaceActionContext,
   type MarketplaceRemoveContext,
 } from "../../src/services/marketplace/actions"
-import type { McpMarketplaceItem } from "../../src/services/marketplace/types"
+import type { McpMarketplaceItem, SkillMarketplaceItem } from "../../src/services/marketplace/types"
 import {
   filterItems,
   hasRelevantItems,
@@ -28,6 +29,16 @@ const item: McpMarketplaceItem = {
   category: "development",
   url: "",
   content: "",
+}
+const skill: SkillMarketplaceItem = {
+  id: "documents",
+  type: "skill",
+  name: "Documents",
+  displayName: "Documents",
+  description: "Document workflows",
+  category: "productivity",
+  displayCategory: "Productivity",
+  content: "https://example.com/documents.tar.gz",
 }
 const fs = vscode.workspace.fs as unknown as {
   readFile: (uri: vscode.Uri) => Promise<Uint8Array>
@@ -142,6 +153,87 @@ describe("Marketplace installation metadata", () => {
     expect(filterItems(items, metadata, "warehouse", "all", [], [], {}, true, relevance)).toEqual([])
     expect(hasRelevantItems(items, relevance)).toBe(true)
     expect(hasRelevantItems(items, {})).toBe(false)
+  })
+})
+
+describe("Marketplace Skill cache refresh", () => {
+  it("refreshes only Skill state after project installation", async () => {
+    const refresh = mock(async () => ({ data: true }))
+    const dispose = mock(async () => ({ data: true }))
+    const ctx = {
+      connection: {
+        getClientAsync: mock(async () => ({
+          global: { config: { update: mock(async () => {}) } },
+          instance: { dispose },
+          kilocode: { refreshSkills: refresh },
+        })),
+      },
+      marketplace: { install: mock(async () => ({ success: true, slug: skill.id })) },
+    } as unknown as MarketplaceActionContext
+
+    await installMarketplaceItem(ctx, skill, { target: "project" }, project, project)
+
+    expect(refresh).toHaveBeenCalledWith({ directory: project, scope: "project" })
+    expect(dispose).not.toHaveBeenCalled()
+  })
+
+  it("refreshes all Skill caches after global removal", async () => {
+    const refresh = mock(async () => ({ data: true }))
+    const dispose = mock(async () => ({ data: true }))
+    const update = mock(async () => ({ data: {} }))
+    const remove = mock(async () => ({ success: true, slug: skill.id }))
+    const ctx = {
+      connection: {
+        getClientAsync: mock(async () => ({
+          app: {
+            skills: mock(async () => ({
+              data: [
+                {
+                  name: skill.name,
+                  location: `/storage/config/skills/${skill.id}/SKILL.md`,
+                },
+              ],
+            })),
+          },
+          global: { config: { update } },
+          instance: { dispose },
+          kilocode: { refreshSkills: refresh },
+        })),
+      },
+      marketplace: { remove },
+    } as unknown as MarketplaceActionContext
+
+    await removeMarketplaceItem(ctx, skill, "global", project, project)
+
+    expect(refresh).toHaveBeenCalledWith({ directory: project, scope: "global" })
+    expect(remove).toHaveBeenCalledWith(skill, "global", project, `/storage/config/skills/${skill.id}/SKILL.md`)
+    expect(update).not.toHaveBeenCalled()
+    expect(dispose).not.toHaveBeenCalled()
+  })
+
+  it("passes the active local path so managed removal can reject a same-name Skill", async () => {
+    const remove = mock(async (...args: unknown[]) => ({
+      success: false,
+      slug: skill.id,
+      error: `rejected ${String(args[3])}`,
+    }))
+    const ctx = {
+      connection: {
+        getClientAsync: mock(async () => ({
+          app: {
+            skills: mock(async () => ({
+              data: [{ name: skill.name, location: `/home/caizh/.agent/skills/${skill.id}/SKILL.md` }],
+            })),
+          },
+        })),
+      },
+      marketplace: { remove },
+    } as unknown as MarketplaceActionContext
+
+    const result = await removeMarketplaceItem(ctx, skill, "project", project, project)
+
+    expect(result.success).toBe(false)
+    expect(remove).toHaveBeenCalledWith(skill, "project", project, `/home/caizh/.agent/skills/${skill.id}/SKILL.md`)
   })
 })
 

@@ -9,6 +9,24 @@ import { testEffect } from "../lib/effect"
 const it = testEffect(Layer.mergeAll(Command.defaultLayer, CrossSpawnSpawner.defaultLayer))
 
 describe("skill slash commands", () => {
+  it.live("lists and resolves the built-in grill-me skill", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const command = yield* Command.Service
+          const list = yield* command.list()
+          const item = list.find((entry) => entry.name === "grill-me" && entry.source === "skill")
+
+          expect(item).toBeDefined()
+
+          const skill = yield* command.get("grill-me")
+          expect(skill?.source).toBe("skill")
+          expect(yield* Effect.promise(async () => skill?.template)).toContain("Ask the questions one at a time.")
+        }),
+      { git: true },
+    ),
+  )
+
   it.live("lists and resolves skills that conflict with commands", () =>
     provideTmpdirInstance(
       (dir) =>

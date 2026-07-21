@@ -6,6 +6,7 @@ interface PendingEntry {
   info: Permission.Request
   ruleset: Permission.Ruleset
   hardRuleset?: Permission.Ruleset
+  forceAsk?: boolean
   deferred: Deferred.Deferred<void, Permission.RejectedError | Permission.CorrectedError>
 }
 
@@ -30,6 +31,7 @@ export function drainCovered(
   return Effect.gen(function* () {
     for (const [id, entry] of pending) {
       if (id === exclude) continue
+      if (entry.forceAsk) continue
       // Never auto-resolve config file edit permissions
       const skill = ConfigProtection.globalSkillPattern(entry.info)
       if (ConfigProtection.isRequest(entry.info) && !skill) continue

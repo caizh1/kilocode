@@ -7,6 +7,13 @@ interface MarketplaceSkillMerge {
   marketplaceInstalledMetadata: MarketplaceInstalledMetadata
 }
 
+export type SkillOrigin = "market" | "local" | "builtin"
+
+export interface SkillRoots {
+  global: readonly string[]
+  project?: readonly string[]
+}
+
 export function normalizeSkillKey(value: string): string {
   return value
     .trim()
@@ -25,11 +32,25 @@ export function isListedUploadableSkill(id: string, ids: ReadonlySet<string>): b
   return Boolean(key && ids.has(key))
 }
 
+export function skillOrigin(skill: CliSkill, roots?: SkillRoots): SkillOrigin {
+  if (
+    skill.location === "builtin" ||
+    skill.location === "<built-in>" ||
+    path.resolve(skill.location).includes(`${path.sep}builtin-skills${path.sep}`)
+  ) {
+    return "builtin"
+  }
+  if (roots?.project?.some((root) => contains(root, skill.location))) return "market"
+  if (roots?.global.some((root) => contains(root, skill.location))) return "market"
+  return "local"
+}
+
 export function mergeMarketplaceSkills(
   items: MarketplaceItem[],
   skills: CliSkill[] | undefined,
   metadata: MarketplaceInstalledMetadata,
   skillsFetched: boolean,
+  roots?: SkillRoots,
 ): MarketplaceSkillMerge {
   const remote = items.filter((item): item is SkillMarketplaceItem => item.type === "skill")
   const index = new Map<string, string>()
@@ -53,7 +74,10 @@ export function mergeMarketplaceSkills(
     aliases.set(key, id)
     const item = remote.find((skill) => skill.id === id)
     const source = local.get(key)
-    if (item && source) item.uploadable = skillsFetched && isUploadableSkill(source)
+    if (item && source) {
+      item.uploadable = skillsFetched && isUploadableSkill(source)
+      item.origin = skillOrigin(source, roots)
+    }
   }
 
   const installed = {
@@ -62,7 +86,7 @@ export function mergeMarketplaceSkills(
   }
   const extras = Array.from(local.entries()).flatMap(([key, skill]) => {
     if (aliases.has(key)) return []
-    return [localSkill(key, skill, skillsFetched)]
+    return [localSkill(key, skill, skillsFetched, roots)]
   })
 
   return {
@@ -84,7 +108,7 @@ function mapInstalledSkills(
   return result
 }
 
-function localSkill(id: string, skill: CliSkill, skillsFetched: boolean): SkillMarketplaceItem {
+function localSkill(id: string, skill: CliSkill, skillsFetched: boolean, roots?: SkillRoots): SkillMarketplaceItem {
   const description = skill.description?.trim() || "本地已安装的 Skill"
   return {
     type: "skill",
@@ -97,5 +121,11 @@ function localSkill(id: string, skill: CliSkill, skillsFetched: boolean): SkillM
     content: "",
     localOnly: true,
     uploadable: skillsFetched && isUploadableSkill(skill),
+    origin: skillOrigin(skill, roots),
   }
+}
+
+function contains(root: string, location: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(location))
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
 }

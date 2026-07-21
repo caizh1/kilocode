@@ -1,0 +1,83 @@
+{
+  "requiredTopics": [
+    "positioning",
+    "boundaries",
+    "io",
+    "architecture",
+    "business",
+    "objects",
+    "functions",
+    "state",
+    "interfaces",
+    "errors",
+    "strategy",
+    "integration",
+    "observability",
+    "evidence"
+  ],
+  "cases": [
+    {
+      "name": "unconsumed-anchor",
+      "designUnits": ["DU-TARGET"],
+      "completedUnits": ["DU-TARGET"],
+      "remainingAnchors": ["[[SBDD-CONTENT:DU-TARGET:interfaces]]"],
+      "sections": [
+        { "heading": "目标模块设计", "unitId": "DU-TARGET", "bodyKinds": ["explanatory-paragraph"] }
+      ],
+      "expectedStatus": "MISSING",
+      "expectedFindings": ["unconsumed-content-anchor"]
+    },
+    {
+      "name": "missing-child-body",
+      "designUnits": ["DU-TARGET", "DU-CHILD"],
+      "completedUnits": ["DU-TARGET"],
+      "remainingAnchors": [],
+      "sections": [
+        { "heading": "目标模块设计", "unitId": "DU-TARGET", "bodyKinds": ["explanatory-paragraph"] },
+        { "heading": "子模块设计", "unitId": "DU-CHILD", "bodyKinds": ["image", "caption"] }
+      ],
+      "expectedStatus": "MISSING",
+      "expectedFindings": ["incomplete-unit-census", "bodyless-heading:子模块设计"]
+    },
+    {
+      "name": "list-and-table-only",
+      "designUnits": ["DU-TARGET"],
+      "completedUnits": ["DU-TARGET"],
+      "remainingAnchors": [],
+      "sections": [
+        { "heading": "接口设计", "unitId": "DU-TARGET", "bodyKinds": ["list", "table"] }
+      ],
+      "expectedStatus": "MISSING",
+      "expectedFindings": ["bodyless-heading:接口设计"]
+    },
+    {
+      "name": "image-only",
+      "designUnits": ["DU-TARGET"],
+      "completedUnits": ["DU-TARGET"],
+      "remainingAnchors": [],
+      "sections": [
+        { "heading": "状态机设计", "unitId": "DU-TARGET", "bodyKinds": ["image", "caption"] }
+      ],
+      "expectedStatus": "MISSING",
+      "expectedFindings": ["bodyless-heading:状态机设计"]
+    },
+    {
+      "name": "complete-target-and-children",
+      "designUnits": ["DU-TARGET", "DU-INGEST", "DU-STORE"],
+      "completedUnits": ["DU-TARGET", "DU-INGEST", "DU-STORE"],
+      "remainingAnchors": [],
+      "topics": {
+        "DU-TARGET": ["positioning", "boundaries", "io", "architecture", "business", "objects", "functions", "state", "interfaces", "errors", "strategy", "integration", "observability", "evidence"],
+        "DU-INGEST": ["positioning", "boundaries", "io", "architecture", "business", "objects", "functions", "state", "interfaces", "errors", "strategy", "integration", "observability", "evidence"],
+        "DU-STORE": ["positioning", "boundaries", "io", "architecture", "business", "objects", "functions", "state", "interfaces", "errors", "strategy", "integration", "observability", "evidence"]
+      },
+      "sections": [
+        { "heading": "目标模块设计", "unitId": "DU-TARGET", "bodyKinds": ["explanatory-paragraph", "table"] },
+        { "heading": "Ingest子模块设计", "unitId": "DU-INGEST", "bodyKinds": ["explanatory-paragraph", "image", "caption"] },
+        { "heading": "Store子模块设计", "unitId": "DU-STORE", "bodyKinds": ["code-explanation", "table"] }
+      ],
+      "expectedStatus": "PASS",
+      "expectedFindings": []
+    }
+  ]
+}

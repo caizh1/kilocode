@@ -24,6 +24,7 @@ export interface AutoApproveController {
 
 const CONFIG = "chipmate.v2.autoApprove"
 const KEY = "enabled"
+const MANUAL = "agent_console_shell"
 
 /**
  * Runtime auto-accept toggle for permissions.
@@ -73,6 +74,7 @@ export function registerToggleAutoApprove(
         const { data: pending } = await client.permission.list({ directory: dir }, { throwOnError: true })
         for (const req of pending) {
           if (generation !== snapshot) break
+          if (req.permission === MANUAL) continue
           await client.permission
             .reply({ requestID: req.id, directory: dir, reply: "once" }, { throwOnError: true })
             .catch((err) => {
@@ -89,6 +91,7 @@ export function registerToggleAutoApprove(
 
   const approve = async (event: Asked, directory?: string) => {
     if (!active) return false
+    if (event.properties.permission === MANUAL) return false
     const client = tryGetClient(connectionService)
     if (!client) return false
     const dir =

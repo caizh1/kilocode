@@ -47,6 +47,24 @@ it.instance(
 )
 
 it.instance(
+  "grill-me ships as an original built-in skill",
+  () =>
+    Effect.gen(function* () {
+      const skill = yield* Skill.Service
+      const item = yield* skill.get("grill-me")
+
+      expect(item).toBeDefined()
+      expect(item!.location).toBe(Skill.BUILTIN_LOCATION)
+      expect(item!.content.startsWith("---\nname: grill-me\n")).toBe(true)
+      expect(item!.content).toContain("Ask the questions one at a time.")
+      expect(item!.content).toContain(
+        "If a question can be answered by exploring the codebase, explore the codebase instead.",
+      )
+    }),
+  { git: true },
+)
+
+it.instance(
   "document deliverable skills ship as built-ins without replacing QA",
   () =>
     Effect.gen(function* () {
@@ -71,9 +89,9 @@ it.instance(
       expect(sourceBacked!.location).toContain(path.join("builtin-skills", "source-backed-detail-design", "SKILL.md"))
       expect(sourceBacked!.content.startsWith("---\n")).toBe(true)
       expect(sourceBacked!.content).not.toMatch(/^<hr\s*\/?/i)
-      expect(sourceBacked!.content).toContain("not a migrated Word/document contract")
-      expect(sourceBacked!.content).toContain("Kilo built-in skill")
-      expect(sourceBacked!.content).toContain("Do not force ordinary code QA")
+      expect(sourceBacked!.content).toContain("SBDD_RULESET_REVISION=2026-07-long-task-gate-v1")
+      expect(sourceBacked!.content).toContain("not a ChipMate runtime pipeline")
+      expect(sourceBacked!.content).toContain("Ordinary code QA continues through native evidence tools without artifacts")
       expect(existsSync(path.join(path.dirname(sourceBacked!.location), "references", "01-core-principles.md"))).toBe(
         true,
       )

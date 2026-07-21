@@ -33,8 +33,15 @@ import { SessionID } from "@/session/schema"
 
 const root = "/kilocode"
 
+export const SkillScope = Schema.Literals(["project", "global"])
+
 export const RemoveSkillPayload = Schema.Struct({
   location: Schema.String,
+  scope: Schema.optional(SkillScope),
+})
+
+export const RefreshSkillsPayload = Schema.Struct({
+  scope: SkillScope,
 })
 
 export const RemoveAgentPayload = Schema.Struct({
@@ -56,6 +63,7 @@ export const KilocodePaths = {
   heapSnapshot: `${root}/heap/snapshot`,
   agentRequirements: `${root}/agent/requirements`,
   removeSkill: `${root}/skill/remove`,
+  refreshSkills: `${root}/skill/refresh`,
   removeAgent: `${root}/agent/remove`,
   notebookList: `${root}/notebook`,
   notebookReply: `${root}/notebook/:requestID/reply`,
@@ -103,7 +111,18 @@ export const KilocodeApi = HttpApi.make("kilocode")
           OpenApi.annotations({
             identifier: "kilocode.removeSkill",
             summary: "Remove a skill",
-            description: "Remove a skill by deleting its manifest from disk and clearing it from cache.",
+            description: "Remove a discovered user skill directory from disk and refresh the Skill cache.",
+          }),
+        ),
+        HttpApiEndpoint.post("refreshSkills", KilocodePaths.refreshSkills, {
+          query: WorkspaceRoutingQuery,
+          payload: RefreshSkillsPayload,
+          success: described(Schema.Boolean, "Skill cache refreshed"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "kilocode.refreshSkills",
+            summary: "Refresh skills",
+            description: "Refresh Skill discovery and state without disposing active workspace sessions.",
           }),
         ),
         HttpApiEndpoint.post("removeAgent", KilocodePaths.removeAgent, {

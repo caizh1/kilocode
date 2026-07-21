@@ -11,11 +11,14 @@ import {
 import type { PermissionRequest } from "../../webview-ui/src/types/messages"
 import { routeAgentConsoleInput } from "../../src/agent-console/input"
 import { queue } from "../../webview-ui/agent-console/queue"
+import { redact } from "../../webview-ui/agent-manager/terminal/diagnostic"
+import { contrast } from "../../webview-ui/agent-manager/terminal/theme"
+import { activityBlocks, mergeActivity } from "../../webview-ui/agent-console/activity"
 
-const request = (command: string): PermissionRequest => ({
+const request = (command: string, toolName = "bash"): PermissionRequest => ({
   id: "permission-1",
   sessionID: "session-1",
-  toolName: "bash",
+  toolName,
   patterns: [],
   always: [],
   args: { command },
@@ -56,6 +59,7 @@ describe("agent console command presentation", () => {
     expect(permissionPresentation(safe)).toBe("standard")
     expect(permissionPresentation(danger)).toBe("high")
     expect(permissionEditPrompt(danger)).toBe("sudo rm -rf /tmp/example")
+    expect(permissionPresentation(request("sudo rm -rf /tmp/example", "agent_console_shell"))).toBe("high")
   })
 
   test("rejects the original permission before prefilling and ignores duplicate edits", () => {
@@ -84,6 +88,90 @@ describe("agent console command presentation", () => {
 })
 
 describe("agent console terminal bridge", () => {
+  test("deduplicates replayed activity and groups a live command in order", () => {
+    const events = mergeActivity(
+      [
+        { seq: 1, time: 1, kind: "idle", data: "/workspace $ printf ok\r\n" },
+        {
+          seq: 2,
+          time: 2,
+          kind: "begin",
+          cwd: "/workspace",
+          runId: "run-1",
+          source: "direct",
+          command: "printf ok",
+        },
+      ],
+      [
+        {
+          seq: 2,
+          time: 2,
+          kind: "begin",
+          cwd: "/workspace",
+          runId: "run-1",
+          source: "direct",
+          command: "printf ok",
+        },
+        { seq: 3, time: 3, kind: "data", data: "ok", runId: "run-1", source: "direct" },
+        { seq: 4, time: 4, kind: "end", cwd: "/workspace", exitCode: 0, runId: "run-1" },
+      ],
+    )
+
+    expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4])
+    expect(activityBlocks(events)).toEqual([
+      {
+        id: "terminal:1",
+        time: 1,
+        kind: "idle",
+        data: "/workspace $ printf ok\r\n",
+        running: false,
+      },
+      {
+        id: "terminal:run-1",
+        time: 2,
+        kind: "run",
+        data: "ok",
+        cwd: "/workspace",
+        exitCode: 0,
+        running: false,
+        runId: "run-1",
+        source: "direct",
+        callId: undefined,
+        command: "printf ok",
+      },
+    ])
+  })
+
+  test("forces Agent Console terminal text and ANSI white to pure white", () => {
+    expect(
+      contrast(
+        {
+          foreground: "#333",
+          cursor: "#333",
+          cursorAccent: "#eee",
+          white: "#ccc",
+          brightWhite: "#eee",
+          background: "#fff",
+        },
+        "#fff",
+        "#101113",
+      ),
+    ).toEqual({
+      foreground: "#fff",
+      cursor: "#fff",
+      cursorAccent: "#101113",
+      white: "#fff",
+      brightWhite: "#fff",
+      background: "#101113",
+    })
+  })
+
+  test("redacts websocket credentials from diagnostics", () => {
+    expect(redact("Failed ws://127.0.0.1/pty/1?auth_token=aGVsbG86c2VjcmV0%3D&cursor=-1")).toBe(
+      "Failed ws://127.0.0.1/pty/1?auth_token=[redacted]&cursor=-1",
+    )
+  })
+
   test("queues the first shell command until the PTY websocket binds", () => {
     createRoot((dispose) => {
       const [selection] = createSignal<string | null>(LOCAL)
@@ -130,5 +218,19 @@ describe("agent console terminal bridge", () => {
 
     expect(sent).toEqual(["test\r", "printf ok\r", "pwd\r"])
     expect(failed).toEqual([{ id: "fourth", message: "terminal connection error" }])
+  })
+
+  test("sends twenty sequential commands exactly once", () => {
+    const sent: string[] = []
+    const bridge = queue(() => undefined)
+    bridge.bind((data) => {
+      sent.push(data)
+      return true
+    })
+
+    for (const index of Array.from({ length: 20 }, (_, index) => index)) {
+      expect(bridge.send(`run-${index}`, `printf ${index}\r`)).toBe(true)
+    }
+    expect(sent).toEqual(Array.from({ length: 20 }, (_, index) => `printf ${index}\r`))
   })
 })

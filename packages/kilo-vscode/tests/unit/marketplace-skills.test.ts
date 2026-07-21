@@ -3,6 +3,7 @@ import {
   isListedUploadableSkill,
   mergeMarketplaceSkills,
   normalizeSkillKey,
+  skillOrigin,
 } from "../../src/services/marketplace/skills"
 import type { MarketplaceItem } from "../../src/services/marketplace/types"
 
@@ -23,6 +24,32 @@ const metadata = {
 }
 
 describe("Marketplace Skill merge", () => {
+  it("shows a built-in grill-me Skill as a local-only installed card", () => {
+    const result = mergeMarketplaceSkills(
+      [],
+      [
+        {
+          name: "grill-me",
+          description: "Interview the user relentlessly about a plan or design.",
+          location: "builtin",
+          content: "# grill-me",
+        },
+      ],
+      { project: {}, global: { "grill-me": { type: "skill" } } },
+      true,
+    )
+
+    expect(result.marketplaceItems).toHaveLength(1)
+    expect(result.marketplaceItems[0]).toMatchObject({
+      id: "grill-me",
+      localOnly: true,
+      uploadable: true,
+      origin: "builtin",
+      displayCategory: "本地",
+    })
+    expect(result.marketplaceInstalledMetadata.global["grill-me"]).toEqual({ type: "skill" })
+  })
+
   it("uses one remote card and aliases local installation scopes", () => {
     const result = mergeMarketplaceSkills(
       [remote],
@@ -101,5 +128,23 @@ describe("Marketplace Skill merge", () => {
     expect(isListedUploadableSkill("Local Guide", ids)).toBe(true)
     expect(isListedUploadableSkill("code-review", ids)).toBe(false)
     expect(isListedUploadableSkill("unknown", ids)).toBe(false)
+  })
+
+  it("classifies only ChipMate managed roots as marketplace-managed", () => {
+    const roots = {
+      project: ["/workspace/.chipmate-v2/skills", "/real/workspace/.chipmate-v2/skills"],
+      global: ["/storage/config/skills"],
+    }
+
+    expect(skillOrigin({ name: "project", location: "/workspace/.chipmate-v2/skills/project/SKILL.md" }, roots)).toBe(
+      "market",
+    )
+    expect(skillOrigin({ name: "global", location: "/storage/config/skills/global/SKILL.md" }, roots)).toBe("market")
+    expect(skillOrigin({ name: "agent", location: "/workspace/.agents/skills/agent/SKILL.md" }, roots)).toBe("local")
+    expect(skillOrigin({ name: "custom", location: "/opt/custom/custom/SKILL.md" }, roots)).toBe("local")
+    expect(
+      skillOrigin({ name: "aliased", location: "/real/workspace/.chipmate-v2/skills/aliased/SKILL.md" }, roots),
+    ).toBe("market")
+    expect(skillOrigin({ name: "builtin", location: "/cache/builtin-skills/builtin/SKILL.md" }, roots)).toBe("builtin")
   })
 })

@@ -1,6 +1,6 @@
-# 09 Target Module Assembly and Context Parent Rules
+# 09 Target Module Assembly and Owning-Module Rules
 
-文件名为兼容现有 reference 集合而保留；这里的 mandatory assembly owner 是解析后的 target module，不是其 context parent。完整交付中，target module 必须具备五类视图：
+文件名为兼容现有 reference 集合而保留；这里的 mandatory assembly owner 是解析后的 target module，不是其所属上级模块。完整交付中，target module 必须具备五类视图：
 
 1. target-module-architecture：架构边界、组件、上下游和共享资源；
 2. business-target-module-master-flow：high-level 业务总流程图；
@@ -27,12 +27,14 @@ Target 汇总图不能展开所有函数内部细节。函数内部细节必须�
 
 代码/架构视角 target 图不得替代 business-target-module-master-flow。最终正文必须同时引用 high-level 业务总图和代码/架构视角 target 图。
 
-## Context parent 定位
+## 系统架构定位、所属上级模块与目标角色
 
-Context parent 只在第 3 章说明 target 在父系统中的角色、进入/退出接口、关键 handoff 和边界。必要时可以生成一张 source-backed context architecture 或 interaction figure，但该图不属于 DesignUnit、不占 `5D`、不建立 FsmAudit，也不能替代 target 的任何五类图。例如源码确认 `Platform -> Worker` 时，Platform 位于本节，Worker 才进入后续 target assembly。
+系统架构位置、源码归属、所属上级模块、调用关系、数据/状态/控制权 handoff、依赖、协作、管理和资源所有权必须分别取证，并在全文所有出现位置保持一致。源码归属不能证明系统层级；所属上级模块不能自动视为业务上游或调用入口；调用关系不能证明所有权；目标属于某系统层内部时不得把同一系统层写成目标下游。“管理”或“位于……之间”必须有直接证据，证据不足时标记“待确认”。
+
+所属上级模块只用于说明目标在系统中的位置、源码归属、进入/退出接口、关键 handoff 和边界。必要时可以生成一张 source-backed positioning architecture 或 interaction figure，但该图不属于 DesignUnit、不占 `5D`、不建立 FsmAudit，也不能替代 target 的任何五类图。该关系规则适用于所有章节、表格、图、图注、review notes 和结论，不限于固定章节。生成内容统一使用“所属上级模块”，不得显示内部字段名或其直译。
 
 ## 内部架构与子模块分解
 
-Target module 正文的第 4 至第 8 章共同组成唯一 root target DesignUnit：第 4 章放架构基础图，第 6 章放唯一业务流程基础图，第 7 章只分解 target 内部候选并放闭环后的子模块分解表且不占五视图槽位，第 8 章放数据/生命周期、代码流程、状态机或 `N/A` 以及其他实现细节。第 8 章只引用第 6 章业务主图，不重复插入或计数。第 9 章开始逐个放 target-owned confirmed submodule 的连续本地章节。分解表至少包含 Discovery Signal IDs、Candidate ID、源码位置、业务定位、职责、输入输出、上下游、关键状态或生命周期对象、确认结论与依据、排除原因或合并归属、重要性/深挖依据、详细章节、证据和置信度。表旁必须同时报告 discovery signal 和 candidate 的 mapped/unmapped 数量，且两者 `unmapped=0`。每个 `confirmed_submodule` 行都必须进入本地章节和五视图覆盖账本；context parent 不得出现在此表中伪装为 target 子模块。
+Target module 正文的第 4 至第 8 章共同组成唯一 root target DesignUnit：第 4 章放架构基础图，第 6 章放唯一业务流程基础图，第 7 章只分解 target 内部候选并放闭环后的子模块分解表且不占五视图槽位，第 8 章放数据/生命周期、代码流程、状态机或 `N/A` 以及其他实现细节。第 8 章只引用第 6 章业务主图，不重复插入或计数。第 9 章开始逐个放 target-owned confirmed submodule 的连续本地章节。分解表至少包含 Discovery Signal IDs、Candidate ID、源码位置、业务定位、职责、输入输出、上游/下游及其关系类型、关键状态或生命周期对象、确认结论与依据、排除原因或合并归属、重要性/深挖依据、详细章节、证据和置信度。表旁必须同时报告 discovery signal 和 candidate 的 mapped/unmapped 数量，且两者 `unmapped=0`。每个 `confirmed_submodule` 行都必须进入本地章节和五视图覆盖账本；所属上级模块不得出现在此表中伪装为 target 子模块。
 
-Target 汇总节点必须链接到对应的已确认子模块连续章节。Target 代码图、状态图、对象索引或性能汇总只能表达跨单元关系，不能替代子模块本地架构、业务、数据、代码、状态和异常恢复说明。Context-parent 图同样不能替代 target 或子模块本地内容。
+Target 汇总节点必须链接到对应的已确认子模块连续章节。Target 代码图、状态图、对象索引或性能汇总只能表达跨单元关系，不能替代子模块本地架构、业务、数据、代码、状态和异常恢复说明。所属上级模块定位图同样不能替代 target 或子模块本地内容。

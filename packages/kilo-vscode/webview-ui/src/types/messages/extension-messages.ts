@@ -764,8 +764,75 @@ export interface AgentConsoleTerminalCreatedMessage {
   type: "agentConsole.terminal.created"
   terminalId: string
   title: string
-  wsUrl: string
   font: TerminalFont
+}
+
+export interface AgentConsoleTerminalConnectedMessage {
+  type: "agentConsole.terminal.connected"
+  terminalId: string
+}
+
+export interface AgentConsoleTerminalDataMessage {
+  type: "agentConsole.terminal.data"
+  terminalId: string
+  data: string
+}
+
+export interface AgentConsoleActivityEvent {
+  seq: number
+  time: number
+  kind: "idle" | "begin" | "data" | "end"
+  data?: string
+  cwd?: string
+  exitCode?: number
+  runId?: string
+  source?: "direct" | "agent"
+  callId?: string
+  command?: string
+}
+
+export interface AgentConsoleTerminalActivityMessage {
+  type: "agentConsole.terminal.activity"
+  terminalId: string
+  event: AgentConsoleActivityEvent
+}
+
+export interface AgentConsoleTerminalActivitySnapshotMessage {
+  type: "agentConsole.terminal.activitySnapshot"
+  terminalId: string
+  events: AgentConsoleActivityEvent[]
+  throughSeq: number
+}
+
+export interface AgentConsoleTerminalStateMessage {
+  type: "agentConsole.terminal.state"
+  terminalId: string
+  state:
+    | { status: "starting" }
+    | { status: "ready"; cwd: string }
+    | { status: "busy"; cwd: string }
+    | { status: "recovering"; cwd?: string }
+    | { status: "error"; message: string }
+}
+
+export interface AgentConsoleTerminalRecoveryMessage {
+  type: "agentConsole.terminal.recovery"
+  terminalId: string
+  success: boolean
+  message?: string
+}
+
+export interface AgentConsoleTerminalRelayErrorMessage {
+  type: "agentConsole.terminal.relayError"
+  terminalId: string
+  message: string
+}
+
+export interface AgentConsoleTerminalDisconnectedMessage {
+  type: "agentConsole.terminal.disconnected"
+  terminalId: string
+  code: number
+  reason: string
 }
 
 export interface AgentConsoleTerminalFontChangedMessage {
@@ -1368,6 +1435,14 @@ export type ExtensionMessage =
   | AgentManagerPRStatusMessage
   | AgentManagerTerminalCreatedMessage
   | AgentConsoleTerminalCreatedMessage
+  | AgentConsoleTerminalConnectedMessage
+  | AgentConsoleTerminalDataMessage
+  | AgentConsoleTerminalActivityMessage
+  | AgentConsoleTerminalActivitySnapshotMessage
+  | AgentConsoleTerminalStateMessage
+  | AgentConsoleTerminalRecoveryMessage
+  | AgentConsoleTerminalRelayErrorMessage
+  | AgentConsoleTerminalDisconnectedMessage
   | AgentConsoleTerminalFontChangedMessage
   | AgentConsoleTerminalClosedMessage
   | AgentConsoleTerminalErrorMessage

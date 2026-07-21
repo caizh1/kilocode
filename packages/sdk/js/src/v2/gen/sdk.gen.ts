@@ -195,6 +195,8 @@ import type {
   KilocodeNotebookRejectResponses,
   KilocodeNotebookReplyErrors,
   KilocodeNotebookReplyResponses,
+  KilocodeRefreshSkillsErrors,
+  KilocodeRefreshSkillsResponses,
   KilocodeRemoveAgentErrors,
   KilocodeRemoveAgentResponses,
   KilocodeRemoveSkillErrors,
@@ -8240,13 +8242,14 @@ export class Kilocode extends HeyApiClient {
   /**
    * Remove a skill
    *
-   * Remove a skill by deleting its manifest from disk and clearing it from cache.
+   * Remove a discovered user skill directory from disk and refresh the Skill cache.
    */
   public removeSkill<ThrowOnError extends boolean = false>(
     parameters?: {
       directory?: string
       workspace?: string
       location?: string
+      scope?: "project" | "global"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -8258,6 +8261,7 @@ export class Kilocode extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "location" },
+            { in: "body", key: "scope" },
           ],
         },
       ],
@@ -8274,6 +8278,47 @@ export class Kilocode extends HeyApiClient {
         },
       },
     )
+  }
+
+  /**
+   * Refresh skills
+   *
+   * Refresh Skill discovery and state without disposing active workspace sessions.
+   */
+  public refreshSkills<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      scope?: "project" | "global"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "scope" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      KilocodeRefreshSkillsResponses,
+      KilocodeRefreshSkillsErrors,
+      ThrowOnError
+    >({
+      url: "/kilocode/skill/refresh",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
   }
 
   /**

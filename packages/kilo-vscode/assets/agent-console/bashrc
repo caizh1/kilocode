@@ -1,0 +1,58 @@
+# ChipMate Agent Console shell integration for Ubuntu/Debian Bash.
+# Load the user's interactive configuration first so aliases, PATH, prompt,
+# virtual environments, and other shell state behave like a normal terminal.
+if [[ -r "$HOME/.bashrc" ]]; then
+  source "$HOME/.bashrc"
+fi
+
+__chipmate_token="${KILO_AGENT_CONSOLE_TOKEN-}"
+unset KILO_AGENT_CONSOLE KILO_AGENT_CONSOLE_TOKEN
+
+if [[ "$__chipmate_token" =~ ^[a-fA-F0-9]{32}$ ]]; then
+  __chipmate_emit() {
+    printf '\033]6973;%s;%s\a' "$__chipmate_token" "$1"
+  }
+
+  __chipmate_cwd() {
+    printf '%s' "$PWD" | base64 | tr -d '\n'
+  }
+
+  __chipmate_begin() {
+    __chipmate_emit "begin;$(__chipmate_cwd)"
+  }
+
+  __chipmate_first=1
+  __chipmate_after() {
+    local code=$?
+    if (( __chipmate_first )); then
+      __chipmate_emit "ready;$(__chipmate_cwd)"
+      __chipmate_first=0
+      return "$code"
+    fi
+    __chipmate_emit "end;${code};$(__chipmate_cwd)"
+    return "$code"
+  }
+
+  __chipmate_prompt=()
+  case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+    "declare -a"*) __chipmate_prompt=("${PROMPT_COMMAND[@]}") ;;
+    *)
+      if [[ -n "${PROMPT_COMMAND-}" ]]; then
+        __chipmate_prompt=("$PROMPT_COMMAND")
+      fi
+      ;;
+  esac
+
+  __chipmate_ps0="${PS0-}"
+  __chipmate_install() {
+    PROMPT_COMMAND=(__chipmate_after "${__chipmate_prompt[@]}")
+    PS0='$(__chipmate_begin)'"${__chipmate_ps0}"
+  }
+
+  __chipmate_resync() {
+    __chipmate_install
+    __chipmate_emit "resync;$(__chipmate_cwd)"
+  }
+
+  __chipmate_install
+fi

@@ -3573,6 +3573,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       const sid = resolved.sid
       const dir = resolved.dir
 
+      await this.opts.beforePrompt?.({ sessionID: sid, directory: dir, agent })
+
       const parts: Array<TextPartInput | FilePartInput> = []
       if (files) {
         for (const f of files) {

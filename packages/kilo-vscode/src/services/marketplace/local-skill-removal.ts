@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto"
+import { realpathSync } from "fs"
 import * as path from "path"
 import * as vscode from "vscode"
 import type { KiloConnectionService } from "../cli-backend"
@@ -94,13 +95,12 @@ export class LocalSkillRemoval {
       if (!current.some((skill) => same(skill, target))) throw new Error("该 Skill 已变化，请刷新后重试。")
 
       progress("removing")
-      await client.kilocode.removeSkill({ location: target.location, directory }, { throwOnError: true })
+      await client.kilocode.removeSkill(
+        { location: target.location, scope: target.scope, directory },
+        { throwOnError: true },
+      )
 
       progress("refreshing")
-      const first = await list(client, directory)
-      if (first.some((skill) => same(skill, target))) {
-        await client.instance.dispose({ directory }, { throwOnError: true })
-      }
       const fresh = await list(client, directory)
       if (fresh.some((skill) => same(skill, target))) throw new Error("删除后 Skill 缓存仍未刷新。")
       if (await exists(path.dirname(target.location))) throw new Error("删除后 Skill 目录仍然存在。")
@@ -141,7 +141,11 @@ async function list(client: Awaited<ReturnType<KiloConnectionService["getClientA
 async function exists(dir: string) {
   return vscode.workspace.fs.stat(vscode.Uri.file(dir)).then(
     () => true,
-    () => false,
+    (err: unknown) => {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false
+      if (err instanceof vscode.FileSystemError && err.code === "FileNotFound") return false
+      throw err
+    },
   )
 }
 
@@ -158,6 +162,16 @@ function removable(skill: CliSkill) {
 }
 
 function contains(root: string, location: string) {
-  const relative = path.relative(path.resolve(root), path.resolve(location))
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+  const inside = (base: string, target: string) => {
+    const relative = path.relative(path.resolve(base), path.resolve(target))
+    return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+  }
+  if (inside(root, location)) return true
+  try {
+    return inside(realpathSync(root), realpathSync(location))
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false
+    console.warn("[Kilo New] Failed to resolve local Skill scope:", root, location, err)
+    return false
+  }
 }

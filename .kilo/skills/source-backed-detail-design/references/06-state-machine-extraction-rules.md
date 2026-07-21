@@ -6,7 +6,7 @@
 
 ## 2. 状态变量
 
-状态变量可能是 ctx->state、mp->state、flush_state、cur_state、next_state、phase、step、status。必须记录定义位置、可能取值、读取位置、写入位置、handler、状态改变条件，并证明确实存在 `current state -> event/trigger -> guard/action -> next state` 的持久控制关系。
+从当前源码识别实际的持久状态存储，不预设任何变量名、字段名或命名模式。必须记录定义位置、可能取值、读取位置、写入位置、handler、状态改变条件，并证明确实存在 `current state -> event/trigger -> guard/action -> next state` 的持久控制关系。
 
 ## 3. dispatch 分析
 
@@ -20,7 +20,7 @@
 
 每个重要 FSM 必须覆盖 dispatch、state-overview、transition-conditions、error-retry-timeout 和关键 `handler-<state>` 细节。可在标签保持可读、语义边界清楚时合并视图，也可按分支或 handler 拆分；不使用固定图片数量作为质量指标。状态边必须包含 trigger/event、guard condition、action、next state、evidence ID。
 
-状态机图必须放在所属 target module 或已确认子模块的状态机小节中。全局状态机索引或 target 总览只能用于说明跨单元转换，不能替代本地 dispatch、handler、失败和恢复分析。Target module 和已确认子模块使用相同三态判定。每个 DesignUnit 建立 FsmAudit，逐项记录 state storage/enums、state reads、state/next-state writes、events/triggers、dispatch/handler、initialization、terminal/error/recovery paths、positive/negative evidence IDs 和 audit completeness。Context parent 不是 DesignUnit，不建立强制 FsmAudit：
+状态机图必须放在所属 target module 或已确认子模块的状态机小节中。全局状态机索引或 target 总览只能用于说明跨单元转换，不能替代本地 dispatch、handler、失败和恢复分析。Target module 和已确认子模块使用相同三态判定。每个 DesignUnit 建立 FsmAudit，逐项记录 state storage/enums、state reads、state/next-state writes、events/triggers、dispatch/handler、initialization、terminal/error/recovery paths、positive/negative evidence IDs 和 audit completeness。所属上级模块不是 DesignUnit，不建立强制 FsmAudit：
 
 - `PRESENT`：源码存在持久控制状态参与 `current state -> event/trigger -> guard/action -> next state` 关系，必须生成状态机图；
 - `N/A`：所有 audit 维度均已完整搜索且负证据证明不存在上述状态语义；

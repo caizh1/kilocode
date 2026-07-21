@@ -20,15 +20,7 @@
 
 ### 2.1 允许抽象
 
-允许把多个函数、多个分支或多个状态处理抽象成一个业务动作，例如：
-
-| 源码事实 | 可抽象为 |
-|---|---|
-| 参数校验、ctx 初始化、资源申请 | 请求接入与上下文准备 |
-| switch state + handler 调用 | 按当前业务状态分派处理 |
-| 队列入队、等待回调、状态置 WAIT | 等待异步处理结果 |
-| retry counter + timeout branch | 超时重试控制 |
-| error code + cleanup + state error | 失败收敛与资源清理 |
+允许把具有同一业务目的、处理对象和结果的多个函数、分支或状态处理抽象成一个业务动作。每个抽象必须从当前源码证据动态命名，并保留其覆盖的函数、条件、状态、数据变化和证据 ID；不得套用本 Skill 预设的动作名称。
 
 ### 2.2 禁止抽象
 
@@ -36,21 +28,7 @@
 
 ### 2.3 图中命名规则
 
-业务流程图中的节点优先使用业务语义命名：
-
-- 请求接入
-- 参数与上下文校验
-- 业务对象装载
-- 状态判定
-- 策略选择
-- 下游请求发起
-- 等待异步结果
-- 结果合并
-- 状态提交
-- 异常收敛
-- 成功完成
-
-函数名、结构体名、字段名、宏名不得作为主节点名称，除非该符号本身就是业务概念。源码符号放到证据表，不放到业务图主标签。
+业务流程图中的节点必须使用从当前源码和业务证据抽象出的业务语义。函数名、结构体名、字段名、宏名不得作为主节点名称，除非该符号本身就是经证据确认的业务概念。源码符号放到证据表，不放到业务图主标签。本 Skill 不预设节点名称、业务阶段或流程类型。
 
 ## 3. 业务证据输出
 
@@ -80,22 +58,7 @@ business_capability_id,capability_name,capability_description,business_value,sco
 business_step_id,step_name,step_type,submodule,input_business_object,business_action,decision_condition,output_business_object,state_effect,next_possible_steps,source_basis,evidence_ids
 ```
 
-step_type 包括：
-
-- trigger
-- validation
-- preparation
-- business_action
-- decision
-- dispatch
-- wait
-- retry
-- error
-- cleanup
-- complete
-- abort
-- external_dependency
-- data_commit
+`step_type` 使用从当前流程语义归纳的简短角色名称；不得为了匹配本 Skill 的固定枚举而改写、合并或遗漏实际步骤。
 
 要求：
 
@@ -131,7 +94,7 @@ coverage_status 包括 covered/partial/unverified。unverified 不能进入最�
 item_type,item_name,section_file,has_description,description_chars,has_evidence,diagram_refs,quality_status,notes
 ```
 
-item_type 包括 capability/submodule/target_flow。quality_status 包括 pass/weak/missing。每个业务能力、target module 和每个已确认子模块都必须有一行覆盖记录；context parent 只作为外部参与者或 handoff 证据，不占 target_flow 覆盖行。
+item_type 包括 capability/submodule/target_flow。quality_status 包括 pass/weak/missing。每个业务能力、target module 和每个已确认子模块都必须有一行覆盖记录；所属上级模块只作为外部参与者或 handoff 证据，不占 target_flow 覆盖行。
 
 ## 4. 子模块业务流程图规则
 
@@ -172,8 +135,8 @@ business-submodule-<submodule-name>.png
 输出位置：
 
 ```text
-04-diagrams/mmd/business/parent/
-04-diagrams/png/business/parent/
+04-diagrams/mmd/business/target/
+04-diagrams/png/business/target/
 ```
 
 命名建议：
@@ -206,31 +169,7 @@ business-target-module-master-flow.png
 flowchart TD
 ```
 
-推荐使用 subgraph 表达子模块边界：
-
-```mmd
-flowchart TD
-    Start([业务触发])
-    subgraph SM1[子模块：请求接入]
-        A[接收业务请求]
-        B{请求是否有效}
-        C[准备业务上下文]
-    end
-    subgraph SM2[子模块：核心处理]
-        D[选择处理策略]
-        E[执行核心业务动作]
-    end
-    Done([完成])
-    Error([失败收敛])
-
-    Start --> A
-    A --> B
-    B -- "有效" --> C
-    B -- "无效" --> Error
-    C --> D
-    D --> E
-    E --> Done
-```
+源码证明确有子模块边界时，使用 subgraph 表达这些真实边界；不存在该层级时不得为了套模板创建 subgraph。本 Skill 不提供可被误用为实际流程的预制 Mermaid 节点或分支示例。
 
 节点 ID 必须 ASCII。节点 label 使用中文业务语义。边 label 必须体现业务条件，不得只写 yes/no。
 
@@ -239,10 +178,8 @@ flowchart TD
 子模块业务图不设置节点或边的最低数量。它必须完整表达一个业务子模块的真实阶段、分支和结果；当正文宽度下标签、条件边或分支关系不可读时，拆成“子模块总览 + 场景/分支详图”，不得删掉异常路径或无限缩小图片。
 
 总模块业务图同样不设置节点数量门槛。它应使用 subgraph 表达子模块，并展示影响端到端业务结果的关键条件；代码内部细枝末节放入子模块或代码流程图。总图在 Word 正文宽度下不可读时，可按语义拆为：
-  - business-parent-main-flow；
-  - business-parent-error-retry-flow；
-  - business-parent-async-wait-flow；
-  - business-parent-data-state-flow。
+  - target overview；
+  - 由当前源码识别出的独立场景或分支详图。
 
 ## 8. 无效业务图判定
 

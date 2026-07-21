@@ -21,6 +21,12 @@ class TestPaths extends MarketplacePaths {
   }
 }
 
+class LinkedPaths extends TestPaths {
+  override skillsDir(): string {
+    return path.join(tmpDir, "linked-root", "skills")
+  }
+}
+
 function skill(content: string, id = "test-skill") {
   return {
     type: "skill" as const,
@@ -215,6 +221,119 @@ describe("MarketplaceInstaller skills", () => {
     }
 
     expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf-8")).toBe("# Installed\n")
+  })
+
+  it("does not report a missing managed Skill as successfully removed", async () => {
+    const paths = new TestPaths()
+    const installer = new MarketplaceInstaller(paths)
+
+    const result = await installer.removeSkill(
+      skill("https://example.com/skill.tar.gz"),
+      "project",
+      tmpDir,
+      path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"),
+    )
+
+    expect(result).toEqual({
+      success: false,
+      slug: "test-skill",
+      error: "Skill is not installed in the selected scope",
+    })
+  })
+
+  it("removes the complete managed Skill directory", async () => {
+    const paths = new TestPaths()
+    const dir = path.join(paths.skillsDir("project", tmpDir), "test-skill")
+    await fs.mkdir(path.join(dir, "references"), { recursive: true })
+    await Promise.all([
+      fs.writeFile(path.join(dir, "SKILL.md"), "# Installed\n"),
+      fs.writeFile(path.join(dir, "references", "guide.md"), "# Guide\n"),
+    ])
+    const installer = new MarketplaceInstaller(paths)
+
+    const result = await installer.removeSkill(
+      skill("https://example.com/skill.tar.gz"),
+      "project",
+      tmpDir,
+      path.join(dir, "SKILL.md"),
+    )
+
+    expect(result).toEqual({ success: true, slug: "test-skill" })
+    expect(
+      await fs.stat(dir).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false)
+  })
+
+  it("refuses to remove a managed directory containing a nested Skill", async () => {
+    const paths = new TestPaths()
+    const dir = path.join(paths.skillsDir("project", tmpDir), "test-skill")
+    const child = path.join(dir, "child")
+    await fs.mkdir(child, { recursive: true })
+    await Promise.all([
+      fs.writeFile(path.join(dir, "SKILL.md"), "# Parent\n"),
+      fs.writeFile(path.join(child, "SKILL.md"), "# Child\n"),
+    ])
+    const installer = new MarketplaceInstaller(paths)
+
+    const result = await installer.removeSkill(
+      skill("https://example.com/skill.tar.gz"),
+      "project",
+      tmpDir,
+      path.join(dir, "SKILL.md"),
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("nested Skill")
+    expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf8")).toBe("# Parent\n")
+    expect(await fs.readFile(path.join(child, "SKILL.md"), "utf8")).toBe("# Child\n")
+  })
+
+  it("refuses to remove a managed Skill through a symbolic link", async () => {
+    if (process.platform === "win32") return
+    const paths = new TestPaths()
+    const target = path.join(tmpDir, "target")
+    const dir = path.join(paths.skillsDir("project", tmpDir), "test-skill")
+    await fs.mkdir(target, { recursive: true })
+    await fs.mkdir(path.dirname(dir), { recursive: true })
+    await fs.writeFile(path.join(target, "SKILL.md"), "# Linked\n")
+    await fs.symlink(target, dir)
+    const installer = new MarketplaceInstaller(paths)
+
+    const result = await installer.removeSkill(
+      skill("https://example.com/skill.tar.gz"),
+      "project",
+      tmpDir,
+      path.join(dir, "SKILL.md"),
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("regular directory")
+    expect(await fs.readFile(path.join(target, "SKILL.md"), "utf8")).toBe("# Linked\n")
+  })
+
+  it("refuses a symbolic link above the managed Skill root", async () => {
+    if (process.platform === "win32") return
+    const paths = new LinkedPaths()
+    const actual = path.join(tmpDir, "actual-root")
+    const dir = path.join(actual, "skills", "test-skill")
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(path.join(dir, "SKILL.md"), "# Linked root\n")
+    await fs.symlink(actual, path.join(tmpDir, "linked-root"))
+    const installer = new MarketplaceInstaller(paths)
+
+    const result = await installer.removeSkill(
+      skill("https://example.com/skill.tar.gz"),
+      "project",
+      tmpDir,
+      path.join(dir, "SKILL.md"),
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("regular directory")
+    expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf8")).toBe("# Linked root\n")
   })
 
   it("installs an extracted project skill without leaving staging directories", async () => {

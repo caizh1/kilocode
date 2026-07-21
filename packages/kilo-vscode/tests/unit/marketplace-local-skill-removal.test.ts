@@ -32,16 +32,18 @@ afterEach(async () => {
 })
 
 describe("local Skill removal", () => {
-  it("uses an opaque target, refreshes a stale CLI instance, and clears import metadata", async () => {
+  it("uses an opaque target, relies on narrow Skill refresh, and clears import metadata", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-skill-remove-"))
     roots.push(root)
     bindFs()
     const project = path.join(root, "project")
     const storage = path.join(root, "storage")
-    const skillRoot = path.join(project, ".kilo", "skills", "portable")
+    const skillRoot = path.join(project, ".agents", "skills", "portable")
     const location = path.join(skillRoot, "SKILL.md")
+    const sibling = path.join(skillRoot, "KEEP.txt")
     await fs.mkdir(skillRoot, { recursive: true })
     await fs.writeFile(location, "---\nname: portable\ndescription: test\n---\n")
+    await fs.writeFile(sibling, "keep")
 
     const context = { globalStorageUri: vscode.Uri.file(storage) } as vscode.ExtensionContext
     const registry = new LocalImportRegistry(context)
@@ -62,19 +64,14 @@ describe("local Skill removal", () => {
 
     const skill = { name: "portable", description: "test", location }
     let removed = false
-    let disposed = false
     const client = {
-      app: { skills: async () => ({ data: removed && disposed ? [] : [skill] }) },
+      app: { skills: async () => ({ data: removed ? [] : [skill] }) },
       kilocode: {
-        removeSkill: async () => {
+        removeSkill: async (input: { scope?: string; location?: string }) => {
+          expect(input.scope).toBe("project")
+          expect(input.location).toBe(location)
           removed = true
           await fs.rm(skillRoot, { recursive: true, force: true })
-          return { data: true }
-        },
-      },
-      instance: {
-        dispose: async () => {
-          disposed = true
           return { data: true }
         },
       },
@@ -96,9 +93,9 @@ describe("local Skill removal", () => {
     )
 
     expect(result).toMatchObject({ success: true, skillId: "portable", scope: "project" })
-    expect(disposed).toBe(true)
     expect(phases).toEqual(["validating", "removing", "refreshing", "reconciling"])
-    expect(await exists(skillRoot)).toBe(false)
+    expect(await exists(location)).toBe(false)
+    expect(await exists(sibling)).toBe(false)
     expect(await registry.list()).toEqual([])
   })
 
@@ -131,6 +128,59 @@ describe("local Skill removal", () => {
     expect(result.success).toBe(false)
     expect(called).toBe(false)
     expect(await exists(skillRoot)).toBe(true)
+  })
+
+  it("deletes an explicit Linux .agent Skill by its discovered path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-linux-skill-remove-"))
+    roots.push(root)
+    bindFs()
+    const project = path.join(root, "workspace")
+    const dir = path.join(root, "home", "caizh", ".agent", "skills", "iar-to-gcc-migration-gated")
+    const location = path.join(dir, "SKILL.md")
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(location, "---\nname: iar-to-gcc-migration-gated\ndescription: test\n---\n")
+    const skill = { name: "iar-to-gcc-migration-gated", location }
+    const client = {
+      app: { skills: async () => ({ data: (await exists(dir)) ? [skill] : [] }) },
+      kilocode: {
+        removeSkill: async (input: { location?: string; scope?: string }) => {
+          expect(input).toMatchObject({ location, scope: "global" })
+          await fs.rm(dir, { recursive: true, force: true })
+          return { data: true }
+        },
+      },
+    }
+    const context = { globalStorageUri: vscode.Uri.file(path.join(root, "storage")) } as vscode.ExtensionContext
+    const removal = new LocalSkillRemoval({ getClientAsync: async () => client } as never, context)
+    const target = removal.issue([skill], project)[0]!
+
+    const result = await removal.remove(
+      { requestId: "request-linux", targetToken: target.targetToken, skillId: target.skillId, scope: target.scope },
+      project,
+      () => {},
+    )
+
+    expect(result.success).toBe(true)
+    expect(await exists(dir)).toBe(false)
+  })
+
+  it("keeps project scope when the workspace is opened through a symbolic link", async () => {
+    if (process.platform === "win32") return
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-linked-skill-scope-"))
+    roots.push(root)
+    const project = path.join(root, "project")
+    const alias = path.join(root, "alias")
+    const dir = path.join(project, ".chipmate-v2", "skills", "linked")
+    const location = path.join(dir, "SKILL.md")
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(location, "---\nname: linked\ndescription: test\n---\n")
+    await fs.symlink(project, alias)
+    const context = { globalStorageUri: vscode.Uri.file(path.join(root, "storage")) } as vscode.ExtensionContext
+    const removal = new LocalSkillRemoval({} as never, context)
+
+    const target = removal.issue([{ name: "linked", location }], alias)[0]
+
+    expect(target?.scope).toBe("project")
   })
 
   it("prunes stale local import records for the active workspace", async () => {

@@ -34,10 +34,16 @@ export const ItemCard = (props: Props) => {
   const installed = () => scopes().length > 0
   const name = () => props.displayName ?? props.item.name
   const skill = () => (props.item.type === "skill" ? (props.item as SkillMarketplaceItem) : undefined)
-  const local = () => Boolean(skill()?.localOnly || skill()?.origin === "local-import")
+  const local = () =>
+    Boolean(
+      skill()?.origin === "local" ||
+        skill()?.origin === "local-import" ||
+        (skill()?.localOnly && skill()?.origin !== "builtin" && skill()?.origin !== "market"),
+    )
   const origin = () => {
     if (skill()?.origin === "local-import") return t("marketplace.local.badge.imported")
     if (skill()?.origin === "market") return t("marketplace.local.badge.managed")
+    if (skill()?.origin === "builtin") return t("marketplace.local.badge.builtin")
     return undefined
   }
   const published = () => {
@@ -163,32 +169,34 @@ export const ItemCard = (props: Props) => {
               }
             >
               {scopes().map((scope) => (
-                <Show
-                  when={props.item.type === "skill"}
-                  fallback={
-                    <Button size="small" variant="ghost" onClick={() => props.onRemove(props.item, scope)}>
-                      {scopes().length > 1
-                        ? t("marketplace.card.removeScope", { scope: t(`marketplace.scope.${scope}`) })
-                        : t("marketplace.card.remove")}
-                    </Button>
-                  }
-                >
-                  <IconButton
-                    icon="trash"
-                    size="small"
-                    variant="ghost"
-                    aria-label={
-                      scopes().length > 1
-                        ? t("marketplace.card.removeScope", { scope: t(`marketplace.scope.${scope}`) })
-                        : t("marketplace.card.remove")
+                <Show when={props.item.type !== "skill" || skill()?.origin === "market"}>
+                  <Show
+                    when={props.item.type === "skill"}
+                    fallback={
+                      <Button size="small" variant="ghost" onClick={() => props.onRemove(props.item, scope)}>
+                        {scopes().length > 1
+                          ? t("marketplace.card.removeScope", { scope: t(`marketplace.scope.${scope}`) })
+                          : t("marketplace.card.remove")}
+                      </Button>
                     }
-                    title={
-                      scopes().length > 1
-                        ? t("marketplace.card.removeScope", { scope: t(`marketplace.scope.${scope}`) })
-                        : t("marketplace.card.remove")
-                    }
-                    onClick={() => props.onRemove(props.item, scope)}
-                  />
+                  >
+                    <IconButton
+                      icon="trash"
+                      size="small"
+                      variant="ghost"
+                      aria-label={
+                        scopes().length > 1
+                          ? t("marketplace.card.removeScope", { scope: t(`marketplace.scope.${scope}`) })
+                          : t("marketplace.card.remove")
+                      }
+                      title={
+                        scopes().length > 1
+                          ? t("marketplace.card.removeScope", { scope: t(`marketplace.scope.${scope}`) })
+                          : t("marketplace.card.remove")
+                      }
+                      onClick={() => props.onRemove(props.item, scope)}
+                    />
+                  </Show>
                 </Show>
               ))}
             </Show>

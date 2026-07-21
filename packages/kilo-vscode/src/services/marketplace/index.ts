@@ -1,4 +1,6 @@
 import * as vscode from "vscode"
+import * as fs from "fs/promises"
+import * as path from "path"
 import { randomUUID } from "crypto"
 import { MarketplaceApiClient } from "./api"
 import { MarketplacePaths } from "./paths"
@@ -74,7 +76,10 @@ export class MarketplaceService {
       this.detector.detect(workspace, skills),
       relevance,
     ])
-    const merged = mergeMarketplaceSkills(fetched.items, skills, metadata, fetched.skillsFetched)
+    const merged = mergeMarketplaceSkills(fetched.items, skills, metadata, fetched.skillsFetched, {
+      global: await aliases(this.paths.skillsDir("global")),
+      ...(workspace ? { project: await aliases(this.paths.skillsDir("project", workspace)) } : {}),
+    })
     const aligned = await this.api.alignedMode()
     const state =
       aligned && details
@@ -241,8 +246,13 @@ export class MarketplaceService {
     return this.api.subscribe(change)
   }
 
-  async remove(item: MarketplaceItem, scope: "project" | "global", workspace?: string): Promise<RemoveResult> {
-    const result = await this.installer.remove(item, scope, workspace)
+  async remove(
+    item: MarketplaceItem,
+    scope: "project" | "global",
+    workspace?: string,
+    location?: string,
+  ): Promise<RemoveResult> {
+    const result = await this.installer.remove(item, scope, workspace, location)
 
     if (result.success) {
       vscode.window.showInformationMessage(`Successfully removed ${item.name}`)
@@ -255,6 +265,15 @@ export class MarketplaceService {
     this.scans.clear()
     this.api.dispose()
   }
+}
+
+async function aliases(dir: string): Promise<string[]> {
+  const resolved = path.resolve(dir)
+  const real = await fs.realpath(dir).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== "ENOENT") console.warn("[Kilo New] Failed to resolve Marketplace Skill root:", dir, err)
+    return resolved
+  })
+  return [...new Set([resolved, real])]
 }
 
 export type {

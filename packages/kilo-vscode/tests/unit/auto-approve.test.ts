@@ -6,7 +6,7 @@ import type { Event, KiloClient } from "@kilocode/sdk/v2/client"
 import type { KiloConnectionService } from "../../src/services/cli-backend/connection-service"
 
 type ConfigEvent = { affectsConfiguration(key: string): boolean }
-type Permission = { id: string }
+type Permission = { id: string; permission?: string }
 
 function defer<T>() {
   const state = {} as { resolve: (value: T) => void; reject: (err: unknown) => void }
@@ -109,8 +109,11 @@ function client(opts: {
   } as unknown as KiloClient
 }
 
-function asked(id: string, sessionID = "ses_1") {
-  return { type: "permission.asked", properties: { id, sessionID } } as Extract<Event, { type: "permission.asked" }>
+function asked(id: string, sessionID = "ses_1", permission = "bash") {
+  return { type: "permission.asked", properties: { id, sessionID, permission } } as Extract<
+    Event,
+    { type: "permission.asked" }
+  >
 }
 
 describe("registerToggleAutoApprove", () => {
@@ -205,6 +208,46 @@ describe("registerToggleAutoApprove", () => {
     )
 
     expect(await ctrl.approve(asked("perm_1"))).toBe(false)
+  })
+
+  it("never auto-approves Agent Console commands", async () => {
+    config(true)
+    const replies: unknown[] = []
+    const conn = connection(client({ reply: async (args) => replies.push(args) }))
+    const ctrl = registerToggleAutoApprove(
+      context(),
+      conn.svc,
+      () => "/workspace",
+      () => ["/workspace"],
+    )
+
+    expect(await ctrl.approve(asked("perm_manual", "ses_console", "agent_console_shell"))).toBe(false)
+    expect(replies).toEqual([])
+  })
+
+  it("skips pending Agent Console commands while draining other permissions", async () => {
+    config(false)
+    const replies: unknown[] = []
+    const conn = connection(
+      client({
+        list: async () => ({
+          data: [
+            { id: "perm_manual", permission: "agent_console_shell" },
+            { id: "perm_bash", permission: "bash" },
+          ],
+        }),
+        reply: async (args) => replies.push(args),
+      }),
+    )
+    const ctrl = registerToggleAutoApprove(
+      context(),
+      conn.svc,
+      () => "/workspace",
+      () => ["/workspace"],
+    )
+
+    await ctrl.toggle()
+    expect(replies).toEqual([{ requestID: "perm_bash", directory: "/workspace", reply: "once" }])
   })
 
   it("cancels pending permission drains when disabled during an enable generation", async () => {

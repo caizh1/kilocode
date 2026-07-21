@@ -564,6 +564,12 @@ export const kiloScenarios: Scenario[] = [
       }),
     ),
   http.protected
+    .post("/kilocode/skill/refresh", "kilocode.refreshSkills")
+    .inProject({ git: true })
+    .mutating()
+    .at((ctx) => ({ path: "/kilocode/skill/refresh", headers: ctx.headers(), body: { scope: "project" } }))
+    .json(200, (body) => check(body === true, "skill refresh should return true")),
+  http.protected
     .post("/kilocode/agent/remove", "kilocode.removeAgent")
     .inProject({ git: true, init: agent })
     .mutating()

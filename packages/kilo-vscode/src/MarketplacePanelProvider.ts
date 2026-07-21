@@ -308,10 +308,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     })
     await this.registry.put({ origin: link.origin, ...state, changedAt: synced.changedAt })
     const dir = workspace ?? this.directory()
-    const client = await this.connection.getClientAsync(dir)
-    await client.instance.dispose({ directory: dir }).catch((err: unknown) => {
-      console.warn("[Kilo New] CLI skill invalidation after deep-link install failed:", err)
-    })
+    await invalidateMarketplaceSkills(this.marketplaceCtx, selected.scope, dir)
     vscode.window.showInformationMessage(`${intent.skillId} r${intent.revision} 已安全安装并同步。`)
     this.openPanel(workspace ?? null)
     await this.fetchData()
@@ -724,16 +721,21 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     const available = new Map(targets.map((target) => [target.skillId, target]))
     for (const item of items) {
       if (item.type !== "skill") continue
-      const target = available.get(normalizeSkillKey(item.id))
-      if (target && item.localOnly) {
+      const keys = [item.id, item.name, item.displayName].map(normalizeSkillKey).filter(Boolean)
+      const target = keys.map((key) => available.get(key)).find((entry) => entry !== undefined)
+      if (target && item.origin === "local") {
         item.removeToken = target.targetToken
+        item.removeSkillId = target.skillId
         item.localScope = target.scope
       }
-      const record = records.find((entry) => entry.skillId === item.id && (!target || entry.scope === target.scope))
+      const record = records.find(
+        (entry) => keys.includes(normalizeSkillKey(entry.skillId)) && target && entry.scope === target.scope,
+      )
       if (!record) continue
       item.origin = "local-import"
       if (target) {
         item.removeToken = target.targetToken
+        item.removeSkillId = target.skillId
         item.localScope = target.scope
       }
       item.localState = item.localOnly || item.sha256 === record.installedSha256 ? "unmanaged" : "modified"

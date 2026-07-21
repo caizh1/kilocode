@@ -7,6 +7,7 @@ import KILO_CONFIG from "./kilo-config.md" with { type: "text" }
 import CHIPMATE_CONFIG from "./chipmate-config.md" with { type: "text" }
 import { ProductProfile } from "../product-profile"
 import DOCUMENTS from "../../../../../.kilo/skills/documents/SKILL.md" with { type: "text" }
+import GRILL_ME from "../../../../../.kilo/skills/grill-me/SKILL.md" with { type: "text" }
 import SOURCE_BACKED_DETAIL_DESIGN from "../../../../../.kilo/skills/source-backed-detail-design/SKILL.md" with { type: "text" }
 import SOURCE_BACKED_DETAIL_DESIGN_REF_01 from "../../../../../.kilo/skills/source-backed-detail-design/references/01-core-principles.md" with { type: "text" }
 import SOURCE_BACKED_DETAIL_DESIGN_REF_02 from "../../../../../.kilo/skills/source-backed-detail-design/references/02-input-and-module-scope-rules.md" with { type: "text" }
@@ -37,6 +38,12 @@ export const BUILTIN_SKILLS: BuiltinSkill[] = [
     description:
       "Create, inspect, edit, render, merge, diff, and manage Word .docx document artifacts with Kilo native tools, Mermaid PNG figures, and external render diagnostics. Use only when the user explicitly asks for document deliverables, not for ordinary code QA.",
     content: DOCUMENTS,
+  },
+  {
+    name: "grill-me",
+    description:
+      'Interview the user relentlessly about a plan or design until reaching shared understanding, resolving each branch of the decision tree. Use when user wants to stress-test a plan, get grilled on their design, or mentions "grill me".',
+    content: GRILL_ME,
   },
   {
     name: "kilo-config",

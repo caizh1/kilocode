@@ -4,13 +4,13 @@
 
 ## 1. 混合式正文结构
 
-完整 Word 默认按以下顺序组织，标题可依据真实模块层级自然化，但不得把代码细节提前到业务定位之前：
+完整 Word 默认按以下顺序组织，标题可依据真实模块层级自然化，但不得把代码细节提前到业务定位之前。完整任务先按范围、正文、图形、Word 四阶段执行；正文阶段未证明 readiness 时不得加载 Word payload 或创建 DOCX：
 
-在章节开始前，必须先建立真实 `Title` 标题区、可选副标题/摘要、一个文本严格等于 `{{TOC}}` 的独立摘要段落，再开始第一个真实 Heading 1“阅读路径”。目录不得手写成 Normal 段落标题列表；所有正文完成后使用 `materialize_word_fields` 的 `tocMode: "materialize"` 生成 Word 原生 TOC field，并保持标题页、目录页和正文分页分离。
+在章节开始前，必须先建立正式封面：真实 `Title`、根据本次范围与证据动态生成且不重复标题的有效副标题、默认作者 `ChipMate source-backed-detail-design`（用户明确指定作者时优先），以及简洁的文档范围、源码基线和证据状态说明。副标题不得只写“详细设计”或其他占位文字；未知封面事实省略或标记“待确认”，不得虚构。封面说明之后放置一个文本严格等于 `{{TOC}}` 的独立摘要段落，再开始第一个真实 Heading 1“阅读路径”。封面保持第一页，原生目录从第二页开始；目录不得手写成 Normal 段落标题列表。
 
 1. 阅读路径；
 2. 术语、范围与证据基线；
-3. 父系统定位与目标模块角色；
+3. 系统架构定位、所属上级模块与目标模块角色；
 4. 目标模块职责、边界与架构；
 5. 业务能力总览；
 6. 详细主业务流程；
@@ -27,13 +27,15 @@
 
 每个主要章节以简短设计结论开头，以“读者现在应理解什么”和关键源码入口结束。引用必须来自实际读取或检索的证据，不得加入未读文档占位符。完整交付先完成每个设计单元的十四项内容草稿和证据表，再据此规划图，最后组装 Word；不得先建一个短 Word 后用剩余时间选择性补正文。
 
-全局开篇负责建立认知；第 3 章只说明 context parent 对 target 的系统定位；第 4 至第 8 章共同组成唯一 target module DesignUnit；第 9 章逐个承载 target-owned confirmed submodule 的本地完整细节；全局收尾只负责跨模块总结和索引。Target 的架构基础图属于第 4 章，唯一业务流程基础图属于第 6 章，第 7 章只分解 target 内部子模块且不占五视图槽位，数据/生命周期、代码流程和状态机属于第 8 章。第 8 章只引用第 6 章业务主图，不重复插入或计数。Context parent、全局对象表、接口表、代码流、状态机或性能章节不能替代 target 或任何已确认子模块的本地正文。
+全局开篇负责建立认知；系统定位部分分别说明目标的系统架构位置、源码归属、所属上级模块、调用关系和 handoff；第 4 至第 8 章共同组成唯一 target module DesignUnit；第 9 章逐个承载 target-owned confirmed submodule 的本地完整细节；全局收尾只负责跨模块总结和索引。Target 的架构基础图属于第 4 章，唯一业务流程基础图属于第 6 章，第 7 章只分解 target 内部子模块且不占五视图槽位，数据/生命周期、代码流程和状态机属于第 8 章。第 8 章只引用第 6 章业务主图，不重复插入或计数。所属上级模块、全局对象表、接口表、代码流、状态机或性能章节不能替代 target 或任何已确认子模块的本地正文。关系分离与证据一致性检查适用于全文，不限于系统定位章节。
+
+章节生成前必须核对集合恒等：架构介绍/分解表中的 confirmed 名称、冻结 census、unit 文件 ID、第 9 章详细章节 ID 和五视图账本 unit ID 完全相同。数量相同但名称被外部/context 单元替换仍是 `MISSING`，不得创建 Word。
 
 ## 2. 阅读路径模板
 
 阅读路径必须包含四条路线：
 
-- 大图理解：父系统定位 → 目标模块职责与架构 → 业务能力 → 详细主业务流程；
+- 大图理解：系统架构定位与模块归属 → 目标模块职责与架构 → 业务能力 → 详细主业务流程；
 - 核心流程：详细主业务流程 → 内部架构与子模块分解 → 已确认子模块业务流程；
 - 代码点读：设计对象与生命周期 → 函数/功能覆盖 → 代码流程 → 接口与协作；
 - 调试性能：异常恢复 → 算法与性能 → 调试与可观测性 → 建议点读源码。
@@ -43,7 +45,7 @@
 ## 3. 术语与范围表模板
 
 ```md
-| 用户目标名 | 源码确认名称 | 缩写含义/UNKNOWN | 中文说明 | parent/target/core 归属 | 证据 | 置信度 | owner-review 项 |
+| 用户目标名 | 源码确认名称 | 缩写含义/UNKNOWN | 中文说明 | 所属上级模块/目标模块/子模块归属 | 证据 | 置信度 | owner-review 项 |
 |---|---|---|---|---|---|---|---|
 ```
 
@@ -88,7 +90,7 @@
 
 ## 7. Target module 和已确认子模块统一模板
 
-Target module 及每个 target-owned confirmed submodule 按以下顺序输出；context parent 不使用本模板：
+Target module 及每个 target-owned confirmed submodule 按以下顺序输出；所属上级模块不使用本模板：
 
 ```md
 ### <设计单元名称>详细设计
@@ -126,7 +128,7 @@ Target module 及每个 target-owned confirmed submodule 按以下顺序输出�
 说明状态所有者、dispatch、事件、guard、action、转换、副作用、非法/忽略事件、失败和恢复；插入状态机图或提供证据化 N/A。
 
 #### 9. 接口与协作
-分类说明外部、内部、跨模块、回调、异步、队列、通知、硬件、寄存器、DMA 或固件适配接口。
+分类说明外部、内部、跨模块、回调、异步、队列、通知及源码确认的适配接口。
 
 #### 10. 异常与恢复
 | 路径 | 触发条件 | 处理动作 | 状态/数据影响 | 终态 | 证据 |
@@ -210,9 +212,9 @@ Target module 及每个 target-owned confirmed submodule 按以下顺序输出�
 
 ## 12. Word 组装规则
 
-使用真实 Heading 层级和目录。Target module 与每个已确认子模块必须保持连续，标题、图题、图片、图注和图后解读就地组装。Context parent 只在第 3 章作为定位说明，不能扩展为另一个主体章节。Word 中不得把所有业务图、代码图或状态机图集中到脱离所属单元的全局图集章节。
+使用真实 Heading 层级和目录。Target module 与每个已确认子模块必须保持连续，标题、图题、图片、图注和图后解读就地组装。所属上级模块只作为定位、归属和 handoff 说明，不能扩展为另一个主体章节。Word 中不得把所有业务图、代码图或状态机图集中到脱离所属单元的全局图集章节。所有章节、表格、图和结论都必须使用“所属上级模块”这一用户侧称呼，并分别核对系统位置、源码归属、调用和数据流证据。
 
-在创建 Word 前冻结最终标题序列。轻量骨架必须预先包含所有最终 H1/H2/H3 标题，以及每个正文/表格批次的唯一占位锚点；后续编辑只能消费对应锚点一次。锚点缺失或歧义时先修复骨架或使用更具体的既有 H3 锚点，禁止把该设计单元追加到文末。目标模块实现细节必须位于全部子模块章节之前，所有子模块必须按冻结分解表顺序连续出现。
+在创建 Word 前冻结最终标题序列。非交付态 `*-working.docx` 必须预先包含所有最终 H1/H2/H3 标题，以及每个正文/表格批次的唯一普通段落锚点 `[[SBDD-CONTENT:<designUnitId>:<topicId>]]`，但不得包含图片。后续编辑只能使用 `replace_paragraph_with_blocks` 和精确 `paragraphText` locator 消费对应锚点一次；禁止使用 heading 后插入或文末 append 绕过缺失锚点。目标模块实现细节必须位于全部子模块章节之前，所有子模块必须按冻结分解表顺序连续出现。
 
 逻辑正文可按以下文件组织，也可以合并为等价的 Word 章节：
 
@@ -220,7 +222,7 @@ Target module 及每个 target-owned confirmed submodule 按以下顺序输出�
 05-enhanced-detail-design/README.md
 05-enhanced-detail-design/01-reading-path.md
 05-enhanced-detail-design/02-terminology-scope-evidence.md
-05-enhanced-detail-design/03-parent-and-target-role.md
+05-enhanced-detail-design/03-system-position-and-module-role.md
 05-enhanced-detail-design/04-target-architecture-and-capabilities.md
 05-enhanced-detail-design/05-main-business-flows.md
 05-enhanced-detail-design/06-submodule-decomposition.md
@@ -234,7 +236,9 @@ Target module 及每个 target-owned confirmed submodule 按以下顺序输出�
 05-enhanced-detail-design/14-assumptions-risks-review.md
 ```
 
-对多子模块任务，推荐在 Word 组装前把目标模块和每个已确认子模块分别保存为 `05-enhanced-detail-design/units/<designUnitId>.md`。每个文件都使用同一十四项模板并记录内容状态、图状态和证据状态；`08-confirmed-submodules.md` 只保存有序索引，不能用一个汇总文件掩盖未完成单元。
+完整 Word 任务必须在图形和 Word 阶段之前，把目标模块和每个已确认子模块分别保存为 `05-enhanced-detail-design/units/<designUnitId>.md`。每个文件都使用同一十四项模板，在相邻位置记录主题状态、解释和证据；`08-confirmed-submodules.md` 只保存有序索引，不能用一个汇总文件掩盖未完成单元。`02-source-evidence/module-scope.md`、这些 unit 文件以及输出根目录的 `resume-state.md` 和 `review-notes.md` 共同提供正文 readiness 证据；任何 applicable topic 为 `MISSING` 时 Word 状态保持 `not_started`。
+
+全部正文锚点替换后、插图前必须执行逐标题 body audit。每个最终 Heading 的本地检查区间截止到下一个任意级别 Heading，区间内必须存在解释性正文；父级 DesignUnit 的十四项聚合覆盖另行跨子标题检查。图片、图题、图注、图号、空段落、目录、内容锚点以及单独的列表或表格不计正文，容器标题必须在首个子标题之前有方向性说明。空标题、只有图片、只有清单、只有表格或只有一句名称说明时，本节为 `MISSING/PARTIAL`，不得进入插图、TOC 或交付阶段。
 
 ## 13. 文字质量要求
 

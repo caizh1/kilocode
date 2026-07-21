@@ -6,6 +6,7 @@ import path from "path"
 import { promisify } from "util"
 import { TextReader, TextWriter, Uint8ArrayReader, Uint8ArrayWriter, ZipReader, ZipWriter } from "@zip.js/zip.js"
 import { declareArtifact } from "@/kilocode/documents/artifacts"
+import { assertValidWordDocumentBytes, prepareWordDocumentBytes } from "@/kilocode/documents/word-validation"
 import { Instance } from "@/kilocode/instance"
 import { userEnv } from "@/kilocode/product-env"
 
@@ -458,13 +459,15 @@ type RenderContext = {
 export async function createWordDocument(spec: CreateWordDocumentSpec): Promise<CreatedWordDocument> {
   validateCreateSpec(spec)
   const context = await buildContext(spec)
-  const bytes = await buildDocx(spec, context)
+  const built = await buildDocx(spec, context)
+  const prepared = await prepareWordDocumentBytes(built, "create_word_document candidate")
   const artifact = await declareArtifact({
     kind: "word-document",
     title: spec.artifactTitle ?? spec.title,
     taskSlug: spec.taskSlug ?? spec.title,
     primaryFile: safeDocxName(spec.outputFile ?? spec.title),
-    qualityStatus: "unknown",
+    warnings: prepared.warnings,
+    qualityStatus: prepared.warnings.length ? "warning" : "unknown",
   })
   const output = path.join(
     Instance.directory,
@@ -473,12 +476,12 @@ export async function createWordDocument(spec: CreateWordDocumentSpec): Promise<
   )
   assertInside(path.join(Instance.directory, artifact.artifactDir), output, "outputFile")
   await fs.mkdir(path.dirname(output), { recursive: true })
-  await fs.writeFile(output, bytes)
+  await fs.writeFile(output, prepared.bytes)
   return {
     path: normalizePortable(path.relative(Instance.directory, output)),
     artifactDir: artifact.artifactDir,
     manifestPath: artifact.manifestPath,
-    warnings: [],
+    warnings: prepared.warnings,
   }
 }
 
@@ -488,8 +491,9 @@ export async function inspectWordDocument(input: {
   maxTables?: number
 }): Promise<WordDocumentInspection> {
   const absolute = resolveWorkspacePath(input.path)
-  const bytes = await fs.readFile(absolute)
-  const zip = new ZipReader(new Uint8ArrayReader(new Uint8Array(bytes)))
+  const bytes = new Uint8Array(await fs.readFile(absolute))
+  await assertValidWordDocumentBytes(bytes, `inspect_word_document source ${input.path}`)
+  const zip = new ZipReader(new Uint8ArrayReader(bytes))
   try {
     const entries = await zip.getEntries()
     const byName = new Map(entries.map((entry) => [entry.filename, entry]))
@@ -568,6 +572,7 @@ export async function applyWordDocumentEdits(input: ApplyWordDocumentEditsInput)
   const effectiveDryRun = input.dryRun ?? input.edits.some(isDeleteEdit)
   const source = resolveWorkspacePath(input.sourcePath)
   const bytes = new Uint8Array(await fs.readFile(source))
+  await assertValidWordDocumentBytes(bytes, `apply_word_document_edits source ${input.sourcePath}`)
   const zip = new ZipReader(new Uint8ArrayReader(bytes))
   const warnings: string[] = []
   try {
@@ -594,6 +599,18 @@ export async function applyWordDocumentEdits(input: ApplyWordDocumentEditsInput)
     }
     if (effectiveDryRun) return { dryRun: true, renderAfterEdit: false, impacts, warnings }
 
+    const nextBytes = await rewriteDocx(
+      entries,
+      {
+        "word/document.xml": documentXml,
+        "word/_rels/document.xml.rels": relsXml,
+        ...textOverrides,
+      },
+      mediaUpdates,
+    )
+    const prepared = await prepareWordDocumentBytes(nextBytes, "apply_word_document_edits candidate")
+    warnings.push(...prepared.warnings)
+
     const backupEnabled = input.backup ?? true
     const backupFile = backupEnabled
       ? safeDocxName(`${path.basename(input.sourcePath, ".docx")}-source-backup.docx`)
@@ -619,16 +636,7 @@ export async function applyWordDocumentEdits(input: ApplyWordDocumentEditsInput)
       assertInside(path.join(Instance.directory, artifact.artifactDir), backupPath, "backupFile")
       await fs.writeFile(backupPath, bytes)
     }
-    const nextBytes = await rewriteDocx(
-      entries,
-      {
-        "word/document.xml": documentXml,
-        "word/_rels/document.xml.rels": relsXml,
-        ...textOverrides,
-      },
-      mediaUpdates,
-    )
-    await fs.writeFile(output, nextBytes)
+    await fs.writeFile(output, prepared.bytes)
     const outputPath = normalizePortable(path.relative(Instance.directory, output))
     let renderResult: RenderedWordDocument | undefined
     if (input.renderAfterEdit) {
@@ -869,6 +877,8 @@ export function normalizeWordTableSpec(input: NormalizeWordTableSpecInput): Norm
 
 export async function renderWordDocument(input: RenderWordDocumentInput): Promise<RenderedWordDocument> {
   const source = resolveWorkspacePath(input.sourcePath)
+  const docxBytes = new Uint8Array(await fs.readFile(source))
+  await assertValidWordDocumentBytes(docxBytes, `render_word_document source ${input.sourcePath}`)
   const endpoint = input.remoteEndpoint?.trim() || process.env["KILO_WORD_RENDER_ENDPOINT"]?.trim()
   const diagnostics: WordRenderDiagnostic[] = []
   const maxPages = clamp(input.maxPages ?? 500, 1, 2_000)
@@ -888,7 +898,6 @@ export async function renderWordDocument(input: RenderWordDocumentInput): Promis
     diagnostics.push(...local.diagnostics)
     return writeRenderedWordArtifacts(input, source, local.response, diagnostics, maxPages, diagnosticsFile)
   }
-  const docxBytes = new Uint8Array(await fs.readFile(source))
   let response: RemoteWordRenderResponse
   try {
     response = await callWordRenderer(
@@ -1199,11 +1208,9 @@ async function writeRenderedWordArtifacts(
   const defectiveText =
     response.textQa?.ok !== true || response.issues?.some((item) => item.code === "word-render-text-loss-suspected")
   const pageIntegrityFailure = diagnostics.some((item) =>
-    [
-      "word-render-page-sequence-invalid",
-      "word-render-page-duplicate",
-      "word-render-pdf-page-count-mismatch",
-    ].includes(item.code),
+    ["word-render-page-sequence-invalid", "word-render-page-duplicate", "word-render-pdf-page-count-mismatch"].includes(
+      item.code,
+    ),
   )
   const completePages =
     pageCountKind === "exact" &&
@@ -1766,7 +1773,7 @@ function drawingParagraph(
   const cy = Math.round(height * EMU_PER_CSS_PIXEL)
   const alt = escapeAttr(altText)
   const properties = `<w:pPr><w:jc w:val="center"/><w:keepLines/>${keepNext ? "<w:keepNext/>" : ""}</w:pPr>`
-  const drawing = `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="${alt}" descr="${alt}" title="${alt}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="${alt}" descr="${alt}"/><pic:cNvPicPr><a:picLocks noChangeAspect="1"/></pic:cNvPicPr></pic:nvPicPr><pic:blipFill><a:blip r:embed="${escapeAttr(relId)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`
+  const drawing = `<w:drawing xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="${alt}" descr="${alt}" title="${alt}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="${alt}" descr="${alt}"/><pic:cNvPicPr><a:picLocks noChangeAspect="1"/></pic:cNvPicPr></pic:nvPicPr><pic:blipFill><a:blip r:embed="${escapeAttr(relId)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`
   return `<w:p>${properties}<w:r>${drawing}</w:r></w:p>`
 }
 
@@ -2130,20 +2137,28 @@ async function verifyRefreshedDocx(
 ): Promise<{ ok: boolean; diagnostics: string[] }> {
   const diagnostics: string[] = []
   const original = await wordSemanticManifest(source).catch((error) => {
-    diagnostics.push(`could not inspect source DOCX semantics: ${error instanceof Error ? error.message : String(error)}`)
+    diagnostics.push(
+      `could not inspect source DOCX semantics: ${error instanceof Error ? error.message : String(error)}`,
+    )
     return undefined
   })
   const refreshed = await wordSemanticManifest(bytes).catch((error) => {
-    diagnostics.push(`payload is not a structurally valid DOCX: ${error instanceof Error ? error.message : String(error)}`)
+    diagnostics.push(
+      `payload is not a structurally valid DOCX: ${error instanceof Error ? error.message : String(error)}`,
+    )
     return undefined
   })
   if (!original || !refreshed) return { ok: false, diagnostics }
   if (!refreshed.hasToc) diagnostics.push("refreshed DOCX has no native TOC field")
-  if (original.titleCount !== 1 || !original.title) diagnostics.push("source DOCX must contain exactly one non-empty Title")
+  if (original.titleCount !== 1 || !original.title)
+    diagnostics.push("source DOCX must contain exactly one non-empty Title")
   if (original.headings.length === 0) diagnostics.push("source native TOC has no Heading 1-3 denominator")
-  if (!sameJson(original.body, refreshed.body)) diagnostics.push("non-TOC body paragraph sequence changed during field refresh")
-  if (!sameJson(original.tables, refreshed.tables)) diagnostics.push("table geometry or cell text changed during field refresh")
-  if (!sameJson(original.images, refreshed.images)) diagnostics.push("drawing identity, placement, alt text, or media changed")
+  if (!sameJson(original.body, refreshed.body))
+    diagnostics.push("non-TOC body paragraph sequence changed during field refresh")
+  if (!sameJson(original.tables, refreshed.tables))
+    diagnostics.push("table geometry or cell text changed during field refresh")
+  if (!sameJson(original.images, refreshed.images))
+    diagnostics.push("drawing identity, placement, alt text, or media changed")
   if (!sameJson(original.controls, refreshed.controls)) diagnostics.push("content-control text or identity changed")
   if (!sameJson(original.headers, refreshed.headers) || !sameJson(original.footers, refreshed.footers))
     diagnostics.push("header or footer semantic text changed during field refresh")
@@ -2186,6 +2201,7 @@ type WordSemanticManifest = {
 }
 
 async function wordSemanticManifest(bytes: Uint8Array): Promise<WordSemanticManifest> {
+  await assertValidWordDocumentBytes(bytes, "Word semantic manifest source")
   const zip = new ZipReader(new Uint8ArrayReader(new Uint8Array(bytes)))
   try {
     const entries = await zip.getEntries()
@@ -2203,7 +2219,7 @@ async function wordSemanticManifest(bytes: Uint8Array): Promise<WordSemanticMani
       const info = {
         title: configured.title || /^(?:Title|标题)$/i.test(style),
         toc: configured.toc || /^(?:TOC|Contents|目录)\s*[1-3]$/i.test(style),
-        level: configured.level ?? (direct ? Number(direct[1]) as 1 | 2 | 3 : undefined),
+        level: configured.level ?? (direct ? (Number(direct[1]) as 1 | 2 | 3) : undefined),
       }
       return { xml, style, text, info }
     })
@@ -2220,7 +2236,10 @@ async function wordSemanticManifest(bytes: Uint8Array): Promise<WordSemanticMani
     const body = paragraphs
       .filter((item) => !item.info.toc && !hasNativeToc(item.xml))
       .filter((item) => item.text && !onlyMutableFieldResult(item.xml, item.text))
-      .map((item) => ({ kind: item.info.title ? "title" : item.info.level ? `heading-${item.info.level}` : "body", text: item.text }))
+      .map((item) => ({
+        kind: item.info.title ? "title" : item.info.level ? `heading-${item.info.level}` : "body",
+        text: item.text,
+      }))
     const inspected = await inspectImages(documentXml, relsXml ?? "", byName)
     const images = inspected.images.map((item) => ({
       headingPath: item.headingPath,
@@ -2232,7 +2251,9 @@ async function wordSemanticManifest(bytes: Uint8Array): Promise<WordSemanticMani
     }))
     const parts = async (prefix: string) => {
       const result: string[] = []
-      for (const entry of entries.filter((item) => item.filename.startsWith(`word/${prefix}`) && item.filename.endsWith(".xml"))) {
+      for (const entry of entries.filter(
+        (item) => item.filename.startsWith(`word/${prefix}`) && item.filename.endsWith(".xml"),
+      )) {
         const xml = await readEntryText(byName, entry.filename)
         if (!xml) continue
         const text = normalizeWordText(textFromXml(xml).replace(/\b\d+\b/g, ""))
@@ -2558,7 +2579,9 @@ function findImageRelationship(relsXml: string, locator: WordEditLocator): { rel
 
 async function readDocxSnapshot(inputPath: string): Promise<DocxSnapshot> {
   const absolute = resolveWorkspacePath(inputPath)
-  const zip = new ZipReader(new Uint8ArrayReader(new Uint8Array(await fs.readFile(absolute))))
+  const source = new Uint8Array(await fs.readFile(absolute))
+  await assertValidWordDocumentBytes(source, `Word source ${inputPath}`)
+  const zip = new ZipReader(new Uint8ArrayReader(source))
   try {
     const entries = await zip.getEntries()
     const bytes = new Map<string, Uint8Array>()
@@ -2977,6 +3000,9 @@ async function writeDocxArtifact(
   binaryOverrides: Map<string, Uint8Array>,
   input: { title: string; taskSlug: string; outputFile: string; warnings: string[] },
 ): Promise<{ path: string; artifactDir: string; manifestPath: string }> {
+  const nextBytes = await rewriteDocx(source.entries, textOverrides, binaryOverrides)
+  const prepared = await prepareWordDocumentBytes(nextBytes, "Word mutation candidate")
+  input.warnings.push(...prepared.warnings)
   const artifact = await declareArtifact({
     kind: "word-document",
     title: input.title,
@@ -2992,8 +3018,7 @@ async function writeDocxArtifact(
   )
   assertInside(path.join(Instance.directory, artifact.artifactDir), output, "outputFile")
   await fs.mkdir(path.dirname(output), { recursive: true })
-  const nextBytes = await rewriteDocx(source.entries, textOverrides, binaryOverrides)
-  await fs.writeFile(output, nextBytes)
+  await fs.writeFile(output, prepared.bytes)
   return {
     path: normalizePortable(path.relative(Instance.directory, output)),
     artifactDir: artifact.artifactDir,

@@ -57,8 +57,8 @@ for (const skill of seedSkills) {
   clearXattrs(cleanSourceDir)
   const tarballName = `${skill.id}.tar.gz`
   const tarballPath = join(bundleDir, "packages", "skill-market", "skills", tarballName)
-  createTarGz(cleanSourceDir, tarballPath, ".")
-  assertTarballHasRootSkillMd(tarballPath)
+  createTarGz(cleanSourceDir, tarballPath, skill.id)
+  verify(tarballPath, skill.id)
   catalogItems.push({
     id: skill.id,
     name: skill.name,
@@ -139,11 +139,21 @@ with tarfile.open(target, "w:gz", format=tarfile.PAX_FORMAT) as tar:
   }
 }
 
-function assertTarballHasRootSkillMd(tarballPath) {
+function verify(tarballPath, id) {
   const result = spawnSync("tar", ["-tzf", tarballPath], { encoding: "utf8" })
   if (result.status !== 0) throw new Error(`Could not inspect ${tarballPath}: ${result.stderr || result.stdout}`)
   const entries = result.stdout.split(/\r?\n/).filter(Boolean)
-  if (!entries.includes("./SKILL.md")) throw new Error(`Skill archive missing root SKILL.md: ${tarballPath}`)
+  if (!entries.includes(`${id}/SKILL.md`)) throw new Error(`Skill archive missing ${id}/SKILL.md: ${tarballPath}`)
+  if (!entries.every((entry) => safe(entry, id))) {
+    throw new Error(`Skill archive contains a path outside ${id}/: ${tarballPath}`)
+  }
+}
+
+function safe(entry, id) {
+  const normalized = entry.replace(/\/+$/, "")
+  if (!normalized || normalized.startsWith("/") || normalized.includes("\\")) return false
+  const parts = normalized.split("/")
+  return parts[0] === id && !parts.some((part) => !part || part === "." || part === "..")
 }
 
 function sha256File(file) {

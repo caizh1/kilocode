@@ -2,6 +2,7 @@ import path from "path"
 import { randomUUID } from "crypto" // kilocode_change
 import { pathToFileURL } from "url"
 import { Effect, Layer, Context, Schema } from "effect"
+import { ScopedCache } from "effect" // kilocode_change
 import { NamedError } from "@opencode-ai/core/util/error"
 import type { Agent } from "@/agent/agent"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -16,7 +17,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@opencode-ai/core/util/glob"
 import * as Log from "@opencode-ai/core/util/log"
 import { Discovery } from "./discovery"
-import { mkdir, rename, rm, writeFile } from "fs/promises" // kilocode_change
+import { lstat, mkdir, rename, rm, writeFile } from "fs/promises" // kilocode_change
 import { BUILTIN_SKILLS } from "../kilocode/skills/builtin" // kilocode_change
 import { primaryPaths } from "../kilocode/primary-worktree" // kilocode_change
 import { ProductProfile } from "../kilocode/product-profile" // kilocode_change
@@ -87,6 +88,7 @@ type State = {
 // kilocode_change start - retain markdown trust provenance through discovery
 type Match = {
   path: string
+  scanRoot: string
   trusted: boolean
   root?: string
   sourceRoot?: string
@@ -109,7 +111,8 @@ export interface Interface {
   readonly all: () => Effect.Effect<Info[]>
   readonly dirs: () => Effect.Effect<string[]>
   readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
-  readonly remove: (location: string) => Effect.Effect<void, Error> // kilocode_change
+  readonly refresh: (scope: "project" | "global") => Effect.Effect<void> // kilocode_change
+  readonly remove: (location: string, scope: "project" | "global") => Effect.Effect<void, Error> // kilocode_change
 }
 
 // kilocode_change start
@@ -187,6 +190,7 @@ const scan = Effect.fnUntraced(function* (
     // kilocode_change start
     state.matches.set(match, {
       path: match,
+      scanRoot: root,
       trusted: opts?.trusted ?? false,
       root: opts?.root,
       sourceRoot: opts?.sourceRoot,
@@ -399,13 +403,19 @@ export const layer = Layer.effect(
       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
     })
 
-    // kilocode_change start - remove only a currently discovered user skill and refresh both caches atomically
-    const invalidate = Effect.fn("Skill.invalidate")(function* () {
+    // kilocode_change start - refresh only Skill discovery/state without disposing the workspace instance
+    const refresh = Effect.fn("Skill.refresh")(function* (scope: "project" | "global") {
+      if (scope === "global") {
+        yield* ScopedCache.invalidateAll(discovered.cache)
+        yield* ScopedCache.invalidateAll(state.cache)
+        return
+      }
       yield* InstanceState.invalidate(discovered)
       yield* InstanceState.invalidate(state)
     })
 
-    const remove = Effect.fn("Skill.remove")(function* (location: string) {
+    // remove only a currently discovered user skill and refresh both caches atomically
+    const remove = Effect.fn("Skill.remove")(function* (location: string, scope: "project" | "global") {
       const resolved = path.resolve(location)
       const current = yield* InstanceState.get(state)
       const item = Object.values(current.skills).find(
@@ -427,22 +437,53 @@ export const layer = Layer.effect(
         path.parse(dir).root,
       ].map((root) => path.resolve(root))
       if (roots.includes(dir)) return yield* Effect.fail(new Error("cannot remove a protected parent directory"))
-      if (path.basename(dir).toLowerCase() !== item.name.toLowerCase()) {
+      const key = (value: string) =>
+        value
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9._-]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+      if (!key(item.name) || key(path.basename(dir)) !== key(item.name)) {
         return yield* Effect.fail(new Error("skill directory must match the skill name"))
       }
-      const nested = Object.values(current.skills).some((skill) => {
-        if (skill.location === item.location || skill.location === BUILTIN_LOCATION) return false
-        const relative = path.relative(dir, path.resolve(skill.location))
-        return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
+      const matches = (yield* InstanceState.get(discovered)).matches
+      const match = matches.find((match) => path.resolve(match.path) === resolved)
+      if (!match) return yield* Effect.fail(new Error("skill is not present in the current discovery snapshot"))
+      const nested = matches.some((match) => {
+        if (path.resolve(match.path) === resolved) return false
+        const relative = path.relative(dir, path.resolve(match.path))
+        return (
+          relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+        )
       })
       if (nested) return yield* Effect.fail(new Error("skill directory contains another discovered skill"))
-      const builtin = path.join(global.cache, "builtin-skills")
-      const relative = path.relative(builtin, dir)
-      if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
-        return yield* Effect.fail(new Error("cannot remove built-in skill"))
+      for (const cache of [path.join(global.cache, "builtin-skills"), path.join(global.cache, "skills")]) {
+        const relative = path.relative(cache, dir)
+        if (
+          relative === "" ||
+          (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+        ) {
+          return yield* Effect.fail(new Error("cannot remove cached skill content"))
+        }
       }
       if (path.basename(resolved) !== "SKILL.md") {
         return yield* Effect.fail(new Error("skill location must point to SKILL.md"))
+      }
+      const root = path.resolve(match.scanRoot)
+      const relative = path.relative(root, dir)
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        return yield* Effect.fail(new Error("skill directory escaped its discovery root"))
+      }
+      const chain = relative
+        .split(path.sep)
+        .filter(Boolean)
+        .reduce<string[]>((items, part) => [...items, path.join(items.at(-1) ?? root, part)], [root])
+      const stats = yield* Effect.tryPromise({
+        try: () => Promise.all([...chain.map((item) => lstat(item)), lstat(resolved)]),
+        catch: (err) => (err instanceof Error ? err : new Error(String(err))),
+      })
+      if (stats.some((stat) => stat.isSymbolicLink())) {
+        return yield* Effect.fail(new Error("cannot remove a skill through a symbolic link"))
       }
 
       const tomb = path.join(dir, `.SKILL.md.removing-${randomUUID()}`)
@@ -452,7 +493,7 @@ export const layer = Layer.effect(
       })
 
       yield* Effect.gen(function* () {
-        yield* invalidate()
+        yield* refresh(scope)
         const fresh = yield* InstanceState.get(state)
         if (Object.values(fresh.skills).some((skill) => path.resolve(skill.location) === resolved)) {
           return yield* Effect.fail(new Error("skill remained discoverable after removal"))
@@ -464,24 +505,42 @@ export const layer = Layer.effect(
               try: () => rename(tomb, resolved),
               catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
             })
-            yield* invalidate()
+            yield* refresh(scope)
             return yield* Effect.fail(err)
           }),
         ),
       )
 
       yield* Effect.tryPromise({
-        try: () => rm(dir, { recursive: true, force: true }),
+        try: async () => {
+          await rm(dir, { recursive: true, force: false })
+          await lstat(dir).then(
+            () => Promise.reject(new Error("skill directory still exists after removal")),
+            (err: NodeJS.ErrnoException) => {
+              if (err.code !== "ENOENT") return Promise.reject(err)
+            },
+          )
+        },
         catch: (err) => (err instanceof Error ? err : new Error(String(err))),
       }).pipe(
         Effect.catch((err) =>
-          Effect.sync(() => log.warn("failed to clean removed skill tombstone", { path: tomb, error: err })),
+          Effect.gen(function* () {
+            yield* Effect.tryPromise({
+              try: () => rename(tomb, resolved),
+              catch: (cause) =>
+                new Error(
+                  `failed to remove skill directory: ${err.message}; rollback failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+                ),
+            })
+            yield* refresh(scope)
+            return yield* Effect.fail(new Error(`failed to remove skill directory: ${err.message}`))
+          }),
         ),
       )
     })
     // kilocode_change end
 
-    return Service.of({ get, require, all, dirs, available, remove }) // kilocode_change
+    return Service.of({ get, require, all, dirs, available, refresh, remove }) // kilocode_change
   }),
 )
 

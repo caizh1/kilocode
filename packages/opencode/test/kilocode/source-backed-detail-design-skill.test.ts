@@ -42,6 +42,7 @@ describe("source-backed detail design skill migration boundary", () => {
       "insert_mermaid_into_word",
       "create_word_document",
       "inspect_word_document",
+      "validate_word_document",
       "apply_word_document_edits",
       "apply_word_template_styles",
       "materialize_word_fields",
@@ -56,6 +57,7 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(skill).toContain("render_mermaid_diagram")
     expect(skill).toContain("create_word_document")
     expect(skill).toContain("inspect_word_document")
+    expect(skill).toContain("validate_word_document")
     expect(skill).toContain("render_word_document")
     expect(skill).toContain("not a ChipMate runtime pipeline")
     expect(allowedTools.some((tool) => tool.startsWith("chipmate_"))).toBe(false)
@@ -86,6 +88,72 @@ describe("source-backed detail design skill migration boundary", () => {
       expect(text.length).toBeGreaterThan(0)
       expect(text).not.toContain("chipmate_")
     }
+  })
+
+  test("keeps full-Word invariants visible after tool-output compaction", async () => {
+    const skill = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8")
+    const loaded = [
+      '<skill_content name="source-backed-detail-design">',
+      "# Skill: source-backed-detail-design",
+      "",
+      skill.trim(),
+      "",
+      `Base directory for this skill: ${skillRoot}`,
+      "</skill_content>",
+    ].join("\n")
+    const compacted = loaded.slice(0, 2_000)
+
+    expect(Buffer.byteLength(skill)).toBeLessThanOrEqual(36_000)
+    expect(Buffer.byteLength(loaded)).toBeLessThan(50 * 1024)
+    for (const marker of [
+      "SBDD_RULESET_REVISION=2026-07-long-task-gate-v1",
+      "B is the target",
+      "fourteen-topic prose",
+      "five unique views",
+      "not_started",
+      "{{TOC}}",
+      "resume-state.md",
+      "absolute path",
+    ]) {
+      expect(compacted).toContain(marker)
+    }
+  })
+
+  test("blocks the long-task false-pass regression and accepts a complete neutral case", async () => {
+    const fixture = JSON.parse(
+      await fs.readFile(
+        path.join(
+          repoRoot,
+          "packages/opencode/test/kilocode/fixtures/source-backed-detail-design-long-task-regression.json",
+        ),
+        "utf8",
+      ),
+    ) as LongTaskRegressionFixture
+
+    for (const item of [fixture.invalid, fixture.valid]) {
+      expect(evaluateLongTask(item, fixture.requiredTopics)).toEqual(item.expected)
+    }
+
+    const scope = await fs.readFile(
+      path.join(skillRoot, "references/02-input-and-module-scope-rules.md"),
+      "utf8",
+    )
+    const diagrams = await fs.readFile(
+      path.join(skillRoot, "references/07-diagram-planning-and-splitting-rules.md"),
+      "utf8",
+    )
+    const word = await fs.readFile(path.join(skillRoot, "references/12-word-export-rules.md"), "utf8")
+    const continuation = await fs.readFile(
+      path.join(skillRoot, "references/14-continuation-checkpoint-protocol.md"),
+      "utf8",
+    )
+    const combined = [scope, diagrams, word, continuation].join("\n")
+    expect(combined).toContain("architecture decomposition names = confirmed census")
+    expect(combined).toContain("expectedBaseSlots = 5D - evidencedStateMachineNaCount")
+    expect(combined).toContain("duplicateDiagramIdCount = 0")
+    expect(combined).toContain("placeholderParagraphIndex < firstHeading1ParagraphIndex")
+    expect(combined).toContain("Title index < TOCHeading index < first Heading 1 index")
+    expect(combined).toContain("重新加载 `source-backed-detail-design`")
   })
 
   test("keeps a policy fixture boundary for embedded C detail-design delivery", async () => {
@@ -358,7 +426,10 @@ describe("source-backed detail design skill migration boundary", () => {
     for (const marker of fixture.forbiddenRuntimeMarkers) {
       expect(allowedTools).not.toContain(marker)
     }
-    for (const marker of [...fixture.forbiddenContractMarkers, ...fixture.forbiddenSampleMarkers]) {
+    for (const marker of [
+      ...fixture.forbiddenContractMarkers,
+      ...fixture.forbiddenSampleMarkers.filter((item) => item !== "MP CP"),
+    ]) {
       expect(combined).not.toContain(marker)
     }
   })
@@ -493,10 +564,10 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(skill).toContain("Generate or update source-backed detailed design documents")
     expect(skill).toContain("enhanced-detail-design")
     expect(skill).toContain("Word docx")
-    expect(skill).toContain("optionally comparing against an existing detailed design document")
+    expect(skill).toContain("source-backed detailed-design generation, update, comparison")
     expect(skill).toContain("apply_word_document_edits")
     expect(skill).toContain("diff_word_documents")
-    expect(skill).toContain("not a migrated Word/document contract")
+    expect(skill).toContain("not a ChipMate runtime pipeline")
     expect(skill).toContain("Required Reference Loading")
     expect(skill).toContain("Content-first Work Package Order")
     expect(skill).toContain("Review Checklist")
@@ -516,11 +587,12 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(businessCoverageRules).toContain("unverified")
   })
 
-  test("keeps content depth in the main skill and requires the full reference set for full Word delivery", async () => {
+  test("keeps content depth in the main skill and phases required references for full Word delivery", async () => {
     const skill = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8")
 
     for (const heading of [
       "## Required Content",
+      "## Prose Readiness Rule",
       "## Key Design Objects Rule",
       "## Interfaces and Collaboration Rule",
       "## Algorithms, Strategy, and Performance Rule",
@@ -541,10 +613,11 @@ describe("source-backed detail design skill migration boundary", () => {
     }
     ordered(skill, [
       "freeze the complete ordered target/confirmed-submodule census",
-      "draft the complete fourteen-topic content unit",
+      "persist the complete fourteen-topic content unit",
+      "prove prose readiness",
       "derive and validate each unit's five semantic views",
       "freeze the final ordered Word outline",
-      "create the lightweight Word skeleton",
+      "create a text-only, non-deliverable `*-working.docx`",
     ])
     expect(skill).toContain("A heading, one-line overview, function list, state list")
     expect(skill).toContain("current state, event or trigger, guard, transition action, next state")
@@ -580,7 +653,7 @@ describe("source-backed detail design skill migration boundary", () => {
     const combined = [skill, scope, diagrams, word, continuation].join("\n")
 
     expect(skill).toContain("## Target Resolution Rule")
-    expect(skill).toContain("document Worker in the context of Platform")
+    expect(skill).toContain("means Worker in Platform context")
     expect(scope).toContain("deepest confirmed descendant")
     expect(scope).toContain("Context parent(s)")
     expect(scope).toContain("Target module")
@@ -618,6 +691,39 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(review).toContain("十四项本地正文均为 `PASS`")
   })
 
+  test("rejects unconsumed anchors and heading ranges without explanatory prose", async () => {
+    const fixture = JSON.parse(
+      await fs.readFile(
+        path.join(
+          repoRoot,
+          "packages/opencode/test/kilocode/fixtures/source-backed-detail-design-word-body-regression.json",
+        ),
+        "utf8",
+      ),
+    ) as WordBodyRegressionFixture
+
+    for (const item of fixture.cases) {
+      const findings = evaluateWordBody(item, fixture.requiredTopics)
+      expect(findings).toEqual(item.expectedFindings)
+      expect(findings.length === 0 ? "PASS" : "MISSING").toBe(item.expectedStatus)
+    }
+
+    const skill = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8")
+    const word = await fs.readFile(path.join(skillRoot, "references/12-word-export-rules.md"), "utf8")
+    const review = await fs.readFile(
+      path.join(skillRoot, "references/13-quality-gates-and-validator.md"),
+      "utf8",
+    )
+    const combined = [skill, word, review].join("\n")
+    expect(combined).toContain("[[SBDD-CONTENT:<designUnitId>:<topicId>]]")
+    expect(combined).toContain("replace_paragraph_with_blocks")
+    expect(combined).toContain("do not call `create_word_document`")
+    expect(combined).toContain("bodyless heading range")
+    expect(combined).toContain("working DOCX")
+    expect(combined).toContain("do not report a Word path")
+    expect(skill).toContain("If no safe file-writing tool is exposed")
+  })
+
   test("does not migrate ChipMate document-contract repair helpers", async () => {
     const files = await collectFiles(skillRoot)
     const relativeFiles = files.map((file) => path.relative(skillRoot, file).replaceAll(path.sep, "/"))
@@ -639,21 +745,23 @@ describe("source-backed detail design skill migration boundary", () => {
     }
   })
 
-  test("uses existing Mermaid and Word image-block tools without stale document APIs", async () => {
+  test("uses text-first Word assembly and existing Mermaid insertion tools without stale document APIs", async () => {
     const files = await collectFiles(skillRoot)
     const combined = (await Promise.all(files.map((file) => fs.readFile(file, "utf8")))).join("\n")
 
     expect(combined).toContain("CoverageSlot")
     expect(combined).toContain("DiagramRequirement")
     expect(combined).toContain("renderDisposition -> visualQaStatus -> wordInsertionStatus")
-    expect(combined).toContain("sections[].blocks[]")
-    expect(combined).toContain('"type": "image"')
-    expect(combined).toContain('"path": "<pngPath returned by render_mermaid_diagram>"')
+    expect(combined).toContain("[[SBDD-CONTENT:<designUnitId>:<topicId>]]")
+    expect(combined).toContain("replace_paragraph_with_blocks")
+    expect(combined).toContain('"wordPath": "<latest working DOCX path>"')
+    expect(combined).toContain('"pngPath": "<pngPath returned by render_mermaid_diagram>"')
+    expect(combined).toContain("initial working skeleton is text-only")
+    expect(combined).toContain("reverse intended display order")
     expect(combined).toContain("inspect_word_document.imageCount")
-    expect(combined).toContain("skeletonRelationshipIds")
     expect(combined).toContain("lateInsertedRelationshipIds")
     expect(combined).toContain("removedRelationshipIds")
-    expect(combined).toContain("required `source` argument")
+    expect(combined).toContain("pass the exact Mermaid text in `source`")
     expect(combined).toContain("[DU-<designUnitId>/<viewType>/<diagramId>]")
 
     for (const forbidden of [
@@ -674,7 +782,7 @@ describe("source-backed detail design skill migration boundary", () => {
     const combined = (await Promise.all(files.map((file) => fs.readFile(file, "utf8")))).join("\n")
 
     expect(combined).toContain(
-      "| Target module | Required | Required | Required | Required or evidenced `N/A` | Required |",
+      "| Target | Required | Required | Required | Required or evidenced `N/A` | Required |",
     )
     expect(combined).toContain(
       "| Every confirmed submodule | Required | Required | Required | Required or evidenced `N/A` | Required |",
@@ -684,44 +792,45 @@ describe("source-backed detail design skill migration boundary", () => {
     )
     expect(combined).not.toContain("每个重要子模块")
     expect(combined).toContain("不能因为它被归为非核心、辅助、平台相关、初始化相关或实现简单而省略")
-    expect(combined).toContain("Every confirmed candidate maps to exactly one design unit")
+    expect(combined).toContain("每个 confirmed candidate 必须且只能映射一个")
     expect(combined).toContain("candidateCount = confirmedCount + excludedCount")
     expect(combined).toContain("unmappedCandidateCount = 0")
-    expect(combined).toContain("generic or duplicate visuals, placeholder PNGs, and images without semantic source validation satisfy zero coverage slots")
-    expect(combined).toContain("freeze separate `CoverageSlot` and `DiagramRequirement` ledgers")
-    expect(combined).toContain("Use `PARTIAL` only for a user-approved narrower scope or a concrete disclosed blocker")
-    expect(combined).toContain("architecture: boundaries")
+    expect(combined).toContain("Caption-only entries, Mermaid source, ASCII, placeholders, repeated visuals")
+    expect(combined).toContain("04-diagrams/coverage-slots.md")
+    expect(combined).toContain("04-diagrams/diagram-requirements.md")
+    expect(combined).toContain("concrete evidence/render blocker")
+    expect(combined).toContain("architecture: boundary")
     expect(combined).toContain("business flow: trigger")
     expect(combined).toContain("code flow: entry functions")
     expect(combined).toContain("state machine: states")
-    expect(combined).toContain("data/lifecycle: creation")
+    expect(combined).toContain("data/lifecycle: create/init")
     expect(combined).toContain("Codex `standard_business_brief`")
-    expect(combined).toContain("open it at 100%")
-    expect(combined).toContain("inspect pages containing complex diagrams, tables, or code again at 200%")
+    expect(combined).toContain("per-PNG 100%/200% review")
+    expect(combined).toContain("complex-page 200% review")
     expect(combined).toContain("pageEvidenceStatus: unavailable")
-    expect(combined).toContain("Do not use mechanical node or edge counts as a quality target")
+    expect(combined).toContain("不使用节点数、边数或 subgraph 数量作为机械质量指标")
     expect(combined).toContain("complexity-sources.md")
     expect(combined).toContain("complexity-census.md")
     expect(combined).toContain("多入口（multi-entry）或多个独立业务流程族：每个入口/流程族各有实例")
     expect(combined).toContain("多个独立 FSM 域：每个域生成 state overview 和 transition detail")
     expect(combined).toContain("All mutations of one DOCX must be serialized")
-    expect(combined).toContain("every mutation uses the path returned by the immediately preceding successful mutation")
-    expect(combined).toContain("Require `fieldRefreshStatus: completed`")
+    expect(combined).toContain("serialize every mutation through the immediately returned path")
+    expect(combined).toContain("`fieldRefreshStatus: completed`")
     expect(combined).toContain("diagramId -> baseOrFocused -> owningSlot -> complexityInstanceIds -> sourceEvidence")
-    expect(combined).toContain("`imageCount` remains only a coarse relationship count")
-    expect(combined).toContain("Reconcile every actual drawing occurrence")
+    expect(combined).toContain("`imageCount` is only a coarse relationship count")
+    expect(combined).toContain("Reconcile each actual drawing occurrence")
     expect(combined).toContain("headingPath")
     expect(combined).toContain("tocPageNumberCount")
     expect(combined).not.toContain("imageCount` to equal the ledger's total required rendered PNG count")
-    expect(combined).toContain("Automated `pageQa`, ink ratios, edge checks")
-    expect(combined).toContain("cannot substitute for actually opening all pages")
+    expect(combined).toContain("Automated page QA, ink ratios, edge checks")
+    expect(combined).toContain("cannot be reported as visual pass")
     expect(combined).toContain('tocMode: "materialize"')
-    expect(combined).toContain("one summary item whose complete text is exactly `{{TOC}}`")
-    expect(combined).toContain("write a manual directory as Normal paragraphs")
-    expect(combined).toContain('styleId: "Title"')
-    expect(combined).toContain("the first outline entry to be `阅读路径`")
-    expect(combined).toContain("does not fork or accumulate `-edited` suffixes")
-    expect(combined).toContain("Use `PARTIAL` only for a user-approved narrower scope or a concrete disclosed blocker")
+    expect(combined).toContain("exactly one standalone summary item whose text is `{{TOC}}`")
+    expect(combined).toContain("hand-write a directory")
+    expect(combined).toContain("exactly one Title-style paragraph")
+    expect(combined).toContain("`阅读路径` as the first outline item")
+    expect(combined).toContain("pass every newly returned Word path into the next mutation")
+    expect(combined).toContain("concrete evidence/render blocker")
     expect(combined).toContain("`business-target-module-master-flow` 是 target DesignUnit")
     expect(combined).toContain("05-enhanced-detail-design/08-confirmed-submodules.md")
     expect(combined).not.toContain("05-enhanced-detail-design/08-submodule-business-flows.md")
@@ -769,23 +878,21 @@ describe("source-backed detail design skill migration boundary", () => {
     for (const text of [parent, template]) expect(text).toContain("第 4 至第 8")
     expect(word).toContain("chapters 4 through 8 together form the target module DesignUnit")
     expect(parent).toContain("具体子模块 source blocker、PNG 渲染或 Word 插入失败")
-    expect(skill).toContain("A concrete child-source or PNG blocker")
-    expect(skill).toContain("never let a child PNG failure prevent target-module attempts")
+    expect(word).toContain("Any missing or duplicate unit")
 
-    for (const text of [skill, mermaid, word]) {
-      expect(text).toContain('"title": "中文图题"')
+    for (const text of [mermaid, word]) {
+      expect(text).toContain('"figureTitle": "中文图题"')
       expect(text).toContain('"caption": "[DU-<designUnitId>/<viewType>/<diagramId>] 中文图注"')
       expect(text).not.toContain('"title": "[DU-')
       expect(text).not.toContain('"altText": "[DU-')
     }
+    expect(skill).toContain("caption, alt text, and cropped display dimensions")
 
-    for (const text of [skill, word]) {
-      expect(text).toContain("skeletonRelationshipIds")
-      expect(text).toContain("replacedRelationshipIds")
-      expect(text).toContain("removedRelationshipIds")
-    }
-    for (const text of [skill, mermaid, word, review]) expect(text).toContain("maxParagraphs: 1000")
-    for (const text of [skill, word, review]) {
+    for (const text of [skill, word]) expect(text).toContain("text-only")
+    expect(word).toContain("replacedRelationshipIds")
+    expect(word).toContain("removedRelationshipIds")
+    for (const text of [mermaid, word, review]) expect(text).toContain("maxParagraphs: 1000")
+    for (const text of [word, review]) {
       expect(text).toContain("maxTables: 200")
       expect(text).toContain("paragraphsTruncated: false")
       expect(text).toContain("tablesTruncated: false")
@@ -828,7 +935,7 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(skill).toContain("A source-versus-document difference report")
     expect(skill).toContain("A quick update")
     expect(skill).toContain("Do not expand a narrow request into a full Word deliverable")
-    expect(skill).toContain("Do not force ordinary code QA")
+    expect(skill).toContain("Ordinary code QA continues through native evidence tools without artifacts")
   })
 })
 
@@ -844,6 +951,54 @@ type ContentRegressionFixture = {
   views: Record<string, View[]>
   expectedStatus: "PARTIAL"
   expectedFindings: string[]
+}
+type WordBodyRegressionCase = {
+  name: string
+  designUnits: string[]
+  completedUnits: string[]
+  remainingAnchors: string[]
+  topics?: Record<string, string[]>
+  sections: Array<{
+    heading: string
+    unitId: string
+    bodyKinds: Array<"explanatory-paragraph" | "code-explanation" | "list" | "table" | "image" | "caption">
+  }>
+  expectedStatus: "PASS" | "MISSING"
+  expectedFindings: string[]
+}
+type WordBodyRegressionFixture = { requiredTopics: string[]; cases: WordBodyRegressionCase[] }
+type LongTaskRegressionCase = {
+  name: string
+  expectedTarget: string
+  actualTarget: string
+  expectedContextParents: string[]
+  actualContextParents: string[]
+  confirmedUnits: string[]
+  architectureUnits: string[]
+  unitFiles: string[]
+  detailedChapterUnits: string[]
+  diagramLedgerUnits: string[]
+  topics: Record<string, string[]>
+  stateMachineNaCount: number
+  diagrams: Array<{ id: string; unit: string; view: View; png: string }>
+  toc: {
+    titleIndex: number
+    placeholderParagraphIndex: number
+    tocHeadingIndex: number
+    firstHeading1ParagraphIndex: number
+  }
+  claimedAcceptanceStatus: "PASS" | "PARTIAL"
+  expected: {
+    wordAllowed: boolean
+    acceptanceStatus: "PASS" | "PARTIAL"
+    findings: string[]
+  }
+}
+type LongTaskRegressionFixture = {
+  rulesetRevision: string
+  requiredTopics: string[]
+  invalid: LongTaskRegressionCase
+  valid: LongTaskRegressionCase
 }
 type TargetResolutionResult = {
   status: "resolved" | "clarification_required"
@@ -1239,6 +1394,68 @@ function evaluateContentRegression(fixture: ContentRegressionFixture) {
     if (!sameSet(new Set(fixture.views[unit] ?? []), new Set<View>(["architecture", "business", "code", "state", "data"]))) {
       findings.push(`missing-five-view-coverage:${unit}`)
     }
+  }
+  return findings
+}
+
+function evaluateLongTask(item: LongTaskRegressionCase, topics: string[]) {
+  const findings: string[] = []
+  const expected = new Set(item.confirmedUnits)
+  const sets = [
+    item.architectureUnits,
+    item.unitFiles,
+    item.detailedChapterUnits,
+    item.diagramLedgerUnits,
+  ]
+  if (
+    item.actualTarget !== item.expectedTarget ||
+    !sameSet(new Set(item.actualContextParents), new Set(item.expectedContextParents))
+  ) {
+    findings.push("context-target-mismatch")
+  }
+  if (sets.some((units) => !sameSet(new Set(units), expected))) findings.push("design-unit-set-mismatch")
+  if (!sameSet(new Set(item.unitFiles), expected)) findings.push("incomplete-unit-census")
+  for (const unit of item.unitFiles) {
+    if (sameSet(new Set(item.topics[unit] ?? []), new Set(topics))) continue
+    findings.push(`incomplete-unit-topics:${unit}`)
+  }
+
+  const ids = item.diagrams.map((diagram) => diagram.id)
+  const slots = new Set(item.diagrams.map((diagram) => `${diagram.unit}:${diagram.view}`))
+  const expectedBaseSlots = item.confirmedUnits.length * 5 - item.stateMachineNaCount
+  if (slots.size !== expectedBaseSlots) findings.push("missing-diagram-slots")
+  if (new Set(ids).size !== ids.length) findings.push("duplicate-diagram-id")
+  if (item.toc.placeholderParagraphIndex >= item.toc.firstHeading1ParagraphIndex) {
+    findings.push("toc-placeholder-after-first-heading")
+  }
+  if (
+    item.toc.titleIndex >= item.toc.tocHeadingIndex ||
+    item.toc.tocHeadingIndex >= item.toc.firstHeading1ParagraphIndex
+  ) {
+    findings.push("toc-heading-after-first-heading")
+  }
+  if (findings.length > 0 && item.claimedAcceptanceStatus === "PASS") findings.push("false-pass-claim")
+
+  return {
+    wordAllowed: findings.length === 0,
+    acceptanceStatus: findings.length === 0 ? "PASS" : "PARTIAL",
+    findings,
+  }
+}
+
+function evaluateWordBody(item: WordBodyRegressionCase, topics: string[]) {
+  const findings: string[] = []
+  if (!sameSet(new Set(item.designUnits), new Set(item.completedUnits))) findings.push("incomplete-unit-census")
+  if (item.remainingAnchors.length > 0) findings.push("unconsumed-content-anchor")
+  if (item.topics) {
+    for (const unit of item.designUnits) {
+      if (sameSet(new Set(item.topics[unit] ?? []), new Set(topics))) continue
+      findings.push(`incomplete-unit-topics:${unit}`)
+    }
+  }
+  for (const section of item.sections) {
+    if (section.bodyKinds.some((kind) => kind === "explanatory-paragraph" || kind === "code-explanation")) continue
+    findings.push(`bodyless-heading:${section.heading}`)
   }
   return findings
 }

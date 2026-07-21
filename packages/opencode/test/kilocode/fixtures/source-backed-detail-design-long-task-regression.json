@@ -1,0 +1,107 @@
+{
+  "rulesetRevision": "2026-07-long-task-gate-v1",
+  "requiredTopics": [
+    "positioning",
+    "boundaries",
+    "io",
+    "architecture",
+    "business",
+    "objects",
+    "functions",
+    "state",
+    "interfaces",
+    "errors",
+    "strategy",
+    "integration",
+    "observability",
+    "evidence"
+  ],
+  "invalid": {
+    "name": "compressed-session-false-pass",
+    "expectedTarget": "Worker",
+    "actualTarget": "Platform",
+    "expectedContextParents": ["Platform"],
+    "actualContextParents": [],
+    "confirmedUnits": ["Worker", "Queue", "Retry", "Store"],
+    "architectureUnits": ["Worker", "Queue", "Retry", "PlatformFlush"],
+    "unitFiles": ["Worker", "Queue", "Retry"],
+    "detailedChapterUnits": ["Worker", "Queue", "Retry"],
+    "diagramLedgerUnits": ["Worker", "Queue", "Retry", "PlatformFlush"],
+    "topics": {
+      "Worker": ["positioning", "boundaries", "io", "architecture", "business", "objects", "functions", "state", "interfaces", "errors", "strategy", "integration", "observability", "evidence"],
+      "Queue": ["positioning", "boundaries", "io", "architecture", "business", "objects", "functions", "state", "interfaces", "errors", "strategy", "integration", "observability", "evidence"],
+      "Retry": ["positioning", "boundaries", "io", "architecture", "business", "objects", "functions", "state", "interfaces", "errors", "strategy", "integration", "observability"]
+    },
+    "stateMachineNaCount": 0,
+    "diagrams": [
+      {"id": "DG-WORKER-ARCH", "unit": "Worker", "view": "architecture", "png": "DG-WORKER-ARCH.png"},
+      {"id": "DG-WORKER-BUSINESS", "unit": "Worker", "view": "business", "png": "DG-WORKER-BUSINESS.png"},
+      {"id": "DG-QUEUE-STATE", "unit": "Queue", "view": "state", "png": "DG-QUEUE-STATE.png"},
+      {"id": "DG-QUEUE-STATE", "unit": "Queue", "view": "state", "png": "DG-QUEUE-STATE-copy.png"},
+      {"id": "DG-RETRY-DATA", "unit": "Retry", "view": "data", "png": "DG-RETRY-DATA.png"}
+    ],
+    "toc": {
+      "titleIndex": 0,
+      "placeholderParagraphIndex": 12,
+      "tocHeadingIndex": 12,
+      "firstHeading1ParagraphIndex": 4
+    },
+    "claimedAcceptanceStatus": "PASS",
+    "expected": {
+      "wordAllowed": false,
+      "acceptanceStatus": "PARTIAL",
+      "findings": [
+        "context-target-mismatch",
+        "design-unit-set-mismatch",
+        "incomplete-unit-census",
+        "incomplete-unit-topics:Retry",
+        "missing-diagram-slots",
+        "duplicate-diagram-id",
+        "toc-placeholder-after-first-heading",
+        "toc-heading-after-first-heading",
+        "false-pass-claim"
+      ]
+    }
+  },
+  "valid": {
+    "name": "target-and-child-complete",
+    "expectedTarget": "Worker",
+    "actualTarget": "Worker",
+    "expectedContextParents": ["Platform"],
+    "actualContextParents": ["Platform"],
+    "confirmedUnits": ["Worker", "Queue"],
+    "architectureUnits": ["Worker", "Queue"],
+    "unitFiles": ["Worker", "Queue"],
+    "detailedChapterUnits": ["Worker", "Queue"],
+    "diagramLedgerUnits": ["Worker", "Queue"],
+    "topics": {
+      "Worker": ["positioning", "boundaries", "io", "architecture", "business", "objects", "functions", "state", "interfaces", "errors", "strategy", "integration", "observability", "evidence"],
+      "Queue": ["positioning", "boundaries", "io", "architecture", "business", "objects", "functions", "state", "interfaces", "errors", "strategy", "integration", "observability", "evidence"]
+    },
+    "stateMachineNaCount": 0,
+    "diagrams": [
+      {"id": "DG-WORKER-ARCH", "unit": "Worker", "view": "architecture", "png": "DG-WORKER-ARCH.png"},
+      {"id": "DG-WORKER-BUSINESS", "unit": "Worker", "view": "business", "png": "DG-WORKER-BUSINESS.png"},
+      {"id": "DG-WORKER-CODE", "unit": "Worker", "view": "code", "png": "DG-WORKER-CODE.png"},
+      {"id": "DG-WORKER-STATE", "unit": "Worker", "view": "state", "png": "DG-WORKER-STATE.png"},
+      {"id": "DG-WORKER-DATA", "unit": "Worker", "view": "data", "png": "DG-WORKER-DATA.png"},
+      {"id": "DG-QUEUE-ARCH", "unit": "Queue", "view": "architecture", "png": "DG-QUEUE-ARCH.png"},
+      {"id": "DG-QUEUE-BUSINESS", "unit": "Queue", "view": "business", "png": "DG-QUEUE-BUSINESS.png"},
+      {"id": "DG-QUEUE-CODE", "unit": "Queue", "view": "code", "png": "DG-QUEUE-CODE.png"},
+      {"id": "DG-QUEUE-STATE", "unit": "Queue", "view": "state", "png": "DG-QUEUE-STATE.png"},
+      {"id": "DG-QUEUE-DATA", "unit": "Queue", "view": "data", "png": "DG-QUEUE-DATA.png"}
+    ],
+    "toc": {
+      "titleIndex": 0,
+      "placeholderParagraphIndex": 2,
+      "tocHeadingIndex": 2,
+      "firstHeading1ParagraphIndex": 4
+    },
+    "claimedAcceptanceStatus": "PASS",
+    "expected": {
+      "wordAllowed": true,
+      "acceptanceStatus": "PASS",
+      "findings": []
+    }
+  }
+}

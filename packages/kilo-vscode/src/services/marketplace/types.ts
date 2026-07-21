@@ -88,10 +88,11 @@ export interface SkillMarketplaceItem extends MarketplaceItemBase {
   localOnly?: boolean
   /** The latest successful remote catalog scan confirmed this local Skill is absent. */
   uploadable?: boolean
-  origin?: "market" | "local-import" | "builtin"
+  origin?: "market" | "local" | "local-import" | "builtin"
   localState?: "managed" | "unmanaged" | "modified"
   publishState?: "unpublished" | "matched" | "local-changes" | "blocked"
   removeToken?: string
+  removeSkillId?: string
   localScope?: "global" | "project"
 }
 

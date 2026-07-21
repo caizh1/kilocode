@@ -85,7 +85,7 @@ business_capability_id,capability_name,capability_description,business_value,sco
 
 - `capability_name` 只写能力名称，不得把说明塞进名称；
 - `capability_description` 必须完整说明该能力处理的对象、触发、动作、结果和边界；不使用固定字数作为质量门槛；
-- `business_value` 说明该能力对模块业务结果的价值，例如接入校验、状态推进、数据落盘、资源回收、异常收敛；
+- `business_value` 说明该能力对当前目标模块业务结果的实际价值，内容必须由本次源码证据导出，不使用预设业务动作；
 - `scope_boundary` 说明该能力负责什么、不负责什么；
 - `key_steps` 用业务语言概括全部关键阶段，不遗漏源码确认的决策、等待、失败或终止阶段；
 - `source_functions` 和 `evidence_ids` 不能为空；
@@ -99,4 +99,4 @@ business_capability_id,capability_name,capability_description,business_value,sco
 item_type,item_name,section_file,has_description,description_chars,has_evidence,diagram_refs,quality_status,notes
 ```
 
-item_type 包括 capability/submodule/target_flow。quality_status 包括 pass/weak/missing。每个业务能力、target module 和每个已确认子模块都必须有一行覆盖记录。Context parent 仅作为定位或 handoff 证据，不占 target_flow 覆盖行。重要性只决定深挖和拆图程度，不得把已确认子模块排除在覆盖记录之外。
+item_type 包括 capability/submodule/target_flow。quality_status 包括 pass/weak/missing。每个业务能力、target module 和每个已确认子模块都必须有一行覆盖记录。所属上级模块仅作为定位或 handoff 证据，不占 target_flow 覆盖行。重要性只决定深挖和拆图程度，不得把已确认子模块排除在覆盖记录之外。

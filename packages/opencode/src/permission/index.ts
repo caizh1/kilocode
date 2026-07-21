@@ -57,8 +57,8 @@ export type NotFoundError = PermissionV1.NotFoundError
 export type Error = PermissionV1.Error
 export const ReplyInput = PermissionV1.ReplyInput
 export type ReplyInput = PermissionV1.ReplyInput
-// Kilo extends upstream's AskInput with an optional hardRuleset (consumed by drain + session/prompt)
-export type AskInput = PermissionV1.AskInput & { hardRuleset?: PermissionV1.Ruleset }
+// Kilo extends upstream's AskInput with hardRuleset and a non-persistable manual confirmation.
+export type AskInput = PermissionV1.AskInput & { hardRuleset?: PermissionV1.Ruleset; forceAsk?: boolean }
 // kilocode_change end
 
 // kilocode_change start
@@ -91,6 +91,7 @@ interface PendingEntry {
   // kilocode_change start
   ruleset: Ruleset
   hardRuleset?: Ruleset
+  forceAsk?: boolean
   saved?: boolean
   // kilocode_change end
   deferred: Deferred.Deferred<void, RejectedError | CorrectedError>
@@ -147,6 +148,7 @@ function subset(permission: string, ruleset: Ruleset) {
 }
 
 function covered(entry: PendingEntry, approved: Ruleset, local: Ruleset) {
+  if (entry.forceAsk) return false
   if (ConfigProtection.isRequest(entry.info)) return false
   return entry.info.patterns.every((pattern) => {
     if (veto(entry.info.permission, pattern, entry.hardRuleset)) return false
@@ -188,7 +190,7 @@ export const layer = Layer.effect(
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
       // kilocode_change start
-      const { ruleset, hardRuleset, ...request } = input
+      const { ruleset, hardRuleset, forceAsk, ...request } = input
       const s = yield* InstanceState.get(state)
       const local = s.session[request.sessionID] ?? []
       // kilocode_change end
@@ -227,7 +229,7 @@ export const layer = Layer.effect(
           })
         }
         // kilocode_change start - override "allow" to "ask" for protected config paths
-        if (rule.action === "allow" && (!isProtected || trusted)) continue
+        if (rule.action === "allow" && (!isProtected || trusted) && !forceAsk) continue
         // kilocode_change end
         needsAsk = true
       }
@@ -261,7 +263,7 @@ export const layer = Layer.effect(
       log.info("asking", { id, permission: info.permission, patterns: info.patterns })
 
       const deferred = yield* Deferred.make<void, RejectedError | CorrectedError>()
-      pending.set(id, { info, ruleset, hardRuleset, deferred }) // kilocode_change
+      pending.set(id, { info, ruleset, hardRuleset, forceAsk, deferred }) // kilocode_change
       yield* events.publish(Event.Asked, info) // kilocode_change - was bus.publish
       return yield* Effect.ensuring(
         Deferred.await(deferred),

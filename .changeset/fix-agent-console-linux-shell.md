@@ -3,4 +3,4 @@
 "chipmate": patch
 ---
 
-Restore Agent Console shells on Linux and improve console tab alignment and output contrast.
+Keep Agent Console input editable in the terminal timeline and recover the persistent Linux shell after interrupted or incomplete commands.

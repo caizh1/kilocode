@@ -21,6 +21,9 @@ const aligned = fs.readFileSync(
   path.join(root, "webview-ui/src/components/marketplace/AlignedSkillMarket.tsx"),
   "utf-8",
 )
+const actions = fs.readFileSync(path.join(root, "src/services/marketplace/actions.ts"), "utf-8")
+const bridge = fs.readFileSync(path.join(root, "src/services/skill-market/bridge.ts"), "utf-8")
+const localRemoval = fs.readFileSync(path.join(root, "src/services/marketplace/local-skill-removal.ts"), "utf-8")
 const install = fs.readFileSync(path.join(root, "webview-ui/src/components/marketplace/InstallModal.tsx"), "utf-8")
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8")) as {
   contributes: { commands: Array<{ command: string; title: string }> }
@@ -74,6 +77,8 @@ describe("standalone Marketplace architecture", () => {
     expect(card).toContain('icon="trash"')
     expect(card).not.toContain("🌟")
     expect(view).toContain("<RemoveDialog")
+    expect(card).toContain('skill()?.origin === "market"')
+    expect(view).toContain('item.origin !== "market"')
   })
 
   it("shows aligned Skill risk badges and requires confirmation before risky installation", () => {
@@ -139,5 +144,14 @@ describe("standalone Marketplace architecture", () => {
     expect(remove).not.toContain("new MarketplaceService()")
     expect(remove).not.toContain("AgentMarketplaceItem")
     expect(remove).not.toContain("McpMarketplaceItem")
+  })
+
+  it("refreshes Skill caches without disposing active workspace sessions", () => {
+    expect(actions).toContain("client.kilocode.refreshSkills")
+    expect(panel).toContain("invalidateMarketplaceSkills(this.marketplaceCtx, selected.scope, dir)")
+    expect(panel).not.toContain("CLI skill invalidation after deep-link install failed")
+    expect(bridge).toContain(".kilocode.refreshSkills")
+    expect(bridge.indexOf(".kilocode.refreshSkills")).toBeLessThan(bridge.indexOf("await this.reply"))
+    expect(localRemoval).not.toContain("client.instance.dispose")
   })
 })

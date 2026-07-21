@@ -18,6 +18,7 @@ allowed-tools:
   - insert_mermaid_into_word
   - create_word_document
   - inspect_word_document
+  - validate_word_document
   - apply_word_document_edits
   - apply_word_template_styles
   - materialize_word_fields
@@ -42,34 +43,19 @@ metadata:
 
 # Source-backed Detail Design for Kilo
 
-Use this skill when the user explicitly asks to regenerate, enhance, update, or export a detailed design document from current source code, optionally comparing against an existing detailed design document.
+## Critical Full-Word Invariants
 
-This is a Kilo built-in skill using the native skill mechanism. It is not a ChipMate runtime pipeline, not question routing, not a migrated Word/document contract, and not a replacement for Kilo ordinary QA. The model owns scope discovery, evidence planning, work-package sequencing, diagram semantics, section writing, artifact selection, and Word document assembly. Kilo tools execute evidence retrieval, artifact writes, Mermaid rendering, generic Word generation, Word edits, and optional render QA.
+`SBDD_RULESET_REVISION=2026-07-long-task-gate-v1`. For a full Word task, resolve one source-evidenced target before drafting: explicit user intent wins, and an evidenced ancestor/descendant name chain defaults to its deepest, most specific member unless the user requests separate subjects. Before any DOCX, persist the scope lock; complete fourteen-topic prose for the target and every confirmed submodule; resolve five unique views per DesignUnit, with the state machine allowed only an evidence-backed `N/A`. Missing or duplicate content or figures keeps Word `not_started`. Put the sole `{{TOC}}` summary paragraph before the first Heading 1. After compaction or resume, reload this Skill and read `resume-state.md`. Never deliver an incomplete or working DOCX; end a successful final answer with its authoritative absolute path.
 
-Do not import ChipMate runtime contract mechanisms into this skill. In particular, do not add contract-steering metadata, required-deliverable validators, document-depth gates, recipe-specific Word repair loops, or blocking skill-contract gates to Kilo's native QA path.
+Use this Skill for source-backed detailed-design generation, update, comparison, diagrams, and Word delivery. It uses Kilo's native Skill and document tools; it is not a ChipMate runtime pipeline, question route, ordinary-QA replacement, contract, validator, or repair gate. The model owns scope, evidence, content, diagrams, and assembly.
 
 ## Non-goals and QA Boundary
 
-- Do not migrate or assume ChipMate `DesignDocAgentFlow`, ChipMate planner, ChipMate question routing, or ChipMate CodeGraph/RAG management UI.
-- Do not migrate or assume ChipMate Word/document runtime contracts, artifact-consumption gates, recipe-specific repair prompts, or mandatory delivery gates.
-- Do not force ordinary code QA, call-chain questions, macro/register analysis, or document QA into this workflow.
-- For ordinary code understanding, use Kilo native `codebase_analysis`, `semantic_search`, `document_search`, `grep`, `glob`, and `read` directly.
-- Trigger this skill only for explicit detailed-design, design-doc, Word/docx, Mermaid/diagram, or source-backed documentation deliverables.
-- If the user only asks a normal coding question, answer through Kilo native QA tools and do not create artifacts.
+Use this Skill only for explicit detailed-design, Word/docx, Mermaid, or source-backed documentation deliverables. Ordinary code QA continues through native evidence tools without artifacts. Do not migrate ChipMate planner, routing, CodeGraph UI, artifact contract, validator, repair steering, or global delivery gates, and do not change Kilo Skill discovery, ordinary QA, RAG, or tool-loop behavior.
 
 ## Non-contract Capability Preservation
 
-Chapter restructuring must preserve every existing non-contract capability in this skill:
-
-- input and scope: existing-document clue extraction, candidate-range scoring, parent/target/core mapping, primary/auxiliary/excluded scope, and bounded terminology;
-- source and control-flow evidence: source indexes, exact symbol/line evidence, function coverage, calls, branches, state transitions, data reads/writes, error and cleanup paths, and edge coverage;
-- business abstraction: business capabilities, steps, objects, cross-submodule handoffs, terminal outcomes, confidence, and source-backed interpretation;
-- document content: full documents, single chapters, single submodules, state-machine-focused reports, existing-document updates, and source-versus-document differences;
-- diagrams: target-module and confirmed-submodule architecture, business, code, state-machine, and data/lifecycle views, plus readable split views for complex flows;
-- Word delivery: generic create/edit/style/merge/diff tools, ordered image blocks, standard business formatting, native TOC, image identity checks, and page-image visual review;
-- continuation: resumable work-package state and human-readable review notes for long tasks without affecting ordinary QA.
-
-Do not delete evidence schemas, work packages, update/diff behavior, build/integration coverage, narrow-delivery behavior, or continuation guidance merely because the final Word chapters are reorganized.
+Preserve scope discovery, line-level control-flow evidence, business abstraction, fourteen-topic local design units, five-view diagrams, existing-document diff, native Word/TOC, image and page visual review, narrow deliveries, and resumable work packages. Keep their detailed schemas in the existing references. Reorganizing chapters must not delete evidence, build/integration, update/diff, or continuation behavior.
 
 ## Kilo Tool Mapping
 
@@ -83,65 +69,64 @@ Use Kilo native evidence tools first:
 | Exact source confirmation and line-level citations | `read`, `grep`, `glob` |
 | Artifact manifest and diagnostics | `declare_artifact`, `list_artifacts`, `open_artifact`, `export_artifact_diagnostics` |
 | Mermaid source validation/rendering/saving | `validate_mermaid_diagram`, `render_mermaid_diagram`, `save_mermaid_artifact` |
-| Word generation/inspection/editing/render QA | `create_word_document`, `inspect_word_document`, `apply_word_document_edits`, `insert_mermaid_into_word`, `render_word_document` |
+| Word generation/inspection/editing/render QA | `create_word_document`, `inspect_word_document`, `validate_word_document`, `apply_word_document_edits`, `insert_mermaid_into_word`, `render_word_document` |
 
 Do not call Mermaid tools to decide business semantics. The model must decide diagram type, main flow, exception flow, state role, split strategy, and figure placement from evidence and this skill's references. Mermaid tools only validate, render, save, and insert artifacts.
 
 ## Required Reference Loading
 
-References are progressive instructions, not runtime contract metadata. For a full Word detailed-design delivery, read and record `references/01-core-principles.md` through `references/10-detail-design-output-templates.md`, plus `references/12-word-export-rules.md`, `references/13-quality-gates-and-validator.md`, and `references/15-business-flow-abstraction-rules.md`, before drafting the document. Read `references/11-feature-diff-completeness-rules.md` when an earlier document is supplied. Read `references/14-continuation-checkpoint-protocol.md` whenever the task spans turns or needs resumable state.
+References are phase instructions, not runtime contracts. For full Word work load them progressively:
 
-A single-chapter, single-submodule, state-machine-only, difference-only, or quick-update request reads only the references listed for its active work packages. Missing materialized references are a disclosed delivery limitation; they do not change skill routing or ordinary QA. A full Word delivery must not silently skip a required reference and still claim complete coverage.
+1. scope/evidence: `01`-`06`, `14`, `15`;
+2. prose: `10`, then persist and audit every fourteen-topic unit;
+3. diagrams, only after prose readiness: `07`-`09`;
+4. Word/review, only after both gates are terminal: `12`-`14`.
 
-| Work package | References |
-|---|---|
-| input-and-scope | `references/01-core-principles.md`, `references/02-input-and-module-scope-rules.md`, `references/14-continuation-checkpoint-protocol.md` |
-| source-evidence | `references/03-source-exploration-rules.md` |
-| control-flow-evidence | `references/04-control-flow-evidence-schema.md`, `references/05-submodule-business-flow-rules.md`, `references/06-state-machine-extraction-rules.md` |
-| business-flow-abstraction-and-diagrams | `references/15-business-flow-abstraction-rules.md`, `references/07-diagram-planning-and-splitting-rules.md`, `references/08-mermaid-png-rendering-rules.md` |
-| code-level-submodule-diagrams | `references/05-submodule-business-flow-rules.md`, `references/07-diagram-planning-and-splitting-rules.md`, `references/08-mermaid-png-rendering-rules.md` |
-| state-machine-diagrams | `references/06-state-machine-extraction-rules.md`, `references/08-mermaid-png-rendering-rules.md` |
-| target-module-diagram-and-context | `references/09-parent-module-assembly-rules.md` |
-| enhanced-detail-design | `references/10-detail-design-output-templates.md` |
-| diff-and-feature-report | `references/11-feature-diff-completeness-rules.md` |
-| review-and-word-export | `references/12-word-export-rules.md`, `references/13-quality-gates-and-validator.md` |
+Load `11` when an earlier document exists. Narrow requests load only their active work-package references. Missing required references are a disclosed limitation and cannot be called complete.
+
+The reference groups are `input-and-scope` (`references/01-core-principles.md`, `02`, `14`), `source-evidence` (`03`), `control-flow-evidence` (`04`-`06`), `business-flow-abstraction-and-diagrams` (`07`-`09`, `references/15-business-flow-abstraction-rules.md`), `enhanced-detail-design` (`references/10-detail-design-output-templates.md`), `diff-and-feature-report` (`11`), and `review-and-word-export` (`references/12-word-export-rules.md`, `references/13-quality-gates-and-validator.md`).
 
 ## Content-first Work Package Order
 
 For a broad end-to-end detailed-design deliverable, use this order:
 
-1. locate the parent context, target module, source regions, and candidate submodules;
+1. resolve and persist the evidenced owning modules, one target module, source regions, and candidate submodules in `02-source-evidence/module-scope.md`;
 2. collect source, control-flow, state, data-ownership, build, and business evidence;
 3. freeze the complete ordered target/confirmed-submodule census with evidence-backed exclusions;
-4. draft the complete fourteen-topic content unit and evidence table for the target and every confirmed submodule;
-5. derive and validate each unit's five semantic views and any focused diagrams from those completed content units;
-6. freeze the final ordered Word outline, including every target and submodule H1/H2/H3 heading and unique content anchor;
-7. create the lightweight Word skeleton with available PNGs, then fill prose and tables serially by exact anchor;
-8. materialize the native TOC, inspect structure and image identity, render all pages, and complete visual review;
-9. add existing-document differences when applicable and publish final coverage, limitations, and owner-review notes.
+4. persist the complete fourteen-topic content unit and evidence table for the target and every confirmed submodule under `05-enhanced-detail-design/units/`, and update root-level `resume-state.md` plus `review-notes.md`;
+5. prove prose readiness from those files; if any unit or applicable topic is incomplete, stop before Mermaid and Word work and preserve the continuation point;
+6. derive and validate each unit's five semantic views and any focused diagrams from the completed content units;
+7. freeze the final ordered Word outline, including every target and submodule H1/H2/H3 heading and exact `[[SBDD-CONTENT:<designUnitId>:<topicId>]]` paragraph anchor;
+8. create a text-only, non-deliverable `*-working.docx`, fill every prose/table anchor serially, and pass the heading-body audit before inserting any PNG;
+9. insert approved PNGs serially, materialize the native TOC, inspect structure, body coverage and image identity, render all pages, explicitly validate the authoritative DOCX with `validate_word_document`, and complete visual review;
+10. add existing-document differences when applicable and publish final coverage, limitations, and owner-review notes.
 
-Scale or skip packages only for an explicitly narrow request. Do not begin Mermaid authoring from a name inventory, and do not begin Word assembly while content units, evidence, or required diagrams are missing. If an execution boundary is reached, persist the completed evidence, content units, figure state, and continuation point instead of compressing or omitting remaining submodules.
+Scale or skip packages only for an explicitly narrow request. Do not begin Mermaid authoring from a name inventory, and do not call `create_word_document` while prose readiness is false or required diagram inputs are unresolved. If an execution boundary is reached, persist the completed evidence, content units, figure state, and continuation point instead of compressing or omitting remaining submodules. An unfinished full-document task has no deliverable DOCX path.
 
 ## Delivery Scope Variants
 
-- A full Word delivery uses the canonical full-document outline, all applicable design units, five source-backed view types, coverage reporting, image checks, and page visual review.
-- A single-chapter or single-submodule delivery keeps terminology, scope, and evidence context but expands only the requested design unit and its applicable views.
-- A state-machine-only delivery keeps scope, state ownership, dispatch, transitions, guards/actions, handlers, failure/recovery behavior, and evidence without forcing unrelated Word chapters.
-- An existing-document update rebuilds conclusions from current source, uses the existing generic Word edit/style/diff tools, and treats old prose only as a clue or comparison input.
-- A source-versus-document difference report keeps symbol-evolution mapping and `Both` / `CodeOnly` / `DocOnly` capability classification without requiring a new full Word document unless requested.
-- A quick update may reduce work packages, but it must disclose skipped analysis, unavailable evidence, and unreviewed figures or pages.
+- A full Word delivery uses the canonical outline, all scoped design units, five views, coverage, and visual review.
+- A single-chapter or single-submodule delivery expands only the requested unit and keeps enough scope/evidence context.
+- A state-machine-only delivery keeps state ownership, transitions, guards/actions, recovery, and evidence without unrelated chapters.
+- An existing-document update rebuilds conclusions from current source with generic Word edit/style/diff tools.
+- A source-versus-document difference report keeps symbol evolution and `Both` / `CodeOnly` / `DocOnly` without forcing full Word.
+- A quick update discloses skipped analysis, unavailable evidence, and unreviewed figures or pages.
 
-Do not expand a narrow request into a full Word deliverable, and do not use any scope variant as a reason to alter skill discovery, permissions, or ordinary QA behavior.
+Do not expand a narrow request into a full Word deliverable or alter skill discovery, permissions, or ordinary QA.
 
 For a full multi-submodule task, create `resume-state.md`, `continue-prompt.md`, and `review-notes.md` before Word assembly so work can continue without shrinking the requested scope. Do not create these files for ordinary QA or short narrow document tasks.
 
 ## Output Root and Artifact Guidance
 
-Use workspace-safe `<module-name>_source_backed_detail_design/`, preferably via `declare_artifact`, with existing `00-input/` through `08-word-export/` work packages. Record logical-to-actual Mermaid paths in `04-diagrams/diagram-index.md`.
+Use workspace-safe `<module-name>_source_backed_detail_design/`, preferably reserving the artifact root via `declare_artifact`, with existing `00-input/` through `08-word-export/` work packages. Materialize Markdown evidence and unit files under that root with the runtime's existing workspace file-writing tool when it is exposed; do not use shell, Python, Node, or temporary JSON as a substitute. If no safe file-writing tool is exposed, prose readiness is blocked and Word creation must not start. Record logical-to-actual Mermaid paths in `04-diagrams/diagram-index.md`.
 
-## Scope and Parent-to-Core Rule
+## Scope and Module-Relationship Rule
 
-Map parent context, the requested target module, core implementation, and source-backed handoffs before conclusions. Do not collapse the target into its densest file. Use bounded relationship wording and owner-review items for uncertain mappings.
+Map the internal owning-module role, requested target module, core implementation, and source-backed handoffs before conclusions. Do not collapse the target into its densest file. Use bounded relationship wording and owner-review items for uncertain mappings.
+
+Keep system-architecture position, source ownership, owning-module relationship, callers/callees, data/state/control handoffs, dependencies, collaboration, management, and resource ownership as separate evidence dimensions everywhere they appear. Never infer one dimension from another. In particular, source containment does not prove system layering; an owning module is not automatically a business upstream or call entry; a call edge does not prove ownership; and a target located inside a system layer cannot also describe that same layer as its downstream. Use “管理” or “位于……之间” only with direct evidence for that exact relationship. Mark unsupported dimensions as `待确认` instead of completing them from industry conventions.
+
+The stable internal scope key remains `context_parent`. Never expose that token or any literal translation of it in Word, Markdown work packages, tables, figures, captions, review notes, or final answers. Use the user-facing label “所属上级模块”, and only when source evidence establishes the relationship. Apply this rule globally rather than only in a particular chapter.
 
 ## Terminology and Confidence Rule
 
@@ -149,11 +134,11 @@ Resolve names and ownership from evidence; never invent acronym expansions. Star
 
 ## Word Output Language Rule
 
-Default Word prose, headings, tables, captions, conclusions, review notes, and business-diagram labels to Simplified Chinese. Preserve source symbols, paths, config keys, standards, products, tools, abbreviations, and status tokens. Use `中文说明（Original Term）` only for a well-supported translation; otherwise retain English and explain it in Chinese. Keep code-flow symbols exact and terminology consistent.
+Default Word prose, headings, tables, captions, conclusions, review notes, and business-diagram labels to Simplified Chinese. Preserve source symbols, paths, config keys, standards, products, tools, abbreviations, and status tokens. Use `中文说明（Original Term）` only for a well-supported translation; otherwise retain English and explain it in Chinese. Keep code-flow symbols exact and terminology consistent. Render internal scope roles with their approved user-facing Chinese labels; do not copy internal field names into the document.
 
 ## Required Content
 
-The document must teach a new maintainer how the current implementation works, not merely prove that source symbols were found. Include the reading path; terminology and scope; parent and target boundaries; exhaustive submodule census; business capabilities and complete business flows; implementation, functions, design objects, interfaces, states, algorithms, configuration/build, concurrency/performance, errors and observability; diagrams; evidence/coverage; differences; assumptions, risks, and owner-review items. Report coverage as `PASS / PARTIAL / MISSING / N/A`.
+The document must teach a new maintainer how the current implementation works, not merely prove that source symbols were found. Include the reading path; terminology and scope; system position, owning-module and target boundaries; exhaustive submodule census; business capabilities and complete business flows; implementation, functions, design objects, interfaces, states, algorithms, configuration/build, concurrency/performance, errors and observability; diagrams; evidence/coverage; differences; assumptions, risks, and owner-review items. Report coverage as `PASS / PARTIAL / MISSING / N/A`.
 
 The target module and every confirmed submodule require one continuous local content unit. A heading, one-line overview, function list, state list, macro list, structure list, or diagram alone is not detailed design. Each unit must explain business meaning before implementation detail and must cover all fourteen topics in the Design Unit Template. If a topic applies but is only named or listed, mark it `PARTIAL`; if it is absent, mark it `MISSING`.
 
@@ -161,21 +146,21 @@ For every business-flow family, explain the trigger, preconditions, business obj
 
 For every key function, explain responsibility, parameters and return value, preconditions and postconditions, callers and callees, local decisions and loops, state/data/resource side effects, synchronous or asynchronous completion, error behavior, cleanup, and line-level evidence. A table that contains only function names and one-line labels is incomplete.
 
+## Prose Readiness Rule
+
+For every full Word task, prose readiness is a required, inspectable phase result rather than an internal claim. Persist `02-source-evidence/module-scope.md`, one `05-enhanced-detail-design/units/<designUnitId>.md` file per target or confirmed submodule, and root-level `resume-state.md` plus `review-notes.md` before any Word creation. Each unit file uses the fourteen-topic template and records every topic as `PASS`, evidence-backed `N/A`, or `MISSING`, with its explanation and evidence beside the status.
+
+Prose readiness is true only when the resolved target is distinct from every evidenced owning module, the frozen DesignUnit count equals the number of complete unit files, and every applicable topic in every unit is explanatory `PASS` or justified `N/A`. A heading, picture, caption, list, table, source-symbol inventory, single summary sentence, or status checkbox cannot establish readiness. If any unit file, topic explanation, exception path, or evidence link is absent, keep Word state `not_started`, record the first incomplete item, and continue from the persisted drafts in a later turn. Do not create or report a partial DOCX merely to preserve progress.
+
+After text is copied into Word, audit each final heading's own local range before image insertion. The range ends at the next heading of any level and must contain explanatory Normal/code content; a parent DesignUnit's aggregate coverage is checked separately across its child headings. Empty paragraphs, `{{TOC}}`, `[[SBDD-CONTENT:*]]` anchors, image titles, captions, figure IDs, drawings, and standalone lists or tables do not count as explanatory body. Container headings also require a short orientation paragraph before their first child heading. Any empty, image-only, list-only, table-only, or one-line-name section is `MISSING` or `PARTIAL`; repair it before inserting figures, materializing the TOC, treating the file as final, or reporting a Word path.
+
 ## Key Design Objects Rule
 
-Do not present structures, variables, enums, macros, queues, caches, bitmaps, or tables as a flat inventory:
-
-- structures: explain important field semantics, creator, initializer, owner, readers/writers, mutation points, lifecycle, consistency rules, concurrency risks, and related flows;
-- global/context objects: explain stored state, initialization and reset timing, readers/writers, boundary values, invalidation, cleanup, and ownership transfer;
-- enums and state fields: explain state meaning, entry condition, triggering event, guard, action, exit condition, next state, side effects, and evidence;
-- queues, caches, bitmaps, and tables: explain capacity/index rules, producer/consumer relationship, full/empty or hit/miss behavior, aging/timeout, merge/split behavior, persistence, invalidation, and release;
-- macros and configuration: explain the controlled path, enabled/disabled behavior, default or platform value when evidenced, performance/resource effect, and review items.
-
-A field-name list is not a lifecycle explanation, and a macro list is not configuration or performance design.
+Do not present structures, variables, states, configuration, queues, caches, indexes, or tables as inventories. Explain meaning, creation/initialization, owner, readers/writers, mutations, capacity or boundary rules, lifecycle, invalidation/release, concurrency/consistency risks, affected flows, configuration behavior, and evidence. A field or configuration-name list is not lifecycle, strategy, or performance design; detailed object templates stay in reference `10`.
 
 ## Interfaces and Collaboration Rule
 
-Separate external/public, internal, cross-module, callback/asynchronous, queue/notification/handoff, and hardware/register/DMA/adapter interfaces. For each key interface explain caller, callee, parameters, return or completion result, precondition, postcondition, call timing, synchronous/asynchronous behavior, state/data/resource side effects, failure behavior, and source evidence. For callbacks, queues, hardware submissions, and cross-layer notifications, include the complete request-to-completion sequence. An API-name list is `PARTIAL`, not interface design.
+Separate external/public, internal, cross-module, callback/asynchronous, queue/notification/handoff, and source-evidenced adapter interfaces. For each key interface explain caller, callee, parameters, return or completion result, precondition, postcondition, call timing, synchronous/asynchronous behavior, state/data/resource side effects, failure behavior, and source evidence. For callbacks, queues, adapter submissions, and cross-boundary notifications, include the complete request-to-completion sequence. An API-name list is `PARTIAL`, not interface design.
 
 ## Algorithms, Strategy, and Performance Rule
 
@@ -191,31 +176,31 @@ Provide four reading routes near the beginning: big-picture understanding, core-
 
 ## Target Resolution Rule
 
-Keep these roles distinct:
+Keep three internal roles distinct: `context_parent` records an evidenced owning or enclosing module, the one `target_module` is the document subject, and each `confirmed_submodule` is an independently evidenced child owned inside the target. Generated content labels the first role “所属上级模块” and never exposes the internal key.
 
-- `context parent`: an owning or enclosing module used only to explain where the subject sits, its external boundary, and upstream/downstream handoffs;
-- `target module`: the document subject and the one root target DesignUnit that owns chapters 4 through 8, the complete fourteen-topic content, and five-view coverage;
-- `confirmed submodule`: an independently evidenced child owned inside the target module; each receives its own local chapter and five-view coverage.
+Resolve them before drafting. Explicit user wording wins. Otherwise, when requested names form an evidenced ancestor/descendant chain, select the deepest and most specific member as the target and retain its evidenced ancestors only as owning-module context. If candidates are siblings, hierarchy is unproven, several deepest candidates remain, or the user requests separate subjects, clarify before prose, diagrams, or Word. Do not include concrete module-name examples in this Skill; derive every name and relationship from the current request and source.
 
-Resolve the target before drafting, diagram planning, or Word creation. An explicit user statement such as “以 Worker 为主体” wins. When multiple names form a source-confirmed ancestor/descendant chain, choose the deepest, most specific named module as the target and record every named ancestor as a context parent. Therefore a compact request such as “生成 Platform Worker 模块的详细设计” means “document Worker in the context of Platform” when source evidence confirms `Platform -> Worker`. If the names are siblings, the hierarchy is unproven, more than one deepest candidate remains, or the user explicitly asks for multiple modules separately, do not silently collapse the request: obtain the intended subject or delivery split before drafting. A directory, file, or helper function alone is not a module boundary.
+Persist `module-scope.md` with the original phrase, Skill revision, owning-module roots, unique target and primary root, confirmed target-owned submodules, exclusions, hierarchy evidence, and confidence. Owning modules never enter the DesignUnit census, fourteen-topic denominator, five-view denominator, or FSM audit. Any unit owned outside the target cannot be inserted into the target's submodule census.
 
-Context parents are not DesignUnits and do not receive mandatory fourteen-topic chapters, `FsmAudit`, five-view slots, or figure-count credit. Chapter 3 may include a source-backed context architecture or interaction figure when useful, but that optional figure cannot satisfy any target or confirmed-submodule slot. A context parent becomes a target only when the user explicitly requests its own detailed design.
+Search target interfaces, build/registration, initialization/cleanup, calls, persistent state, resource/queue/cache owners, recovery, and platform variants to discovery closure. Every candidate ends as `confirmed_submodule` or evidence-backed `excluded_non_submodule`; never drop or rename one to reduce work. Confirm an independent responsibility through two signals or one strong ownership/registration/state signal. Detailed closure schemas stay in references `02` and `03`.
 
-Before deciding which submodules are confirmed, search the target roots, public interfaces, build/registration files, initialization and cleanup owners, upstream/downstream call paths, persistent state owners, data/resource/queue/cache owners, error/recovery paths, and platform/configuration variants until a terminal pass finds no new ownership boundary. Record positive and zero-result evidence, consume truncated continuations, and preserve every discovered candidate in the decomposition table. Use `references/03-source-exploration-rules.md` for the exact discovery closure schema and equations; keep those bookkeeping details out of the narrative body.
+Before prose readiness require exact set equality, not only equal counts:
 
-Every candidate ends as exactly `confirmed_submodule` or evidence-backed `excluded_non_submodule`. Confirm a coherent responsibility from at least two independent signals, or from one strong source signal such as a build target/registration, stable public interface, independent persistent state machine, or independent data/resource ownership. Exclusion requires itemized counter-evidence proving alias/duplicate ownership or lack of an independently owned responsibility; the label `helper` or `adapter` is not enough. Do not silently drop, merge, rename, downgrade, or exclude a candidate to reduce writing or diagram work. Every confirmed candidate maps to exactly one design unit, and every confirmed design unit receives a complete local chapter and five-view coverage.
+`architecture decomposition names = confirmed census = DesignUnit IDs = detailed chapter IDs = diagram-ledger unit IDs`.
+
+Any substitution, omission, unresolved candidate, foreign context unit, or mismatch keeps Word `not_started`.
 
 ## Hybrid Chapter Placement Rule
 
 Use a hybrid structure:
 
-- global opening chapters establish reading paths, terminology, source-backed scope, parent context, target-module role, target capabilities, the detailed main business loop, and internal decomposition;
+- global opening chapters establish reading paths, terminology, source-backed scope, system position, owning-module relationship, target-module role, target capabilities, the detailed main business loop, and internal decomposition;
 - the target module and every confirmed submodule then receive one continuous local detailed-design unit;
 - global closing chapters contain only cross-module collaboration, ownership, state handoff, shared configuration/build concerns, resource contention, indexes, coverage, differences, and review items.
 
 A global object list, interface list, code-flow chapter, state-machine chapter, or performance chapter cannot satisfy missing local detail for a confirmed submodule. Link summary rows back to the owning design unit instead of duplicating its detailed prose.
 
-Canonical chapters 4 through 8 together form the target module's one continuous design unit: chapter 4 owns its architecture base slot, chapter 6 owns its one business-flow base slot, chapter 7 decomposes only the target module and owns no five-view slot, and chapter 8 owns its data/lifecycle, code-flow, and state-machine slots plus the remaining implementation detail. The chapter-6 master business flow is the target unit's unique business-flow primary figure; chapter 8 references it and must not insert or count it again. Chapter 9 then contains one continuous local design unit per confirmed submodule owned inside the target. Chapter 3 alone introduces context parents and must not turn them into the document subject.
+Canonical chapters 4 through 8 together form the target module's one continuous design unit: chapter 4 owns its architecture base slot, chapter 6 owns its one business-flow base slot, chapter 7 decomposes only the target module and owns no five-view slot, and chapter 8 owns its data/lifecycle, code-flow, and state-machine slots plus the remaining implementation detail. The chapter-6 master business flow is the target unit's unique business-flow primary figure; chapter 8 references it and must not insert or count it again. Chapter 9 then contains one continuous local design unit per confirmed submodule owned inside the target. The opening system-position section may introduce an evidenced owning module but must not turn it into the document subject. Relationship-separation rules apply to every chapter, table, figure, caption, and conclusion, not only to this opening section.
 
 ## Design Unit Template
 
@@ -229,7 +214,7 @@ The target module and every confirmed submodule must follow this semantic order.
 6. Core structures, variables, queues, caches, ownership, and lifecycle
 7. Function/feature coverage, key functions, and code execution flow
 8. States, events, dispatch, guards, actions, and state-machine behavior
-9. External, internal, cross-module, asynchronous, callback, queue, and hardware interfaces
+9. External, internal, cross-module, asynchronous, callback, queue, and source-evidenced adapter interfaces
 10. Error, wait, retry, timeout, cancellation, recovery, rollback, and cleanup paths
 11. Algorithms, strategies, configuration, concurrency, resources, and performance
 12. Build targets, module registration, initialization order, feature flags, and platform differences
@@ -244,83 +229,34 @@ For every capability and main-flow family, explain the trigger, preconditions, b
 
 ## Diagram Requirements
 
-Use Mermaid for formal detailed-design diagrams. Generate PNG figures with `render_mermaid_diagram` or save known-good PNGs with `save_mermaid_artifact`. Mermaid source alone is not a figure unless the user explicitly asks for source code blocks.
-
-After every design unit's content draft and evidence table are complete, freeze separate `CoverageSlot` and `DiagramRequirement` ledgers so missing or duplicated figures cannot hide inside a count. The coverage ledger has one row for each target/submodule and semantic view; the requirement ledger maps every base or focused diagram to its owning unit/view, source evidence, Mermaid source, validation state, PNG identity, target section, visual review, and Word insertion. Use `references/07-diagram-planning-and-splitting-rules.md` and `references/13-quality-gates-and-validator.md` for the exact schemas and equations rather than carrying that bookkeeping through the main narrative instructions.
-
-Each non-`N/A` base slot requires at least one unique primary diagram. Mermaid source, ASCII or text-box diagrams, generic or duplicate visuals, placeholder PNGs, and images without semantic source validation satisfy zero coverage slots. Only a unique, source-backed, syntax-validated, semantic-validated, successfully rendered and visually approved PNG may satisfy one design unit and one view type. Cross-module overview figures and focused split figures are additional figures and cannot be counted again as another unit's primary view. For each successful render, retain the returned display dimensions, pixel dimensions, scale, warnings, and QA issues. Put every required rendered PNG into the lightweight initial Word skeleton as an image block at the exact intended position in `sections[].blocks[]`; use the returned `pngPath` instead of embedding base64 when a path exists. Structural Word edits cannot add new image blocks, so use `insert_mermaid_into_word` serially for a late, missing, or skeleton-size fallback insertion after the initial Word document has been created.
-
-For a full detailed-design deliverable, use this coverage matrix. `Required` means the view must be present, unique to its design unit/view, source-backed, rendered, inserted next to the corresponding explanation, and visually reviewed. Give every design unit an `FsmAudit` covering state storage/enums, state reads and writes, events/triggers, dispatch/handlers, initialization, terminal/error/recovery paths, and unresolved candidates. Its decision is exactly `PRESENT`, `N/A`, or `MISSING`. A state-machine view may be `N/A` only after a complete negative audit; incomplete evidence or unknown transitions are `MISSING`, not `N/A`.
+Only plan figures after every DesignUnit draft is prose-ready. Let `D = 1 + confirmedSubmoduleCount`; the `1` is the target, never an owning module. Maintain one row for every unit/view slot and compute `expectedBaseSlots = 5D - evidencedStateMachineNaCount`. Word remains `not_started` unless `missingSlotCount = 0` and `duplicateDiagramIdCount = 0`.
 
 | Design unit | Architecture | Business flow | Code flow | State machine | Data/lifecycle |
 |---|---|---|---|---|---|
-| Target module | Required | Required | Required | Required or evidenced `N/A` | Required |
+| Target | Required | Required | Required | Required or evidenced `N/A` | Required |
 | Every confirmed submodule | Required | Required | Required | Required or evidenced `N/A` | Required |
 
-Context parents are excluded from this matrix. An optional context-parent overview is an additional orientation figure, not a base slot and not a substitute for a target or confirmed-submodule figure.
+Each non-`N/A` slot owns one unique primary Diagram ID, Mermaid source, source evidence, PNG identity, target heading, visual-QA result, and Word relationship. One PNG or Diagram ID cannot satisfy multiple units or views. Caption-only entries, Mermaid source, ASCII, placeholders, repeated visuals, and generic overview figures get zero credit. A state-machine `N/A` requires a complete audit of state storage, reads/writes, events, dispatch, initialization, terminal/error/recovery paths, and unresolved candidates; unknown or incomplete evidence is `MISSING`.
 
-Each view must cover its distinct semantics:
+The five views cover distinct semantics:
 
-- architecture: boundaries, responsibilities, internal components, inputs/outputs, upstream/downstream dependencies, shared context, queues, caches, and adapters;
-- business flow: trigger, input object, complete happy path, business decisions, failure, retry, wait, timeout, cancellation, recovery, and terminal outcomes;
-- code flow: entry functions, call layers, branches, loops, callbacks, asynchronous completion, state/data writes, error returns, and cleanup;
-- state machine: states, events, guards, transition actions, failure/recovery, terminal states, and ignored or illegal events;
-- data/lifecycle: creation, initialization, ownership, reads/writes, cross-layer handoff, persistence, concurrent access, invalidation, reclamation, and release.
+- architecture: boundary, responsibilities, components, inputs/outputs, dependencies, queues, caches, adapters, and ownership;
+- business flow: trigger, business object, main path, all decisions, waits, retry/timeout/cancel, failure/recovery, and terminal results;
+- code flow: entry functions, calls, branches, loops, async callbacks, mutations, errors, and cleanup;
+- state machine: states, events, guards, actions, next states, illegal/ignored events, failure, recovery, and termination;
+- data/lifecycle: create/init, owner, readers/writers, handoffs, persistence/concurrency, invalidation, reclamation, and release.
 
-Do not use mechanical node or edge counts as a quality target. Derive focused figures from real multi-entry flows, asynchronous wait/callback/timeout/cancellation chains, independent error/retry/recovery paths, persistent FSM domains, ownership/lifecycle families, and meaningful platform/build/initialization variants. Multiple instances may share a focused diagram only within the same design unit and view when the merged semantics and evidence remain explicit and readable. Never share one primary diagram across design units or base slots, delete exception paths, or indefinitely shrink a dense figure.
-
-Track source validation, render outcome, visual review, and Word insertion independently. A planned source or successful render is not enough. A concrete child-source or PNG blocker may produce a useful `PARTIAL` artifact, but it cannot pass and must not be hidden by target summaries or context-parent figures. Never invent Mermaid source merely to report an attempt, and never use a failed child figure as a reason to skip target-module attempts.
-
-The main business-flow diagram must cover the module's complete business loop. It cannot be replaced by a single read/write subflow, code call chain, or state-machine diagram.
-
-Diagram nodes and edges must be backed by source/control-flow/business evidence. Business diagrams should use business language and avoid making function names the main node labels. Code-level diagrams may include functions, branches, state/data mutation, cleanup, and error paths.
+Add focused figures for every source-evidenced complexity instance that cannot remain readable in its base view. These augment but never replace base slots. Split dense views into overview plus focused figures; never delete branches or indefinitely shrink labels. Track semantic validation, rendering, 100%/200% PNG review, insertion, and all-page review separately. Detailed ledger schemas, Mermaid rendering/cropping, image sizing, and review equations remain in references `07`, `08`, and `13`.
 
 ## Evidence Rule
 
-Every design claim should cite concrete evidence where possible:
-
-- file path and line range;
-- function definition;
-- call relation;
-- branch/condition;
-- state field read/write;
-- structure field;
-- macro/configuration branch;
-- callback path;
-- queue handoff;
-- register/adapter access.
-
-File-name-only or function-name-only evidence is not enough for key design conclusions. If a tool cannot provide line ranges, disclose the evidence granularity limitation.
+Ground design claims in file/line ranges, definitions, calls, branches, state/data reads and writes, structure fields, configuration paths, callbacks, handoffs, and external-resource or adapter access. File-name-only or symbol-name-only evidence is insufficient for key conclusions; disclose unavailable line granularity.
 
 ## Word Output Guidance
 
-When Word output is requested, call `create_word_document` with object-shaped top-level arguments containing `title`, `language: "zh-CN"`, `documentType: "详细设计"`, `headingNumbering: "decimal"`, optional document fields, and `sections`. Do not wrap the arguments in another object and do not pass stringified JSON, Markdown, or prose.
+Read reference `12` before Word work and use native document tools with object-shaped arguments. Create a formal cover: use the authoritative dynamic title; set `documentType` to a source-backed, scope-specific subtitle that adds information and is neither a placeholder nor exactly “详细设计” nor a repetition of the title; pass `author: "ChipMate source-backed-detail-design"` unless the user explicitly supplies another author; and place concise, evidenced scope, source-baseline, and evidence-status summary paragraphs before exactly one standalone summary item whose text is `{{TOC}}`. Omit or mark unavailable cover facts `待确认`; never invent them. The cover remains page 1 and the materialized TOC starts on page 2. Do not hand-write a directory.
 
-Treat allowed tools as permissions, not runtime availability. For the exact Word mutation, fallback, TOC, inspection, and visual-QA protocol, read `references/12-word-export-rules.md`; it is authoritative for this work package. The core sequence is:
-
-1. Complete the discovery census, ordered design-unit list, fourteen-topic content draft, and evidence table for the target and every confirmed submodule. Do not replace unfinished content with shorter prose in order to reach Word creation.
-2. Derive, validate, render, and visually review every required base and focused diagram from those completed content units. A concrete blocker remains `PARTIAL`, but never let a child PNG failure prevent target-module attempts.
-3. Freeze the final ordered outline before calling `create_word_document`. The bounded skeleton contains the real title, `language: "zh-CN"`, one summary item whose complete text is exactly `{{TOC}}`, every final H1/H2/H3 heading in order, one unique content anchor for every prose/table batch, and every available PNG at its intended location. Do not hand-number headings or write a manual directory as Normal paragraphs.
-4. Fill prose and tables serially through exact anchors with `apply_word_document_edits`, at most one chapter or design unit per batch. Never append a completed unit at the document end merely because its anchor is missing or ambiguous. If a unit is too large, split it across its predeclared H3 anchors. Each anchor is consumed once, and every mutation uses the path returned by the immediately preceding successful mutation plus the stable output name, so the document does not fork or accumulate `-edited` suffixes.
-5. Structural edits never carry images. Insert late PNGs serially through `insert_mermaid_into_word` with its required `source` argument, unique heading, plain Chinese title/alt text, and visible figure-ID caption. Mermaid source, ASCII, or prose cannot masquerade as a PNG.
-6. After all content and image mutations, call `materialize_word_fields` with `tocMode: "materialize"`, inspect the exact title and frozen outline order, render, adopt a verified `refreshedDocxPath`, and inspect again. Never use temporary JSON, `pip install`, `python-docx`, custom DOCX scripts, Pandoc, or shell LibreOffice as an authoring fallback.
-
-For every successful Mermaid render, add this shape directly to the target section's ordered `blocks` array:
-
-```json
-{
-  "type": "image",
-  "path": "<pngPath returned by render_mermaid_diagram>",
-  "contentType": "image/png",
-  "title": "中文图题",
-  "caption": "[DU-<designUnitId>/<viewType>/<diagramId>] 中文图注",
-  "altText": "完整的中文可访问性说明，源码符号保持原样",
-  "width": 480,
-  "height": 280
-}
-```
-
-Use the returned cropped display size, `scale: 3`, white background, and Codex `standard_business_brief`. For every PNG, open it at 100% and inspect labels/arrows at 200%; reject clipping, overlap, missing branches, unreadable text, wrong semantics, or duplicate content. Distinct paths, hashes, and image counts are not visual review. Keep the real Title, native directory, and first chapter as separate regions.
+Freeze Title and H1/H2/H3 order, create the text-only `*-working.docx` with unique content anchors, replace each anchor once, and serialize every mutation through the immediately returned path. Require zero anchors, exactly one Title-style paragraph, `阅读路径` as the first outline item, and explanatory local body before inserting images. Insert approved PNGs serially at unique headings with caption, alt text, and cropped display dimensions; then materialize the TOC, require `Title index < TOCHeading index < first Heading 1 index`, render, adopt only a verified refreshed path, reinspect, and open every page. Use `language: "zh-CN"`, decimal headings, cropped Mermaid dimensions, `scale: 3`, white background, and `standard_business_brief`. Never use third-party authoring fallbacks or report a working artifact. Detailed mutation, cover, TOC, inspection, and image rules stay in references `12` and `13`.
 
 ## Canonical Full-Document Outline
 
@@ -328,7 +264,7 @@ The default Word outline is:
 
 1. Reading path
 2. Terminology, scope, and evidence baseline
-3. Parent-system positioning and target-module role
+3. System-architecture position, owning-module relationship, and target-module role
 4. Target-module responsibilities, boundaries, and architecture
 5. Business capability overview
 6. Detailed main business flows
@@ -345,43 +281,26 @@ The default Word outline is:
 
 Keep the first seven topics visible near the front because they provide the reusable new-maintainer path, terminology/scope map, detailed business loop, and submodule decomposition. Chapters 4 through 8 jointly carry the target module's local design unit, and chapter 9 carries each confirmed submodule's local depth. Chapters 10 through 14 summarize and index cross-cutting concerns without replacing local design-unit content. Omit chapter 15 when there is no earlier document.
 
-Before Word creation require every content unit, evidence table, and diagram ledger to be terminal. Track `skeletonRelationshipIds`, `lateInsertedRelationshipIds`, `replacedRelationshipIds`, `removedRelationshipIds`, and final IDs by inspected set difference. After every repair call `inspect_word_document` with `maxParagraphs: 1000` and `maxTables: 200`; require one exact `styleId: "Title"`, no `{{TOC}}`, the first outline entry to be `阅读路径`, the complete frozen target/submodule order, `paragraphsTruncated: false`, and `tablesTruncated: false`. Reconcile every actual drawing occurrence by its `headingPath`, caption, visible figure ID, alt text, relationship ID, media path, and hash. `imageCount` remains only a coarse relationship count and cannot compensate for missing content, a misplaced unit, or a duplicated semantic figure.
+Before Word creation require all content units, evidence tables, coverage slots, and diagrams terminal. Inspect the text-only file exhaustively with `maxParagraphs: 1000` and `maxTables: 200`; require one Title, zero anchors, the frozen outline, local explanatory body, and no truncation. Before TOC materialization require exactly one placeholder whose paragraph index is less than the first Heading 1. Afterwards require no placeholder and `Title index < TOCHeading index < first Heading 1 index`. Reconcile each drawing by heading path, visible Diagram ID, relationship ID, media path, hash, caption, and alt text; `imageCount` alone is insufficient.
 
-Call `render_word_document` only after structural checks. Keep `pageEvidenceStatus` separate from model-owned `pageReviewStatus`; `visualQaStatus` is a compatibility alias, not human review. Require `fieldRefreshStatus: completed`, an authoritative `refreshedDocxPath`, and matching TOC heading, entry, and numeric page counts whenever a native TOC exists; a plain LibreOffice conversion or an updated DOCX without that explicit status is not field refresh. Require exact page count and open every page at 100%; inspect pages containing complex diagrams, tables, or code again at 200%. Automated `pageQa`, ink ratios, edge checks cannot substitute for actually opening all pages. If pages cannot be opened, use `pageReviewStatus: skipped`; if rendering is unavailable, record `pageEvidenceStatus: unavailable`. Report DOCX existence as `artifactStatus` and full scoped result as `acceptanceStatus`; any unresolved required item yields `acceptanceStatus: PARTIAL`.
+Render only after structural checks. Require completed field refresh and adopt its authoritative `refreshedDocxPath`; open every page at 100% and complex pages at 200%. Keep automated page evidence separate from model-owned page review. Unavailable rendering is disclosed, not a visual pass. Any unresolved scoped item yields `acceptanceStatus: PARTIAL`.
 
 ## Final Word Location Rule
 
-When a Word document is generated successfully, end the final user-facing response with a clearly labeled `Word 文档位置` section. It must report the absolute path of the final authoritative `.docx` returned by the completed create/edit/repair/render-refresh chain; a workspace-relative path may be included only as additional location help. Also report the containing directory. This location section must be the last user-facing section, not buried in a progress summary. Never report an intermediate file, planned path, stale file, or earlier mutation result as the delivered document. If Word generation failed or no `.docx` was produced, state that explicitly and do not fabricate an absolute path.
+After the last create/edit/repair/render-refresh mutation, run `validate_word_document` on the authoritative file. Only `valid` or `repaired` may be delivered; a repaired path becomes authoritative. End the final response with `Word 文档位置`, the absolute path of that `.docx`, and its containing directory; a workspace-relative path is optional. Keep this as the last user-facing section. Never report a planned, stale, earlier, prose-incomplete, or `*-working.docx` path. If prose readiness, body audit, or validation failed, report no deliverable DOCX plus the continuation files and first incomplete item; do not fabricate a path.
 
 ## Review Checklist
 
-For a full detailed-design deliverable, review and report these items as `PASS / PARTIAL / MISSING / N/A` where relevant. This is a human-readable review checklist, not a runtime contract, not an automatic repair planner, and not a reason to trigger the skill when the skill tool is disabled:
+For a full delivery, record `PASS / PARTIAL / MISSING / N/A` in `review-notes.md` for:
 
-- required references are loaded and recorded;
-- module scope is written;
-- source/control-flow/business evidence files are non-empty;
-- the target and every confirmed submodule contain all fourteen local content topics with explanations rather than name lists;
-- every key function, design object, interface, strategy, state transition, error path, and source entry is explained with the required semantics and evidence;
-- required Mermaid source and PNG artifacts are paired or gaps are disclosed;
-- edge coverage exists for required diagrams;
-- the target module and every confirmed submodule have all five coverage slots resolved in their local sections, while context parents have no mandatory slots;
-- enhanced detail design chapters exist;
-- diff/feature report exists when an old design was provided;
-- Word docx is generated by `create_word_document`;
-- the coverage ledger contains every design unit and five semantic view types, and every non-`N/A` slot has a unique primary Mermaid PNG plus any required split figures;
-- every required Mermaid render has a target-section image block or completed serial insertion;
-- the discovery inventory has no silently omitted signal or candidate, and every confirmed candidate maps to exactly one complete local design unit;
-- every detected complexity instance has evidence and an owning base or focused diagram; any merge remains within one design unit/view and preserves per-instance semantics;
-- the final inspected relationship-ID set matches the recorded baseline, skeleton, late-inserted, replaced, and actually removed sets after any bounded repair;
-- every mutation of the same DOCX was serialized through one authoritative returned-path chain, with no parallel sibling forks;
-- the final inspected outline and caption-only visible figure IDs still match the planned chapters and local design units; inspection uses `maxParagraphs: 1000` and `maxTables: 200`, and `paragraphsTruncated: false` plus `tablesTruncated: false` or complete all-page QA proves the affected audits are exhaustive;
-- every produced PNG was inspected at 100% and text/edges at 200%;
-- every rendered Word page was inspected, with complex figure/table/code pages checked again at 200%;
-- `artifactStatus` and `acceptanceStatus` are reported separately, and render QA status is recorded when render QA was requested or configured;
-- the final report states design-unit count, base-slot count, evidenced state-machine `N/A` count, split-figure count, rendered count, inserted image count, visually reviewed count, and missing count;
-- review notes record unresolved evidence gaps, required diagram status, skipped render QA, and owner-review items.
+- revision, loaded references, locked scope, target/owning-module roles, independently evidenced relationship dimensions, discovery closure, and exact equality of decomposition, unit, chapter, and ledger sets;
+- fourteen-topic readiness for the target and every confirmed submodule, including mechanisms, exceptions, line-level evidence, zero anchors, and zero empty or inventory-only headings;
+- `D = 1 + confirmedSubmoduleCount`, `expectedBaseSlots = 5D - evidencedStateMachineNaCount`, zero missing slots, zero duplicate Diagram IDs/PNGs, and all focused figures;
+- formal cover with an informative non-redundant Subtitle, approved author and evidenced cover statements; serialized Word mutation through the latest returned path; exactly one pre-chapter TOC placeholder; frozen heading order, complete body inspection, and one-to-one image identity;
+- per-PNG 100%/200% review, all-page 100% review, complex-page 200% review, completed field refresh, and the authoritative final DOCX;
+- separate `artifactStatus` and `acceptanceStatus`, plus design-unit, slot, state-machine-N/A, focused, rendered, inserted, visually reviewed, duplicate, and missing counts.
 
-Do not run or expect a migrated ChipMate artifact validator. Do not turn missing content, diagrams, render output, or skipped optional Word/PDF output into a global automatic contract-planning prompt. These checks apply only inside an explicitly requested delivery using this skill. While required native tools remain available and bounded attempts have not failed, continue from the first unresolved content unit or figure instead of voluntarily stopping at `PARTIAL`. Use `PARTIAL` only for a user-approved narrower scope or a concrete disclosed blocker such as unavailable evidence/rendering, a minimum native Word mutation failure, user interruption, or an exhausted execution boundary. At an execution boundary, persist state and do not generate or claim a complete Word document. Never claim full design completion while a required content topic or view remains `MISSING`.
+This checklist is human-readable Skill guidance, not a runtime contract or ordinary-QA gate. While native tools work, continue from the first unresolved unit or figure. If an execution boundary or concrete evidence/render blocker is reached, persist continuation state and keep Word `not_started` unless all prose and diagram gates passed. Never claim `PASS` or a final DOCX while any required topic, unit, slot, unique PNG, TOC placement, or page check is unresolved.
 
 ## Continuation Protocol
 

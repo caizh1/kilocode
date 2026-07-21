@@ -78,10 +78,26 @@ export class AgentConsoleProvider implements vscode.Disposable {
       port: this.connection.getServerInfo()?.port,
     })
 
+    const terminal = new AgentConsoleTerminal({
+      client: () => this.connection.getClient(),
+      ready: (root) => this.connection.getClientAsync(root).then(() => undefined),
+      config: () => this.connection.getServerConfig() ?? undefined,
+      root: getWorkspaceRoot,
+      rcfile: () => vscode.Uri.joinPath(this.extensionUri, "assets", "agent-console", "bashrc").fsPath,
+      font: readTerminalFont,
+      post: (message) => void panel.webview.postMessage(message),
+      log: (message) => this.output.appendLine(`[Shell] ${message}`),
+    })
+    this.terminal = terminal
+
     const provider = new KiloProvider(this.extensionUri, this.connection, this.context, {
       platform: "agent-console",
       slimEditMetadata: true,
       disableViewedRegistration: true,
+      beforePrompt: async ({ sessionID, directory, agent }) => {
+        if (agent !== "agent-console") return
+        await terminal.bind(sessionID, directory)
+      },
     })
     provider.setRemoteService(this.remote)
     provider.setDiffVirtualProvider(this.diff)
@@ -89,16 +105,6 @@ export class AgentConsoleProvider implements vscode.Disposable {
     provider.attachToWebview(panel.webview)
     provider.setStreamVisibility(panel.active && panel.visible)
     this.provider = provider
-
-    const terminal = new AgentConsoleTerminal({
-      client: () => this.connection.getClient(),
-      config: () => this.connection.getServerConfig() ?? undefined,
-      root: getWorkspaceRoot,
-      font: readTerminalFont,
-      post: (message) => void panel.webview.postMessage(message),
-      log: (message) => this.output.appendLine(`[Shell] ${message}`),
-    })
-    this.terminal = terminal
 
     const messages = panel.webview.onDidReceiveMessage((message: unknown) => {
       if (!isAgentConsoleMessage(message)) return

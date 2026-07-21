@@ -6,6 +6,7 @@ import { AgentManagerTool } from "./agent-manager"
 import { BackgroundProcessTool } from "./background-process"
 import { GenerateImageTool } from "./generate-image"
 import { InteractiveTerminalTool } from "./interactive-terminal"
+import { AgentConsoleShellTool } from "./agent-console-shell"
 import { NotebookEditTool, NotebookExecuteTool, NotebookReadTool } from "./notebook-host"
 import { SkillMarketTools } from "./skill-market"
 import { MemoryRecallTool } from "./memory-recall"
@@ -123,16 +124,43 @@ export namespace KiloToolRegistry {
       const process = yield* BackgroundProcessTool
       const image = yield* GenerateImageTool
       const terminal = yield* InteractiveTerminalTool
+      const consoleShell = yield* AgentConsoleShellTool
       const markets = yield* SkillMarketTools.pipe(
         Effect.provideService(SkillMarket.Service, market ?? unavailableMarket),
       )
-      if (!notebook) return { codebase, recall, managerModels, memory, save, manager, process, image, terminal, markets }
+      if (!notebook)
+        return {
+          codebase,
+          recall,
+          managerModels,
+          memory,
+          save,
+          manager,
+          process,
+          image,
+          terminal,
+          consoleShell,
+          markets,
+        }
       const tools = yield* Effect.all({
         notebookRead: NotebookReadTool,
         notebookEdit: NotebookEditTool,
         notebookExecute: NotebookExecuteTool,
       }).pipe(Effect.provideService(Notebook.Service, notebook))
-      return { codebase, recall, managerModels, memory, save, manager, process, image, terminal, markets, ...tools }
+      return {
+        codebase,
+        recall,
+        managerModels,
+        memory,
+        save,
+        manager,
+        process,
+        image,
+        terminal,
+        consoleShell,
+        markets,
+        ...tools,
+      }
     })
   }
 
@@ -149,6 +177,7 @@ export namespace KiloToolRegistry {
       process: Tool.Info
       image: Tool.Info
       terminal?: Tool.Info
+      consoleShell?: Tool.Info
       notebookRead?: Tool.Info
       notebookEdit?: Tool.Info
       notebookExecute?: Tool.Info
@@ -173,6 +202,7 @@ export namespace KiloToolRegistry {
         manager: Tool.init(tools.manager),
         process: Tool.init(tools.process),
         image: Tool.init(tools.image),
+        ...(tools.consoleShell ? { consoleShell: Tool.init(tools.consoleShell) } : {}),
       })
       const terminal = tools.terminal ? yield* Tool.init(tools.terminal) : undefined
       const notebooks =
@@ -350,6 +380,7 @@ export namespace KiloToolRegistry {
       return yield* Effect.all([
         Tool.init(infos.create),
         Tool.init(infos.inspect),
+        Tool.init(infos.validate),
         Tool.init(infos.applyEdits),
         Tool.init(infos.applyTemplateStyles),
         Tool.init(infos.materializeFields),
@@ -389,6 +420,8 @@ export namespace KiloToolRegistry {
 
   /** Hide human-driven tools from agents that cannot interact with the user directly. */
   export function available(tool: Tool.Def, agent: Agent.Info) {
+    if (agent.name === "agent-console") return tool.id === "agent_console_shell"
+    if (tool.id === "agent_console_shell") return false
     if (tool.id !== "interactive_terminal") return true
     return agent.mode === "primary"
   }
@@ -411,6 +444,7 @@ export namespace KiloToolRegistry {
       process: Tool.Def
       image: Tool.Def
       terminal?: Tool.Def
+      consoleShell?: Tool.Def
       notebookRead?: Tool.Def
       notebookEdit?: Tool.Def
       notebookExecute?: Tool.Def
@@ -439,11 +473,10 @@ export namespace KiloToolRegistry {
       tools.recall,
       ...(Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode" ? [tools.process] : []),
       ...(Flag.KILO_CLIENT === "cli" && tools.terminal ? [tools.terminal] : []),
+      ...(Flag.KILO_CLIENT === "vscode" && tools.consoleShell ? [tools.consoleShell] : []),
       // Agent Manager tools are useful only when the extension can create and display their sessions.
       ...(Flag.KILO_CLIENT === "vscode" ? [tools.managerModels, tools.manager] : []),
-      ...(Flag.KILO_CLIENT === "vscode" && opts.market !== false && tools.markets
-        ? Object.values(tools.markets)
-        : []),
+      ...(Flag.KILO_CLIENT === "vscode" && opts.market !== false && tools.markets ? Object.values(tools.markets) : []),
       ...(Flag.KILO_CLIENT === "vscode" &&
       cfg.experimental?.native_notebook_tools === true &&
       tools.notebookRead &&

@@ -11,6 +11,7 @@ import type {
   MarketplaceItemRef,
   RemoveResult,
 } from "./types"
+import { normalizeSkillKey } from "./skills"
 
 export interface MarketplaceActionContext {
   connection: KiloConnectionService
@@ -52,7 +53,7 @@ export async function installMarketplaceItem(
 
   try {
     const result = await ctx.marketplace.install(item, opts, project)
-    if (result.success) await invalidate(ctx, scope, scope === "project" ? project! : dir)
+    if (result.success) await invalidate(ctx, item, scope, scope === "project" ? project! : dir)
     return result
   } catch (err) {
     return { success: false, slug: item.id, error: String(err) }
@@ -72,12 +73,26 @@ export async function removeMarketplaceItem(
 
   try {
     if (item.type === "mcp") await removeLegacyMcp(ctx, item.id, project, scope)
-    const result = await ctx.marketplace.remove(item, scope, project)
-    if (result.success) await invalidate(ctx, scope, scope === "project" ? project! : dir)
+    const location = item.type === "skill" ? await discoveredSkillLocation(ctx, item, dir) : undefined
+    if (item.type === "skill" && !location) {
+      return { success: false, slug: item.id, error: "Skill is not currently discovered" }
+    }
+    const result = await ctx.marketplace.remove(item, scope, project, location)
+    if (result.success) await invalidate(ctx, item, scope, scope === "project" ? project! : dir)
     return result
   } catch (err) {
     return { success: false, slug: item.id, error: String(err) }
   }
+}
+
+async function discoveredSkillLocation(
+  ctx: MarketplaceActionContext,
+  item: Extract<MarketplaceItem, { type: "skill" }>,
+  dir: string,
+): Promise<string | undefined> {
+  const skills = await fetchMarketplaceSkills(ctx, dir)
+  const keys = new Set([item.id, item.name, item.displayName].map(normalizeSkillKey).filter(Boolean))
+  return skills?.find((skill) => keys.has(normalizeSkillKey(skill.name)))?.location
 }
 
 export async function removeMarketplaceItemFromAllScopes(
@@ -91,7 +106,7 @@ export async function removeMarketplaceItemFromAllScopes(
     const local = project ? await ctx.remove(item, "project", project) : undefined
     const global = await ctx.remove(item, "global", project)
     if (!local?.success && !global.success) return false
-    await invalidate(ctx, global.success ? "global" : "project", global.success ? dir : project!)
+    await invalidate(ctx, item, global.success ? "global" : "project", global.success ? dir : project!)
     return true
   } catch (err) {
     console.warn("[Kilo New] Marketplace removal failed:", err)
@@ -112,9 +127,15 @@ export async function fetchMarketplaceSkills(ctx: MarketplaceActionContext, dir:
 
 async function invalidate(
   ctx: { connection: KiloConnectionService },
+  item: MarketplaceItemRef,
   scope: "project" | "global",
   dir: string,
 ): Promise<void> {
+  if (item.type === "skill") {
+    await refresh(ctx, scope, dir)
+    return
+  }
+
   const client = await ctx.connection.getClientAsync(dir).catch((err: unknown) => {
     console.warn("[Kilo New] Marketplace CLI invalidation deferred:", err)
     return null
@@ -131,12 +152,28 @@ async function invalidate(
   })
 }
 
+async function refresh(
+  ctx: { connection: KiloConnectionService },
+  scope: "project" | "global",
+  dir: string,
+): Promise<void> {
+  const client = await ctx.connection.getClientAsync(dir).catch((err: unknown) => {
+    console.warn("[Kilo New] Marketplace CLI Skill refresh deferred:", err)
+    return null
+  })
+  if (!client) return
+
+  await client.kilocode.refreshSkills({ directory: dir, scope }).catch((err: unknown) => {
+    console.warn("[Kilo New] Skill cache refresh after marketplace change failed:", err)
+  })
+}
+
 export async function invalidateMarketplaceSkills(
   ctx: { connection: KiloConnectionService },
   scope: "project" | "global",
   dir: string,
 ) {
-  await invalidate(ctx, scope, dir)
+  await refresh(ctx, scope, dir)
 }
 
 async function removeLegacyMcp(

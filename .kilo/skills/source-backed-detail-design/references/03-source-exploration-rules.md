@@ -53,7 +53,7 @@ unclassifiedDiscoveryHitCount = 0
 
 `key-functions-and-submodules.md` 必须包含候选闭环表：Candidate ID、Candidate name、DiscoverySignalIds、StrongSignalIds、Responsibility key、Ownership key、Boundary evidence IDs、Decision、Decision evidence IDs、Exclusion counter-evidence IDs、Alias/duplicate owner、DesignUnitId、Destination section、Confidence。每个发现过的候选必须保留一行，最终只能是 `confirmed_submodule` 或 `excluded_non_submodule`。候选表中的 signal ID 集合必须与 signal 表中指向该 candidate 的 ID 集合严格双向相等。排除必须有逐项源码反证；合并或别名必须保留原 Candidate ID 并指向承载它的已确认行。禁止静默删除、改名、合并或因为预计图太多而降级候选。
 
-至少两个相互独立的源码信号可以确认子模块；显式构建目标/模块注册、稳定公开接口边界、独立状态机、独立数据或资源所有权任一项可作为单项强证据。具有强信号的候选默认必须确认；只有逐项反证证明它是别名、重复归属或不拥有职责/状态/资源的 helper/adapter 时才可排除，单写 `helper` 或 `adapter` 标签不是反证。每个 confirmed candidate 必须且只能映射一个 target-owned confirmed-submodule DesignUnit，反向亦然。冻结分解表前必须满足发现面、hit、signal 闭环、`candidateCount = confirmedCount + excludedCount`、`unmappedCandidateCount = 0`、`confirmedCandidateCount = submoduleDesignUnitCount`。DesignUnit 集合只包含一个 target DesignUnit 和 target 内部的 confirmed-submodule DesignUnits，因此 `D = 1 + confirmedCandidateCount`；context parents 不计入 `D`。未闭环时不得冻结 `D`、不得开始 `5D` 图形计划，也不得声明完整交付通过。
+至少两个相互独立的源码信号可以确认子模块；显式构建目标/模块注册、稳定公开接口边界、独立状态机、独立数据或资源所有权任一项可作为单项强证据。具有强信号的候选默认必须确认；只有逐项反证证明它是别名、重复归属或不拥有职责/状态/资源的 helper/adapter 时才可排除，单写 `helper` 或 `adapter` 标签不是反证。每个 confirmed candidate 必须且只能映射一个 target-owned confirmed-submodule DesignUnit，反向亦然。冻结分解表前必须满足发现面、hit、signal 闭环、`candidateCount = confirmedCount + excludedCount`、`unmappedCandidateCount = 0`、`confirmedCandidateCount = submoduleDesignUnitCount`。DesignUnit 集合只包含一个 target DesignUnit 和 target 内部的 confirmed-submodule DesignUnits，因此 `D = 1 + confirmedCandidateCount`；所属上级模块不计入 `D`。未闭环时不得冻结 `D`、不得开始 `5D` 图形计划，也不得声明完整交付通过。
 
 ## 7. 输出文件
 

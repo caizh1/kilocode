@@ -71,10 +71,11 @@ export interface SkillMarketplaceItem extends MarketplaceItemBase {
   risk?: SkillRiskSummary
   localOnly?: boolean
   uploadable?: boolean
-  origin?: "market" | "local-import" | "builtin"
+  origin?: "market" | "local" | "local-import" | "builtin"
   localState?: "managed" | "unmanaged" | "modified"
   publishState?: "unpublished" | "matched" | "local-changes" | "blocked"
   removeToken?: string
+  removeSkillId?: string
   localScope?: "global" | "project"
 }
 

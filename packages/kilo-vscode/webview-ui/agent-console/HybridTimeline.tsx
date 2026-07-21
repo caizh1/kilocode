@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 
-import { type Accessor, type Component, For, Show, createEffect, createMemo, onCleanup } from "solid-js"
+import { type Component, type JSX, For, Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { useSession } from "../src/context/session"
 import { messageTurns } from "../src/context/session-queue"
@@ -8,33 +8,20 @@ import { transcriptRows, type TranscriptRow } from "../src/context/transcript-ro
 import { TranscriptRowView } from "../src/components/chat/TranscriptRow"
 import { WorkingIndicator } from "../src/components/shared/WorkingIndicator"
 import { TurnOutcome } from "../src/components/shared/TurnOutcome"
-
-export interface ShellEntry {
-  id: string
-  command: string
-  output: string
-  created: number
-  state: "running" | "complete" | "error"
-}
+import type { AgentConsoleActivityEvent } from "../src/types/messages/extension-messages"
+import { activityBlocks } from "./activity"
+import { TerminalActivity } from "./TerminalActivity"
 
 interface Props {
-  entries: Accessor<ShellEntry[]>
-  footer?: () => import("solid-js").JSX.Element
+  activities: () => AgentConsoleActivityEvent[]
+  footer?: () => JSX.Element
+  footerTarget?: () => { messageID: string; callID: string } | undefined
+  error?: () => string | undefined
+  prompt: () => JSX.Element
 }
-
-type Event =
-  | { type: "agent"; key: string; created: number; order: number; row: TranscriptRow }
-  | { type: "shell"; key: string; created: number; order: number; entry: ShellEntry }
 
 function time(row: TranscriptRow): number {
   return row.message.time?.created ?? (Date.parse(row.message.createdAt) || 0)
-}
-
-function clean(value: string): string {
-  return value
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
-    .replace(/\x1b(?:[@-_]|\[[0-?]*[ -/]*[@-~])/g, "")
-    .replace(/\r(?!\n)/g, "")
 }
 
 export const HybridTimeline: Component<Props> = (props) => {
@@ -51,23 +38,33 @@ export const HybridTimeline: Component<Props> = (props) => {
     ),
   )
 
-  const events = createMemo<Event[]>(() => {
-    const agent = rows().map((row, order) => ({
-      type: "agent" as const,
+  const events = createMemo(() => {
+    const transcript = rows().map((row, order) => ({
+      type: "row" as const,
       key: row.key,
       created: time(row),
       order,
       row,
     }))
-    const shell = props.entries().map((entry, order) => ({
-      type: "shell" as const,
-      key: entry.id,
-      created: entry.created,
-      order: rows().length + order,
-      entry,
+    const terminal = activityBlocks(props.activities()).map((block, order) => ({
+      type: "terminal" as const,
+      key: block.id,
+      created: block.time,
+      order: transcript.length + order,
+      block,
     }))
-    return [...agent, ...shell].sort((a, b) => a.created - b.created || a.order - b.order)
+    return [...transcript, ...terminal]
+      .sort((a, b) => a.created - b.created || a.order - b.order)
   })
+
+  const target = (row: TranscriptRow) => {
+    const footer = props.footerTarget?.()
+    if (!footer || row.message.id !== footer.messageID) return false
+    if (row.type !== "assistant" && row.type !== "user") return false
+    return row.parts.some((part) => part.type === "tool" && part.callID === footer.callID)
+  }
+
+  const targeted = createMemo(() => rows().some(target))
 
   const scroll = () => {
     if (frame !== undefined) cancelAnimationFrame(frame)
@@ -80,9 +77,10 @@ export const HybridTimeline: Component<Props> = (props) => {
   createEffect(() => {
     events()
       .map((event) => {
-        if (event.type === "shell") return event.entry.output.length
-        if (event.row.type === "diff" || event.row.type === "error") return event.row.key
-        return event.row.parts.length
+        if (event.type === "terminal") return `${event.key}:${event.block.data.length}:${event.block.running}`
+        const row = event.row
+        if (row.type === "diff" || row.type === "error") return row.key
+        return row.parts.length
       })
       .join(":")
     session.status()
@@ -104,30 +102,22 @@ export const HybridTimeline: Component<Props> = (props) => {
         </Show>
         <For each={events()}>
           {(event) => (
-            <Show
-              when={event.type === "shell" ? event.entry : undefined}
-              fallback={<TranscriptRowView row={(event as Extract<Event, { type: "agent" }>).row} />}
-            >
-              {(entry) => (
-                <section data-component="agent-console-shell-entry" data-state={entry().state}>
-                  <div data-slot="agent-console-shell-command">
-                    <span data-slot="agent-console-prompt">$</span>
-                    <code>{entry().command}</code>
-                  </div>
-                  <Show when={entry().output}>
-                    <pre>{clean(entry().output)}</pre>
-                  </Show>
-                  <Show when={entry().state === "running"}>
-                    <span data-slot="agent-console-shell-running">执行中…</span>
-                  </Show>
-                </section>
-              )}
-            </Show>
+            <>
+              <Show when={event.type === "row" ? event.row : undefined}>
+                {(row) => <TranscriptRowView row={row()} />}
+              </Show>
+              <Show when={event.type === "terminal" ? event.block : undefined}>
+                {(block) => <TerminalActivity block={block()} />}
+              </Show>
+              <Show when={event.type === "row" && target(event.row)}>{props.footer?.()}</Show>
+            </>
           )}
         </For>
         <WorkingIndicator />
         <TurnOutcome />
-        <Show when={props.footer}>{props.footer?.()}</Show>
+        <Show when={!targeted() && props.footer}>{props.footer?.()}</Show>
+        <Show when={props.error?.()}>{(message) => <div data-slot="agent-console-input-error">{message()}</div>}</Show>
+        {props.prompt()}
       </div>
     </div>
   )

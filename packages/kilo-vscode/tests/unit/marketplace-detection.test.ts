@@ -12,6 +12,19 @@ afterEach(async () => {
 })
 
 describe("Marketplace Skill installation detection", () => {
+  it("classifies a built-in grill-me Skill as globally installed", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "marketplace-detection-"))
+    dirs.push(root)
+    const workspace = path.join(root, "repo")
+    await fs.mkdir(workspace, { recursive: true })
+
+    const detector = new InstallationDetector(new MarketplacePaths(path.join(root, "global")))
+    const result = await detector.detect(workspace, [{ name: "grill-me", location: "builtin" }])
+
+    expect(result.project["grill-me"]).toBeUndefined()
+    expect(result.global["grill-me"]).toEqual({ type: "skill" })
+  })
+
   it("classifies a project Skill through a canonical workspace alias", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "marketplace-detection-"))
     dirs.push(root)

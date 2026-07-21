@@ -47,7 +47,7 @@ description: A removable test skill.
           const skill = yield* Skill.Service
           expect((yield* skill.all()).some((item) => item.location === file)).toBe(true)
 
-          yield* skill.remove(file)
+          yield* skill.remove(file, "project")
 
           const exists = yield* Effect.promise(() =>
             fs.stat(root).then(
@@ -71,10 +71,10 @@ description: A removable test skill.
           const builtin = list.find((item) => item.location.includes(`${path.sep}builtin-skills${path.sep}`))
           expect(builtin).toBeDefined()
 
-          const arbitrary = yield* Effect.exit(skill.remove(path.join(process.cwd(), "SKILL.md")))
+          const arbitrary = yield* Effect.exit(skill.remove(path.join(process.cwd(), "SKILL.md"), "project"))
           expect(arbitrary._tag).toBe("Failure")
 
-          const protectedResult = yield* Effect.exit(skill.remove(builtin!.location))
+          const protectedResult = yield* Effect.exit(skill.remove(builtin!.location, "project"))
           expect(protectedResult._tag).toBe("Failure")
           const exists = yield* Effect.promise(() =>
             fs.stat(builtin!.location).then(
@@ -101,7 +101,7 @@ description: A removable test skill.
             const skill = yield* Skill.Service
             expect((yield* skill.get("shared"))?.location).toBe(global)
 
-            yield* skill.remove(global)
+            yield* skill.remove(global, "global")
 
             expect((yield* skill.get("shared"))?.location).toBe(project)
             const exists = yield* Effect.promise(() =>
@@ -113,6 +113,85 @@ description: A removable test skill.
             expect(exists).toBe(true)
           }),
         ),
+      { git: true },
+    ),
+  )
+
+  it.live("reveals the built-in Skill after deleting a user override", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const root = path.join(dir, ".kilo", "skills", "kilo-config")
+          const file = path.join(root, "SKILL.md")
+          yield* Effect.promise(() =>
+            Bun.write(
+              file,
+              `---
+name: kilo-config
+description: User override.
+---
+
+# User override
+`,
+            ),
+          )
+
+          const skill = yield* Skill.Service
+          expect((yield* skill.get("kilo-config"))?.location).toBe(file)
+
+          yield* skill.remove(file, "project")
+
+          const restored = yield* skill.get("kilo-config")
+          expect(restored?.location).toBe(Skill.BUILTIN_LOCATION)
+          expect(restored?.content).not.toContain("# User override")
+        }),
+      { git: true },
+    ),
+  )
+
+  it.live("refuses to remove a directory that contains a nested Skill", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const root = path.join(dir, ".kilo", "skills", "parent")
+          const parent = path.join(root, "SKILL.md")
+          const child = path.join(root, "child", "SKILL.md")
+          yield* Effect.promise(() => Promise.all([writeNamed(parent, "parent"), writeNamed(child, "child")]))
+
+          const skill = yield* Skill.Service
+          expect((yield* skill.get("parent"))?.location).toBe(parent)
+          expect((yield* skill.get("child"))?.location).toBe(child)
+
+          const result = yield* Effect.exit(skill.remove(parent, "project"))
+
+          expect(result._tag).toBe("Failure")
+          expect(yield* Effect.promise(() => fs.readFile(parent, "utf8"))).toContain("name: parent")
+          expect(yield* Effect.promise(() => fs.readFile(child, "utf8"))).toContain("name: child")
+        }),
+      { git: true },
+    ),
+  )
+
+  it.live("refuses to remove through a symbolic link inside the discovery root", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          if (process.platform === "win32") return
+          const external = path.join(dir, "external", "linked")
+          const config = path.join(dir, ".kilo")
+          const file = path.join(external, "SKILL.md")
+          yield* Effect.promise(() => Promise.all([writeNamed(file, "linked"), fs.mkdir(config, { recursive: true })]))
+          yield* Effect.promise(() => fs.symlink(path.dirname(external), path.join(config, "skills")))
+
+          const skill = yield* Skill.Service
+          const item = yield* skill.get("linked")
+          expect(item).toBeDefined()
+
+          const result = yield* Effect.exit(skill.remove(item!.location, "project"))
+
+          expect(result._tag).toBe("Failure")
+          expect(yield* Effect.promise(() => fs.readFile(file, "utf8"))).toContain("name: linked")
+        }),
       { git: true },
     ),
   )
@@ -136,7 +215,7 @@ description: A root skill that must not delete the workspace.
           const skill = yield* Skill.Service
           expect((yield* skill.get(name))?.location).toBe(file)
 
-          const result = yield* Effect.exit(skill.remove(file))
+          const result = yield* Effect.exit(skill.remove(file, "project"))
 
           expect(result._tag).toBe("Failure")
           expect(yield* Effect.promise(() => fs.readFile(file, "utf8"))).toContain("must not delete the workspace")
@@ -156,6 +235,18 @@ description: The ${source} copy.
 ---
 
 # Shared
+`,
+  )
+}
+
+async function writeNamed(file: string, name: string) {
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  await Bun.write(
+    file,
+    `---
+name: ${name}
+description: Nested removal test.
+---
 `,
   )
 }

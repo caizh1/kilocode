@@ -10,7 +10,6 @@ import { SessionContext } from "../context/session"
 import { ServerContext } from "../context/server"
 import { WorktreeModeProvider } from "../context/worktree-mode"
 import type { PermissionRequest } from "../types/messages"
-import type { ShellEntry } from "../../agent-console/HybridTimeline"
 
 registerVscodeToolOverrides()
 
@@ -37,7 +36,7 @@ const messages = [
     modelID: "deepseek-v4-flash",
     providerID: "internal",
     mode: "default",
-    agent: "code",
+    agent: "agent-console",
     path: { cwd: "/project", root: "/project" },
     finish: "stop",
   },
@@ -67,7 +66,7 @@ const parts = {
 const permission: PermissionRequest = {
   id: "agent-console-dangerous-bash",
   sessionID: sid,
-  toolName: "bash",
+  toolName: "agent_console_shell",
   patterns: ["sudo rm -rf /tmp/example"],
   always: [],
   args: {
@@ -78,28 +77,41 @@ const permission: PermissionRequest = {
   tool: { messageID: aid, callID: "agent-console-dangerous-call" },
 }
 
-const shellEntries: ShellEntry[] = [
-  {
-    id: "agent-console-shell-history",
-    command: "pwd && uname -srm",
-    output: "/project\nLinux 6.8.0 x86_64\n",
-    created: now - 2000,
-    state: "complete",
-  },
-  {
-    id: "agent-console-shell-error",
-    command: "false",
-    output: "terminal connection error",
-    created: now - 1000,
-    state: "error",
-  },
-]
-
 const data = {
   ...defaultMockData,
   message: { [sid]: messages },
   part: parts,
 }
+
+const activity = [
+  { seq: 1, time: now - 1000, kind: "idle" as const, data: "ChipMate local shell\r\n/project $ printf status\r\n" },
+  {
+    seq: 2,
+    time: now + 2000,
+    kind: "begin" as const,
+    cwd: "/project",
+    runId: "story-run",
+    source: "direct" as const,
+    command: "printf status",
+  },
+  {
+    seq: 3,
+    time: now + 2100,
+    kind: "data" as const,
+    data: "\x1b[32mstatus ok\x1b[0m\r\n\x1b[31mone warning\x1b[0m",
+    runId: "story-run",
+    source: "direct" as const,
+  },
+  {
+    seq: 4,
+    time: now + 2200,
+    kind: "end" as const,
+    cwd: "/project",
+    exitCode: 0,
+    runId: "story-run",
+    source: "direct" as const,
+  },
+]
 
 const server = {
   connectionState: () => "connected" as const,
@@ -127,7 +139,7 @@ const Shell: Component = () => {
         height: "100%",
         "flex-direction": "column",
         gap: "8px",
-        color: "var(--vscode-terminal-foreground)",
+        color: "#fff",
         "font-family": "var(--vscode-editor-font-family, monospace)",
         "font-size": "13px",
       }}
@@ -135,6 +147,7 @@ const Shell: Component = () => {
       <div>ChipMate local shell</div>
       <div>/project $ bun run typecheck</div>
       <div style={{ color: "var(--vscode-testing-iconPassed, #40c463)" }}>Typecheck passed</div>
+      <div style={{ color: "var(--vscode-errorForeground, #f14c4c)" }}>Command failed</div>
       <label style={{ display: "flex", gap: "8px", "align-items": "center" }}>
         <span>/project $</span>
         <input
@@ -155,11 +168,11 @@ const Shell: Component = () => {
   )
 }
 
-const Demo: Component = () => {
-  const [permissions, setPermissions] = createSignal([permission])
+const Demo: Component<{ inline?: boolean; busy?: boolean; timeout?: number }> = (props) => {
+  const [permissions, setPermissions] = createSignal(props.inline ? [] : [permission])
   const [responding, setResponding] = createSignal(new Set<string>())
   const session = {
-    ...mockSessionValue({ id: sid, status: "idle", permissions: permissions() }),
+    ...mockSessionValue({ id: sid, status: props.busy ? "busy" : "idle", permissions: permissions() }),
     messages: () => messages,
     visibleMessages: () => messages,
     userMessages: () => messages.filter((message) => message.role === "user"),
@@ -174,12 +187,16 @@ const Demo: Component = () => {
   }
 
   return (
-    <StoryProviders data={data} sessionID={sid} status="idle" locale="zh" noPadding>
+    <StoryProviders data={data} sessionID={sid} status={props.busy ? "busy" : "idle"} locale="zh" noPadding>
       <ServerContext.Provider value={server}>
         <SessionContext.Provider value={session as never}>
           <WorktreeModeProvider>
             <div style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
-              <AgentConsoleContent shell={<Shell />} initialEntries={shellEntries} />
+              <AgentConsoleContent
+                shell={<Shell />}
+                activities={props.inline ? activity : undefined}
+                routeTimeout={props.timeout}
+              />
             </div>
           </WorktreeModeProvider>
         </SessionContext.Provider>
@@ -199,4 +216,19 @@ type Story = StoryObj
 export const Approval: Story = {
   name: "Agent timeline with high-risk approval",
   render: () => <Demo />,
+}
+
+export const Inline: Story = {
+  name: "Inline terminal timeline",
+  render: () => <Demo inline />,
+}
+
+export const Busy: Story = {
+  name: "Editable prompt while Agent is busy",
+  render: () => <Demo inline busy />,
+}
+
+export const RouteTimeout: Story = {
+  name: "Route timeout preserves input",
+  render: () => <Demo inline timeout={50} />,
 }

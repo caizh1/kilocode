@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { PhotonImage } from "@silvia-odwyer/photon-node"
-import { TextWriter, Uint8ArrayReader, ZipReader } from "@zip.js/zip.js"
+import { TextWriter, Uint8ArrayReader, Uint8ArrayWriter, ZipReader, ZipWriter } from "@zip.js/zip.js"
 import fs from "fs/promises"
 import { createServer } from "node:http"
 import path from "path"
@@ -17,6 +17,7 @@ import {
   mergeWordDocuments,
   normalizeWordTableSpec,
   renderWordDocument,
+  type WordDocumentInspection,
 } from "../../src/kilocode/documents/word"
 import { provideTestInstance, tmpdir } from "../fixture/fixture"
 
@@ -93,6 +94,47 @@ async function serveJson(payload: unknown) {
   }
 }
 
+async function rewriteDocxPart(
+  input: Uint8Array,
+  part: string,
+  transform: (source: string) => string,
+): Promise<Uint8Array> {
+  const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(input)))
+  const writer = new ZipWriter(new Uint8ArrayWriter())
+  try {
+    for (const entry of await reader.getEntries()) {
+      if (entry.directory) continue
+      const bytes = await entry.getData?.(new Uint8ArrayWriter())
+      if (!bytes) continue
+      const next =
+        entry.filename === part
+          ? new TextEncoder().encode(transform(Buffer.from(bytes).toString("utf8")))
+          : bytes
+      await writer.add(entry.filename, new Uint8ArrayReader(next))
+    }
+    return await writer.close()
+  } finally {
+    await reader.close()
+  }
+}
+
+function bodyless(doc: WordDocumentInspection) {
+  return doc.outline
+    .filter((heading, index) => {
+      const next = doc.outline[index + 1]
+      return !doc.paragraphs.some((paragraph) => {
+        if (paragraph.index <= heading.paragraphIndex) return false
+        if (next && paragraph.index >= next.paragraphIndex) return false
+        if (paragraph.headingLevel || paragraph.styleId === "Caption") return false
+        const value = paragraph.text.trim()
+        if (!value || value === "{{TOC}}" || /^\[\[SBDD-CONTENT:[^\]]+\]\]$/.test(value)) return false
+        if (paragraph.styleId?.startsWith("List")) return false
+        return true
+      })
+    })
+    .map((heading) => heading.title)
+}
+
 describe("kilocode Word documents", () => {
   test("creates a docx artifact and inspects bounded document structure", async () => {
     await Effect.runPromise(
@@ -138,6 +180,158 @@ describe("kilocode Word documents", () => {
             expect(inspection.totalTables).toBe(1)
             expect(inspection.paragraphsTruncated).toBe(false)
             expect(inspection.tablesTruncated).toBe(false)
+          }),
+        { git: true },
+      ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
+    )
+  })
+
+  test("exposes image-only headings and unconsumed content anchors as bodyless", async () => {
+    await Effect.runPromise(
+      provideTmpdirInstance(
+        (dir) =>
+          Effect.promise(async () => {
+            await fs.writeFile(path.join(dir, "diagram.png"), Buffer.from(PNG_1X1, "base64"))
+            const created = await createWordDocument({
+              title: "Body Audit Negative",
+              language: "zh-CN",
+              outputFile: "body-audit-negative.docx",
+              summary: ["{{TOC}}"],
+              sections: [
+                {
+                  title: "状态机设计",
+                  level: 1,
+                  blocks: [
+                    {
+                      type: "image",
+                      path: "diagram.png",
+                      title: "状态机图",
+                      caption: "[DU-TARGET/state/01] 状态机图",
+                      altText: "仅有图片而没有正文的状态机章节",
+                    },
+                  ],
+                },
+                {
+                  title: "接口设计",
+                  level: 1,
+                  blocks: [{ type: "paragraph", text: "[[SBDD-CONTENT:DU-TARGET:interfaces]]" }],
+                },
+                { title: "已确认子模块详细设计", level: 1, blocks: [] },
+                {
+                  title: "完整子模块",
+                  level: 2,
+                  blocks: [{ type: "paragraph", text: "该子模块具备独立职责、输入输出和异常恢复说明。" }],
+                },
+              ],
+            })
+            const inspection = await inspectWordDocument({ path: created.path, maxParagraphs: 1_000, maxTables: 200 })
+
+            expect(inspection.images).toHaveLength(1)
+            expect(bodyless(inspection)).toEqual(["状态机设计", "接口设计", "已确认子模块详细设计"])
+            expect(inspection.paragraphs.some((item) => item.text.startsWith("[[SBDD-CONTENT:"))).toBe(true)
+          }),
+        { git: true },
+      ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
+    )
+  })
+
+  test("keeps target and child prose complete before serial image insertion", async () => {
+    await Effect.runPromise(
+      provideTmpdirInstance(
+        (dir) =>
+          Effect.promise(async () => {
+            await fs.writeFile(path.join(dir, "diagram.png"), Buffer.from(PNG_1X1, "base64"))
+            const created = await createWordDocument({
+              title: "Body Audit Positive",
+              language: "zh-CN",
+              outputFile: "body-audit-working.docx",
+              summary: ["{{TOC}}"],
+              sections: [
+                {
+                  title: "目标模块设计",
+                  level: 1,
+                  blocks: [{ type: "paragraph", text: "[[SBDD-CONTENT:DU-TARGET:positioning]]" }],
+                },
+                {
+                  title: "Ingest 子模块",
+                  level: 1,
+                  blocks: [{ type: "paragraph", text: "[[SBDD-CONTENT:DU-INGEST:business]]" }],
+                },
+                {
+                  title: "Store 子模块",
+                  level: 1,
+                  blocks: [{ type: "paragraph", text: "[[SBDD-CONTENT:DU-STORE:lifecycle]]" }],
+                },
+              ],
+            })
+            const target = await applyWordDocumentEdits({
+              sourcePath: created.path,
+              outputFile: "body-audit-working.docx",
+              edits: [
+                {
+                  op: "replace_paragraph_with_blocks",
+                  locator: { paragraphText: "[[SBDD-CONTENT:DU-TARGET:positioning]]" },
+                  blocks: [
+                    {
+                      type: "paragraph",
+                      text: "目标模块负责协调输入、状态推进和失败恢复，边界由公开入口及持久状态所有权共同确定。",
+                    },
+                  ],
+                },
+              ],
+            })
+            const ingest = await applyWordDocumentEdits({
+              sourcePath: target.path!,
+              outputFile: "body-audit-working.docx",
+              edits: [
+                {
+                  op: "replace_paragraph_with_blocks",
+                  locator: { paragraphText: "[[SBDD-CONTENT:DU-INGEST:business]]" },
+                  blocks: [
+                    {
+                      type: "paragraph",
+                      text: "Ingest 接收请求并校验前置条件，随后完成异步提交；失败时回滚所有权并返回明确终态。",
+                    },
+                  ],
+                },
+              ],
+            })
+            const store = await applyWordDocumentEdits({
+              sourcePath: ingest.path!,
+              outputFile: "body-audit-working.docx",
+              edits: [
+                {
+                  op: "replace_paragraph_with_blocks",
+                  locator: { paragraphText: "[[SBDD-CONTENT:DU-STORE:lifecycle]]" },
+                  blocks: [
+                    {
+                      type: "paragraph",
+                      text: "Store 创建并持有记录，提交后转移读写责任，失效路径负责回收缓存与释放底层资源。",
+                    },
+                  ],
+                },
+              ],
+            })
+            const prose = await inspectWordDocument({ path: store.path!, maxParagraphs: 1_000, maxTables: 200 })
+
+            expect(bodyless(prose)).toEqual([])
+            expect(prose.paragraphs.some((item) => item.text.startsWith("[[SBDD-CONTENT:"))).toBe(false)
+            expect(prose.images).toHaveLength(0)
+
+            const inserted = await insertWordPngImage({
+              sourcePath: store.path!,
+              pngPath: "diagram.png",
+              heading: "Ingest 子模块",
+              figureTitle: "Ingest 业务流程图",
+              caption: "[DU-INGEST/business/01] Ingest 业务流程图",
+              altText: "Ingest 请求从校验、异步提交到失败回滚的完整流程",
+              outputFile: "body-audit-final.docx",
+            })
+            const final = await inspectWordDocument({ path: inserted.path, maxParagraphs: 1_000, maxTables: 200 })
+
+            expect(bodyless(final)).toEqual([])
+            expect(final.images).toHaveLength(1)
+            expect(final.images[0]?.headingPath).toEqual(["Ingest 子模块"])
           }),
         { git: true },
       ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
@@ -534,25 +728,26 @@ describe("kilocode Word documents", () => {
               "rIdInsertedImage2",
             ])
 
-            const orphaned = await applyWordDocumentEdits({
-              sourcePath: second.path,
-              dryRun: false,
-              edits: [
-                {
-                  op: "patch_ooxml_part",
-                  patch: {
-                    part: "word/_rels/document.xml.rels",
-                    find: "</Relationships>",
-                    replace:
-                      '<Relationship Id="rIdOrphan" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/></Relationships>',
+            const root = path.join(dir, path.dirname(second.artifactDir))
+            const before = await fs.readdir(root)
+            await expect(
+              applyWordDocumentEdits({
+                sourcePath: second.path,
+                dryRun: false,
+                edits: [
+                  {
+                    op: "patch_ooxml_part",
+                    patch: {
+                      part: "word/_rels/document.xml.rels",
+                      find: "</Relationships>",
+                      replace:
+                        '<Relationship Id="rIdOrphan" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/></Relationships>',
+                    },
                   },
-                },
-              ],
-            })
-            const orphanInspection = await inspectWordDocument({ path: orphaned.path! })
-            expect(orphanInspection.images).toHaveLength(2)
-            expect(orphanInspection.imageDiagnostics.relationshipCount).toBe(3)
-            expect(orphanInspection.imageDiagnostics.orphanRelationshipIds).toEqual(["rIdOrphan"])
+                ],
+              }),
+            ).rejects.toThrow("media-target-missing")
+            expect(await fs.readdir(root)).toEqual(before)
 
             const bytes = new Uint8Array(await fs.readFile(path.join(dir, second.path)))
             const reader = new ZipReader(new Uint8ArrayReader(bytes))
@@ -1273,6 +1468,45 @@ describe("kilocode Word documents", () => {
               expect(rendered.diagnostics.some((item) => item.code === "pdf-missing")).toBe(false)
             } finally {
               await nested.stop()
+            }
+
+            const invalidRefresh = await rewriteDocxPart(
+              refreshedToc,
+              "word/document.xml",
+              (document) =>
+                document
+                  .replace(' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"', "")
+                  .replace(
+                    "<w:sectPr",
+                    "<w:p><w:r><w:drawing><a:graphicFrameLocks/></w:drawing></w:r></w:p><w:sectPr",
+                  ),
+            )
+            const malformedRefresh = await serveJson(remoteWordPayload({
+              pageCount: 1,
+              returnedPageCount: 1,
+              pageCountKind: "exact",
+              fieldRefreshStatus: "completed",
+              fieldRefreshDiagnostics: [],
+              tocHeadingCount: 1,
+              tocEntryCount: 1,
+              tocPageNumberCount: 1,
+              updatedDocxBase64: Buffer.from(invalidRefresh).toString("base64"),
+              pdfBase64: Buffer.from("%PDF-1.4\n%%EOF").toString("base64"),
+              pages: [{ page: 1, pngBase64: PNG_INK }],
+            }))
+            try {
+              const rendered = await renderWordDocument({
+                sourcePath: tocSource.path,
+                remoteEndpoint: malformedRefresh.origin,
+              })
+              expect(rendered.fieldRefreshStatus).toBe("failed")
+              expect(rendered.refreshedDocxPath).toBeUndefined()
+              expect(rendered.fieldRefreshDiagnostics?.join("; ")).toContain("xml-namespace-prefix-undefined")
+              expect(rendered.diagnostics).toContainEqual(
+                expect.objectContaining({ code: "word-render-refreshed-docx-invalid", severity: "error" }),
+              )
+            } finally {
+              await malformedRefresh.stop()
             }
 
             const dropped = await applyWordDocumentEdits({

@@ -11,6 +11,7 @@ import {
   normalizeWordTableSpec,
   renderWordDocument,
 } from "@/kilocode/documents/word"
+import { validateWordDocument } from "@/kilocode/documents/word-validation"
 
 const ImageBlock = Schema.Struct({
   type: Schema.Literal("image"),
@@ -174,6 +175,18 @@ const InspectParameters = Schema.Struct({
   }),
 })
 
+const ValidateParameters = Schema.Struct({
+  path: Schema.String.annotate({ description: "Workspace-relative .docx path to validate." }),
+  repairMode: Schema.optional(Schema.Union([Schema.Literal("none"), Schema.Literal("safe")])).annotate({
+    description:
+      "Validation-only by default. Safe mode may add known DrawingML namespace declarations or replace invalid XML control characters and always writes a new artifact.",
+  }),
+  outputFile: Schema.optional(Schema.String).annotate({
+    description: "Optional repaired .docx filename inside the new artifact directory.",
+  }),
+  taskSlug: Schema.optional(Schema.String).annotate({ description: "Optional repaired artifact directory slug." }),
+})
+
 const ApplyTemplateStylesParameters = Schema.Struct({
   sourcePath: Schema.String.annotate({ description: "Workspace-relative source .docx path." }),
   templatePath: Schema.optional(Schema.String).annotate({
@@ -293,6 +306,10 @@ type WordMeta = {
   totalTables?: number
   tocEntryCount?: number
   needsLayoutRefresh?: boolean
+  validationStatus?: "valid" | "repaired" | "invalid"
+  validationErrorCount?: number
+  validationWarningCount?: number
+  repairCount?: number
   failed?: boolean
   error?: string
 }
@@ -435,6 +452,45 @@ export const InspectWordDocumentTool = Tool.define(
             ),
           }),
           "Word Document Inspection Failed",
+          { path: params.path },
+        )
+      }).pipe(Effect.orDie),
+  }),
+)
+
+export const ValidateWordDocumentTool = Tool.define(
+  "validate_word_document",
+  Effect.succeed({
+    description:
+      "Strictly validate a Word .docx ZIP/OPC package, namespace-aware XML, relationships, media targets, and image signatures. Safe repair is limited to known lossless XML fixes and writes a new artifact. Use only in explicit Word/document workflows; do not use for ordinary QA.",
+    parameters: ValidateParameters,
+    execute: (
+      params: Schema.Schema.Type<typeof ValidateParameters>,
+      ctx: Tool.Context,
+    ): Effect.Effect<Tool.ExecuteResult<WordMeta>> =>
+      Effect.gen(function* () {
+        yield* ctx.ask({
+          permission: "validate_word_document",
+          patterns: [params.path],
+          always: ["*"],
+          metadata: { path: params.path, repairMode: params.repairMode },
+        })
+        return yield* runWordOperation(
+          () => validateWordDocument(mutable(params)),
+          (result) => ({
+            title: result.status === "invalid" ? "Word Document Invalid" : "Word Document Validated",
+            metadata: {
+              path: result.path,
+              artifactDir: result.artifactDir,
+              manifestPath: result.manifestPath,
+              validationStatus: result.status,
+              validationErrorCount: result.errors.length,
+              validationWarningCount: result.warnings.length,
+              repairCount: result.repairs.length,
+            },
+            output: JSON.stringify(result, null, 2),
+          }),
+          "Word Document Validation Failed",
           { path: params.path },
         )
       }).pipe(Effect.orDie),
@@ -738,6 +794,7 @@ export const RenderWordDocumentTool = Tool.define(
 export const WordDocumentTools = Effect.all({
   create: CreateWordDocumentTool,
   inspect: InspectWordDocumentTool,
+  validate: ValidateWordDocumentTool,
   applyEdits: ApplyWordDocumentEditsTool,
   applyTemplateStyles: ApplyWordTemplateStylesTool,
   materializeFields: MaterializeWordFieldsTool,

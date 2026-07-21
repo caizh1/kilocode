@@ -1,8 +1,8 @@
 /**
  * Experimental xterm.js terminal tab.
  *
- * Mounts an xterm Terminal in a ref'd div and opens a WebSocket directly
- * to the CLI server's `/pty/:id/connect` endpoint. Output frames come back
+ * Mounts an xterm Terminal in a ref'd div and opens either a direct WebSocket
+ * or an injected transport to the CLI server's `/pty/:id/connect` endpoint. Output frames come back
  * as text (PTY bytes) or binary (control frames with a leading 0x00 byte
  * carrying cursor metadata — see `packages/opencode/src/pty/index.ts:46`).
  *
@@ -22,10 +22,13 @@ import { useLanguage } from "../../src/context/language"
 import { formatReviewCommentsMarkdown } from "../../src/utils/review-comment-markdown"
 import type { TerminalWriter } from "./state"
 import type { TerminalFont } from "./state"
+import { redact } from "./diagnostic"
+import { contrast } from "./theme"
 
 interface Props {
   terminalId: string
-  wsUrl: string
+  wsUrl?: string
+  socket?: () => TerminalSocket
   /** Terminal font settings forwarded from the extension host. Used on
    *  initial mount; live changes arrive via `agentManager.terminal.fontChanged`. */
   font: TerminalFont
@@ -45,7 +48,22 @@ interface Props {
   fontType?: "agentManager.terminal.fontChanged" | "agentConsole.terminal.fontChanged"
   shortcuts?: boolean
   output?: (data: string) => void
-  connection?: (state: "open" | "error" | "closed") => void
+  inputEnabled?: boolean
+  dirty?: (value: boolean) => void
+  foreground?: string
+  connection?: (state: "open" | "error" | "closed", detail?: string) => void
+  diagnostic?: (event: "connecting" | "open" | "error" | "close" | "send-skipped", detail?: string) => void
+}
+
+export interface TerminalSocket {
+  binaryType: BinaryType
+  readonly readyState: number
+  onopen: ((event: Event) => void) | null
+  onmessage: ((event: MessageEvent) => void) | null
+  onerror: ((event: Event) => void) | null
+  onclose: ((event: CloseEvent) => void) | null
+  send(data: string): void
+  close(): void
 }
 
 /** How long the ResizeObserver waits after the last size change before
@@ -58,6 +76,7 @@ interface Props {
  *  every observation, so the visible terminal is never stale; only
  *  the backend dimension sync is debounced. */
 const RESIZE_DEBOUNCE_MS = 100
+const AGENT_CONSOLE_SURFACE = "#101113"
 
 /** Resolve a VS Code CSS custom property to a concrete color string.
  *
@@ -86,30 +105,34 @@ function cssVar(name: string, fallback: string): string {
  * Driven by a MutationObserver because VS Code is the source of truth here
  * rather than a Solid theme signal.
  */
-function readTheme() {
-  return {
-    background: cssVar("--vscode-terminal-background", "#1e1e1e"),
-    foreground: cssVar("--vscode-terminal-foreground", "#d4d4d4"),
-    cursor: cssVar("--vscode-terminalCursor-foreground", "#d4d4d4"),
-    cursorAccent: cssVar("--vscode-terminalCursor-background", "#1e1e1e"),
-    selectionBackground: cssVar("--vscode-terminal-selectionBackground", "rgba(255,255,255,0.2)"),
-    black: cssVar("--vscode-terminal-ansiBlack", "#000000"),
-    red: cssVar("--vscode-terminal-ansiRed", "#cd3131"),
-    green: cssVar("--vscode-terminal-ansiGreen", "#0dbc79"),
-    yellow: cssVar("--vscode-terminal-ansiYellow", "#e5e510"),
-    blue: cssVar("--vscode-terminal-ansiBlue", "#2472c8"),
-    magenta: cssVar("--vscode-terminal-ansiMagenta", "#bc3fbc"),
-    cyan: cssVar("--vscode-terminal-ansiCyan", "#11a8cd"),
-    white: cssVar("--vscode-terminal-ansiWhite", "#e5e5e5"),
-    brightBlack: cssVar("--vscode-terminal-ansiBrightBlack", "#666666"),
-    brightRed: cssVar("--vscode-terminal-ansiBrightRed", "#f14c4c"),
-    brightGreen: cssVar("--vscode-terminal-ansiBrightGreen", "#23d18b"),
-    brightYellow: cssVar("--vscode-terminal-ansiBrightYellow", "#f5f543"),
-    brightBlue: cssVar("--vscode-terminal-ansiBrightBlue", "#3b8eea"),
-    brightMagenta: cssVar("--vscode-terminal-ansiBrightMagenta", "#d670d6"),
-    brightCyan: cssVar("--vscode-terminal-ansiBrightCyan", "#29b8db"),
-    brightWhite: cssVar("--vscode-terminal-ansiBrightWhite", "#e5e5e5"),
-  }
+function readTheme(foreground?: string) {
+  return contrast(
+    {
+      background: cssVar("--vscode-terminal-background", "#1e1e1e"),
+      foreground: cssVar("--vscode-terminal-foreground", "#d4d4d4"),
+      cursor: cssVar("--vscode-terminalCursor-foreground", "#d4d4d4"),
+      cursorAccent: cssVar("--vscode-terminalCursor-background", "#1e1e1e"),
+      selectionBackground: cssVar("--vscode-terminal-selectionBackground", "rgba(255,255,255,0.2)"),
+      black: cssVar("--vscode-terminal-ansiBlack", "#000000"),
+      red: cssVar("--vscode-terminal-ansiRed", "#cd3131"),
+      green: cssVar("--vscode-terminal-ansiGreen", "#0dbc79"),
+      yellow: cssVar("--vscode-terminal-ansiYellow", "#e5e510"),
+      blue: cssVar("--vscode-terminal-ansiBlue", "#2472c8"),
+      magenta: cssVar("--vscode-terminal-ansiMagenta", "#bc3fbc"),
+      cyan: cssVar("--vscode-terminal-ansiCyan", "#11a8cd"),
+      white: cssVar("--vscode-terminal-ansiWhite", "#e5e5e5"),
+      brightBlack: cssVar("--vscode-terminal-ansiBrightBlack", "#666666"),
+      brightRed: cssVar("--vscode-terminal-ansiBrightRed", "#f14c4c"),
+      brightGreen: cssVar("--vscode-terminal-ansiBrightGreen", "#23d18b"),
+      brightYellow: cssVar("--vscode-terminal-ansiBrightYellow", "#f5f543"),
+      brightBlue: cssVar("--vscode-terminal-ansiBrightBlue", "#3b8eea"),
+      brightMagenta: cssVar("--vscode-terminal-ansiBrightMagenta", "#d670d6"),
+      brightCyan: cssVar("--vscode-terminal-ansiBrightCyan", "#29b8db"),
+      brightWhite: cssVar("--vscode-terminal-ansiBrightWhite", "#e5e5e5"),
+    },
+    foreground,
+    foreground ? AGENT_CONSOLE_SURFACE : undefined,
+  )
 }
 
 /** Allow agent-manager Cmd/Ctrl shortcuts to fall through xterm's key handler. */
@@ -141,7 +164,8 @@ export const TerminalTab: Component<Props> = (props) => {
       fontFamily: props.font.fontFamily,
       fontSize: props.font.fontSize,
       scrollback: 5000,
-      theme: readTheme(),
+      minimumContrastRatio: props.foreground ? 7 : 1,
+      theme: readTheme(props.foreground),
       allowProposedApi: true,
     })
     const fit = new FitAddon()
@@ -196,20 +220,63 @@ export const TerminalTab: Component<Props> = (props) => {
     // ⌘T / ⌘W / ⌘⌥← etc. still work while the terminal is focused.
     term.attachCustomKeyEventHandler((event) => props.shortcuts === false || !isAgentManagerShortcut(event))
 
-    const ws = new WebSocket(props.wsUrl)
+    const endpoint = (() => {
+      if (props.socket) return "extension-host-relay"
+      try {
+        if (!props.wsUrl) return "missing-url"
+        const url = new URL(props.wsUrl)
+        return `${url.protocol}//${url.host}${url.pathname}`
+      } catch (err) {
+        log("invalid WebSocket URL", err)
+        return "invalid-url"
+      }
+    })()
+    props.diagnostic?.("connecting", `endpoint=${endpoint}`)
+    const ws = (() => {
+      try {
+        if (props.socket) return props.socket()
+        if (!props.wsUrl) throw new Error("missing WebSocket URL")
+        return new WebSocket(props.wsUrl)
+      } catch (err) {
+        const detail = redact(err instanceof Error ? err.message : String(err))
+        log("WebSocket constructor threw", err)
+        props.diagnostic?.("error", `constructor=${detail}`)
+        props.connection?.("error", `constructor=${detail}`)
+        term.writeln(`\r\n\x1b[31m[${t("agentManager.terminal.connectionError")}: ${detail}]\x1b[0m`)
+        return undefined
+      }
+    })()
+    if (!ws) {
+      onCleanup(() => term.dispose())
+      return
+    }
     ws.binaryType = "arraybuffer"
     let closed = false
     let unbind: (() => void) | undefined
+    let inputDirty = false
+    const setDirty = (value: boolean) => {
+      if (inputDirty === value) return
+      inputDirty = value
+      props.dirty?.(value)
+    }
     ws.onopen = () => {
       unbind = props.bind?.((data) => {
         if (ws.readyState !== WebSocket.OPEN) return false
         ws.send(data)
         return true
       })
+      props.diagnostic?.("open", `endpoint=${endpoint}`)
       props.connection?.("open")
     }
     const disposeData = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data)
+      if (props.inputEnabled === false && data !== "\x03") return
+      if (/[\r\n\x03\x15]/.test(data)) setDirty(false)
+      else if (data !== "\x7f") setDirty(true)
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data)
+        return
+      }
+      props.diagnostic?.("send-skipped", `readyState=${ws.readyState} bytes=${data.length}`)
     })
     ws.onmessage = (event) => {
       // Text frames carry PTY output; binary frames starting with 0x00
@@ -226,16 +293,22 @@ export const TerminalTab: Component<Props> = (props) => {
         props.output?.(new TextDecoder().decode(bytes))
       }
     }
-    ws.onerror = () => {
+    ws.onerror = (event) => {
       if (closed) return
-      props.connection?.("error")
-      term.writeln(`\r\n\x1b[90m[${t("agentManager.terminal.connectionError")}]\x1b[0m`)
+      const error = event instanceof CustomEvent && typeof event.detail === "string" ? redact(event.detail) : undefined
+      const detail = `readyState=${ws.readyState}${error ? ` error=${error}` : ""}`
+      props.diagnostic?.("error", detail)
+      props.connection?.("error", detail)
+      term.writeln(`\r\n\x1b[31m[${t("agentManager.terminal.connectionError")}: ${detail}]\x1b[0m`)
     }
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (closed) return
       closed = true
-      props.connection?.("closed")
-      term.writeln(`\r\n\x1b[90m[${t("agentManager.terminal.ended")}]\x1b[0m`)
+      const reason = redact(event.reason || "none")
+      const detail = `code=${event.code} reason=${reason} clean=${event.wasClean}`
+      props.diagnostic?.("close", detail)
+      props.connection?.("closed", detail)
+      term.writeln(`\r\n\x1b[31m[${t("agentManager.terminal.ended")}: ${detail}]\x1b[0m`)
     }
 
     // Resize: fit on any host size change and forward new cols/rows to
@@ -364,7 +437,7 @@ export const TerminalTab: Component<Props> = (props) => {
     // properties, and hand the new palette to xterm. The canvas / DOM
     // renderer picks the new colors up on the next refresh.
     const applyTheme = () => {
-      term.options.theme = readTheme()
+      term.options.theme = readTheme(props.foreground)
       term.refresh(0, Math.max(0, term.rows - 1))
     }
     const themeObserver = new MutationObserver(applyTheme)
@@ -380,6 +453,7 @@ export const TerminalTab: Component<Props> = (props) => {
       clearTimeout(resizeTimer)
       ro.disconnect()
       disposeData.dispose()
+      props.dirty?.(false)
       closed = true
       try {
         ws.close()

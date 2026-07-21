@@ -12799,6 +12799,7 @@ export type KilocodeAgentRequirementsResponse =
 export type KilocodeRemoveSkillData = {
   body?: {
     location: string
+    scope?: "project" | "global"
   }
   path?: never
   query?: {
@@ -12825,6 +12826,36 @@ export type KilocodeRemoveSkillResponses = {
 }
 
 export type KilocodeRemoveSkillResponse = KilocodeRemoveSkillResponses[keyof KilocodeRemoveSkillResponses]
+
+export type KilocodeRefreshSkillsData = {
+  body?: {
+    scope: "project" | "global"
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/skill/refresh"
+}
+
+export type KilocodeRefreshSkillsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type KilocodeRefreshSkillsError = KilocodeRefreshSkillsErrors[keyof KilocodeRefreshSkillsErrors]
+
+export type KilocodeRefreshSkillsResponses = {
+  /**
+   * Skill cache refreshed
+   */
+  200: boolean
+}
+
+export type KilocodeRefreshSkillsResponse = KilocodeRefreshSkillsResponses[keyof KilocodeRefreshSkillsResponses]
 
 export type KilocodeRemoveAgentData = {
   body?: {

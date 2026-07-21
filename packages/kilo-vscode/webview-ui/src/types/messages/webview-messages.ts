@@ -764,6 +764,27 @@ export interface AgentConsoleTerminalCreateRequest {
   type: "agentConsole.terminal.create"
 }
 
+export interface AgentConsoleTerminalConnectRequest {
+  type: "agentConsole.terminal.connect"
+  terminalId: string
+}
+
+export interface AgentConsoleTerminalWriteRequest {
+  type: "agentConsole.terminal.write"
+  terminalId: string
+  data: string
+}
+
+export interface AgentConsoleTerminalRecoverRequest {
+  type: "agentConsole.terminal.recover"
+  terminalId: string
+}
+
+export interface AgentConsoleTerminalDisconnectRequest {
+  type: "agentConsole.terminal.disconnect"
+  terminalId: string
+}
+
 export interface AgentConsoleTerminalCloseRequest {
   type: "agentConsole.terminal.close"
   terminalId: string
@@ -774,6 +795,13 @@ export interface AgentConsoleTerminalResizeRequest {
   terminalId: string
   cols: number
   rows: number
+}
+
+export interface AgentConsoleTerminalDiagnosticRequest {
+  type: "agentConsole.terminal.diagnostic"
+  terminalId: string
+  event: "connecting" | "open" | "error" | "close" | "send-skipped" | "input-gate" | "route-timeout"
+  detail?: string
 }
 
 export interface AgentConsoleShellRestartRequest {
@@ -793,6 +821,21 @@ export interface AgentConsoleInputRouteRequest {
   type: "agentConsole.input.route"
   requestId: string
   input: string
+}
+
+export interface AgentConsoleCommandExpectRequest {
+  type: "agentConsole.command.expect"
+  terminalId: string
+  runId: string
+  source: "direct" | "agent"
+  command: string
+  callId?: string
+}
+
+export interface AgentConsoleCommandCancelRequest {
+  type: "agentConsole.command.cancel"
+  terminalId: string
+  runId: string
 }
 
 // Open a file in the selected worktree for a specific session
@@ -1561,12 +1604,19 @@ export type WebviewMessage =
   | OpenContentRequest
   | AgentManagerTerminalCreateRequest
   | AgentConsoleTerminalCreateRequest
+  | AgentConsoleTerminalConnectRequest
+  | AgentConsoleTerminalWriteRequest
+  | AgentConsoleTerminalRecoverRequest
+  | AgentConsoleTerminalDisconnectRequest
   | AgentConsoleTerminalCloseRequest
   | AgentConsoleTerminalResizeRequest
+  | AgentConsoleTerminalDiagnosticRequest
   | AgentConsoleShellRestartRequest
   | AgentConsoleSessionNewRequest
   | AgentConsoleModeChangedRequest
   | AgentConsoleInputRouteRequest
+  | AgentConsoleCommandExpectRequest
+  | AgentConsoleCommandCancelRequest
   | AgentManagerTerminalCloseRequest
   | AgentManagerTerminalResizeRequest
   | RequestImageModelsMessage

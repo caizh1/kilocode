@@ -17,6 +17,7 @@ describe("document tool routing boundary", () => {
     expect(artifacts).toContain("do not use for ordinary QA")
     expect(word).toContain("Use only when the user explicitly asks to generate a Word/docx deliverable")
     expect(word).toContain("not for general document QA; use document_search for indexed document questions")
+    expect(word).toContain("Use only in explicit Word/document workflows; do not use for ordinary QA")
     expect(word).toContain("Delete operations should be dry-run first")
     expect(mermaid).toContain("does not decide business flow")
     expect(mermaid).toContain("not a code or document QA tool")

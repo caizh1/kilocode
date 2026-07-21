@@ -24,6 +24,7 @@ import { InstanceHttpApi } from "../api"
 import * as ApiError from "../errors"
 import { CursorQuery, PtyConnectApi } from "../groups/pty"
 import { WebSocketTracker } from "../websocket-tracker"
+import * as AgentConsolePty from "@/kilocode/agent-console/pty" // kilocode_change
 
 function validOrigin(request: HttpServerRequest.HttpServerRequest, opts: CorsOptions | undefined) {
   return isAllowedRequestOrigin(request.headers.origin, request.headers.host, opts)
@@ -60,18 +61,32 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
     })
 
     const create = Effect.fn("PtyHttpApi.create")(function* (ctx: { payload: typeof Pty.CreateInput.Type }) {
+      // kilocode_change start - attach Agent Console shells to the Kilo-only same-PTY bridge
+      const directory = (yield* InstanceState.context).directory
       return yield* pty(
         Pty.Service.use((service) =>
-          Effect.flatMap(
-            PtyPreparation.prepareCreate({
+          Effect.gen(function* () {
+            const info = yield* PtyPreparation.prepareCreate({
               ...ctx.payload,
               args: ctx.payload.args ? [...ctx.payload.args] : undefined,
               env: ctx.payload.env ? { ...ctx.payload.env } : undefined,
-            }),
-            service.create,
-          ),
+            }).pipe(Effect.flatMap(service.create))
+            const token = AgentConsolePty.registration(ctx.payload.env)
+            if (!token || !AgentConsolePty.isAgentConsole(info.title)) return info
+            const socket = AgentConsolePty.attach({
+              directory,
+              ptyID: info.id,
+              token,
+              write: (data) => Effect.runPromise(service.write(info.id, data)),
+            })
+            const handler = yield* service.connect(info.id, socket, 0).pipe(Effect.orDie)
+            if (!handler) return info
+            socket.connected(handler.onClose)
+            return info
+          }),
         ),
       )
+      // kilocode_change end
     })
 
     const get = Effect.fn("PtyHttpApi.get")(function* (ctx: { params: { ptyID: PtyID } }) {
@@ -91,12 +106,22 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
       params: { ptyID: PtyID }
       payload: typeof Pty.UpdateInput.Type
     }) {
+      const directory = (yield* InstanceState.context).directory // kilocode_change
       return yield* pty(
-        Pty.Service.use((service) =>
-          service.update(ctx.params.ptyID, {
-            ...ctx.payload,
-            size: ctx.payload.size ? { ...ctx.payload.size } : undefined,
-          }),
+        Pty.Service.use(
+          (service) =>
+            // kilocode_change start - bind a real Agent Console session before its first prompt
+            Effect.gen(function* () {
+              const info = yield* service.update(ctx.params.ptyID, {
+                ...ctx.payload,
+                size: ctx.payload.size ? { ...ctx.payload.size } : undefined,
+              })
+              if ("sessionID" in ctx.payload && AgentConsolePty.isAgentConsole(info.title)) {
+                AgentConsolePty.bind({ directory, ptyID: info.id, sessionID: ctx.payload.sessionID })
+              }
+              return info
+            }),
+          // kilocode_change end
         ),
       ).pipe(
         Effect.catchTag("Pty.NotFoundError", (error) =>

@@ -15,6 +15,7 @@ import PROMPT_DEBUG from "../../agent/prompt/debug.txt"
 import PROMPT_ORCHESTRATOR from "../../agent/prompt/orchestrator.txt"
 import PROMPT_ASK from "../../agent/prompt/ask.txt"
 import PROMPT_EXPLORE from "../../agent/prompt/explore.txt"
+import PROMPT_AGENT_CONSOLE from "./agent-console.txt"
 import { applyInternalIndexingDefaults, isInternalOffline } from "../internal-offline"
 import { ProductProfile } from "../product-profile"
 
@@ -317,15 +318,29 @@ function hardRules() {
   })
 }
 
+function agentConsole(): AgentInfo {
+  return {
+    name: "agent-console",
+    description: "Terminal-native assistant for the persistent ChipMate Agent Console shell.",
+    prompt: PROMPT_AGENT_CONSOLE,
+    options: {},
+    permission: Permission.fromConfig({
+      "*": "deny",
+      agent_console_shell: "ask",
+    }),
+    mode: "primary",
+    native: true,
+    hidden: true,
+  }
+}
+
 export function harden(item?: { name: string; permission: Permission.Ruleset }) {
   if (!item) return
   if (!locked.has(item.name)) return
   item.permission = hardRules()
 }
 
-export function hardenSystemAgents<T extends { name: string; permission: Permission.Ruleset }>(
-  agents: Record<string, T>,
-) {
+export function hardenSystemAgents(agents: Record<string, AgentInfo>) {
   for (const [key, item] of Object.entries(agents)) {
     if (locked.has(key)) {
       item.permission = hardRules()
@@ -333,6 +348,7 @@ export function hardenSystemAgents<T extends { name: string; permission: Permiss
     }
     harden(item)
   }
+  agents["agent-console"] = agentConsole()
 }
 
 // Returns experimental_telemetry config for generate calls.
@@ -348,28 +364,7 @@ export function telemetryOptions(_cfg: Config.Info) {
 // - Patch appropriate agents with semantic_search and codebase_analysis
 // - Add debug, orchestrator, ask agents
 export function patchAgents(
-  agents: Record<
-    string,
-    {
-      name: string
-      displayName?: string
-      source?: string
-      description?: string
-      deprecated?: boolean
-      mode: "subagent" | "primary" | "all"
-      native?: boolean
-      hidden?: boolean
-      topP?: number
-      temperature?: number
-      color?: string
-      permission: Permission.Ruleset
-      model?: { modelID: string; providerID: string }
-      variant?: string
-      prompt?: string
-      options: Record<string, unknown>
-      steps?: number
-    }
-  >,
+  agents: Record<string, AgentInfo>,
   defaults: Permission.Ruleset,
   user: Permission.Ruleset,
   cfg: Config.Info,
@@ -378,6 +373,8 @@ export function patchAgents(
   whitelistedDirs: string[],
 ) {
   const internal = isInternalOffline()
+
+  agents["agent-console"] = agentConsole()
 
   // Rename "build" → "code" for backward compatibility
   if (agents.build) {

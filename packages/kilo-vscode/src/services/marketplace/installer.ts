@@ -324,11 +324,16 @@ export class MarketplaceInstaller {
 
   // ── Remove ──────────────────────────────────────────────────────────
 
-  async remove(item: MarketplaceItemRef, scope: "project" | "global", workspace?: string): Promise<RemoveResult> {
+  async remove(
+    item: MarketplaceItemRef,
+    scope: "project" | "global",
+    workspace?: string,
+    location?: string,
+  ): Promise<RemoveResult> {
     if (scope === "project" && !workspace) {
       return { success: false, slug: item.id, error: "No workspace directory for project-scope removal" }
     }
-    if (item.type === "skill") return this.removeSkill(item, scope, workspace)
+    if (item.type === "skill") return this.removeSkill(item, scope, workspace, location)
     if (item.type === "mcp") return this.removeMcp(item, scope, workspace)
     return this.removeAgent(item, scope, workspace)
   }
@@ -356,6 +361,7 @@ export class MarketplaceInstaller {
     item: Pick<SkillMarketplaceItem, "id">,
     scope: "project" | "global",
     workspace?: string,
+    location?: string,
   ): Promise<RemoveResult> {
     if (scope === "project" && !workspace) {
       return { success: false, slug: item.id, error: "No workspace directory for project-scope removal" }
@@ -369,17 +375,37 @@ export class MarketplaceInstaller {
     if (!contains(base, dir)) {
       return { success: false, slug: item.id, error: "Invalid skill id" }
     }
+    if (!location || !(await same(location, path.join(dir, "SKILL.md")))) {
+      return { success: false, slug: item.id, error: "Skill discovery location does not match the selected scope" }
+    }
+    const tomb = path.join(path.dirname(base), `.removing-skill-${item.id}-${randomUUID()}`)
     try {
-      await fs.access(dir)
-      const tomb = path.join(base, `.removing-${item.id}-${randomUUID()}`)
+      await validateRoot(base)
+      await validateSkillDirectory(dir)
       await fs.rename(dir, tomb)
-      await fs.rm(tomb, { recursive: true, force: true }).catch((err) => {
-        console.warn(`Failed to clean removed skill tombstone ${tomb}:`, err)
-      })
+      try {
+        await fs.rm(tomb, { recursive: true, force: false })
+      } catch (err) {
+        try {
+          await fs.rename(tomb, dir)
+        } catch (cause) {
+          console.warn(`Failed to remove skill ${item.id} and restore ${dir}:`, err, cause)
+          return {
+            success: false,
+            slug: item.id,
+            error: `Skill cleanup failed and rollback failed: ${String(err)}; ${String(cause)}`,
+          }
+        }
+        console.warn(`Failed to remove skill ${item.id}; restored original directory:`, err)
+        return { success: false, slug: item.id, error: `Skill cleanup failed: ${String(err)}` }
+      }
+      if ((await exists(dir)) || (await exists(tomb))) {
+        return { success: false, slug: item.id, error: "Skill directory still exists after removal" }
+      }
       return { success: true, slug: item.id }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        return { success: true, slug: item.id }
+        return { success: false, slug: item.id, error: "Skill is not installed in the selected scope" }
       }
       console.warn(`Failed to remove skill ${item.id}:`, err)
       return { success: false, slug: item.id, error: String(err) }
@@ -423,6 +449,44 @@ async function exists(filepath: string): Promise<boolean> {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return false
     throw err
   }
+}
+
+async function validateSkillDirectory(dir: string): Promise<void> {
+  const root = await fs.lstat(dir)
+  if (!root.isDirectory() || root.isSymbolicLink()) throw new Error("Skill target must be a regular directory")
+  const manifest = await fs.lstat(path.join(dir, "SKILL.md"))
+  if (!manifest.isFile() || manifest.isSymbolicLink()) throw new Error("Skill manifest must be a regular file")
+
+  const queue = [dir]
+  for (const current of queue) {
+    const entries = await fs.readdir(current, { withFileTypes: true })
+    for (const entry of entries) {
+      const file = path.join(current, entry.name)
+      if (entry.isSymbolicLink()) throw new Error("Skill directory contains a symbolic link")
+      if (!entry.isDirectory()) continue
+      queue.push(file)
+      if (file !== dir && (await exists(path.join(file, "SKILL.md")))) {
+        throw new Error("Skill directory contains a nested Skill")
+      }
+    }
+  }
+}
+
+async function validateRoot(root: string): Promise<void> {
+  for (const dir of [path.dirname(root), root]) {
+    const stat = await fs.lstat(dir)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Skill root must be a regular directory")
+  }
+}
+
+async function same(first: string, second: string): Promise<boolean> {
+  const normalize = (value: string) => {
+    const resolved = path.resolve(value)
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved
+  }
+  if (normalize(first) === normalize(second)) return true
+  const paths = await Promise.all([fs.realpath(first), fs.realpath(second)]).catch(() => undefined)
+  return Boolean(paths && normalize(paths[0]) === normalize(paths[1]))
 }
 
 function contains(dir: string, filepath: string): boolean {

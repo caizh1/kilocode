@@ -1,12 +1,13 @@
 /** @jsxImportSource solid-js */
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
-import { For, Show, createSignal, onMount } from "solid-js"
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
 import Settings from "../components/settings/Settings"
 import { ChatView } from "../components/chat/ChatView"
 import HistoryView from "../components/history/HistoryView"
 import { AgentConsoleContent } from "../../agent-console/AgentConsoleApp"
+import { TerminalTab, type TerminalSocket } from "../../agent-manager/terminal/TerminalTab"
 import type {
   AgentInfo,
   Config,
@@ -19,6 +20,7 @@ import type {
 } from "../types/messages"
 import { StoryProviders, defaultMockData } from "./StoryProviders"
 import { CHIPMATE_SERVER_KEY } from "../../../src/shared/chipmate-server"
+import "../../agent-console/agent-console.css"
 import "../../agent-manager/agent-manager.css"
 
 const meta: Meta = {
@@ -214,6 +216,186 @@ const consoleSession = {
   getParts: () => [],
 }
 
+type TerminalScenario = "mixed" | "burst" | "bytes"
+
+interface TerminalStats {
+  scenario: TerminalScenario | null
+  state: "idle" | "running" | "complete" | "stopped"
+  frames: number
+  bytes: number
+  received: number
+  commands: number
+  interrupts: number
+  expectedTail: string
+  input: string
+}
+
+interface TerminalQA {
+  start(scenario: TerminalScenario): Promise<TerminalStats>
+  stop(): TerminalStats
+  stats(): TerminalStats
+  transcript(): { emitted: string; received: string; input: string }
+}
+
+declare global {
+  interface Window {
+    __chipmateTerminalQA?: TerminalQA
+  }
+}
+
+const wait = (delay: number) => new Promise<void>((resolve) => window.setTimeout(resolve, delay))
+
+class FixtureSocket implements TerminalSocket {
+  binaryType: BinaryType = "arraybuffer"
+  onopen: ((event: Event) => void) | null = null
+  onmessage: ((event: MessageEvent) => void) | null = null
+  onerror: ((event: Event) => void) | null = null
+  onclose: ((event: CloseEvent) => void) | null = null
+  #ready: number = WebSocket.CONNECTING
+  #run = 0
+  #input = ""
+  #emitted = ""
+  #received = ""
+  #stats: TerminalStats = {
+    scenario: null,
+    state: "idle",
+    frames: 0,
+    bytes: 0,
+    received: 0,
+    commands: 0,
+    interrupts: 0,
+    expectedTail: "",
+    input: "",
+  }
+
+  constructor() {
+    window.setTimeout(() => {
+      if (this.#ready !== WebSocket.CONNECTING) return
+      this.#ready = WebSocket.OPEN
+      this.onopen?.(new Event("open"))
+      this.#emit("\x1b[2J\x1b[HCHIPMATE_TERMINAL_READY\r\n$ ")
+    }, 0)
+  }
+
+  get readyState() {
+    return this.#ready
+  }
+
+  snapshot(): TerminalStats {
+    return {
+      ...this.#stats,
+      received: new TextEncoder().encode(this.#received).byteLength,
+      input: this.#input,
+    }
+  }
+
+  received(data: string) {
+    this.#received += data
+  }
+
+  transcript() {
+    return { emitted: this.#emitted, received: this.#received, input: this.#input }
+  }
+
+  async start(scenario: TerminalScenario): Promise<TerminalStats> {
+    const run = ++this.#run
+    this.#emitted = ""
+    this.#received = ""
+    this.#stats = {
+      scenario,
+      state: "running",
+      frames: 0,
+      bytes: 0,
+      received: 0,
+      commands: this.#stats.commands,
+      interrupts: this.#stats.interrupts,
+      expectedTail: `CHIPMATE_${scenario.toUpperCase()}_DONE`,
+      input: this.#input,
+    }
+    if (scenario === "burst") {
+      for (let offset = 0; offset < 5_000; offset += 100) {
+        if (run !== this.#run) return this.snapshot()
+        const lines = Array.from(
+          { length: 100 },
+          (_, index) => `BURST-${(offset + index).toString().padStart(4, "0")}: ${"x".repeat(72)}\r\n`,
+        ).join("")
+        this.#emit(offset ? lines : `\x1b[2J\x1b[H${lines}`)
+        await wait(0)
+      }
+      this.#emit(`${this.#stats.expectedTail}\r\n$ `)
+    }
+    if (scenario === "mixed") {
+      const frames = [
+        "\x1b[2J\x1b[HSTATIC plain terminal output\r\n",
+        "\x1b[31mANSI red\x1b[0m \x1b[32mANSI green\x1b[0m \x1b[34mANSI blue\x1b[0m\r\n",
+        "PROGRESS 000%\rPROGRESS 050%\rPROGRESS 100%\r\n",
+        "BACKSPACE: ABC\b\bXY\r\n",
+        "中文宽字符：终端布局校验；emoji：😀 🫠 👨‍👩‍👧‍👦 🏳️‍🌈\r\n",
+        `${"LONG-LINE-".repeat(180)}\r\n`,
+        "\x1b[2J\x1b[HCLEAR-SCREEN-RECOVERED\r\n",
+        `${this.#stats.expectedTail}\r\n$ `,
+      ]
+      for (const frame of frames) {
+        if (run !== this.#run) return this.snapshot()
+        this.#emit(frame)
+        await wait(24)
+      }
+    }
+    if (scenario === "bytes") {
+      const text = Array.from(
+        { length: 40 },
+        (_, index) => `BYTE-${index.toString().padStart(4, "0")}|`,
+      ).join("")
+      for (const byte of new TextEncoder().encode(`${text}${this.#stats.expectedTail}\r\n$ `)) {
+        if (run !== this.#run) return this.snapshot()
+        this.#emit(Uint8Array.of(byte).buffer)
+        if (this.#stats.frames % 64 === 0) await wait(1)
+      }
+    }
+    if (run === this.#run) this.#stats.state = "complete"
+    return this.snapshot()
+  }
+
+  stop(): TerminalStats {
+    this.#run += 1
+    this.#stats.state = "stopped"
+    return this.snapshot()
+  }
+
+  send(data: string) {
+    if (this.#ready !== WebSocket.OPEN) return
+    this.#input += data
+    if (data.includes("\x03")) {
+      this.#stats.interrupts += 1
+      this.#emit("^C\r\nCHIPMATE_INTERRUPT_ACK\r\n$ ")
+      return
+    }
+    this.#emit(data === "\r" ? "\r\n" : data)
+    const commands = this.#input.split("\r")
+    this.#input = commands.pop() ?? ""
+    for (const command of commands) {
+      this.#stats.commands += 1
+      this.#emit(`CHIPMATE_COMMAND_${this.#stats.commands}:${command}\r\n$ `)
+    }
+  }
+
+  close() {
+    if (this.#ready === WebSocket.CLOSED) return
+    this.#run += 1
+    this.#ready = WebSocket.CLOSED
+    this.onclose?.(new CloseEvent("close", { code: 1000, reason: "fixture-disposed", wasClean: true }))
+  }
+
+  #emit(data: string | ArrayBuffer) {
+    if (this.#ready !== WebSocket.OPEN) return
+    const bytes = typeof data === "string" ? new TextEncoder().encode(data).byteLength : data.byteLength
+    this.#emitted += typeof data === "string" ? data : new TextDecoder().decode(data)
+    this.#stats.frames += 1
+    this.#stats.bytes += bytes
+    this.onmessage?.(new MessageEvent("message", { data }))
+  }
+}
+
 function SettingsFixture() {
   const [open, setOpen] = createSignal(false)
   onMount(() => {
@@ -307,13 +489,70 @@ function ConsoleFixture() {
           <div data-ui="low-end-console-sessions" style={{ display: "flex", gap: "8px", padding: "8px" }}>
             <For each={tabs}>{(item) => <span>{item.title}</span>}</For>
           </div>
-          <div style={{ "min-height": 0, flex: 1 }}>
-            <AgentConsoleContent shell={<pre data-ui="low-end-console-output">CHIPMATE_LOW_END_OK</pre>} />
+          <div style={{ "min-height": 0, height: 0, flex: 1, overflow: "hidden" }}>
+            <ConsoleTerminal />
           </div>
         </div>
       </Show>
     </StoryProviders>
   )
+}
+
+function ConsoleTerminal() {
+  let socket: FixtureSocket | undefined
+  const qa: TerminalQA = {
+    start: (scenario) => {
+      if (!socket) throw new Error("Terminal fixture socket is not mounted")
+      return socket.start(scenario)
+    },
+    stop: () => socket?.stop() ?? emptyStats(),
+    stats: () => socket?.snapshot() ?? emptyStats(),
+    transcript: () => socket?.transcript() ?? { emitted: "", received: "", input: "" },
+  }
+  onMount(() => {
+    window.__chipmateTerminalQA = qa
+  })
+  onCleanup(() => {
+    if (window.__chipmateTerminalQA === qa) delete window.__chipmateTerminalQA
+    socket?.close()
+  })
+  const terminal = (
+    <div data-ui="low-end-console-output" style={{ width: "100%", height: "100%", "min-height": 0 }}>
+      <TerminalTab
+        terminalId="low-end-real-xterm"
+        socket={() => {
+          socket = new FixtureSocket()
+          return socket
+        }}
+        font={{ fontFamily: "monospace", fontSize: 13 }}
+        active={true}
+        focus={true}
+        shortcuts={false}
+        foreground="#fff"
+        output={(value) => socket?.received(value)}
+      />
+    </div>
+  )
+  return (
+    <AgentConsoleContent
+      initialMode="shell"
+      shell={terminal}
+    />
+  )
+}
+
+function emptyStats(): TerminalStats {
+  return {
+    scenario: null,
+    state: "idle",
+    frames: 0,
+    bytes: 0,
+    received: 0,
+    commands: 0,
+    interrupts: 0,
+    expectedTail: "",
+    input: "",
+  }
 }
 
 export const AgentConsole: Story = {

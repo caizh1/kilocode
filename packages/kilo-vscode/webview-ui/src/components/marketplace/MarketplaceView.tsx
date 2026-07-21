@@ -245,12 +245,17 @@ export const MarketplaceView = () => {
               type: "removeLocalSkill",
               requestId,
               targetToken: item.removeToken!,
-              skillId: item.id,
+              skillId: item.removeSkillId ?? item.id,
               scope,
             })
           }}
         />
       ))
+      return
+    }
+    if (item.type === "skill" && item.origin !== "market") {
+      setErrors((prev) => [...prev, t("marketplace.remove.sourceChanged")])
+      fetchData()
       return
     }
     dialog.show(() => (
