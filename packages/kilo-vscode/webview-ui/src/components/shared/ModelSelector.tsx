@@ -26,6 +26,7 @@ import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Tag } from "@kilocode/kilo-ui/tag"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
+import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useProvider } from "../../context/provider"
 import type { EnrichedModel } from "../../context/provider"
 import { useConfig } from "../../context/config"
@@ -50,6 +51,8 @@ import {
 import { ModelPreview } from "./ModelPreview"
 import { searchMatch } from "../../utils/search-match"
 import { isCustomProviderPackage } from "../../../../src/shared/provider-model"
+import { internalOfflineProviderDefaults } from "../../../../src/shared/internal-offline"
+import CustomProviderDialog from "../settings/CustomProviderDialog"
 
 // ---------------------------------------------------------------------------
 // Row / group key helpers — single source of truth for key formatting
@@ -148,6 +151,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   const { connected, models, findModel } = useProvider()
   const language = useLanguage()
   const vscode = useVSCode()
+  const dialog = useDialog()
   // Session context is optional — ModelSelectorBase is also used in Settings
   // where SessionProvider may not be mounted.
   const session = useContext(SessionContext)
@@ -573,6 +577,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
   function configure() {
     setOpen(false)
+    if (internalOfflineProviderDefaults()) {
+      dialog.show(() => <CustomProviderDialog />)
+      return
+    }
     vscode.postMessage({ type: "openSettingsPanel", tab: "providers" })
   }
 

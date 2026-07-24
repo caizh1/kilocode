@@ -3,7 +3,7 @@ import { t } from "../i18n"
 import type { AutocompleteStatusBarStateProps } from "./types"
 import { humanFormatSessionCost, formatTime } from "./statusbar-utils"
 
-const SUPPORTED_PROVIDER_DISPLAY_NAME = "Kilo Gateway"
+const SUPPORTED_PROVIDER_DISPLAY_NAME = "ChipMate Gateway"
 const SETTINGS_COMMAND = `command:chipmate.v2.settingsButtonClicked?${encodeURIComponent(JSON.stringify(["autocomplete"]))}`
 
 export class AutocompleteStatusBar {

@@ -1,6 +1,7 @@
 import type { Command } from "@/command"
 import type { ReviewCommand } from "@kilocode/kilo-telemetry"
 import REVIEW from "./review.txt"
+import { KilocodeSystemPrompt } from "@/kilocode/system-prompt"
 
 const legacy = {
   "local-review": {
@@ -31,7 +32,7 @@ export function reviewCommand(): Command.Info {
   return {
     name: "review",
     description: "review changes [uncommitted|commit|branch|pr]",
-    template: REVIEW,
+    template: KilocodeSystemPrompt.brand(REVIEW),
     hints: ["$ARGUMENTS"],
   }
 }

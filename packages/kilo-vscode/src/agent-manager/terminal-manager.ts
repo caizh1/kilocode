@@ -14,6 +14,13 @@
  */
 
 import type { KiloClient } from "@kilocode/sdk/v2/client"
+import { getErrorMessage } from "../kilo-provider-utils"
+
+export function ptyError(error: unknown): string {
+  const message = getErrorMessage(error)
+  if (/^\[object [^\]]+\]$/.test(message)) return "Unknown PTY error"
+  return message
+}
 
 /**
  * Everything the manager needs from the surrounding AgentManagerProvider.
@@ -86,7 +93,7 @@ export class TerminalManager {
       env: params.env,
     })
     if (error || !data) {
-      const err = error instanceof Error ? error.message : String(error ?? "unknown error")
+      const err = ptyError(error ?? "unknown error")
       throw new Error(`Failed to create PTY: ${err}`)
     }
     const terminalId = makeTerminalId()
@@ -116,7 +123,7 @@ export class TerminalManager {
       sessionID,
     })
     if (!error) return
-    const message = error instanceof Error ? error.message : String(error)
+    const message = ptyError(error)
     throw new Error(`Failed to bind Agent Console PTY: ${message}`)
   }
 
@@ -131,7 +138,7 @@ export class TerminalManager {
       size: { cols, rows },
     })
     if (error) {
-      const err = error instanceof Error ? error.message : String(error)
+      const err = ptyError(error)
       this.deps.log(`Terminal resize failed (${terminalId}): ${err}`)
     }
   }
@@ -149,7 +156,7 @@ export class TerminalManager {
       const client = this.deps.getClient()
       const { error } = await client.pty.remove({ directory: entry.cwd, ptyID: entry.ptyID })
       if (error) {
-        const msg = error instanceof Error ? error.message : String(error)
+        const msg = ptyError(error)
         this.deps.log(`Terminal close failed (${terminalId}): ${msg} — PTY may linger until kilo serve exits`)
         return
       }
@@ -158,7 +165,7 @@ export class TerminalManager {
       // Thrown errors are reserved for transport-level failures (no
       // response from the server at all); API-level errors arrive via
       // the `error` field checked above.
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = ptyError(err)
       this.deps.log(`Terminal close transport error (${terminalId}): ${msg}`)
     }
   }
@@ -195,7 +202,7 @@ export class TerminalManager {
       try {
         return this.deps.getClient()
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
+        const msg = ptyError(err)
         this.deps.log(
           `Terminal dispose: SDK client unavailable (${msg}); relying on kilo serve process-group kill to reap PTYs`,
         )
@@ -223,7 +230,7 @@ export class TerminalManager {
     for (const r of results) {
       if (r.ok) continue
       failed++
-      const msg = r.err instanceof Error ? r.err.message : String(r.err)
+      const msg = ptyError(r.err)
       this.deps.log(`Terminal dispose cleanup failed (${r.entry.terminalId}): ${msg}`)
     }
     if (failed > 0) {

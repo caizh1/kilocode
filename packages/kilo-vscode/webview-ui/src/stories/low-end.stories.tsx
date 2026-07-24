@@ -536,7 +536,7 @@ function ConsoleTerminal() {
   return (
     <AgentConsoleContent
       initialMode="shell"
-      shell={terminal}
+      shell={() => terminal}
     />
   )
 }

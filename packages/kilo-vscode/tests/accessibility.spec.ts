@@ -64,6 +64,22 @@ test.describe("webview accessibility ratchet", () => {
     })
   }
 
+  test("QA collapsed input panel is keyboard-operable and passes WCAG checks", async ({ page }) => {
+    await open(page, "prompt-input--qa-all-controls-stop")
+    const collapse = page.getByRole("button", { name: "Collapse input panel" })
+    await collapse.focus()
+    await expect(collapse).toBeFocused()
+    await page.keyboard.press("Enter")
+
+    const expand = page.getByRole("button", { name: "Expand input panel" })
+    await expect(expand).toBeFocused()
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible()
+    await scan(page)
+
+    await page.keyboard.press("Enter")
+    await expect(page.locator("textarea.prompt-input")).toBeFocused()
+  })
+
   test("Agent Manager keeps virtualized transcript fragments laid out", async ({ page }) => {
     await open(page, "agentmanager--sidebar-search-open")
 
@@ -127,7 +143,7 @@ test.describe("webview accessibility ratchet", () => {
   test("Profile login exposes a keyboard-operable named control", async ({ page }) => {
     await open(page, "profile--not-logged-in")
 
-    const login = page.getByRole("button", { name: /Login with (?:ChipMate|Kilo Code)/ })
+    const login = page.getByRole("button", { name: "Login with ChipMate" })
     await reach(page, login)
     await expect(login).toBeFocused()
 

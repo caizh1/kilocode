@@ -1,0 +1,70 @@
+{
+  "cases": [
+    {
+      "name": "representative-happy-path-does-not-cover-the-target-loop",
+      "flowFamilies": ["FF-ENTRY-A", "FF-ENTRY-B"],
+      "businessEdges": ["BE-START", "BE-BRANCH-A", "BE-ASYNC", "BE-RECOVER"],
+      "asyncHandoffs": ["BH-COMPLETE"],
+      "terminalSteps": ["BT-SUCCESS", "BT-REJECTED", "BT-RECOVERED"],
+      "diagrams": [
+        {
+          "id": "DG-TARGET-BUSINESS-BASE",
+          "kind": "base",
+          "png": "target-business.png",
+          "flowFamilies": ["FF-ENTRY-A"],
+          "businessEdges": ["BE-START", "BE-BRANCH-A"],
+          "asyncHandoffs": [],
+          "terminalSteps": ["BT-SUCCESS"],
+          "navigatesTo": []
+        }
+      ],
+      "claimedAcceptanceStatus": "PASS",
+      "expected": {
+        "wordAllowed": false,
+        "acceptanceStatus": "PARTIAL",
+        "findings": [
+          "unmapped-flow-family",
+          "missing-business-edge",
+          "missing-async-handoff",
+          "missing-business-terminal",
+          "master-flow-not-navigable"
+        ]
+      }
+    },
+    {
+      "name": "overview-plus-focused-flows-cover-all-source-backed-outcomes",
+      "flowFamilies": ["FF-ENTRY-A", "FF-ENTRY-B"],
+      "businessEdges": ["BE-START", "BE-BRANCH-A", "BE-ASYNC", "BE-RECOVER"],
+      "asyncHandoffs": ["BH-COMPLETE"],
+      "terminalSteps": ["BT-SUCCESS", "BT-REJECTED", "BT-RECOVERED"],
+      "diagrams": [
+        {
+          "id": "DG-TARGET-BUSINESS-BASE",
+          "kind": "base",
+          "png": "target-business.png",
+          "flowFamilies": ["FF-ENTRY-A"],
+          "businessEdges": ["BE-START", "BE-BRANCH-A"],
+          "asyncHandoffs": [],
+          "terminalSteps": ["BT-SUCCESS", "BT-REJECTED"],
+          "navigatesTo": ["DG-TARGET-BUSINESS-ASYNC"]
+        },
+        {
+          "id": "DG-TARGET-BUSINESS-ASYNC",
+          "kind": "focused",
+          "png": "target-business-async.png",
+          "flowFamilies": ["FF-ENTRY-B"],
+          "businessEdges": ["BE-ASYNC", "BE-RECOVER"],
+          "asyncHandoffs": ["BH-COMPLETE"],
+          "terminalSteps": ["BT-RECOVERED"],
+          "navigatesTo": []
+        }
+      ],
+      "claimedAcceptanceStatus": "PASS",
+      "expected": {
+        "wordAllowed": true,
+        "acceptanceStatus": "PASS",
+        "findings": []
+      }
+    }
+  ]
+}

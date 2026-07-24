@@ -34,7 +34,7 @@ describe("agent terminal package contributions", () => {
       ["chipmate.v2.sidebarTitle.historyButtonClicked", "History", "$(history)"],
       ["chipmate.v2.sidebarTitle.agentManagerOpen", "Agent Manager", "$(organization)"],
       ["chipmate.v2.sidebarTitle.agentTerminalOpen", "Agent Console", "$(terminal)"],
-      ["chipmate.v2.sidebarTitle.kiloClawOpen", "KiloClaw", "$(comment-discussion)"],
+      ["chipmate.v2.sidebarTitle.kiloClawOpen", "ChipMateClaw", "$(comment-discussion)"],
       ["chipmate.v2.sidebarTitle.marketplaceButtonClicked", "市场", "$(extensions)"],
       ["chipmate.v2.sidebarTitle.profileButtonClicked", "Profile", "$(account)"],
       ["chipmate.v2.sidebarTitle.settingsButtonClicked", "Settings", "$(settings-gear)"],

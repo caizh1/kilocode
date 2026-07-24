@@ -185,7 +185,7 @@ const ProvidersTab: Component = () => {
                 color: "var(--vscode-foreground)",
               }}
             >
-              Kilo Gateway
+              ChipMate Gateway
             </span>
             <Show
               when={kiloLoggedIn()}

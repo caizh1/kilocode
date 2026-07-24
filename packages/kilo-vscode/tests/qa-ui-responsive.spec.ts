@@ -64,6 +64,30 @@ async function resizeComposer(page: Page, width: number) {
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
 }
 
+test("QA new session action stays available without showing a hover hint", async ({ page }) => {
+  await load(page, "chat--chat-view-with-messages", 420, "dark-modern", ".session-new-button")
+
+  const button = page.getByRole("button", { name: "New Session", exact: true })
+  await expect(button).toBeVisible()
+  await expect(button).toHaveAttribute("aria-label", "New Session")
+  await button.focus()
+  await expect(button).toBeFocused()
+
+  await button.hover()
+  await page.waitForTimeout(1_000)
+  await expect(page.locator('[data-component="tooltip"]')).toHaveCount(0)
+
+  await page.evaluate(() => {
+    document.documentElement.dataset.newTaskRequests = "0"
+    window.addEventListener("newTaskRequest", () => {
+      const root = document.documentElement
+      root.dataset.newTaskRequests = String(Number(root.dataset.newTaskRequests ?? "0") + 1)
+    })
+  })
+  await button.click()
+  await expect(page.locator("html")).toHaveAttribute("data-new-task-requests", "1")
+})
+
 test("QA composer keeps every dense control in bounds without overlap", async ({ page }) => {
   for (const width of COMPOSER_WIDTHS) {
     await load(page, "prompt-input--qa-all-controls-send", 1500)
@@ -198,7 +222,7 @@ test("QA composer keeps every dense control in bounds without overlap", async ({
     expect(layout.container, `unexpected Composer width at ${width}px`).toBeCloseTo(width, 0)
     expect(layout.scrollWidth, `horizontal overflow at ${width}px`).toBeLessThanOrEqual(layout.clientWidth)
     expect(layout.overlaps, `control overlap at ${width}px`).toBe(0)
-    expect(layout.controls.length, `missing dense controls at ${width}px`).toBe(layout.container <= 300 ? 8 : 12)
+    expect(layout.controls.length, `missing dense controls at ${width}px`).toBe(layout.container <= 300 ? 8 : 13)
     for (const control of layout.controls) {
       expect(control.left, `control escapes left edge at ${width}px`).toBeGreaterThanOrEqual(layout.shell.left - 1)
       expect(control.right, `control escapes right edge at ${width}px`).toBeLessThanOrEqual(layout.shell.right + 1)
@@ -363,6 +387,191 @@ test("QA composer exposes semantic send, speech, and busy stop actions", async (
   await expect(page.locator(".prompt-send-button")).toHaveCount(0)
 })
 
+test("QA input panel preserves its draft, cursor, scroll, focus, and session-local collapsed state", async ({ page }) => {
+  await load(page, "prompt-input--qa-panel-behavior", 420)
+
+  const input = page.locator("textarea.prompt-input")
+  const draft = Array.from({ length: 24 }, (_, index) => `Draft line ${index + 1}`).join("\n")
+  await input.fill(draft)
+  const before = await input.evaluate((node) => {
+    const cursor = node.value.length - 8
+    node.setSelectionRange(cursor, cursor, "none")
+    node.scrollTop = 36
+    return {
+      cursor,
+      height: node.getBoundingClientRect().height,
+      scroll: node.scrollTop,
+    }
+  })
+
+  await page.getByRole("button", { name: "Collapse input panel" }).click()
+  const rail = page.locator('[data-ui="qa-composer-collapsed"]')
+  const expand = page.getByRole("button", { name: "Expand input panel" })
+  await expect(rail).toBeVisible()
+  await expect(input).toHaveCount(0)
+  await expect(expand).toBeFocused()
+
+  await expand.click()
+  await expect(input).toHaveValue(draft)
+  await expect(input).toBeFocused()
+  await expect
+    .poll(() => input.evaluate((node) => node.getBoundingClientRect().height))
+    .toBeCloseTo(before.height, 0)
+  const after = await input.evaluate((node) => ({ cursor: node.selectionStart, scroll: node.scrollTop }))
+  expect(after.cursor).toBe(before.cursor)
+  expect(after.scroll).toBe(before.scroll)
+
+  await page.getByRole("button", { name: "Collapse input panel" }).click()
+  await page.locator('[data-ui="qa-switch-session"]').dispatchEvent("click")
+  await expect(rail).toBeVisible()
+  await expect(page.locator('[data-ui="qa-composer"]')).toHaveAttribute("data-state", "collapsed")
+
+  await page.evaluate(() => window.dispatchEvent(new Event("focusPrompt")))
+  await expect(input).toBeVisible()
+  await expect(input).toBeFocused()
+  await expect(page.locator('[data-ui="qa-composer"]')).toHaveAttribute("data-state", "expanded")
+})
+
+test("QA collapsed busy rail keeps the real abort action available", async ({ page }) => {
+  await load(page, "prompt-input--qa-all-controls-stop", 420)
+
+  await page.getByRole("button", { name: "Collapse input panel" }).click()
+  await expect(page.locator('[data-ui="qa-composer-collapsed"]')).toContainText("Answering…")
+  await expect(page.locator('[data-ui="qa-abort-count"]')).toHaveText("0")
+
+  await page.getByRole("button", { name: "Stop" }).click()
+  await expect(page.locator('[data-ui="qa-abort-count"]')).toHaveText("1")
+  await expect(page.getByRole("button", { name: "Expand input panel" })).toBeVisible()
+})
+
+test("QA collapse action uses the direct control above 300px and the overflow menu at 300px", async ({ page }) => {
+  await load(page, "prompt-input--qa-all-controls-send", 1500)
+  await resizeComposer(page, 301)
+  await expect(page.locator('[data-ui="qa-action-collapse-input"]')).toBeVisible()
+  await expect(page.getByRole("button", { name: "More options" })).toBeHidden()
+
+  await resizeComposer(page, 300)
+  await expect(page.locator('[data-ui="qa-action-collapse-input"]')).toBeHidden()
+  const more = page.getByRole("button", { name: "More options" })
+  await more.click()
+  const item = page.getByRole("menuitem", { name: "Collapse input panel" })
+  await expect(item).toBeVisible()
+  await item.click()
+  await expect(page.locator('[data-ui="qa-composer-collapsed"]')).toBeVisible()
+})
+
+test("QA collapsed rail stays in bounds at supported widths", async ({ page }) => {
+  for (const width of [200, 300, 301, 420, 560, 960, 1450]) {
+    await load(page, "prompt-input--qa-panel-behavior", 1500)
+    await resizeComposer(page, width)
+    if (width <= 300) {
+      await page.getByRole("button", { name: "More options" }).click()
+      await page.getByRole("menuitem", { name: "Collapse input panel" }).click()
+    } else {
+      await page.locator('[data-ui="qa-action-collapse-input"]').click()
+    }
+
+    const layout = await page.locator('[data-ui="qa-composer"]').evaluate((composer) => {
+      const shell = composer.getBoundingClientRect()
+      const rail = composer.querySelector<HTMLElement>('[data-ui="qa-composer-collapsed"]')!.getBoundingClientRect()
+      const buttons = Array.from(composer.querySelectorAll<HTMLButtonElement>("button")).map((button) =>
+        button.getBoundingClientRect(),
+      )
+      return {
+        height: shell.height,
+        overflow: composer.scrollWidth > composer.clientWidth,
+        rail: { left: rail.left, right: rail.right, top: rail.top, bottom: rail.bottom },
+        shell: { left: shell.left, right: shell.right, top: shell.top, bottom: shell.bottom },
+        overlap:
+          buttons.length > 1 &&
+          buttons[0]!.left < buttons[1]!.right &&
+          buttons[0]!.right > buttons[1]!.left &&
+          buttons[0]!.top < buttons[1]!.bottom &&
+          buttons[0]!.bottom > buttons[1]!.top,
+      }
+    })
+
+    expect(layout.height, `collapsed height at ${width}px`).toBeGreaterThanOrEqual(44)
+    expect(layout.height, `collapsed height at ${width}px`).toBeLessThanOrEqual(48)
+    expect(layout.overflow, `collapsed overflow at ${width}px`).toBe(false)
+    expect(layout.overlap, `collapsed controls overlap at ${width}px`).toBe(false)
+    expect(layout.rail.left, `rail escapes left at ${width}px`).toBeGreaterThanOrEqual(layout.shell.left)
+    expect(layout.rail.right, `rail escapes right at ${width}px`).toBeLessThanOrEqual(layout.shell.right)
+  }
+})
+
+test("QA collapsed rail supports light, high contrast, RTL, and reduced motion", async ({ page }) => {
+  for (const theme of ["light-modern", "hc-black"]) {
+    await load(page, "prompt-input--qa-panel-behavior", 420, theme)
+    await page.emulateMedia({ colorScheme: theme === "light-modern" ? "light" : "dark", reducedMotion: "reduce" })
+    const composer = page.locator('[data-ui="qa-composer"]')
+    if (theme === "light-modern") await composer.evaluate((node) => node.setAttribute("dir", "rtl"))
+    await page.getByRole("button", { name: "Collapse input panel" }).click()
+
+    const material = await composer.evaluate((node) => {
+      const style = getComputedStyle(node)
+      const state = node.querySelector<HTMLElement>(".prompt-collapsed-state")!.getBoundingClientRect()
+      const actions = node.querySelector<HTMLElement>(".prompt-collapsed-actions")!.getBoundingClientRect()
+      return {
+        background: style.backgroundColor,
+        border: style.borderTopWidth,
+        shadow: style.boxShadow,
+        duration: Number.parseFloat(style.animationDuration),
+        rtl: state.left > actions.left,
+      }
+    })
+
+    expect(material.background).not.toBe("rgba(0, 0, 0, 0)")
+    expect(material.border).toBe("1px")
+    expect(material.duration).toBeLessThanOrEqual(0.001)
+    if (theme === "light-modern") expect(material.rtl).toBe(true)
+    if (theme === "hc-black") expect(material.shadow).toBe("none")
+  }
+})
+
+test("QA panel resize preserves pinned and user-paused transcript scrolling", async ({ page }) => {
+  await load(page, "chat--qa-titanium-full-conversation", 420)
+  const list = page.locator(".message-list")
+  const conversation = page.locator('[data-ui="qa-conversation"]')
+  const composer = page.locator('[data-ui="qa-composer"]')
+  await list.evaluate((node) => {
+    node.scrollTop = node.scrollHeight
+  })
+  const expanded = await conversation.evaluate((node) => node.getBoundingClientRect().height)
+
+  await page.getByRole("button", { name: "Collapse input panel" }).click()
+  await expect
+    .poll(() => list.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
+    .toBeLessThanOrEqual(2)
+  const collapsed = await conversation.evaluate((node) => node.getBoundingClientRect().height)
+  expect(collapsed).toBeGreaterThan(expanded)
+  const flow = await page.locator('[data-ui="qa-shell"]').evaluate((shell) => {
+    const conversation = shell.querySelector<HTMLElement>('[data-ui="qa-conversation"]')!.getBoundingClientRect()
+    const composer = shell.querySelector<HTMLElement>('[data-ui="qa-composer"]')!.getBoundingClientRect()
+    return { conversation: conversation.bottom, composer: composer.top }
+  })
+  expect(flow.composer).toBeGreaterThanOrEqual(flow.conversation)
+
+  await page.getByRole("button", { name: "Expand input panel" }).click()
+  await expect
+    .poll(() => list.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
+    .toBeLessThanOrEqual(2)
+
+  await list.dispatchEvent("wheel", { deltaY: -120 })
+  await list.evaluate((node) => {
+    node.scrollTop = Math.max(1, node.scrollHeight - node.clientHeight - 180)
+  })
+  await expect(page.getByRole("button", { name: "Scroll to bottom" })).toBeVisible()
+  const paused = await list.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop)
+
+  await composer.getByRole("button", { name: "Collapse input panel" }).click()
+  await expect(page.getByRole("button", { name: "Scroll to bottom" })).toBeVisible()
+  await expect
+    .poll(() => list.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
+    .toBeGreaterThan(20)
+  expect(paused).toBeGreaterThan(20)
+})
+
 test("QA extreme-narrow menus preserve indexing and optional actions", async ({ page }) => {
   await load(page, "prompt-input--qa-all-controls-send", 1500)
   await resizeComposer(page, 300)
@@ -384,6 +593,7 @@ test("QA extreme-narrow menus preserve indexing and optional actions", async ({ 
   await expect(more).toBeVisible()
   await more.focus()
   await page.keyboard.press("Enter")
+  await expect(page.getByRole("menuitem", { name: "Collapse input panel" })).toBeVisible()
   await expect(page.getByRole("menuitem", { name: "Reset model to default" })).toBeVisible()
   await expect(page.getByRole("menuitem", { name: /sandbox/i })).toBeVisible()
   await expect(page.getByRole("menuitem", { name: /^Start voice input/ })).toBeVisible()
@@ -431,7 +641,12 @@ test("QA idle controls use refined glass borders while focus and high contrast r
   expect(contrast.border).toBe(contrast.full)
   expect(contrast.shadow).toBe("none")
 
+  await page.goto("about:blank")
   await load(page, "prompt-input--qa-indexing-standby", 850, "light-modern")
+  await page.locator(selector).first().hover()
+  await expect
+    .poll(() => page.locator(selector).first().evaluate((item) => getComputedStyle(item).backgroundColor))
+    .toBe("rgb(234, 244, 255)")
   const light = await colors(page, selector)
   expect(light.width).toBe("1px")
   expect(light.shadow).toContain("inset")
@@ -725,6 +940,59 @@ test("QA task HUD reads as an integrated context strip across target widths and 
     return { border: style.borderTopWidth, shadow: style.boxShadow, blur: style.backdropFilter }
   })
   expect(contrast).toEqual({ border: "1px", shadow: "none", blur: "none" })
+})
+
+test("QA task HUD context popover escapes clipping across narrow widths and themes", async ({ page }) => {
+  for (const theme of ["dark-modern", "light-modern"]) {
+    for (const width of [200, 300, 420]) {
+      await load(page, "chat--qa-task-hud-integrated-1280", width, theme, '[data-ui="qa-task-hud"]')
+
+      const hud = page.locator('[data-ui="qa-task-hud"]')
+      await hud.locator('.task-header-context-trigger').click()
+
+      const popover = page.locator('[data-component="popover-content"]')
+      const action = popover.locator('[data-slot="task-header-context-action"]').first()
+      await expect(popover).toBeVisible()
+      await expect(action).toBeVisible()
+      await expect(action).toBeEnabled()
+
+      const layout = await popover.evaluate((menu) => {
+        const box = menu.getBoundingClientRect()
+        const hud = document.querySelector<HTMLElement>('[data-ui="qa-task-hud"]')!
+        const action = menu.querySelector<HTMLButtonElement>('[data-slot="task-header-context-action"]')!
+        const target = action.getBoundingClientRect()
+        const hit = document.elementFromPoint(target.left + target.width / 2, target.top + target.height / 2)
+        return {
+          portalled: !hud.contains(menu),
+          left: box.left,
+          top: box.top,
+          right: box.right,
+          bottom: box.bottom,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          hit: !!hit && action.contains(hit),
+          scrollWidth: document.documentElement.scrollWidth,
+        }
+      })
+
+      expect(layout.portalled, `popover remains inside HUD at ${width}px in ${theme}`).toBe(true)
+      expect(layout.left, `popover escapes left at ${width}px in ${theme}`).toBeGreaterThanOrEqual(0)
+      expect(layout.top, `popover escapes top at ${width}px in ${theme}`).toBeGreaterThanOrEqual(0)
+      expect(layout.right, `popover escapes right at ${width}px in ${theme}`).toBeLessThanOrEqual(layout.viewport.width)
+      expect(layout.bottom, `popover escapes bottom at ${width}px in ${theme}`).toBeLessThanOrEqual(layout.viewport.height)
+      expect(layout.hit, `compact action is covered at ${width}px in ${theme}`).toBe(true)
+      expect(layout.scrollWidth, `popover causes horizontal overflow at ${width}px in ${theme}`).toBeLessThanOrEqual(
+        layout.viewport.width,
+      )
+
+      await action.click()
+    }
+  }
+
+  await load(page, "chat--qa-titanium-full-conversation", 420, "dark-modern", '[data-ui="qa-task-hud"]')
+  await page.locator('.task-header-context-trigger').click()
+  await expect(
+    page.locator('[data-component="popover-content"] [data-slot="task-header-context-action"]').first(),
+  ).toBeDisabled()
 })
 
 test("QA user messages use one content-sized bubble for short, medium, and long text", async ({ page }) => {

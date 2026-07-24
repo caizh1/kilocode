@@ -1378,6 +1378,10 @@ export type ReferenceConfig = {
 export type DocumentIndexConfig = {
   enabled?: boolean
   paths?: Array<string>
+  approvedExternalRoots?: Array<{
+    path: string
+    workspace?: string
+  }>
   include?: Array<string>
   exclude?: Array<string>
   maxFiles?: number

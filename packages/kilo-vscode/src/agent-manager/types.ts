@@ -598,6 +598,12 @@ interface SaveImageIn {
   filename: string
 }
 
+interface RenderPlantUmlIn {
+  type: "renderPlantUml"
+  requestId: string
+  source: string
+}
+
 interface LoadMessagesIn {
   type: "loadMessages"
   sessionID: string
@@ -820,6 +826,7 @@ export type AgentManagerInMessage =
   | GenericOpenFileIn
   | PreviewImageIn
   | SaveImageIn
+  | RenderPlantUmlIn
   | LoadMessagesIn
   | SendMessageIn
   | SendCommandIn

@@ -28,6 +28,7 @@ const DOCUMENT_ARTIFACT_TOOLS = new Set([
   "render_word_document",
   "save_mermaid_artifact",
   "render_mermaid_diagram",
+  "render_plantuml_diagram",
   "insert_mermaid_into_word",
 ])
 
@@ -54,8 +55,16 @@ export function documentArtifactCardFromToolPart(part: ToolPart): DocumentArtifa
     })),
     link("diagnostics", "Open diagnostics", read("diagnosticsPath")),
     link("json", "Open JSON", read("jsonPath")),
-    link("source", "Open Mermaid source", read("sourcePath")),
-    link("page-png", "Open Mermaid PNG", read("pngPath") ?? read("mermaidPngPath")),
+    link(
+      "source",
+      part.tool === "render_plantuml_diagram" ? "Open PlantUML source" : "Open Mermaid source",
+      read("sourcePath"),
+    ),
+    link(
+      "page-png",
+      part.tool === "render_plantuml_diagram" ? "Open PlantUML PNG" : "Open Mermaid PNG",
+      read("pngPath") ?? read("mermaidPngPath"),
+    ),
     link("folder", "Open artifact folder", artifactDir),
   ])
   if (!artifactDir && links.length === 0) return undefined
@@ -71,6 +80,7 @@ export function documentArtifactCardFromToolPart(part: ToolPart): DocumentArtifa
 
 function titleFor(tool: string, fallback?: string): string {
   if (fallback?.trim()) return fallback
+  if (tool.includes("plantuml")) return "PlantUML artifact"
   if (tool.includes("mermaid")) return "Mermaid artifact"
   if (tool === "diff_word_documents") return "Word diff artifact"
   if (tool === "render_word_document") return "Word render artifact"
@@ -131,7 +141,7 @@ function qualityFrom(
   output: Record<string, unknown>,
 ): DocumentArtifactCardModel["quality"] {
   if (input === "ok" || input === "warning" || input === "failed" || input === "unknown") return input
-  if (tool === "render_mermaid_diagram") {
+  if (tool === "render_mermaid_diagram" || tool === "render_plantuml_diagram") {
     const rendered = flag(metadata.rendered) ?? flag(output.rendered)
     const issues = objects(metadata.issues).concat(objects(output.issues), objects(output.diagnostics))
     if (rendered === false || issues.some((item) => item.severity === "error")) return "failed"

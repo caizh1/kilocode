@@ -15,6 +15,8 @@ const define = {
   __CHIPMATE_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL__: JSON.stringify(
     process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL || "",
   ),
+  __CHIPMATE_INTERNAL_PROVIDER_API_BASE_URL__: JSON.stringify(process.env.KILO_INTERNAL_PROVIDER_API_BASE_URL || ""),
+  __CHIPMATE_INTERNAL_PROVIDER_CHAT_MODEL__: JSON.stringify(process.env.KILO_INTERNAL_PROVIDER_CHAT_MODEL || ""),
 }
 
 // VS Code 1.101+ runs Node 22 extension hosts where navigator is a global.

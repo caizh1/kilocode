@@ -27,9 +27,10 @@ async function delegate(req: FastifyRequest, reply: FastifyReply) {
   await listener(req.raw, reply.raw)
 }
 
-export function register(app: FastifyInstance, root = true) {
+export function register(app: FastifyInstance, root = true, packages = true) {
   for (const route of LEGACY_ROUTES) {
     if (!root && route.method === "GET" && route.url === "/") continue
+    if (!packages && route.method === "GET" && route.url.startsWith("/packages/")) continue
     app.route({
       method: route.method,
       url: route.url,

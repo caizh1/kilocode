@@ -13,7 +13,7 @@ const outRoot = resolve(process.env.CHIPMATE_SERVER_OFFLINE_OUT || join(serverDi
 const bundleDir = join(outRoot, "chipmate-server-offline")
 const workDir = join(outRoot, ".chipmate-server-offline-work")
 const archiveName = `chipmate-word-render-${version}-linux-amd64.docker.tar.gz`
-const archivePath = join(serverDir, archiveName)
+const archivePath = resolve(process.env.CHIPMATE_SERVER_DOCKER_ARCHIVE || join(serverDir, archiveName))
 const archiveShaPath = `${archivePath}.sha256`
 
 const seedSkills = [

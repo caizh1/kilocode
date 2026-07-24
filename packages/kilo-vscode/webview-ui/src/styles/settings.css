@@ -268,6 +268,22 @@
   margin: 0 0 24px;
 }
 
+.settings-shell .settings-page-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.settings-shell .settings-page-brand-icon {
+  flex: 0 0 52px;
+  width: 52px;
+  height: 52px;
+}
+
+.settings-shell .settings-page-header-copy {
+  min-width: 0;
+}
+
 .settings-shell .settings-page-header h3 {
   margin: 0;
   color: var(--vscode-foreground, var(--text-strong));
@@ -276,6 +292,13 @@
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: -0.02em;
+}
+
+.settings-shell .settings-page-header p {
+  margin: 6px 0 0;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--kilo-font-size-14);
+  line-height: 1.5;
 }
 
 .settings-shell .settings-page-groups {
@@ -471,7 +494,7 @@
 
 .settings-shell .chipmate-server-control {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 132px 230px;
+  grid-template-columns: minmax(260px, 1fr) 132px;
   align-items: center;
   gap: 24px;
   min-width: 0;
@@ -545,6 +568,7 @@
 .settings-shell .chipmate-server-status-slot {
   display: flex;
   align-items: center;
+  grid-column: 1 / -1;
   min-width: 0;
   min-height: 58px;
 }
@@ -593,6 +617,265 @@
 .settings-shell .chipmate-server-reload {
   padding: 0;
   color: var(--vscode-descriptionForeground, var(--text-weak-base));
+}
+
+.settings-shell .chipmate-update-card[data-component="card"] {
+  gap: 0;
+  padding-block: 30px 0;
+  overflow: hidden;
+}
+
+.settings-shell .chipmate-update-heading,
+.settings-shell .chipmate-update-auto,
+.settings-shell .chipmate-update-available,
+.settings-shell .chipmate-update-result-row,
+.settings-shell .chipmate-update-status,
+.settings-shell .chipmate-update-notes-title {
+  display: flex;
+  min-width: 0;
+}
+
+.settings-shell .chipmate-update-heading {
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 28px;
+}
+
+.settings-shell .chipmate-update-heading > div,
+.settings-shell .chipmate-update-auto > div,
+.settings-shell .chipmate-update-copy,
+.settings-shell .chipmate-update-status > div:last-child {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.settings-shell .chipmate-update-heading h3 {
+  margin: 0;
+  color: var(--vscode-foreground, var(--text-strong));
+  font-size: var(--kilo-font-size-20);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.settings-shell .chipmate-update-heading p {
+  margin: 7px 0 0;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--kilo-font-size-16);
+  line-height: 1.45;
+}
+
+.settings-shell .chipmate-update-check[data-component="button"] {
+  flex: 0 0 auto;
+  min-height: 48px;
+  padding-inline: 18px;
+  gap: 9px;
+  color: var(--vscode-foreground, var(--text-base));
+  font-size: var(--kilo-font-size-16);
+  font-weight: 500;
+  background: color-mix(in srgb, var(--settings-glass-fill-strong) 88%, transparent);
+  border: 1px solid var(--settings-glass-border);
+  border-radius: 11px;
+  box-shadow: inset 0 1px 0 var(--settings-glass-highlight);
+}
+
+.settings-shell .chipmate-update-check[data-component="button"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--settings-active-fill) 80%, var(--settings-glass-fill-strong) 20%);
+  border-color: var(--settings-active-border);
+}
+
+.settings-shell .chipmate-update-auto {
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 27px 0;
+  border-top: 1px solid color-mix(in srgb, var(--settings-glass-border) 52%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--settings-glass-border) 52%, transparent);
+}
+
+.settings-shell .chipmate-update-auto > div {
+  gap: 6px;
+}
+
+.settings-shell .chipmate-update-auto strong,
+.settings-shell .chipmate-update-status strong,
+.settings-shell .chipmate-update-copy > strong {
+  color: var(--vscode-foreground, var(--text-strong));
+  font-size: var(--kilo-font-size-18);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.settings-shell .chipmate-update-auto span,
+.settings-shell .chipmate-update-status span,
+.settings-shell .chipmate-update-copy > span {
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--kilo-font-size-15);
+  line-height: 1.45;
+}
+
+.settings-shell .chipmate-update-auto [data-component="switch"] {
+  flex: 0 0 auto;
+}
+
+.settings-shell .chipmate-update-status {
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 20px;
+  min-height: 132px;
+  padding: 27px 0;
+}
+
+.settings-shell .chipmate-update-status > div:last-child {
+  gap: 5px;
+}
+
+.settings-shell .chipmate-update-icon {
+  display: flex;
+  flex: 0 0 58px;
+  width: 58px;
+  height: 58px;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-testing-iconPassed, var(--text-success-base, #73c991));
+  font-size: calc(var(--kilo-font-size-14) * 3);
+  line-height: 1;
+}
+
+.settings-shell .chipmate-update-icon .codicon {
+  color: currentColor;
+  font-size: inherit;
+}
+
+.settings-shell .chipmate-update-status-progress .chipmate-update-icon {
+  color: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+}
+
+.settings-shell .chipmate-update-status-error .chipmate-update-icon {
+  color: var(--vscode-errorForeground, var(--text-critical-base, #f14c4c));
+}
+
+.settings-shell .chipmate-update-available {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 20px;
+  padding: 32px 0 30px;
+}
+
+.settings-shell .chipmate-update-icon-available {
+  color: var(--vscode-focusBorder, #3794ff);
+}
+
+.settings-shell .chipmate-update-copy {
+  gap: 6px;
+}
+
+.settings-shell .chipmate-update-notes-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 7px;
+  min-height: 32px;
+  margin: 4px 0 0;
+  padding: 0;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  font: inherit;
+  font-size: var(--kilo-font-size-15);
+  line-height: 1.35;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.settings-shell .chipmate-update-notes-toggle:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-focusBorder));
+  text-decoration: underline;
+}
+
+.settings-shell .chipmate-update-notes-toggle:focus-visible,
+.settings-shell .chipmate-update-install:focus-visible,
+.settings-shell .chipmate-update-result-row [data-component="button"]:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.settings-shell .chipmate-update-notes {
+  margin-top: 4px;
+  padding: 18px 22px;
+  color: var(--vscode-foreground, var(--text-base));
+  background: color-mix(in srgb, var(--settings-glass-fill-strong) 88%, var(--vscode-focusBorder) 12%);
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 28%, var(--settings-glass-border) 72%);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 12%, transparent),
+    0 10px 26px color-mix(in srgb, var(--vscode-widget-shadow, #000) 18%, transparent);
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.settings-shell .chipmate-update-notes-title {
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.settings-shell .chipmate-update-notes-title .codicon {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--kilo-font-size-18);
+}
+
+.settings-shell .chipmate-update-notes [data-component="markdown"] {
+  color: var(--vscode-foreground, var(--text-base));
+  font-size: var(--kilo-font-size-14);
+}
+
+.settings-shell .chipmate-update-notes [data-component="markdown"] > :first-child {
+  margin-top: 0;
+}
+
+.settings-shell .chipmate-update-notes [data-component="markdown"] > :last-child {
+  margin-bottom: 0;
+}
+
+.settings-shell .chipmate-update-notes-meta {
+  margin: 12px 0 0;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--kilo-font-size-13);
+}
+
+.settings-shell .chipmate-update-install[data-component="button"] {
+  align-self: start;
+  min-height: 50px;
+  padding-inline: 20px;
+  gap: 9px;
+  font-size: var(--kilo-font-size-16);
+  font-weight: 600;
+  border-radius: 10px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 28%, transparent),
+    0 8px 20px color-mix(in srgb, var(--vscode-button-background) 25%, transparent);
+}
+
+.settings-shell .chipmate-update-result-row {
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.settings-shell .chipmate-update-result-row > [data-component="button"] {
+  flex: 0 0 auto;
+  min-height: 46px;
+  gap: 8px;
+  border-radius: 10px;
+}
+
+.settings-shell .chipmate-update-card .chipmate-server-reload {
+  margin-inline: -32px;
+  padding: 22px 32px 24px;
+  border-top: 1px solid color-mix(in srgb, var(--settings-glass-border) 52%, transparent);
 }
 
 .settings-shell .settings-save-bar-wrap {
@@ -797,6 +1080,15 @@ body.vscode-high-contrast-light .settings-shell .chipmate-server-input [data-slo
       max-width: 100%;
     }
   }
+
+  .settings-shell .chipmate-update-available {
+    grid-template-columns: 50px minmax(0, 1fr);
+  }
+
+  .settings-shell .chipmate-update-install[data-component="button"] {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 @media (max-width: 719px) {
@@ -888,6 +1180,46 @@ body.vscode-high-contrast-light .settings-shell .chipmate-server-input [data-slo
 
   .settings-shell .chipmate-server-reload {
     padding: 0 4px;
+  }
+
+  .settings-shell .chipmate-update-heading,
+  .settings-shell .chipmate-update-auto,
+  .settings-shell .chipmate-update-result-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-shell .chipmate-update-check[data-component="button"],
+  .settings-shell .chipmate-update-result-row > [data-component="button"] {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .settings-shell .chipmate-update-auto [data-component="switch"] {
+    align-self: flex-end;
+  }
+
+  .settings-shell .chipmate-update-available {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .settings-shell .chipmate-update-icon {
+    flex-basis: 42px;
+    width: 42px;
+    height: 42px;
+    font-size: calc(var(--kilo-font-size-16) * 2);
+  }
+
+  .settings-shell .chipmate-update-install[data-component="button"] {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .settings-shell .chipmate-update-card .chipmate-server-reload {
+    margin-inline: -20px;
+    padding: 18px 20px 20px;
   }
 
   .settings-shell .settings-save-bar {

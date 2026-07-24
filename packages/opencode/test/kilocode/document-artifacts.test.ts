@@ -9,14 +9,19 @@ import {
   listArtifacts,
   resolveOpenArtifact,
 } from "../../src/kilocode/documents/artifacts"
+import { Instance } from "../../src/kilocode/instance"
 import { provideTmpdirInstance } from "../fixture/fixture"
+
+function within<A>(fn: () => Promise<A>) {
+  return Instance.restore(Instance.current, fn)
+}
 
 describe("kilocode document artifacts", () => {
   test("declares and lists artifact manifests under .kilo/artifacts", async () => {
     await Effect.runPromise(
       provideTmpdirInstance(
         (dir) =>
-          Effect.promise(async () => {
+          Effect.promise(() => within(async () => {
             const artifact = await declareArtifact({
               kind: "word-document",
               title: "Interface Design",
@@ -48,7 +53,7 @@ describe("kilocode document artifacts", () => {
             expect(artifacts).toHaveLength(1)
             expect(artifacts[0]?.artifactDir).toBe(artifact.artifactDir)
             expect(artifacts[0]?.manifestPath).toBe(artifact.manifestPath)
-          }),
+          })),
         { git: true },
       ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
     )
@@ -58,7 +63,7 @@ describe("kilocode document artifacts", () => {
     await Effect.runPromise(
       provideTmpdirInstance(
         (dir) =>
-          Effect.promise(async () => {
+          Effect.promise(() => within(async () => {
             const artifact = await declareArtifact({
               kind: "mermaid-diagram",
               title: "State Machine",
@@ -85,7 +90,30 @@ describe("kilocode document artifacts", () => {
             expect(diagnostics.path).toStartWith(".kilo/artifacts/artifact-diagnostics-")
             expect(diagnostics.diagnostics.artifacts).toHaveLength(1)
             expect(await fs.readFile(path.join(dir, diagnostics.path), "utf8")).toContain("State Machine")
-          }),
+          })),
+        { git: true },
+      ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
+    )
+  })
+
+  test("allocates unique directories for concurrent artifacts with the same slug", async () => {
+    await Effect.runPromise(
+      provideTmpdirInstance(
+        () =>
+          Effect.promise(() => within(async () => {
+            const artifacts = await Promise.all(
+              Array.from({ length: 8 }, () =>
+                declareArtifact({
+                  kind: "mermaid-diagram",
+                  taskSlug: "same-second-render",
+                  primaryFile: "diagram.png",
+                }),
+              ),
+            )
+            expect(new Set(artifacts.map((item) => item.artifactDir)).size).toBe(artifacts.length)
+            expect(new Set(artifacts.map((item) => item.manifestPath)).size).toBe(artifacts.length)
+            expect(await listArtifacts()).toHaveLength(artifacts.length)
+          })),
         { git: true },
       ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
     )
@@ -95,7 +123,7 @@ describe("kilocode document artifacts", () => {
     await Effect.runPromise(
       provideTmpdirInstance(
         () =>
-          Effect.promise(async () => {
+          Effect.promise(() => within(async () => {
             await expect(declareArtifact({ kind: "word-document", artifactDir: "../outside" })).rejects.toThrow(
               "artifactDir must be inside .kilo/artifacts",
             )
@@ -109,7 +137,7 @@ describe("kilocode document artifacts", () => {
             await expect(resolveOpenArtifact({ path: "../outside/artifact.json" })).rejects.toThrow(
               "path must be inside .",
             )
-          }),
+          })),
         { git: true },
       ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
     )

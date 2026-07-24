@@ -22,6 +22,7 @@ function askRuleset(internal = false) {
     codebase_search: "allow",
     codebase_analysis: "allow",
     semantic_search: "allow",
+    render_plantuml_diagram: "allow",
     ...(internal ? { document_search: "allow" as const } : {}),
   })
 }
@@ -53,6 +54,7 @@ function askRulesetWithMcp(servers: string[], user: Permission.Ruleset = []) {
       codebase_search: "allow",
       codebase_analysis: "allow",
       semantic_search: "allow",
+      render_plantuml_diagram: "allow",
       ...mcpRules,
     }),
     user,
@@ -241,6 +243,7 @@ describe("Ask agent tool disabled checks", () => {
       "codebase_analysis",
       "semantic_search",
       "document_search",
+      "render_plantuml_diagram",
     ]
     const result = Permission.disabled(tools, ruleset)
     for (const tool of tools) {

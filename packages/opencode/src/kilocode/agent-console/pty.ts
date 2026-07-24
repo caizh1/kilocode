@@ -3,6 +3,7 @@ import stripAnsi from "strip-ansi"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "agent-console-pty" })
+const execute = "\x18\x05"
 const OSC = "\x1b]6973;"
 const BEL = "\x07"
 const ST = "\x1b\\"
@@ -12,7 +13,7 @@ export const ENV_ENABLED = "KILO_AGENT_CONSOLE"
 export const ENV_TOKEN = "KILO_AGENT_CONSOLE_TOKEN"
 export const TITLE = "ChipMate Agent Console"
 
-type Marker = "ready" | "begin" | "end" | "resync"
+type Marker = "ready" | "begin" | "end" | "prompt" | "resync"
 
 type Result = {
   output: string
@@ -33,6 +34,11 @@ type Active = {
   promise: Promise<Result | Error>
 }
 
+type Pending = {
+  active: Active
+  result: Result
+}
+
 type Slot = {
   directory: string
   ptyID: string
@@ -46,6 +52,7 @@ type Slot = {
   closed: boolean
   buffer: string
   active?: Active
+  pending?: Pending
   write(data: string): Promise<void>
   disconnect?: () => void
 }
@@ -135,39 +142,63 @@ function capture(slot: Slot, value: string) {
   }
 }
 
+function finish(slot: Slot) {
+  const pending = slot.pending
+  if (!pending) return
+  slot.pending = undefined
+  pending.active.done(pending.result)
+  log.info("command complete", {
+    ptyID: slot.ptyID,
+    generation: slot.generation,
+    duration: Date.now() - pending.active.started,
+    exitCode: pending.result.exitCode,
+    bytes: pending.active.bytes,
+    truncated: pending.active.truncated,
+  })
+}
+
 function complete(slot: Slot, code: number, cwd: string) {
   const active = slot.active
   slot.active = undefined
   slot.cwd = cwd
   slot.busy = false
-  slot.ready = true
+  slot.ready = false
   if (!active) return
   const output = Buffer.concat(active.chunks).toString("utf8")
-  active.done({ output, exitCode: code, cwd, bytes: active.bytes, truncated: active.truncated })
-  log.info("command complete", {
-    ptyID: slot.ptyID,
-    generation: slot.generation,
-    duration: Date.now() - active.started,
-    exitCode: code,
-    bytes: active.bytes,
-    truncated: active.truncated,
-  })
+  slot.pending = {
+    active,
+    result: { output, exitCode: code, cwd, bytes: active.bytes, truncated: active.truncated },
+  }
+}
+
+function reject(slot: Slot, err: Error) {
+  const active = slot.active
+  const pending = slot.pending
+  slot.active = undefined
+  slot.pending = undefined
+  if (active) active.done(err)
+  if (pending) pending.active.done(err)
 }
 
 function marker(slot: Slot, value: string) {
   const [kind, first, second] = value.split(";") as [Marker, string | undefined, string | undefined]
-  if (kind === "ready" || kind === "resync") {
+  if (kind === "ready") {
     const cwd = first ? decode(first) : undefined
     if (cwd === undefined) return
     slot.cwd = cwd
-    if (kind === "resync" && slot.active) {
-      const active = slot.active
-      slot.active = undefined
-      active.done(new Error("Agent Console command was interrupted while recovering the Shell"))
-    }
     slot.ready = true
     slot.busy = false
-    if (kind === "resync") log.info("terminal resynchronized", { ptyID: slot.ptyID, generation: slot.generation })
+    finish(slot)
+    return
+  }
+  if (kind === "resync") {
+    const cwd = first ? decode(first) : undefined
+    if (cwd === undefined) return
+    slot.cwd = cwd
+    slot.ready = false
+    slot.busy = false
+    reject(slot, new Error("Agent Console command was interrupted while recovering the Shell"))
+    log.info("terminal resynchronized", { ptyID: slot.ptyID, generation: slot.generation })
     return
   }
   if (kind === "begin") {
@@ -211,11 +242,9 @@ function feed(slot: Slot, value: string) {
 }
 
 function fail(slot: Slot, err: Error) {
-  const active = slot.active
-  slot.active = undefined
   slot.ready = false
   slot.busy = false
-  if (active) active.done(err)
+  reject(slot, err)
 }
 
 function detach(slot: Slot, reason = "The Agent Console terminal closed") {
@@ -350,7 +379,7 @@ export async function run(input: RunInput): Promise<Result> {
   slot.ready = false
   const started = Date.now()
   log.info("command write", { ptyID: slot.ptyID, generation: slot.generation })
-  await slot.write(`${input.command}\r`).catch((err: unknown) => {
+  await slot.write(`${input.command}${execute}`).catch((err: unknown) => {
     fail(slot, err instanceof Error ? err : new Error(String(err)))
     throw err
   })
@@ -367,7 +396,7 @@ export async function run(input: RunInput): Promise<Result> {
   })
   await wait(task.promise, new AbortController().signal, 2_000)
   if (slot.active === task || !slot.ready) {
-    await slot.write("__chipmate_resync\r").catch((err: unknown) => {
+    await slot.write(`__chipmate_resync${execute}`).catch((err: unknown) => {
       log.warn("resync write failed", { ptyID: slot.ptyID, error: String(err) })
     })
     await wait(task.promise, new AbortController().signal, 3_000)

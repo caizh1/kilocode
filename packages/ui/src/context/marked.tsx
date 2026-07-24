@@ -156,6 +156,7 @@ function replaceWithHighlighted(block: Element, html: string, sourceHash: string
   // Store a hash of the source code so the morphdom guard in Markdown can detect
   // mid-stream content changes without keeping the full source in the DOM.
   highlighted.setAttribute("data-source-hash", sourceHash)
+  highlighted.toggleAttribute("hidden", pre.hasAttribute("hidden"))
   // Preserve any wrapper structure (e.g., markdown-code wrapper with copy button)
   const wrapper = pre.parentElement
   if (wrapper?.getAttribute("data-component") === "markdown-code") {

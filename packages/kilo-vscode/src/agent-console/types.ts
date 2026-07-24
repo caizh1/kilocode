@@ -5,6 +5,10 @@ export type AgentConsoleMode = "agent" | "shell"
 
 export type AgentConsoleRunSource = "direct" | "agent"
 
+export type AgentConsoleInputStage = "capture" | "route" | "apply"
+
+export type AgentConsoleInputRecovery = "retain" | "archive"
+
 export type AgentConsoleActivityEvent = {
   seq: number
   time: number
@@ -35,7 +39,7 @@ export type AgentConsoleInMessage =
   | { type: "agentConsole.shell.restart" }
   | { type: "agentConsole.session.new" }
   | { type: "agentConsole.mode.changed"; mode: AgentConsoleMode }
-  | { type: "agentConsole.input.route"; requestId: string; input: string }
+  | { type: "agentConsole.input.capture"; terminalId: string; requestId: string }
   | {
       type: "agentConsole.command.expect"
       terminalId: string
@@ -84,6 +88,14 @@ export type AgentConsoleOutMessage =
       requestId: string
       route: "agent" | "shell"
       input: string
+    }
+  | {
+      type: "agentConsole.input.error"
+      requestId: string
+      message: string
+      stage: AgentConsoleInputStage
+      recovery: AgentConsoleInputRecovery
+      input?: string
     }
 
 export function isAgentConsoleMessage(message: unknown): message is AgentConsoleInMessage {

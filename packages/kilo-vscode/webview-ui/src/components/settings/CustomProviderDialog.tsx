@@ -5,17 +5,28 @@ import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { ProviderIcon } from "@kilocode/kilo-ui/provider-icon"
 import { Select } from "@kilocode/kilo-ui/select"
 import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Switch } from "@kilocode/kilo-ui/switch"
 import { TextField } from "@kilocode/kilo-ui/text-field"
 import { showToast } from "@kilocode/kilo-ui/toast"
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, type Component } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
+import {
+  activateQuickAutocomplete,
+  shouldActivateQuickAutocomplete,
+} from "../../context/autocomplete-settings"
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
 import { useProvider } from "../../context/provider"
+import { useSession } from "../../context/session"
 import { useVSCode } from "../../context/vscode"
 import type { ExtensionMessage, ProviderAuthState, ProviderConfig } from "../../types/messages"
 import { createProviderAction } from "../../utils/provider-action"
 import { MASKED_CUSTOM_PROVIDER_KEY, resolveCustomProviderKey } from "../../../../src/shared/custom-provider"
+import {
+  internalOfflineProviderDefaults,
+  shouldUseQuickProviderMode,
+  type InternalOfflineProviderDefaults,
+} from "../../../../src/shared/internal-offline"
 import {
   CUSTOM_PROVIDER_PACKAGE,
   isCustomProviderPackage,
@@ -33,7 +44,12 @@ import type {
   ThinkingTypeValue,
   VariantEntry,
 } from "./CustomProviderModelCard"
-import { validateCustomProvider } from "./CustomProviderValidation"
+import {
+  createAutocompleteModel,
+  createReasoningModel,
+  resolveQuickModels,
+  validateCustomProvider,
+} from "./CustomProviderValidation"
 import type { FormErrors, FormState, HeaderRow } from "./CustomProviderValidation"
 const DEBOUNCE_MS = 500
 const SEARCH_DEBOUNCE_MS = 150
@@ -56,6 +72,36 @@ function fuzzy(query: string, target: string) {
 }
 
 type FetchedModel = { id: string; name: string }
+type QuickAutocompleteStatusProps = {
+  ready: boolean
+  title: string
+  description: string
+}
+
+const QuickAutocompleteStatus: Component<QuickAutocompleteStatusProps> = (props) => (
+  <div
+    aria-live="polite"
+    style={{
+      display: "flex",
+      "flex-direction": "column",
+      gap: "3px",
+      padding: "12px",
+      border: props.ready
+        ? "1px solid color-mix(in srgb, var(--vscode-testing-iconPassed) 38%, transparent)"
+        : "1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground) 42%, transparent)",
+      "border-radius": "12px",
+      background: props.ready
+        ? "color-mix(in srgb, var(--vscode-testing-iconPassed) 6%, transparent)"
+        : "color-mix(in srgb, var(--vscode-editorWarning-foreground) 7%, transparent)",
+    }}
+  >
+    <span style={{ "font-weight": "600", "overflow-wrap": "anywhere" }}>{props.title}</span>
+    <span style={{ "font-size": "var(--kilo-font-size-11)", color: "var(--text-weak-base)" }}>
+      {props.description}
+    </span>
+  </div>
+)
+
 type RawModel = {
   name?: string
   reasoning?: boolean
@@ -145,15 +191,25 @@ function resolveAuth(existing: ExistingProvider | undefined, states: Record<stri
   return states[existing.providerID]
 }
 
-function initForm(existing: ExistingProvider | undefined, auth: ProviderAuthState | undefined): FormState {
+function formModels(existing: ExistingProvider | undefined, defaults: InternalOfflineProviderDefaults | undefined) {
+  if (existing) return initModels(existing.config)
+  if (defaults) return [createReasoningModel(defaults.modelID)]
+  return initModels(undefined)
+}
+
+function initForm(
+  existing: ExistingProvider | undefined,
+  auth: ProviderAuthState | undefined,
+  defaults: InternalOfflineProviderDefaults | undefined,
+): FormState {
   const npm = existing?.config?.npm
   return {
-    providerID: existing?.providerID ?? "",
-    name: existing?.name ?? "",
+    providerID: existing?.providerID ?? defaults?.providerID ?? "",
+    name: existing?.name ?? defaults?.name ?? "",
     npm: isCustomProviderPackage(npm) ? npm : CUSTOM_PROVIDER_PACKAGE,
-    baseURL: (existing?.config?.options as { baseURL?: string } | undefined)?.baseURL ?? "",
+    baseURL: (existing?.config?.options as { baseURL?: string } | undefined)?.baseURL ?? defaults?.baseURL ?? "",
     apiKey: resolveCustomProviderKey(auth),
-    models: initModels(existing?.config),
+    models: formModels(existing, defaults),
     headers: initHeaders(existing?.config),
     saving: false,
   }
@@ -163,21 +219,28 @@ export interface CustomProviderDialogProps {
   onBack?: () => void
   /** When set, the dialog opens in edit mode with pre-filled values. */
   existing?: ExistingProvider
+  /** Story/test override; production callers use compile-time internal defaults. */
+  defaults?: InternalOfflineProviderDefaults
 }
 
 const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   const dialog = useDialog()
-  const { config } = useConfig()
+  const { config, settings } = useConfig()
   const provider = useProvider()
+  const session = useSession()
   const language = useLanguage()
   const vscode = useVSCode()
   const action = createProviderAction(vscode)
   onCleanup(action.dispose)
 
   const editing = () => !!props.existing
+  const defaults = props.defaults ?? internalOfflineProviderDefaults()
+  const eligible = () => shouldUseQuickProviderMode(defaults, props.existing?.providerID)
+  const [advanced, setAdvanced] = createSignal(!eligible())
+  const quick = () => eligible() && !advanced()
 
   const auth = resolveAuth(props.existing, provider.authStates())
-  const [form, setForm] = createStore<FormState>(initForm(props.existing, auth))
+  const [form, setForm] = createStore<FormState>(initForm(props.existing, auth, defaults))
 
   const [errors, setErrors] = createStore<FormErrors>({
     providerID: undefined,
@@ -195,6 +258,27 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   const [fetchedModels, setFetchedModels] = createSignal<FetchedModel[]>()
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
   const [fetchStatus, setFetchStatus] = createSignal<string>()
+  const [quickModel, setQuickModel] = createSignal<FetchedModel>()
+  const [quickAutocomplete, setQuickAutocomplete] = createSignal<FetchedModel>()
+  const autocompleteStatus = createMemo(() => {
+    const model = quickAutocomplete()
+    if (!model) {
+      return {
+        ready: false,
+        title: language.t("provider.custom.quick.autocomplete.missing", {
+          model: defaults?.autocompleteModelID ?? "",
+        }),
+        description: language.t("provider.custom.quick.autocomplete.qaOnly"),
+      }
+    }
+    return {
+      ready: true,
+      title: language.t("provider.custom.quick.autocomplete.ready", { model: model.id }),
+      description: shouldActivateQuickAutocomplete(settings())
+        ? language.t("provider.custom.quick.autocomplete.enable")
+        : language.t("provider.custom.quick.autocomplete.preserve"),
+    }
+  })
 
   // Search within fetched models
   const [search, setSearch] = createSignal("")
@@ -236,9 +320,12 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     setFetchedModels(undefined)
     setFetchError(undefined)
     setFetchStatus(undefined)
+    setQuickModel(undefined)
+    setQuickAutocomplete(undefined)
     setSearch("")
 
     if (npm === "@ai-sdk/anthropic" || !/^https?:\/\//.test(url.trim())) return
+    if (quick() && !key.trim() && !props.existing) return
 
     fetchVersion++
     const version = fetchVersion
@@ -304,6 +391,37 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
         return
       }
 
+      if (quick() && defaults) {
+        const resolved = resolveQuickModels(models, defaults.modelID, defaults.autocompleteModelID)
+        const exact = resolved.exact
+        setQuickAutocomplete(resolved.autocomplete)
+        if (exact) {
+          const qwen = resolved.autocomplete
+          const configured = [
+            createReasoningModel(exact.id, exact.name || exact.id),
+            ...(qwen ? [createAutocompleteModel(qwen.id, qwen.name || qwen.id)] : []),
+          ]
+          setForm("models", configured)
+          setErrors(
+            "models",
+            configured.map(() => ({ variants: [] })),
+          )
+          setQuickModel(exact)
+          setFetchStatus(language.t("provider.custom.quick.models.verified"))
+          return
+        }
+
+        const candidates = resolved.candidates
+        if (candidates.length === 0) {
+          setFetchError(language.t("provider.custom.quick.models.missing"))
+          return
+        }
+        setSelected(new Set<string>())
+        setFetchedModels(candidates)
+        setFetchStatus(language.t("provider.custom.quick.models.choose"))
+        return
+      }
+
       // Filter using the snapshot taken at fetch time (trimmed, case-insensitive)
       const fresh = models.filter((m) => !existing.has(m.id.trim().toLowerCase()))
 
@@ -330,6 +448,10 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   // ── Model picker actions ────────────────────────────────────────────
 
   function toggleModel(id: string) {
+    if (quick()) {
+      setSelected((value) => (value.has(id) ? new Set<string>() : new Set([id])))
+      return
+    }
     const next = new Set(selected())
     if (next.has(id)) next.delete(id)
     else next.add(id)
@@ -358,6 +480,26 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     const sel = selected()
     const picked = models.filter((m) => sel.has(m.id))
     if (picked.length === 0) return
+
+    if (quick()) {
+      const model = picked[0]
+      if (!model) return
+      const qwen = quickAutocomplete()
+      const configured = [
+        createReasoningModel(model.id, model.name || model.id),
+        ...(qwen ? [createAutocompleteModel(qwen.id, qwen.name || qwen.id)] : []),
+      ]
+      setForm("models", configured)
+      setErrors(
+        "models",
+        configured.map(() => ({ variants: [] })),
+      )
+      setQuickModel(model)
+      setFetchedModels(undefined)
+      setSelected(new Set<string>())
+      setFetchStatus(language.t("provider.custom.quick.models.selected", { model: model.id }))
+      return
+    }
 
     // Replace the single empty row or append
     const row = form.models[0]
@@ -495,9 +637,12 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   function save(e: SubmitEvent) {
     e.preventDefault()
     if (form.saving) return
+    if (quick() && !quickModel()) return
 
     const result = validate()
     if (!result) return
+    const active = quick() ? quickModel() : undefined
+    const autocomplete = quick() ? quickAutocomplete() : undefined
 
     setForm("saving", true)
 
@@ -508,16 +653,52 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
         config: result.config,
         apiKey: apiTouched() ? result.key : undefined,
         apiKeyChanged: apiTouched(),
+        ...(active ? { activateModelID: active.id } : {}),
       },
       {
         onConnected: () => {
-          setForm("saving", false)
-          dialog.close()
-          showToast({
-            variant: "success",
-            icon: "circle-check",
-            title: language.t("provider.connect.toast.connected.title", { provider: result.name }),
-            description: language.t("provider.connect.toast.connected.description", { provider: result.name }),
+          const model = active
+          if (model && defaults) {
+            session.selectModel(result.providerID, model.id)
+            session.selectVariant(defaults.variant)
+          }
+
+          const complete = () => {
+            setForm("saving", false)
+            dialog.close()
+            showToast({
+              variant: "success",
+              icon: "circle-check",
+              title: language.t("provider.connect.toast.connected.title", { provider: result.name }),
+              description: language.t("provider.connect.toast.connected.description", { provider: result.name }),
+            })
+          }
+
+          if (!active || !defaults) {
+            complete()
+            return
+          }
+          if (!autocomplete) {
+            setForm("saving", false)
+            dialog.close()
+            showToast({
+              title: language.t("provider.custom.quick.autocomplete.missingToast.title"),
+              description: language.t("provider.custom.quick.autocomplete.missingToast.description"),
+            })
+            return
+          }
+          void activateQuickAutocomplete(vscode, {
+            providerID: result.providerID,
+            modelID: autocomplete.id,
+          }).then(complete, (error) => {
+            setForm("saving", false)
+            dialog.close()
+            showToast({
+              title: language.t("provider.custom.quick.autocomplete.failedToast.title"),
+              description: language.t("provider.custom.quick.autocomplete.failedToast.description", {
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            })
           })
         },
         onError: (message) => {
@@ -550,7 +731,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
           gap: "24px",
           padding: "0 10px 12px 10px",
           "overflow-y": "auto",
-          "max-height": "60vh",
+          "max-height": quick() ? "78vh" : "60vh",
         }}
       >
         <div style={{ padding: "0 10px", display: "flex", gap: "16px", "align-items": "center" }}>
@@ -566,321 +747,507 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
           onSubmit={save}
           style={{ padding: "0 10px 24px 10px", display: "flex", "flex-direction": "column", gap: "24px" }}
         >
-          <div style={{ "font-size": "var(--kilo-font-size-14)", color: "var(--text-base)" }}>
-            {language.t("provider.custom.description.prefix")}
-            {language.t("provider.custom.description.link")}
-            {language.t("provider.custom.description.suffix")}
-          </div>
+          <Show when={!quick()}>
+            <>
+              <div style={{ "font-size": "var(--kilo-font-size-14)", color: "var(--text-base)" }}>
+                {language.t("provider.custom.description.prefix")}
+                {language.t("provider.custom.description.link")}
+                {language.t("provider.custom.description.suffix")}
+              </div>
 
-          <div style={{ display: "flex", "flex-direction": "column", gap: "16px" }}>
-            <TextField
-              autofocus={!editing()}
-              label={language.t("provider.custom.field.providerID.label")}
-              placeholder={language.t("provider.custom.field.providerID.placeholder")}
-              description={language.t("provider.custom.field.providerID.description")}
-              value={form.providerID}
-              onChange={(v) => setForm("providerID", v)}
-              validationState={errors.providerID ? "invalid" : undefined}
-              error={errors.providerID}
-              disabled={editing()}
-            />
-            <TextField
-              label={language.t("provider.custom.field.name.label")}
-              placeholder={language.t("provider.custom.field.name.placeholder")}
-              value={form.name}
-              onChange={(v) => setForm("name", v)}
-              validationState={errors.name ? "invalid" : undefined}
-              error={errors.name}
-            />
-            <div style={{ display: "flex", "flex-direction": "column", gap: "4px" }}>
-              <label
-                style={{
-                  "font-size": "var(--kilo-font-size-12)",
-                  "font-weight": "500",
-                  color: "var(--text-weak-base)",
-                }}
-              >
-                {language.t("provider.custom.field.package.label")}
-              </label>
-              <Select
-                options={PACKAGE_OPTIONS}
-                current={PACKAGE_OPTIONS.find((option) => option.value === form.npm)}
-                value={(option) => option.value}
-                label={(option) => option.label}
-                onSelect={(option) => {
-                  if (!option) return
-                  setForm("npm", option.value)
-                  setFetchPackage(option.value)
-                }}
-                variant="secondary"
-                triggerVariant="settings"
-              />
-            </div>
-            <TextField
-              label={language.t("provider.custom.field.baseURL.label")}
-              placeholder={language.t("provider.custom.field.baseURL.placeholder")}
-              value={form.baseURL}
-              onChange={(v) => {
-                setForm("baseURL", v)
-                setFetchURL(v)
-              }}
-              validationState={errors.baseURL ? "invalid" : undefined}
-              error={errors.baseURL}
-            />
-            <TextField
-              type="password"
-              label={language.t("provider.custom.field.apiKey.label")}
-              placeholder={language.t("provider.custom.field.apiKey.placeholder")}
-              description={language.t("provider.custom.field.apiKey.description")}
-              value={form.apiKey}
-              onChange={(v) => {
-                const key = !apiTouched() && form.apiKey === MASKED_CUSTOM_PROVIDER_KEY ? v.replace(/^\*+/, "") : v
-                setApiTouched(true)
-                setForm("apiKey", key)
-                setFetchKey(key)
-              }}
-            />
-          </div>
-
-          {/* Models */}
-          <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
-            <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
-              <label
-                style={{
-                  "font-size": "var(--kilo-font-size-12)",
-                  "font-weight": "500",
-                  color: "var(--text-weak-base)",
-                }}
-              >
-                {language.t("provider.custom.models.label")}
-              </label>
-              <Show when={fetching()}>
-                <Spinner style={{ width: "12px", height: "12px" }} />
-              </Show>
-            </div>
-            <For each={form.models}>
-              {(m, i) => (
-                <ModelCard
-                  m={m}
-                  i={i}
-                  errors={errors.models[i()] ?? {}}
-                  t={language.t}
-                  canRemove={form.models.length > 1}
-                  onChangeId={(v) => setForm("models", i(), "id", v)}
-                  onChangeName={(v) => setForm("models", i(), "name", v)}
-                  onChangeReasoning={(v) => setForm("models", i(), "reasoning", v)}
-                  onChangeSupportsImages={(v) => setForm("models", i(), "supportsImages", v)}
-                  onRemove={() => removeModel(i())}
-                  onAddVariant={() => addVariant(i())}
-                  onRemoveVariant={(vi) => removeVariant(i(), vi)}
-                  onChangeVariantName={(vi, val) => setForm("models", i(), "variants", vi, "name", val)}
-                  onChangeVariantEnableThinking={(vi, val) =>
-                    setForm("models", i(), "variants", vi, "enableThinking", val)
-                  }
-                  onChangeVariantThinking={(vi, val) => setForm("models", i(), "variants", vi, "thinking", val)}
-                  onChangeVariantSplitReasoning={(vi, val) =>
-                    setForm("models", i(), "variants", vi, "splitReasoning", val)
-                  }
-                  onChangeVariantReasoningEffort={(vi, val) =>
-                    setForm("models", i(), "variants", vi, "reasoningEffort", val)
-                  }
-                  onChangeVariantOutputEffort={(vi, val) => setForm("models", i(), "variants", vi, "outputEffort", val)}
-                  onChangeVariantChatTemplateArgs={(vi, val) =>
-                    setForm("models", i(), "variants", vi, "chatTemplateArgs", val)
-                  }
+              <div style={{ display: "flex", "flex-direction": "column", gap: "16px" }}>
+                <TextField
+                  autofocus={!editing()}
+                  label={language.t("provider.custom.field.providerID.label")}
+                  placeholder={language.t("provider.custom.field.providerID.placeholder")}
+                  description={language.t("provider.custom.field.providerID.description")}
+                  value={form.providerID}
+                  onChange={(v) => setForm("providerID", v)}
+                  validationState={errors.providerID ? "invalid" : undefined}
+                  error={errors.providerID}
+                  disabled={editing()}
                 />
-              )}
-            </For>
-            <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={addModel}>
-              {language.t("provider.custom.models.add")}
-            </Button>
-
-            {/* Fetch error */}
-            <Show when={fetchError()}>
-              {(err) => (
-                <span
-                  style={{ "font-size": "var(--kilo-font-size-12)", color: "var(--vscode-errorForeground, #f14c4c)" }}
-                >
-                  {err()}
-                </span>
-              )}
-            </Show>
-
-            {/* Fetch status (success/info messages) */}
-            <Show when={!fetchError() && fetchStatus()}>
-              {(status) => (
-                <span
-                  style={{
-                    "font-size": "var(--kilo-font-size-12)",
-                    color: "var(--text-weak-base, var(--vscode-descriptionForeground))",
-                  }}
-                >
-                  {status()}
-                </span>
-              )}
-            </Show>
-
-            {/* Model selection picker */}
-            <Show when={fetchedModels()}>
-              {(models) => (
-                <div
-                  style={{
-                    border: "1px solid var(--border-weak-base, var(--vscode-panel-border))",
-                    "border-radius": "6px",
-                    padding: "12px",
-                    display: "flex",
-                    "flex-direction": "column",
-                    gap: "8px",
-                  }}
-                >
-                  {/* Header with count + toggle */}
-                  <div
+                <TextField
+                  label={language.t("provider.custom.field.name.label")}
+                  placeholder={language.t("provider.custom.field.name.placeholder")}
+                  value={form.name}
+                  onChange={(v) => setForm("name", v)}
+                  validationState={errors.name ? "invalid" : undefined}
+                  error={errors.name}
+                />
+                <div style={{ display: "flex", "flex-direction": "column", gap: "4px" }}>
+                  <label
                     style={{
-                      display: "flex",
-                      "justify-content": "space-between",
-                      "align-items": "center",
+                      "font-size": "var(--kilo-font-size-12)",
+                      "font-weight": "500",
+                      color: "var(--text-weak-base)",
                     }}
                   >
+                    {language.t("provider.custom.field.package.label")}
+                  </label>
+                  <Select
+                    options={PACKAGE_OPTIONS}
+                    current={PACKAGE_OPTIONS.find((option) => option.value === form.npm)}
+                    value={(option) => option.value}
+                    label={(option) => option.label}
+                    onSelect={(option) => {
+                      if (!option) return
+                      setForm("npm", option.value)
+                      setFetchPackage(option.value)
+                    }}
+                    variant="secondary"
+                    triggerVariant="settings"
+                  />
+                </div>
+                <TextField
+                  label={language.t("provider.custom.field.baseURL.label")}
+                  placeholder={language.t("provider.custom.field.baseURL.placeholder")}
+                  value={form.baseURL}
+                  onChange={(v) => {
+                    setForm("baseURL", v)
+                    setFetchURL(v)
+                  }}
+                  validationState={errors.baseURL ? "invalid" : undefined}
+                  error={errors.baseURL}
+                />
+                <TextField
+                  type="password"
+                  label={language.t("provider.custom.field.apiKey.label")}
+                  placeholder={language.t("provider.custom.field.apiKey.placeholder")}
+                  description={language.t("provider.custom.field.apiKey.description")}
+                  value={form.apiKey}
+                  onChange={(v) => {
+                    const key = !apiTouched() && form.apiKey === MASKED_CUSTOM_PROVIDER_KEY ? v.replace(/^\*+/, "") : v
+                    setApiTouched(true)
+                    setForm("apiKey", key)
+                    setFetchKey(key)
+                  }}
+                />
+              </div>
+
+              {/* Models */}
+              <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+                <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+                  <label
+                    style={{
+                      "font-size": "var(--kilo-font-size-12)",
+                      "font-weight": "500",
+                      color: "var(--text-weak-base)",
+                    }}
+                  >
+                    {language.t("provider.custom.models.label")}
+                  </label>
+                  <Show when={fetching()}>
+                    <Spinner style={{ width: "12px", height: "12px" }} />
+                  </Show>
+                </div>
+                <For each={form.models}>
+                  {(m, i) => (
+                    <ModelCard
+                      m={m}
+                      i={i}
+                      errors={errors.models[i()] ?? {}}
+                      t={language.t}
+                      canRemove={form.models.length > 1}
+                      onChangeId={(v) => setForm("models", i(), "id", v)}
+                      onChangeName={(v) => setForm("models", i(), "name", v)}
+                      onChangeReasoning={(v) => setForm("models", i(), "reasoning", v)}
+                      onChangeSupportsImages={(v) => setForm("models", i(), "supportsImages", v)}
+                      onRemove={() => removeModel(i())}
+                      onAddVariant={() => addVariant(i())}
+                      onRemoveVariant={(vi) => removeVariant(i(), vi)}
+                      onChangeVariantName={(vi, val) => setForm("models", i(), "variants", vi, "name", val)}
+                      onChangeVariantEnableThinking={(vi, val) =>
+                        setForm("models", i(), "variants", vi, "enableThinking", val)
+                      }
+                      onChangeVariantThinking={(vi, val) => setForm("models", i(), "variants", vi, "thinking", val)}
+                      onChangeVariantSplitReasoning={(vi, val) =>
+                        setForm("models", i(), "variants", vi, "splitReasoning", val)
+                      }
+                      onChangeVariantReasoningEffort={(vi, val) =>
+                        setForm("models", i(), "variants", vi, "reasoningEffort", val)
+                      }
+                      onChangeVariantOutputEffort={(vi, val) =>
+                        setForm("models", i(), "variants", vi, "outputEffort", val)
+                      }
+                      onChangeVariantChatTemplateArgs={(vi, val) =>
+                        setForm("models", i(), "variants", vi, "chatTemplateArgs", val)
+                      }
+                    />
+                  )}
+                </For>
+                <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={addModel}>
+                  {language.t("provider.custom.models.add")}
+                </Button>
+
+                {/* Fetch error */}
+                <Show when={fetchError()}>
+                  {(err) => (
                     <span
                       style={{
                         "font-size": "var(--kilo-font-size-12)",
-                        "font-weight": "500",
-                        color: "var(--text-weak-base)",
+                        color: "var(--vscode-errorForeground, #f14c4c)",
                       }}
                     >
-                      <Show
-                        when={debouncedSearch()}
-                        fallback={language.t("provider.custom.models.fetch.found", {
-                          count: String(models().length),
-                        })}
-                      >
-                        {language.t("provider.custom.models.fetch.showing", {
-                          shown: String(filtered().length),
-                          total: String(models().length),
-                        })}
-                      </Show>
+                      {err()}
                     </span>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <Button type="button" size="small" variant="ghost" onClick={selectAll}>
-                        {language.t("provider.custom.models.fetch.selectAll")}
-                      </Button>
-                      <Button type="button" size="small" variant="ghost" onClick={deselectAll}>
-                        {language.t("provider.custom.models.fetch.deselectAll")}
-                      </Button>
+                  )}
+                </Show>
+
+                {/* Fetch status (success/info messages) */}
+                <Show when={!fetchError() && fetchStatus()}>
+                  {(status) => (
+                    <span
+                      style={{
+                        "font-size": "var(--kilo-font-size-12)",
+                        color: "var(--text-weak-base, var(--vscode-descriptionForeground))",
+                      }}
+                    >
+                      {status()}
+                    </span>
+                  )}
+                </Show>
+
+                {/* Model selection picker */}
+                <Show when={fetchedModels()}>
+                  {(models) => (
+                    <div
+                      style={{
+                        border: "1px solid var(--border-weak-base, var(--vscode-panel-border))",
+                        "border-radius": "6px",
+                        padding: "12px",
+                        display: "flex",
+                        "flex-direction": "column",
+                        gap: "8px",
+                      }}
+                    >
+                      {/* Header with count + toggle */}
+                      <div
+                        style={{
+                          display: "flex",
+                          "justify-content": "space-between",
+                          "align-items": "center",
+                        }}
+                      >
+                        <span
+                          style={{
+                            "font-size": "var(--kilo-font-size-12)",
+                            "font-weight": "500",
+                            color: "var(--text-weak-base)",
+                          }}
+                        >
+                          <Show
+                            when={debouncedSearch()}
+                            fallback={language.t("provider.custom.models.fetch.found", {
+                              count: String(models().length),
+                            })}
+                          >
+                            {language.t("provider.custom.models.fetch.showing", {
+                              shown: String(filtered().length),
+                              total: String(models().length),
+                            })}
+                          </Show>
+                        </span>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <Button type="button" size="small" variant="ghost" onClick={selectAll}>
+                            {language.t("provider.custom.models.fetch.selectAll")}
+                          </Button>
+                          <Button type="button" size="small" variant="ghost" onClick={deselectAll}>
+                            {language.t("provider.custom.models.fetch.deselectAll")}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Search */}
+                      <Show when={models().length > 10}>
+                        <TextField
+                          label={language.t("provider.custom.models.fetch.search")}
+                          hideLabel
+                          placeholder={language.t("provider.custom.models.fetch.search")}
+                          value={search()}
+                          onChange={setSearch}
+                        />
+                      </Show>
+
+                      {/* Model list */}
+                      <div
+                        style={{
+                          "max-height": "200px",
+                          "overflow-y": "auto",
+                          display: "flex",
+                          "flex-direction": "column",
+                          gap: "2px",
+                        }}
+                      >
+                        <For each={filtered()}>
+                          {(m) => (
+                            <label
+                              style={{
+                                display: "flex",
+                                "align-items": "center",
+                                gap: "8px",
+                                padding: "4px 2px",
+                                cursor: "pointer",
+                                "font-size": "var(--kilo-font-size-13)",
+                                color: "var(--text-base, var(--vscode-foreground))",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selected().has(m.id)}
+                                onChange={() => toggleModel(m.id)}
+                                style={{ cursor: "pointer" }}
+                              />
+                              {m.id}
+                            </label>
+                          )}
+                        </For>
+                      </div>
+
+                      {/* Actions */}
+                      <div style={{ display: "flex", gap: "8px", "margin-top": "4px" }}>
+                        <Button
+                          type="button"
+                          size="small"
+                          variant="primary"
+                          onClick={addSelected}
+                          disabled={count() === 0}
+                        >
+                          {language.t("provider.custom.models.fetch.add", { count: String(count()) })}
+                        </Button>
+                        <Button type="button" size="small" variant="ghost" onClick={cancelFetch}>
+                          {language.t("common.cancel")}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
+                  )}
+                </Show>
+              </div>
 
-                  {/* Search */}
-                  <Show when={models().length > 10}>
-                    <TextField
-                      label={language.t("provider.custom.models.fetch.search")}
-                      hideLabel
-                      placeholder={language.t("provider.custom.models.fetch.search")}
-                      value={search()}
-                      onChange={setSearch}
-                    />
-                  </Show>
+              {/* Headers */}
+              <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+                <label
+                  style={{
+                    "font-size": "var(--kilo-font-size-12)",
+                    "font-weight": "500",
+                    color: "var(--text-weak-base)",
+                  }}
+                >
+                  {language.t("provider.custom.headers.label")}
+                </label>
+                <For each={form.headers}>
+                  {(h, i) => (
+                    <div style={{ display: "flex", gap: "8px", "align-items": "start" }}>
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label={language.t("provider.custom.headers.key.label")}
+                          hideLabel
+                          placeholder={language.t("provider.custom.headers.key.placeholder")}
+                          value={h.key}
+                          onChange={(v) => setForm("headers", i(), "key", v)}
+                          validationState={errors.headers[i()]?.key ? "invalid" : undefined}
+                          error={errors.headers[i()]?.key}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label={language.t("provider.custom.headers.value.label")}
+                          hideLabel
+                          placeholder={language.t("provider.custom.headers.value.placeholder")}
+                          value={h.value}
+                          onChange={(v) => setForm("headers", i(), "value", v)}
+                          validationState={errors.headers[i()]?.value ? "invalid" : undefined}
+                          error={errors.headers[i()]?.value}
+                        />
+                      </div>
+                      <IconButton
+                        type="button"
+                        icon="trash"
+                        variant="ghost"
+                        onClick={() => removeHeader(i())}
+                        disabled={form.headers.length <= 1}
+                        aria-label={language.t("provider.custom.headers.remove")}
+                        style={{ "margin-top": "6px" }}
+                      />
+                    </div>
+                  )}
+                </For>
+                <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={addHeader}>
+                  {language.t("provider.custom.headers.add")}
+                </Button>
+              </div>
+            </>
+          </Show>
 
-                  {/* Model list */}
-                  <div
-                    style={{
-                      "max-height": "200px",
-                      "overflow-y": "auto",
-                      display: "flex",
-                      "flex-direction": "column",
-                      gap: "2px",
-                    }}
-                  >
-                    <For each={filtered()}>
-                      {(m) => (
+          <Show when={quick()}>
+            <div
+              style={{
+                display: "flex",
+                "flex-direction": "column",
+                gap: "18px",
+                padding: "18px",
+                border: "1px solid var(--border-weak-base, var(--vscode-panel-border))",
+                "border-radius": "16px",
+                background: "color-mix(in srgb, var(--vscode-editor-background) 82%, transparent)",
+                "box-shadow": "inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 12%, transparent)",
+              }}
+            >
+              <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
+                <strong style={{ "font-size": "var(--kilo-font-size-16)", color: "var(--vscode-foreground)" }}>
+                  {language.t("provider.custom.quick.title")}
+                </strong>
+                <span style={{ "font-size": "var(--kilo-font-size-13)", color: "var(--text-weak-base)" }}>
+                  {language.t("provider.custom.quick.description")}
+                </span>
+              </div>
+
+              <TextField
+                autofocus
+                type="password"
+                label={language.t("provider.custom.field.apiKey.label")}
+                placeholder={language.t("provider.custom.field.apiKey.placeholder")}
+                value={form.apiKey}
+                onChange={(v) => {
+                  const key = !apiTouched() && form.apiKey === MASKED_CUSTOM_PROVIDER_KEY ? v.replace(/^\*+/, "") : v
+                  setApiTouched(true)
+                  setForm("apiKey", key)
+                  setFetchKey(key)
+                }}
+              />
+
+              <div
+                aria-live="polite"
+                style={{
+                  display: "flex",
+                  "align-items": "center",
+                  gap: "8px",
+                  "min-width": "0",
+                  "font-size": "var(--kilo-font-size-12)",
+                  color: fetchError()
+                    ? "var(--vscode-errorForeground, #f14c4c)"
+                    : "var(--text-weak-base, var(--vscode-descriptionForeground))",
+                }}
+              >
+                <Show when={fetching()}>
+                  <Spinner style={{ width: "12px", height: "12px", "flex-shrink": 0 }} />
+                </Show>
+                <span style={{ "overflow-wrap": "anywhere" }}>
+                  {fetching()
+                    ? language.t("provider.custom.models.fetching")
+                    : (fetchError() ?? fetchStatus() ?? language.t("provider.custom.quick.models.waiting"))}
+                </span>
+              </div>
+
+              <Show when={fetchedModels()}>
+                {(models) => (
+                  <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
+                    <For each={models()}>
+                      {(model) => (
                         <label
                           style={{
                             display: "flex",
                             "align-items": "center",
                             gap: "8px",
-                            padding: "4px 2px",
+                            padding: "8px 10px",
+                            border: "1px solid var(--border-weak-base, var(--vscode-panel-border))",
+                            "border-radius": "10px",
                             cursor: "pointer",
-                            "font-size": "var(--kilo-font-size-13)",
-                            color: "var(--text-base, var(--vscode-foreground))",
+                            "min-width": "0",
                           }}
                         >
                           <input
-                            type="checkbox"
-                            checked={selected().has(m.id)}
-                            onChange={() => toggleModel(m.id)}
-                            style={{ cursor: "pointer" }}
+                            type="radio"
+                            name="chipmate-model"
+                            checked={selected().has(model.id)}
+                            onChange={() => toggleModel(model.id)}
                           />
-                          {m.id}
+                          <span style={{ "overflow-wrap": "anywhere", "min-width": "0" }}>{model.id}</span>
                         </label>
                       )}
                     </For>
-                  </div>
-
-                  {/* Actions */}
-                  <div style={{ display: "flex", gap: "8px", "margin-top": "4px" }}>
-                    <Button type="button" size="small" variant="primary" onClick={addSelected} disabled={count() === 0}>
-                      {language.t("provider.custom.models.fetch.add", { count: String(count()) })}
+                    <Button
+                      type="button"
+                      size="small"
+                      variant="secondary"
+                      onClick={addSelected}
+                      disabled={count() !== 1}
+                    >
+                      {language.t("provider.custom.quick.models.confirm")}
                     </Button>
-                    <Button type="button" size="small" variant="ghost" onClick={cancelFetch}>
-                      {language.t("common.cancel")}
-                    </Button>
                   </div>
-                </div>
-              )}
-            </Show>
-          </div>
+                )}
+              </Show>
 
-          {/* Headers */}
-          <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
-            <label
-              style={{ "font-size": "var(--kilo-font-size-12)", "font-weight": "500", color: "var(--text-weak-base)" }}
-            >
-              {language.t("provider.custom.headers.label")}
-            </label>
-            <For each={form.headers}>
-              {(h, i) => (
-                <div style={{ display: "flex", gap: "8px", "align-items": "start" }}>
-                  <div style={{ flex: 1 }}>
-                    <TextField
-                      label={language.t("provider.custom.headers.key.label")}
-                      hideLabel
-                      placeholder={language.t("provider.custom.headers.key.placeholder")}
-                      value={h.key}
-                      onChange={(v) => setForm("headers", i(), "key", v)}
-                      validationState={errors.headers[i()]?.key ? "invalid" : undefined}
-                      error={errors.headers[i()]?.key}
-                    />
+              <Show when={quickModel()}>
+                {(model) => (
+                  <div
+                    style={{
+                      display: "grid",
+                      "grid-template-columns": "minmax(0, 1fr) auto",
+                      gap: "12px",
+                      "align-items": "center",
+                      padding: "12px",
+                      border: "1px solid color-mix(in srgb, var(--vscode-testing-iconPassed) 45%, transparent)",
+                      "border-radius": "12px",
+                      background: "color-mix(in srgb, var(--vscode-testing-iconPassed) 7%, transparent)",
+                    }}
+                  >
+                    <div style={{ display: "flex", "flex-direction": "column", gap: "3px", "min-width": "0" }}>
+                      <span style={{ "font-weight": "600", "overflow-wrap": "anywhere" }}>{model().name}</span>
+                      <span
+                        style={{
+                          "font-size": "var(--kilo-font-size-11)",
+                          color: "var(--text-weak-base)",
+                          "overflow-wrap": "anywhere",
+                        }}
+                      >
+                        {model().id}
+                      </span>
+                    </div>
+                    <span style={{ color: "var(--vscode-testing-iconPassed)", "font-weight": "600" }}>
+                      {language.t("provider.custom.quick.models.ready")}
+                    </span>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <TextField
-                      label={language.t("provider.custom.headers.value.label")}
-                      hideLabel
-                      placeholder={language.t("provider.custom.headers.value.placeholder")}
-                      value={h.value}
-                      onChange={(v) => setForm("headers", i(), "value", v)}
-                      validationState={errors.headers[i()]?.value ? "invalid" : undefined}
-                      error={errors.headers[i()]?.value}
-                    />
-                  </div>
-                  <IconButton
-                    type="button"
-                    icon="trash"
-                    variant="ghost"
-                    onClick={() => removeHeader(i())}
-                    disabled={form.headers.length <= 1}
-                    aria-label={language.t("provider.custom.headers.remove")}
-                    style={{ "margin-top": "6px" }}
-                  />
-                </div>
-              )}
-            </For>
-            <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={addHeader}>
-              {language.t("provider.custom.headers.add")}
-            </Button>
-          </div>
+                )}
+              </Show>
 
-          <Button type="submit" size="large" variant="primary" disabled={form.saving}>
-            {form.saving ? language.t("common.saving") : language.t("common.submit")}
+              <Show when={quickModel()}>
+                <QuickAutocompleteStatus {...autocompleteStatus()} />
+              </Show>
+
+              <div
+                style={{
+                  display: "flex",
+                  "align-items": "center",
+                  "justify-content": "space-between",
+                  gap: "12px",
+                  "flex-wrap": "wrap",
+                  padding: "4px 2px",
+                }}
+              >
+                <div style={{ display: "flex", "flex-direction": "column", gap: "2px" }}>
+                  <span style={{ "font-weight": "500" }}>{language.t("provider.custom.quick.reasoning.title")}</span>
+                  <span style={{ "font-size": "var(--kilo-font-size-11)", color: "var(--text-weak-base)" }}>
+                    {language.t("provider.custom.quick.reasoning.description")}
+                  </span>
+                </div>
+                <Switch checked disabled hideLabel>
+                  {language.t("provider.custom.quick.reasoning.title")}
+                </Switch>
+              </div>
+
+              <Button type="button" size="small" variant="ghost" icon="settings-gear" onClick={() => setAdvanced(true)}>
+                {language.t("provider.custom.quick.advanced")}
+              </Button>
+            </div>
+          </Show>
+
+          <Button type="submit" size="large" variant="primary" disabled={form.saving || (quick() && !quickModel())}>
+            {form.saving
+              ? language.t("common.saving")
+              : quick()
+                ? language.t("provider.custom.quick.save")
+                : language.t("common.submit")}
           </Button>
         </form>
       </div>

@@ -359,10 +359,46 @@ test("stopping a batch aborts the active upload and never starts queued artifact
 
 test("extension analytics and service status expose public and operational data", async ({ page }) => {
   await waitForCatalog(page)
+  const day = 24 * 60 * 60 * 1_000
+  const now = Date.now()
+  const stamp = (offset: number) => new Date(now + offset * day).toISOString().slice(0, 10)
+  const state = {
+    trend: [
+      { date: stamp(-5), downloads: 2, favorites: 0 },
+      { date: stamp(-2), downloads: 1, favorites: 0 },
+      { date: stamp(-1), downloads: 17, favorites: 0 },
+      { date: stamp(0), downloads: 3, favorites: 0 },
+    ],
+  }
+  await page.route("**/api/v1/analytics/extensions/overview", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      totals: { downloads: 23, favorites: 0, rating: 0, active: 21, growth30d: 100 },
+      trend: state.trend,
+      downloads: [],
+      ratings: [],
+      targets: [],
+      activity: [],
+    }),
+  }))
   await page.goto("/extensions/analytics")
   await expect(page.getByRole("heading", { name: "插件市场分析", exact: true })).toBeVisible()
   await expect(page.getByText("30 天增长", { exact: true })).toBeVisible()
   await expect(page.getByRole("heading", { name: "最近动态", exact: true })).toBeVisible()
+  await expect(page.getByRole("list", { name: "最近30天下载趋势，合计 23 次，单日峰值 17 次" })).toBeVisible()
+  await expect(page.locator(".trend-bar")).toHaveCount(30)
+  for (const [offset, downloads, expected] of [[-5, 2, 11.7647], [-2, 1, 8], [-1, 17, 100], [0, 3, 17.6471]] as const) {
+    const bar = page.getByRole("listitem", { name: `${stamp(offset)}，${downloads} 次下载`, exact: true })
+    await expect(bar).toHaveAttribute("title", `${stamp(offset)}：${downloads} 次下载`)
+    expect(await bar.evaluate((node) => Number.parseFloat((node as HTMLElement).style.height))).toBeCloseTo(expected, 3)
+  }
+  expect(await page.getByRole("listitem", { name: `${stamp(-3)}，0 次下载`, exact: true }).evaluate((node) => (node as HTMLElement).style.height)).toBe("0%")
+
+  state.trend = []
+  await page.reload()
+  await expect(page.getByText("近30天暂无下载", { exact: true })).toBeVisible()
+  await expect(page.locator(".trend-bar")).toHaveCount(0)
   await page.goto("/status")
   await expect(page.getByText("VS Code 插件市场", { exact: true })).toBeVisible()
 })

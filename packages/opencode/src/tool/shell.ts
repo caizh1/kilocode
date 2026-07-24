@@ -25,6 +25,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
 
 export { Parameters } from "./shell/prompt"
 
@@ -704,6 +705,22 @@ export const ShellTool = Tool.define(
           parameters: prompt.parameters,
           execute: (params: Parameters, ctx: Tool.Context) =>
             Effect.gen(function* () {
+              // kilocode_change start - source-backed document work uses native artifact tools only
+              if (WorkflowGuard.shell(ctx.sessionID, ctx.messages)) {
+                const description = params.description ?? params.command
+                return {
+                  title: "Shell blocked for source-backed document workflow",
+                  metadata: {
+                    output: "",
+                    exit: null,
+                    description,
+                    truncated: false,
+                  },
+                  output:
+                    "The active source-backed-detail-design turn cannot use shell commands. Use declare_artifact and the native read/grep/write/edit, Mermaid, and Word tools; do not create, copy, move, or rewrite work-package files through shell.",
+                }
+              }
+              // kilocode_change end
               const instanceCtx = yield* InstanceState.context
               const cwd = params.workdir
                 ? yield* permission.resolve(params.workdir, instanceCtx.directory, shell)

@@ -1206,11 +1206,13 @@ export const layer = Layer.effect(
         // kilocode_change end
         ctx.needsCompaction = false
         ctx.compactionError = undefined // kilocode_change
-        ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
+        const cfg = yield* config.get() // kilocode_change
+        ctx.shouldBreak = cfg.experimental?.continue_loop_on_deny !== true
 
         return yield* Effect.gen(function* () {
           // kilocode_change start - publish retry state consistently for provider and empty-response retries
           const retries = { provider: 0 }
+          const bytes = Buffer.byteLength(JSON.stringify(streamInput.messages))
           const setRetry = (info: {
             attempt: number
             message: string
@@ -1282,12 +1284,23 @@ export const layer = Layer.effect(
                     abort: ac.signal,
                     set: status.set,
                     used: retries.provider,
+                    bytes,
+                    summary: ctx.assistantMessage.summary,
                   }),
                   set: (info) => {
                     if (info.attempt > 0) retries.provider += 1
                     return setRetry(info)
                   },
                 }),
+              ),
+              Effect.catch((error) =>
+                KiloSessionProcessor.compact({
+                  error: retryParse(error),
+                  bytes,
+                  auto: cfg.compaction?.auto !== false,
+                })
+                  ? Effect.fail(new KiloSessionOverflow.PreflightError())
+                  : Effect.fail(error),
               ),
             )
 

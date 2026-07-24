@@ -2,9 +2,11 @@ import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@kilocode/sd
 import type { DiffSourceCapabilities, DiffSourceDescriptor } from "../../../../src/diff/sources/types"
 import type { PartBatch, PartRemove, PartUpdate } from "../../../../src/shared/stream-messages"
 import type { ChipmateServerState, ChipmateServerTestResult } from "../../../../src/shared/chipmate-server"
+import type { ChipmateUpdateResult } from "../../../../src/shared/update-check"
 import type { SessionMode } from "../../context/worktree-mode"
 import type {
   AnalyticsSeries,
+  BatchPublicationResult,
   InstallationState,
   LocalSkillImportProgress,
   MarketCapabilities,
@@ -357,7 +359,9 @@ export interface IndexingStatusLoadedMessage {
 
 export interface DocumentRagFoldersSelectedMessage {
   type: "documentRagFoldersSelected"
+  scope: "global" | "project"
   paths: string[]
+  approvals: Array<{ path: string; workspace?: string }>
 }
 
 export interface IndexingSettingsLoadedMessage {
@@ -627,6 +631,12 @@ export interface ChipmateServerTestResultMessage {
   result: ChipmateServerTestResult
 }
 
+export interface ChipmateUpdateStateMessage {
+  type: "chipmateUpdateState"
+  requestId: string
+  result: ChipmateUpdateResult
+}
+
 export interface GlobalConfigLoadedMessage {
   type: "globalConfigLoaded"
   config: Config
@@ -856,6 +866,15 @@ export interface AgentConsoleInputRoutedMessage {
   requestId: string
   route: "agent" | "shell"
   input: string
+}
+
+export interface AgentConsoleInputErrorMessage {
+  type: "agentConsole.input.error"
+  requestId: string
+  message: string
+  stage: "capture" | "route" | "apply"
+  recovery: "retain" | "archive"
+  input?: string
 }
 
 export interface AgentManagerRunStatusMessage extends RunStatus {
@@ -1196,6 +1215,11 @@ export interface MarketplacePublicationResultMessage {
   run: PublicationRun
 }
 
+export interface MarketplaceBatchPublicationResultMessage {
+  type: "marketplaceBatchPublicationResult"
+  result: BatchPublicationResult
+}
+
 export interface MarketplaceSkillDetailMessage {
   type: "marketplaceSkillDetail"
   id: string
@@ -1310,6 +1334,16 @@ export interface ValidateFilesResultMessage {
   existing: string[]
 }
 
+export interface PlantUmlRenderedMessage {
+  type: "plantUmlRendered"
+  requestId: string
+  ok: boolean
+  dataUrl?: string
+  width?: number
+  height?: number
+  issues?: string[]
+}
+
 export type ExtensionMessage =
   | ReadyMessage
   | FontSizeChangedMessage
@@ -1388,6 +1422,7 @@ export type ExtensionMessage =
   | SettingUpdateFailedMessage
   | ChipmateServerSettingsLoadedMessage
   | ChipmateServerTestResultMessage
+  | ChipmateUpdateStateMessage
   | GlobalConfigLoadedMessage
   | NotificationSettingsLoadedMessage
   | TimelineSettingLoadedMessage
@@ -1447,6 +1482,7 @@ export type ExtensionMessage =
   | AgentConsoleTerminalClosedMessage
   | AgentConsoleTerminalErrorMessage
   | AgentConsoleInputRoutedMessage
+  | AgentConsoleInputErrorMessage
   | AgentManagerTerminalFontChangedMessage
   | AgentManagerTerminalClosedMessage
   | AgentManagerTerminalErrorMessage
@@ -1475,6 +1511,7 @@ export type ExtensionMessage =
   | MarketplaceCatalogMessage
   | MarketplaceInstallResultMessage
   | MarketplacePublicationResultMessage
+  | MarketplaceBatchPublicationResultMessage
   | MarketplaceSkillDetailMessage
   | MarketplaceRemoveResultMessage
   | LocalSkillImportPreviewMessage
@@ -1501,6 +1538,7 @@ export type ExtensionMessage =
   | TelemetryStateMessage
   | RemoteStatusMessage
   | ValidateFilesResultMessage
+  | PlantUmlRenderedMessage
   | MemoryLoadedMessage
   | MemoryEventMessage
   | MemoryOperationResultMessage

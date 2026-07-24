@@ -22,6 +22,10 @@ import { CHIPMATE_SERVER_KEY } from "../../../src/shared/chipmate-server"
 import { ChatView } from "../components/chat/ChatView"
 import { SidebarEmptyState } from "../components/chat/SidebarEmptyState"
 import { WorkStyleContext, type WorkStyleContextValue } from "../context/work-style"
+import { useDialog } from "@kilocode/kilo-ui/context/dialog"
+import CustomProviderDialog from "../components/settings/CustomProviderDialog"
+import type { InternalOfflineProviderDefaults } from "../../../src/shared/internal-offline"
+import { QWEN_FIM_MODEL_ID } from "../../../src/shared/qwen-autocomplete"
 
 const meta: Meta = {
   title: "Settings",
@@ -31,6 +35,47 @@ export default meta
 type Story = StoryObj
 
 function noop() {}
+
+const customDefaults: InternalOfflineProviderDefaults = {
+  providerID: "chipmate",
+  name: "ChipMate",
+  npm: "@ai-sdk/openai-compatible",
+  baseURL: "https://api.example.com/v1",
+  modelID: "deepseek-v4-flash",
+  autocompleteModelID: QWEN_FIM_MODEL_ID,
+  variant: "low",
+}
+
+function OpenCustomProviderDialog(props: { defaults?: InternalOfflineProviderDefaults }) {
+  const dialog = useDialog()
+  onMount(() => dialog.show(() => <CustomProviderDialog defaults={props.defaults} />))
+  return <div style={{ width: "100%", height: "100%" }} />
+}
+
+function CustomProviderStory(props: { width: string; quick?: boolean }) {
+  return (
+    <div style={{ width: props.width, height: "760px", "max-width": "100vw", overflow: "hidden" }}>
+      <StoryProviders noPadding locale="zh">
+        <OpenCustomProviderDialog defaults={props.quick ? customDefaults : undefined} />
+      </StoryProviders>
+    </div>
+  )
+}
+
+export const CustomProviderQuick420: Story = {
+  name: "Custom provider — key-only 420px",
+  render: () => <CustomProviderStory width="420px" quick />,
+}
+
+export const CustomProviderQuick300: Story = {
+  name: "Custom provider — key-only 300px",
+  render: () => <CustomProviderStory width="300px" quick />,
+}
+
+export const CustomProviderPublic: Story = {
+  name: "Custom provider — public full form",
+  render: () => <CustomProviderStory width="420px" />,
+}
 
 const MOCK_AGENTS = [
   { name: "code", description: "General-purpose coding agent", mode: "primary" as const, native: true },
@@ -113,6 +158,87 @@ export const ChipmateServerFailure: Story = {
   ),
 }
 
+export const ChipmateUpdateLatest: Story = {
+  name: "ChipMate 更新 — 当前最新",
+  render: () => (
+    <ChipmateServerStory
+      preview={{
+        result: { status: "success", code: "ok", skillsCount: 12 },
+        update: {
+          status: "latest",
+          currentVersion: "1.0.9",
+          checkedAt: Date.now(),
+          target: "darwin-arm64",
+        },
+      }}
+    />
+  ),
+}
+
+const availableUpdate = {
+  status: "available" as const,
+  candidateId: "storybook-update",
+  currentVersion: "1.0.9",
+  version: "1.0.10",
+  target: "darwin-arm64" as const,
+  publishedAt: "2026-07-24T08:00:00.000Z",
+  releaseNotes:
+    "- 新增手动检查更新与版本状态提示\n- 优化离线环境中的更新包校验与安装流程\n- 修复更新完成后未及时提示重载的问题",
+}
+
+export const ChipmateUpdateAvailable: Story = {
+  name: "ChipMate 更新 — 发现新版本",
+  render: () => (
+    <ChipmateServerStory
+      preview={{ result: { status: "success", code: "ok", skillsCount: 12 }, update: availableUpdate }}
+    />
+  ),
+}
+
+export const ChipmateUpdateNotes: Story = {
+  name: "ChipMate 更新 — 展开更新说明",
+  render: () => (
+    <ChipmateServerStory
+      preview={{
+        result: { status: "success", code: "ok", skillsCount: 12 },
+        update: availableUpdate,
+        notesExpanded: true,
+      }}
+    />
+  ),
+}
+
+export const ChipmateUpdateChecking: Story = {
+  name: "ChipMate 更新 — 正在检查",
+  render: () => <ChipmateServerStory preview={{ updatePhase: "checking" }} />,
+}
+
+export const ChipmateUpdateInstalling: Story = {
+  name: "ChipMate 更新 — 正在安装",
+  render: () => <ChipmateServerStory preview={{ update: availableUpdate, updatePhase: "installing" }} />,
+}
+
+export const ChipmateUpdateInstalled: Story = {
+  name: "ChipMate 更新 — 等待重载",
+  render: () => <ChipmateServerStory preview={{ update: { status: "installed", version: "1.0.10" } }} />,
+}
+
+export const ChipmateUpdateError: Story = {
+  name: "ChipMate 更新 — 检查失败",
+  render: () => (
+    <ChipmateServerStory
+      preview={{
+        update: {
+          status: "error",
+          code: "availability",
+          message: "暂时无法连接 ChipMate Server，请检查网络后重试。",
+          retryable: true,
+        },
+      }}
+    />
+  ),
+}
+
 export const ChipmateServerNarrow: Story = {
   name: "ChipMate Server — narrow",
   render: () => <ChipmateServerStory width="360px" />,
@@ -133,6 +259,7 @@ function AlignedSettings(props: {
   hover?: boolean
   width?: string
   height?: string
+  server?: string
   onClose?: () => void
 }) {
   let ref: HTMLDivElement | undefined
@@ -152,7 +279,7 @@ function AlignedSettings(props: {
         noPadding
         locale="zh"
         config={aligned}
-        settings={{ [CHIPMATE_SERVER_KEY]: "http://127.0.0.1:6001" }}
+        settings={{ [CHIPMATE_SERVER_KEY]: props.server ?? "http://127.0.0.1:6001" }}
         dirty={props.dirty}
         saving={props.saving}
         canSave={props.canSave}
@@ -167,6 +294,104 @@ function AlignedSettings(props: {
       </StoryProviders>
     </div>
   )
+}
+
+export const SettingsChipmateUpdateLatest: Story = {
+  name: "设置更新 — 最新版本设计基准",
+  render: () => (
+    <AlignedSettings
+      width="1440px"
+      height="1024px"
+      server="https://chipmate.internal:7443"
+      preview={{
+        result: { status: "success", code: "ok", skillsCount: 12 },
+        update: {
+          status: "latest",
+          currentVersion: "1.0.9",
+          checkedAt: Date.now(),
+          target: "darwin-arm64",
+        },
+      }}
+    />
+  ),
+}
+
+export const SettingsChipmateUpdateAvailable: Story = {
+  name: "设置更新 — 发现新版本设计基准",
+  render: () => (
+    <AlignedSettings
+      width="1440px"
+      height="1024px"
+      server="https://chipmate.internal:7443"
+      preview={{ result: { status: "success", code: "ok", skillsCount: 12 }, update: availableUpdate }}
+    />
+  ),
+}
+
+export const SettingsChipmateUpdateNotes: Story = {
+  name: "设置更新 — 更新说明设计基准",
+  render: () => (
+    <AlignedSettings
+      width="1440px"
+      height="1024px"
+      server="https://chipmate.internal:7443"
+      preview={{
+        result: { status: "success", code: "ok", skillsCount: 12 },
+        update: availableUpdate,
+        notesExpanded: true,
+      }}
+    />
+  ),
+}
+
+export const SettingsChipmateUpdateMid: Story = {
+  name: "设置更新 — 900 × 800",
+  render: () => (
+    <AlignedSettings
+      width="900px"
+      height="800px"
+      server="https://chipmate.internal:7443"
+      preview={{ result: { status: "success", code: "ok", skillsCount: 12 }, update: availableUpdate }}
+    />
+  ),
+}
+
+export const SettingsChipmateUpdateNarrow: Story = {
+  name: "设置更新 — 480 × 900",
+  render: () => (
+    <AlignedSettings
+      width="480px"
+      height="900px"
+      server="https://chipmate.internal:7443"
+      preview={{ result: { status: "success", code: "ok", skillsCount: 12 }, update: availableUpdate }}
+    />
+  ),
+}
+
+export const SettingsChipmateUpdateLight: Story = {
+  name: "设置更新 — 浅色",
+  globals: { vscodeTheme: "light-modern" },
+  render: () => (
+    <AlignedSettings
+      width="1440px"
+      height="1024px"
+      server="https://chipmate.internal:7443"
+      preview={{ result: { status: "success", code: "ok", skillsCount: 12 }, update: availableUpdate }}
+    />
+  ),
+}
+
+export const SettingsChipmateUpdateContrast: Story = {
+  name: "设置更新 — 高对比度",
+  globals: { vscodeTheme: "hc-black" },
+  render: () => (
+    <AlignedSettings
+      width="1440px"
+      height="1024px"
+      server="https://chipmate.internal:7443"
+      preview={{ result: { status: "success", code: "ok", skillsCount: 12 }, update: availableUpdate }}
+    />
+  ),
 }
 
 export const SettingsAlignedDesktop: Story = {

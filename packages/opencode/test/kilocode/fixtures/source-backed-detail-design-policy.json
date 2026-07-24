@@ -20,18 +20,18 @@
     "quality gate report"
   ],
   "expectedCapabilityGroups": [
-    "input-and-scope",
-    "source-evidence",
-    "control-flow-evidence",
-    "business-flow-abstraction-and-diagrams",
-    "enhanced-detail-design",
-    "diff-and-feature-report",
-    "review-and-word-export"
+    "scope discovery",
+    "line-level control-flow evidence",
+    "business abstraction",
+    "fourteen-topic local design units",
+    "five-view diagrams",
+    "existing-document diff",
+    "native Word/TOC"
   ],
   "expectedOutline": [
     "1. Reading path",
     "2. Terminology, scope, and evidence baseline",
-    "3. Parent-system positioning and target-module role",
+    "3. System-architecture position, owning-module relationship, and target-module role",
     "4. Target-module responsibilities, boundaries, and architecture",
     "5. Business capability overview",
     "6. Detailed main business flows",
@@ -55,7 +55,7 @@
     "6. Core structures, variables, queues, caches, ownership, and lifecycle",
     "7. Function/feature coverage, key functions, and code execution flow",
     "8. States, events, dispatch, guards, actions, and state-machine behavior",
-    "9. External, internal, cross-module, asynchronous, callback, queue, and hardware interfaces",
+    "9. External, internal, cross-module, asynchronous, callback, queue, and source-evidenced adapter interfaces",
     "10. Error, wait, retry, timeout, cancellation, recovery, rollback, and cleanup paths",
     "11. Algorithms, strategies, configuration, concurrency, resources, and performance",
     "12. Build targets, module registration, initialization order, feature flags, and platform differences",

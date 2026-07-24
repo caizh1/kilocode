@@ -2,10 +2,65 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "fs/promises"
 import { tmpdir } from "os"
 import path from "path"
+import { deflateSync } from "node:zlib"
+import JSZip from "jszip"
 import { utils, write } from "xlsx"
 import { extractDocument, pdftotextPath } from "../../../../src/indexing/documents/extractors"
 
 const dirs: string[] = []
+const uml = "@startuml\nclass Controller\nController --> Service\n@enduml"
+
+function chunk(kind: string, data: Uint8Array) {
+  const out = Buffer.alloc(12 + data.byteLength)
+  out.writeUInt32BE(data.byteLength, 0)
+  out.write(kind, 4, 4, "ascii")
+  Buffer.from(data).copy(out, 8)
+  return out
+}
+
+function plantuml() {
+  const payload = Buffer.concat([
+    Buffer.from("plantuml\0", "latin1"),
+    Buffer.from([1, 0, 0, 0]),
+    deflateSync(Buffer.from(`${uml}\n\n1.2026.6`, "utf8")),
+  ])
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("iTXt", payload),
+    chunk("IEND", Buffer.alloc(0)),
+  ])
+}
+
+async function docx(text: string) {
+  const zip = new JSZip()
+  zip.file(
+    "[Content_Types].xml",
+    '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+  )
+  zip.file(
+    "_rels/.rels",
+    '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+  )
+  zip.file(
+    "word/document.xml",
+    `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`,
+  )
+  zip.file("word/media/image1.png", plantuml())
+  return zip.generateAsync({ type: "uint8array" })
+}
+
+function declared(input: Uint8Array, size: number) {
+  const bytes = Buffer.from(input)
+  for (let offset = 0; offset + 46 <= bytes.length; offset += 1) {
+    if (bytes.readUInt32LE(offset) !== 0x02014b50) continue
+    const length = bytes.readUInt16LE(offset + 28)
+    const name = bytes.subarray(offset + 46, offset + 46 + length).toString("utf8")
+    if (!/^word\/media\/[^/]+\.png$/i.test(name)) continue
+    bytes.writeUInt32LE(size, offset + 24)
+    return bytes
+  }
+  throw new Error("media central directory entry not found")
+}
 
 async function temp(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "kilo-documents-"))
@@ -35,11 +90,37 @@ describe("Document extractors", () => {
   test("bounds extracted document text by bytes", async () => {
     const dir = await temp()
     const file = path.join(dir, "large.txt")
-    await writeFile(file, "0123456789".repeat(100))
+    await writeFile(file, "你".repeat(100))
 
     const sections = await extractDocument(file, 64)
 
     expect(Buffer.byteLength(sections[0]?.text ?? "")).toBeLessThanOrEqual(64)
+    expect(sections[0]?.text).not.toContain("\uFFFD")
+  })
+
+  test("reserves DOCX extraction budget for embedded PlantUML source", async () => {
+    const dir = await temp()
+    const file = path.join(dir, "architecture.docx")
+    await writeFile(file, await docx("Long body ".repeat(200)))
+
+    const sections = await extractDocument(file, 256)
+    const diagram = sections.find((section) => section.kind === "diagram")
+
+    expect(diagram?.mediaPath).toBe("word/media/image1.png")
+    expect(diagram?.text).toContain("Controller --> Service")
+    expect(sections.reduce((total, section) => total + Buffer.byteLength(section.text), 0)).toBeLessThanOrEqual(256)
+  })
+
+  test("keeps DOCX body text when embedded PNG declarations exceed safety limits", async () => {
+    const dir = await temp()
+    const file = path.join(dir, "oversized-media.docx")
+    await writeFile(file, declared(await docx("Architecture body"), 16 * 1024 * 1024 + 1))
+
+    const sections = await extractDocument(file)
+
+    expect(sections[0]?.text).toContain("Architecture body")
+    expect(sections[0]?.text).toContain("Embedded PlantUML extraction failed")
+    expect(sections.some((section) => section.kind === "diagram")).toBe(false)
   })
 
   test("extracts XLSX and ODS sheets with row ranges", async () => {

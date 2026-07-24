@@ -17,7 +17,7 @@
 
 目标解析顺序：用户明确指定主体时直接采用；多个名称形成源码确认的祖先—后代链时选择最深、最具体的名称为 `target_module`，其有证据的上层拥有者记为 `context_parent`；同级、层级未知、存在多个最深候选或用户明确要求多个模块分别作为主体时，先请求用户确认主体或交付拆分。不得因为名称排在前面、目录更大或拥有更多文件就把所属上级模块升格为目标模块。
 
-紧凑表达按“最后且最具体名称优先”解析，但只有源码层级证据成立时才应用；本 Skill 不提供任何具体模块名称示例。冻结后的 `module-scope.md` 是 scope lock，必须记录用户原始表达、`SBDD_RULESET_REVISION`、所属上级模块源码根、唯一目标模块及其主源码根、目标内部确认子模块、排除对象、层级证据和置信度。
+紧凑表达按“最后且最具体名称优先”解析，但只有源码层级证据成立时才应用；本 Skill 不提供任何具体模块名称示例。冻结后的 `module-scope.md` 是 scope lock，必须记录用户原始表达、`SBDD_RULESET_REVISION`、所属上级模块源码根、唯一目标模块及其主源码根、目标编译单元 census、目标内部确认子模块、排除对象、层级证据和置信度。每个 target-owned 编译单元必须映射到 target orchestration、唯一候选/确认单元、证据化 alias/duplicate owner 或 generated/test 等证据化 non-submodule，并满足 `unmappedTargetCompilationUnitCount = 0`；未完成前不得冻结范围。
 
 对以下关系分别建立证据，不得从一种关系推导另一种关系：系统架构位置、源码归属、所属上级模块、实际调用方和被调用方、数据/状态/控制权 handoff、依赖、协作、管理和资源所有权。源码包含不能证明系统层级，所属上级模块不能自动视为业务上游或调用入口，调用边不能证明所有权。目标位于某系统层内部时，不得同时把该系统层写成目标下游。“管理”或“位于……之间”必须有直接证据；证据不足时标记“待确认”，不得使用行业常识补全。该一致性规则适用于所有章节、表格、图、图注、review notes 和结论。
 
@@ -81,6 +81,28 @@
 ## 8. 后续探索边界
 ```
 
-冻结范围时必须证明：只有一个 root target DesignUnit；每个 confirmed submodule 都由 target 内部的职责、接口、状态或数据所有权证据支持；所属上级模块不进入 DesignUnit、十四项正文、FsmAudit 或 `5D` 分母。若用户明确要求多个主体，本单目标模板不得静默选一个，必须先确定拆分方式。
+冻结范围时必须证明只有一个 root target DesignUnit，所属上级模块不进入 DesignUnit/十四项/五视图分母。目标范围内参与构建、非 generated/test 的实现单元，只要具有配对接口/头文件及可跨文件调用的符号，就必须确认为子模块；无状态、纯函数、utility/storage/adapter、共享或只有一个调用者均不改变此结论。只有 target orchestration、无实现/API 的 header-only 定义、范围外 generated/test，或“全部导出符号仅透传且不增加校验、转换、状态、资源、错误或生命周期行为”的精确 alias/duplicate 才可排除；后一种必须逐符号给出证据并指向唯一 confirmed owner。“被某单元使用”只证明依赖，不证明别名或归属合并。若用户明确要求多个主体，必须先确定拆分方式。
+
+冻结 `module-scope.md` 后立即写入并回读同目录 `design-unit-census.json`。该文件是图形完整性校验的独立输入，不复制正文。通用字段为 `version: 1`、唯一 `targetDesignUnitId`，以及 `designUnits[]` 的 `id/name/kind/parentId?`；根目标的 `kind` 为 `target`，每个确认子模块的 `kind` 为 `confirmed-submodule` 且 `parentId` 指向直接所属 DesignUnit。
+
+C/C++ 目标还必须写入工作区内 `targetSourceRoot` 和 `implementationUnits[]`。语义校验器会递归枚举该根下的 `.c/.cc/.cpp/.cxx`，每个实际实现文件必须恰好出现一次：
+
+```json
+{
+  "version": 1,
+  "targetDesignUnitId": "<target-id>",
+  "targetSourceRoot": "<workspace-relative-target-source-root>",
+  "designUnits": [
+    { "id": "<target-id>", "name": "<target-name>", "kind": "target" },
+    { "id": "<child-id>", "name": "<child-name>", "kind": "confirmed-submodule", "parentId": "<target-id>" }
+  ],
+  "implementationUnits": [
+    { "path": "<workspace-relative-main-implementation>", "disposition": "target", "designUnitId": "<target-id>" },
+    { "path": "<workspace-relative-child-implementation>", "disposition": "confirmed-submodule", "designUnitId": "<child-id>" }
+  ]
+}
+```
+
+`disposition: "excluded"` 只允许 `exclusion.reason` 为 `generated`、`test-fixture`、`inactive-platform-variant`、`outside-target-build` 或 `exact-alias-duplicate`，且必须带非空行级 `evidence[]`；`outside-target-build` 必须引用构建/注册证据，精确别名还必须以 `ownerDesignUnitId` 指向唯一确认单元。`utility`、`helper`、无状态、纯函数、小文件、单调用者、无 FSM、无资源或“业务不够独立”都不是合法 reason。目标 orchestration 实现映射到 target，不写 excluded。要求实际实现路径集合与 `implementationUnits[].path` 严格相等、每个非排除项的 DesignUnit 映射有效、合法排除证据可读；否则范围未冻结，禁止绘图。其 ID/名称集合必须与 `module-scope.md` 冻结集合完全一致。图形阶段不得删改或重建该文件来规避缺图；范围确因新源码证据变化时，必须返回范围阶段并同步重做全部下游正文和图形账本。
 
 范围冻结不是计数相等，而是集合恒等：`architecture decomposition names = confirmed census = DesignUnit IDs = detailed chapter IDs = diagram-ledger unit IDs`。任一目标外部单元混入、confirmed 单元被替换、同数异名、遗漏或多余项都使 Word 保持 `not_started`。

@@ -11,14 +11,15 @@ import {
 } from "../src/index.ts"
 
 test("public publication states and labels remain complete", () => {
-  assert.equal(PUBLICATION_STATUSES.length, 9)
+  assert.equal(PUBLICATION_STATUSES.length, 10)
   assert.equal(PUBLICATION_LABELS.CAPABILITY_UNSUPPORTED, "服务器能力不支持")
   assert.ok(MARKET_ERROR_CODES.includes("INTENT_REPLAYED"))
 })
 
 test("Fastify registers the complete frozen legacy route list", () => {
-  assert.equal(LEGACY_ROUTES.length, 13)
+  assert.equal(LEGACY_ROUTES.length, 14)
   assert.ok(LEGACY_ROUTES.some((route) => route.method === "POST" && route.url === "/render/word"))
+  assert.ok(LEGACY_ROUTES.some((route) => route.method === "POST" && route.url === "/render/plantuml"))
   assert.ok(LEGACY_ROUTES.some((route) => route.method === "GET" && route.url === "/marketplace/skills/*"))
 })
 

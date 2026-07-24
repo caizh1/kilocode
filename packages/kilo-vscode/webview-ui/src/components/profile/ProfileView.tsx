@@ -298,7 +298,9 @@ const ProfileView: Component<ProfileViewProps> = (props) => {
                               "font-size": "var(--kilo-font-size-13)",
                             }}
                           >
-                            <span style={{ "font-weight": "600", color: "var(--vscode-foreground)" }}>Kilo Pass</span>
+                            <span style={{ "font-weight": "600", color: "var(--vscode-foreground)" }}>
+                              ChipMate Pass
+                            </span>
                             <span style={{ color: "var(--vscode-descriptionForeground)" }}>
                               {short(pass().currentPeriodUsageUsd)} / {short(pass().currentPeriodBaseCreditsUsd)}
                             </span>

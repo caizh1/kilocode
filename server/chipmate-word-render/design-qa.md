@@ -435,3 +435,22 @@ No P0 crash or unusable-page failure is visible. No open P1/P2 remains in the fi
 - No P0, P1 or P2 is open for G9. Mobile and legacy browsers remain out of scope; archive inputs are browser-local and only selected VSIX bytes cross the publication boundary.
 
 final result: passed
+
+### Skill Publication Terminal States — G10
+
+- Functional Chrome E2E covers the published, unchanged, retry/double-submit and mixed error-plus-20-script-warning states. The full repository `npm run check` gate passes.
+- Installed macOS Google Chrome opened the local publish page at `1484×1060` and completed the local QA login. The archive chooser then lost extension control before bytes were selected, so no authoritative terminal-state screenshot was produced.
+- The required `1484×1060`, `1440×1024` and `1050×1024` success, failure and warning-state visual captures remain `BLOCKED / UNVERIFIED`. Playwright results are functional evidence only and are not treated as installed-Chrome visual sign-off.
+
+### Skill Risk Warning Precision — G11
+
+- The installed macOS Google Chrome opened the local `skill-risk-v3` publish page at `1484×1060`, completed the local QA login and opened the archive chooser.
+- The Chrome extension rejected local archive injection before upload, so the 20-script, placeholder-credential and high-confidence-credential terminal states could not be captured. The required `1484×1060`, `1440×1024` and `1050×1024` visual evidence remains `BLOCKED / UNVERIFIED`.
+- Functional Chrome E2E verifies one warning category for 20 expandable script paths and the updated risk-category wording. `npm run check` passes generated-contract validation, typecheck, lint and all package tests. Playwright evidence is not treated as installed-Chrome visual certification.
+
+### Extension Analytics Download Trend — G12
+
+- The user-provided production-shaped series `2 / 1 / 17 / 3` was reproduced against the local analytics API with a total of `23`. The Web view now renders a continuous UTC 30-day series with zero-filled missing dates and normalized nonzero heights of `11.7647% / 8% / 100% / 17.6471%`.
+- Installed macOS Google Chrome evidence: `/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/10-extension-analytics-trend-1484x1060.jpg` and `/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/11-extension-analytics-trend-1050x1024.jpg`.
+- Both accepted desktop widths have zero root overflow. The chart fills its glass panel, keeps dates and the 30-day total readable, and reports zero Chrome console warnings/errors. No P0, P1 or P2 remains for G12.
+- `npm run check` passes generated-contract validation, typecheck, lint and all 98 package tests. The Chrome E2E project passes all 28 tests; the combined Chrome/Edge command cannot start Edge because Microsoft Edge is not installed on this Mac, so Edge remains `UNVERIFIED` rather than a product failure.

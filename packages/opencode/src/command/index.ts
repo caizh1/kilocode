@@ -169,12 +169,20 @@ export const layer = Layer.effect(
 
     const get = Effect.fn("Command.get")(function* (name: string) {
       const s = yield* InstanceState.get(state)
-      const exact = s.commands[name] // kilocode_change
-      if (exact) return exact // kilocode_change
-      const alias = legacyReviewCommand(name) // kilocode_change
-      if (alias) return alias // kilocode_change
-
       // kilocode_change start
+      const exact = s.commands[name]
+      if (exact?.source !== "skill") {
+        if (exact) return exact
+      } else {
+        const item = yield* skill.get(name)
+        if (item) return fromSkill(item)
+      }
+      const alias = legacyReviewCommand(name)
+      if (alias) return alias
+
+      const current = yield* skill.get(name)
+      if (current) return fromSkill(current)
+
       const target = skillName(name)
       if (target) {
         const item = yield* skill.get(target)
@@ -195,12 +203,8 @@ export const layer = Layer.effect(
     // kilocode_change start
     const list = Effect.fn("Command.list")(function* () {
       const s = yield* InstanceState.get(state)
-      const result = Object.values(s.commands)
-      const names = new Set(result.map((item) => item.name))
-      for (const item of yield* skill.all()) {
-        if (s.commands[item.name]?.source === "skill") continue
-        if (names.has(item.name)) result.push(fromSkill(item))
-      }
+      const result = Object.values(s.commands).filter((item) => item.source !== "skill")
+      for (const item of yield* skill.all()) result.push(fromSkill(item))
       return result
     })
     // kilocode_change end

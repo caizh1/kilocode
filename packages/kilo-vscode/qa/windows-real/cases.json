@@ -24,7 +24,7 @@
         "列出安装扩展并启动无工作区窗口"
       ],
       "expectedState": [
-        "chipmate.chipmate@0.0.88 已安装",
+        "chipmate.chipmate@1.0.9 已安装",
         "包含 kilo.exe、rg.exe、LanceDB、Tree-sitter 和 dist bundles",
         "不包含 ffmpeg.exe 或 dist source maps",
         "无工作区时索引保持 idle"
@@ -41,10 +41,10 @@
       "profiles": ["upgrade", "coexist"],
       "changesets": ["isolate-chipmate-v2"],
       "pathPatterns": ["^packages/kilo-vscode/src/", "^packages/opencode/src/config/paths\\.ts$"],
-      "preconditions": ["0.0.86 VSIX 可选提供", "Kilo VSIX 可选提供"],
+      "preconditions": ["1.0.8 VSIX 可选提供", "Kilo VSIX 可选提供"],
       "steps": [
-        "在隔离 Profile 安装 0.0.86 并写入测试设置",
-        "使用 --force 覆盖安装 0.0.88",
+        "在隔离 Profile 安装 1.0.8 并写入测试设置",
+        "使用 --force 覆盖安装 1.0.9",
         "执行 installed-host probe 并连续三次 Reload",
         "在 coexist Profile 同时启用 Kilo 与 ChipMate"
       ],
@@ -284,19 +284,36 @@
       "title": "验证 session/worktree/terminal 和危险操作审批",
       "severity": "P1",
       "profiles": ["clean"],
-      "changesets": ["agent-console-webview"],
+      "changesets": ["agent-console-webview", "fix-agent-console-windows-powershell"],
       "pathPatterns": [
+        "^packages/kilo-vscode/src/agent-console/",
+        "^packages/kilo-vscode/webview-ui/agent-console/",
+        "^packages/kilo-vscode/assets/agent-console/",
         "^packages/kilo-vscode/src/agent-manager/",
         "^packages/kilo-vscode/src/services/agent-terminal/"
       ],
-      "preconditions": ["测试 Git 仓库与 sentinel 临时根已创建"],
-      "steps": [
-        "创建 session、tab 和 worktree",
-        "打开 Agent/Shell 模式",
-        "执行安全命令",
-        "请求删除 sentinel 文件并取消/确认"
+      "preconditions": [
+        "测试 Git 仓库与 sentinel 临时根已创建",
+        "x64 VS Code Stable 与正式 win32-x64-baseline VSIX 已安装",
+        "确定性本地 Mock Provider 已启动",
+        "本次运行明确声明 arm64-vm 或 native-x64 gate"
       ],
-      "expectedState": ["session 和项目路由正确", "终端可交互", "高风险命令需要二次确认", "取消后无文件变化"],
+      "steps": [
+        "打开 Agent Console 并确认 Agent 模式只有一个真实 PowerShell 提示符和一个 UIA Edit 控件",
+        "逐字符输入 Write-Output CHIPMATE_QA_OK 并按 Enter，确认直接执行且只出现一次输出",
+        "输入中文自然语言并确认进入 Agent 时间线而不是 PowerShell 执行",
+        "用 Mock Provider 触发命令审批，依次验证取消与确认",
+        "连续提交 100 次并检查零丢失零重复",
+        "切换 Agent/Shell 50 次，执行 5000 行输出、Reload 与重连",
+        "分别在 GPU 默认与 --disable-gpu 下采集逐帧视频、截图、UIA 树和 Extension Host 日志"
+      ],
+      "expectedState": [
+        "命令与自然语言共享同一个真实 PowerShell 提示符",
+        "Enter 无丢失或重复并保留 PSReadLine 历史、补全、光标与中文 IME",
+        "命令直接执行，自然语言进入 Agent，审批命令仍需用户确认",
+        "Shell 标签保持同一 PTY 的完整 scrollback",
+        "字体、DPI、滚动、模式切换与流式输出无闪白、跳动或未裁决差异"
+      ],
       "visualOracle": "baseline",
       "timeoutSeconds": 900,
       "cleanup": ["仅删除 sentinel 临时 worktree"]
@@ -308,9 +325,9 @@
       "severity": "P1",
       "profiles": ["clean"],
       "changesets": [
-      "close-skill-publication-progress",
-      "atomic-skill-market-tools",
-      "extension-market-batch-upload",
+        "close-skill-publication-progress",
+        "atomic-skill-market-tools",
+        "extension-market-batch-upload",
         "extension-market-unlimited-batches",
         "fix-local-skill-removal",
         "import-local-skills",

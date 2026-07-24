@@ -1,4 +1,5 @@
 import * as path from "path"
+import { realpath } from "fs/promises"
 import * as vscode from "vscode"
 import type {
   KiloClient,
@@ -105,6 +106,7 @@ import { retryable, backoff, MAX_RETRIES } from "./util/retry"
 import { hasGit } from "./kilo-provider/git-status"
 import * as MemoryDebug from "./services/memory-debug"
 import { promptChipmateServerReload, resolveChipmateServer, testChipmateServer } from "./services/chipmate-server"
+import { getUpdateCheckService } from "./services/update-check"
 import { CHIPMATE_SERVER_KEY, normalizeChipmateServerBaseUrl } from "./shared/chipmate-server"
 import {
   LocalSkillRemoval,
@@ -181,6 +183,10 @@ type ContextMessage = { contextDirectory?: unknown }
 type TypedWebviewMessage = {
   type: string
   value?: unknown
+}
+
+function outside(rel: string): boolean {
+  return path.isAbsolute(rel) || rel === ".." || rel.startsWith(`..${path.sep}`)
 }
 type SandboxSupportClient = {
   support: (
@@ -997,6 +1003,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       if (await this.handleModelSelectorExpandedMessage(message)) return
       this.visibleTaskStreams.handle(message)
       if (await this.handleMemoryMessage(message)) return
+      await this.handleChipmateUpdateMessage(message)
       if (await this.handleIndexingMessage(message)) return
       switch (message.type) {
         case "webviewReady":
@@ -1525,6 +1532,36 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return true
     }
     return false
+  }
+
+  private async handleChipmateUpdateMessage(message: {
+    type?: unknown
+    requestId?: unknown
+    candidateId?: unknown
+  }): Promise<void> {
+    if (message.type === "reloadChipmateWindow") {
+      await vscode.commands.executeCommand("workbench.action.reloadWindow")
+      return
+    }
+    if (message.type !== "checkChipmateUpdate" && message.type !== "installChipmateUpdate") return
+    if (typeof message.requestId !== "string") return
+    const service = getUpdateCheckService()
+    const unavailable = {
+      status: "error" as const,
+      code: "availability",
+      message: "ChipMate update service is not ready.",
+      retryable: true,
+    }
+    if (message.type === "checkChipmateUpdate") {
+      const result = service ? await service.probeManual() : unavailable
+      this.postMessage({ type: "chipmateUpdateState", requestId: message.requestId, result })
+      return
+    }
+    const result =
+      service && typeof message.candidateId === "string"
+        ? await service.installManual(message.candidateId)
+        : unavailable
+    this.postMessage({ type: "chipmateUpdateState", requestId: message.requestId, result })
   }
 
   private async toggleFavorite(message: {
@@ -2296,6 +2333,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const method = typeof msg.method === "number" ? msg.method : 0
     const key = typeof msg.apiKey === "string" ? msg.apiKey : undefined
     const keyChanged = msg.apiKeyChanged === true
+    const model = typeof msg.activateModelID === "string" ? msg.activateModelID : undefined
     const code = typeof msg.code === "string" ? msg.code : undefined
     const config = msg.config && typeof msg.config === "object" ? (msg.config as Record<string, unknown>) : undefined
     const metadata =
@@ -2309,7 +2347,17 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return
     }
     if (msg.type === "saveCustomProvider" && config)
-      return saveCustomProviderAction(ctx, rid, pid, config, key, keyChanged, this.cachedConfigMessage, set)
+      return saveCustomProviderAction(
+        ctx,
+        rid,
+        pid,
+        config,
+        key,
+        keyChanged,
+        this.cachedConfigMessage,
+        set,
+        model,
+      )
   }
 
   private async handleFetchCustomProviderModels(msg: Record<string, unknown>): Promise<void> {
@@ -2541,7 +2589,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
   }
 
-  private async handleIndexingMessage(message: { type: string; tab?: string }): Promise<boolean> {
+  private async handleIndexingMessage(message: {
+    type: string
+    tab?: string
+    scope?: "global" | "project"
+  }): Promise<boolean> {
     switch (message.type) {
       case "requestIndexingStatus":
         void this.fetchAndSendIndexingStatus().catch((err) =>
@@ -2549,7 +2601,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         )
         return true
       case "selectDocumentRagFolder":
-        void this.selectDocumentRagFolder().catch((err) =>
+        void this.selectDocumentRagFolder(message.scope ?? "project").catch((err) =>
           console.error("[Kilo New] selectDocumentRagFolder failed:", err),
         )
         return true
@@ -2608,7 +2660,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       const res = await fetch(`${config.baseUrl}/indexing/status`, {
         headers: {
           Authorization: `Basic ${auth}`,
-          "x-kilo-directory": dir,
+          "x-kilo-directory": encodeURIComponent(dir),
         },
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -2692,7 +2744,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (current && this.connectionState === "connected") void this.fetchAndSendIndexingStatus({ snapshot: true })
   }
 
-  private async selectDocumentRagFolder(): Promise<void> {
+  private async selectDocumentRagFolder(scope: "global" | "project" = "project"): Promise<void> {
     const root = this.getIndexingDirectory()
     if (!root) {
       void vscode.window.showWarningMessage("Open a workspace folder before adding Document RAG folders.")
@@ -2714,16 +2766,44 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return
     }
 
-    const paths = picks.flatMap((uri) => {
-      const rel = path.relative(root, uri.fsPath)
-      if (!rel || rel === ".") return ["."]
-      if (path.isAbsolute(rel) || rel === ".." || rel.startsWith(`..${path.sep}`)) return []
-      return [rel.replaceAll(path.sep, "/")]
-    })
-    if (paths.length !== picks.length) {
-      void vscode.window.showWarningMessage("Document RAG folders must be inside the current workspace.")
+    const workspace = await realpath(root).catch(() => path.resolve(root))
+    const selected = await Promise.all(
+      picks.map(async (uri) => {
+        const file = await realpath(uri.fsPath).catch(() => path.resolve(uri.fsPath))
+        const rel = path.relative(workspace, file)
+        if (!rel || rel === "." || !outside(rel)) return undefined
+        return {
+          path: file,
+          approval: { path: file, ...(scope === "project" ? { workspace } : {}) },
+        }
+      }),
+    )
+    const valid = selected.filter((item): item is NonNullable<typeof item> => Boolean(item))
+    if (valid.length !== picks.length) {
+      void vscode.window.showInformationMessage(
+        "Folders inside the current workspace are already included in Document RAG.",
+      )
     }
-    if (paths.length > 0) this.postMessage({ type: "documentRagFoldersSelected", paths })
+    const roots = [...new Map(valid.map((item) => [item.path, item])).values()]
+    const approvals = roots.map((item) => item.approval)
+    if (approvals.length > 0) {
+      const action = "Allow and Add"
+      const choice = await vscode.window.showWarningMessage(
+        "Files in external Document RAG folders will be read and sent to the configured embedding provider.",
+        { modal: true },
+        action,
+      )
+      if (choice !== action) return
+    }
+    if (this.indexing.dead) return
+    if (target !== this.indexing.target || !this.isCurrentIndexingDirectory(root)) {
+      void vscode.window.showWarningMessage("The project changed while authorizing Document RAG folders. Try again.")
+      return
+    }
+    const paths = roots.map((item) => item.path)
+    if (paths.length > 0) {
+      this.postMessage({ type: "documentRagFoldersSelected", scope, paths, approvals })
+    }
   }
 
   private async rebuildDocumentRag(): Promise<void> {
@@ -2750,7 +2830,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         method: "POST",
         headers: {
           Authorization: `Basic ${auth}`,
-          "x-kilo-directory": dir,
+          "x-kilo-directory": encodeURIComponent(dir),
         },
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)

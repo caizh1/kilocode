@@ -10,6 +10,7 @@ import { Provider } from "@/provider/provider"
 import { SessionID } from "@/session/schema"
 import * as ToolJsonSchema from "@/tool/json-schema"
 import { Tool } from "@/tool/tool"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard"
 import { Effect, Schema } from "effect"
 import { matchesQuery } from "./model-search"
 import DESCRIPTION from "./agent-manager.txt"
@@ -251,6 +252,14 @@ export const AgentManagerTool = Tool.define<
       jsonSchema: ToolJsonSchema.fromSchema(WireParams),
       execute: (params, ctx) =>
         Effect.gen(function* () {
+          if (WorkflowGuard.sourceBacked(ctx.sessionID, ctx.messages)) {
+            return {
+              title: "Agent Manager blocked for source-backed document workflow",
+              output:
+                "The active source-backed-detail-design workflow must keep scope, evidence, prose, diagrams, and Word assembly in this root session. Continue with native read, grep, and document tools.",
+              metadata: { action: "action" in params ? params.action : "start" },
+            }
+          }
           if ("action" in params) {
             if (params.action === "list") {
               yield* ctx.ask({

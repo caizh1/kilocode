@@ -2,6 +2,10 @@ import { describe, expect, it } from "bun:test"
 import { isCurrentChipmateServerTest } from "../../src/shared/chipmate-server"
 
 const source = await Bun.file(new URL("../../webview-ui/src/context/config.tsx", import.meta.url)).text()
+const server = await Bun.file(
+  new URL("../../webview-ui/src/components/settings/ChipmateServerTab.tsx", import.meta.url),
+).text()
+const provider = await Bun.file(new URL("../../src/KiloProvider.ts", import.meta.url)).text()
 
 describe("ChipMate Server settings flow", () => {
   it("requests settings independently of the CLI configuration response", () => {
@@ -22,5 +26,17 @@ describe("ChipMate Server settings flow", () => {
     expect(isCurrentChipmateServerTest("latest", "stale")).toBeFalse()
     expect(isCurrentChipmateServerTest("latest", "latest")).toBeTrue()
     expect(isCurrentChipmateServerTest(undefined, "latest")).toBeFalse()
+  })
+
+  it("keeps manual update checks and installation as separate request-correlated actions", () => {
+    expect(server).toContain('type: "checkChipmateUpdate"')
+    expect(server).toContain('type: "installChipmateUpdate"')
+    expect(server).toContain('message.requestId !== updateRequest()')
+    expect(server).toContain('data-ui="chipmate-update-notes"')
+    expect(server).toContain('aria-live="assertive"')
+    expect(provider).toContain('message.type === "checkChipmateUpdate"')
+    expect(provider).toContain("service.probeManual()")
+    expect(provider).toContain('message.type !== "checkChipmateUpdate" && message.type !== "installChipmateUpdate"')
+    expect(provider).toContain("service.installManual(message.candidateId)")
   })
 })

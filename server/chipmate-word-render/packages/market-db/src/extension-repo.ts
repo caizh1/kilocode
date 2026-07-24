@@ -36,6 +36,7 @@ interface ExtensionRow {
   rating_total: number
   rating_count: number
   updated_at: string
+  owner_id: string | null
 }
 
 interface ArtifactRow {
@@ -87,6 +88,20 @@ export class ExtensionRepo {
   private pruned = ""
 
   constructor(private readonly db: DatabaseSync) {}
+
+  repair(): void {
+    const rows = this.db
+      .prepare(
+        `SELECT id,updated_at FROM extensions e
+         WHERE latest_artifact_id IS NOT NULL
+           AND NOT EXISTS(
+             SELECT 1 FROM extension_artifacts a
+             WHERE a.id=e.latest_artifact_id AND a.status='published'
+           )`,
+      )
+      .all() as unknown as Array<{ id: string; updated_at: string }>
+    for (const row of rows) this.recompute(row.id, row.updated_at)
+  }
 
   search(input: ExtensionSearchInput = {}): ExtensionSummaryItem[] {
     const rows = this.db
@@ -167,11 +182,95 @@ export class ExtensionRepo {
     return rows.map((row) => this.item(row))
   }
 
+  updateArtifacts(id: string): ExtensionArtifactItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT a.*,
+          CASE WHEN EXISTS(SELECT 1 FROM extension_sources s WHERE s.artifact_id=a.id AND s.active=1 AND s.kind='system')
+            THEN 'system' ELSE 'web' END AS source
+         FROM extension_artifacts a JOIN extensions e ON e.id=a.extension_id
+         WHERE a.extension_id=? AND a.status='published'
+           AND (EXISTS(SELECT 1 FROM extension_sources s WHERE s.artifact_id=a.id AND s.active=1 AND s.kind='system')
+             OR (e.owner_id IS NOT NULL AND a.uploader_id=e.owner_id))
+         ORDER BY a.published_at ASC`,
+      )
+      .all(id) as unknown as ArtifactRow[]
+    return rows.map((row) => this.item(row))
+  }
+
+  owner(id: string): { extensionId: string; ownerId?: string } | undefined {
+    const row = this.db.prepare("SELECT id,owner_id FROM extensions WHERE id=?").get(id) as
+      | { id: string; owner_id: string | null }
+      | undefined
+    if (!row) return undefined
+    return { extensionId: row.id, ...(row.owner_id ? { ownerId: row.owner_id } : {}) }
+  }
+
+  bindOwner(id: string, userId: string, stamp: string): { extensionId: string; ownerId: string } {
+    const row = this.owner(id)
+    if (!row) throw new Error("NOT_FOUND")
+    if (row.ownerId && row.ownerId !== userId) throw new Error("OWNERSHIP_REQUIRED")
+    this.db.prepare("UPDATE extensions SET owner_id=?,updated_at=? WHERE id=? AND owner_id IS NULL").run(userId, stamp, id)
+    this.audit(userId, "extension.owner-bind", id, "", {})
+    return { extensionId: id, ownerId: userId }
+  }
+
   publish(input: ExtensionArtifactInput): { artifact: ExtensionArtifactItem; duplicate: boolean } {
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      const result = this.insert(input)
+      this.db.exec("COMMIT")
+      return result
+    } catch (err) {
+      this.db.exec("ROLLBACK")
+      throw err
+    }
+  }
+
+  private insert(input: ExtensionArtifactInput): { artifact: ExtensionArtifactItem; duplicate: boolean } {
+    const owner = this.owner(input.manifest.id)
+    if (input.sourceKind === "web") {
+      if (!input.uploaderId) throw new Error("AUTH_INVALID")
+      if (owner?.ownerId && owner.ownerId !== input.uploaderId) throw new Error("OWNERSHIP_REQUIRED")
+      if (owner && !owner.ownerId) throw new Error("EXTENSION_OWNER_UNASSIGNED")
+    }
     const duplicate = this.artifactBySha(input.sha256)
     if (duplicate) {
       if (input.sourceKind === "system") this.source(input.sourceKey, duplicate.id, input.sourceKind, input.publishedAt)
       return { artifact: duplicate, duplicate: true }
+    }
+    const conflict = input.sourceKind === "web"
+      ? (this.db
+          .prepare(
+            `SELECT a.*,
+              CASE WHEN EXISTS(SELECT 1 FROM extension_sources s WHERE s.artifact_id=a.id AND s.active=1 AND s.kind='system')
+                THEN 'system' ELSE 'web' END AS source
+             FROM extension_artifacts a
+             WHERE a.extension_id=? AND a.version=? AND a.target=? AND a.status='published' AND a.sha256<>?
+             ORDER BY a.published_at DESC LIMIT 1`,
+          )
+          .get(
+            input.manifest.id,
+            input.manifest.version,
+            input.manifest.updateTarget ?? input.manifest.target,
+            input.sha256,
+          ) as ArtifactRow | undefined)
+      : undefined
+    if (conflict) {
+      throw new Error(`EXTENSION_VERSION_CONFLICT:${JSON.stringify({
+        extensionId: input.manifest.id,
+        version: input.manifest.version,
+        target: input.manifest.updateTarget ?? input.manifest.target,
+        existing: {
+          id: conflict.id,
+          filename: conflict.filename,
+          sha256: conflict.sha256,
+          publishedAt: conflict.published_at,
+          source: conflict.source,
+          canDelete: conflict.source === "web",
+        },
+        incoming: { filename: input.filename, sha256: input.sha256 },
+      })}`)
     }
     const removed = this.artifactRow("a.sha256=?", input.sha256)
     if (removed) {
@@ -199,9 +298,9 @@ export class ExtensionRepo {
       this.db
         .prepare(
           `INSERT INTO extensions(
-            id,publisher,name,display_name,description,categories_json,keywords_json,engine_vscode,latest_version,
-            latest_artifact_id,icon_data,readme,system_plugin,status,created_at,updated_at
-          ) VALUES(?,?,?,?,?,?,?,?,?,?,?, ?,?,'published',?,?)`,
+          id,publisher,name,display_name,description,categories_json,keywords_json,engine_vscode,latest_version,
+            latest_artifact_id,icon_data,readme,system_plugin,owner_id,status,created_at,updated_at
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'published',?,?)`,
         )
         .run(
           input.manifest.id,
@@ -217,6 +316,7 @@ export class ExtensionRepo {
           input.manifest.iconData ?? null,
           input.manifest.readme,
           input.manifest.systemPlugin ? 1 : 0,
+          input.sourceKind === "web" ? input.uploaderId! : null,
           input.publishedAt,
           input.publishedAt,
         )
@@ -232,7 +332,7 @@ export class ExtensionRepo {
         input.id,
         input.manifest.id,
         input.manifest.version,
-        input.manifest.target,
+        input.manifest.updateTarget ?? input.manifest.target,
         input.sha256,
         input.size,
         input.path,
@@ -291,7 +391,8 @@ export class ExtensionRepo {
   remove(id: string, userId: string, stamp: string): ExtensionArtifactItem {
     const item = this.artifact(id)
     if (!item) throw new Error("NOT_FOUND")
-    if (!item.uploaderId || item.uploaderId !== userId) throw new Error("OWNERSHIP_REQUIRED")
+    const owner = this.owner(item.extensionId)
+    if (!owner?.ownerId || owner.ownerId !== userId || item.source !== "web") throw new Error("OWNERSHIP_REQUIRED")
     this.db.prepare("UPDATE extension_sources SET active=0,last_seen_at=? WHERE artifact_id=?").run(stamp, id)
     this.db
       .prepare(

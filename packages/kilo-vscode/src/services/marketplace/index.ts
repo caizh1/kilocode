@@ -1,12 +1,11 @@
 import * as vscode from "vscode"
-import * as fs from "fs/promises"
-import * as path from "path"
 import { randomUUID } from "crypto"
 import { MarketplaceApiClient } from "./api"
 import { MarketplacePaths } from "./paths"
 import { InstallationDetector, type CliSkill } from "./detection"
 import { MarketplaceInstaller } from "./installer"
 import { mergeMarketplaceSkills } from "./skills"
+import { findSkillInstance, listSkillInstances, reconcileSkillInstances } from "./skill-instances"
 import { isInternalOfflineBuild } from "../../shared/internal-offline"
 import { createSkillArchive } from "./archive"
 import type { MarketEvent } from "./analytics"
@@ -71,15 +70,18 @@ export class MarketplaceService {
   ): Promise<MarketplaceDataResponse> {
     const request = this.api.fetchAll(apiKey)
     const relevance = request.then((result) => this.relevance(result.items, roots))
-    const [fetched, metadata, matches] = await Promise.all([
+    const found = listSkillInstances({
+      global: this.paths.skillsDir("global"),
+      ...(workspace ? { project: this.paths.skillsDir("project", workspace) } : {}),
+    })
+    const [fetched, instances, matches] = await Promise.all([
       request,
-      this.detector.detect(workspace, skills),
+      found,
       relevance,
     ])
-    const merged = mergeMarketplaceSkills(fetched.items, skills, metadata, fetched.skillsFetched, {
-      global: await aliases(this.paths.skillsDir("global")),
-      ...(workspace ? { project: await aliases(this.paths.skillsDir("project", workspace)) } : {}),
-    })
+    const physical = reconcileSkillInstances(instances.items, skills)
+    const metadata = await this.detector.detect(workspace, skills, physical)
+    const merged = mergeMarketplaceSkills(fetched.items, skills, metadata, fetched.skillsFetched, undefined, physical)
     const aligned = await this.api.alignedMode()
     const state =
       aligned && details
@@ -91,7 +93,7 @@ export class MarketplaceService {
             fetchList(apiKey, (key) => this.api.analytics(key), "获取市场分析数据失败"),
           ])
         : []
-    const errors = [...fetched.errors, ...fetchErrors(state[1], state[2], state[3], state[4])]
+    const errors = [...fetched.errors, ...instances.errors, ...fetchErrors(state[1], state[2], state[3], state[4])]
     return {
       marketplaceItems: merged.marketplaceItems,
       marketplaceInstalledMetadata: merged.marketplaceInstalledMetadata,
@@ -202,6 +204,23 @@ export class MarketplaceService {
     return this.installer.isSkillInstalled(id, scope, workspace)
   }
 
+  skillInstance(id: string, workspace?: string) {
+    return findSkillInstance(
+      {
+        global: this.paths.skillsDir("global"),
+        ...(workspace ? { project: this.paths.skillsDir("project", workspace) } : {}),
+      },
+      id,
+    )
+  }
+
+  skillInstances(workspace?: string) {
+    return listSkillInstances({
+      global: this.paths.skillsDir("global"),
+      ...(workspace ? { project: this.paths.skillsDir("project", workspace) } : {}),
+    })
+  }
+
   installVerifiedSkill(
     item: { id: string; revision: number; sha256: string; url: string },
     scope: "project" | "global",
@@ -265,15 +284,6 @@ export class MarketplaceService {
     this.scans.clear()
     this.api.dispose()
   }
-}
-
-async function aliases(dir: string): Promise<string[]> {
-  const resolved = path.resolve(dir)
-  const real = await fs.realpath(dir).catch((err: NodeJS.ErrnoException) => {
-    if (err.code !== "ENOENT") console.warn("[Kilo New] Failed to resolve Marketplace Skill root:", dir, err)
-    return resolved
-  })
-  return [...new Set([resolved, real])]
 }
 
 export type {

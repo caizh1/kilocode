@@ -1,5 +1,5 @@
 {
-  "rulesetRevision": "2026-07-long-task-gate-v1",
+  "rulesetRevision": "2026-07-flow-family-gate-v3",
   "requiredTopics": [
     "positioning",
     "boundaries",

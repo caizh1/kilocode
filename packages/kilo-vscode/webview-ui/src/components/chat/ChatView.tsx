@@ -234,7 +234,7 @@ export const ChatView: Component<ChatViewProps> = (props) => {
       <div class="new-task-button-wrapper" classList={{ "new-task-button-wrapper--empty": !hasChat }}>
         <div class="session-actions-row">
           <Show when={canStartSession(hasChat)}>
-            <Tooltip value={language.t("sidebar.session.newSession.tooltip")} placement="top">
+            <Tooltip value={language.t("sidebar.session.newSession.tooltip")} placement="top" disabled>
               <Button
                 variant="secondary"
                 size="small"
@@ -261,7 +261,7 @@ export const ChatView: Component<ChatViewProps> = (props) => {
           </Show>
           <Show when={canStartWorktree()}>
             <div class="session-worktree-split" ref={worktreeRef}>
-              <Tooltip value={worktreeTooltip} placement="top">
+              <Tooltip value={worktreeTooltip} placement="top" disabled>
                 <Button
                   variant="secondary"
                   size="small"
@@ -273,7 +273,7 @@ export const ChatView: Component<ChatViewProps> = (props) => {
                 </Button>
               </Tooltip>
               <DropdownMenu gutter={4} placement="top-start" getAnchorRect={() => worktreeRef?.getBoundingClientRect()}>
-                <Tooltip value={advancedTooltip} placement="top">
+                <Tooltip value={advancedTooltip} placement="top" disabled>
                   <DropdownMenu.Trigger
                     class="session-worktree-split-arrow"
                     aria-label={language.t("agentManager.worktree.advancedOptions")}
@@ -306,7 +306,7 @@ export const ChatView: Component<ChatViewProps> = (props) => {
           </Show>
           <Show when={canMoveToWorktree(hasChat)}>
             <>
-              <Tooltip value={moveTooltip()} placement="top">
+              <Tooltip value={moveTooltip()} placement="top" disabled>
                 <Button
                   variant="ghost"
                   size="small"

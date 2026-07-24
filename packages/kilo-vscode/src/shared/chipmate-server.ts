@@ -9,6 +9,7 @@ export type ChipmateServerEndpoints = {
   marketplace: string
   word: string
   mermaid: string
+  plantuml: string
   health: string
   updates: string
 }
@@ -66,6 +67,7 @@ export function deriveChipmateServerEndpoints(value: string): ChipmateServerEndp
     marketplace: `${base}/marketplace`,
     word: `${base}/render/word`,
     mermaid: `${base}/render/mermaid`,
+    plantuml: `${base}/render/plantuml`,
     health: `${base}/health`,
     updates: `${base}/packages/manifest.json`,
   }

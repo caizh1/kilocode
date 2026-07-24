@@ -502,6 +502,7 @@
 
 .task-header-context-popover {
   width: min(280px, calc(100vw - 16px));
+  min-width: min(200px, calc(100vw - 16px));
   max-width: calc(100vw - 16px);
   white-space: normal;
   overflow-wrap: break-word;

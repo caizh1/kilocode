@@ -97,6 +97,21 @@ test("plan agent still hard-denies non-plan edits after user edit allow", async 
   })
 })
 
+test("Ask and Plan allow chat PlantUML rendering while retaining write restrictions", async () => {
+  await using tmp = await tmpdir({})
+
+  await provideTestInstance({
+    directory: tmp.path,
+    fn: async () => {
+      for (const name of ["ask", "plan"]) {
+        const agent = await load(tmp.path, (svc) => svc.get(name))
+        expect(Permission.evaluate("render_plantuml_diagram", "plantuml", agent!.permission).action).toBe("allow")
+        expect(Permission.evaluate("write", "diagram.puml", agent!.permission).action).toBe("deny")
+      }
+    },
+  })
+})
+
 test.serial("internal code, explore, debug, and ask agents expose retrieval tools", () =>
   offline(async () => {
     await using tmp = await tmpdir({})
@@ -170,7 +185,8 @@ test.serial("internal explore prompt routes retrieval without changing the publi
         process.env.KILO_INTERNAL_OFFLINE = "1"
         const agent = await load(internalDir.path, (svc) => svc.get("explore"))
         expect(agent!.prompt).toContain("Use the retrieval route that best matches the question")
-        expect(agent!.prompt).toContain("Use codebase_analysis first")
+        expect(agent!.prompt).not.toContain("codebase_analysis")
+        expect(agent!.prompt).toContain("Use Grep for exact identifiers or text")
         expect(agent!.prompt).toContain("do not repeatedly retry the retrieval tool")
       },
     })

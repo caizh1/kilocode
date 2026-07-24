@@ -81,6 +81,7 @@ export class CodeIndexConfigManager {
   private documents: Required<DocumentIndexConfig> = {
     enabled: false,
     paths: ["."],
+    approvedExternalRoots: [],
     include: [],
     exclude: [],
     maxFiles: DEFAULT_DOCUMENT_MAX_FILES,
@@ -305,10 +306,11 @@ export class CodeIndexConfigManager {
   private normalizeDocuments(input?: DocumentIndexConfig): Required<DocumentIndexConfig> {
     const chunkChars = positive(input?.chunkChars, DEFAULT_DOCUMENT_CHUNK_CHARS)
     const overlap = nonnegative(input?.chunkOverlapChars, DEFAULT_DOCUMENT_CHUNK_OVERLAP_CHARS)
-    const paths = input?.paths === undefined ? ["."] : cleanList(input.paths)
+    const paths = [".", ...cleanList(input?.paths).filter((item) => item !== ".")]
     return {
       enabled: input?.enabled === true,
       paths,
+      approvedExternalRoots: cleanRoots(input?.approvedExternalRoots),
       include: cleanList(input?.include),
       exclude: cleanList(input?.exclude),
       maxFiles: positive(input?.maxFiles, DEFAULT_DOCUMENT_MAX_FILES),
@@ -371,6 +373,7 @@ export class CodeIndexConfigManager {
     return {
       enabled: this.documents.enabled,
       paths: this.documents.paths.slice(),
+      approvedExternalRoots: this.documents.approvedExternalRoots.map((item) => ({ ...item })),
       include: this.documents.include.slice(),
       exclude: this.documents.exclude.slice(),
       maxFiles: this.documents.maxFiles,
@@ -385,6 +388,18 @@ export class CodeIndexConfigManager {
 
 function cleanList(input?: string[]): string[] {
   return [...new Set((input ?? []).map((item) => item.trim()).filter(Boolean))]
+}
+
+function cleanRoots(
+  input?: DocumentIndexConfig["approvedExternalRoots"],
+): NonNullable<DocumentIndexConfig["approvedExternalRoots"]> {
+  const roots = (input ?? []).flatMap((item) => {
+    const root = item.path.trim()
+    const workspace = item.workspace?.trim()
+    if (!root) return []
+    return [{ path: root, ...(workspace ? { workspace } : {}) }]
+  })
+  return [...new Map(roots.map((item) => [`${item.workspace ?? "*"}\0${item.path}`, item])).values()]
 }
 
 function positive(input: number | undefined, fallback: number): number {

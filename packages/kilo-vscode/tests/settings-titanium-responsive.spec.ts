@@ -85,6 +85,18 @@ test("every Settings tab remains reachable in the Titanium shell", async ({ page
   }
 })
 
+test("Models settings uses ChipMate Gateway branding", async ({ page }) => {
+  await page.goto(`/iframe.html?id=settings--settings-titanium-models&viewMode=story&globals=${GLOBALS}`, {
+    waitUntil: "load",
+  })
+  await page.waitForSelector("[data-ui='settings-shell']", { state: "visible" })
+
+  await expect(
+    page.getByText("隐藏提供商可能会使用您的提示词进行训练的 ChipMate Gateway 模型。", { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText(/Kilo Gateway/)).toHaveCount(0)
+})
+
 test("Light and High Contrast keep accessible material fallbacks", async ({ page }) => {
   await load(page, 900, "light-modern")
   const light = page.locator("[data-ui='settings-shell']")

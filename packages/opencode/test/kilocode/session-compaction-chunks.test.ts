@@ -366,6 +366,13 @@ describe("KiloCompactionChunks", () => {
     expect(KiloCompactionChunks.budget({ cfg, model, outputTokenMax })).toBe(5_692)
   })
 
+  test("caps fallback chunks for providers that reject large compaction payloads", () => {
+    const model = ProviderTest.model({ providerID, id: modelID, limit: { context: 1_000_000, output: 384_000 } })
+    const cfg = {} as Config.Info
+
+    expect(KiloCompactionChunks.budget({ cfg, model, outputTokenMax: 32_000 })).toBe(48_000)
+  })
+
   test("preserves gateway errors from chunk workers", async () => {
     const error = new MessageV2.APIError({
       message: "The operation was aborted",

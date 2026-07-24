@@ -140,12 +140,15 @@ const PromptProviders: ParentComponent<{
   busy?: boolean
   none?: boolean
   autoFree?: boolean
+  switchable?: boolean
   locale?: "en" | "zh" | "zht"
   index?: IndexingStatus
   variant?: string
 }> = (props) => {
   const base = mockSessionValue({ status: props.busy ? "busy" : "idle" })
   const [variant, setVariant] = createSignal(props.variant ?? "medium")
+  const [sid, update] = createSignal("story-session-001")
+  const [aborts, tally] = createSignal(0)
   const selected = () => {
     if (props.none) return null
     if (props.autoFree) return { providerID: "kilo", modelID: "kilo-auto/free" }
@@ -153,6 +156,8 @@ const PromptProviders: ParentComponent<{
   }
   const session = {
     ...base,
+    currentSessionID: sid,
+    setCurrentSessionID: update,
     agents: () => agents,
     selectedAgent: () => "code",
     selected,
@@ -162,6 +167,7 @@ const PromptProviders: ParentComponent<{
     selectVariant: (value: string) => setVariant(value),
     hasModelOverride: () => props.modelOverride ?? false,
     clearModelOverride: noop,
+    abort: () => tally((value) => value + 1),
   }
   return (
     <StoryProviders
@@ -177,10 +183,38 @@ const PromptProviders: ParentComponent<{
           <div class="chat-input" data-ui="qa-dock">
             {props.speech ? (
               <ServerContext.Provider value={speechServer as any}>
-                <SessionContext.Provider value={session as any}>{props.children}</SessionContext.Provider>
+                <SessionContext.Provider value={session as any}>
+                  {props.children}
+                  <span hidden data-ui="qa-abort-count">
+                    {aborts()}
+                  </span>
+                  {props.switchable ? (
+                    <button
+                      hidden
+                      data-ui="qa-switch-session"
+                      onClick={() =>
+                        update((value) => (value === "story-session-001" ? "story-session-002" : "story-session-001"))
+                      }
+                    />
+                  ) : null}
+                </SessionContext.Provider>
               </ServerContext.Provider>
             ) : (
-              <SessionContext.Provider value={session as any}>{props.children}</SessionContext.Provider>
+              <SessionContext.Provider value={session as any}>
+                {props.children}
+                <span hidden data-ui="qa-abort-count">
+                  {aborts()}
+                </span>
+                {props.switchable ? (
+                  <button
+                    hidden
+                    data-ui="qa-switch-session"
+                    onClick={() =>
+                      update((value) => (value === "story-session-001" ? "story-session-002" : "story-session-001"))
+                    }
+                  />
+                ) : null}
+              </SessionContext.Provider>
             )}
           </div>
         </div>
@@ -424,6 +458,15 @@ export const QAAllControlsStop: Story = {
   name: "QA all controls — busy stop",
   render: () => (
     <PromptProviders variants modelOverride indexing longModel speech sandbox busy index={mixed}>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const QAPanelBehavior: Story = {
+  name: "QA input panel — behavior",
+  render: () => (
+    <PromptProviders switchable speech>
       <PromptInput />
     </PromptProviders>
   ),

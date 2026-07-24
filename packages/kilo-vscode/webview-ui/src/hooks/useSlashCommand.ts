@@ -59,7 +59,6 @@ export function useSlashCommand(
   const [server, setServer] = createSignal<SlashCommandInfo[]>([])
   const [query, setQuery] = createSignal<string | null>(null)
   const [index, setIndex] = createSignal(0)
-  const [requested, setRequested] = createSignal(false)
   const [slashEnd, setSlashEnd] = createSignal<number | null>(null)
 
   const all: SlashCommandEntry[] = [
@@ -138,7 +137,7 @@ export function useSlashCommand(
     },
     {
       name: "kiloclaw",
-      description: "Open KiloClaw chat",
+      description: "Open ChipMateClaw chat",
       hints: ["claw"],
       action: () => {
         vscode.postMessage({ type: "openKiloClaw" })
@@ -183,8 +182,6 @@ export function useSlashCommand(
   const show = () => query() !== null
 
   const request = () => {
-    if (requested()) return
-    setRequested(true)
     vscode.postMessage({ type: "requestCommands" })
   }
 
@@ -221,7 +218,7 @@ export function useSlashCommand(
     const before = val.substring(0, cursor)
     const match = before.match(SLASH_PATTERN)
     if (match) {
-      request()
+      if (query() === null) request()
       setQuery(match[1])
       setIndex(0)
       setSlashEnd(cursor)

@@ -53,9 +53,10 @@ export type DocumentSearchResult = {
 export type DocumentSection = {
   filePath: string
   text: string
-  kind: "text" | "pdf" | "spreadsheet"
+  kind: "text" | "pdf" | "spreadsheet" | "diagram"
   page?: number
   sheet?: string
+  mediaPath?: string
   startLine: number
   endLine: number
 }

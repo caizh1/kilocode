@@ -544,9 +544,176 @@ test("publish page shows the shared validation report without changing local fil
     .getByLabel("Skill 归档")
     .setInputFiles(resolve("../../docs/chipmate-skill-market-alignment-evidence/g0/source-backed-detail-design.tar.gz"))
   await page.getByRole("button", { name: "校验并发布" }).click()
-  await expect(page.getByText("发布成功", { exact: true })).toBeVisible()
+  await expect(page.locator(".publication-success").getByText("发布成功", { exact: true })).toBeVisible()
+  await expect(page.getByText("上传完成，正在执行权威校验", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "发布成功", exact: true })).toBeDisabled()
   await expect(page.getByText(/确定性修复仅应用到上传快照/)).toBeVisible()
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+})
+
+test("publish report prioritizes blocking errors and groups repeated script warnings", async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("chipmate-market-csrf", "csrf-for-errors")
+    sessionStorage.setItem("chipmate-market-session-active", "1")
+  })
+  await page.route("**/api/v1/auth/me", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "market-alice-123456",
+        displayName: "Alice",
+        firstSeenAt: "2026-07-12T00:00:00.000Z",
+        lastSeenAt: "2026-07-12T00:00:00.000Z",
+      }),
+    }),
+  )
+  await page.route("**/api/v1/events/batch", (route) =>
+    route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ accepted: 1 }) }),
+  )
+  await page.route("**/api/v1/publications", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "publication-errors-12345678",
+        ownerId: "market-alice-123456",
+        status: "NEEDS_AUTHOR_FIX",
+        stage: "format",
+        report: {
+          valid: false,
+          stage: "format",
+          issues: [
+            ...Array.from({ length: 20 }, (_, index) => ({
+              code: "scripts-present",
+              severity: "warning",
+              file: `scripts/tool-${index}.py`,
+              message: "包含脚本文件；市场服务不会执行这些脚本，使用前请自行审查。",
+              fixable: false,
+              repairKind: "none",
+              riskLevel: "medium",
+            })),
+            {
+              code: "security-file-type",
+              severity: "error",
+              file: "scripts/__pycache__/tool.pyc",
+              message: "归档包含不支持的文件类型。",
+              fixable: false,
+              repairKind: "none",
+              riskLevel: "none",
+            },
+          ],
+          sourceSha256: "a".repeat(64),
+          snapshotSha256: "b".repeat(64),
+          changed: false,
+          policyVersion: "skill-risk-v3",
+          risk: { level: "medium", issueCount: 1, policyVersion: "skill-risk-v3" },
+        },
+        patches: [],
+        createdAt: "2026-07-12T00:00:00.000Z",
+        updatedAt: "2026-07-12T00:00:00.000Z",
+      }),
+    }),
+  )
+  await page.goto("/publish")
+  await page
+    .getByLabel("Skill 归档")
+    .setInputFiles(resolve("../../docs/chipmate-skill-market-alignment-evidence/g0/source-backed-detail-design.tar.gz"))
+  await page.getByRole("button", { name: "校验并发布", exact: true }).click()
+  const issues = page.locator(".issue-list article")
+  await expect(issues).toHaveCount(2)
+  await expect(issues.first()).toHaveClass(/issue-error/)
+  await expect(issues.first().getByText("阻止发布", { exact: true })).toBeVisible()
+  await expect(issues.first()).toContainText("scripts/__pycache__/tool.pyc")
+  await expect(issues.nth(1)).toContainText("包含 20 个脚本文件")
+  await issues.nth(1).getByText("查看 20 个文件", { exact: true }).click()
+  await expect(issues.nth(1)).toContainText("scripts/tool-0.py")
+  await expect(issues.nth(1)).toContainText("scripts/tool-19.py")
+  await expect(page.getByText("1 类阻断错误", { exact: true })).toBeVisible()
+  await expect(page.getByText("1 类警告", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "请重新选择修改后的 Skill", exact: true })).toBeDisabled()
+})
+
+test("publish retry reuses its idempotency key and a same-tick double click sends once", async ({ page }) => {
+  const keys: string[] = []
+  await page.addInitScript(() => {
+    sessionStorage.setItem("chipmate-market-csrf", "csrf-for-retry")
+    sessionStorage.setItem("chipmate-market-session-active", "1")
+  })
+  await page.route("**/api/v1/auth/me", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "market-alice-123456",
+        displayName: "Alice",
+        firstSeenAt: "2026-07-12T00:00:00.000Z",
+        lastSeenAt: "2026-07-12T00:00:00.000Z",
+      }),
+    }),
+  )
+  await page.route("**/api/v1/events/batch", (route) =>
+    route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ accepted: 1 }) }),
+  )
+  await page.route("**/api/v1/publications", async (route) => {
+    keys.push(route.request().headers()["idempotency-key"] ?? "")
+    if (keys.length === 1)
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "服务暂不可用，请重试。" }),
+      })
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "publication-retry-12345678",
+        skillId: "source-backed-detail-design",
+        ownerId: "market-alice-123456",
+        status: "PUBLISHED",
+        stage: "complete",
+        report: {
+          valid: true,
+          stage: "complete",
+          issues: [],
+          sourceSha256: "a".repeat(64),
+          snapshotSha256: "b".repeat(64),
+          changed: false,
+          policyVersion: "skill-risk-v2",
+          risk: { level: "none", issueCount: 0, policyVersion: "skill-risk-v2" },
+        },
+        patches: [],
+        release: {
+          skillId: "source-backed-detail-design",
+          revision: 1,
+          sha256: "b".repeat(64),
+          archiveUrl: "/archive",
+          report: { valid: true },
+          publishedAt: "2026-07-12T00:00:00.000Z",
+        },
+        createdAt: "2026-07-12T00:00:00.000Z",
+        updatedAt: "2026-07-12T00:00:00.000Z",
+      }),
+    })
+  })
+  await page.goto("/publish")
+  await page
+    .getByLabel("Skill 归档")
+    .setInputFiles(resolve("../../docs/chipmate-skill-market-alignment-evidence/g0/source-backed-detail-design.tar.gz"))
+  const button = page.getByRole("button", { name: "校验并发布", exact: true })
+  await button.click()
+  await expect(page.getByRole("alert")).toContainText("服务暂不可用，请重试。")
+  const logs = clean.get(page) ?? []
+  const expected = logs.findIndex((item) => item.includes("status of 503"))
+  if (expected >= 0) logs.splice(expected, 1)
+  await button.evaluate((node) => {
+    if (!(node instanceof HTMLButtonElement)) throw new Error("publish button is not an HTML button")
+    node.click()
+    node.click()
+  })
+  await expect(page.locator(".publication-success")).toBeVisible()
+  expect(keys).toHaveLength(2)
+  expect(keys[0]).toBe(keys[1])
 })
 
 test("skill detail warns before downloading a medium-risk release", async ({ page }) => {
@@ -591,7 +758,7 @@ test("skill detail warns before downloading a medium-risk release", async ({ pag
   })
 
   await page.goto("/skills/source-backed-detail-design")
-  await expect(page.getByText("存在风险 · 1 项", { exact: true })).toBeVisible()
+  await expect(page.getByText("存在风险 · 1 类", { exact: true })).toBeVisible()
   await expect(page.getByText("检测到可能的凭据或私钥，请在使用前确认内容和权限范围。", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "下载归档", exact: true }).click()
 
@@ -664,7 +831,7 @@ test("skill folder is packed locally before the existing publication request", a
         id: "folder-publication-12345678-1234-1234-1234-123456789012",
         skillId: "folder-skill",
         ownerId: "market-alice-123456",
-        status: "PUBLISHED",
+        status: "UNCHANGED",
         stage: "complete",
         report: {
           valid: true,
@@ -700,7 +867,8 @@ test("skill folder is packed locally before the existing publication request", a
     await mkdir(resolve(".runtime/design-qa/g11"), { recursive: true })
     await page.screenshot({ path: resolve(".runtime/design-qa/g11/folder-upload-1440x1024-real-chrome.png") })
     await page.getByRole("button", { name: "校验并发布", exact: true }).click()
-    await expect(page.getByText("发布成功", { exact: true })).toBeVisible()
+    await expect(page.locator(".publication-duplicate")).toContainText("内容未变化，已发布过")
+    await expect(page.getByRole("button", { name: "已发布，无内容变化", exact: true })).toBeDisabled()
   } finally {
     await rm(root, { recursive: true, force: true })
   }

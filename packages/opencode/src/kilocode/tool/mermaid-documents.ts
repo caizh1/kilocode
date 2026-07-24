@@ -1,15 +1,27 @@
+import { createHash } from "node:crypto"
 import { Effect, Schema } from "effect"
 import {
   insertMermaidIntoWord,
   renderMermaidDiagram,
+  renderSourceBackedMermaidBatch,
   saveMermaidArtifact,
-  validateMermaidDiagram,
+  validateMermaidDiagramRequest,
 } from "@/kilocode/documents/mermaid"
 import * as Tool from "@/tool/tool"
+import * as SemanticGuard from "@/kilocode/documents/mermaid-semantic-guard"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard"
+import * as Readiness from "@/kilocode/skill/workflow-readiness"
+import { Instance } from "@/kilocode/instance"
 
 const ValidateMermaidParameters = Schema.Struct({
   source: Schema.String.annotate({ description: "Mermaid diagram source text." }),
   diagramType: Schema.optional(Schema.String).annotate({ description: "Optional expected diagram type label." }),
+  semanticMode: Schema.optional(Schema.Literal("source-backed")).annotate({
+    description: "Enable source-backed claim validation for a detailed-design diagram. Omit for ordinary Mermaid.",
+  }),
+  semanticEvidencePath: Schema.optional(Schema.String).annotate({
+    description: "Workspace-relative diagram-claims.json path required by source-backed semantic validation.",
+  }),
 })
 
 const SaveMermaidParameters = Schema.Struct({
@@ -25,7 +37,13 @@ const SaveMermaidParameters = Schema.Struct({
 })
 
 const RenderMermaidParameters = Schema.Struct({
-  source: Schema.String.annotate({ description: "Mermaid diagram source text to render." }),
+  source: Schema.optional(Schema.String).annotate({
+    description: "Mermaid diagram source text to render. Required unless batchManifestPath is used.",
+  }),
+  batchManifestPath: Schema.optional(Schema.String).annotate({
+    description:
+      "Workspace-relative version 1 batch manifest for source-backed detailed-design diagrams. Its optional basePath roots work-package item/result paths without changing workspace-relative source evidence. Requires semanticMode and replaces source/semanticEvidencePath for this call.",
+  }),
   title: Schema.optional(Schema.String),
   taskSlug: Schema.optional(Schema.String),
   sourceFile: Schema.optional(Schema.String),
@@ -40,6 +58,12 @@ const RenderMermaidParameters = Schema.Struct({
     description: "Optional render scale forwarded to the configured Mermaid render service.",
   }),
   timeoutMs: Schema.optional(Schema.Number),
+  semanticMode: Schema.optional(Schema.Literal("source-backed")).annotate({
+    description: "Enable source-backed claim validation before rendering. Omit for ordinary Mermaid.",
+  }),
+  semanticEvidencePath: Schema.optional(Schema.String).annotate({
+    description: "Workspace-relative diagram-claims.json path required by source-backed semantic validation.",
+  }),
 })
 
 const InsertMermaidIntoWordParameters = Schema.Struct({
@@ -86,6 +110,37 @@ type MermaidMeta = {
   valid?: boolean
   failed?: boolean
   error?: string
+  semanticStatus?: "not-requested" | "valid" | "valid-with-unknowns" | "invalid"
+  sourceHash?: string
+  claimCount?: number
+  validatedClaimCount?: number
+  semanticDiagnosticsPath?: string
+  wordFitScale?: number
+  wordFitDensity?: number
+  wordFitAspectRatio?: number
+  wordFitStatus?: "readable" | "split-required"
+  wordFitReasons?: string[]
+  documentReady?: boolean
+  pendingSplitDiagramIds?: string[]
+  pendingSplitDetails?: Array<{
+    diagramId: string
+    missingNodes: Array<{ id: string; symbol?: string; designUnitId?: string }>
+    missingEdges: Array<{ from: string; to: string; relation: string }>
+    suggestedChildren: Array<{
+      suggestedDiagramId: string
+      splitFromDiagramId: string
+      nodes: Array<{ id: string; symbol?: string; designUnitId?: string }>
+      edges: Array<{ from: string; to: string; relation: string }>
+    }>
+  }>
+  batchResultPath?: string
+  requestedCount?: number
+  processedCount?: number
+  renderedCount?: number
+  readyCount?: number
+  invalidCount?: number
+  splitRequiredCount?: number
+  complete?: boolean
 }
 
 function mermaidFailure(title: string, err: unknown, metadata: MermaidMeta = {}): Tool.ExecuteResult<MermaidMeta> {
@@ -138,25 +193,50 @@ export const ValidateMermaidDiagramTool = Tool.define(
   "validate_mermaid_diagram",
   Effect.succeed({
     description:
-      "Validate Mermaid source syntax at a bounded, renderer-oriented level. This tool does not decide business flow, exception flow, state roles, or diagram semantics.",
+      "Validate Mermaid syntax. This tool does not decide business flow unless source-backed semanticMode explicitly verifies claims; omit it for ordinary Mermaid. Once source-backed mode is used in a session, that session cannot render by downgrading to ordinary Mermaid.",
     parameters: ValidateMermaidParameters,
     execute: (
       params: Schema.Schema.Type<typeof ValidateMermaidParameters>,
       ctx: Tool.Context,
     ): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
       Effect.gen(function* () {
+        if (params.semanticMode) {
+          SemanticGuard.mark(ctx.sessionID)
+          const issue = params.semanticEvidencePath
+            ? SemanticGuard.validate(ctx.sessionID, params.semanticEvidencePath)
+            : undefined
+          if (issue) {
+            const sourceHash = createHash("sha256").update(params.source).digest("hex")
+            return blocked("Mermaid Semantic Validation Budget Exhausted", sourceHash, issue, "valid")
+          }
+        }
         yield* ctx.ask({
           permission: "validate_mermaid_diagram",
           patterns: [params.diagramType ?? "mermaid"],
           always: ["*"],
-          metadata: { diagramType: params.diagramType },
+          metadata: { diagramType: params.diagramType, semanticMode: params.semanticMode },
         })
         return yield* runMermaidOperation(
-          () => validateMermaidDiagram(params),
+          () => validateMermaidDiagramRequest({ ...params, semanticSessionId: ctx.sessionID }),
           (result) => ({
             title: result.valid ? "Mermaid Diagram Valid" : "Mermaid Diagram Invalid",
-            metadata: { valid: result.valid },
-            output: JSON.stringify(result, null, 2),
+            metadata: {
+              valid: result.valid,
+              semanticStatus: result.semanticStatus,
+              sourceHash: result.sourceHash,
+              claimCount: result.claimCount,
+              validatedClaimCount: result.validatedClaimCount,
+              semanticDiagnosticsPath: result.diagnosticsPath,
+            },
+            output: JSON.stringify(
+              {
+                ...result,
+                semanticFingerprint: undefined,
+                issues: result.issues.slice(0, 20),
+              },
+              null,
+              2,
+            ),
           }),
           "Mermaid Diagram Validation Failed",
         )
@@ -207,13 +287,133 @@ export const RenderMermaidDiagramTool = Tool.define(
   "render_mermaid_diagram",
   Effect.succeed({
     description:
-      "Render Mermaid source into PNG using an external renderer endpoint or externally installed mmdc, then return the PNG path, display and pixel dimensions, scale, warnings, and render QA issues. It does not infer business semantics.",
+      "Render Mermaid source into PNG only when the user explicitly requests Mermaid or does not specify another diagram language or renderer. Never use this tool as a fallback for an explicitly requested format or tool such as UML/PlantUML, Graphviz, or draw.io. For UML/PlantUML requests, do not probe local PlantUML, Java, or Graphviz availability and do not convert the request to Mermaid; use render_plantuml_diagram when validation or rendering is requested, and use the normal Code file-writing tool when only PlantUML source is requested. For source-backed detailed-design diagrams only, semanticMode validates claims and reports documentReady/Word-fit; split-required PNGs are evidence artifacts and cannot be inserted into Word. Omit semanticMode for ordinary Mermaid. A session that already attempted source-backed validation cannot omit semanticMode to bypass an invalid result.",
     parameters: RenderMermaidParameters,
     execute: (
       params: Schema.Schema.Type<typeof RenderMermaidParameters>,
       ctx: Tool.Context,
     ): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
       Effect.gen(function* () {
+        const active = WorkflowGuard.sourceBacked(ctx.sessionID, ctx.messages)
+        if (active && params.semanticMode !== "source-backed") {
+          return mermaidFailure(
+            "Source-backed Mermaid Render Blocked",
+            'The active source-backed-detail-design workflow requires semanticMode="source-backed" and source-backed claims. Ordinary Mermaid rendering cannot satisfy its figure matrix.',
+          )
+        }
+        if (active) {
+          if (!WorkflowGuard.figures(ctx.sessionID, ctx.messages)) {
+            return mermaidFailure(
+              "Source-backed Mermaid Render Blocked",
+              "Source-backed diagrams start only after the prose checkpoint and the user's uninterrupted continuation; end the initial turn without rendering.",
+            )
+          }
+          const root = WorkflowGuard.root(ctx.sessionID, ctx.messages)
+          if (!root) {
+            return mermaidFailure(
+              "Source-backed Mermaid Render Blocked",
+              "Declare the canonical artifact root before rendering source-backed diagrams.",
+            )
+          }
+          const ready = yield* Effect.promise(() => Readiness.prose(Instance.directory, root))
+          if (ready.issues.length) {
+            return mermaidFailure(
+              "Source-backed Mermaid Render Blocked",
+              `Complete fourteen separately headed prose topics for every frozen DesignUnit before drawing. ${ready.issues.slice(0, 20).join("; ")}`,
+            )
+          }
+          if (!params.batchManifestPath && (ready.census?.designUnits.length ?? 0) > 1) {
+            return mermaidFailure(
+              "Source-backed Mermaid Render Blocked",
+              "A multi-DesignUnit full document must render a frozen source-backed batch manifest; inline single-diagram rendering is reserved for narrow one-unit work.",
+            )
+          }
+        }
+        if (params.batchManifestPath) {
+          if (params.semanticMode !== "source-backed") {
+            return mermaidFailure(
+              "Mermaid Source-backed Batch Rejected",
+              "batchManifestPath requires semanticMode=\"source-backed\".",
+            )
+          }
+          if (params.source !== undefined || params.semanticEvidencePath !== undefined) {
+            return mermaidFailure(
+              "Mermaid Source-backed Batch Rejected",
+              "batchManifestPath cannot be combined with source or semanticEvidencePath; each batch item supplies its own paths.",
+            )
+          }
+          const issue = SemanticGuard.check(ctx.sessionID, params.semanticMode)
+          if (issue) return blocked("Mermaid Semantic Downgrade Blocked", "", issue, "rendered")
+          yield* ctx.ask({
+            permission: "render_mermaid_diagram",
+            patterns: [params.batchManifestPath],
+            always: ["*"],
+            metadata: {
+              hasRemoteEndpoint: Boolean(params.remoteEndpoint),
+              scale: params.scale,
+              timeoutMs: params.timeoutMs,
+              semanticMode: params.semanticMode,
+              batchManifestPath: params.batchManifestPath,
+            },
+          })
+          return yield* runMermaidOperation(
+            () =>
+              renderSourceBackedMermaidBatch({
+                manifestPath: params.batchManifestPath!,
+                remoteEndpoint: params.remoteEndpoint,
+                theme: params.theme,
+                background: params.background,
+                scale: params.scale,
+                timeoutMs: params.timeoutMs,
+                semanticSessionId: ctx.sessionID,
+              }),
+            (result) => ({
+              title: result.complete
+                ? "Mermaid Source-backed Batch Ready"
+                : result.invalidCount
+                  ? "Mermaid Source-backed Batch Invalid"
+                  : "Mermaid Source-backed Batch Needs Readability Repair",
+              metadata: {
+                rendered: result.renderedCount === result.requestedCount,
+                quality: result.invalidCount ? "failed" : result.complete ? "ok" : "warning",
+                semanticStatus: result.invalidCount ? "invalid" : "valid",
+                batchResultPath: result.resultPath,
+                requestedCount: result.requestedCount,
+                processedCount: result.processedCount,
+                renderedCount: result.renderedCount,
+                readyCount: result.readyCount,
+                invalidCount: result.invalidCount,
+                splitRequiredCount: result.splitRequiredCount,
+                complete: result.complete,
+                pendingSplitDiagramIds: result.pendingSplitDiagramIds,
+                pendingSplitDetails: result.pendingSplitDetails,
+              },
+              output: JSON.stringify(
+                {
+                  ...result,
+                  items: result.items.map((item) => ({
+                    ...item,
+                    issues: item.issues.slice(0, 20),
+                    warnings: item.warnings.slice(0, 10),
+                  })),
+                },
+                null,
+                2,
+              ),
+            }),
+            "Mermaid Source-backed Batch Failed",
+            { sourcePath: params.batchManifestPath },
+          )
+        }
+        if (params.source === undefined) {
+          return mermaidFailure("Mermaid Diagram Render Failed", "source is required when batchManifestPath is omitted.")
+        }
+        const source = params.source
+        const issue = SemanticGuard.check(ctx.sessionID, params.semanticMode)
+        if (issue) {
+          const sourceHash = createHash("sha256").update(source).digest("hex")
+          return blocked("Mermaid Semantic Downgrade Blocked", sourceHash, issue, "rendered")
+        }
         yield* ctx.ask({
           permission: "render_mermaid_diagram",
           patterns: [params.title ?? params.sourceFile ?? "mermaid"],
@@ -222,36 +422,115 @@ export const RenderMermaidDiagramTool = Tool.define(
             hasRemoteEndpoint: Boolean(params.remoteEndpoint),
             scale: params.scale,
             timeoutMs: params.timeoutMs,
+            semanticMode: params.semanticMode,
           },
         })
         return yield* runMermaidOperation(
-          () => renderMermaidDiagram(params),
-          (result) => ({
-            title: result.rendered ? "Mermaid Diagram Rendered" : "Mermaid Diagram Render Failed",
-            metadata: {
-              rendered: result.rendered,
-              artifactDir: result.artifactDir,
-              manifestPath: result.manifestPath,
-              sourcePath: result.sourcePath,
-              pngPath: result.pngPath,
-              diagnosticsPath: result.diagnosticsPath,
-              width: result.width,
-              height: result.height,
-              pixelWidth: result.pixelWidth,
-              pixelHeight: result.pixelHeight,
-              scale: result.scale,
-              issues: result.issues,
-              quality: quality(result),
-              warnings: result.warnings,
-            },
-            output: JSON.stringify(result, null, 2),
-          }),
+          () => renderMermaidDiagram({ ...params, source, semanticSessionId: ctx.sessionID }),
+          (result) => {
+            const semantic =
+              result.semanticStatus === "valid" || result.semanticStatus === "valid-with-unknowns"
+            if (result.rendered && semantic) {
+              if (result.documentReady !== false && result.pngPath) {
+                SemanticGuard.allow(
+                  ctx.sessionID,
+                  result.sourceHash,
+                  result.pngPath,
+                  result.semanticFingerprint,
+                )
+              } else {
+                SemanticGuard.hold(ctx.sessionID, result.semanticFingerprint)
+              }
+            }
+            const split = result.wordFitStatus === "split-required"
+            const pending = SemanticGuard.pending(ctx.sessionID)
+            const details = SemanticGuard.pendingDetails(ctx.sessionID)
+            return {
+              title: result.rendered
+                ? split
+                  ? "Mermaid Diagram Rendered - Split Required"
+                  : "Mermaid Diagram Rendered"
+                : "Mermaid Diagram Render Failed",
+              metadata: {
+                rendered: result.rendered,
+                artifactDir: result.artifactDir,
+                manifestPath: result.manifestPath,
+                sourcePath: result.sourcePath,
+                pngPath: result.pngPath,
+                diagnosticsPath: result.diagnosticsPath,
+                width: result.width,
+                height: result.height,
+                pixelWidth: result.pixelWidth,
+                pixelHeight: result.pixelHeight,
+                scale: result.scale,
+                issues: result.issues,
+                quality: split ? "warning" : quality(result),
+                warnings: [...result.warnings, ...(result.wordFitReasons ?? [])],
+                semanticStatus: result.semanticStatus,
+                sourceHash: result.sourceHash,
+                claimCount: result.claimCount,
+                validatedClaimCount: result.validatedClaimCount,
+                semanticDiagnosticsPath: result.semanticDiagnosticsPath,
+                wordFitScale: result.wordFitScale,
+                wordFitDensity: result.wordFitDensity,
+                wordFitAspectRatio: result.wordFitAspectRatio,
+                wordFitStatus: result.wordFitStatus,
+                wordFitReasons: result.wordFitReasons,
+                documentReady: result.documentReady,
+                pendingSplitDiagramIds: pending,
+                pendingSplitDetails: details,
+              },
+              output: JSON.stringify(
+                {
+                  ...result,
+                  semanticFingerprint: undefined,
+                  semanticIssues: result.semanticIssues.slice(0, 20),
+                  pendingSplitDiagramIds: pending,
+                  pendingSplitDetails: details,
+                },
+                null,
+                2,
+              ),
+            }
+          },
           "Mermaid Diagram Render Failed",
           { sourcePath: params.sourceFile },
         )
       }).pipe(Effect.orDie),
   }),
 )
+
+function blocked(
+  title: string,
+  sourceHash: string,
+  issue: SemanticGuard.Issue,
+  field: "valid" | "rendered",
+): Tool.ExecuteResult<MermaidMeta> {
+  const status = field === "valid" ? { valid: false } : { rendered: false }
+  return {
+    title,
+    metadata: {
+      ...status,
+      failed: true,
+      quality: "failed" as const,
+      semanticStatus: "invalid" as const,
+      sourceHash,
+      issues: [issue],
+      warnings: [issue.message],
+      error: issue.message,
+    },
+    output: JSON.stringify(
+      {
+        ...status,
+        semanticStatus: "invalid",
+        sourceHash,
+        issues: [issue],
+      },
+      null,
+      2,
+    ),
+  }
+}
 
 export const InsertMermaidIntoWordTool = Tool.define(
   "insert_mermaid_into_word",
@@ -264,6 +543,33 @@ export const InsertMermaidIntoWordTool = Tool.define(
       ctx: Tool.Context,
     ): Effect.Effect<Tool.ExecuteResult<MermaidMeta>> =>
       Effect.gen(function* () {
+        const hash = createHash("sha256").update(params.source).digest("hex")
+        const issue = SemanticGuard.insert(ctx.sessionID, hash, params.pngPath, Boolean(params.pngBase64))
+        if (issue) {
+          return {
+            title: "Mermaid Semantic Insert Blocked",
+            metadata: {
+              inserted: false,
+              failed: true,
+              quality: "failed" as const,
+              semanticStatus: "invalid" as const,
+              sourceHash: hash,
+              issues: [issue],
+              warnings: [issue.message],
+              error: issue.message,
+            },
+            output: JSON.stringify(
+              {
+                inserted: false,
+                semanticStatus: "invalid",
+                sourceHash: hash,
+                issues: [issue],
+              },
+              null,
+              2,
+            ),
+          }
+        }
         yield* ctx.ask({
           permission: "insert_mermaid_into_word",
           patterns: [params.wordPath],

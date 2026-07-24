@@ -5,7 +5,7 @@ import { dirname, relative, resolve } from "node:path"
 
 const input = resolve(process.argv[2] ?? "results.json")
 const output = resolve(process.argv[3] ?? resolve(dirname(input), "report.html"))
-const data = JSON.parse(readFileSync(input, "utf8"))
+const data = JSON.parse(readFileSync(input, "utf8").replace(/^\uFEFF/, ""))
 const results = Array.isArray(data.results) ? data.results : []
 const atomic = Array.isArray(data.atomicResults) ? data.atomicResults : []
 const counts = Object.fromEntries(
@@ -64,7 +64,6 @@ const page = `<!doctype html>
     .map(([key, value]) => `${key} ${value}`)
     .join(" · ")}</p>` : ""}</section>${cards}${atomic.length ? `<details><summary>原子断言明细（${atomic.length}）</summary><table><thead><tr><th>ID</th><th>状态</th><th>断言</th><th>说明</th></tr></thead><tbody>${atomicRows}</tbody></table></details>` : ""}</main></body></html>`
 writeFileSync(output, page)
-process.stdout.write(`${output}\n`)
 
 function html(value) {
   return String(value ?? "")

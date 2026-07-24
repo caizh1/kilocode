@@ -567,7 +567,8 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
       headers: { ...headers, "idempotency-key": "publication-key-0002" },
       payload: archive,
     })
-    assert.equal(unchanged.json().status, "UNCHANGED")
+    assert.equal(unchanged.json().id, created.json().id)
+    assert.equal(unchanged.json().status, "PUBLISHED")
     assert.equal(unchanged.json().release.revision, 1)
     assert.deepEqual(unchanged.json().report, created.json().report)
 
@@ -582,7 +583,7 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
       url: "/api/v1/me/publications",
       headers: { authorization: "Bearer alice" },
     })
-    assert.equal(mine.json()[0].id, unchanged.json().id)
+    assert.equal(mine.json().filter((item: { skillId?: string }) => item.skillId === "new-skill").length, 1)
     const other = await app.inject({
       method: "GET",
       url: "/api/v1/me/publications",
@@ -630,8 +631,56 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     assert.equal(risky.statusCode, 200)
     assert.equal(risky.json().status, "PUBLISHED")
     assert.equal(risky.json().report.risk.level, "medium")
+    assert.equal(risky.json().report.risk.issueCount, 2)
+    assert.equal(risky.json().report.policyVersion, "skill-risk-v3")
     assert.ok(risky.json().report.issues.some((issue: { code: string }) => issue.code === "security-secret"))
     assert.ok(risky.json().report.issues.every((issue: { message: string }) => /[\u4e00-\u9fff]/.test(issue.message)))
+
+    const sqlite = new DatabaseSync(join(data.dir, "db", "market.sqlite"))
+    const stored = sqlite
+      .prepare("SELECT validation_report_json,archive_path FROM releases WHERE skill_id=? AND revision=1")
+      .get("risky-skill") as {
+      validation_report_json: string
+      archive_path: string
+    }
+    const legacy = JSON.parse(stored.validation_report_json) as Record<string, unknown> & {
+      risk: Record<string, unknown>
+    }
+    legacy.policyVersion = "skill-risk-v2"
+    legacy.risk.policyVersion = "skill-risk-v2"
+    const owner = sqlite.prepare("SELECT author_id FROM skills WHERE id=?").get("risky-skill") as { author_id: string }
+    const now = "2026-07-12T12:00:00.000Z"
+    sqlite
+      .prepare(
+        "INSERT INTO skills(id,name,description,category,tags_json,author_id,status,latest_revision,created_at,updated_at,legacy_json) VALUES(?,?,?,?,?,?,?,1,?,?,?)",
+      )
+      .run(
+        "historical-v2-skill",
+        "Historical v2 Skill",
+        "Preserve historical risk reports.",
+        "general",
+        "[]",
+        owner.author_id,
+        "published",
+        now,
+        now,
+        "{}",
+      )
+    sqlite.prepare(
+      "INSERT INTO releases(skill_id,revision,sha256,size_bytes,validation_report_json,archive_path,published_at,metadata_json) VALUES(?,1,?,1,?,?,?,?)",
+    ).run(
+      "historical-v2-skill",
+      "f".repeat(64),
+      JSON.stringify(legacy),
+      stored.archive_path,
+      now,
+      "{}",
+    )
+    sqlite.close()
+    const historical = await app.inject({ method: "GET", url: "/api/v1/skills/historical-v2-skill" })
+    assert.equal(historical.statusCode, 200, historical.body)
+    assert.equal(historical.json().risk.policyVersion, "skill-risk-v2")
+    assert.ok(historical.json().releases[0].report.issues.length > 0)
 
     const tinyArchive = await publicationArchive(
       data.dir,

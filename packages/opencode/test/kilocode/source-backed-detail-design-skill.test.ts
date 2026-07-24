@@ -59,7 +59,7 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(skill).toContain("inspect_word_document")
     expect(skill).toContain("validate_word_document")
     expect(skill).toContain("render_word_document")
-    expect(skill).toContain("not a ChipMate runtime pipeline")
+    expect(skill).toContain("Ordinary QA stays artifact-free")
     expect(allowedTools.some((tool) => tool.startsWith("chipmate_"))).toBe(false)
     expect(allowedTools).not.toContain("DesignDocAgentFlow")
   })
@@ -92,6 +92,16 @@ describe("source-backed detail design skill migration boundary", () => {
 
   test("keeps full-Word invariants visible after tool-output compaction", async () => {
     const skill = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8")
+    const scope = await fs.readFile(path.join(skillRoot, "references", "02-input-and-module-scope-rules.md"), "utf8")
+    const mermaid = await fs.readFile(path.join(skillRoot, "references", "08-mermaid-png-rendering-rules.md"), "utf8")
+    const review = await fs.readFile(path.join(skillRoot, "references", "13-quality-gates-and-validator.md"), "utf8")
+    const revision = (
+      await Promise.all(
+        ["07-diagram-planning-and-splitting-rules.md", "14-continuation-checkpoint-protocol.md"].map((file) =>
+          fs.readFile(path.join(skillRoot, "references", file), "utf8"),
+        ),
+      )
+    ).join("\n")
     const loaded = [
       '<skill_content name="source-backed-detail-design">',
       "# Skill: source-backed-detail-design",
@@ -106,17 +116,369 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(Buffer.byteLength(skill)).toBeLessThanOrEqual(36_000)
     expect(Buffer.byteLength(loaded)).toBeLessThan(50 * 1024)
     for (const marker of [
-      "SBDD_RULESET_REVISION=2026-07-long-task-gate-v1",
-      "B is the target",
-      "fourteen-topic prose",
-      "five unique views",
-      "not_started",
-      "{{TOC}}",
-      "resume-state.md",
-      "absolute path",
+      "SBDD_RULESET_REVISION=2026-07-source-semantic-v117",
+      "root only",
+      "task/agent_manager STOP",
+      "target=deepest evidenced",
+      "orchestrator!=child",
+      "DesignUnits only actual implementations under target source root",
+      "outside units=dependencies unless user expands scope",
+      "map every target-dir implementation",
+      "stateless/utility remains child",
+      "zero unmapped",
+      "Before units:scope+census",
+      "D exact impl reads+D file greps",
+      "EACH unit has 14 separate numbered headings+14 adjacent markers",
+      "range/catch-all heading invalid",
+      "No 07/08/MMD/figures",
+      "14-business-flow-family-census.csv",
+      "flowCensusStatus: PASS",
+      "rows>=D",
+      "every unit owns>=1 real family",
+      "never request “继续”",
+      "RESUME",
+      "reload Skill+07+08",
+      "read resume+review+batch units before ANY `04-diagrams` write",
+      "freeze full `5D` rows",
+      "source+edge ledgers→all batch MMD/claims write+read",
+      "one v1 batch manifest",
+      "one source-backed batch render",
+      'semanticMode:"source-backed"',
+      "`semanticEvidencePath`",
+      "ordinary fallback invalid",
+      "FIGURES",
+      "documentReady=true",
+      "FULL WORD",
+      "3–5 turns",
+      "only “继续”",
+      "five views/unit",
     ]) {
       expect(compacted).toContain(marker)
     }
+    expect(skill).toContain("grep symbols→targeted read")
+    expect(skill).toContain("final DOCX")
+    expect(skill).toContain("exactly one standalone `{{TOC}}`")
+    expect(skill).toContain("Exact `A→B` proof")
+    expect(skill).toContain("MMD→`sourceHash`→claim")
+    expect(skill).toContain("split-required→overview+focus before next")
+    expect(skill).toContain("no call quota/anchor ledger")
+    expect(skill).toContain("tool-enforced 10 source-backed validations/4 renders")
+    expect(skill).toContain("Data needs one-object producer+consumer evidence")
+    expect(skill).toContain('semanticMode:"source-backed"')
+    expect(skill).toContain("semanticEvidencePath")
+    expect(skill).toContain("definition/include/order is not proof")
+    expect(skill).toContain("minor whitespace/layout/wording is nonblocking")
+    expect(skill).toContain("source discovery excludes them")
+    expect(skill).toContain("ignore these paths even when the target-directory listing exposes them")
+    expect(skill).toContain("No `...`/wildcards")
+    expect(skill).toContain("At Word width reject overlap, crossings")
+    expect(skill).toContain("ordinary Mermaid omits both fields")
+    expect(skill).toContain("Architecture maps every child/shared object/input/output/egress")
+    expect(skill).toContain("Chinese relation labels")
+    expect(skill).toContain("Omission/deletion/overwrite STOP")
+    expect(skill).toContain("An invalid/split batch is not a turn boundary")
+    expect(skill).toContain("pendingSplitDetails.suggestedChildren")
+    expect(skill).toContain("same suggested ID, parent, nodes and edges")
+    expect(skill).toContain("`scopePath`=target source root, never one file in a full task")
+    expect(skill).toContain("architecture `designUnitCensusPath`=canonical census")
+    expect(skill).toContain("A `split-required` render is evidence-only")
+    expect([skill, mermaid, review, revision].join("\n")).not.toContain(
+      "SBDD_RULESET_REVISION=2026-07-source-semantic-v116",
+    )
+    expect(revision).toContain("SBDD_RULESET_REVISION=2026-07-source-semantic-v117")
+    expect(mermaid).toContain("validated node and edge coverage is monotonic")
+    expect(skill).toContain("Keep the full multi-unit workflow in the root session")
+    expect(skill).toContain("do not use `task`, `agent_manager`")
+    expect(skill).toContain("calls `declare_artifact` once")
+    expect(skill).toContain("never invent a fixed reusable root")
+    expect(skill).toContain(
+      "`D` distinct exact implementation-file native `read` calls and `D` distinct file-targeted native `grep` calls",
+    )
+    expect(skill).toContain("figureBatchCount = min(3, max(1, ceil(D / 3)))")
+    expect(skill).toContain("expectedTurnCount = 2 + figureBatchCount")
+    expect(skill).toContain("It must never ask the user how to proceed")
+    expect(skill).toContain("The root writes all frozen fourteen-topic unit files")
+    expect(skill).toContain("shell `cat`/`grep`, bash")
+    expect(skill).toContain("A narrow source-backed figure reads only `08`")
+    expect(skill).toContain(
+      "read `references/07-diagram-planning-and-splitting-rules.md` and then `references/08-mermaid-png-rendering-rules.md` before the first figure write",
+    )
+    expect(scope).toContain("design-unit-census.json")
+    expect(mermaid).toContain("designUnitCensusPath")
+    expect(mermaid).toContain("designUnitId")
+    expect(mermaid).toContain('"targetDesignUnitId": "DU-TARGET"')
+    expect(mermaid).toContain('"kind": "confirmed-submodule"')
+    expect(review).toContain("恰好映射到一个可见 node claim")
+    expect(skill).not.toContain("Narrow transaction: ONE TOOL CALL TOTAL/message")
+    expect(skill).not.toContain("#2 FIRST target-symbol grep/no replacement")
+  })
+
+  test("requires Render Service QA, Word-fit splitting, and contradiction-free figure checkpoints", async () => {
+    const skill = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8")
+    const diagrams = await fs.readFile(
+      path.join(skillRoot, "references/07-diagram-planning-and-splitting-rules.md"),
+      "utf8",
+    )
+    const mermaid = await fs.readFile(
+      path.join(skillRoot, "references/08-mermaid-png-rendering-rules.md"),
+      "utf8",
+    )
+    const continuation = await fs.readFile(
+      path.join(skillRoot, "references/14-continuation-checkpoint-protocol.md"),
+      "utf8",
+    )
+
+    for (const text of [skill, diagrams, mermaid]) {
+      expect(text).toContain("wordFitStatus")
+      expect(text).toContain("documentReady")
+      expect(text).toContain("split-required")
+    }
+    expect(skill).toContain("The root processes only the current frozen batch")
+    expect(diagrams).toContain("单个 DesignUnit 完成不是用户响应边界")
+    expect(mermaid).toContain("serviceBasicQaDiagramIdSet")
+    expect(mermaid).toContain("serviceBasicQaDiagramCount = terminalDiagramIdSet.size")
+    expect(mermaid).toContain("missingServiceBasicQaCount = 0")
+    expect(mermaid).toContain("contentCropRatio >= 0.2")
+    expect(mermaid).toContain("font-safe words instead of emoji")
+    expect(mermaid).toContain("unexplained one-letter node or edge labels")
+    expect(mermaid).toContain("pixelReviewStatus: unavailable")
+    expect(mermaid).toContain("qaLevel: render-service-basic")
+    expect(mermaid).toContain("Probe renders, rejected layouts, old paths")
+    expect(mermaid).toContain("Never render batch items in parallel or use batch mode for ordinary Mermaid")
+    expect(mermaid).toContain("uniqueTerminalPngSha256Count")
+    expect(mermaid).toContain("duplicateTerminalPngHashCount = renderOutputPathCollisionCount = 0")
+    expect(diagrams).toContain("architectureBaseConfirmedNameSet = frozenConfirmedSubmoduleNameSet")
+    expect(diagrams).toContain("missingOverviewSemanticItemCount = foreignOverviewSubstitutionCount = 0")
+    expect(diagrams).toContain("renderAttemptCount <= 4")
+    expect(diagrams).toContain("unmappedBaseSupportObjectCount = 0")
+    expect(mermaid).toContain("a container ID used as an arrow endpoint")
+    expect(mermaid).toContain("reject an empty or whitespace-only `subgraph` title")
+    expect(mermaid).toContain("any outer-target cross-boundary edge")
+    expect(mermaid).toContain("one single-line titled outer target container (`baseTargetContainerCount = 1`)")
+    expect(mermaid).toContain(
+      "target-owned entry, dispatcher/handoff, every confirmed submodule, every frozen evidenced support object, and one named egress",
+    )
+    expect(mermaid).toContain("External contract names stay in the egress")
+    expect(mermaid).toContain("a focused external-interaction figure has no container")
+    expect(mermaid).toContain("Never shorten, translate, normalize, or invent a source identifier or alias")
+    expect(mermaid).toContain("Generic English role words")
+    expect(mermaid).toContain("any internal subgraph in the base architecture overview")
+    expect(mermaid).toContain("Each base node has exactly two visual lines")
+    expect(mermaid).toContain("do not repeat transitive/secondary dependencies as dispatcher-to-all fanout")
+    expect(mermaid).toContain("Minimal `~~~` invisible links may constrain layout only")
+    expect(mermaid).toContain("never share one source as invisible fanout")
+    expect(mermaid).toContain("perform a separate native `read` and audit that exact text")
+    expect(mermaid).toContain("widthFit = 624 / width")
+    expect(mermaid).toContain("heightFit = 720 / height")
+    expect(mermaid).toContain("no arithmetic means failure")
+    expect(mermaid).toContain("wordFitStatus=split-required")
+    expect(mermaid).toContain("cannot count as a terminal base/focused figure or enter Word")
+    expect(continuation).toContain("不得再次全库探索")
+    expect(continuation).toContain("总数与完成状态只从 canonical ledgers/checkpoint 取得")
+    expect(mermaid).toContain("Render Service parser success is authoritative")
+    expect(diagrams).toContain("renderAttemptCount=4` 必须 `STOP_NOW`")
+    expect(mermaid).toContain("at most four render attempts per claim path")
+    expect(mermaid).toContain("On the fourth failed attempt, checkpoint and stop")
+    expect(diagrams).toContain("Overview 不是目录图")
+    expect(diagrams).toContain("五张基础图本身必须分别成为该 DesignUnit 的详细语义地图")
+    expect(diagrams).toContain("拆图只能增加细节")
+    expect(mermaid).toContain("missingBaseSemanticItemCount")
+    expect(mermaid).toContain("removedRequiredSemanticItemCount = missingRequiredSemanticItemCount = 0")
+    expect(mermaid).toContain("genericPlaceholderNodeCount")
+    expect(mermaid).toContain("singleHappyPathOnlyCount")
+    expect(mermaid).toContain("focusedOnlySemanticCount")
+    expect(skill).toContain(
+      "read `references/07-diagram-planning-and-splitting-rules.md` and then `references/08-mermaid-png-rendering-rules.md` before the first figure write",
+    )
+    expect(diagrams).toContain("flowchart TB")
+    expect(mermaid).toContain("baseInternalSubgraphCount = baseNodeThirdLineCount = baseNodeCapacityOrParameterCount = directFanoutDuplicateEdgeCount")
+    expect(mermaid).toContain("must not contain init/theme directives")
+    expect(diagrams).toContain("远端语法失败也消耗一次")
+    for (const field of [
+      "postTargetEndNodeOrEdgeCount",
+      "orphanConfirmedUnitCount",
+      "duplicateConfirmedUnitPlacementCount",
+      "baseInternalSubgraphCount",
+      "baseNodeThirdLineCount",
+      "directFanoutDuplicateEdgeCount",
+      "targetOrchestratorMisclassifiedCount",
+      "headerOnlySupportMisclassifiedCount",
+      "layoutOnlyInvisibleFanoutCount",
+    ]) {
+      expect(diagrams).toContain(field)
+    }
+    expect(diagrams).toContain("sourceEvidenceCallCount = sourceCallLedgerRowCount = finalSourceCallOrdinal <= 8")
+    expect(diagrams).toContain("02-source-evidence/source-call-ledger.md")
+    expect(diagrams).toContain("Observed Anchor IDs")
+    expect(diagrams).toContain("S<ordinal>A<n>=path:start[-end]@symbol-or-relation")
+    expect(diagrams).toContain("directoryPseudoAnchorCount > 0")
+    expect(diagrams).toContain(
+      "unobservedLedgerAnchorCount = directoryPseudoAnchorCount = replacementTargetGrepCount = 0",
+    )
+    expect(diagrams).toContain("targetSymbolGrepCallCount = 1")
+    expect(diagrams).toContain("replacementTargetGrepCount = 0")
+    expect(diagrams).toContain("`oldString` 必须只等于唯一 sentinel")
+    expect(diagrams).toContain("每个 assistant message 只能有一个 tool call")
+    expect(diagrams).toContain("multiToolMessageViolationCount > 0")
+    expect(diagrams).toContain("仅按 `03 → 07 → 08` 加载 reference")
+    expect(diagrams).toContain("extraReferenceReadCount > 0")
+    expect(diagrams).toContain("创建目录、写九列 ledger 表头+唯一 sentinel、执行 source call 1")
+    expect(diagrams).toContain("multiReadBatchViolationCount = diagramChronologyViolationCount = 0")
+    expect(diagrams).toContain("整批作废")
+    expect(diagrams).toContain("call 1 是精确目标目录 read")
+    expect(diagrams).toContain("call 2 是第一次出现的 target-scoped symbol grep 调用")
+    expect(diagrams).toContain("sourceCallOrderViolationCount = 0")
+    expect(diagrams).toContain("ledger 初始必须含唯一 `<!-- SBDD-APPEND-SOURCE-ROW -->`")
+    expect(diagrams).toContain("下一条 tool call 只能独立 edit 该哨兵")
+    expect(diagrams).toContain("空/失败以 `EMPTY`/`ERROR` 独占 slot")
+    expect(diagrams).toContain("unledgeredSourceCallCount > 0")
+    expect(diagrams).toContain("offSequenceSourceCallCount > 0")
+    expect(diagrams).toContain("support/definition/platform header、parent read/glob 均禁止")
+    expect(diagrams).toContain("#3 public header → #4 main impl → #5 one confirmed-submodule header")
+    expect(diagrams).toContain("fullImplementationReadCount <= 2")
+    expect(diagrams).toContain("reportedConfirmedSubmoduleNameSet = frozenConfirmedSubmoduleNameSet")
+    expect(diagrams).toContain("maxBaseNodesPerVisualRank <= 3")
+    expect(diagrams).toContain("actualVisualRankPlan = plannedVisualRankPlan")
+    expect(diagrams).toContain("3 <= actualVisualRankCount <= 5")
+    expect(diagrams).toContain("plannedVisualRankCount > 5")
+    expect(diagrams).toContain("sourceLedgerReadIndex < semanticLedgerReadIndex < firstMmdWriteIndex < firstMmdReadIndex")
+    expect(diagrams).toContain("mmdDeclaredNodeIdSet = semanticNodeIdSet")
+    expect(diagrams).toContain("incidentVisibleEdgeCount >= 1")
+    expect(diagrams).toContain('禁止 `A ~~~ NEW["..."]`')
+    expect(diagrams).toContain("`EGRESS ~~~ OTHER` 明确失败")
+    expect(diagrams).toContain("estimatedCssWidth <= 960")
+    expect(diagrams).toContain("estimatedCssHeight <= 1107")
+    expect(diagrams).toContain("publicHeaderReadCount <= 1")
+    expect(diagrams).toContain("focusedSubmoduleHeaderReadCount <= 1")
+    expect(diagrams).toContain("supportDefinitionPlatformHeaderReadCount = parentDirectoryReadCount = parentGlobCount = 0")
+    expect(diagrams).toContain("parentScopedGrepCount >= 1 && parentScopedGrepCount <= 2")
+    expect(diagrams).toContain("Anchor ID 映射随后永久不可变")
+    expect(diagrams).toContain("edgeLedgerMutationAfterReadCount > 0")
+    expect(diagrams).toContain("Observed Anchor ID(s) 单元格只能含裸 ID")
+    expect(diagrams).toContain("diagramChronologyViolationCount")
+    expect(diagrams).toContain("`READ source-call-ledger`")
+    expect(diagrams).toContain("04-diagrams/visible-edge-evidence.md")
+    expect(diagrams).toContain(
+      "unreadEvidencePathCount = unobservedAnchorReferenceCount = anchorSemanticOverreachCount = endpointOnlyEdgeAnchorCount = 0",
+    )
+    expect(diagrams).toContain("边 anchor 的已记录含义必须明确包含 `source -> relationship -> target`")
+    expect(diagrams).toContain("不能登记未成图的 support object")
+    expect(diagrams).toContain("edgeEvidenceLedgerWritten = edgeEvidenceLedgerRead = true")
+    expect(diagrams).toContain("visibleEdgeTripleSet = ledgerEdgeTripleSet")
+    expect(diagrams).toContain("architectureBaseSupportObjectNameSet = evidencedSupportObjectNameSet")
+    expect(diagrams).toContain("unmappedBaseSupportObjectCount = 0")
+    expect(diagrams).toContain("不得通过删除 evidence-backed node/edge")
+    expect(mermaid).toContain("File-name-only, symbol-only, or final-response counts are invalid")
+    expect(mermaid).toContain("must not delete an evidence-backed node/edge")
+    expect(diagrams).toContain("targetTitlePathCount = 0")
+    expect(diagrams).toContain("layoutOnlyVisibleEdgeCount")
+    expect(diagrams).toContain("inventedVisibleEdgeCount")
+    expect(diagrams).toContain("visibleEdgeLineCount = visibleEdgeEvidenceRowCount")
+    expect(diagrams).toContain("reversedVisibleEdgeForLayoutCount")
+    expect(diagrams).toContain("layoutOnlyInvisibleLinkCount = layoutOnlyInvisibleLinkIds.size")
+    expect(diagrams).toContain("每一条可见箭头行都必须写成带简洁语义标签的 `-->|<evidenced relation>|`")
+    expect(diagrams).toContain("实际 MMD 必须出现一条从最后内部 terminal 到具名 egress 的 `LAST ~~~ EGRESS`")
+    expect(diagrams).toContain("不能先渲染再靠第二次修正补 hard gate")
+    expect(diagrams).toContain("三个或更多真实可见目标")
+    expect(diagrams).toContain("egressTerminalVisualRank = true")
+    expect(diagrams).toContain("unresolvedWideFanoutSourceCount = wastefulBaseLabelWhitespaceCount = 0")
+    expect(mermaid).toContain("Plan at most three compact nodes in one rank")
+    expect(diagrams).toContain("现有 `.mmd`、PNG、DOCX")
+    expect(mermaid).toContain("Attempt two sets `firstPass: false` and then `STOP_NOW`")
+    expect(skill).toContain("second failed render=`attempted_failed/STOP_NOW`")
+    expect(mermaid).toContain("every visible arrow line must carry an evidenced relationship label")
+    expect(mermaid).toContain("actual final layout-only chain whose last token is the named egress")
+    expect(mermaid).toContain("correction repeats write→independent read→all hard gates→validate→render")
+    expect(mermaid).toContain("The gate applies to Word, no-Word, image-only, narrow and calibration delivery")
+    expect(mermaid).toContain("do not copy to a terminal PNG, declare an artifact, suggest completion, deliver a file")
+    expect(mermaid).toContain("A narrow architecture task reads this reference only")
+    expect(mermaid).toContain("one authoritative `.mmd`")
+    expect(mermaid).toContain("claimEdgeCount = visibleMmdArrowLineCount")
+    expect(mermaid).toContain("one arrow carrying several API names still has one edge claim")
+    expect(mermaid).toContain("default module/resource/interface edges to `dependency`")
+    expect(mermaid).toContain("An aggregated label naming several functions remains one evidenced `dependency` claim")
+    expect(mermaid).toContain("requiredArchitectureNodeSet = target + confirmed children + evidenced shared objects")
+    expect(mermaid).toContain("a bare API/function list is not a sufficient relationship label")
+    expect(mermaid).toContain("reportedRequiredArchitectureOmissionCount > 0")
+    expect(mermaid).toContain("claimSchemaErrorCount = missingClaimEvidenceCount")
+    expect(mermaid).toContain("at most ten source-backed semantic validations")
+    expect(mermaid).toContain("splitFromDiagramId")
+    expect(skill).toContain("node/edge-ID union")
+    expect(mermaid).toContain("never guess a range from a truncated full-file read")
+    expect(mermaid).toContain("egressInsideTarget")
+    expect(skill).toContain("raw inventories, and giant canvases are not detail")
+    expect(skill).toContain("Only `documentReady=true` counts")
+    expect(mermaid).toContain("Never use `bash`, a package manager, `npx`, `npm`, `bunx`, `pip`")
+    expect(mermaid).toContain("Never report a requested task slug, fabricated timestamp directory")
+    expect(skill).toContain("batchManifestPath")
+    expect(skill).toContain("1–20 unique items")
+    expect(skill).toContain("exactly once for that frozen batch")
+    expect(skill).toContain("do not also pass `source` or `semanticEvidencePath`")
+    expect(mermaid).toContain("repair-only batch")
+    expect(mermaid).toContain("batchResultPath")
+    expect(mermaid).toContain("Never render batch items in parallel or use batch mode for ordinary Mermaid")
+    expect(continuation).toContain("五张基础图 semantic-set audit")
+    expect(continuation).toContain("canonicalPhaseStatusMatchCount=1")
+    expect(continuation).toContain("stalePhaseStatusCount=0")
+    expect(continuation).toContain("staleRemainingCount=0")
+    expect(continuation).toContain("没有平行的 Phase Progress 摘要")
+  })
+
+  test("requires fail-closed batch-audited prose before diagrams or Word", async () => {
+    const skill = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8")
+    const template = await fs.readFile(
+      path.join(skillRoot, "references", "10-detail-design-output-templates.md"),
+      "utf8",
+    )
+    const review = await fs.readFile(
+      path.join(skillRoot, "references", "13-quality-gates-and-validator.md"),
+      "utf8",
+    )
+
+    for (const marker of [
+      "reference10Loaded: true",
+      "The root writes all frozen fourteen-topic unit files",
+      "make one native `read` tool call targeted at each saved file",
+      "use one `grep` targeted at that same file",
+      "a directory or recursive grep is invalid",
+      "after every edit, separately re-read and re-grep that exact file",
+      "after all frozen unit drafts exist",
+      "only after every unit passes",
+      "verifiedFile",
+      "verifiedHeadingIds",
+      "combinedHeadingMatchCount",
+      "verifiedStatusMarkerIds",
+      "separateReadToolCallCompleted",
+    ]) {
+      expect(skill).toContain(marker)
+    }
+    for (const file of [
+      "references/07-diagram-planning-and-splitting-rules.md",
+      "references/08-mermaid-png-rendering-rules.md",
+      "references/09-parent-module-assembly-rules.md",
+    ]) {
+      expect(skill).toContain(file)
+    }
+    expect(skill).toContain("never guess filenames")
+    expect(template).toContain("根会话可按冻结顺序先写完多个 unit 草稿")
+    expect(template).toContain("shell `cat`/`grep`、write 返回和模型记忆均不能代替该审计")
+    expect(template).toContain("write frozen unit drafts → for each unit: read → grep")
+    expect(template).toContain("任何未独立 read+grep 的草稿仍为 `MISSING`")
+    expect(template).toContain("不得仅凭头文件、目录列表、另一单元源码、模型记忆或常见实现模式起草")
+    expect(template).toContain("preWriteImplementationReadCount")
+    expect(template).toContain("unreadImplementationPathCount = 0")
+    expect(template).toContain("一个宽泛证据 ID 不得自动支持十四个主题")
+    expect(template).toContain("update one canonical resume checkpoint")
+    expect(template).toContain("只有 topic `08`")
+    for (const id of Array.from({ length: 14 }, (_, index) => String(index + 1).padStart(2, "0"))) {
+      const topic = String(Number(id))
+      expect(template).toMatch(new RegExp(`#### ${topic}\\. [^\\n]+\\nSBDD-TOPIC-STATUS: ${id} \\|`))
+    }
+    expect(review).toContain("单独 read 工具回读 → 独立 grep 标题和 status 行")
+    expect(review).toContain("批量写完多个 unit 后")
+    expect(review).toContain("模型自述、checkbox 或手写 review 表")
+    expect(review).toContain("却计入 PASS")
+    expect(review).toContain("topic 01–07/09–14 是否全部为解释性 PASS")
   })
 
   test("blocks the long-task false-pass regression and accepts a complete neutral case", async () => {
@@ -154,6 +516,44 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(combined).toContain("placeholderParagraphIndex < firstHeading1ParagraphIndex")
     expect(combined).toContain("Title index < TOCHeading index < first Heading 1 index")
     expect(combined).toContain("重新加载 `source-backed-detail-design`")
+  })
+
+  test("rejects a shallow representative flow and requires flow-family edge and terminal closure", async () => {
+    const fixture = JSON.parse(
+      await fs.readFile(
+        path.join(
+          repoRoot,
+          "packages/opencode/test/kilocode/fixtures/source-backed-detail-design-flow-family-regression.json",
+        ),
+        "utf8",
+      ),
+    ) as FlowFamilyRegressionFixture
+
+    for (const item of fixture.cases) expect(evaluateFlowFamilies(item)).toEqual(item.expected)
+
+    const skill = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8")
+    const diagrams = await fs.readFile(
+      path.join(skillRoot, "references/07-diagram-planning-and-splitting-rules.md"),
+      "utf8",
+    )
+    const flows = await fs.readFile(
+      path.join(skillRoot, "references/15-business-flow-abstraction-rules.md"),
+      "utf8",
+    )
+    const word = await fs.readFile(path.join(skillRoot, "references/12-word-export-rules.md"), "utf8")
+    const combined = [skill, diagrams, flows, word].join("\n")
+
+    expect(combined).toContain("14-business-flow-family-census.csv")
+    expect(combined).toContain("unmappedFlowFamilyCount = 0")
+    expect(combined).toContain("missingBusinessEdgeCount = 0")
+    expect(combined).toContain("missingAsyncHandoffCount = 0")
+    expect(combined).toContain("missingBusinessTerminalCount = 0")
+    expect(combined).toContain("flowCensusParseStatus=failed")
+    expect(combined).toContain("Flow family IDs")
+    expect(combined).toContain("Async handoff IDs")
+    expect(combined).toContain("Terminal step IDs")
+    expect(combined).toContain("代表性流程")
+    expect(combined).toContain("not_started")
   })
 
   test("keeps a policy fixture boundary for embedded C detail-design delivery", async () => {
@@ -359,7 +759,7 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(candidates.filter((candidate) => candidate.strongSignal).every((candidate) => candidate.decision === "confirmed_submodule")).toBe(true)
     expect(discovery).toContain("candidateCount = confirmedCount + excludedCount")
     expect(discovery).toContain("unmappedCandidateCount = 0")
-    expect(skill).toContain("`confirmed_submodule` or evidence-backed `excluded_non_submodule`")
+    expect(skill).toContain("`confirmed_submodule` or evidenced `excluded_non_submodule`")
     expect(new Set(confirmed.map((candidate) => candidate.designUnitId)).size).toBe(confirmed.length)
     expect(new Set(confirmed.map((candidate) => candidate.designUnitId))).toEqual(
       new Set(fixture.diagramCoverageFixture.designUnits.filter((unit) => unit.kind === "confirmed_submodule").map((unit) => unit.id)),
@@ -564,10 +964,11 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(skill).toContain("Generate or update source-backed detailed design documents")
     expect(skill).toContain("enhanced-detail-design")
     expect(skill).toContain("Word docx")
-    expect(skill).toContain("source-backed detailed-design generation, update, comparison")
+    expect(skill).toContain("Use for explicit deliverables")
     expect(skill).toContain("apply_word_document_edits")
     expect(skill).toContain("diff_word_documents")
     expect(skill).toContain("not a ChipMate runtime pipeline")
+    expect(skill).toContain("Ordinary QA stays artifact-free")
     expect(skill).toContain("Required Reference Loading")
     expect(skill).toContain("Content-first Work Package Order")
     expect(skill).toContain("Review Checklist")
@@ -603,7 +1004,8 @@ describe("source-backed detail design skill migration boundary", () => {
       expect(skill).toContain(heading)
     }
     for (const reference of [
-      "references/01-core-principles.md",
+      "references/02-input-and-module-scope-rules.md",
+      "references/03-source-exploration-rules.md",
       "references/10-detail-design-output-templates.md",
       "references/12-word-export-rules.md",
       "references/13-quality-gates-and-validator.md",
@@ -612,16 +1014,18 @@ describe("source-backed detail design skill migration boundary", () => {
       expect(skill).toContain(reference)
     }
     ordered(skill, [
-      "freeze the complete ordered target/confirmed-submodule census",
-      "persist the complete fourteen-topic content unit",
-      "prove prose readiness",
-      "derive and validate each unit's five semantic views",
-      "freeze the final ordered Word outline",
-      "create a text-only, non-deliverable `*-working.docx`",
+      "ordered DesignUnits",
+      "The root writes all frozen fourteen-topic unit files",
+      "figureBatchCount = min(3, max(1, ceil(D / 3)))",
+      "Process only the next batch",
+      "create bounded text-complete Word fragments",
+      "materialize the sole TOC",
     ])
     expect(skill).toContain("A heading, one-line overview, function list, state list")
+    expect(skill).toContain("distinctTopicHeadingCount = 14")
+    expect(skill).toContain("headings such as `6-14`, `6/7/8`, `remaining topics`")
     expect(skill).toContain("current state, event or trigger, guard, transition action, next state")
-    expect(skill).toContain("A table that contains only function names and one-line labels is incomplete")
+    expect(skill).toContain("A one-line function table is incomplete")
   })
 
   test("separates context parents from the deepest source-confirmed target module", async () => {
@@ -653,15 +1057,16 @@ describe("source-backed detail design skill migration boundary", () => {
     const combined = [skill, scope, diagrams, word, continuation].join("\n")
 
     expect(skill).toContain("## Target Resolution Rule")
-    expect(skill).toContain("means Worker in Platform context")
+    expect(skill).toContain("an evidenced ancestor/descendant chain")
+    expect(skill).toContain("deepest, most specific member")
     expect(scope).toContain("deepest confirmed descendant")
-    expect(scope).toContain("Context parent(s)")
-    expect(scope).toContain("Target module")
-    expect(scope).toContain("Confirmed submodules")
+    expect(scope).toContain("所属上级模块")
+    expect(scope).toContain("唯一目标模块")
+    expect(scope).toContain("目标内部确认子模块")
     expect(diagrams).toContain("`D = 1 + confirmedSubmoduleCount`")
-    expect(diagrams).toContain("Context-parent orientation figures 不计入 `D`、`5D` 或 requiredFigureCount")
-    expect(word).toContain("chapter 3 contains only context-parent positioning and target handoffs")
-    expect(continuation).toContain("Context parents 不进入 DesignUnit census")
+    expect(diagrams).toContain("所属上级模块定位图不计入 `D`、`5D` 或 requiredFigureCount")
+    expect(word).toContain("opening positioning section separates system architecture")
+    expect(continuation).toContain("所属上级模块不进入 DesignUnit census")
     expect(continuation).toContain("目标仍需澄清时不得开始正文或 Word")
     expect(combined).not.toContain("the requested target module is the parent design unit")
     expect(combined).not.toContain("请求的目标模块就是承载这些内部子模块的父设计单元")
@@ -688,7 +1093,7 @@ describe("source-backed detail design skill migration boundary", () => {
     )
     expect(review).toContain("确认子模块数量必须等于完整本地详细设计章节数量")
     expect(review).toContain("只有简介、函数名、状态名、结构体、字段、宏或阈值清单")
-    expect(review).toContain("十四项本地正文均为 `PASS`")
+    expect(review).toContain("topic 01–07/09–14 为 `PASS`")
   })
 
   test("rejects unconsumed anchors and heading ranges without explanatory prose", async () => {
@@ -717,11 +1122,11 @@ describe("source-backed detail design skill migration boundary", () => {
     const combined = [skill, word, review].join("\n")
     expect(combined).toContain("[[SBDD-CONTENT:<designUnitId>:<topicId>]]")
     expect(combined).toContain("replace_paragraph_with_blocks")
-    expect(combined).toContain("do not call `create_word_document`")
+    expect(skill).toContain("Word starts only after all prose files and figure result manifests pass")
     expect(combined).toContain("bodyless heading range")
     expect(combined).toContain("working DOCX")
-    expect(combined).toContain("do not report a Word path")
-    expect(skill).toContain("If no safe file-writing tool is exposed")
+    expect(combined).toContain("no DOCX path")
+    expect(skill).toContain("Without a safe writing tool")
   })
 
   test("does not migrate ChipMate document-contract repair helpers", async () => {
@@ -756,7 +1161,7 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(combined).toContain("replace_paragraph_with_blocks")
     expect(combined).toContain('"wordPath": "<latest working DOCX path>"')
     expect(combined).toContain('"pngPath": "<pngPath returned by render_mermaid_diagram>"')
-    expect(combined).toContain("initial working skeleton is text-only")
+    expect(combined).toContain("only after all render transactions and prose readiness pass")
     expect(combined).toContain("reverse intended display order")
     expect(combined).toContain("inspect_word_document.imageCount")
     expect(combined).toContain("lateInsertedRelationshipIds")
@@ -780,6 +1185,7 @@ describe("source-backed detail design skill migration boundary", () => {
   test("requires five source-backed diagram views and explicit image/page visual review", async () => {
     const files = await collectFiles(skillRoot)
     const combined = (await Promise.all(files.map((file) => fs.readFile(file, "utf8")))).join("\n")
+    const word = await fs.readFile(path.join(skillRoot, "references/12-word-export-rules.md"), "utf8")
 
     expect(combined).toContain(
       "| Target | Required | Required | Required | Required or evidenced `N/A` | Required |",
@@ -792,29 +1198,39 @@ describe("source-backed detail design skill migration boundary", () => {
     )
     expect(combined).not.toContain("每个重要子模块")
     expect(combined).toContain("不能因为它被归为非核心、辅助、平台相关、初始化相关或实现简单而省略")
-    expect(combined).toContain("每个 confirmed candidate 必须且只能映射一个")
+    expect(combined).toContain("每个 confirmed candidate 与 target-owned DesignUnit 双射")
     expect(combined).toContain("candidateCount = confirmedCount + excludedCount")
     expect(combined).toContain("unmappedCandidateCount = 0")
     expect(combined).toContain("Caption-only entries, Mermaid source, ASCII, placeholders, repeated visuals")
     expect(combined).toContain("04-diagrams/coverage-slots.md")
     expect(combined).toContain("04-diagrams/diagram-requirements.md")
-    expect(combined).toContain("concrete evidence/render blocker")
+    expect(combined).toContain("rendered: false")
+    expect(combined).toContain("uniqueSuccessfulDiagramIdCount = requiredFigureCount")
+    expect(combined).toContain("uniqueSuccessfulDiagramIdCount = successfulRenderedItemCount = requiredFigureCount")
+    expect(combined).toContain("Batch-call count is orchestration evidence only")
+    expect(combined).toContain("remainingRequiredFigureCount")
+    expect(combined).toContain("pendingRenderSlotCount")
+    expect(combined).toContain("missingRenderedPngCount")
+    expect(combined).toContain("completedFigureUnitIds")
+    expect(combined).toContain("PASS（N/A）")
+    expect(combined).toContain("`save_mermaid_artifact` success proves source persistence only")
+    expect(combined).toContain("including a working skeleton")
     expect(combined).toContain("architecture: boundary")
     expect(combined).toContain("business flow: trigger")
     expect(combined).toContain("code flow: entry functions")
     expect(combined).toContain("state machine: states")
     expect(combined).toContain("data/lifecycle: create/init")
     expect(combined).toContain("Codex `standard_business_brief`")
-    expect(combined).toContain("per-PNG 100%/200% review")
-    expect(combined).toContain("complex-page 200% review")
-    expect(combined).toContain("pageEvidenceStatus: unavailable")
+    expect(combined).toContain("Render Service basic-QA transaction")
+    expect(combined).toContain("optional `pixelReviewStatus`")
+    expect(combined).toContain("no final artifact declaration")
     expect(combined).toContain("不使用节点数、边数或 subgraph 数量作为机械质量指标")
     expect(combined).toContain("complexity-sources.md")
     expect(combined).toContain("complexity-census.md")
     expect(combined).toContain("多入口（multi-entry）或多个独立业务流程族：每个入口/流程族各有实例")
     expect(combined).toContain("多个独立 FSM 域：每个域生成 state overview 和 transition detail")
     expect(combined).toContain("All mutations of one DOCX must be serialized")
-    expect(combined).toContain("serialize every mutation through the immediately returned path")
+    expect(word).toContain("every mutation uses the immediately returned path")
     expect(combined).toContain("`fieldRefreshStatus: completed`")
     expect(combined).toContain("diagramId -> baseOrFocused -> owningSlot -> complexityInstanceIds -> sourceEvidence")
     expect(combined).toContain("`imageCount` is only a coarse relationship count")
@@ -822,18 +1238,25 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(combined).toContain("headingPath")
     expect(combined).toContain("tocPageNumberCount")
     expect(combined).not.toContain("imageCount` to equal the ledger's total required rendered PNG count")
-    expect(combined).toContain("Automated page QA, ink ratios, edge checks")
-    expect(combined).toContain("cannot be reported as visual pass")
+    expect(combined).toContain("qaLevel: render-service-basic")
+    expect(combined).toContain("not human/model pixel review")
     expect(combined).toContain('tocMode: "materialize"')
-    expect(combined).toContain("exactly one standalone summary item whose text is `{{TOC}}`")
-    expect(combined).toContain("hand-write a directory")
+    expect(combined).toContain("exactly one standalone `{{TOC}}` before Heading 1 `阅读路径`")
+    expect(combined).toContain("no handwritten directory")
     expect(combined).toContain("exactly one Title-style paragraph")
     expect(combined).toContain("`阅读路径` as the first outline item")
-    expect(combined).toContain("pass every newly returned Word path into the next mutation")
-    expect(combined).toContain("concrete evidence/render blocker")
+    expect(combined).toContain("pass the path returned by each successful")
+    expect(combined).toContain("`PARTIAL` is the unfinished task status")
+    expect(combined).toContain("no Heading 1 named `目录`/`TOC`/`Contents`")
+    expect(combined).toContain("evidenced FSM `N/A` must have no Diagram ID")
+    expect(combined).toContain("generic `truncated: true` is also failure")
+    expect(combined).toContain("`visualQaStatus: skipped`")
+    expect(combined).toContain("`fieldRefreshStatus: failed`")
     expect(combined).toContain("`business-target-module-master-flow` 是 target DesignUnit")
     expect(combined).toContain("05-enhanced-detail-design/08-confirmed-submodules.md")
     expect(combined).not.toContain("05-enhanced-detail-design/08-submodule-business-flows.md")
+    expect(combined).not.toContain("a concrete image/render blocker may leave a text-complete generated DOCX")
+    expect(combined).not.toContain("generated + PARTIAL")
   })
 
   test("closes discovery, complexity, FSM, chapter, figure identity, and Word acceptance gaps", async () => {
@@ -856,7 +1279,12 @@ describe("source-backed detail design skill migration boundary", () => {
     }
     expect(skill).not.toContain("discoverySignalCount = mappedToCandidateSignalCount + evidencedNonSubmoduleSignalCount")
     expect(discovery).toContain("DiscoverySignalId")
-    expect(discovery).toContain("单写 `helper` 或 `adapter` 标签不是反证")
+    expect(discovery).toContain("unmappedTargetCompilationUnitCount = 0")
+    expect(discovery).toContain("callable/cross-file symbols")
+    expect(discovery).toContain("“只被另一单元使用”只是依赖边")
+    expect(discovery).toContain("exact alias/duplicate")
+    expect(skill).toContain("unmappedTargetCompilationUnitCount = 0")
+    expect(review).toContain("编译单元、发现信号与候选是否三重闭环")
 
     const schema =
       "diagramId -> baseOrFocused -> owningSlot -> complexityInstanceIds -> sourceEvidence -> mmdPath -> sourceStatus -> syntaxValidation -> semanticCoverage -> pngPath -> visibleFigureId -> targetSection -> renderDisposition -> visualQaStatus -> wordInsertionStatus"
@@ -873,11 +1301,12 @@ describe("source-backed detail design skill migration boundary", () => {
     }
     expect(fsm).toContain("Target module 和已确认子模块使用相同三态判定")
 
-    expect(skill).toContain("Canonical chapters 4 through 8 together form the target module's one continuous design unit")
-    expect(skill).toContain("Chapter 9 then contains one continuous local design unit per confirmed submodule")
+    expect(skill).toContain("Chapters 4 through 8 jointly form the target's continuous DesignUnit")
+    expect(skill).toContain("Chapter 9 contains one continuous DesignUnit per confirmed submodule")
     for (const text of [parent, template]) expect(text).toContain("第 4 至第 8")
     expect(word).toContain("chapters 4 through 8 together form the target module DesignUnit")
-    expect(parent).toContain("具体子模块 source blocker、PNG 渲染或 Word 插入失败")
+    expect(parent).toContain("任一 source 或 PNG 失败立即保存续作点")
+    expect(parent).toContain("停止后续 target/child 图与全部 Word 工作")
     expect(word).toContain("Any missing or duplicate unit")
 
     for (const text of [mermaid, word]) {
@@ -886,9 +1315,10 @@ describe("source-backed detail design skill migration boundary", () => {
       expect(text).not.toContain('"title": "[DU-')
       expect(text).not.toContain('"altText": "[DU-')
     }
-    expect(skill).toContain("caption, alt text, and cropped display dimensions")
+    expect(skill).toContain("caption/alt text/cropped dimensions")
 
-    for (const text of [skill, word]) expect(text).toContain("text-only")
+    expect(skill).toContain("text-complete Word fragments")
+    expect(word).toContain("text-only")
     expect(word).toContain("replacedRelationshipIds")
     expect(word).toContain("removedRelationshipIds")
     for (const text of [mermaid, word, review]) expect(text).toContain("maxParagraphs: 1000")
@@ -896,13 +1326,16 @@ describe("source-backed detail design skill migration boundary", () => {
       expect(text).toContain("maxTables: 200")
       expect(text).toContain("paragraphsTruncated: false")
       expect(text).toContain("tablesTruncated: false")
+      expect(text).toContain("serviceBasicPageQaStatus")
+      expect(text).toContain("pixelReviewStatus")
+      expect(text).toContain("pagePngPaths")
     }
-    expect(skill).toContain("acceptanceStatus: PARTIAL")
-    expect(word).toContain("acceptanceStatus: PASS | PARTIAL")
+    expect(skill).toContain("`PARTIAL` describes the unfinished task")
+    expect(word).toContain("`PARTIAL` is the unfinished task status")
     expect(mermaid).toContain("acceptance remains `PARTIAL`")
     expect(review).toContain("acceptanceStatus` 才能为 `PASS`")
     expect(word).not.toContain("baselineImageCount + successfulNewImageInsertions - intentionallyRemovedBaselineImages")
-    expect(word).toContain("artifactStatus: generated | failed")
+    expect(word).toContain("no final artifact declaration")
   })
 
   test("preserves all non-contract capability families after chapter restructuring", async () => {
@@ -935,7 +1368,7 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(skill).toContain("A source-versus-document difference report")
     expect(skill).toContain("A quick update")
     expect(skill).toContain("Do not expand a narrow request into a full Word deliverable")
-    expect(skill).toContain("Ordinary code QA continues through native evidence tools without artifacts")
+    expect(skill).toContain("Ordinary QA stays artifact-free")
   })
 })
 
@@ -967,6 +1400,30 @@ type WordBodyRegressionCase = {
   expectedFindings: string[]
 }
 type WordBodyRegressionFixture = { requiredTopics: string[]; cases: WordBodyRegressionCase[] }
+type FlowFamilyRegressionCase = {
+  name: string
+  flowFamilies: string[]
+  businessEdges: string[]
+  asyncHandoffs: string[]
+  terminalSteps: string[]
+  diagrams: Array<{
+    id: string
+    kind: "base" | "focused"
+    png: string
+    flowFamilies: string[]
+    businessEdges: string[]
+    asyncHandoffs: string[]
+    terminalSteps: string[]
+    navigatesTo: string[]
+  }>
+  claimedAcceptanceStatus: "PASS" | "PARTIAL"
+  expected: {
+    wordAllowed: boolean
+    acceptanceStatus: "PASS" | "PARTIAL"
+    findings: string[]
+  }
+}
+type FlowFamilyRegressionFixture = { cases: FlowFamilyRegressionCase[] }
 type LongTaskRegressionCase = {
   name: string
   expectedTarget: string
@@ -1398,6 +1855,38 @@ function evaluateContentRegression(fixture: ContentRegressionFixture) {
   return findings
 }
 
+function evaluateFlowFamilies(item: FlowFamilyRegressionCase) {
+  const findings = new Set<string>()
+  const ids = new Set(item.diagrams.map((diagram) => diagram.id))
+  const pngs = new Set(item.diagrams.map((diagram) => diagram.png))
+  const families = new Set(item.diagrams.flatMap((diagram) => diagram.flowFamilies))
+  const edges = new Set(item.diagrams.flatMap((diagram) => diagram.businessEdges))
+  const handoffs = new Set(item.diagrams.flatMap((diagram) => diagram.asyncHandoffs))
+  const terminals = new Set(item.diagrams.flatMap((diagram) => diagram.terminalSteps))
+  const base = item.diagrams.find((diagram) => diagram.kind === "base")
+
+  if (!sameSet(families, new Set(item.flowFamilies))) findings.add("unmapped-flow-family")
+  if (!sameSet(edges, new Set(item.businessEdges))) findings.add("missing-business-edge")
+  if (!sameSet(handoffs, new Set(item.asyncHandoffs))) findings.add("missing-async-handoff")
+  if (!sameSet(terminals, new Set(item.terminalSteps))) findings.add("missing-business-terminal")
+  if (ids.size !== item.diagrams.length || pngs.size !== item.diagrams.length) findings.add("duplicate-business-diagram")
+
+  const reachable = new Set(base?.flowFamilies ?? [])
+  for (const id of base?.navigatesTo ?? []) {
+    const target = item.diagrams.find((diagram) => diagram.id === id)
+    if (!target) continue
+    for (const family of target.flowFamilies) reachable.add(family)
+  }
+  if (!base || !sameSet(reachable, new Set(item.flowFamilies))) findings.add("master-flow-not-navigable")
+
+  const list = [...findings]
+  return {
+    wordAllowed: list.length === 0,
+    acceptanceStatus: list.length === 0 ? "PASS" as const : "PARTIAL" as const,
+    findings: list,
+  }
+}
+
 function evaluateLongTask(item: LongTaskRegressionCase, topics: string[]) {
   const findings: string[] = []
   const expected = new Set(item.confirmedUnits)
@@ -1554,6 +2043,13 @@ function deriveSourceOracle(files: Map<string, string>) {
 
 function frontmatterList(text: string, key: string): string[] {
   const lines = text.split(/\r?\n/)
+  const inline = lines.find((line) => line.startsWith(`${key}: [`))
+  if (inline) {
+    return inline
+      .slice(inline.indexOf("[") + 1, inline.lastIndexOf("]"))
+      .split(",")
+      .map((item) => item.trim())
+  }
   const start = lines.findIndex((line) => line.trim() === `${key}:`)
   if (start === -1) return []
   const items: string[] = []

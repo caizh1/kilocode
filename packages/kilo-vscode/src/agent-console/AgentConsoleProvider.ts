@@ -84,6 +84,7 @@ export class AgentConsoleProvider implements vscode.Disposable {
       config: () => this.connection.getServerConfig() ?? undefined,
       root: getWorkspaceRoot,
       rcfile: () => vscode.Uri.joinPath(this.extensionUri, "assets", "agent-console", "bashrc").fsPath,
+      psfile: () => vscode.Uri.joinPath(this.extensionUri, "assets", "agent-console", "powershell.ps1").fsPath,
       font: readTerminalFont,
       post: (message) => void panel.webview.postMessage(message),
       log: (message) => this.output.appendLine(`[Shell] ${message}`),

@@ -1,17 +1,19 @@
-// Kilo-specific translations and overrides
+// ChipMate translations and overrides
 // Keys here will override any matching keys from upstream translations
 export const dict = {
-  // Kilo Gateway provider translations
+  // ChipMate Gateway provider translations
   "provider.connect.kiloGateway.line1":
-    "Kilo Gateway gives you access to a curated set of reliable optimized models for coding agents.",
+    "ChipMate Gateway gives you access to a curated set of reliable optimized models for coding agents.",
   "provider.connect.kiloGateway.line2":
     "With a single API key you'll get access to models such as Claude, GPT, Gemini, GLM and more.",
   "provider.connect.kiloGateway.visit.prefix": "Visit ",
-  "provider.connect.kiloGateway.visit.link": "kilo.ai",
+  "provider.connect.kiloGateway.visit.link": "ChipMate",
   "provider.connect.kiloGateway.visit.suffix": " to collect your API key.",
   "provider.connect.kiloGateway.byok.prefix": "For more usage stats, ",
-  "provider.connect.kiloGateway.byok.link": "BYOK via Kilo's Gateway",
+  "provider.connect.kiloGateway.byok.link": "BYOK via ChipMate Gateway",
   "provider.connect.kiloGateway.byok.suffix": ".",
+  "dialog.usageExceeded.freeTier.description":
+    "Subscribe to ChipMate Go for reliable access to the best open-source models, starting at $5/month.",
 
   // Provider settings translations
   "settings.providers.group.recommended": "Recommended",
@@ -49,12 +51,12 @@ export const dict = {
   "marketplace.install.scope.global.description": "All projects on this machine. Stored in your user configuration.",
   "marketplace.install.destination": "Installation destination",
   "marketplace.install.about.mcp":
-    "An MCP server gives Kilo additional tools for working with external services or local programs.",
+    "An MCP server gives ChipMate additional tools for working with external services or local programs.",
   "marketplace.install.about.agent": "An agent adds a reusable role with its own instructions and permissions.",
   "marketplace.install.about.skill":
-    "A skill adds task-specific instructions and resources that Kilo can load when needed.",
+    "A skill adds task-specific instructions and resources that ChipMate can load when needed.",
   "marketplace.install.mcp.warning":
-    "MCP servers can run local commands or connect to external services. Kilo will ask for permission before using their tools unless your permissions allow them automatically.",
+    "MCP servers can run local commands or connect to external services. ChipMate will ask for permission before using their tools unless your permissions allow them automatically.",
   "marketplace.install.project.warning":
     "Project files may be committed to version control. Do not store secrets here unless the configuration references an environment variable.",
   "marketplace.risk.none": "No risks found",
@@ -109,6 +111,8 @@ export const dict = {
   "marketplace.install.required": "{{name}} is required",
   "marketplace.scope.project": "project",
   "marketplace.scope.global": "global",
+  "marketplace.skill.effective": "Active",
+  "marketplace.skill.shadowedByProject": "Inactive · overridden by project Skill",
   "marketplace.remove.type.mcp": "MCP server",
   "marketplace.remove.type.skill": "skill",
   "marketplace.remove.type.agent": "agent",
@@ -170,6 +174,13 @@ export const dict = {
   "marketplace.local.result.unchanged": "Already installed",
   "marketplace.local.result.skipped": "Skipped",
   "marketplace.local.result.failed": "Failed",
+  "marketplace.local.activationFailedTitle": "Skills imported but not activated in this session",
+  "marketplace.local.activationRequestFailed": "Refresh request failed: {{error}}",
+  "marketplace.local.activationVerificationFailed":
+    "The refresh request succeeded, but {{count}} Skills are still missing from the refreshed list.",
+  "marketplace.local.activationUnknown": "Unknown refresh error",
+  "marketplace.local.activationReloadHint":
+    "The files were kept safely. Review the error and use Reload Window if recovery is still needed.",
   "marketplace.local.publishHint":
     "Nothing was uploaded. Publish later from the Skill card after reviewing the installed snapshot.",
   "marketplace.local.done": "Back to Skill Hub",
@@ -229,6 +240,26 @@ export const dict = {
     "Deterministic repairs apply only to the upload snapshot; local files were not changed.",
   "marketplace.aligned.closeReport": "Close report",
   "marketplace.aligned.upload": "Publish this Skill to the market",
+  "marketplace.batch.open": "Batch upload",
+  "marketplace.batch.select": "Select {{name}}",
+  "marketplace.batch.selected": "{{count}} Skills selected",
+  "marketplace.batch.selectVisible": "Select current results",
+  "marketplace.batch.clear": "Clear",
+  "marketplace.batch.cancel": "Cancel",
+  "marketplace.batch.upload": "Upload {{count}}",
+  "marketplace.batch.uploading": "Uploading…",
+  "marketplace.batch.resultTitle": "Batch upload complete",
+  "marketplace.batch.resultTotal": "{{count}} Skills processed",
+  "marketplace.batch.state.published": "Published {{count}}",
+  "marketplace.batch.state.unchanged": "Unchanged {{count}}",
+  "marketplace.batch.state.attention": "Needs attention {{count}}",
+  "marketplace.batch.state.failed": "Failed {{count}}",
+  "marketplace.batch.state.skipped": "Skipped {{count}}",
+  "marketplace.batch.label.published": "Published",
+  "marketplace.batch.label.unchanged": "Unchanged",
+  "marketplace.batch.label.attention": "Needs attention",
+  "marketplace.batch.label.failed": "Failed",
+  "marketplace.batch.label.skipped": "Skipped",
   "marketplace.aligned.noAnalytics": "No aggregated market events are available yet.",
   "marketplace.aligned.total": "Total {{count}}",
   "marketplace.aligned.unpublish": "Unpublish Skill",
@@ -283,7 +314,7 @@ export const dict = {
     "Keep waiting for the snapshot to complete. Subsequent turns are fast once the initial snapshot is built.",
   "snapshot.slowRepo.answer.disable": "Disable for this project",
   "snapshot.slowRepo.answer.disable.description":
-    "Turn off Kilo's snapshots for this project. You will lose undo/redo of Kilo file changes, but git still tracks everything.",
+    "Turn off ChipMate snapshots for this project. You will lose undo/redo of ChipMate file changes, but git still tracks everything.",
 
   // Edit-tool header: hover-revealed action opening the diff in a full tab.
   "ui.messagePart.openInDiffViewer": "Open in Diff Viewer",
@@ -305,9 +336,45 @@ export const dict = {
   "settings.chipmateServer.address.placeholder": "chipmate-server.example.com:6001",
   "settings.chipmateServer.test.action": "Test connection",
   "settings.chipmateServer.test.testing": "Testing…",
-  "settings.chipmateServer.autoUpdate.title": "Automatically install plugin updates",
+  "settings.chipmateServer.autoUpdate.title": "Automatically install updates",
   "settings.chipmateServer.autoUpdate.description":
-    "Check the configured ChipMate Server and install a compatible plugin update. Reload the window when prompted to finish.",
+    "Automatically download and install compatible new versions in the background",
+  "settings.chipmateServer.update.title": "Plugin updates",
+  "settings.chipmateServer.update.description":
+    "Check for and install a ChipMate version compatible with the current platform.",
+  "settings.chipmateServer.update.check": "Check for updates",
+  "settings.chipmateServer.update.checking": "Checking for updates…",
+  "settings.chipmateServer.update.checkingDetail": "Reading the latest compatible version from ChipMate Server.",
+  "settings.chipmateServer.update.latest": "You're up to date",
+  "settings.chipmateServer.update.currentVersion": "Current version {{version}}",
+  "settings.chipmateServer.update.justChecked": "Just checked",
+  "settings.chipmateServer.update.available": "Version {{version}} is available",
+  "settings.chipmateServer.update.versionTransition": "Current {{current}}  →  Latest {{latest}}",
+  "settings.chipmateServer.update.installDetail":
+    "ChipMate will download, verify, and install the update. Reload the window when it finishes.",
+  "settings.chipmateServer.update.install": "Update now",
+  "settings.chipmateServer.update.installing": "Installing update",
+  "settings.chipmateServer.update.installingDetail": "Downloading, verifying, and installing the VSIX…",
+  "settings.chipmateServer.update.notesShow": "View release notes",
+  "settings.chipmateServer.update.notesHide": "Hide release notes",
+  "settings.chipmateServer.update.notesTitle": "Version {{version}} release notes",
+  "settings.chipmateServer.update.notesEmpty": "No release notes are available for this version.",
+  "settings.chipmateServer.update.publishedAt": "Published {{date}}",
+  "settings.chipmateServer.update.publishedUnknown": "Publication date unavailable",
+  "settings.chipmateServer.update.currentPlatform": "For the current platform",
+  "settings.chipmateServer.update.installed": "Update installed",
+  "settings.chipmateServer.update.installedDetail": "Version {{version}} is ready. Reload the window to finish.",
+  "settings.chipmateServer.update.reload": "Reload window",
+  "settings.chipmateServer.update.failed": "Update failed",
+  "settings.chipmateServer.update.retry": "Retry",
+  "settings.chipmateServer.update.error.server":
+    "The update service could not be reached. Check the ChipMate Server address and try again.",
+  "settings.chipmateServer.update.error.action": "The update could not be downloaded or installed. Try again.",
+  "settings.chipmateServer.update.error.package":
+    "The update package did not pass verification. Check for updates again.",
+  "settings.chipmateServer.update.error.validation":
+    "The update information is no longer valid. Check for updates again.",
+  "settings.chipmateServer.update.reloadHint": "Reload the VS Code window after installing an update.",
   "settings.chipmateServer.reloadHint": "Reload the window after saving for all remote features to use the new server.",
   "settings.chipmateServer.status.invalid": "Enter a valid host and explicit port without an API path.",
   "settings.chipmateServer.status.savedInvalid":

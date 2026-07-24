@@ -123,11 +123,63 @@ describe("Marketplace Skill merge", () => {
   })
 
   it("accepts upload requests only for currently verified uploadable card ids", () => {
-    const ids = new Set(["local-guide"])
+    const ids = new Set(["local-guide", "global:shared"])
 
     expect(isListedUploadableSkill("Local Guide", ids)).toBe(true)
+    expect(isListedUploadableSkill("global:shared", ids)).toBe(true)
     expect(isListedUploadableSkill("code-review", ids)).toBe(false)
     expect(isListedUploadableSkill("unknown", ids)).toBe(false)
+  })
+
+  it("renders project and global copies of one logical Skill as separate cards", () => {
+    const instances = [
+      {
+        instanceId: "project:code-review",
+        id: "code-review",
+        name: "code-review",
+        description: "Project v1",
+        scope: "project" as const,
+        root: "/workspace/.chipmate-v2/skills/code-review",
+        location: "/workspace/.chipmate-v2/skills/code-review/SKILL.md",
+        sha256: "1".repeat(64),
+        effective: true,
+      },
+      {
+        instanceId: "global:code-review",
+        id: "code-review",
+        name: "code-review",
+        description: "Global v2",
+        scope: "global" as const,
+        root: "/storage/config/skills/code-review",
+        location: "/storage/config/skills/code-review/SKILL.md",
+        sha256: "2".repeat(64),
+        effective: false,
+        shadowedBy: "project:code-review",
+      },
+    ]
+    const result = mergeMarketplaceSkills(
+      [remote],
+      [{ name: "code-review", location: instances[0].location }],
+      { project: { "code-review": { type: "skill" } }, global: { "code-review": { type: "skill" } } },
+      true,
+      undefined,
+      instances,
+    )
+
+    expect(result.marketplaceItems).toHaveLength(2)
+    expect(result.marketplaceItems[0]).toMatchObject({
+      id: "code-review",
+      instanceId: "project:code-review",
+      localScope: "project",
+      effective: true,
+    })
+    expect(result.marketplaceItems[1]).toMatchObject({
+      id: "code-review",
+      instanceId: "global:code-review",
+      localScope: "global",
+      effective: false,
+      shadowedBy: "project:code-review",
+    })
   })
 
   it("classifies only ChipMate managed roots as marketplace-managed", () => {

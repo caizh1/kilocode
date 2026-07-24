@@ -66,7 +66,7 @@ describe("tool.document_search", () => {
   test("describes indexed workspace document search", async () => {
     const tool = await initTool()
 
-    expect(tool.description).toContain("Search indexed workspace documents")
+    expect(tool.description).toContain("Search indexed workspace and explicitly approved external documents")
     expect(tool.description).toContain("PDF")
     expect(tool.description).toContain("XLSX")
   })
@@ -178,6 +178,31 @@ describe("tool.document_search", () => {
           )
           expect(search).not.toHaveBeenCalled()
         } finally {
+          search.mockRestore()
+        }
+      },
+    })
+  })
+
+  test("forwards absolute paths for engine-side approved-root validation", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const search = spyOn(KiloIndexing, "searchDocuments").mockResolvedValue([])
+        const restore = stub()
+        const external = path.resolve(tmp.path, "..", "manuals")
+
+        try {
+          const tool = await initTool()
+          await rt.runPromise(tool.execute({ query: "policy", path: external }, baseCtx))
+
+          expect(search).toHaveBeenCalledWith("policy", {
+            directoryPrefix: external,
+            maxResults: 8,
+          })
+        } finally {
+          restore()
           search.mockRestore()
         }
       },

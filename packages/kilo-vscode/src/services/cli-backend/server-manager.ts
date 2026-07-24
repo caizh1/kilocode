@@ -32,8 +32,53 @@ export type ServerExitInfo = {
   pid?: number
   runId: string
   expected: boolean
+  phase: "starting" | "running"
+  arch: string
+  cliHash: string
+  crash?: "access-violation"
 }
 type ServerExitListener = (info: ServerExitInfo) => void
+
+export function serverDetached(platform: NodeJS.Platform = process.platform): boolean {
+  return platform !== "win32"
+}
+
+export function isAccessViolation(code: number | null): boolean {
+  return code !== null && code >>> 0 === 0xc0000005
+}
+
+export function isWindowsArm(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform !== "win32") return false
+  return [env.PROCESSOR_ARCHITECTURE, env.PROCESSOR_ARCHITEW6432, env.PROCESSOR_IDENTIFIER].some((value) =>
+    /arm64|armv8/i.test(value ?? ""),
+  )
+}
+
+export function resolveCliPath(
+  root: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  exists: (file: string) => boolean = fs.existsSync,
+): string {
+  const paths = platform === "win32" ? path.win32 : path
+  const bin = paths.join(root, "bin")
+  const arm = paths.join(bin, "kilo-arm64.exe")
+  if (isWindowsArm(env, platform) && exists(arm)) return arm
+  return paths.join(bin, platform === "win32" ? "kilo.exe" : "kilo")
+}
+
+export function cliRuntimeEnv(file: string): Record<string, string> {
+  const paths = /^[a-z]:[\\/]/i.test(file) || file.includes("\\") ? path.win32 : path
+  if (paths.basename(file).toLowerCase() !== "kilo-arm64.exe") return {}
+  return { KILO_INDEXING_PROCESS_PATH: paths.join(paths.dirname(file), "kilo-indexer-arm64.exe") }
+}
+
+export function taskkillArgs(pid: number, force: boolean): string[] {
+  return ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])]
+}
 
 export function resolveServerCwd(folders: readonly WorkspaceFolderLike[] | undefined, storage: string): string {
   return folders?.[0]?.uri.fsPath ?? storage
@@ -77,6 +122,7 @@ export function resolveManagedServerEnv(env: NodeJS.ProcessEnv, storage: string)
     "KILO_DEV_CWD",
     "KILO_DEV_REPO",
     "KILO_MEMORY_DEBUG_DIR",
+    "KILO_INDEXING_PROCESS_PATH",
     "KILO_PLUGIN_META_FILE",
     "KILO_TUI_CONFIG",
     "KILO_ZED_DB",
@@ -95,9 +141,11 @@ export function resolveManagedServerEnv(env: NodeJS.ProcessEnv, storage: string)
 
 export class ServerManager {
   private instance: ServerInstance | null = null
+  private starting: ChildProcess | null = null
   private startupPromise: Promise<ServerInstance> | null = null
   private lastExitInfo: ServerExitInfo | null = null
   private readonly expected = new Set<ChildProcess>()
+  private disposed = false
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -111,6 +159,7 @@ export class ServerManager {
    * Get or start the server instance
    */
   async getServer(): Promise<ServerInstance> {
+    if (this.disposed) throw new Error("CLI server manager has been disposed")
     console.log("[Kilo New] ServerManager: 🔍 getServer called")
     if (this.instance) {
       console.log("[Kilo New] ServerManager: ♻️ Returning existing instance:", { port: this.instance.port })
@@ -123,14 +172,23 @@ export class ServerManager {
     }
 
     console.log("[Kilo New] ServerManager: 🚀 Starting new server instance...")
-    this.startupPromise = this.startServer()
-    try {
-      this.instance = await this.startupPromise
-      console.log("[Kilo New] ServerManager: ✅ Server started successfully:", { port: this.instance.port })
-      return this.instance
-    } finally {
-      this.startupPromise = null
-    }
+    const start = this.startServer()
+      .then((instance) => {
+        if (this.disposed) {
+          this.expected.add(instance.process)
+          ServerManager.killProcess(instance.process, "SIGKILL")
+          throw new Error("CLI server manager was disposed during startup")
+        }
+        this.instance = instance
+        if (this.starting === instance.process) this.starting = null
+        console.log("[Kilo New] ServerManager: ✅ Server started successfully:", { port: instance.port })
+        return instance
+      })
+      .finally(() => {
+        this.startupPromise = null
+      })
+    this.startupPromise = start
+    return start
   }
 
   private async startServer(): Promise<ServerInstance> {
@@ -147,6 +205,15 @@ export class ServerManager {
       )
     }
 
+    const cliHash = await hashFile(cliPath)
+    const cliArch = path.basename(cliPath).toLowerCase() === "kilo-arm64.exe" ? "arm64" : process.arch
+    console.log("[Kilo New] ServerManager: 🔎 CLI SHA-256:", cliHash)
+    console.log("[Kilo New] ServerManager: 🧭 Runtime architecture:", {
+      extensionHost: process.arch,
+      windowsArmHost: isWindowsArm(),
+      cli: cliArch,
+    })
+
     const stat = fs.statSync(cliPath)
     console.log("[Kilo New] ServerManager: 📄 CLI isFile:", stat.isFile())
     console.log("[Kilo New] ServerManager: 📄 CLI mode (octal):", (stat.mode & 0o777).toString(8))
@@ -156,6 +223,7 @@ export class ServerManager {
       const cfg = vscode.workspace.getConfiguration("chipmate.v2")
       const render = renderEnv()
       console.log("[Kilo New] ServerManager: 🖼️ Mermaid render endpoint:", mermaidEndpoint(render))
+      console.log("[Kilo New] ServerManager: 🖼️ PlantUML render endpoint:", plantumlEndpoint(render))
       const internal = internalOfflineEnv()
       const indexingControl = indexingControlEnv(internal)
       const claudeCompat = cfg.get<boolean>("claudeCodeCompat", false)
@@ -188,6 +256,7 @@ export class ServerManager {
           ...(extraCaCerts && { NODE_EXTRA_CA_CERTS: extraCaCerts }),
           ...(!proxyStrictSSL && { NODE_TLS_REJECT_UNAUTHORIZED: "0" }),
           ...resolveManagedServerEnv(process.env, this.context.globalStorageUri.fsPath),
+          ...cliRuntimeEnv(cliPath),
           ...render,
           // VS Code's http.proxy / http.noProxy settings are not reflected in
           // process.env, so spawned children bypass the user's configured proxy
@@ -231,22 +300,34 @@ export class ServerManager {
           ...bwrapEnv,
         },
         stdio: ["ignore", "pipe", "pipe"],
-        detached: true,
+        detached: serverDetached(),
       })
+      this.starting = serverProcess
       console.log("[Kilo New] ServerManager: 📦 Process spawned with PID:", serverProcess.pid)
       void MemoryDebug.append({
         event: "cli.spawned",
         runId,
-        data: { pid: serverProcess.pid, cli: path.basename(cliPath) },
+        data: {
+          pid: serverProcess.pid,
+          cli: path.basename(cliPath),
+          cliHash,
+          arch: process.arch,
+          cliArch,
+          windowsArmHost: isWindowsArm(),
+          phase: "starting",
+        },
       })
 
       let resolved = false
       let reported = false
+      let timeout = ""
       const stderrLines: string[] = []
 
       const finish = (code: number | null, signal: NodeJS.Signals | null) => {
         if (reported) return
         reported = true
+        clearTimeout(timer)
+        if (this.starting === serverProcess) this.starting = null
         console.log("[Kilo New] ServerManager: 🛑 Process exited:", { code, signal })
         this.lastExitInfo = {
           code,
@@ -256,6 +337,10 @@ export class ServerManager {
           pid: serverProcess.pid,
           runId,
           expected: this.expected.delete(serverProcess),
+          phase: resolved ? "running" : "starting",
+          arch: process.arch,
+          cliHash,
+          crash: isAccessViolation(code) ? "access-violation" : undefined,
         }
         this.appendIndexingOutput(formatServerExitInfo(this.lastExitInfo))
         void MemoryDebug.append({
@@ -266,6 +351,11 @@ export class ServerManager {
             signal,
             expected: this.lastExitInfo.expected,
             pid: serverProcess.pid,
+            phase: this.lastExitInfo.phase,
+            arch: process.arch,
+            cliArch,
+            windowsArmHost: isWindowsArm(),
+            cliHash,
             crash: MemoryDebug.parseCrash(stderrLines),
             stderr: stderrLines.join("\n"),
           },
@@ -275,9 +365,21 @@ export class ServerManager {
         }
         this.onExit?.(this.lastExitInfo)
         if (resolved) return
-        const { userMessage, userDetails } = toErrorMessage(processExitMessage(code, signal), stderrLines, cliPath)
+        const { userMessage, userDetails } = toErrorMessage(
+          timeout || processExitMessage(code, signal),
+          stderrLines,
+          cliPath,
+        )
         reject(new ServerStartupError(userMessage, userDetails))
       }
+
+      const timer = setTimeout(() => {
+        if (resolved) return
+        console.error(`[Kilo New] ServerManager: ⏰ Server startup timeout (${STARTUP_TIMEOUT_SECONDS}s)`)
+        timeout = t("server.startupTimeout", { seconds: STARTUP_TIMEOUT_SECONDS })
+        ServerManager.killProcess(serverProcess, "SIGKILL")
+      }, STARTUP_TIMEOUT_SECONDS * 1000)
+      timer.unref()
 
       serverProcess.stdout?.on("data", (data: Buffer) => {
         const output = data.toString()
@@ -287,7 +389,13 @@ export class ServerManager {
         const port = parseServerPort(output)
         if (port !== null && !resolved) {
           resolved = true
+          clearTimeout(timer)
           console.log("[Kilo New] ServerManager: 🎯 Port detected:", port)
+          void MemoryDebug.append({
+            event: "cli.ready",
+            runId,
+            data: { pid: serverProcess.pid, port, phase: "running" },
+          })
           resolve({ port, password, process: serverProcess, runId })
         }
       })
@@ -310,19 +418,6 @@ export class ServerManager {
       serverProcess.on("exit", (code, signal) => {
         finish(code, signal)
       })
-
-      setTimeout(() => {
-        if (!resolved) {
-          console.error(`[Kilo New] ServerManager: ⏰ Server startup timeout (${STARTUP_TIMEOUT_SECONDS}s)`)
-          ServerManager.killProcess(serverProcess)
-          const { userMessage, userDetails } = toErrorMessage(
-            t("server.startupTimeout", { seconds: STARTUP_TIMEOUT_SECONDS }),
-            stderrLines,
-            cliPath,
-          )
-          reject(new ServerStartupError(userMessage, userDetails))
-        }
-      }, STARTUP_TIMEOUT_SECONDS * 1000)
     })
   }
 
@@ -332,8 +427,7 @@ export class ServerManager {
 
   private getCliPath(): string {
     // Always use the bundled binary from the extension directory
-    const binName = process.platform === "win32" ? "kilo.exe" : "kilo"
-    const cliPath = path.join(this.context.extensionPath, "bin", binName)
+    const cliPath = resolveCliPath(this.context.extensionPath)
     console.log("[Kilo New] ServerManager: 📦 Using CLI path:", cliPath)
     return cliPath
   }
@@ -345,30 +439,43 @@ export class ServerManager {
   /**
    * Kill a process and its entire process group.
    * On Unix, we send the signal to -pid (negative) to reach the whole group.
-   * On Windows, process.kill() on the child handle is sufficient.
+   * On Windows, taskkill targets the exact PID and its descendants.
    */
   private static killProcess(proc: ChildProcess, signal: NodeJS.Signals = "SIGTERM"): void {
     if (proc.pid === undefined) {
       return
     }
-    try {
-      if (process.platform !== "win32") {
-        // Negative PID targets the entire process group
-        process.kill(-proc.pid, signal)
-      } else {
-        proc.kill(signal)
+    if (process.platform === "win32") {
+      if (signal !== "SIGKILL") {
+        proc.kill("SIGTERM")
+        return
       }
-    } catch {
-      // Process already gone — ignore
+      const killer = spawn("taskkill.exe", taskkillArgs(proc.pid, signal === "SIGKILL"), {
+        stdio: "ignore",
+        detached: false,
+      })
+      killer.on("error", (err) => {
+        console.warn("[Kilo New] ServerManager: taskkill failed:", { pid: proc.pid, error: err.message })
+      })
+      return
+    }
+    try {
+      // Negative PID targets the entire process group.
+      process.kill(-proc.pid, signal)
+    } catch (err) {
+      console.debug("[Kilo New] ServerManager: process group already exited:", {
+        pid: proc.pid,
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 
   dispose(): void {
-    if (!this.instance) {
-      return
-    }
-    const proc = this.instance.process
+    this.disposed = true
+    const proc = this.instance?.process ?? this.starting
+    if (!proc) return
     this.instance = null
+    this.starting = null
     this.expected.add(proc)
 
     console.log("[Kilo New] ServerManager: 🔴 Disposing — sending SIGTERM to process group, PID:", proc.pid)
@@ -392,13 +499,15 @@ export function renderEnv(): Record<string, string> {
   const unified = chipmateServerEndpoints()
   const word = unified.endpoints?.word ?? ""
   const mermaid = unified.endpoints?.mermaid ?? ""
+  const plantuml = unified.endpoints?.plantuml ?? ""
   return {
     ...(word && !process.env.KILO_WORD_RENDER_ENDPOINT ? { KILO_WORD_RENDER_ENDPOINT: word } : {}),
     ...(mermaid && !process.env.KILO_MERMAID_RENDER_ENDPOINT ? { KILO_MERMAID_RENDER_ENDPOINT: mermaid } : {}),
+    ...(plantuml && !process.env.KILO_PLANTUML_RENDER_ENDPOINT ? { KILO_PLANTUML_RENDER_ENDPOINT: plantuml } : {}),
   }
 }
 
-export type MermaidEndpoint = {
+export type RenderEndpoint = {
   state: "injected" | "inherited" | "absent"
   endpoint?: string
 }
@@ -406,8 +515,18 @@ export type MermaidEndpoint = {
 export function mermaidEndpoint(
   render: Record<string, string> = renderEnv(),
   inherited = process.env.KILO_MERMAID_RENDER_ENDPOINT,
-): MermaidEndpoint {
+): RenderEndpoint {
   const injected = render.KILO_MERMAID_RENDER_ENDPOINT
+  if (injected) return { state: "injected", endpoint: redactEndpoint(injected) }
+  if (inherited) return { state: "inherited", endpoint: redactEndpoint(inherited) }
+  return { state: "absent" }
+}
+
+export function plantumlEndpoint(
+  render: Record<string, string> = renderEnv(),
+  inherited = process.env.KILO_PLANTUML_RENDER_ENDPOINT,
+): RenderEndpoint {
+  const injected = render.KILO_PLANTUML_RENDER_ENDPOINT
   if (injected) return { state: "injected", endpoint: redactEndpoint(injected) }
   if (inherited) return { state: "inherited", endpoint: redactEndpoint(inherited) }
   return { state: "absent" }
@@ -460,6 +579,8 @@ function stripAnsi(str: string): string {
 
 function processExitMessage(code: number | null, signal: NodeJS.Signals | null): string {
   if (signal) return `CLI process exited from signal ${signal} before server started`
+  if (isAccessViolation(code))
+    return "CLI process crashed with Windows access violation 0xC0000005 before server started"
   return t("server.processExited", { code: code ?? "null" })
 }
 
@@ -473,11 +594,25 @@ function formatServerExitInfo(info: ServerExitInfo): string {
     .join("\n")
   return [
     `[${new Date().toISOString()}] CLI background process exited with ${reason}.`,
+    `Phase: ${info.phase}`,
+    `Process: pid=${info.pid ?? "unknown"} arch=${info.arch}`,
     `CLI path: ${info.cliPath}`,
+    `CLI SHA-256: ${info.cliHash}`,
+    info.crash === "access-violation" ? "Crash: Windows access violation 0xC0000005" : undefined,
     stderr ? `Last CLI stderr:\n${stderr}` : undefined,
   ]
     .filter(Boolean)
     .join("\n")
+}
+
+function hashFile(file: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256")
+    const stream = fs.createReadStream(file)
+    stream.on("data", (data) => hash.update(data))
+    stream.on("error", reject)
+    stream.on("end", () => resolve(hash.digest("hex")))
+  })
 }
 
 function rememberStderr(lines: string[], output: string): void {

@@ -384,4 +384,47 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX idx_publication_undos_run ON publication_undos(run_id);
     `,
   },
+  {
+    version: 8,
+    name: "publication-request-aliases",
+    sql: `
+      CREATE TABLE publication_request_keys (
+        owner_id TEXT NOT NULL REFERENCES users(id),
+        idempotency_key TEXT NOT NULL,
+        source_sha256 TEXT NOT NULL,
+        run_id TEXT NOT NULL REFERENCES publication_runs(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(owner_id, idempotency_key)
+      );
+      INSERT INTO publication_request_keys(owner_id,idempotency_key,source_sha256,run_id,created_at)
+      SELECT owner_id,idempotency_key,source_sha256,id,created_at
+      FROM publication_runs
+      WHERE idempotency_key IS NOT NULL;
+      CREATE INDEX idx_publication_request_run ON publication_request_keys(run_id);
+    `,
+  },
+  {
+    version: 9,
+    name: "extension-publisher-ownership",
+    sql: `
+      ALTER TABLE extensions ADD COLUMN owner_id TEXT REFERENCES users(id);
+      UPDATE extensions
+      SET owner_id=(
+        SELECT uploader_id FROM extension_artifacts
+        WHERE extension_artifacts.extension_id=extensions.id
+          AND uploader_id IS NOT NULL
+        ORDER BY published_at ASC,id ASC LIMIT 1
+      )
+      WHERE EXISTS(
+        SELECT 1 FROM extension_artifacts
+        WHERE extension_artifacts.extension_id=extensions.id
+          AND uploader_id IS NOT NULL
+      );
+      UPDATE extension_artifacts
+      SET status='removed',removal_reason='owner-migration',removed_at=datetime('now'),removed_by='migration'
+      WHERE uploader_id IS NOT NULL
+        AND uploader_id<>(SELECT owner_id FROM extensions WHERE extensions.id=extension_artifacts.extension_id);
+      CREATE INDEX idx_extensions_owner ON extensions(owner_id,updated_at DESC);
+    `,
+  },
 ]

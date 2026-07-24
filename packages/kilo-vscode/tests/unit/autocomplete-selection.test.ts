@@ -11,8 +11,14 @@ import {
   autocompleteSelectionLabel,
   qwenAutocompleteModels,
 } from "../../webview-ui/src/components/settings/autocomplete-model-selector"
-import { buildAutocompleteSettingMessages } from "../../webview-ui/src/context/autocomplete-settings"
+import {
+  activateQuickAutocomplete,
+  buildAutocompleteSettingMessages,
+  requestAutocompleteSelection,
+  shouldActivateQuickAutocomplete,
+} from "../../webview-ui/src/context/autocomplete-settings"
 import { autocompleteDirectory } from "../../src/services/autocomplete/workspace"
+import type { ExtensionMessage, WebviewMessage } from "../../webview-ui/src/types/messages"
 
 const original = vscode.workspace.getConfiguration
 const originalFolders = vscode.workspace.workspaceFolders
@@ -185,6 +191,152 @@ describe("autocomplete selection settings", () => {
         requestId: "request-2",
       },
     ])
+  })
+
+  it("activates quick autocomplete only for unset or automatic selections", () => {
+    expect(shouldActivateQuickAutocomplete({})).toBe(true)
+    expect(shouldActivateQuickAutocomplete({ "autocomplete.automatic": true })).toBe(true)
+    expect(
+      shouldActivateQuickAutocomplete({
+        "autocomplete.automatic": false,
+        "autocomplete.provider": "manual",
+        "autocomplete.model": "manual-model",
+      }),
+    ).toBe(false)
+  })
+
+  it("waits for both autocomplete selection acknowledgements", async () => {
+    const handlers = new Set<(message: ExtensionMessage) => void>()
+    const posts: WebviewMessage[] = []
+    const transport = {
+      postMessage: (message: WebviewMessage) => posts.push(message),
+      onMessage: (handler: (message: ExtensionMessage) => void) => {
+        handlers.add(handler)
+        return () => handlers.delete(handler)
+      },
+    }
+    const pending = requestAutocompleteSelection(transport, { providerID: "chipmate", modelID: "qwen-coder-30b0" }, 100)
+    const request = posts[0]
+    if (!request || !("requestId" in request)) throw new Error("Missing autocomplete selection request")
+    const requestId = request.requestId
+    const emit = (key: string) => {
+      for (const handler of handlers) handler({ type: "settingUpdated", key, value: null, requestId })
+    }
+
+    emit("autocomplete.provider")
+    expect(handlers.size).toBe(1)
+    emit("autocomplete.model")
+    await pending
+    expect(handlers.size).toBe(0)
+    expect(posts[0]).toMatchObject({
+      type: "updateAutocompleteSelection",
+      providerID: "chipmate",
+      modelID: "qwen-coder-30b0",
+      automatic: true,
+    })
+  })
+
+  it("reports autocomplete selection write failures", async () => {
+    const handlers = new Set<(message: ExtensionMessage) => void>()
+    const posts: WebviewMessage[] = []
+    const transport = {
+      postMessage: (message: WebviewMessage) => posts.push(message),
+      onMessage: (handler: (message: ExtensionMessage) => void) => {
+        handlers.add(handler)
+        return () => handlers.delete(handler)
+      },
+    }
+    const pending = requestAutocompleteSelection(transport, { providerID: "chipmate", modelID: "qwen-coder-30b0" }, 100)
+    const request = posts[0]
+    if (!request || !("requestId" in request)) throw new Error("Missing autocomplete selection request")
+    for (const handler of handlers) {
+      handler({
+        type: "settingUpdateFailed",
+        key: "autocomplete.provider",
+        message: "settings are read-only",
+        requestId: request.requestId,
+      })
+    }
+
+    await expect(pending).rejects.toThrow("settings are read-only")
+  })
+
+  it("rechecks authoritative settings and preserves an explicit autocomplete choice", async () => {
+    const handlers = new Set<(message: ExtensionMessage) => void>()
+    const posts: WebviewMessage[] = []
+    const transport = {
+      postMessage: (message: WebviewMessage) => posts.push(message),
+      onMessage: (handler: (message: ExtensionMessage) => void) => {
+        handlers.add(handler)
+        return () => handlers.delete(handler)
+      },
+    }
+    const pending = activateQuickAutocomplete(
+      transport,
+      { providerID: "chipmate", modelID: "qwen-coder-30b0" },
+      100,
+    )
+    expect(posts).toEqual([{ type: "requestAutocompleteSettings" }])
+    for (const handler of handlers) {
+      handler({
+        type: "autocompleteSettingsLoaded",
+        settings: {
+          enableAutoTrigger: true,
+          enableSmartInlineTaskKeybinding: false,
+          enableChatAutocomplete: false,
+          provider: "manual",
+          model: "manual-model",
+          automatic: false,
+        },
+      })
+    }
+
+    expect(await pending).toBe("preserved")
+    expect(posts).toEqual([{ type: "requestAutocompleteSettings" }])
+  })
+
+  it("rechecks authoritative automatic settings before selecting quick autocomplete", async () => {
+    const handlers = new Set<(message: ExtensionMessage) => void>()
+    const posts: WebviewMessage[] = []
+    const transport = {
+      postMessage: (message: WebviewMessage) => posts.push(message),
+      onMessage: (handler: (message: ExtensionMessage) => void) => {
+        handlers.add(handler)
+        return () => handlers.delete(handler)
+      },
+    }
+    const pending = activateQuickAutocomplete(
+      transport,
+      { providerID: "chipmate", modelID: "qwen-coder-30b0" },
+      100,
+    )
+    const loaded: ExtensionMessage = {
+      type: "autocompleteSettingsLoaded",
+      settings: {
+        enableAutoTrigger: false,
+        enableSmartInlineTaskKeybinding: false,
+        enableChatAutocomplete: false,
+        provider: null,
+        model: null,
+        automatic: true,
+      },
+    }
+    for (const handler of [...handlers]) handler(loaded)
+    await Promise.resolve()
+    const request = posts.find((message) => message.type === "updateAutocompleteSelection")
+    if (!request || !("requestId" in request)) throw new Error("Missing autocomplete selection request")
+    for (const key of ["autocomplete.provider", "autocomplete.model"]) {
+      for (const handler of [...handlers]) {
+        handler({ type: "settingUpdated", key, value: null, requestId: request.requestId })
+      }
+    }
+
+    expect(await pending).toBe("activated")
+    expect(request).toMatchObject({
+      providerID: "chipmate",
+      modelID: "qwen-coder-30b0",
+      automatic: true,
+    })
   })
 
   it("routes multi-root autocomplete through the document folder and safely handles no workspace", () => {

@@ -312,7 +312,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
               <Tooltip value={activityTooltip()} placement="bottom" contentClass="task-header-memory-tooltip">
                 <DeferredPopover
                   placement="bottom-end"
-                  portal={false}
+                  portal
                   class="task-header-context-popover"
                   triggerAs="button"
                   triggerProps={{

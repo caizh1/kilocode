@@ -1,6 +1,12 @@
+import { isUtf8 } from "node:buffer"
+
 const OSC = "\x1b]6973;"
 const BEL = "\x07"
 const ST = "\x1b\\"
+const MARKER_BYTES = 96 * 1024
+const INPUT_BYTES = 64 * 1024
+const INPUT_IDS = 256
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export type AgentConsoleShellState =
   | { status: "starting" }
@@ -15,9 +21,24 @@ export type AgentConsoleShellActivity =
   | { kind: "data"; data: string }
   | { kind: "end"; cwd: string; exitCode: number }
 
+export type AgentConsoleShellInput = {
+  kind: "input"
+  requestId: string
+  input: string
+  command: boolean
+}
+
+export type AgentConsoleShellApplied = {
+  kind: "applied"
+  requestId: string
+  route: "agent" | "shell"
+}
+
 function decode(value: string): string | undefined {
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value)) return
-  return Buffer.from(value, "base64").toString("utf8")
+  if (value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) return
+  const bytes = Buffer.from(value, "base64")
+  if (bytes.toString("base64") !== value || !isUtf8(bytes)) return
+  return bytes.toString("utf8")
 }
 
 function closer(value: string, from: number) {
@@ -40,11 +61,18 @@ export class AgentConsoleIntegration {
   private readonly prefix: string
   private buffer = ""
   private current: AgentConsoleShellState = { status: "starting" }
+  private readonly ids = new Set<string>()
+  private readonly order: string[] = []
+  private readonly acks = new Set<string>()
+  private readonly ackorder: string[] = []
 
   constructor(
     token: string,
     private readonly update: (state: AgentConsoleShellState) => void,
     private readonly activity: (event: AgentConsoleShellActivity) => void = () => undefined,
+    private readonly input: (event: AgentConsoleShellInput) => void = () => undefined,
+    private readonly arm: (cwd: string) => void = () => undefined,
+    private readonly applied: (event: AgentConsoleShellApplied) => void = () => undefined,
   ) {
     this.prefix = `${OSC}${token};`
   }
@@ -67,6 +95,11 @@ export class AgentConsoleIntegration {
       const from = start + this.prefix.length
       const end = closer(this.buffer, from)
       if (!end) {
+        if (this.buffer.length > MARKER_BYTES) {
+          this.output(this.buffer.slice(0, start + 1))
+          this.buffer = this.buffer.slice(start + 1)
+          continue
+        }
         this.buffer = this.buffer.slice(start)
         return
       }
@@ -90,12 +123,18 @@ export class AgentConsoleIntegration {
   }
 
   private marker(value: string): void {
-    const [kind, first, second] = value.split(";")
-    if (kind === "ready" || kind === "resync") {
+    const [kind, first, second, third] = value.split(";")
+    if (kind === "ready") {
       const cwd = first ? decode(first) : undefined
       if (cwd !== undefined) this.set({ status: "ready", cwd })
       return
     }
+    if (kind === "prompt") {
+      const cwd = first ? decode(first) : undefined
+      if (cwd !== undefined) this.arm(cwd)
+      return
+    }
+    if (kind === "resync") return
     if (kind === "begin") {
       const cwd = first ? decode(first) : undefined
       if (cwd !== undefined) {
@@ -104,13 +143,48 @@ export class AgentConsoleIntegration {
       }
       return
     }
+    if (kind === "input") {
+      this.inputMarker(first, second, third)
+      return
+    }
+    if (kind === "applied") {
+      this.appliedMarker(first, second)
+      return
+    }
     if (kind !== "end") return
     const code = Number(first)
     const cwd = second ? decode(second) : undefined
     if (cwd !== undefined && Number.isSafeInteger(code) && code >= 0 && code <= 255) {
-      this.set({ status: "ready", cwd })
       this.activity({ kind: "end", cwd, exitCode: code })
+      this.arm(cwd)
     }
+  }
+
+  private inputMarker(requestId?: string, known?: string, payload?: string): void {
+    if (!requestId || !UUID.test(requestId) || (known !== "0" && known !== "1") || payload === undefined) return
+    if (payload.length > Math.ceil((INPUT_BYTES * 4) / 3) + 4 || this.ids.has(requestId)) return
+    const decoded = decode(payload)
+    if (decoded === undefined || Buffer.byteLength(decoded) > INPUT_BYTES) return
+    this.ids.add(requestId)
+    this.order.push(requestId)
+    if (this.order.length > INPUT_IDS) {
+      const old = this.order.shift()
+      if (old) this.ids.delete(old)
+    }
+    this.input({ kind: "input", requestId, command: known === "1", input: decoded })
+  }
+
+  private appliedMarker(requestId?: string, route?: string): void {
+    if (!requestId || !UUID.test(requestId) || (route !== "agent" && route !== "shell")) return
+    const key = `${requestId}/${route}`
+    if (this.acks.has(key)) return
+    this.acks.add(key)
+    this.ackorder.push(key)
+    if (this.ackorder.length > INPUT_IDS) {
+      const old = this.ackorder.shift()
+      if (old) this.acks.delete(old)
+    }
+    this.applied({ kind: "applied", requestId, route })
   }
 
   private output(data: string): void {

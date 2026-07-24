@@ -7,6 +7,7 @@ type Options = {
   baseURL: string
   apiKey?: string
   headers?: Record<string, string>
+  timeout?: number
 }
 
 type ModelEntry = {
@@ -41,7 +42,7 @@ export async function fetchOpenAIModels(opts: Options): Promise<ModelEntry[]> {
   const response = await fetch(url, {
     method: "GET",
     headers,
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(opts.timeout ?? 15_000),
   })
 
   if (!response.ok) {

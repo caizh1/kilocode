@@ -3,6 +3,8 @@
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
 import { createSignal, type Component } from "solid-js"
 import { AgentConsoleContent } from "../../agent-console/AgentConsoleApp"
+import { TerminalTab, type TerminalSocket } from "../../agent-manager/terminal/TerminalTab"
+import type { TerminalWriter } from "../../agent-manager/terminal/state"
 import "../../agent-console/agent-console.css"
 import { StoryProviders, defaultMockData, mockSessionValue } from "./StoryProviders"
 import { registerVscodeToolOverrides } from "../components/chat/VscodeToolOverrides"
@@ -130,47 +132,84 @@ const server = {
   gitInstalled: () => true,
 }
 
-const Shell: Component = () => {
-  const [value, setValue] = createSignal("")
+class StorySocket implements TerminalSocket {
+  binaryType: BinaryType = "arraybuffer"
+  readyState: number = WebSocket.CONNECTING
+  onopen: ((event: Event) => void) | null = null
+  onmessage: ((event: MessageEvent) => void) | null = null
+  onerror: ((event: Event) => void) | null = null
+  onclose: ((event: CloseEvent) => void) | null = null
+
+  constructor() {
+    queueMicrotask(() => {
+      this.readyState = WebSocket.OPEN
+      this.onopen?.(new Event("open"))
+      this.emit(
+        "ChipMate local shell\r\n/project $ bun run typecheck\r\n\x1b[32mTypecheck passed\x1b[0m\r\n\x1b[31mCommand failed\x1b[0m\r\n/project $ ",
+      )
+    })
+  }
+
+  send(data: string): void {
+    if (data.startsWith("\x18\x15")) {
+      this.emit(`\r\x1b[2K/project $ ${data.slice(2)}`)
+      return
+    }
+    this.emit(data)
+    if (data === "\r") this.emit("\r\n/project $ ")
+  }
+
+  close(): void {
+    this.readyState = WebSocket.CLOSED
+  }
+
+  private emit(data: string): void {
+    this.onmessage?.(new MessageEvent("message", { data }))
+  }
+}
+
+const Shell: Component<{ bind: (next: TerminalWriter) => () => void }> = (props) => (
+  <TerminalTab
+    terminalId="agent-console-story-shell"
+    socket={() => new StorySocket()}
+    font={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 13 }}
+    active={true}
+    focus={true}
+    shortcuts={false}
+    foreground="#fff"
+    bind={props.bind}
+  />
+)
+
+const ImeDemo: Component = () => {
+  const [count, setCount] = createSignal(0)
   return (
-    <div
-      style={{
-        display: "flex",
-        height: "100%",
-        "flex-direction": "column",
-        gap: "8px",
-        color: "#fff",
-        "font-family": "var(--vscode-editor-font-family, monospace)",
-        "font-size": "13px",
-      }}
-    >
-      <div>ChipMate local shell</div>
-      <div>/project $ bun run typecheck</div>
-      <div style={{ color: "var(--vscode-testing-iconPassed, #40c463)" }}>Typecheck passed</div>
-      <div style={{ color: "var(--vscode-errorForeground, #f14c4c)" }}>Command failed</div>
-      <label style={{ display: "flex", gap: "8px", "align-items": "center" }}>
-        <span>/project $</span>
-        <input
-          aria-label="输入 Shell 命令"
-          value={value()}
-          onInput={(event) => setValue(event.currentTarget.value)}
-          style={{
-            flex: "1",
-            border: "0",
-            outline: "0",
-            color: "inherit",
-            background: "transparent",
-            "font-family": "inherit",
+    <StoryProviders data={data} sessionID={sid} status="idle" locale="zh" noPadding>
+      <div style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
+        <output data-ui="agent-console-ime-captures">{count()}</output>
+        <TerminalTab
+          terminalId="agent-console-ime-shell"
+          socket={() => new StorySocket()}
+          font={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 13 }}
+          active={true}
+          focus={true}
+          shortcuts={false}
+          foreground="#fff"
+          captureInput={true}
+          capture={() => {
+            setCount((value) => value + 1)
+            return "accepted"
           }}
         />
-      </label>
-    </div>
+      </div>
+    </StoryProviders>
   )
 }
 
-const Demo: Component<{ inline?: boolean; busy?: boolean; timeout?: number }> = (props) => {
+const Demo: Component<{ inline?: boolean; busy?: boolean }> = (props) => {
   const [permissions, setPermissions] = createSignal(props.inline ? [] : [permission])
   const [responding, setResponding] = createSignal(new Set<string>())
+  const [entries, setEntries] = createSignal(activity)
   const session = {
     ...mockSessionValue({ id: sid, status: props.busy ? "busy" : "idle", permissions: permissions() }),
     messages: () => messages,
@@ -192,10 +231,22 @@ const Demo: Component<{ inline?: boolean; busy?: boolean; timeout?: number }> = 
         <SessionContext.Provider value={session as never}>
           <WorktreeModeProvider>
             <div style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
+              <button
+                hidden
+                data-ui="agent-console-stream-chunk"
+                onClick={() =>
+                  setEntries((items) =>
+                    items.map((item) =>
+                      item.seq === 3 && item.kind === "data"
+                        ? { ...item, data: `${item.data}\r\n\x1b[36mstreamed tail\x1b[0m` }
+                        : item,
+                    ),
+                  )
+                }
+              />
               <AgentConsoleContent
-                shell={<Shell />}
-                activities={props.inline ? activity : undefined}
-                routeTimeout={props.timeout}
+                shell={(bind) => <Shell bind={bind} />}
+                activities={props.inline ? entries() : undefined}
               />
             </div>
           </WorktreeModeProvider>
@@ -224,11 +275,16 @@ export const Inline: Story = {
 }
 
 export const Busy: Story = {
-  name: "Editable prompt while Agent is busy",
+  name: "Shell prompt while Agent is busy",
   render: () => <Demo inline busy />,
 }
 
 export const RouteTimeout: Story = {
-  name: "Route timeout preserves input",
-  render: () => <Demo inline timeout={50} />,
+  name: "Single real shell input",
+  render: () => <Demo inline />,
+}
+
+export const Ime: Story = {
+  name: "Windows IME Enter routing",
+  render: () => <ImeDemo />,
 }

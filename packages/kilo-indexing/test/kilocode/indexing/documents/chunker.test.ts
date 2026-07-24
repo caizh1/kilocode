@@ -57,4 +57,22 @@ describe("Document chunker", () => {
     expect(pdf[0]?.sourceRef).toBe("guide.pdf#page=3")
     expect(sheet[0]?.sourceRef).toBe(path.join("tables", "book.xlsx") + "#sheet=Data%20Sheet rows=2-4")
   })
+
+  test("adds media refs for embedded diagram extracts", () => {
+    const chunks = chunkDocument(
+      {
+        filePath: path.join(root, "design.docx"),
+        text: "@startuml\nAlice -> Bob\n@enduml",
+        kind: "diagram",
+        mediaPath: "word/media/image2.png",
+        startLine: 1,
+        endLine: 3,
+      },
+      root,
+      1200,
+      0,
+    )
+
+    expect(chunks[0]?.sourceRef).toBe("design.docx#media=word/media/image2.png")
+  })
 })

@@ -33,11 +33,14 @@ import {
 } from "../../utils/indexing-defaults"
 import SettingsRow from "./SettingsRow"
 import {
+  documentRoots,
+  extraRoots,
   indexingConfig,
   indexingDescription,
   indexingEnabled,
   indexingEnabledInherited,
   indexingInheritance,
+  mergeExternalRoots,
   indexingSource,
   indexingUpdate,
   type IndexingScope,
@@ -50,7 +53,7 @@ type DocumentNumberKey = "maxFileBytes" | "chunkChars" | "chunkOverlapChars" | "
 type Translate = ReturnType<typeof useLanguage>["t"]
 
 const allProviders: { value: ProviderId; label: string }[] = [
-  { value: "kilo", label: "Kilo" },
+  { value: "kilo", label: "ChipMate" },
   { value: "openai", label: "OpenAI" },
   { value: "ollama", label: "Ollama" },
   { value: "openai-compatible", label: "OpenAI-Compatible" },
@@ -202,7 +205,7 @@ const IndexingTab: Component = () => {
   const [tuningDrafts, setTuningDrafts] = createSignal<Record<string, string>>({})
   const [documentDrafts, setDocumentDrafts] = createSignal<Record<string, string>>({})
   const [copied, setCopied] = createSignal<string>()
-  const [scope, setScope] = createSignal<IndexingScope>("global")
+  const [scope, setScope] = createSignal<IndexingScope>("project")
   let timer: ReturnType<typeof setTimeout> | undefined
 
   onCleanup(() => {
@@ -232,18 +235,26 @@ const IndexingTab: Component = () => {
     setScope(next)
   }
 
-  const updateIndexing = (partial: IndexingConfig) => {
-    const materialized = materializeInternalIndexingDefaultsForSave(base(), partial)
-    const patch = { indexing: indexingUpdate(scope(), globalCfg(), projectCfg(), materialized) }
-    if (scope() === "global") {
+  const updateIndexingAt = (target: IndexingScope, partial: IndexingConfig) => {
+    const current = indexingConfig(target, globalCfg(), projectCfg())
+    const materialized = materializeInternalIndexingDefaultsForSave(current, partial)
+    const patch = { indexing: indexingUpdate(target, globalCfg(), projectCfg(), materialized) }
+    if (target === "global") {
       updateGlobalConfig(patch)
       return
     }
     updateProjectConfig(patch)
   }
 
+  const updateIndexing = (partial: IndexingConfig) => updateIndexingAt(scope(), partial)
+
+  const updateDocumentsAt = (target: IndexingScope, partial: NonNullable<IndexingConfig["documents"]>) => {
+    const current = target === "global" ? globalCfg() : projectCfg()
+    updateIndexingAt(target, { documents: { ...(current.documents ?? {}), ...partial } })
+  }
+
   const updateDocuments = (partial: NonNullable<IndexingConfig["documents"]>) => {
-    updateIndexing({ documents: { ...(raw().documents ?? {}), ...partial } })
+    updateDocumentsAt(scope(), partial)
   }
 
   const copyDiagnostics = (label: string, status: IndexingPipelineStatus) => {
@@ -259,7 +270,7 @@ const IndexingTab: Component = () => {
 
   const vectorStore = () => cfg().vectorStore ?? DEFAULT_VECTOR_STORE
   const documents = () => cfg().documents ?? {}
-  const documentPaths = () => documents().paths ?? []
+  const extraPaths = () => extraRoots(documents().paths)
   const kiloDefault = () =>
     getKiloEmbeddingModel(embeds.catalog().defaultModel, embeds.catalog())?.id ?? embeds.catalog().defaultModel
   const kiloModels = createMemo(() =>
@@ -430,24 +441,31 @@ const IndexingTab: Component = () => {
     updateDocuments({ [key]: patterns.length > 0 ? patterns : undefined })
   }
 
-  const addDocumentPaths = (paths: string[]) => {
-    updateDocuments({ paths: [...new Set([...documentPaths(), ...paths])] })
+  const addDocumentPaths = (
+    target: IndexingScope,
+    paths: string[],
+    approvals: NonNullable<NonNullable<IndexingConfig["documents"]>["approvedExternalRoots"]>,
+  ) => {
+    const current = indexingConfig(target, globalCfg(), projectCfg()).documents?.paths ?? []
+    const next = documentRoots([...current, ...paths])
+    const existing = globalCfg().documents?.approvedExternalRoots ?? []
+    const trusted = mergeExternalRoots(existing, approvals)
+    if (target === "global") {
+      updateDocumentsAt("global", { paths: next, approvedExternalRoots: trusted })
+      return
+    }
+    updateDocumentsAt("project", { paths: next })
+    updateDocumentsAt("global", { approvedExternalRoots: trusted })
   }
 
-  const setDocumentPath = (index: number, value: string) => {
-    const next = documentPaths().slice()
-    next[index] = value.trim()
-    updateDocuments({ paths: next.filter(Boolean) })
-  }
-
-  const removeDocumentPath = (index: number) => {
-    updateDocuments({ paths: documentPaths().filter((_, item) => item !== index) })
+  const removeDocumentPath = (path: string) => {
+    updateDocuments({ paths: documentRoots(extraPaths().filter((item) => item !== path)) })
   }
 
   onCleanup(
     vscode.onMessage((message) => {
       if (message.type !== "documentRagFoldersSelected") return
-      addDocumentPaths(message.paths)
+      addDocumentPaths(message.scope, message.paths, message.approvals)
     }),
   )
 
@@ -830,22 +848,32 @@ const IndexingTab: Component = () => {
           </Switch>
         </SettingsRow>
         <SettingsRow
+          title={language.t("settings.indexing.documents.workspace.title")}
+          description={language.t("settings.indexing.documents.workspace.description")}
+        >
+          <div style={{ width: "min(360px, 100%)" }}>
+            <TextField value={server.workspaceDirectory() || "."} readOnly />
+          </div>
+        </SettingsRow>
+        <SettingsRow
           title={language.t("settings.indexing.documents.folders.title")}
           description={language.t("settings.indexing.documents.folders.description")}
         >
           <div style={{ display: "flex", "flex-direction": "column", gap: "8px", width: "min(360px, 100%)" }}>
             <For
-              each={documentPaths()}
+              each={extraPaths()}
               fallback={
                 <span style={{ color: "var(--vscode-descriptionForeground)", "font-size": "var(--kilo-font-size-12)" }}>
                   {language.t("settings.indexing.documents.folders.empty")}
                 </span>
               }
             >
-              {(item, index) => (
+              {(item) => (
                 <div style={{ display: "flex", "align-items": "center", gap: "8px", "min-width": 0 }}>
-                  <TextField value={item} placeholder="docs" onChange={(value) => setDocumentPath(index(), value)} />
-                  <Button variant="ghost" size="small" icon="trash" onClick={() => removeDocumentPath(index())}>
+                  <div style={{ flex: 1, "min-width": 0 }}>
+                    <TextField value={item} readOnly />
+                  </div>
+                  <Button variant="ghost" size="small" icon="trash" onClick={() => removeDocumentPath(item)}>
                     {language.t("settings.indexing.documents.folders.remove")}
                   </Button>
                 </div>
@@ -856,7 +884,7 @@ const IndexingTab: Component = () => {
                 variant="secondary"
                 size="small"
                 icon="folder"
-                onClick={() => vscode.postMessage({ type: "selectDocumentRagFolder" })}
+                onClick={() => vscode.postMessage({ type: "selectDocumentRagFolder", scope: scope() })}
               >
                 {language.t("settings.indexing.documents.folders.add")}
               </Button>

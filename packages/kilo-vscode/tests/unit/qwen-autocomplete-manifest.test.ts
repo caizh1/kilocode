@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { QWEN_FIM_MODEL_ID } from "../../src/shared/qwen-autocomplete"
 
 describe("qwen autocomplete manifest settings", () => {
   const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf8"))
@@ -11,8 +12,8 @@ describe("qwen autocomplete manifest settings", () => {
     expect(props["chipmate.v2.autocomplete.provider"]).toMatchObject({ type: "string" })
     expect(props["chipmate.v2.autocomplete.qwen.endpoint"]).toBeUndefined()
     expect(props["chipmate.v2.autocomplete.qwen.apiKey"]).toBeUndefined()
-    expect(props["chipmate.v2.autocomplete.qwen.model"].default).toBe("qwen-coder-30b0")
-    expect(props["chipmate.v2.autocomplete.model"].enum).toContain("qwen-coder-30b0")
+    expect(props["chipmate.v2.autocomplete.qwen.model"].default).toBe(QWEN_FIM_MODEL_ID)
+    expect(props["chipmate.v2.autocomplete.model"].enum).toContain(QWEN_FIM_MODEL_ID)
     expect(props["chipmate.v2.autocomplete.provider"].enum).toBeUndefined()
     expect(props["chipmate.v2.autocomplete.provider"].examples).toContain("your-connected-provider-id")
     expect(props["chipmate.v2.autocomplete.qwen.debounceMs"].default).toBe(350)

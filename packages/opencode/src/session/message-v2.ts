@@ -41,6 +41,7 @@ import { Snapshot } from "@/snapshot" // kilocode_change
 import { SessionNetwork } from "./network" // kilocode_change
 import { CodexAuthExpiredError } from "@/kilocode/provider/codex-refresh" // kilocode_change
 import { KiloSessionMessageOrder } from "@/kilocode/session/message-order" // kilocode_change
+import { KiloPartLifecycle } from "@/kilocode/session/part-lifecycle" // kilocode_change
 import * as TextStream from "@/kilocode/text-stream" // kilocode_change
 import { Effect, Schema } from "effect"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
@@ -339,7 +340,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
       }
       for (const part of msg.parts) {
         // User message parts should never be empty
-        if (part.type === "text" && !part.ignored && part.text !== "")
+        // kilocode_change - transient progress belongs to the UI only and its local metadata is not valid provider metadata
+        if (part.type === "text" && !part.ignored && !KiloPartLifecycle.transient(part) && part.text !== "")
           userMessage.parts.push({
             type: "text",
             text: part.text,
@@ -411,8 +413,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         return part.metadata?.anthropic?.signature != null
       })
       for (const part of msg.parts) {
-        // kilocode_change - !part.ignored keeps local UI warnings out of future prompts
-        if (part.type === "text" && !part.ignored) {
+        // kilocode_change - ignored warnings and transient UI progress must stay out of future prompts
+        if (part.type === "text" && !part.ignored && !KiloPartLifecycle.transient(part)) {
           const text = part.text === "" && hasSignedReasoning ? " " : part.text
           assistantMessage.parts.push({
             type: "text",

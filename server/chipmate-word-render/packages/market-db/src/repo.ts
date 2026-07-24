@@ -137,6 +137,7 @@ export class MarketRepo {
     this.db.prepare("PRAGMA journal_mode=WAL").get()
     this.migrate()
     this.extensions = new ExtensionRepo(this.db)
+    this.extensions.repair()
   }
 
   health(): MarketDbHealth {
@@ -647,15 +648,24 @@ export class MarketRepo {
     const bytes = Buffer.from(input.archive)
     const source = sha(bytes)
     const existing = this.db
-      .prepare("SELECT id,source_sha256 FROM publication_runs WHERE owner_id=? AND idempotency_key=?")
-      .get(input.ownerId, input.idempotencyKey) as unknown as { id: string; source_sha256: string } | undefined
+      .prepare("SELECT run_id,source_sha256 FROM publication_request_keys WHERE owner_id=? AND idempotency_key=?")
+      .get(input.ownerId, input.idempotencyKey) as unknown as { run_id: string; source_sha256: string } | undefined
     if (existing) {
       if (existing.source_sha256 !== source) throw new Error("IDEMPOTENCY_CONFLICT")
-      return this.publicationItem(existing.id)!
+      return this.publicationItem(existing.run_id)!
     }
 
     const snapshot = validateSkillArchive(bytes)
     const now = new Date().toISOString()
+    const reusable = snapshot.valid ? this.reusable(input.ownerId, snapshot) : undefined
+    if (reusable) {
+      this.db
+        .prepare(
+          "INSERT INTO publication_request_keys(owner_id,idempotency_key,source_sha256,run_id,created_at) VALUES(?,?,?,?,?)",
+        )
+        .run(input.ownerId, input.idempotencyKey, source, reusable.id, now)
+      return reusable
+    }
     const dir = join(this.dir, "publications", input.id)
     const path = join(dir, "snapshot.tar.gz")
     mkdirSync(dir, { recursive: true })
@@ -696,6 +706,11 @@ export class MarketRepo {
           previous?.status ?? null,
           previous?.latest_revision ?? null,
         )
+      this.db
+        .prepare(
+          "INSERT INTO publication_request_keys(owner_id,idempotency_key,source_sha256,run_id,created_at) VALUES(?,?,?,?,?)",
+        )
+        .run(input.ownerId, input.idempotencyKey, source, input.id, now)
       this.db.exec("COMMIT")
       return this.publicationItem(input.id)!
     } catch (err) {
@@ -1018,6 +1033,18 @@ export class MarketRepo {
     return this.extensions.artifacts(id)
   }
 
+  extensionUpdateArtifacts(id: string) {
+    return this.extensions.updateArtifacts(id)
+  }
+
+  extensionOwner(id: string) {
+    return this.extensions.owner(id)
+  }
+
+  bindExtensionOwner(id: string, userId: string, stamp: string) {
+    return this.extensions.bindOwner(id, userId, stamp)
+  }
+
   publishExtension(input: ExtensionArtifactInput) {
     return this.extensions.publish(input)
   }
@@ -1147,13 +1174,33 @@ export class MarketRepo {
 
   private publishSnapshot(ownerId: string, snapshot: SkillSnapshot, report: PublicationReport, created: string[]) {
     const current = this.db
-      .prepare("SELECT author_id,latest_revision FROM skills WHERE id=?")
-      .get(snapshot.spec.id) as unknown as { author_id: string; latest_revision: number } | undefined
+      .prepare("SELECT author_id,latest_revision,status FROM skills WHERE id=?")
+      .get(snapshot.spec.id) as unknown as { author_id: string; latest_revision: number; status: string } | undefined
     if (current && current.author_id !== ownerId) throw new Error("OWNERSHIP_REQUIRED")
     const duplicate = this.db
       .prepare("SELECT revision FROM releases WHERE skill_id=? AND sha256=?")
       .get(snapshot.spec.id, snapshot.snapshotSha256) as unknown as { revision: number } | undefined
-    if (duplicate) return { status: "UNCHANGED" as const, revision: Number(duplicate.revision) }
+    if (duplicate) {
+      if (current?.status === "unpublished") {
+        const now = new Date().toISOString()
+        this.db
+          .prepare(
+            "UPDATE skills SET name=?,description=?,category=?,tags_json=?,status='published',latest_revision=?,updated_at=?,legacy_json=? WHERE id=?",
+          )
+          .run(
+            snapshot.spec.name,
+            snapshot.spec.description,
+            snapshot.spec.category,
+            JSON.stringify(snapshot.spec.tags),
+            duplicate.revision,
+            now,
+            JSON.stringify(snapshot.spec),
+            snapshot.spec.id,
+          )
+        return { status: "PUBLISHED" as const, revision: Number(duplicate.revision) }
+      }
+      return { status: "UNCHANGED" as const, revision: Number(duplicate.revision) }
+    }
     if (snapshot.semver) {
       const semver = this.db
         .prepare("SELECT revision FROM releases WHERE skill_id=? AND semver=?")
@@ -1221,6 +1268,22 @@ export class MarketRepo {
       )
     this.db.prepare("UPDATE skills SET latest_revision=?,updated_at=? WHERE id=?").run(revision, now, snapshot.spec.id)
     return { status: "PUBLISHED" as const, revision }
+  }
+
+  private reusable(ownerId: string, snapshot: SkillSnapshot) {
+    const row = this.db
+      .prepare(
+        `SELECT p.id
+         FROM skills s
+         JOIN releases r ON r.skill_id=s.id AND r.revision=s.latest_revision
+         JOIN publication_runs p ON p.skill_id=s.id AND p.result_revision=r.revision
+         WHERE s.id=? AND s.author_id=? AND s.status='published' AND r.sha256=?
+           AND p.owner_id=? AND p.status IN ('PUBLISHED','UNCHANGED')
+         ORDER BY CASE p.status WHEN 'PUBLISHED' THEN 0 ELSE 1 END,p.created_at ASC,p.id ASC
+         LIMIT 1`,
+      )
+      .get(snapshot.spec.id, ownerId, snapshot.snapshotSha256, ownerId) as unknown as { id: string } | undefined
+    return row ? this.publicationItem(row.id) : undefined
   }
 
   private publicationItem(id: string): PublicationItem | undefined {

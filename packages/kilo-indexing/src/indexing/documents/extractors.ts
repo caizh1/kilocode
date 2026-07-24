@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 import mammoth from "mammoth"
 import { read, utils, type CellObject, type WorkBook } from "xlsx"
+import { extractDocxPlantUml } from "./plantuml"
 import type { DocumentSection } from "./types"
 
 const sheetRows = 50_000
@@ -42,16 +43,53 @@ async function docx(filePath: string, max: number): Promise<DocumentSection[]> {
   const result = await mammoth.extractRawText({ buffer: bytes })
   const messages: Array<{ type?: string; message?: string }> = result.messages ?? []
   const warnings = messages.filter((item) => item.type === "warning").map((item) => item.message ?? "")
-  const note = warnings.length > 0 ? `\n\nDOCX extraction warnings: ${warnings.join("; ")}` : ""
-  const value = limit(`${result.value}${note}`, max)
-  return [
-    {
+  const diagrams = await extractDocxPlantUml(bytes, {
+    maxTotalSourceBytes: Math.min(512 * 1024, Math.max(1, Math.floor(max * 0.4))),
+  }).catch((err: unknown) => ({
+    diagrams: [],
+    warnings: [`Embedded PlantUML extraction failed: ${err instanceof Error ? err.message : String(err)}`],
+    truncated: true,
+  }))
+  warnings.push(...diagrams.warnings)
+  if (diagrams.truncated) warnings.push("Embedded PlantUML extraction was truncated by safety limits.")
+  const candidates = diagrams.diagrams.map((diagram) => {
+    const text = `[Embedded PlantUML diagram: ${diagram.mediaPath}]\n${diagram.source}`
+    return {
       filePath,
-      text: value,
-      kind: "text",
+      text,
+      kind: "diagram" as const,
+      mediaPath: diagram.mediaPath,
       startLine: 1,
-      endLine: Math.max(1, value.split(/\r?\n/).length),
-    },
+      endLine: Math.max(1, text.split(/\r?\n/).length),
+    }
+  })
+  const items: DocumentSection[] = []
+  let used = 0
+  for (const item of candidates) {
+    const bytes = Buffer.byteLength(item.text, "utf8")
+    if (used + bytes > max) {
+      warnings.push(`${item.mediaPath}: PlantUML source exceeds the extracted document byte budget.`)
+      continue
+    }
+    used += bytes
+    items.push(item)
+  }
+  const note = warnings.length > 0 ? `\n\nDOCX extraction warnings: ${warnings.join("; ")}` : ""
+  const reserved = items.reduce((total, item) => total + Buffer.byteLength(item.text, "utf8"), 0)
+  const value = limit(`${result.value}${note}`, Math.max(0, max - Math.min(max, reserved)))
+  return [
+    ...(value
+      ? [
+          {
+            filePath,
+            text: value,
+            kind: "text" as const,
+            startLine: 1,
+            endLine: Math.max(1, value.split(/\r?\n/).length),
+          },
+        ]
+      : []),
+    ...items,
   ]
 }
 
@@ -227,5 +265,7 @@ function limit(value: string, max: number): string {
   if (max <= 0) return ""
   const bytes = Buffer.from(value)
   if (bytes.length <= max) return value
-  return bytes.subarray(0, max).toString("utf8")
+  const result = bytes.subarray(0, max).toString("utf8")
+  if (Buffer.byteLength(result, "utf8") <= max) return result
+  return result.slice(0, -1)
 }

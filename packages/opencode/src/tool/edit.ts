@@ -22,6 +22,7 @@ import { filterDiagnostics } from "./diagnostics" // kilocode_change
 import { ConfigValidation } from "../kilocode/config-validation" // kilocode_change
 import * as EncodedIO from "../kilocode/tool/encoded-io" // kilocode_change
 import * as Encoding from "../kilocode/encoding" // kilocode_change
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
 
 const MAX_DIFF_CONTENT = 500_000 // kilocode_change
 
@@ -106,6 +107,34 @@ export const EditTool = Tool.define(
           const filePath = path.isAbsolute(params.filePath)
             ? params.filePath
             : path.join(instance.directory, params.filePath)
+          // kilocode_change start - keep source-backed document mutations inside the declared artifact root
+          const blocked = WorkflowGuard.mutation(ctx.sessionID, ctx.messages, instance.directory, filePath)
+          if (blocked) {
+            return {
+              title: "Edit blocked for source-backed document workflow",
+              metadata: {
+                diagnostics: {},
+                diff: "",
+                filediff: buildFileDiff(filePath, "", ""),
+              },
+              output: blocked,
+            }
+          }
+          const staged = yield* Effect.promise(() =>
+            WorkflowGuard.stage(ctx.sessionID, ctx.messages, instance.directory, filePath),
+          )
+          if (staged) {
+            return {
+              title: "Edit blocked until source-backed prose is ready",
+              metadata: {
+                diagnostics: {},
+                diff: "",
+                filediff: buildFileDiff(filePath, "", ""),
+              },
+              output: staged,
+            }
+          }
+          // kilocode_change end
           yield* assertExternalDirectoryEffect(ctx, filePath)
 
           let diff = ""
@@ -125,6 +154,10 @@ export const EditTool = Tool.define(
                 const desiredBom = next.bom
                 contentOld = ""
                 contentNew = next.text
+                const checkpoint = yield* Effect.promise(() =>
+                  WorkflowGuard.checkpoint(ctx.sessionID, ctx.messages, instance.directory, filePath, contentNew),
+                )
+                if (checkpoint) throw new Error(checkpoint)
                 diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
                 cachedFilediff = buildFileDiff(filePath, contentOld, contentNew) // kilocode_change
                 yield* ctx.ask({
@@ -166,6 +199,10 @@ export const EditTool = Tool.define(
               const next = Bom.split(replace(contentOld, old, replacement, params.replaceAll))
               const desiredBom = source.bom || next.bom
               contentNew = next.text
+              const checkpoint = yield* Effect.promise(() =>
+                WorkflowGuard.checkpoint(ctx.sessionID, ctx.messages, instance.directory, filePath, contentNew),
+              )
+              if (checkpoint) throw new Error(checkpoint)
 
               diff = trimDiff(
                 createTwoFilesPatch(

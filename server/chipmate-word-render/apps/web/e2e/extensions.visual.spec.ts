@@ -142,6 +142,7 @@ test("capture extension market design QA evidence in installed Chrome", async ({
   await page.waitForTimeout(500)
   await shot(page, "09-extension-upload-progress-1484x1060.png")
   await expect(page.getByText("1 个发布成功", { exact: true })).toBeVisible({ timeout: 15_000 })
+  await shot(page, "09-extension-upload-complete-1484x1060.png")
 
   const many = Array.from({ length: 41 }, (_, index) => ({
     name: `plugin-${index}.vsix`,

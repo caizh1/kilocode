@@ -2,6 +2,8 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import * as os from "os"
 import { createHash, randomUUID } from "crypto"
+import { isSkillId, validateSkillIdentity } from "@opencode-ai/core/kilocode/skill-identity"
+import { readPortableMetadata } from "@chipmate/skill-spec"
 import * as yaml from "yaml"
 import { exec } from "../../util/process"
 import type {
@@ -182,7 +184,7 @@ export class MarketplaceInstaller {
       return { success: false, slug: item.id, error: "Skill has no tarball URL" }
     }
 
-    if (!isSafeId(item.id)) {
+    if (!isSkillId(item.id)) {
       return { success: false, slug: item.id, error: "Invalid skill id" }
     }
 
@@ -224,6 +226,8 @@ export class MarketplaceInstaller {
         return { success: false, slug: item.id, error: "Extracted archive missing SKILL.md" }
       }
 
+      await validateSkillIdentityAt(staging, item.id)
+
       await fs.rename(staging, dir)
 
       return { success: true, slug: item.id, filePath: path.join(dir, "SKILL.md"), line: 1 }
@@ -250,7 +254,7 @@ export class MarketplaceInstaller {
   }
 
   async isSkillInstalled(id: string, scope: "project" | "global", workspace?: string): Promise<boolean> {
-    if (!isSafeId(id)) return false
+    if (!isSkillId(id)) return false
     return exists(path.join(this.paths.skillsDir(scope, workspace), id))
   }
 
@@ -263,7 +267,7 @@ export class MarketplaceInstaller {
       return { success: false, slug: item.id, error: "No workspace directory for project-scope install" }
     }
     if (
-      !isSafeId(item.id) ||
+      !isSkillId(item.id) ||
       !/^[a-f0-9]{64}$/.test(item.sha256) ||
       !Number.isSafeInteger(item.revision) ||
       item.revision < 1
@@ -295,6 +299,7 @@ export class MarketplaceInstaller {
       if (!(await exists(path.join(staging, "SKILL.md")))) {
         return { success: false, slug: item.id, error: "Extracted archive missing SKILL.md" }
       }
+      await validateSkillIdentityAt(staging, item.id)
       if (await exists(dir)) {
         await fs.rename(dir, backup)
         state.backedUp = true
@@ -367,7 +372,7 @@ export class MarketplaceInstaller {
       return { success: false, slug: item.id, error: "No workspace directory for project-scope removal" }
     }
 
-    if (!isSafeId(item.id)) {
+    if (!isSkillId(item.id)) {
       return { success: false, slug: item.id, error: "Invalid skill id" }
     }
     const base = this.paths.skillsDir(scope, workspace)
@@ -382,6 +387,7 @@ export class MarketplaceInstaller {
     try {
       await validateRoot(base)
       await validateSkillDirectory(dir)
+      await validateSkillIdentityAt(dir, item.id)
       await fs.rename(dir, tomb)
       try {
         await fs.rm(tomb, { recursive: true, force: false })
@@ -470,6 +476,29 @@ async function validateSkillDirectory(dir: string): Promise<void> {
       }
     }
   }
+}
+
+async function validateSkillIdentityAt(dir: string, expected: string): Promise<void> {
+  const content = await fs.readFile(path.join(dir, "SKILL.md"), "utf8")
+  const metadata = readPortableMetadata(content)
+  if (!metadata.name) throw new Error("SKILL.md frontmatter must contain name")
+  const file = path.join(dir, "skill.json")
+  const saved = await fs.readFile(file, "utf8").catch((err: NodeJS.ErrnoException) => {
+    if (err.code === "ENOENT") return undefined
+    throw err
+  })
+  const id = (() => {
+    if (saved === undefined) return undefined
+    const value = JSON.parse(saved) as unknown
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("skill.json must be an object")
+    const id = (value as { id?: unknown }).id
+    if (id === undefined) return undefined
+    if (typeof id !== "string") throw new Error("skill.json id must be a string")
+    return id
+  })()
+  const identity = validateSkillIdentity({ name: metadata.name, directory: expected, metadataId: id })
+  if (!identity.valid) throw new Error(identity.message)
+  if (identity.id !== expected) throw new Error(`Skill id "${identity.id}" does not match expected id "${expected}"`)
 }
 
 async function validateRoot(root: string): Promise<void> {

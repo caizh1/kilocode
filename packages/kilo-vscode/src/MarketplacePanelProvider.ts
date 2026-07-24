@@ -26,6 +26,7 @@ import {
 } from "./services/marketplace/local-skill-removal"
 import { confirmRepairDiff, generateAiRepair } from "./services/marketplace/repair"
 import { publish, type PublicationOutcome, type PublicationPhase } from "./services/marketplace/publication"
+import { publishBatch } from "./services/marketplace/publication-batch"
 import { isListedUploadableSkill, normalizeSkillKey } from "./services/marketplace/skills"
 import { archiveUrl, installLink, repairLink, type InstallLink } from "./services/marketplace/uri"
 import {
@@ -33,6 +34,8 @@ import {
   buildMarketplaceSkillUploadPayload,
 } from "./services/marketplace/upload"
 import {
+  activatableSkillIds,
+  activateMarketplaceSkills,
   fetchMarketplaceData,
   fetchMarketplaceSkills,
   invalidateMarketplaceSkills,
@@ -41,6 +44,7 @@ import {
   type MarketplaceActionContext,
 } from "./services/marketplace/actions"
 import type {
+  BatchPublicationItem,
   InstallMarketplaceItemOptions,
   SkillImportSelection,
   MarketplaceItem,
@@ -59,6 +63,8 @@ interface MarketplaceMessage {
   mpItem?: MarketplaceItem
   mpInstallOptions?: InstallMarketplaceItemOptions
   mpSkillId?: string
+  mpSkillInstanceId?: string
+  mpSkillIds?: string[]
   url?: unknown
   event?: string
   properties?: Record<string, unknown>
@@ -73,10 +79,12 @@ interface MarketplaceMessage {
 
 interface UploadableSkill {
   id: string
+  instanceId?: string
   name: string
   description?: string
   root?: string
   content?: string
+  sha256?: string
 }
 
 function phaseLabel(phase: PublicationPhase, status?: string) {
@@ -105,6 +113,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
   private readonly removal: LocalSkillRemoval
   private readonly analytics: MarketplaceAnalytics
   private uploadableSkillIds = new Set<string>()
+  private uploadableSkillHashes = new Map<string, string | undefined>()
   private readonly blockedSkillIds = new Set<string>()
   private marketplaceUser: MarketplaceUser | undefined
   private serverState: MarketplaceServerState = { status: "connecting", checkedAt: new Date().toISOString() }
@@ -427,6 +436,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
   }
 
   private async handle(msg: MarketplaceMessage): Promise<void> {
+    if (await this.handleBatchMessage(msg)) return
     if (await this.handleSkillMessage(msg)) return
     switch (msg.type) {
       case "webviewReady":
@@ -471,6 +481,13 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     }
   }
 
+  private async handleBatchMessage(msg: MarketplaceMessage): Promise<boolean> {
+    if (msg.type !== "uploadMarketplaceSkills") return false
+    console.info("[Kilo New] Marketplace batch upload requested.")
+    if (msg.mpSkillIds) await this.uploadMarketplaceSkills(msg.mpSkillIds)
+    return true
+  }
+
   private async handleSkillMessage(msg: MarketplaceMessage): Promise<boolean> {
     switch (msg.type) {
       case "pickLocalSkills":
@@ -483,16 +500,14 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         if (msg.importToken) this.importer.cancel(msg.importToken)
         return true
       case "removeLocalSkill":
-        if (msg.requestId && msg.targetToken && msg.skillId && msg.scope) {
-          await this.removeLocalSkill(msg.requestId, msg.targetToken, msg.skillId, msg.scope)
-        }
+        await this.removeLocalSkillMessage(msg)
         return true
       case "fetchMarketplaceSkillDetail":
         if (msg.mpSkillId) await this.fetchSkillDetail(msg.mpSkillId)
         return true
       case "uploadMarketplaceSkill":
         console.info("[Kilo New] Marketplace upload skill requested.")
-        if (msg.mpSkillId) await this.uploadMarketplaceSkill(msg.mpSkillId)
+        await this.uploadSkillMessage(msg)
         return true
       case "starMarketplaceSkill":
         console.info("[Kilo New] Marketplace star skill requested.")
@@ -505,6 +520,17 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       default:
         return false
     }
+  }
+
+  private async removeLocalSkillMessage(msg: MarketplaceMessage): Promise<void> {
+    if (!msg.requestId || !msg.targetToken || !msg.skillId || !msg.scope) return
+    await this.removeLocalSkill(msg.requestId, msg.targetToken, msg.skillId, msg.scope)
+  }
+
+  private async uploadSkillMessage(msg: MarketplaceMessage): Promise<void> {
+    const id = msg.mpSkillInstanceId ?? msg.mpSkillId
+    if (!id) return
+    await this.uploadMarketplaceSkill(id)
   }
 
   /** Ask the webview to open the install dialog for a queued suggestion, once it can receive it. */
@@ -541,11 +567,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       const targets = this.removal.issue(skills, project)
       await this.removal.reconcile(project)
       await this.decorateLocalSkills(data.marketplaceItems, project, targets)
-      this.uploadableSkillIds = new Set(
-        data.marketplaceItems
-          .filter((item): item is SkillMarketplaceItem => item.type === "skill" && Boolean(item.uploadable))
-          .map((item) => item.id),
-      )
+      this.rememberUploadable(data.marketplaceItems)
       if (generation !== this.generation) return
       const dismissed = this.context.globalState.get<boolean>("chipmate.v2.agentMigrationBannerDismissed") ?? false
       this.serverState = resolvedServerState(data.marketplaceStatus, data.errors)
@@ -562,6 +584,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       })
     } catch (err) {
       this.uploadableSkillIds.clear()
+      this.uploadableSkillHashes.clear()
       const error = marketplaceDataErrorMessage(err)
       if (generation !== this.generation) return
       this.serverState = serverFailure(err)
@@ -591,6 +614,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       const targets = this.removal.issue(skills, project)
       await this.removal.reconcile(project)
       await this.decorateLocalSkills(data.marketplaceItems, project, targets)
+      this.rememberUploadable(data.marketplaceItems)
       this.post({
         type: "marketplaceCatalog",
         marketplaceItems: data.marketplaceItems,
@@ -667,12 +691,22 @@ export class MarketplacePanelProvider implements vscode.Disposable {
           const result = await this.importer.install(selection, this.project ?? undefined)
           const installed = result.items.filter((item) => item.status === "installed")
           for (const item of installed) await this.detachManagedSkill(item.id, selection.scope)
-          if (installed.length > 0) {
+          const ids = activatableSkillIds(result.items)
+          const activation = await (async () => {
+            if (ids.length === 0) return undefined
             const dir = selection.scope === "project" ? this.project! : this.directory()
-            await invalidateMarketplaceSkills(this.marketplaceCtx, selection.scope, dir)
+            return activateMarketplaceSkills(this.marketplaceCtx, selection.scope, dir, ids)
+          })()
+          const output = activation ? { ...result, activation } : result
+          if (activation?.status === "ready") await this.fetchData()
+          this.post({ type: "localSkillImportResult", result: output })
+          if (activation?.status === "failed") {
+            const detail =
+              activation.phase === "refresh-request"
+                ? activation.message
+                : `刷新后仍缺少 ${activation.missingIds?.length ?? 0} 个 Skill`
+            void vscode.window.showWarningMessage(`Skill 已写入磁盘，但当前会话未激活：${detail ?? "未知原因"}`)
           }
-          this.post({ type: "localSkillImportResult", result })
-          await this.fetchData()
         } catch (err) {
           const error = err instanceof Error ? err.message : String(err)
           this.post({ type: "localSkillImportError", error })
@@ -718,22 +752,37 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     const records = (await this.localRegistry.list()).filter(
       (item) => item.scope === "global" || (item.scope === "project" && item.workspaceId === workspaceId),
     )
+    const origin = new URL(this.marketplace.serverBaseUrl()).origin
+    const managed = (await this.registry.list(origin)).filter(
+      (item) => item.scope === "global" || (item.scope === "project" && item.workspaceId === workspaceId),
+    )
     const available = new Map(targets.map((target) => [target.skillId, target]))
     for (const item of items) {
       if (item.type !== "skill") continue
       const keys = [item.id, item.name, item.displayName].map(normalizeSkillKey).filter(Boolean)
       const target = keys.map((key) => available.get(key)).find((entry) => entry !== undefined)
-      if (target && item.origin === "local") {
+      if (target && item.origin === "local" && !item.instanceId) {
         item.removeToken = target.targetToken
         item.removeSkillId = target.skillId
         item.localScope = target.scope
       }
       const record = records.find(
-        (entry) => keys.includes(normalizeSkillKey(entry.skillId)) && target && entry.scope === target.scope,
+        (entry) =>
+          keys.includes(normalizeSkillKey(entry.skillId)) &&
+          item.localScope !== undefined &&
+          entry.scope === item.localScope,
       )
+      const installed = managed.find(
+        (entry) =>
+          keys.includes(normalizeSkillKey(entry.skillId)) &&
+          item.localScope !== undefined &&
+          entry.scope === item.localScope,
+      )
+      if (record) item.origin = "local-import"
+      else if (installed) item.origin = "market"
+      else if (item.instanceId) item.origin = "local"
       if (!record) continue
-      item.origin = "local-import"
-      if (target) {
+      if (target && !item.instanceId) {
         item.removeToken = target.targetToken
         item.removeSkillId = target.skillId
         item.localScope = target.scope
@@ -749,6 +798,14 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     }
   }
 
+  private rememberUploadable(items: MarketplaceItem[]): void {
+    const skills = items.filter(
+      (item): item is SkillMarketplaceItem => item.type === "skill" && Boolean(item.uploadable),
+    )
+    this.uploadableSkillIds = new Set(skills.map((item) => item.instanceId ?? item.id))
+    this.uploadableSkillHashes = new Map(skills.map((item) => [item.instanceId ?? item.id, item.localSha256]))
+  }
+
   private async removeLocalSkill(requestId: string, targetToken: string, skillId: string, scope: "global" | "project") {
     const progress = (phase: SkillRemovePhase) => this.post({ type: "skillRemoveProgress", requestId, phase })
     const result = await this.removal.remove({ requestId, targetToken, skillId, scope }, this.directory(), progress)
@@ -761,15 +818,21 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     void vscode.window.showErrorMessage(`Skill 删除失败：${result.error ?? "未知错误"}`)
   }
 
-  private async uploadMarketplaceSkill(id: string): Promise<void> {
-    if (!isListedUploadableSkill(id, this.uploadableSkillIds)) {
+  private async uploadMarketplaceSkill(key: string): Promise<void> {
+    if (!isListedUploadableSkill(key, this.uploadableSkillIds)) {
       vscode.window.showWarningMessage("该 Skill 当前不满足上传条件，请刷新市场后重试。")
       return
     }
 
-    const selected = await this.installedSkillForUpload(id)
+    const selected = await this.installedSkillForUpload(key)
     if (!selected) {
       vscode.window.showWarningMessage("该 Skill 已不在当前已安装列表，请刷新市场后重试。")
+      await this.fetchData()
+      return
+    }
+    const expected = this.uploadableSkillHashes.get(key)
+    if (expected && selected.sha256 !== expected) {
+      vscode.window.showWarningMessage("该 Skill 内容已变化，请刷新市场后重新选择上传。")
       await this.fetchData()
       return
     }
@@ -807,10 +870,123 @@ export class MarketplacePanelProvider implements vscode.Disposable {
               content: selected.content ?? "",
             }),
       submit: (payload) => this.marketplace.uploadSkill(payload, apiKey),
-      finish: (outcome) => this.finishPublication(id, selected, outcome),
+      finish: (outcome) => this.finishPublication(selected.id, selected, outcome),
     }).catch((err: unknown) => {
       void this.analytics.track("publication_validation_failed", { context: { reason: "request-failed" } })
       void vscode.window.showErrorMessage(`Skill 上传失败：${marketplaceIdentityErrorMessage(err)}`)
+    })
+  }
+
+  private async uploadMarketplaceSkills(ids: string[]): Promise<void> {
+    const requested = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)))
+    if (requested.length === 0) {
+      this.post({ type: "marketplaceBatchPublicationResult", result: { items: [] } })
+      return
+    }
+
+    const apiKey = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "正在验证市场用户...",
+        cancellable: false,
+      },
+      async () => await this.marketplaceApiKey("批量上传 Skill 到市场"),
+    )
+    if (!apiKey) {
+      this.postBatchFailure(requested, "市场身份验证失败，批量上传未启动。")
+      return
+    }
+
+    const installed = await this.installedSkillsForUpload().catch((err: unknown) => {
+      console.warn("[Kilo New] Marketplace failed to list installed Skills for batch upload:", err)
+      return undefined
+    })
+    if (!installed) {
+      this.postBatchFailure(requested, "读取本地已安装 Skill 失败，请确认 ChipMate CLI 已正常启动。")
+      return
+    }
+
+    const skills = new Map(installed.map((skill) => [skill.instanceId ?? skill.id, skill]))
+    const skipped = new Map<string, BatchPublicationItem>()
+    const targets = requested.flatMap((id) => {
+      if (!isListedUploadableSkill(id, this.uploadableSkillIds)) {
+        skipped.set(id, {
+          id: skills.get(id)?.id ?? id,
+          name: skills.get(id)?.name ?? id,
+          state: "skipped",
+          error: "该 Skill 已不满足上传条件。",
+        })
+        return []
+      }
+      const skill = skills.get(id)
+      const expected = this.uploadableSkillHashes.get(id)
+      if (skill && (!expected || skill.sha256 === expected)) return [{ id, name: skill.name, skill }]
+      if (skill) {
+        skipped.set(id, {
+          id: skill.id,
+          name: skill.name,
+          state: "skipped",
+          error: "该 Skill 内容已变化，请刷新后重新选择。",
+        })
+        return []
+      }
+      skipped.set(id, { id, name: id, state: "skipped", error: "该 Skill 已不在当前已安装列表。" })
+      return []
+    })
+
+    const completed = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "正在批量发布 Skill 到市场...",
+        cancellable: false,
+      },
+      async (progress) =>
+        publishBatch(
+          targets,
+          async (target) => {
+            void this.analytics.track("publication_start", {
+              skillId: target.skill.id,
+              context: { source: "vscode-batch" },
+            })
+            const payload = target.skill.root
+              ? await buildMarketplaceSkillUploadPayload(target.skill.root)
+              : buildMarketplaceBuiltinSkillUploadPayload({
+                  name: target.skill.name,
+                  description: target.skill.description,
+                  content: target.skill.content ?? "",
+                })
+            return this.marketplace.uploadSkill(payload, apiKey)
+          },
+          (target, current, total) => {
+            progress.report({ message: `${current}/${total} · ${target.name}` })
+          },
+        ),
+    )
+
+    const results = new Map(completed.map((item) => [item.id, item]))
+    for (const item of completed) {
+      if (item.run) this.recordPublication(item.run.skillId ?? skills.get(item.id)?.id ?? item.id, item.run)
+      if (item.state === "failed") {
+        void this.analytics.track("publication_validation_failed", {
+          skillId: skills.get(item.id)?.id ?? item.id,
+          context: { reason: "request-failed", source: "vscode-batch" },
+        })
+      }
+    }
+    const items = requested.flatMap((id) => {
+      const item = results.get(id) ?? skipped.get(id)
+      return item ? [item] : []
+    })
+    this.post({ type: "marketplaceBatchPublicationResult", result: { items } })
+    await this.fetchData()
+  }
+
+  private postBatchFailure(ids: string[], error: string): void {
+    this.post({
+      type: "marketplaceBatchPublicationResult",
+      result: {
+        items: ids.map((id) => ({ id, name: id, state: "failed" as const, error })),
+      },
     })
   }
 
@@ -822,19 +998,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       return
     }
 
-    if (run.status === "PUBLISHED" || run.status === "UNCHANGED") this.blockedSkillIds.delete(id)
-    else this.blockedSkillIds.add(id)
-    void this.analytics.track(
-      run.status === "PUBLISHED" || run.status === "UNCHANGED"
-        ? "publication_success"
-        : "publication_validation_failed",
-      {
-        ...(run.skillId ? { skillId: run.skillId } : {}),
-        ...(run.release ? { revision: run.release.revision } : {}),
-        context: { status: run.status },
-      },
-    )
-    this.post({ type: "marketplacePublicationResult", run })
+    this.recordPublication(id, run)
     void this.fetchData()
 
     const label = run.status === "PUBLISHED" || run.status === "UNCHANGED" ? "发布完成" : "校验完成"
@@ -856,17 +1020,50 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     if (applied) void this.fetchData()
   }
 
+  private recordPublication(id: string, run: NonNullable<PublicationOutcome["run"]>): void {
+    if (run.status === "PUBLISHED" || run.status === "UNCHANGED") this.blockedSkillIds.delete(id)
+    else this.blockedSkillIds.add(id)
+    void this.analytics.track(
+      run.status === "PUBLISHED" || run.status === "UNCHANGED"
+        ? "publication_success"
+        : "publication_validation_failed",
+      {
+        ...(run.skillId ? { skillId: run.skillId } : {}),
+        ...(run.release ? { revision: run.release.revision } : {}),
+        context: { status: run.status },
+      },
+    )
+    this.post({ type: "marketplacePublicationResult", run })
+  }
+
   private async installedSkillForUpload(id: string): Promise<UploadableSkill | undefined> {
     try {
-      const client = await this.connection.getClientAsync(this.directory())
-      const { data } = await client.app.skills({ directory: this.directory() }, { throwOnError: true })
-      const skills = (data ?? []).map((skill) => normalizeLocalSkill(skill as CliSkill))
-      return skills.find((skill) => skill?.id === normalizeSkillKey(id))
+      const skills = await this.installedSkillsForUpload()
+      return skills.find((skill) => (skill.instanceId ?? skill.id) === id)
     } catch (err) {
       console.warn("[Kilo New] Marketplace failed to list installed skills for upload:", err)
-      vscode.window.showWarningMessage("读取本地已安装 Skill 失败，请确认 Kilo CLI 已正常启动。")
+      vscode.window.showWarningMessage("读取本地已安装 Skill 失败，请确认 ChipMate CLI 已正常启动。")
       return undefined
     }
+  }
+
+  private async installedSkillsForUpload(): Promise<UploadableSkill[]> {
+    const client = await this.connection.getClientAsync(this.directory())
+    const { data } = await client.app.skills({ directory: this.directory() }, { throwOnError: true })
+    const builtin = (data ?? []).flatMap((skill) => {
+      const item = normalizeLocalSkill(skill as CliSkill)
+      return item && !item.root ? [item] : []
+    })
+    const found = await this.marketplace.skillInstances(this.project ?? undefined)
+    const physical = found.items.map((item) => ({
+      id: item.id,
+      instanceId: item.instanceId,
+      name: item.name,
+      description: item.description,
+      root: item.root,
+      sha256: item.sha256,
+    }))
+    return [...physical, ...builtin]
   }
 
   private async starMarketplaceSkill(skillId: string): Promise<void> {
@@ -1071,6 +1268,8 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       this.directory(),
     )
     if (result.success && item.type === "skill") {
+      const workspaceId = this.localRegistry.workspaceId(scope === "project" ? (this.project ?? undefined) : undefined)
+      await this.localRegistry.remove(item.id, scope, workspaceId)
       await this.syncManaged(item, scope, "removed")
       void this.analytics.track("skill_remove", {
         skillId: item.id,

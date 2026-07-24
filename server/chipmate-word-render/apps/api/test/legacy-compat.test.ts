@@ -214,6 +214,10 @@ test("Fastify and the frozen Node server return equivalent legacy contracts", { 
         { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "" }) },
       ],
       [
+        "/render/plantuml",
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "" }) },
+      ],
+      [
         "/auth/new-api/resolve-user",
         { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey: "" }) },
       ],
@@ -271,6 +275,7 @@ test("Fastify starts with market storage unavailable and reports degradation", {
     assert.equal(market.catalogExists, false)
     assert.ok((health.endpoints as string[]).includes("/render/word"))
     assert.ok((health.endpoints as string[]).includes("/render/mermaid"))
+    assert.ok((health.endpoints as string[]).includes("/render/plantuml"))
   } finally {
     await Promise.all([stop(fastify), rm(value.dir, { recursive: true, force: true })])
   }

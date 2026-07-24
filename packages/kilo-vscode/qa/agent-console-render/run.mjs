@@ -64,8 +64,8 @@ try {
     limitations: [
       "源码 Story 使用真实生产 TerminalTab/xterm 和测试态 Socket，但不经过扩展宿主或真实远端 PTY。",
       "macOS 的 Chromium 字体栅格化、GPU 合成和缩放不能证明 Windows DirectWrite 与原生显示缩放无问题。",
-      "140ms 透明度切换只生成 contact sheet 和视频，保留为 REVIEW，不由机器替用户判断观感。",
-      "本轮不测试模型回答质量，也不修改 Agent Console 业务代码或视觉样式。",
+      "模式切换的空白帧与透明度由机器断言检查；控制台主体与阿里云参考图的一致性仍须用户复核。",
+      "本轮不测试模型回答质量。",
     ],
   }
   const errors = validate(data)
@@ -245,8 +245,12 @@ async function run(browser, base, storyId, attemptNumber, gpu, scale) {
     await field.press("Enter")
     await field.press("Control+C")
     const input = await page.evaluate(() => window.__chipmateTerminalQA?.stats())
-    assertions.push(check("input.command-once", input?.commands === 1, `命令执行计数=${input?.commands ?? "missing"}。`))
-    assertions.push(check("input.ctrl-c-once", input?.interrupts === 1, `Ctrl+C 计数=${input?.interrupts ?? "missing"}。`))
+    assertions.push(
+      check("input.command-once", input?.commands === 1, `命令执行计数=${input?.commands ?? "missing"}。`),
+    )
+    assertions.push(
+      check("input.ctrl-c-once", input?.interrupts === 1, `Ctrl+C 计数=${input?.interrupts ?? "missing"}。`),
+    )
 
     const burst = await scenario(page, "burst", path)
     assertions.push(check("pty.burst.exact", burst.exact, burst.summary))
@@ -287,7 +291,7 @@ async function run(browser, base, storyId, attemptNumber, gpu, scale) {
         check(
           `layout.${width}.prompt-contained`,
           prompt.contained,
-          `Agent 输入行 contained=${prompt.contained}，宽=${prompt.prompt?.width?.toFixed(1) ?? "missing"}。`,
+          `Agent 真实终端输入行 contained=${prompt.contained}，宽=${prompt.prompt?.width?.toFixed(1) ?? "missing"}。`,
         ),
       )
       await shell.click({ noWaitAfter: true })
@@ -334,15 +338,35 @@ async function run(browser, base, storyId, attemptNumber, gpu, scale) {
     const reload = await scenario(page, "mixed", path, "reload")
     assertions.push(check("reload.restore", reload.exact && reload.tail, reload.summary))
 
-    assertions.push(review("visual.opacity-140ms", "淡入淡出观感只进入逐帧视频和 contact sheet，由用户复核。"))
+    const transitions = await page.evaluate(() =>
+      ["agent-console-terminal", "agent-console-activity"].map((slot) => {
+        const node = document.querySelector(`[data-slot="${slot}"]`)
+        return node ? getComputedStyle(node).transitionDuration : "missing"
+      }),
+    )
+    assertions.push(
+      check(
+        "render.no-opacity-transition",
+        transitions.every((value) => value === "0s"),
+        `Terminal/Agent 图层 transitionDuration=${transitions.join(",")}。`,
+      ),
+    )
     writeFileSync(join(path, "layout.json"), `${JSON.stringify(layout, null, 2)}\n`)
     writeFileSync(join(path, "performance.json"), `${JSON.stringify(perf, null, 2)}\n`)
   } catch (error) {
-    assertions.push(blocked("runner.execution", error instanceof Error ? (error.stack ?? error.message) : String(error)))
+    assertions.push(
+      blocked("runner.execution", error instanceof Error ? (error.stack ?? error.message) : String(error)),
+    )
   } finally {
     await bounded(cast.stop(), 5_000)
-    await bounded(context.tracing.stop({ path: trace }).catch(() => undefined), 5_000)
-    await bounded(page.screenshot({ path: join(path, "final.png") }).catch(() => undefined), 5_000)
+    await bounded(
+      context.tracing.stop({ path: trace }).catch(() => undefined),
+      5_000,
+    )
+    await bounded(
+      page.screenshot({ path: join(path, "final.png") }).catch(() => undefined),
+      5_000,
+    )
     await bounded(context.close(), 5_000)
   }
 
@@ -402,8 +426,7 @@ async function instrument(page) {
 async function scenario(page, name, path, suffix = name) {
   const stats = await page.evaluate((value) => window.__chipmateTerminalQA?.start(value), name)
   await page.waitForFunction(
-    (tail) =>
-      [...document.querySelectorAll(".xterm-rows > div")].some((row) => row.textContent?.includes(tail)),
+    (tail) => [...document.querySelectorAll(".xterm-rows > div")].some((row) => row.textContent?.includes(tail)),
     stats.expectedTail,
     { timeout: 60_000 },
   )
@@ -456,7 +479,7 @@ async function rects(page, width) {
 async function promptRect(page) {
   return page.evaluate(() => {
     const area = document.querySelector('[data-slot="agent-console-layers"]')?.getBoundingClientRect()
-    const prompt = document.querySelector('[data-component="agent-console-prompt"]')?.getBoundingClientRect()
+    const prompt = document.querySelector('[data-slot="agent-console-terminal"]')?.getBoundingClientRect()
     if (!area || !prompt) return { contained: false, area: null, prompt: null }
     return {
       contained:
@@ -477,7 +500,9 @@ async function rowGeometry(page) {
     const screen = document.querySelector(".xterm-screen")?.getBoundingClientRect()
     const cursor = document.querySelector(".xterm-cursor")?.getBoundingClientRect()
     const cursorClipped = Boolean(
-      screen && cursor && (cursor.left < screen.left - 1 || cursor.right > screen.right + 1 || cursor.bottom > screen.bottom + 1),
+      screen &&
+        cursor &&
+        (cursor.left < screen.left - 1 || cursor.right > screen.right + 1 || cursor.bottom > screen.bottom + 1),
     )
     return { rows: rows.length, overlaps, cursorClipped }
   })
@@ -505,7 +530,13 @@ async function screencast(cdp, frameDir) {
     }
     await cdp.send("Page.screencastFrameAck", { sessionId: event.sessionId }).catch(() => undefined)
   })
-  await cdp.send("Page.startScreencast", { format: "jpeg", quality: 70, maxWidth: 1_143, maxHeight: 720, everyNthFrame: 2 })
+  await cdp.send("Page.startScreencast", {
+    format: "jpeg",
+    quality: 70,
+    maxWidth: 1_143,
+    maxHeight: 720,
+    everyNthFrame: 2,
+  })
   return {
     count: () => ({ observed: count, saved }),
     latest: () => (saved ? join(frameDir, `frame-${String(saved).padStart(4, "0")}.jpg`) : null),
@@ -516,7 +547,20 @@ async function screencast(cdp, frameDir) {
 function edge(path) {
   const result = spawnSync(
     "ffmpeg",
-    ["-hide_banner", "-loglevel", "info", "-i", path, "-vf", "format=gray,edgedetect,signalstats,metadata=print", "-frames:v", "1", "-f", "null", "-"],
+    [
+      "-hide_banner",
+      "-loglevel",
+      "info",
+      "-i",
+      path,
+      "-vf",
+      "format=gray,edgedetect,signalstats,metadata=print",
+      "-frames:v",
+      "1",
+      "-f",
+      "null",
+      "-",
+    ],
     { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
   )
   const match = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.match(/lavfi\.signalstats\.YAVG=([\d.]+)/)
@@ -524,18 +568,48 @@ function edge(path) {
 }
 
 function renderMedia(frameDir, path) {
-  const frames = readdirSync(frameDir).filter((name) => name.endsWith(".jpg")).sort()
+  const frames = readdirSync(frameDir)
+    .filter((name) => name.endsWith(".jpg"))
+    .sort()
   if (!frames.length) return { video: null, contactSheet: null }
   const video = join(path, "screencast.mp4")
   const contact = join(path, "contact-sheet.jpg")
   spawnSync(
     "ffmpeg",
-    ["-y", "-hide_banner", "-loglevel", "error", "-framerate", "15", "-i", join(frameDir, "frame-%04d.jpg"), "-c:v", "libx264", "-pix_fmt", "yuv420p", video],
+    [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-framerate",
+      "15",
+      "-i",
+      join(frameDir, "frame-%04d.jpg"),
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      video,
+    ],
     { stdio: "ignore" },
   )
   spawnSync(
     "ffmpeg",
-    ["-y", "-hide_banner", "-loglevel", "error", "-pattern_type", "glob", "-i", join(frameDir, "*.jpg"), "-vf", "select='not(mod(n,18))',scale=320:-1,tile=5x4", "-frames:v", "1", contact],
+    [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-pattern_type",
+      "glob",
+      "-i",
+      join(frameDir, "*.jpg"),
+      "-vf",
+      "select='not(mod(n,18))',scale=320:-1,tile=5x4",
+      "-frames:v",
+      "1",
+      contact,
+    ],
     { stdio: "ignore" },
   )
   return { video, contactSheet: contact }
@@ -569,10 +643,6 @@ function gated(number, gpu, scale) {
   }
 }
 
-function review(id, summary) {
-  return { id, status: "REVIEW", summary }
-}
-
 function overall(attempts) {
   if (attempts[0].status === "PASS") return "PASS"
   if (attempts[0].status === "REVIEW") return "REVIEW"
@@ -583,7 +653,7 @@ function overall(attempts) {
 
 function summary(status) {
   if (status === "PASS") return "macOS 源码渲染代理的全部机器断言通过。"
-  if (status === "REVIEW") return "macOS 源码渲染代理的机器断言通过；140ms 透明度切换仍待 contact sheet 人工复核。"
+  if (status === "REVIEW") return "macOS 源码渲染代理的机器断言通过；仍有视觉证据待人工复核。"
   if (status === "FLAKY") return "首次失败后两个全新 Context 的结果不一致，记为 FLAKY。"
   if (status === "FAIL") return "三个全新 Context 均复现确定性渲染或交互失败；本轮未修改业务代码。"
   return "测试环境或执行链路被阻塞，不能判定通过。"
@@ -629,7 +699,13 @@ function wait(delay) {
 }
 
 async function bounded(promise, timeout) {
-  return Promise.race([promise.then(() => true, () => false), wait(timeout).then(() => false)])
+  return Promise.race([
+    promise.then(
+      () => true,
+      () => false,
+    ),
+    wait(timeout).then(() => false),
+  ])
 }
 
 function archive(path) {

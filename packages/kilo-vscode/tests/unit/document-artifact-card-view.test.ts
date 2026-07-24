@@ -119,4 +119,35 @@ describe("documentArtifactCardFromToolPart", () => {
     expect(card?.quality).toBe("warning")
     expect(card?.warnings).toEqual([warning])
   })
+
+  test("shows separately saved PlantUML source and PNG with PlantUML labels", () => {
+    const card = documentArtifactCardFromToolPart({
+      id: "part-plantuml",
+      type: "tool",
+      tool: "render_plantuml_diagram",
+      state: {
+        status: "completed",
+        input: {},
+        title: "PlantUML Diagram Rendered",
+        metadata: {
+          rendered: true,
+          sourcePath: "docs/cortex-r8.puml",
+          pngPath: "docs/cortex-r8.png",
+          quality: "ok",
+        },
+        output: JSON.stringify({
+          rendered: true,
+          sourcePath: "docs/cortex-r8.puml",
+          pngPath: "docs/cortex-r8.png",
+          issues: [],
+        }),
+      },
+    } satisfies ToolPart)
+
+    expect(card?.quality).toBe("ok")
+    expect(card?.links).toEqual([
+      { kind: "source", label: "Open PlantUML source", path: "docs/cortex-r8.puml" },
+      { kind: "page-png", label: "Open PlantUML PNG", path: "docs/cortex-r8.png" },
+    ])
+  })
 })

@@ -1,11 +1,16 @@
 import * as vscode from "vscode"
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { createReadStream } from "node:fs"
 import type { ExecFileOptionsWithStringEncoding } from "node:child_process"
 import { exec as run } from "../../util/process"
 import { chipmateServerEndpoints } from "../chipmate-server"
+import {
+  CHIPMATE_UPDATE_TARGETS,
+  type ChipmateUpdateResult,
+  type ChipmateUpdateTarget,
+} from "../../shared/update-check"
 import { readVsixManifest } from "./vsix"
 
 export const LAST_AUTO_KEY = "chipmate.v2.updateCheck.lastAutoCheckMs"
@@ -19,12 +24,12 @@ const DEFAULT_CODE = "code"
 const DEFAULT_MAX = 268_435_456
 const DEFAULT_IDLE = 60_000
 const INSTALL_TIMEOUT = 5 * 60_000
+const CANDIDATE_TIMEOUT = 30 * 60_000
 const INSTALL = "Install Update"
 const RELOAD = "Reload Window"
-const TARGETS = ["win32-x64-baseline", "linux-x64-baseline", "darwin-x64", "darwin-arm64"] as const
 
 type Mode = "auto" | "manual"
-type Target = (typeof TARGETS)[number]
+type Target = ChipmateUpdateTarget
 type Kind =
   | "availability"
   | "manifest"
@@ -47,6 +52,8 @@ type Package = {
   url: string
   sha256: string
   sizeBytes: number
+  releaseNotes?: string
+  publishedAt?: string
 }
 
 type Manifest = {
@@ -96,15 +103,29 @@ class UpdateError extends Error {
 }
 
 type Transaction =
-  | { state: "running"; promise: Promise<"declined" | "installed"> }
+  | { state: "running"; promise: Promise<void> }
   | { state: "installed"; file: string }
   | { state: "manual"; file: string; warning: string }
+
+type Candidate = {
+  id: string
+  currentVersion: string
+  item: Package
+  url: URL
+  source: string
+  createdAt: number
+}
+
+type Probe =
+  | { status: "latest"; currentVersion: string; checkedAt: number; target: Target }
+  | { status: "available"; currentVersion: string; target: Target; item: Package; url: URL }
 
 export class UpdateCheckService implements vscode.Disposable {
   private timer: ReturnType<typeof setTimeout> | undefined
   private readonly disposables: vscode.Disposable[] = []
   private readonly controllers = new Set<AbortController>()
   private readonly transactions = new Map<string, Transaction>()
+  private readonly candidates = new Map<string, Candidate>()
   private readonly deps: Deps
 
   constructor(
@@ -124,6 +145,7 @@ export class UpdateCheckService implements vscode.Disposable {
           event.affectsConfiguration("chipmate.v2.updateCheck") ||
           event.affectsConfiguration("chipmate.v2.chipmateServer")
         ) {
+          this.candidates.clear()
           this.schedule()
         }
       }),
@@ -151,7 +173,8 @@ export class UpdateCheckService implements vscode.Disposable {
     }
     await this.context.globalState.update(LAST_AUTO_KEY, this.deps.now())
     try {
-      await this.check(cfg, "auto")
+      const result = await this.probe(cfg)
+      if (result.status === "available") await this.offer(cfg, result, "auto")
     } catch (err) {
       await this.fail(err, cfg, "auto")
     } finally {
@@ -160,16 +183,91 @@ export class UpdateCheckService implements vscode.Disposable {
   }
 
   async checkManual(): Promise<void> {
-    const cfg = this.config()
-    await this.context.globalState.update(LAST_MANUAL_KEY, this.deps.now())
-    if (!cfg.enabled) {
-      await vscode.window.showWarningMessage("ChipMate update checks are disabled.")
+    const result = await this.probeManual()
+    if (result.status === "error") {
+      await this.warning(result.message)
       return
     }
+    if (result.status === "latest") {
+      await vscode.window.showInformationMessage("ChipMate is already up to date.")
+      return
+    }
+    if (result.status !== "available") return
+    const choice = await vscode.window.showInformationMessage(
+      `ChipMate update ${result.version} is available. Current version: ${result.currentVersion}.`,
+      INSTALL,
+    )
+    if (choice !== INSTALL) return
+    const installed = await this.installManual(result.candidateId)
+    if (installed.status === "error") {
+      await this.warning(installed.message)
+      return
+    }
+    if (installed.status !== "installed") return
+    const reload = await vscode.window.showInformationMessage(
+      "ChipMate update installed. Reload Window to finish.",
+      RELOAD,
+    )
+    if (reload === RELOAD) await vscode.commands.executeCommand("workbench.action.reloadWindow")
+  }
+
+  async probeManual(): Promise<ChipmateUpdateResult> {
+    const cfg = this.config()
+    if (!cfg.enabled) return this.error(new UpdateError("server", "ChipMate update checks are disabled."))
     try {
-      await this.check(cfg, "manual")
+      await this.context.globalState.update(LAST_MANUAL_KEY, this.deps.now())
+      const result = await this.probe(cfg)
+      if (result.status === "latest") return result
+      const id = randomUUID()
+      this.pruneCandidates()
+      this.candidates.set(id, {
+        id,
+        currentVersion: result.currentVersion,
+        item: result.item,
+        url: result.url,
+        source: this.manifestUrl().toString(),
+        createdAt: this.deps.now(),
+      })
+      return {
+        status: "available",
+        candidateId: id,
+        currentVersion: result.currentVersion,
+        version: result.item.version,
+        target: result.target,
+        ...(result.item.releaseNotes ? { releaseNotes: result.item.releaseNotes } : {}),
+        ...(result.item.publishedAt ? { publishedAt: result.item.publishedAt } : {}),
+      }
     } catch (err) {
-      await this.fail(err, cfg, "manual")
+      const result = this.error(err)
+      this.deps.log.warn(`[Kilo New] Manual update probe failed (${result.code}): ${result.message}`)
+      return result
+    }
+  }
+
+  async installManual(id: string): Promise<ChipmateUpdateResult> {
+    const current = this.candidates.get(id)
+    if (!current) return this.error(new UpdateError("manifest", "Update candidate expired. Check for updates again."))
+    if (this.deps.now() - current.createdAt > CANDIDATE_TIMEOUT) {
+      this.candidates.delete(id)
+      return this.error(new UpdateError("manifest", "Update candidate expired. Check for updates again."))
+    }
+    try {
+      if (current.source !== this.manifestUrl().toString()) {
+        this.candidates.clear()
+        throw new UpdateError("server", "ChipMate Server changed. Check for updates again.")
+      }
+      const identity = this.identity()
+      const target = this.target()
+      if (identity.version !== current.currentVersion || target !== current.item.target) {
+        this.candidates.delete(id)
+        throw new UpdateError("identity", "This ChipMate installation changed. Check for updates again.")
+      }
+      await this.perform(this.config(), current.item, current.url, true)
+      return { status: "installed", version: current.item.version }
+    } catch (err) {
+      const result = this.error(err)
+      this.deps.log.warn(`[Kilo New] Manual update install failed (${result.code}): ${result.message}`)
+      return result
     }
   }
 
@@ -177,26 +275,21 @@ export class UpdateCheckService implements vscode.Disposable {
     if (this.timer) clearTimeout(this.timer)
     for (const ctrl of this.controllers) ctrl.abort()
     this.controllers.clear()
+    this.candidates.clear()
     for (const item of this.disposables) item.dispose()
   }
 
-  private async check(cfg: Config, mode: Mode): Promise<void> {
+  private async probe(cfg: Config): Promise<Probe> {
     const id = this.identity()
     const target = this.target()
     if (!target) {
-      const text = "This ChipMate installation does not have a supported internal update target."
-      this.deps.log.warn(`[Kilo New] Update check skipped: ${text}`)
-      if (mode === "manual") await vscode.window.showWarningMessage(text)
-      return
+      throw new UpdateError("target", "This ChipMate installation does not have a supported internal update target.")
     }
     const url = this.manifestUrl()
     const manifest = await this.fetchManifest(cfg, url)
     const item = manifest.latestByTarget[target]
     if (!item) {
-      const text = `No compatible ChipMate update package is available for ${target}.`
-      this.deps.log.log(`[Kilo New] Update check: ${text}`)
-      if (mode === "manual") await vscode.window.showInformationMessage(text)
-      return
+      return { status: "latest", currentVersion: id.version, checkedAt: this.deps.now(), target }
     }
     if (item.publisher !== id.publisher || item.name !== id.name) {
       throw new UpdateError(
@@ -211,44 +304,47 @@ export class UpdateCheckService implements vscode.Disposable {
       throw new UpdateError("download-size", `VSIX download is larger than ${cfg.maxDownloadBytes} bytes.`)
     }
     if (compareVersions(item.version, id.version) <= 0) {
-      if (mode === "manual") await vscode.window.showInformationMessage("ChipMate is already up to date.")
-      return
+      return { status: "latest", currentVersion: id.version, checkedAt: this.deps.now(), target }
     }
-    await this.update(cfg, mode, id, item, resolvePackageUrl(url, item.url))
+    return { status: "available", currentVersion: id.version, target, item, url: resolvePackageUrl(url, item.url) }
   }
 
-  private async update(cfg: Config, mode: Mode, id: Identity, item: Package, url: URL): Promise<void> {
+  private async offer(cfg: Config, result: Extract<Probe, { status: "available" }>, mode: Mode): Promise<void> {
+    if (!cfg.autoInstall) {
+      const choice = await vscode.window.showInformationMessage(
+        `ChipMate update ${result.item.version} is available. Current version: ${result.currentVersion}.`,
+        INSTALL,
+      )
+      if (choice !== INSTALL) return
+    }
+    await this.perform(cfg, result.item, result.url, mode === "manual" || !cfg.autoInstall)
+    const reload = await vscode.window.showInformationMessage(
+      "ChipMate update installed. Reload Window to finish.",
+      RELOAD,
+    )
+    if (reload === RELOAD) await vscode.commands.executeCommand("workbench.action.reloadWindow")
+  }
+
+  private async perform(cfg: Config, item: Package, url: URL, explicit: boolean): Promise<void> {
     const key = `${item.target}/${item.version}/${item.sha256.toLowerCase()}`
     const current = this.transactions.get(key)
     if (current?.state === "running") {
-      await current.promise.catch(() => undefined)
+      await current.promise
       return
     }
-    if (current?.state === "installed") {
-      if (mode === "manual")
-        await vscode.window.showInformationMessage("ChipMate update is installed and awaiting reload.")
-      return
-    }
+    if (current?.state === "installed") return
     if (current?.state === "manual") {
-      if (mode === "manual") await this.warning(current.warning)
-      return
+      if (!explicit) throw new UpdateError("install", current.warning, current.warning, current.file)
     }
 
-    const task = this.apply(cfg, id, item, url)
+    const task = current?.state === "manual"
+      ? this.install(cfg, current.file)
+      : this.download(cfg, item, url).then((file) => this.install(cfg, file))
     this.transactions.set(key, { state: "running", promise: task })
     try {
-      const result = await task
-      if (result === "declined") {
-        this.transactions.delete(key)
-        return
-      }
+      await task
       const file = this.packagePath(item)
       this.transactions.set(key, { state: "installed", file })
-      const reload = await vscode.window.showInformationMessage(
-        "ChipMate update installed. Reload Window to finish.",
-        RELOAD,
-      )
-      if (reload === RELOAD) await vscode.commands.executeCommand("workbench.action.reloadWindow")
     } catch (err) {
       if (err instanceof UpdateError && err.kind === "install" && err.file) {
         this.transactions.set(key, { state: "manual", file: err.file, warning: err.warning })
@@ -257,19 +353,6 @@ export class UpdateCheckService implements vscode.Disposable {
       }
       throw err
     }
-  }
-
-  private async apply(cfg: Config, id: Identity, item: Package, url: URL): Promise<"declined" | "installed"> {
-    if (!cfg.autoInstall) {
-      const choice = await vscode.window.showInformationMessage(
-        `ChipMate update ${item.version} is available. Current version: ${id.version}.`,
-        INSTALL,
-      )
-      if (choice !== INSTALL) return "declined"
-    }
-    const file = await this.download(cfg, item, url)
-    await this.install(cfg, file)
-    return "installed"
   }
 
   private manifestUrl(): URL {
@@ -399,6 +482,12 @@ export class UpdateCheckService implements vscode.Disposable {
     return ctrl
   }
 
+  private pruneCandidates(): void {
+    for (const [id, item] of this.candidates) {
+      if (this.deps.now() - item.createdAt > CANDIDATE_TIMEOUT) this.candidates.delete(id)
+    }
+  }
+
   private async install(cfg: Config, file: string): Promise<void> {
     const cmd = `${quote(cfg.codeCliPath)} --install-extension ${quote(file)} --force`
     try {
@@ -428,6 +517,16 @@ export class UpdateCheckService implements vscode.Disposable {
       await vscode.window.showWarningMessage(text)
     } catch (err) {
       this.deps.log.warn(`[Kilo New] Update check warning notification failed: ${message(err)}`)
+    }
+  }
+
+  private error(err: unknown): Extract<ChipmateUpdateResult, { status: "error" }> {
+    const item = err instanceof UpdateError ? err : new UpdateError("manifest", message(err))
+    return {
+      status: "error",
+      code: item.kind,
+      message: item.message,
+      retryable: ["availability", "server", "download", "install"].includes(item.kind),
     }
   }
 
@@ -490,9 +589,21 @@ export class UpdateCheckService implements vscode.Disposable {
   }
 }
 
+let active: UpdateCheckService | undefined
+
+export function getUpdateCheckService(): UpdateCheckService | undefined {
+  return active
+}
+
 export function registerUpdateCheck(context: vscode.ExtensionContext): UpdateCheckService {
   const service = new UpdateCheckService(context)
-  context.subscriptions.push(service)
+  active = service
+  context.subscriptions.push({
+    dispose: () => {
+      if (active === service) active = undefined
+      service.dispose()
+    },
+  })
   context.subscriptions.push(
     vscode.commands.registerCommand("chipmate.v2.checkForUpdates", () => service.checkManual()),
   )
@@ -578,6 +689,8 @@ function parsePackage(value: unknown, expected: Target): Package {
   const url = string(value.url)
   const sha256 = string(value.sha256)
   const sizeBytes = number(value.sizeBytes)
+  const releaseNotes = parseReleaseNotes(value.releaseNotes)
+  const publishedAt = parsePublishedAt(value.publishedAt)
   if (!extensionId || !publisher || !name || !version || !targetValue || !url || !sha256 || !sizeBytes) {
     throw new UpdateError("manifest", `Update package for ${expected} is incomplete.`)
   }
@@ -586,7 +699,18 @@ function parsePackage(value: unknown, expected: Target): Package {
   if (targetValue !== expected) throw new UpdateError("manifest", `Update package target does not match ${expected}.`)
   if (!parseVersion(version)) throw new UpdateError("version", `Update package version is invalid: ${version}.`)
   if (!/^[a-fA-F0-9]{64}$/.test(sha256)) throw new UpdateError("manifest", "Update package sha256 is invalid.")
-  return { extensionId, publisher, name, version, target: targetValue, url, sha256, sizeBytes }
+  return {
+    extensionId,
+    publisher,
+    name,
+    version,
+    target: targetValue,
+    url,
+    sha256,
+    sizeBytes,
+    ...(releaseNotes ? { releaseNotes } : {}),
+    ...(publishedAt ? { publishedAt } : {}),
+  }
 }
 
 function hostTarget(): Target | undefined {
@@ -598,7 +722,9 @@ function hostTarget(): Target | undefined {
 }
 
 function target(value: unknown): Target | undefined {
-  return typeof value === "string" && (TARGETS as readonly string[]).includes(value) ? (value as Target) : undefined
+  return typeof value === "string" && (CHIPMATE_UPDATE_TARGETS as readonly string[]).includes(value)
+    ? (value as Target)
+    : undefined
 }
 
 async function writeResponse(
@@ -690,6 +816,22 @@ function positive(value: unknown, fallback: number): number {
 
 function string(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
+}
+
+function parseReleaseNotes(value: unknown): string {
+  const notes = typeof value === "string" ? value.trim() : ""
+  if (notes && (Buffer.byteLength(notes, "utf8") > 65_536 || notes.includes("\0"))) {
+    throw new UpdateError("manifest", "Update release notes are invalid.")
+  }
+  return notes
+}
+
+function parsePublishedAt(value: unknown): string {
+  const date = string(value)
+  if (date && Number.isNaN(Date.parse(date))) {
+    throw new UpdateError("manifest", "Update publication date is invalid.")
+  }
+  return date
 }
 
 function number(value: unknown): number {

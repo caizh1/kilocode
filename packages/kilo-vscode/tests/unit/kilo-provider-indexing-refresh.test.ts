@@ -34,7 +34,7 @@ type Internals = {
   fetchAndSendIndexingStatus: () => Promise<void>
   fetchAndSendSandboxStatus: (sessionId: string) => Promise<void>
   pruneDeletedSession: (sessionId: string) => void
-  selectDocumentRagFolder: () => Promise<void>
+  selectDocumentRagFolder: (scope?: "global" | "project") => Promise<void>
   rebuildDocumentRag: () => Promise<void>
 }
 
@@ -50,6 +50,11 @@ function status(message: string, state: "Complete" | "Standby" = "Complete") {
     }),
     { status: 200, headers: { "content-type": "application/json" } },
   )
+}
+
+function directory(headers?: HeadersInit): string {
+  const value = new Headers(headers).get("x-kilo-directory")
+  return value ? decodeURIComponent(value) : ""
 }
 
 function event(message: string, state: "Complete" | "Standby" = "Complete") {
@@ -266,7 +271,7 @@ describe("KiloProvider indexing refresh", () => {
   })
 
   it("fetchAndSendIndexingStatus uses current session directory header", async () => {
-    const worktree = "/repo/.kilo/.kilocode/worktrees/feature"
+    const worktree = "/repo/中文 workspace/.kilo/.kilocode/worktrees/feature"
     const calls: { input: RequestInfo | URL; init?: RequestInit }[] = []
     const original = globalThis.fetch
 
@@ -305,7 +310,7 @@ describe("KiloProvider indexing refresh", () => {
       const headers = new Headers(calls[0]?.init?.headers)
       const auth = Buffer.from("kilo:secret").toString("base64")
       expect(headers.get("Authorization")).toBe(`Basic ${auth}`)
-      expect(headers.get("x-kilo-directory")).toBe(worktree)
+      expect(headers.get("x-kilo-directory")).toBe(encodeURIComponent(worktree))
     } finally {
       globalThis.fetch = original
     }
@@ -331,7 +336,7 @@ describe("KiloProvider indexing refresh", () => {
       await internal.fetchAndSendIndexingStatus()
 
       expect(calls).toHaveLength(1)
-      expect(new Headers(calls[0]?.headers).get("x-kilo-directory")).toBe("/repo-b")
+      expect(new Headers(calls[0]?.headers).get("x-kilo-directory")).toBe(encodeURIComponent("/repo-b"))
     } finally {
       globalThis.fetch = original
     }
@@ -380,7 +385,7 @@ describe("KiloProvider indexing refresh", () => {
     const pending = Promise.withResolvers<Response>()
     const original = globalThis.fetch
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      const dir = new Headers(init?.headers).get("x-kilo-directory")
+      const dir = directory(init?.headers)
       if (dir === "/repo-a") return pending.promise
       return status("project b")
     }) as typeof fetch
@@ -432,7 +437,7 @@ describe("KiloProvider indexing refresh", () => {
     const pending: Array<{ dir: string; response: PromiseWithResolvers<Response> }> = []
     globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
       const response = Promise.withResolvers<Response>()
-      pending.push({ dir: new Headers(init?.headers).get("x-kilo-directory") ?? "", response })
+      pending.push({ dir: directory(init?.headers), response })
       return response.promise
     }) as typeof fetch
 
@@ -531,7 +536,7 @@ describe("KiloProvider indexing refresh", () => {
     const original = globalThis.fetch
     const calls: string[] = []
     globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(new Headers(init?.headers).get("x-kilo-directory") ?? "")
+      calls.push(directory(init?.headers))
       return Promise.resolve(status("project b"))
     }) as typeof fetch
 
@@ -621,7 +626,7 @@ describe("KiloProvider indexing refresh", () => {
     const original = globalThis.fetch
     const calls: string[] = []
     globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(new Headers(init?.headers).get("x-kilo-directory") ?? "")
+      calls.push(directory(init?.headers))
       return Promise.resolve(status("worktree"))
     }) as typeof fetch
 
@@ -647,7 +652,7 @@ describe("KiloProvider indexing refresh", () => {
     const original = globalThis.fetch
     const calls: string[] = []
     globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(new Headers(init?.headers).get("x-kilo-directory") ?? "")
+      calls.push(directory(init?.headers))
       return pending.promise
     }) as typeof fetch
 
@@ -676,7 +681,7 @@ describe("KiloProvider indexing refresh", () => {
     const original = globalThis.fetch
     const calls: string[] = []
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(new Headers(init?.headers).get("x-kilo-directory") ?? "")
+      calls.push(directory(init?.headers))
       return status("done")
     }) as typeof fetch
 
@@ -715,7 +720,7 @@ describe("KiloProvider indexing refresh", () => {
     const original = globalThis.fetch
     const calls: string[] = []
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(new Headers(init?.headers).get("x-kilo-directory") ?? "")
+      calls.push(directory(init?.headers))
       return status("done")
     }) as typeof fetch
 
@@ -795,7 +800,7 @@ describe("KiloProvider indexing refresh", () => {
     const original = globalThis.fetch
     const calls: string[] = []
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(new Headers(init?.headers).get("x-kilo-directory") ?? "")
+      calls.push(directory(init?.headers))
       return status("local")
     }) as typeof fetch
 
@@ -827,7 +832,7 @@ describe("KiloProvider indexing refresh", () => {
     const original = globalThis.fetch
     const calls: string[] = []
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(new Headers(init?.headers).get("x-kilo-directory") ?? "")
+      calls.push(directory(init?.headers))
       return status("root")
     }) as typeof fetch
 
@@ -864,19 +869,25 @@ describe("KiloProvider indexing refresh", () => {
 
       await internal.fetchAndSendIndexingStatus()
 
-      expect(new Headers(calls[0]?.headers).get("x-kilo-directory")).toBe("/repo/worktree")
+      expect(directory(calls[0]?.headers)).toBe("/repo/worktree")
     } finally {
       globalThis.fetch = original
     }
   })
 
-  it("selects Document RAG folders relative to the panel project", async () => {
-    const original = vscode.window.showOpenDialog
+  it("keeps workspace folders implicit when they are selected again", async () => {
+    const dialog = vscode.window.showOpenDialog
+    const info = vscode.window.showInformationMessage
     const messages: unknown[] = []
+    const notices: string[] = []
     Object.assign(vscode.window, {
       showOpenDialog: async (options: vscode.OpenDialogOptions) => {
         expect(options.defaultUri?.fsPath).toBe("/repo-b")
         return [vscode.Uri.file("/repo-b/docs")]
+      },
+      showInformationMessage: async (message: string) => {
+        notices.push(message)
+        return undefined
       },
     })
 
@@ -896,9 +907,166 @@ describe("KiloProvider indexing refresh", () => {
 
       await internal.selectDocumentRagFolder()
 
-      expect(messages).toContainEqual({ type: "documentRagFoldersSelected", paths: ["docs"] })
+      expect(messages).toEqual([])
+      expect(notices).toEqual(["Folders inside the current workspace are already included in Document RAG."])
     } finally {
-      Object.assign(vscode.window, { showOpenDialog: original })
+      Object.assign(vscode.window, { showOpenDialog: dialog, showInformationMessage: info })
+    }
+  })
+
+  it("ignores workspace folders and returns multiple workspace-scoped external approvals", async () => {
+    const dialog = vscode.window.showOpenDialog
+    const warning = vscode.window.showWarningMessage
+    const info = vscode.window.showInformationMessage
+    const messages: unknown[] = []
+    const notices: string[] = []
+    Object.assign(vscode.window, {
+      showOpenDialog: async () => [
+        vscode.Uri.file("/repo/docs"),
+        vscode.Uri.file("/shared/manuals"),
+        vscode.Uri.file("/shared/specs"),
+      ],
+      showWarningMessage: async (_message: string, _options: vscode.MessageOptions, action: string) => action,
+      showInformationMessage: async (message: string) => {
+        notices.push(message)
+        return undefined
+      },
+    })
+
+    try {
+      const conn = createIndexingConnection()
+      const provider = new KiloProvider({} as never, conn.service as never, undefined, {
+        projectDirectory: "/repo",
+      })
+      const internal = provider as unknown as Internals
+      internal.webview = {
+        postMessage: async (message) => {
+          messages.push(message)
+        },
+      }
+
+      await internal.selectDocumentRagFolder("project")
+
+      expect(messages).toContainEqual({
+        type: "documentRagFoldersSelected",
+        scope: "project",
+        paths: ["/shared/manuals", "/shared/specs"],
+        approvals: [
+          { path: "/shared/manuals", workspace: "/repo" },
+          { path: "/shared/specs", workspace: "/repo" },
+        ],
+      })
+      expect(notices).toEqual(["Folders inside the current workspace are already included in Document RAG."])
+    } finally {
+      Object.assign(vscode.window, {
+        showOpenDialog: dialog,
+        showWarningMessage: warning,
+        showInformationMessage: info,
+      })
+    }
+  })
+
+  it("returns an unscoped approval for a globally selected external folder", async () => {
+    const dialog = vscode.window.showOpenDialog
+    const warning = vscode.window.showWarningMessage
+    const messages: unknown[] = []
+    Object.assign(vscode.window, {
+      showOpenDialog: async () => [vscode.Uri.file("/shared/manuals")],
+      showWarningMessage: async (_message: string, _options: vscode.MessageOptions, action: string) => action,
+    })
+
+    try {
+      const conn = createIndexingConnection()
+      const provider = new KiloProvider({} as never, conn.service as never, undefined, {
+        projectDirectory: "/repo",
+      })
+      const internal = provider as unknown as Internals
+      internal.webview = {
+        postMessage: async (message) => {
+          messages.push(message)
+        },
+      }
+
+      await internal.selectDocumentRagFolder("global")
+
+      expect(messages).toContainEqual({
+        type: "documentRagFoldersSelected",
+        scope: "global",
+        paths: ["/shared/manuals"],
+        approvals: [{ path: "/shared/manuals" }],
+      })
+    } finally {
+      Object.assign(vscode.window, { showOpenDialog: dialog, showWarningMessage: warning })
+    }
+  })
+
+  it("does not add external folders when authorization is cancelled", async () => {
+    const dialog = vscode.window.showOpenDialog
+    const warning = vscode.window.showWarningMessage
+    const messages: unknown[] = []
+    Object.assign(vscode.window, {
+      showOpenDialog: async () => [vscode.Uri.file("/shared/manuals")],
+      showWarningMessage: async () => undefined,
+    })
+
+    try {
+      const conn = createIndexingConnection()
+      const provider = new KiloProvider({} as never, conn.service as never, undefined, {
+        projectDirectory: "/repo",
+      })
+      const internal = provider as unknown as Internals
+      internal.webview = {
+        postMessage: async (message) => {
+          messages.push(message)
+        },
+      }
+
+      await internal.selectDocumentRagFolder("global")
+
+      expect(messages).toEqual([])
+    } finally {
+      Object.assign(vscode.window, { showOpenDialog: dialog, showWarningMessage: warning })
+    }
+  })
+
+  it("drops external folder approval when the project changes during authorization", async () => {
+    const dialog = vscode.window.showOpenDialog
+    const warning = vscode.window.showWarningMessage
+    const pending = Promise.withResolvers<string | undefined>()
+    const ready = Promise.withResolvers<void>()
+    const messages: unknown[] = []
+    Object.assign(vscode.window, {
+      showOpenDialog: async () => [vscode.Uri.file("/shared/manuals")],
+      showWarningMessage: (_message: string, options?: vscode.MessageOptions) => {
+        if (!options?.modal) return Promise.resolve(undefined)
+        ready.resolve()
+        return pending.promise
+      },
+    })
+
+    try {
+      const conn = createIndexingConnection()
+      const provider = new KiloProvider({} as never, conn.service as never, undefined, {
+        projectDirectory: "/repo-a",
+      })
+      const internal = provider as unknown as Internals
+      internal.webview = {
+        postMessage: async (message) => {
+          messages.push(message)
+        },
+      }
+
+      const task = internal.selectDocumentRagFolder("project")
+      await ready.promise
+      provider.setProjectDirectory("/repo-b")
+      pending.resolve("Allow and Add")
+      await task
+
+      expect(messages.some((message) => (message as { type?: string }).type === "documentRagFoldersSelected")).toBe(
+        false,
+      )
+    } finally {
+      Object.assign(vscode.window, { showOpenDialog: dialog, showWarningMessage: warning })
     }
   })
 
@@ -985,7 +1153,7 @@ describe("KiloProvider indexing refresh", () => {
       expect(calls).toHaveLength(1)
       expect(calls[0]?.input.endsWith("/indexing/documents/rebuild")).toBe(true)
       expect(calls[0]?.init?.method).toBe("POST")
-      expect(new Headers(calls[0]?.init?.headers).get("x-kilo-directory")).toBe("/repo-b")
+      expect(new Headers(calls[0]?.init?.headers).get("x-kilo-directory")).toBe(encodeURIComponent("/repo-b"))
       expect(cached(internal)).toBe("rebuilt")
     } finally {
       globalThis.fetch = original

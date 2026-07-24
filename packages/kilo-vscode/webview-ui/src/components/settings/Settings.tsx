@@ -66,11 +66,16 @@ const tabs: readonly Item[] = [
 
 const Codicon: Component<{ name: string }> = (props) => <i class={`codicon codicon-${props.name}`} aria-hidden="true" />
 
-const Panel: ParentComponent<{ title: string; description?: string }> = (props) => (
+const Panel: ParentComponent<{ title: string; description?: string; brand?: boolean }> = (props) => (
   <>
-    <div class="settings-page-header" data-ui="settings-page-title">
-      <h3>{props.title}</h3>
-      <Show when={props.description}>{(description) => <p>{description()}</p>}</Show>
+    <div class={`settings-page-header${props.brand ? " settings-page-header-brand" : ""}`} data-ui="settings-page-title">
+      <Show when={props.brand}>
+        <ChipMateLogo class="settings-page-brand-icon" welcome />
+      </Show>
+      <div class="settings-page-header-copy">
+        <h3>{props.title}</h3>
+        <Show when={props.description}>{(description) => <p>{description()}</p>}</Show>
+      </div>
     </div>
     <div class="settings-page-groups" data-ui="settings-groups">
       {props.children}
@@ -242,7 +247,11 @@ const Settings: Component<SettingsProps> = (props) => {
               </Panel>
             </Tabs.Content>
             <Tabs.Content value="chipmateServer" data-ui="settings-content">
-              <Panel title={language.t("settings.chipmateServer.title")}>
+              <Panel
+                title={language.t("settings.chipmateServer.title")}
+                description={language.t("settings.chipmateServer.description")}
+                brand
+              >
                 <ChipmateServerTab preview={props.chipmatePreview} />
               </Panel>
             </Tabs.Content>

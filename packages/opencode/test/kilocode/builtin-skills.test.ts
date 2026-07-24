@@ -89,9 +89,10 @@ it.instance(
       expect(sourceBacked!.location).toContain(path.join("builtin-skills", "source-backed-detail-design", "SKILL.md"))
       expect(sourceBacked!.content.startsWith("---\n")).toBe(true)
       expect(sourceBacked!.content).not.toMatch(/^<hr\s*\/?/i)
-      expect(sourceBacked!.content).toContain("SBDD_RULESET_REVISION=2026-07-long-task-gate-v1")
+      expect(sourceBacked!.content).toContain("SBDD_RULESET_REVISION=2026-07-source-semantic-v117")
       expect(sourceBacked!.content).toContain("not a ChipMate runtime pipeline")
-      expect(sourceBacked!.content).toContain("Ordinary code QA continues through native evidence tools without artifacts")
+      expect(sourceBacked!.content).toContain("Ordinary QA stays artifact-free")
+      expect(sourceBacked!.content).toContain("keeps its native routing/tool loop")
       expect(existsSync(path.join(path.dirname(sourceBacked!.location), "references", "01-core-principles.md"))).toBe(
         true,
       )

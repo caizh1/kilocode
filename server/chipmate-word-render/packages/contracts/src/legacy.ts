@@ -34,6 +34,14 @@ const mermaid = Type.Object(
   },
   { additionalProperties: true },
 )
+const plantuml = Type.Object(
+  {
+    source: Type.String(),
+    filename: Type.Optional(Type.String()),
+    timeoutMs: Type.Optional(Type.Number()),
+  },
+  { additionalProperties: true },
+)
 const textQa = Type.Object({
   ok: Type.Boolean(),
   titlePresent: Type.Boolean(),
@@ -100,6 +108,11 @@ export const LEGACY_ROUTES: readonly LegacyRoute[] = [
     method: "POST",
     url: "/render/mermaid",
     schema: { body: mermaid, response: { 200: rendered, 422: rendered, 500: error } },
+  },
+  {
+    method: "POST",
+    url: "/render/plantuml",
+    schema: { body: plantuml, response: { 200: rendered, 422: rendered, 500: error } },
   },
   {
     method: "POST",

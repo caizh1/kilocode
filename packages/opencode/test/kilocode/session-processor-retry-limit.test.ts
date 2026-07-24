@@ -27,9 +27,10 @@ import { Reference } from "../../src/reference/reference"
 import { Session } from "../../src/session/session"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
+import { KiloSessionProcessor } from "../../src/kilocode/session/processor"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionRetry } from "../../src/session/retry"
-import { MessageID } from "../../src/session/schema"
+import { MessageID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionSummary } from "../../src/session/summary"
 import { Snapshot } from "../../src/snapshot"
@@ -253,6 +254,35 @@ describe("session processor retry limit", () => {
       process.env.KILO_SESSION_RETRY_LIMIT = "5"
       expect(Flag.KILO_SESSION_RETRY_LIMIT).toBe(5)
       delete process.env.KILO_SESSION_RETRY_LIMIT
+    }),
+  )
+
+  it.effect("limits only summary or large-payload retries by default", () =>
+    Effect.sync(() => {
+      delete process.env.KILO_SESSION_RETRY_LIMIT
+      const base = {
+        sessionID: SessionID.make("ses_large_payload_retry"),
+        abort: AbortSignal.any([]),
+        set: () => Effect.void,
+      }
+
+      expect(KiloSessionProcessor.retryOpts({ ...base, bytes: 127_999 }).limit).toBeUndefined()
+      expect(KiloSessionProcessor.retryOpts({ ...base, bytes: 128_000 }).limit).toBe(2)
+      expect(KiloSessionProcessor.retryOpts({ ...base, bytes: 1, summary: true }).limit).toBe(2)
+    }),
+  )
+
+  it.effect("converts only large retryable 5xx failures into compaction", () =>
+    Effect.sync(() => {
+      const error = new MessageV2.APIError({
+        message: "provider unavailable",
+        statusCode: 503,
+        isRetryable: true,
+      }).toObject()
+
+      expect(KiloSessionProcessor.compact({ error, bytes: 128_000, auto: true })).toBe(true)
+      expect(KiloSessionProcessor.compact({ error, bytes: 127_999, auto: true })).toBe(false)
+      expect(KiloSessionProcessor.compact({ error, bytes: 128_000, auto: false })).toBe(false)
     }),
   )
 })

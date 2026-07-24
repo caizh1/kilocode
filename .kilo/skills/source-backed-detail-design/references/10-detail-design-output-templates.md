@@ -62,7 +62,7 @@
 
 ## 5. 详细主业务流程模板
 
-主业务流程章节先给目标模块完整业务闭环总图，再按源码支持的流程族逐个展开。每个流程族包含：
+主业务流程章节先给目标模块完整业务闭环总图，再按 `14-business-flow-family-census.csv` 中源码确认的流程族逐个展开。总图必须覆盖或导航到全部流程族，不能选取一个代表性子流程冒充目标业务闭环。每个流程族包含：
 
 1. 流程目标与业务对象；
 2. 触发与前置条件；
@@ -77,7 +77,7 @@
 11. 总览图、必要的分支/子流程图及图后解读；
 12. 源码证据和未确认项。
 
-流程数量由真实业务能力决定。主业务闭环不能被单个读写子流程、函数调用链或状态机替代。
+流程数量由真实业务能力决定。主业务闭环不能被单个子流程、函数调用链、组件拓扑或状态机替代。章节末报告 `flowFamilyCount / unmappedFlowFamilyCount / missingBusinessEdgeCount / missingAsyncHandoffCount / missingBusinessTerminalCount`，并列出流程族、关键异步 handoff 和终态对应的 Diagram ID；完整交付要求后四项均为 0。总图不可读时保留 overview，并按流程族、异步链或异常恢复链拆图，不得删除分支。
 
 ## 6. 内部架构与子模块分解表
 
@@ -90,15 +90,21 @@
 
 ## 7. Target module 和已确认子模块统一模板
 
-Target module 及每个 target-owned confirmed submodule 按以下顺序输出；所属上级模块不使用本模板：
+Target module 及每个 target-owned confirmed submodule 按以下顺序输出；所属上级模块不使用本模板。以下 `1`–`14` 是不可合并的独立 topic ID：每个 unit 必须恰好保留 14 个独立标题并分别审核。`6-14`、`6/7/8`、“其余内容”或任意合并标题只算一个已存在 topic，其余 ID 必须记为 `MISSING`：
+
+本 reference 必须在创建第一个 unit 文件之前读取，并在 `review-notes.md` 记录 `reference10Loaded: true`。根会话可按冻结顺序先写完多个 unit 草稿；每个 topic 标题下第一条非空行固定为 `SBDD-TOPIC-STATUS: <01..14> | <PASS|N/A|MISSING> | <evidence IDs>`，该内部行不进入最终 Word。正文阶段结束前必须逐个实际文件执行独立原生 `read`，随后独立调用 `grep` 枚举精确标题和 status 行；shell `cat`/`grep`、write 返回和模型记忆均不能代替该审计。合法阶段顺序为 `write frozen unit drafts → for each unit: read → grep → repair/re-read/re-grep as needed → write per-unit review audit → update one canonical resume checkpoint`。提前写下一草稿不构成失败，但任何未独立 read+grep 的草稿仍为 `MISSING`，不得计入完成或进入图形阶段。只有标题和 status ID 均恰为 `01,02,...,14`、每条 status 紧跟对应标题、范围/合并/catch-all 为 0、状态互斥且正文/证据有效，才从实际 status 行派生十四行 audit。
+
+对于按编译单元规则确认的 target/confirmed submodule，topic `01`–`07` 和 `09`–`14` 均为适用项，必须写成有解释、有证据的 `PASS`。没有独立恢复动作、复杂算法、平台差异、专用日志或专用配置本身也是需要说明的设计事实，不能借此写 `N/A`。只有 topic `08` 在完成持久状态所有者、状态存储、读写、事件、dispatch、初始化、终止、异常和恢复的全量审计后，才允许证据化 `N/A`。
 
 ```md
 ### <设计单元名称>详细设计
 
 #### 1. 简介与业务定位
+SBDD-TOPIC-STATUS: 01 | <PASS|MISSING> | <evidence IDs>
 说明该设计单元在所属范围中的作用、触发来源、处理对象、交付结果、典型异常和上下游衔接。
 
 #### 2. 职责、非职责与边界
+SBDD-TOPIC-STATUS: 02 | <PASS|MISSING> | <evidence IDs>
 | 项目 | 说明 | 证据 |
 |---|---|---|
 | 主要职责 | | |
@@ -109,45 +115,59 @@ Target module 及每个 target-owned confirmed submodule 按以下顺序输出�
 | 下游 | | |
 
 #### 3. 触发、前置条件、输入与输出
+SBDD-TOPIC-STATUS: 03 | <PASS|MISSING> | <evidence IDs>
 | 类型 | 对象/事件/状态 | 条件或语义 | 证据 |
 |---|---|---|---|
 
 #### 4. 内部架构、上下游与依赖
+SBDD-TOPIC-STATUS: 04 | <PASS|MISSING> | <evidence IDs>
 插入本设计单元架构图，并解释组件、边界、共享上下文、队列、缓存、适配层和依赖方向。
 
 #### 5. 业务能力与完整业务流程
+SBDD-TOPIC-STATUS: 05 | <PASS|MISSING> | <evidence IDs>
 插入本设计单元业务流程图。图后解释主路径、关键分支、handoff、异常、等待、重试、恢复和终态。
 
 #### 6. 核心对象、所有权与数据生命周期
+SBDD-TOPIC-STATUS: 06 | <PASS|MISSING> | <evidence IDs>
 对结构体、变量、队列、缓存、位图、表和配置对象说明字段语义、创建、初始化、读写、传递、并发、持久化、失效、回收和释放，并插入数据/生命周期图。
 
 #### 7. 函数/功能覆盖与代码执行流程
+SBDD-TOPIC-STATUS: 07 | <PASS|MISSING> | <evidence IDs>
 列出范围内功能和函数覆盖，对关键函数说明签名、参数校验、局部状态、分支、循环、回调、写入、返回、错误和清理，并插入代码流程图。
 
 #### 8. 状态、事件与状态机
+SBDD-TOPIC-STATUS: 08 | <PASS|N/A|MISSING> | <evidence IDs>
 说明状态所有者、dispatch、事件、guard、action、转换、副作用、非法/忽略事件、失败和恢复；插入状态机图或提供证据化 N/A。
 
 #### 9. 接口与协作
+SBDD-TOPIC-STATUS: 09 | <PASS|MISSING> | <evidence IDs>
 分类说明外部、内部、跨模块、回调、异步、队列、通知及源码确认的适配接口。
 
 #### 10. 异常与恢复
+SBDD-TOPIC-STATUS: 10 | <PASS|MISSING> | <evidence IDs>
 | 路径 | 触发条件 | 处理动作 | 状态/数据影响 | 终态 | 证据 |
 |---|---|---|---|---|---|
 
 #### 11. 算法、策略、配置、并发、资源与性能
+SBDD-TOPIC-STATUS: 11 | <PASS|MISSING> | <evidence IDs>
 说明目标、输入、规则、边界、失败路径、复杂度或性能影响、阈值、队列深度、容量、超时、热路径、瓶颈和调优项。
 
 #### 12. 构建、注册、初始化与平台差异
+SBDD-TOPIC-STATUS: 12 | <PASS|MISSING> | <evidence IDs>
 说明构建目标、模块注册、初始化/停止/清理顺序、feature flag、条件编译、平台差异和集成边界。
 
 #### 13. 调试、可观测性与点读源码
+SBDD-TOPIC-STATUS: 13 | <PASS|MISSING> | <evidence IDs>
 说明日志、计数器、断言、dump、诊断、失败症状，以及按问题类型推荐的源码入口。
 
 #### 14. 源码证据、置信度与缺口
+SBDD-TOPIC-STATUS: 14 | <PASS|MISSING> | <evidence IDs>
 列出支持本单元的 SRC/CE/BR/ST/BF 证据、结论置信度、未覆盖内容和 owner-review 项。
 ```
 
-以上十四项是语义字段，不是建议菜单。完整交付中，每个已确认子模块都必须出现且保持连续；不能因为它被归为非核心、辅助、平台相关、初始化相关或实现简单而省略。分解表中出现 `confirmed_submodule` 但没有对应连续章节，或章节缺少适用字段时，交付状态只能是 `PARTIAL/MISSING`。
+以上十四项是语义字段，不是建议菜单。完整交付中，每个已确认子模块都必须出现且保持连续，不能因为它被归为非核心、辅助、平台相关、初始化相关或实现简单而省略。每个 unit 的 review 表必须由回读文件的十四条 `SBDD-TOPIC-STATUS` 行派生。单一状态只能是 `PASS`、topic 08 有证据的 `N/A` 或 `MISSING`，禁止 `PASS（N/A）`；topic 08 结论出现 `N/A`、不适用、不存在持久状态机或等价负结论时，必须计入 `evidencedTopicNaCount`，不得计入 `topicPassCount`。其他 topic 出现 `N/A` 一律为 `MISSING`。要求 `verifiedStatusMarkerIds=01..14`、`topicPassCount + evidencedTopicNaCount = 14`、`missingTopicCount = 0`。文件存在、标题范围或 catch-all 不能证明完成。
+
+每个单元的 audit 还必须逐项记录：`verifiedFile`、`verifiedHeadingIds`、`combinedHeadingMatchCount`、`distinctTopicHeadingCount`、`topicPassCount`、`evidencedTopicNaCount` 和 `missingTopicCount`。其中 `verifiedHeadingIds` 必须来自保存后的文件读取/搜索结果，`combinedHeadingMatchCount` 必须为 0。若当前 token、时间或工具边界不足以完成当前单元，立即保存续作点并停止；不得压缩剩余主题、开始下一单元、进入图形阶段或创建 Word。
 
 以下内容均不构成完整正文：
 
@@ -237,6 +257,16 @@ Target module 及每个 target-owned confirmed submodule 按以下顺序输出�
 ```
 
 完整 Word 任务必须在图形和 Word 阶段之前，把目标模块和每个已确认子模块分别保存为 `05-enhanced-detail-design/units/<designUnitId>.md`。每个文件都使用同一十四项模板，在相邻位置记录主题状态、解释和证据；`08-confirmed-submodules.md` 只保存有序索引，不能用一个汇总文件掩盖未完成单元。`02-source-evidence/module-scope.md`、这些 unit 文件以及输出根目录的 `resume-state.md` 和 `review-notes.md` 共同提供正文 readiness 证据；任何 applicable topic 为 `MISSING` 时 Word 状态保持 `not_started`。
+
+每个 unit 的正文写入前必须完成该单元的源码取证，不得仅凭头文件、目录列表、另一单元源码、模型记忆或常见实现模式起草：
+
+- 在第一个 unit 写入前，为每个 DesignUnit 映射的 implementation file 同时具备一次完整的精确路径 `read` 和一次同路径 file-targeted `grep`；允许先批量读取所有实现、再批量执行所有精确 grep，以减少往返和 token 消耗。头文件读取、目录/递归 grep 或 unit 写入后的补查不能替代该覆盖；
+- 对 census 中映射到该 DesignUnit 的每个 implementation file 完成独立 native `read`；文件超出单次输出时继续读取覆盖入口、所有公开函数、主要分支、错误返回、状态/数据写入和清理路径的实际范围；
+- 对同一 implementation file 完成 file-targeted native `grep`，枚举该单元的入口/内部函数、条件分支、返回值、状态/数据写入和与其他 DesignUnit 的调用点；目录级或递归 grep 不满足本单元；
+- 在 unit write 前把真实工具 call ID、源码路径和已见行范围写入该单元的 pre-write evidence 行；`preWriteImplementationReadCount` 与 `preWriteImplementationGrepCount` 都必须等于该单元映射的 implementation file 数，且 `unreadImplementationPathCount = 0`；
+- 只有头文件声明而未读实现体时，该单元全部机制、错误、性能、生命周期和 N/A 结论保持 `MISSING`，不得写 unit；
+- “无异常路径”“上游保证范围”“无并发风险”“无平台差异”等否定结论必须引用已读实现范围中对应 guard、返回、调用约束或构建证据；源码存在 `NULL`、越界、忙、失败或清理路径时必须在主题 03、07、09、10 中解释，不能用一句“无异常”覆盖；
+- 一个宽泛证据 ID 不得自动支持十四个主题。每个 `PASS/N/A` marker 引用的证据必须解析到实际覆盖该主题结论的行范围；同一窄范围确实覆盖多个主题时可以复用，但 review 必须逐主题说明对应关系。
 
 全部正文锚点替换后、插图前必须执行逐标题 body audit。每个最终 Heading 的本地检查区间截止到下一个任意级别 Heading，区间内必须存在解释性正文；父级 DesignUnit 的十四项聚合覆盖另行跨子标题检查。图片、图题、图注、图号、空段落、目录、内容锚点以及单独的列表或表格不计正文，容器标题必须在首个子标题之前有方向性说明。空标题、只有图片、只有清单、只有表格或只有一句名称说明时，本节为 `MISSING/PARTIAL`，不得进入插图、TOC 或交付阶段。
 

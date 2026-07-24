@@ -15,6 +15,7 @@ function createCtx(
   existing: ExistingGlobal = { disabled_providers: [] },
   merged: ExistingGlobal = existing,
   error?: Error,
+  updateError?: Error,
 ) {
   const calls = {
     set: [] as Array<{ providerID: string; auth: { type: string; key: string; metadata?: Record<string, string> } }>,
@@ -86,6 +87,7 @@ function createCtx(
             calls.order.push("global.update")
             calls.config.push(input)
             calls.configOptions.push(opts ?? {})
+            if (updateError && calls.config.length === 2) throw updateError
             return { data: input }
           },
         },
@@ -262,6 +264,149 @@ describe("saveCustomProvider", () => {
     expect(calls.set).toEqual([{ providerID: "myprovider", auth: { type: "api", key: "sk-test" } }])
     expect(calls.setOptions[0]?.headers?.["x-kilo-defer-instance-dispose"]).toBe("1")
     expect(calls.order).toEqual(["global.get", "global.update", "auth.set", "dispose", "config.get", "providers"])
+  })
+
+  it("activates a saved reasoning model without persisted variants", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx()
+    const config = {
+      ...createProvider(),
+      models: {
+        "deepseek-v4-flash": {
+          name: "DeepSeek V4 Flash",
+          reasoning: true,
+        },
+        "qwen-coder-30b0": {
+          name: "Qwen Coder 30B",
+        },
+      },
+    }
+
+    await saveCustomProvider(
+      ctx,
+      "req",
+      "chipmate",
+      config,
+      "sk-test",
+      true,
+      null,
+      setCachedConfig,
+      "deepseek-v4-flash",
+    )
+
+    expect(calls.config).toHaveLength(2)
+    expect(calls.config[0]).toMatchObject({
+      config: {
+        provider: {
+          chipmate: {
+            models: {
+              "deepseek-v4-flash": { name: "DeepSeek V4 Flash", reasoning: true },
+              "qwen-coder-30b0": { name: "Qwen Coder 30B" },
+            },
+          },
+        },
+      },
+    })
+    expect(calls.set).toEqual([{ providerID: "chipmate", auth: { type: "api", key: "sk-test" } }])
+    expect(calls.config[1]).toEqual({ config: { model: "chipmate/deepseek-v4-flash" } })
+    expect(calls.order).toEqual([
+      "global.get",
+      "global.update",
+      "auth.set",
+      "global.update",
+      "dispose",
+      "config.get",
+      "providers",
+    ])
+    expect(calls.posts).toContainEqual({ type: "providerConnected", requestId: "req", providerID: "chipmate" })
+  })
+
+  it("rejects activation outside the submitted model set before mutating config", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx()
+
+    await saveCustomProvider(
+      ctx,
+      "req",
+      "chipmate",
+      createProvider(),
+      "sk-test",
+      true,
+      null,
+      setCachedConfig,
+      "missing-model",
+    )
+
+    expect(calls.config).toHaveLength(0)
+    expect(calls.set).toHaveLength(0)
+    expect(calls.posts).toContainEqual({
+      type: "providerActionError",
+      requestId: "req",
+      providerID: "chipmate",
+      action: "connect",
+      message: "The model selected for activation is not part of this provider",
+    })
+  })
+
+  it("does not activate the model when secret persistence fails", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx(undefined, undefined, new Error("auth failed"))
+    const config = {
+      ...createProvider(),
+      models: {
+        "deepseek-v4-flash": {
+          name: "DeepSeek V4 Flash",
+          reasoning: true,
+        },
+      },
+    }
+
+    await saveCustomProvider(
+      ctx,
+      "req",
+      "chipmate",
+      config,
+      "sk-test",
+      true,
+      null,
+      setCachedConfig,
+      "deepseek-v4-flash",
+    )
+
+    expect(calls.config).toHaveLength(1)
+    expect(calls.config.some((call) => "model" in call.config)).toBe(false)
+  })
+
+  it("performs the final refresh when activating the saved model fails", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx(undefined, undefined, undefined, new Error("activation failed"))
+    const config = {
+      ...createProvider(),
+      models: {
+        "deepseek-v4-flash": {
+          name: "DeepSeek V4 Flash",
+          reasoning: true,
+        },
+      },
+    }
+
+    await saveCustomProvider(
+      ctx,
+      "req",
+      "chipmate",
+      config,
+      "sk-test",
+      true,
+      null,
+      setCachedConfig,
+      "deepseek-v4-flash",
+    )
+
+    expect(calls.dispose).toBe(1)
+    expect(calls.refresh).toBe(1)
+    expect(calls.posts).toContainEqual({
+      type: "providerActionError",
+      requestId: "req",
+      providerID: "chipmate",
+      action: "connect",
+      message: "activation failed",
+    })
   })
 
   it("finalizes the saved config once when auth persistence fails", async () => {

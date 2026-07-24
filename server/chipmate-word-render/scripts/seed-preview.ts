@@ -126,7 +126,7 @@ async function main() {
   const drop = resolve(runtime, "e2e-extensions/drop")
   await mkdir(drop, { recursive: true })
   const extensions = [
-    { publisher: "chipmate", name: "chipmate", displayName: "ChipMate", version: "0.0.67", target: "win32-x64", category: "Other", note: "团队 AI 编程助手" },
+    { publisher: "chipmate", name: "chipmate", displayName: "ChipMate", version: "0.0.67", target: "win32-x64-baseline", category: "Other", note: "团队 AI 编程助手" },
     { publisher: "ramaxel", name: "cpp-hybrid", displayName: "C/C++ Hybrid Retrieval", version: "2.4.0-beta.2", target: "linux-x64", category: "Programming Languages", note: "Graph + BM25 构建 A" },
     { publisher: "ramaxel", name: "cpp-hybrid", displayName: "C/C++ Hybrid Retrieval", version: "2.4.0-beta.2", target: "linux-x64", category: "Programming Languages", note: "Graph + BM25 构建 B" },
     { publisher: "ramaxel", name: "cpp-hybrid", displayName: "C/C++ Hybrid Retrieval", version: "2.3.0", target: "universal", category: "Programming Languages", note: "通用稳定版" },
@@ -147,6 +147,7 @@ async function main() {
         engines: { vscode: "^1.95.0" },
         categories: [item.category],
         keywords: ["ChipMate", "VSIX", item.target],
+        ...(item.name === "chipmate" ? { chipmatePackageTarget: item.target } : {}),
       }),
     )
     zip.file(

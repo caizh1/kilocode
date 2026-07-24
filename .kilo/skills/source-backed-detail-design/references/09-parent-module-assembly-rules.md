@@ -8,18 +8,19 @@
 4. target-module-state-machine：状态、事件、guard/action 和恢复；若目标模块不存在持久控制状态转换关系则证据化 `N/A`；
 5. target-module-data-lifecycle：数据创建、所有权、传递、并发访问和释放。
 
-business-target-module-master-flow 必须先于 target-module-code-flow 完成。业务总图聚合 target 内部子模块业务图；target 代码图聚合代码级子模块图、状态机图和异常路径图。
+business-target-module-master-flow 必须先于 target-module-code-flow 完成。业务总图聚合全部 source-confirmed 流程族和 target 内部子模块业务图；它不能用一个代表性子流程、状态机或组件拓扑替代端到端闭环。target 代码图聚合代码级子模块图、状态机图和异常路径图。
 
-Target 五类 source 必须在子模块语义、证据、复杂度实例以及全部 base/focused Mermaid source 已完成语法与语义验证后生成。前置条件：存在源码支持的 entry-to-main-flow；每个已确认子模块的五类槽位已有证据、经过验证的 source 或状态机证据化 `N/A`；error/retry/wait/timeout 路径已规划或说明源码无相关路径；edge coverage 已映射关键边。具体子模块 source blocker、PNG 渲染或 Word 插入失败只影响对应槽位状态并使完整验收保持 `PARTIAL`，不得阻塞 target 图的生成和渲染。
+Target 五类 source 必须在子模块语义、证据、复杂度实例以及全部 base/focused 要求已冻结后生成。前置条件：存在源码支持的 entry-to-main-flow；每个已确认子模块的五类槽位已有证据或状态机证据化 `N/A`；error/retry/wait/timeout 路径已规划或说明源码无相关路径；edge coverage 已映射关键边。图形阶段按冻结顺序逐槽执行独立 `render_mermaid_diagram` 事务；任一 source 或 PNG 失败立即保存续作点并停止后续 target/child 图与全部 Word 工作。
 
 业务总图前置条件：
 
 - target business-capability-map 非空；
 - business-flow-steps 非空；
 - business-flow-edges 非空；
+- 14-business-flow-family-census 非空，且 `unmappedFlowFamilyCount = 0`、`missingBusinessEdgeCount = 0`、`missingBusinessTerminalCount = 0`；
 - 每个已确认子模块 high-level 业务流程的语义、证据、边和 Mermaid source 已完成；
 - 子模块业务图 edge coverage 无 unverified；
-- 总图只聚合业务子模块，不展开函数内部。
+- 总图覆盖或导航到全部流程族、关键决策、异步 handoff、失败恢复和终态，不展开函数内部。
 
 五类父图合计必须覆盖外部入口、对外 API、子模块边界、核心数据结构、关键状态机、主要状态转换、下游依赖、error/wait/retry/complete 出口、数据所有权和指向子图的节点说明。单张图只承担自己的语义，不要求把全部信息塞入一张总图。
 

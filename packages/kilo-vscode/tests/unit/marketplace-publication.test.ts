@@ -6,6 +6,7 @@ import { validateSkillArchive } from "@chipmate/skill-spec"
 
 import { createSkillArchive } from "../../src/services/marketplace/archive"
 import { publish, type PublicationOutcome, type PublicationPhase } from "../../src/services/marketplace/publication"
+import { publishBatch, publicationState } from "../../src/services/marketplace/publication-batch"
 import { buildMarketplaceSkillUploadPayload } from "../../src/services/marketplace/upload"
 import type { MarketplaceUploadPayload, PublicationRun } from "../../src/services/marketplace/types"
 
@@ -41,6 +42,40 @@ function boundary(state: { open: boolean }, phases: Array<[PublicationPhase, Pub
 }
 
 describe("Marketplace publication lifecycle", () => {
+  it("publishes batch items sequentially and continues after an item fails", async () => {
+    const order: string[] = []
+    const phases: string[] = []
+    const items = [
+      { id: "first", name: "First" },
+      { id: "broken", name: "Broken" },
+      { id: "last", name: "Last" },
+    ]
+    const results = await publishBatch(
+      items,
+      async (item) => {
+        order.push(item.id)
+        if (item.id === "broken") throw new Error("archive rejected")
+        return run(item.id === "last" ? "UNCHANGED" : "PUBLISHED")
+      },
+      (item, current, total) => phases.push(`${current}/${total}:${item.id}`),
+    )
+
+    expect(order).toEqual(["first", "broken", "last"])
+    expect(phases).toEqual(["1/3:first", "2/3:broken", "3/3:last"])
+    expect(results.map((item) => item.state)).toEqual(["published", "failed", "unchanged"])
+    expect(results[1].error).toBe("archive rejected")
+  })
+
+  it("classifies every non-success publication status as requiring attention", () => {
+    expect(publicationState()).toBe("published")
+    expect(publicationState(run("PUBLISHED"))).toBe("published")
+    expect(publicationState(run("UNCHANGED"))).toBe("unchanged")
+    expect(publicationState(run("NEEDS_AUTHOR_FIX"))).toBe("attention")
+    expect(publicationState(run("NEEDS_AI_CONFIRMATION"))).toBe("attention")
+    expect(publicationState(run("SECURITY_REJECTED"))).toBe("attention")
+    expect(publicationState(run("FAILED"))).toBe("attention")
+  })
+
   it("closes progress before running follow-up work for every server terminal status", async () => {
     const statuses = ["PUBLISHED", "UNCHANGED", "NEEDS_AUTHOR_FIX", "SECURITY_REJECTED"] as const
     for (const status of statuses) {

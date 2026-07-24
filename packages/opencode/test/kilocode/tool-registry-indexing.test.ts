@@ -55,6 +55,7 @@ describe("kilocode tool registry indexing", () => {
             expect(ids).toContain("suggest")
             expect(ids).toContain("validate_mermaid_diagram")
             expect(ids).toContain("render_mermaid_diagram")
+            expect(ids).toContain("render_plantuml_diagram")
             expect(ids).toContain("save_mermaid_artifact")
             expect(ids).toContain("insert_mermaid_into_word")
             expect(avail).not.toHaveBeenCalled()
@@ -183,7 +184,7 @@ describe("kilocode tool registry indexing", () => {
     ),
   )
 
-  it.live("includes indexing tool hints in glob and grep descriptions when indexing is ready", () =>
+  it.live("keeps indexing tools available without CodeGraph routing when indexing is ready", () =>
     provideTmpdirInstance(
       () =>
         Effect.gen(function* () {
@@ -203,10 +204,10 @@ describe("kilocode tool registry indexing", () => {
             expect(ids).toContain("codebase_analysis")
             expect(ids).toContain("semantic_search")
             expect(ids).toContain("document_search")
-            expect(glob).toContain("codebase_analysis")
+            expect(glob).not.toContain("codebase_analysis")
             expect(glob).toContain("semantic_search")
             expect(glob).toContain("document_search")
-            expect(grep).toContain("codebase_analysis")
+            expect(grep).not.toContain("codebase_analysis")
             expect(grep).toContain("semantic_search")
             expect(grep).toContain("document_search")
           } finally {
@@ -664,6 +665,30 @@ describe("kilocode tool registry indexing", () => {
     expect(result.document?.id).toBe("document_search")
   })
 
+  test("keeps public exact-search descriptions free of CodeGraph routing", () => {
+    const def = (id: string): Tool.Def => ({
+      id,
+      description: id,
+      parameters: Schema.String,
+      execute: () => Effect.succeed({ title: id, output: id, metadata: {} }),
+    })
+    const tools = [def("glob"), def("grep"), def("read")]
+    const result = KiloToolRegistry.describe(
+      tools,
+      {
+        analysis: def("codebase_analysis"),
+        semantic: def("semantic_search"),
+        document: def("document_search"),
+      },
+      true,
+    )
+
+    expect(result.find((tool) => tool.id === "glob")?.description).not.toContain("codebase_analysis")
+    expect(result.find((tool) => tool.id === "grep")?.description).not.toContain("codebase_analysis")
+    expect(result.find((tool) => tool.id === "glob")?.description).toContain("semantic_search")
+    expect(result.find((tool) => tool.id === "read")?.description).toBe("read")
+  })
+
   test("resolves internal retrieval visibility from fresh effective config on each model step", async () => {
     const def = (id: string): Tool.Def => ({
       id,
@@ -711,7 +736,11 @@ describe("kilocode tool registry indexing", () => {
       "semantic_search",
       "document_search",
     ])
-    expect(enabled.find((tool) => tool.id === "glob")?.description).toContain("use `codebase_analysis` first")
+    expect(enabled.find((tool) => tool.id === "glob")?.description).not.toContain("codebase_analysis")
+    expect(enabled.find((tool) => tool.id === "grep")?.description).not.toContain("codebase_analysis")
+    expect(enabled.find((tool) => tool.id === "glob")?.description).toContain(
+      "Use `Grep` for exact identifiers or text",
+    )
     expect(enabled.find((tool) => tool.id === "grep")?.description).toContain("do not repeatedly retry")
 
     state.cfg = {

@@ -27,6 +27,7 @@ import {
 import { Identity } from "@kilocode/kilo-telemetry"
 import { KiloSession } from "@/kilocode/session"
 import { stripInternalOptions } from "@/kilocode/agent/options"
+import { KilocodeSystemPrompt } from "@/kilocode/system-prompt"
 // kilocode_change end
 
 type PrepareInput = {
@@ -72,7 +73,13 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       // kilocode_change start - soul defines core identity and personality
       ...(isOpenaiOauth ? [] : [SystemPrompt.soul()]),
       // kilocode_change end
-      ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
+      // kilocode_change start - brand only built-in prompts for the active product profile
+      ...KilocodeSystemPrompt.provider({
+        custom: input.agent.prompt,
+        defaults: SystemPrompt.provider(input.model),
+        append: KilocodeSystemPrompt.appends(input.agent),
+      }),
+      // kilocode_change end
       ...input.system,
       ...(input.user.system ? [input.user.system] : []),
     ]
@@ -116,10 +123,10 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     delete options.include
   }
   if (isOpenaiOauth) {
-  // kilocode_change start - prepend soul to instructions
-  options.instructions = SystemPrompt.soul() + "\n" + system.join("\n")
-  // kilocode_change end
-}
+    // kilocode_change start - prepend soul to instructions
+    options.instructions = SystemPrompt.soul() + "\n" + system.join("\n")
+    // kilocode_change end
+  }
 
   const messages =
     isOpenaiOauth || input.isWorkflow

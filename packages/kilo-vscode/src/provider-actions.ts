@@ -51,6 +51,37 @@ function normalizeCustomProviderModelIDs<T extends { models: Record<string, unkn
   return { ...config, models }
 }
 
+function resolveActivation<T extends { models: Record<string, unknown> }>(
+  providerID: string,
+  config: T,
+  modelID?: string,
+) {
+  const value = normalizeCustomProviderModelIDs(providerID, config)
+  const model = modelID?.trim()
+  if (model && !value.models[model]) {
+    return { error: "The model selected for activation is not part of this provider" }
+  }
+  return { value, model }
+}
+
+async function activateModel(
+  ctx: ActionContext,
+  operation: string,
+  providerID: string,
+  modelID: string | undefined,
+  fallback: unknown,
+) {
+  if (!modelID) return fallback
+  return (
+    (
+      await ctx.client.global.config.update(
+        { config: { model: `${providerID}/${modelID}` } },
+        { throwOnError: true, headers: MemoryDebug.deferredHeader(operation) },
+      )
+    ).data ?? fallback
+  )
+}
+
 function same(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (Array.isArray(a) || Array.isArray(b)) {
@@ -453,6 +484,7 @@ export async function saveCustomProvider(
   apiKeyChanged: boolean,
   cachedConfigMessage: unknown,
   setCachedConfig: (msg: unknown) => void,
+  activateModelID?: string,
 ) {
   const id = validateID(ctx, requestId, providerID, "connect")
   if (!id) return
@@ -462,6 +494,13 @@ export async function saveCustomProvider(
     postError(ctx, requestId, providerID, "connect", sanitized.error)
     return
   }
+
+  const activation = resolveActivation(id, sanitized.value, activateModelID)
+  if (activation.error || !activation.value) {
+    postError(ctx, requestId, providerID, "connect", activation.error ?? "Invalid model activation")
+    return
+  }
+  const normalized = activation.value
 
   const operation = ctx.operationId ?? MemoryDebug.operation("custom-provider", requestId)
   void MemoryDebug.append({
@@ -475,7 +514,6 @@ export async function saveCustomProvider(
     const disabled = globalConfig.disabled_providers ?? []
     const nextDisabled = disabled.filter((item: string) => item !== id)
     const existing = (globalConfig.provider as Record<string, unknown> | undefined)?.[id]
-    const normalized = normalizeCustomProviderModelIDs(id, sanitized.value)
     const patch = withCustomProviderDeletions(existing, normalized)
     const { data: updated } = await ctx.client.global.config.update(
       {
@@ -487,7 +525,7 @@ export async function saveCustomProvider(
       { throwOnError: true, headers: MemoryDebug.deferredHeader(operation) },
     )
 
-    const refresh = async () => {
+    const refresh = async (global: unknown) => {
       void MemoryDebug.append({
         event: "provider.custom.finalize.begin",
         operationId: operation,
@@ -495,10 +533,10 @@ export async function saveCustomProvider(
       })
       await ctx.disposeGlobal(`custom provider save (${id})`)
       const merged = await ctx.client.config.get({ directory: ctx.workspaceDir }, { throwOnError: true })
-      const config = merged.data ?? updated
-      const msg = { type: "configLoaded", config, globalConfig: updated, features: configFeatures(config) }
+      const config = merged.data ?? global
+      const msg = { type: "configLoaded", config, globalConfig: global, features: configFeatures(config) }
       setCachedConfig(msg)
-      ctx.postMessage({ type: "configUpdated", config, globalConfig: updated, features: configFeatures(config) })
+      ctx.postMessage({ type: "configUpdated", config, globalConfig: global, features: configFeatures(config) })
       await ctx.fetchAndSendProviders()
       void MemoryDebug.append({
         event: "provider.custom.finalize.end",
@@ -523,7 +561,7 @@ export async function saveCustomProvider(
         )
       }
     } catch (error) {
-      await refresh()
+      await refresh(updated)
       void MemoryDebug.append({
         event: "provider.custom.auth.failed",
         operationId: operation,
@@ -533,7 +571,12 @@ export async function saveCustomProvider(
       return
     }
 
-    await refresh()
+    const active = await activateModel(ctx, operation, id, activation.model, updated).catch(async (error) => {
+      await refresh(updated)
+      throw error
+    })
+
+    await refresh(active)
     void MemoryDebug.append({
       event: "provider.custom.save.end",
       operationId: operation,

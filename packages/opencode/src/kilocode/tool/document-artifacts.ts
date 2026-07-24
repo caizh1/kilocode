@@ -8,6 +8,7 @@ import {
   DEFAULT_ARTIFACT_ROOT,
   type ArtifactQualityStatus,
 } from "@/kilocode/documents/artifacts"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard"
 
 const QualityStatus = Schema.Union([
   Schema.Literal("ok"),
@@ -117,6 +118,14 @@ export const DeclareArtifactTool = Tool.define(
       ctx: Tool.Context,
     ): Effect.Effect<Tool.ExecuteResult<ArtifactMeta>> =>
       Effect.gen(function* () {
+        const root = WorkflowGuard.root(ctx.sessionID, ctx.messages)
+        if (root) {
+          return artifactFailure(
+            "Artifact Declaration Blocked",
+            `The active source-backed-detail-design workflow already owns its one canonical artifact root: ${root}. Continue using that root; do not declare a second artifact.`,
+            { artifactDir: root },
+          )
+        }
         yield* ctx.ask({
           permission: "declare_artifact",
           patterns: [params.title ?? params.kind],
@@ -132,21 +141,24 @@ export const DeclareArtifactTool = Tool.define(
                 qualityStatus: params.qualityStatus as ArtifactQualityStatus | undefined,
               }),
             ),
-          (result) => ({
-            title: "Artifact Declared",
-            metadata: {
-              artifactDir: result.artifactDir,
-              manifestPath: result.manifestPath,
-              qualityStatus: result.manifest.quality.status,
-            },
-            output: [
-              `Declared ${result.manifest.kind} artifact: ${result.manifest.title}`,
-              `Artifact directory: ${result.artifactDir}`,
-              `Manifest: ${result.manifestPath}`,
-              `Quality: ${result.manifest.quality.status}`,
-              result.manifest.warnings.length ? `Warnings: ${result.manifest.warnings.join("; ")}` : "Warnings: none",
-            ].join("\n"),
-          }),
+          (result) => {
+            WorkflowGuard.declare(ctx.sessionID, ctx.messages, result.artifactDir)
+            return {
+              title: "Artifact Declared",
+              metadata: {
+                artifactDir: result.artifactDir,
+                manifestPath: result.manifestPath,
+                qualityStatus: result.manifest.quality.status,
+              },
+              output: [
+                `Declared ${result.manifest.kind} artifact: ${result.manifest.title}`,
+                `Artifact directory: ${result.artifactDir}`,
+                `Manifest: ${result.manifestPath}`,
+                `Quality: ${result.manifest.quality.status}`,
+                result.manifest.warnings.length ? `Warnings: ${result.manifest.warnings.join("; ")}` : "Warnings: none",
+              ].join("\n"),
+            }
+          },
           "Artifact Declaration Failed",
           { artifactDir: params.artifactDir },
         )

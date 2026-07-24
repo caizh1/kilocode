@@ -44,6 +44,8 @@ export const MARKET_ERROR_CODES = [
   "VALIDATION_FAILED",
   "SECURITY_REJECTED",
   "OWNERSHIP_REQUIRED",
+  "EXTENSION_OWNER_UNASSIGNED",
+  "EXTENSION_VERSION_CONFLICT",
   "IDEMPOTENCY_CONFLICT",
   "INTENT_EXPIRED",
   "INTENT_REPLAYED",
@@ -290,6 +292,7 @@ export const ExtensionArtifactSchema = Type.Object(
     downloads: Type.Integer({ minimum: 0 }),
     publishedAt: dt,
     status: literals(["published", "removed"] as const),
+    releaseNotesAvailable: Type.Boolean(),
     downloadUrl: Type.String({ minLength: 1 }),
   },
   { $id: "ExtensionArtifact", additionalProperties: false },
@@ -506,12 +509,38 @@ export const AnalyticsSeriesSchema = Type.Object(
 )
 export type AnalyticsSeries = Static<typeof AnalyticsSeriesSchema>
 
+export const ExtensionPublicationConflictSchema = Type.Object(
+  {
+    extensionId,
+    version: semver,
+    target: Type.String({ minLength: 1, maxLength: 64 }),
+    existing: Type.Object(
+      {
+        id: Type.String({ minLength: 1, maxLength: 128 }),
+        filename: Type.String({ minLength: 6, maxLength: 180 }),
+        sha256: sha,
+        publishedAt: dt,
+        source: literals(["system", "web"] as const),
+        canDelete: Type.Boolean(),
+      },
+      { additionalProperties: false },
+    ),
+    incoming: Type.Object(
+      { filename: Type.String({ minLength: 6, maxLength: 180 }), sha256: sha },
+      { additionalProperties: false },
+    ),
+  },
+  { $id: "ExtensionPublicationConflict", additionalProperties: false },
+)
+export type ExtensionPublicationConflict = Static<typeof ExtensionPublicationConflictSchema>
+
 export const ApiErrorSchema = Type.Object(
   {
     ok: Type.Literal(false),
     code: MarketErrorCodeSchema,
     message: Type.String({ minLength: 1 }),
     issues: Type.Optional(Type.Array(Type.Ref(ValidationIssueSchema))),
+    conflict: Type.Optional(Type.Ref(ExtensionPublicationConflictSchema)),
   },
   { $id: "ApiError", additionalProperties: false },
 )
@@ -527,6 +556,7 @@ export const SCHEMAS = {
   ExtensionArtifact: ExtensionArtifactSchema,
   ExtensionDetail: ExtensionDetailSchema,
   ExtensionPublicationRun: ExtensionPublicationRunSchema,
+  ExtensionPublicationConflict: ExtensionPublicationConflictSchema,
   ExtensionReview: ExtensionReviewSchema,
   ExtensionSummary: ExtensionSummarySchema,
   InstallationState: InstallationStateSchema,

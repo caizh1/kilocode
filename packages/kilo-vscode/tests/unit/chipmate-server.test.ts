@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import * as vscode from "vscode"
-import { promptChipmateServerReload, resolveChipmateServer, testChipmateServer } from "../../src/services/chipmate-server"
+import {
+  promptChipmateServerReload,
+  resolveChipmateServer,
+  testChipmateServer,
+} from "../../src/services/chipmate-server"
 import { CHIPMATE_SERVER_DEFAULT, deriveChipmateServerEndpoints } from "../../src/shared/chipmate-server"
 import { marketplaceApiOptions } from "../../src/services/marketplace"
-import { mermaidEndpoint, renderEnv } from "../../src/services/cli-backend/server-manager"
+import { mermaidEndpoint, plantumlEndpoint, renderEnv } from "../../src/services/cli-backend/server-manager"
+import { renderPlantUml } from "../../src/kilo-provider/render-plantuml"
 
 type Scope = { globalValue?: unknown; workspaceValue?: unknown; defaultValue?: unknown }
 type State = Map<string, Scope>
@@ -92,8 +97,10 @@ describe("ChipMate Server configuration", () => {
   it("derives Marketplace and renderer runtime endpoints from the unified origin", () => {
     const word = process.env.KILO_WORD_RENDER_ENDPOINT
     const mermaid = process.env.KILO_MERMAID_RENDER_ENDPOINT
+    const plantuml = process.env.KILO_PLANTUML_RENDER_ENDPOINT
     delete process.env.KILO_WORD_RENDER_ENDPOINT
     delete process.env.KILO_MERMAID_RENDER_ENDPOINT
+    delete process.env.KILO_PLANTUML_RENDER_ENDPOINT
     set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "https://runtime.test:7443")
     try {
       expect(marketplaceApiOptions()).toMatchObject({ baseUrl: "https://runtime.test:7443/marketplace" })
@@ -103,20 +110,25 @@ describe("ChipMate Server configuration", () => {
       expect(renderEnv()).toEqual({
         KILO_WORD_RENDER_ENDPOINT: "https://runtime.test:7443/render/word",
         KILO_MERMAID_RENDER_ENDPOINT: "https://runtime.test:7443/render/mermaid",
+        KILO_PLANTUML_RENDER_ENDPOINT: "https://runtime.test:7443/render/plantuml",
       })
     } finally {
       if (word === undefined) delete process.env.KILO_WORD_RENDER_ENDPOINT
       else process.env.KILO_WORD_RENDER_ENDPOINT = word
       if (mermaid === undefined) delete process.env.KILO_MERMAID_RENDER_ENDPOINT
       else process.env.KILO_MERMAID_RENDER_ENDPOINT = mermaid
+      if (plantuml === undefined) delete process.env.KILO_PLANTUML_RENDER_ENDPOINT
+      else process.env.KILO_PLANTUML_RENDER_ENDPOINT = plantuml
     }
   })
 
   it("keeps explicit renderer environment overrides", () => {
     const word = process.env.KILO_WORD_RENDER_ENDPOINT
     const mermaid = process.env.KILO_MERMAID_RENDER_ENDPOINT
+    const plantuml = process.env.KILO_PLANTUML_RENDER_ENDPOINT
     process.env.KILO_WORD_RENDER_ENDPOINT = "https://override.test:7443/word"
     process.env.KILO_MERMAID_RENDER_ENDPOINT = "https://override.test:7443/mermaid"
+    process.env.KILO_PLANTUML_RENDER_ENDPOINT = "https://override.test:7443/plantuml"
     set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "https://runtime.test:7443")
     try {
       expect(renderEnv()).toEqual({})
@@ -125,6 +137,8 @@ describe("ChipMate Server configuration", () => {
       else process.env.KILO_WORD_RENDER_ENDPOINT = word
       if (mermaid === undefined) delete process.env.KILO_MERMAID_RENDER_ENDPOINT
       else process.env.KILO_MERMAID_RENDER_ENDPOINT = mermaid
+      if (plantuml === undefined) delete process.env.KILO_PLANTUML_RENDER_ENDPOINT
+      else process.env.KILO_PLANTUML_RENDER_ENDPOINT = plantuml
     }
   })
 
@@ -139,6 +153,19 @@ describe("ChipMate Server configuration", () => {
       endpoint: "https://legacy.test:6001/render/mermaid",
     })
     expect(mermaidEndpoint({}, "")).toEqual({ state: "absent" })
+  })
+
+  it("reports injected, inherited, and absent PlantUML endpoint states without exposing credentials", () => {
+    expect(
+      plantumlEndpoint({
+        KILO_PLANTUML_RENDER_ENDPOINT: "https://user:secret@render.test:7443/render/plantuml?token=secret#hash",
+      }),
+    ).toEqual({ state: "injected", endpoint: "https://render.test:7443/render/plantuml" })
+    expect(plantumlEndpoint({}, "https://user:secret@legacy.test:6001/render/plantuml?token=secret#hash")).toEqual({
+      state: "inherited",
+      endpoint: "https://legacy.test:6001/render/plantuml",
+    })
+    expect(plantumlEndpoint({}, "")).toEqual({ state: "absent" })
   })
 
   it("ignores legacy per-service settings", () => {
@@ -178,6 +205,79 @@ describe("ChipMate Server configuration", () => {
       ;(vscode.commands as unknown as { executeCommand: typeof execute }).executeCommand = execute
     }
   })
+
+  it("posts the server's original PlantUML PNG bytes back to the webview", async () => {
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "https://runtime.test:7443")
+    const requests: Array<{ url: string; body: unknown }> = []
+    const replies: unknown[] = []
+    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(input), body: JSON.parse(String(init?.body)) })
+      return Response.json({
+        ok: true,
+        png: { contentType: "image/png", base64: "iVBORw0KGgo=" },
+        width: 320,
+        height: 180,
+        issues: [],
+        metadata: { verified: true },
+      })
+    }) as typeof fetch
+
+    await renderPlantUml(
+      { requestId: "uml-1", source: "@startuml\nA -> B\n@enduml" },
+      (reply) => replies.push(reply),
+      fetcher,
+    )
+
+    expect(requests).toEqual([
+      {
+        url: "https://runtime.test:7443/render/plantuml",
+        body: {
+          source: "@startuml\nA -> B\n@enduml",
+          filename: "diagram.puml",
+          timeoutMs: 60_000,
+        },
+      },
+    ])
+    expect(replies).toEqual([
+      {
+        type: "plantUmlRendered",
+        requestId: "uml-1",
+        ok: true,
+        dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+        width: 320,
+        height: 180,
+        issues: [],
+      },
+    ])
+  })
+
+  it("preserves structured PlantUML server diagnostics", async () => {
+    set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "https://runtime.test:7443")
+    const replies: unknown[] = []
+    const fetcher = (async () =>
+      Response.json({
+        ok: false,
+        issues: [
+          { severity: "error", code: "plantuml-syntax-error", message: "Syntax error on line 3" },
+          { severity: "warning", code: "plantuml-source-warning", message: "Check the participant name" },
+        ],
+      })) as typeof fetch
+
+    await renderPlantUml(
+      { requestId: "uml-error", source: "@startuml\nBroken ->\n@enduml" },
+      (reply) => replies.push(reply),
+      fetcher,
+    )
+
+    expect(replies).toEqual([
+      {
+        type: "plantUmlRendered",
+        requestId: "uml-error",
+        ok: false,
+        issues: ["Syntax error on line 3", "Check the participant name"],
+      },
+    ])
+  })
 })
 
 describe("ChipMate Server health test", () => {
@@ -204,6 +304,9 @@ describe("ChipMate Server health test", () => {
         soffice: "1",
         pdftoppm: "1",
         pdfinfo: "1",
+        java: "17",
+        plantuml: "1.2026.6",
+        graphviz: "12",
       },
       capabilities: { skillMarket: { catalogExists: true, skillsCount: 2, warnings: [] } },
       ...patch,
@@ -217,7 +320,16 @@ describe("ChipMate Server health test", () => {
 
   it("reports a capability warning without treating the server as unreachable", async () => {
     const body = payload({
-      tools: { chromium: "1", mermaid: "1", soffice: "", pdftoppm: "1", pdfinfo: "1" },
+      tools: {
+        chromium: "1",
+        mermaid: "1",
+        soffice: "",
+        pdftoppm: "1",
+        pdfinfo: "1",
+        java: "17",
+        plantuml: "1.2026.6",
+        graphviz: "12",
+      },
       capabilities: { skillMarket: { catalogExists: false, skillsCount: 0, warnings: ["catalog missing"] } },
     })
     const base = serve(() => Response.json(body))

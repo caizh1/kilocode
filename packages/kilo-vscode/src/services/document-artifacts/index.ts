@@ -39,19 +39,16 @@ export function registerDocumentArtifactCommands(context: vscode.ExtensionContex
       if (!uri) return
       await vscode.commands.executeCommand("vscode.open", uri)
     }),
-    vscode.commands.registerCommand(
-      "chipmate.v2.documents.openArtifactFolder",
-      async (input?: string | vscode.Uri) => {
-        if (!(await ensureDocumentToolsEnabled())) return
-        const uri = await resolveInput(input, "Artifact file or folder path")
-        if (!uri) return
-        const stat = await fs.stat(uri.fsPath)
-        await vscode.commands.executeCommand(
-          "revealFileInOS",
-          stat.isDirectory() ? uri : vscode.Uri.file(path.dirname(uri.fsPath)),
-        )
-      },
-    ),
+    vscode.commands.registerCommand("chipmate.v2.documents.openArtifactFolder", async (input?: string | vscode.Uri) => {
+      if (!(await ensureDocumentToolsEnabled())) return
+      const uri = await resolveInput(input, "Artifact file or folder path")
+      if (!uri) return
+      const stat = await fs.stat(uri.fsPath)
+      await vscode.commands.executeCommand(
+        "revealFileInOS",
+        stat.isDirectory() ? uri : vscode.Uri.file(path.dirname(uri.fsPath)),
+      )
+    }),
     vscode.commands.registerCommand("chipmate.v2.documents.exportDiagnostics", async () => {
       if (!(await ensureDocumentToolsEnabled())) return
       const root = artifactRoot()
@@ -229,7 +226,7 @@ async function ensureDocumentToolsEnabled(): Promise<boolean> {
   const enabled = vscode.workspace.getConfiguration().get<boolean>(DOCUMENT_TOOLS_ENABLED_CONFIG, true)
   if (enabled) return true
   await vscode.window.showInformationMessage(
-    "Kilo document artifact commands are disabled by chipmate.v2.documents.tools.enabled.",
+    "ChipMate document artifact commands are disabled by chipmate.v2.documents.tools.enabled.",
   )
   return false
 }

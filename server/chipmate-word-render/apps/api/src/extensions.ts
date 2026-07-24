@@ -32,6 +32,8 @@ interface Options {
   minimumFreeBytes?: number
   uploadIdleMs?: number
   uploadMaxMs?: number
+  ownerBindings?: Record<string, string>
+  packageRoot?: string
 }
 
 interface Query {
@@ -51,9 +53,11 @@ export class ExtensionRuntime {
   readonly tmp: string
   private readonly stable = new Map<string, { signature: string; count: number }>()
   private readonly imported = new Map<string, string>()
+  private readonly legacy = new Map<string, { signature: string; valid: boolean }>()
   private readonly warnings = new Map<string, string>()
   private timer?: NodeJS.Timeout
   private scanning = false
+  private syncing?: Promise<void>
 
   constructor(
     private readonly db: MarketDb,
@@ -61,6 +65,8 @@ export class ExtensionRuntime {
     private readonly scanMs = 5_000,
     root = "/data/skill-market/extensions",
     private readonly gate?: UploadGate,
+    private readonly bindings: Record<string, string> = {},
+    private readonly packages = process.env.PACKAGE_ROOT?.trim() || "/packages",
   ) {
     this.root = root
     this.drop = join(root, "drop")
@@ -79,6 +85,70 @@ export class ExtensionRuntime {
     await this.scan()
     this.timer = setInterval(() => void this.scan(), this.scanMs)
     this.timer.unref()
+  }
+
+  private async bindOwners(): Promise<void> {
+    for (const [id, value] of Object.entries(this.bindings)) {
+      const name = value.trim()
+      if (!name) continue
+      const user = await this.db.identity({
+        id: `market-${createHash("sha256").update(name.toLocaleLowerCase()).digest("hex").slice(0, 40)}`,
+        displayName: name,
+      })
+      try {
+        await this.db.bindExtensionOwner(id.toLocaleLowerCase(), user.id, new Date().toISOString())
+      } catch (err) {
+        this.warnings.set(`owner:${id}`, message(err))
+      }
+    }
+  }
+
+  async syncLegacy(): Promise<void> {
+    if (this.syncing) return this.syncing
+    const task = this.loadLegacy()
+    this.syncing = task
+    try {
+      await task
+    } finally {
+      if (this.syncing === task) delete this.syncing
+    }
+  }
+
+  private async loadLegacy(): Promise<void> {
+    const names = (await readdir(this.packages, { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") return []
+      throw err
+    }))
+      .filter((entry) => entry.isFile() && entry.name.toLocaleLowerCase().endsWith(".vsix"))
+      .map((entry) => entry.name)
+    const keys = new Set(names.map((name) => `packages:${name}`))
+    const current = await this.db.extensionSystemSources()
+    const active = new Set(current.map((item) => item.key))
+    for (const name of this.legacy.keys()) {
+      if (!keys.has(`packages:${name}`)) this.legacy.delete(name)
+    }
+    for (const item of current) {
+      if (!item.key.startsWith("packages:") || keys.has(item.key)) continue
+      await this.db.unlistExtensionSource(item.key, new Date().toISOString())
+    }
+    for (const name of names) {
+      const path = join(this.packages, name)
+      const key = `packages:${name}`
+      try {
+        const info = await stat(path)
+        const signature = `${info.size}:${info.mtimeMs}`
+        const cached = this.legacy.get(name)
+        if (cached?.signature === signature && (!cached.valid || active.has(key))) continue
+        await this.publish(path, await hash(path), info.size, safeVsixFilename(name), key, "system")
+        this.legacy.set(name, { signature, valid: true })
+        this.warnings.delete(key)
+      } catch (err) {
+        await this.db.unlistExtensionSource(key, new Date().toISOString())
+        const info = await stat(path).catch(() => undefined)
+        if (info) this.legacy.set(name, { signature: `${info.size}:${info.mtimeMs}`, valid: false })
+        this.warnings.set(key, message(err))
+      }
+    }
   }
 
   stop(): void {
@@ -102,6 +172,7 @@ export class ExtensionRuntime {
       const keys = new Set(names.map((name) => `drop:${name}`))
       const current = await this.db.extensionSystemSources()
       for (const item of current) {
+        if (!item.key.startsWith("drop:")) continue
         if (keys.has(item.key)) continue
         const removed = await this.db.unlistExtensionSource(item.key, new Date().toISOString())
         if (removed) this.events.publish("extension.catalog.changed", { extensionId: removed.extensionId })
@@ -135,6 +206,10 @@ export class ExtensionRuntime {
     sourceKind: "system" | "web",
     uploader?: { id: string; name: string },
   ): Promise<{ artifact: ExtensionArtifactItem; duplicate: boolean }> {
+    if (sourceKind === "web") {
+      await this.syncLegacy()
+      await this.bindOwners()
+    }
     const manifest = await inspectVsix(file)
     const current = await this.db.extensionArtifactBySha(sha256)
     if (current) {
@@ -144,7 +219,8 @@ export class ExtensionRuntime {
         size,
         path: current.path,
         filename,
-        uploaderName: current.uploaderName,
+        ...(uploader ? { uploaderId: uploader.id } : {}),
+        uploaderName: uploader?.name ?? current.uploaderName,
         sourceKey,
         sourceKind,
         manifest,
@@ -159,19 +235,24 @@ export class ExtensionRuntime {
       await mkdir(join(this.artifacts, manifest.id), { recursive: true })
       await rename(file, path)
     }
-    return this.db.publishExtension({
-      id,
-      sha256,
-      size,
-      path,
-      filename,
-      ...(uploader ? { uploaderId: uploader.id } : {}),
-      uploaderName: uploader?.name ?? "系统导入",
-      sourceKey,
-      sourceKind,
-      manifest,
-      publishedAt: new Date().toISOString(),
-    })
+    try {
+      return await this.db.publishExtension({
+        id,
+        sha256,
+        size,
+        path,
+        filename,
+        ...(uploader ? { uploaderId: uploader.id } : {}),
+        uploaderName: uploader?.name ?? "系统导入",
+        sourceKey,
+        sourceKind,
+        manifest,
+        publishedAt: new Date().toISOString(),
+      })
+    } catch (err) {
+      if (sourceKind === "web") await rm(path, { force: true })
+      throw err
+    }
   }
 
   private async inspect(name: string): Promise<void> {
@@ -213,7 +294,15 @@ export function registerExtensions(app: FastifyInstance, db: MarketDb, opts: Opt
     active: opts.activeUploads ?? UPLOAD_MAX_ACTIVE,
     free: opts.minimumFreeBytes ?? UPLOAD_MIN_FREE_BYTES,
   })
-  const runtime = new ExtensionRuntime(db, opts.events, opts.scanMs, opts.root, gate)
+  const runtime = new ExtensionRuntime(
+    db,
+    opts.events,
+    opts.scanMs,
+    opts.root,
+    gate,
+    opts.ownerBindings,
+    opts.packageRoot,
+  )
   app.addContentTypeParser("application/vnd.microsoft.vscode.vsix", (_req, payload, done) => done(null, payload))
 
   app.get("/api/v1/extensions", async (req, reply) => {
@@ -305,6 +394,16 @@ export function registerExtensions(app: FastifyInstance, db: MarketDb, opts: Opt
           })
           opts.events.publish("extension.publication.changed", { runId, status: "VALIDATING", stage: "validating" })
           const manifest = await inspectVsix(target)
+          const peers = await db.extensionUpdateArtifacts(manifest.id)
+          const notes = peers
+            .filter((item) => item.version === manifest.version)
+            .map((item) => item.manifest.releaseNotes?.trim())
+            .filter((item): item is string => Boolean(item))
+          if (manifest.releaseNotes && notes.some((item) => item !== manifest.releaseNotes)) {
+            throw new Error(
+              "EXTENSION_RELEASE_NOTES_CONFLICT: release notes must match every target for the same extension version",
+            )
+          }
           await db.extensionPublication({
             id: runId,
             ownerId: principal.user.id,
@@ -369,6 +468,34 @@ export function registerExtensions(app: FastifyInstance, db: MarketDb, opts: Opt
           opts.events.publish("extension.publication.changed", { runId, status, stage: "complete", error: message(err) })
           if (cancelled) return reply.code(499).send({ ok: false, code: "UPLOAD_CANCELLED", message: "Upload cancelled." })
           if (timedout) return problem(reply, 408, "UPLOAD_TIMEOUT", message(err))
+          const conflict = publicationConflict(err)
+          if (conflict) {
+            return reply.code(409).send({
+              ok: false,
+              code: "EXTENSION_VERSION_CONFLICT",
+              message: "同一扩展版本和平台已存在 SHA-256 不同的构建，未保存本次上传。",
+              conflict,
+            })
+          }
+          if (message(err).startsWith("EXTENSION_RELEASE_NOTES_CONFLICT:")) {
+            return problem(
+              reply,
+              409,
+              "EXTENSION_RELEASE_NOTES_CONFLICT",
+              "同一扩展版本的不同平台包必须包含完全一致的更新说明。",
+            )
+          }
+          if (message(err).includes("EXTENSION_OWNER_UNASSIGNED")) {
+            return problem(
+              reply,
+              409,
+              "EXTENSION_OWNER_UNASSIGNED",
+              "This system extension has no publisher owner. Apply the one-time server owner binding before uploading.",
+            )
+          }
+          if (message(err).includes("OWNERSHIP_REQUIRED")) {
+            return problem(reply, 403, "OWNERSHIP_REQUIRED", "Only the original extension publisher can upload a new version.")
+          }
           const tooLarge = message(err).includes("512 MiB")
           return problem(reply, tooLarge ? 413 : 400, "VALIDATION_FAILED", message(err))
         }
@@ -500,7 +627,7 @@ export function registerExtensions(app: FastifyInstance, db: MarketDb, opts: Opt
       return reply.send(publicArtifact(item))
     } catch (err) {
       const value = message(err)
-      if (value.includes("OWNERSHIP_REQUIRED")) return problem(reply, 403, "OWNERSHIP_REQUIRED", "Only the uploader can delete this artifact.")
+      if (value.includes("OWNERSHIP_REQUIRED")) return problem(reply, 403, "OWNERSHIP_REQUIRED", "Only the original extension publisher can delete this artifact.")
       if (value.includes("NOT_FOUND")) return problem(reply, 404, "NOT_FOUND", "Artifact not found.")
       return sendIdentityError(reply, err)
     }
@@ -609,6 +736,19 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+function publicationConflict(err: unknown): Record<string, unknown> | undefined {
+  const value = message(err)
+  const raw = value.startsWith("EXTENSION_VERSION_CONFLICT:") ? value.slice("EXTENSION_VERSION_CONFLICT:".length) : ""
+  if (!raw) return undefined
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined
+  } catch (error) {
+    console.warn("Invalid extension conflict payload", error)
+    return undefined
+  }
+}
+
 function publicArtifact(item: ExtensionArtifactItem) {
   return {
     id: item.id,
@@ -628,6 +768,7 @@ function publicArtifact(item: ExtensionArtifactItem) {
     downloads: item.downloads,
     publishedAt: item.publishedAt,
     status: item.status,
+    releaseNotesAvailable: Boolean(item.manifest.releaseNotes?.trim()),
     downloadUrl: `/api/v1/extensions/${encodeURIComponent(item.extensionId)}/artifacts/${encodeURIComponent(item.id)}/download`,
   }
 }

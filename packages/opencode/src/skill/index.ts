@@ -24,6 +24,7 @@ import { ProductProfile } from "../kilocode/product-profile" // kilocode_change
 import { Git } from "@/git" // kilocode_change
 import { isRecord } from "@/util/record"
 import { Flag } from "@opencode-ai/core/flag/flag" // kilocode_change
+import { validateInstalledSkill } from "@/kilocode/skill/identity" // kilocode_change
 
 const log = Log.create({ service: "skill" })
 const CLAUDE_EXTERNAL_DIR = ".claude"
@@ -145,6 +146,27 @@ const add = Effect.fnUntraced(function* (state: State, match: Match, events: Eve
 
   if (!isSkillFrontmatter(md.data)) return
 
+  // kilocode_change start - ChipMate uses one canonical identity across CLI and Marketplace
+  if (ProductProfile.chipmate) {
+    const identity = yield* Effect.tryPromise({
+      try: () => validateInstalledSkill(match.path, md.data.name),
+      catch: (err) => err,
+    }).pipe(
+      Effect.catch((err) => {
+        log.warn("invalid ChipMate skill identity", { skill: match.path, err })
+        return Effect.succeed(undefined)
+      }),
+    )
+    if (!identity?.valid) {
+      const message = identity?.message ?? `Failed to validate Skill identity: ${match.path}`
+      const { Session } = yield* Effect.promise(() => import("@/session/session"))
+      yield* events.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
+      log.warn("ignored invalid ChipMate skill", { skill: match.path, message })
+      return
+    }
+  }
+  // kilocode_change end
+
   if (state.skills[md.data.name]) {
     log.warn("duplicate skill name", {
       name: md.data.name,
@@ -213,6 +235,22 @@ const discoverSkills = Effect.fnUntraced(function* (
   const state: ScanState = { matches: new Map(), dirs: new Set() } // kilocode_change
   const projectRoot = worktree === "/" ? directory : worktree // kilocode_change - project substitution boundary
 
+  // kilocode_change start - ChipMate discovers only its fixed global and current-project Skill roots
+  if (ProductProfile.chipmate) {
+    const global = ProductProfile.config()!
+    yield* scan(state, global, "skills/*/SKILL.md", { scope: "global", trusted: true })
+    if (!Flag.KILO_DISABLE_PROJECT_CONFIG) {
+      const local = ProductProfile.project(projectRoot)
+      yield* scan(state, local, "skills/*/SKILL.md", {
+        scope: "project",
+        root: projectRoot,
+        sourceRoot: projectRoot,
+      })
+    }
+    return { matches: Array.from(state.matches.values()), dirs: Array.from(state.dirs) }
+  }
+  // kilocode_change end
+
   const externalDirs: string[] = []
   if (!disableExternalSkills) {
     if (!disableClaudeCodeSkills) externalDirs.push(CLAUDE_EXTERNAL_DIR)
@@ -245,8 +283,10 @@ const discoverSkills = Effect.fnUntraced(function* (
     }
   }
 
+  // kilocode_change start - include primary-checkout Kilo config roots for worktree sessions
+  const primary = new Set(yield* primaryPaths(directory, worktree, [...ProductProfile.dirs]))
   const configDirs = yield* config.directories()
-  const primary = new Set(yield* primaryPaths(directory, worktree, [...ProductProfile.dirs])) // kilocode_change
+  // kilocode_change end
   for (const dir of configDirs) {
     // kilocode_change start - global and explicit KILO_CONFIG_DIR skills are trusted; project and primary-checkout
     // skills remain confined to the active project boundary.

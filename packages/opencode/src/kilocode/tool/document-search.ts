@@ -17,8 +17,7 @@ const Parameters = Schema.Struct({
     description: "The document search query, expressed in natural language.",
   }),
   path: Schema.optional(Schema.String).annotate({
-    description:
-      "Limit search to a specific configured document subdirectory relative to the current workspace directory.",
+    description: "Limit search to a configured workspace subdirectory or an approved indexed external path.",
   }),
   maxResults: Schema.optional(Schema.Number).annotate({
     description: "Maximum number of document snippets to return.",
@@ -165,6 +164,7 @@ function fit(value: string, max: number): { text: string; truncated: boolean } {
 
 function normalizeSearchPath(input?: string): string | undefined {
   if (!input) return undefined
+  if (path.isAbsolute(input)) return path.normalize(input)
 
   const absolute = path.resolve(Instance.directory, input)
   const relative = path.relative(Instance.directory, absolute)

@@ -345,12 +345,12 @@ async function consolePath(context, base, id, metrics) {
       await item.page
         .locator('[data-slot="agent-console-mode"] button[data-value="shell"]')
         .click({ noWaitAfter: true })
-      const field = item.page.locator('[data-slot="agent-console-shell"] textarea')
+      const field = item.page.locator(".xterm-helper-textarea")
       await field.pressSequentially("printf CHIPMATE_LOW_END_OK")
       outputs.push(
         await measure(
           () => field.press("Enter"),
-          () => item.page.locator('[data-ui="low-end-console-output"]').getByText("CHIPMATE_LOW_END_OK").waitFor(),
+          () => item.page.locator(".xterm-screen").getByText("CHIPMATE_LOW_END_OK").waitFor(),
         ),
       )
     }

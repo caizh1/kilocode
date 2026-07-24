@@ -1,4 +1,5 @@
 import { discoverSkillCandidates } from "@chipmate/skill-spec/node"
+import { normalizeSkillId } from "@opencode-ai/core/kilocode/skill-identity"
 import { parse as parseYaml } from "yaml"
 import type { MarketplaceUploadPayload } from "./types"
 
@@ -34,7 +35,7 @@ export function buildMarketplaceBuiltinSkillUploadPayload(skill: MarketplaceBuil
   const content = skill.content
   if (!content.trim()) throw new Error("Built-in Skill content is empty")
   if (rendered(content)) {
-    throw new Error("内置 Skill 内容已被渲染为 HTML，无法上传；请更新 Kilo CLI 后重试。")
+    throw new Error("内置 Skill 内容已被渲染为 HTML，无法上传；请更新 ChipMate CLI 后重试。")
   }
 
   const bytes = Buffer.byteLength(content)
@@ -81,11 +82,7 @@ function firstMeaningfulLine(markdown: string): string | undefined {
 }
 
 function sanitizeId(value: string): string {
-  const id = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+  const id = normalizeSkillId(value)
   if (!id) throw new Error("Skill id is empty")
   return id
 }

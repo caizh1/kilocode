@@ -10,13 +10,13 @@ export const anacondaDesktopDict = {
   "provider.anaconda.status.unavailable": "Unavailable",
   "provider.anaconda.state.unsupported": "Anaconda Desktop is not supported on {{platform}}.",
   "provider.anaconda.state.notInstalled":
-    "Install Anaconda Desktop on this machine, then return here. Kilo does not run the installer for you.",
+    "Install Anaconda Desktop on this machine, then return here. ChipMate does not run the installer for you.",
   "provider.anaconda.state.notRunning": "Open Anaconda Desktop, finish setup and sign in, then choose Check again.",
   "provider.anaconda.state.invalidConfig":
     "Anaconda Desktop setup is incomplete. Open Desktop, finish setup, and restart it if needed.",
-  "provider.anaconda.state.signedOut": "Open Anaconda Desktop and sign in before connecting Kilo.",
+  "provider.anaconda.state.signedOut": "Open Anaconda Desktop and sign in before connecting ChipMate.",
   "provider.anaconda.state.unauthorized":
-    "Kilo could not access Anaconda Desktop. Open Desktop, sign in again, and restart it if needed.",
+    "ChipMate could not access Anaconda Desktop. Open Desktop, sign in again, and restart it if needed.",
   "provider.anaconda.state.unavailable":
     "Anaconda Desktop is not responding yet. Open it and wait for the application to finish starting.",
   "provider.anaconda.state.noModel":
@@ -28,7 +28,7 @@ export const anacondaDesktopDict = {
   "provider.anaconda.state.unhealthy":
     "The active inference server is not healthy yet. Check it in Anaconda Desktop and restart the server if needed.",
   "provider.anaconda.state.ready":
-    "Kilo found a healthy local text-generation server and can import its current connection settings.",
+    "ChipMate found a healthy local text-generation server and can import its current connection settings.",
   "provider.anaconda.server": "Active inference server",
   "provider.anaconda.context": "Context window",
   "provider.anaconda.contextValue": "{{count}} tokens",
@@ -45,7 +45,7 @@ export const anacondaDesktopDict = {
   "provider.anaconda.action.continue": "Continue anyway",
   "provider.anaconda.action.manage": "Manage / Refresh",
   "provider.anaconda.toast.refreshed.title": "Anaconda Desktop refreshed",
-  "provider.anaconda.toast.refreshed.description": "The active local server and models are up to date in Kilo.",
+  "provider.anaconda.toast.refreshed.description": "The active local server and models are up to date in ChipMate.",
   "settings.providers.note.anacondaDesktop": "Run a model served locally by Anaconda Desktop.",
   "settings.providers.tag.local": "Local",
 } as const
@@ -166,10 +166,10 @@ export const dict = {
   "agentRequirements.action.openMarketplace": "Open Marketplace",
   "agentRequirements.error.unknownAgent": "The selected agent could not be found.",
   "agentRequirements.error.malformedDeclaration": "This agent has an invalid requirement declaration.",
-  "agentRequirements.error.discoveryFailed": "Kilo could not check the available skills.",
-  "agentRequirements.error.mcpStatusFailed": "Kilo could not check MCP server status.",
+  "agentRequirements.error.discoveryFailed": "ChipMate could not check the available skills.",
+  "agentRequirements.error.mcpStatusFailed": "ChipMate could not check MCP server status.",
   "agentRequirements.error.scopeMismatch": "This agent requirement check is no longer active.",
-  "agentRequirements.error.requestFailed": "Kilo could not check the agent requirements.",
+  "agentRequirements.error.requestFailed": "ChipMate could not check the agent requirements.",
 
   "palette.search.placeholder": "Search files, commands, and sessions",
   "palette.empty": "No results found",
@@ -203,7 +203,7 @@ export const dict = {
   "provider.connect.status.waiting": "Waiting for authorization...",
   "provider.connect.status.failed": "Authorization failed: {{error}}",
   "provider.connect.apiKey.description":
-    "Enter your {{provider}} API key to connect your account and use {{provider}} models in Kilo.",
+    "Enter your {{provider}} API key to connect your account and use {{provider}} models in ChipMate.",
   "provider.connect.apiKey.description.local":
     "Connect to your local {{provider}} server. Leave the API key empty if the server does not require one (default for localhost).",
   "provider.connect.atomicChat.description":
@@ -233,7 +233,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Visit ",
   "provider.connect.oauth.code.visit.link": "this link",
   "provider.connect.oauth.code.visit.suffix":
-    " to collect your authorization code to connect your account and use {{provider}} models in Kilo.",
+    " to collect your authorization code to connect your account and use {{provider}} models in ChipMate.",
   "provider.connect.oauth.code.label": "{{method}} authorization code",
   "provider.connect.oauth.code.placeholder": "Authorization code",
   "provider.connect.oauth.code.required": "Authorization code is required",
@@ -241,7 +241,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Visit ",
   "provider.connect.oauth.auto.visit.link": "this link",
   "provider.connect.oauth.auto.visit.suffix":
-    " and enter the code below to connect your account and use {{provider}} models in Kilo.",
+    " and enter the code below to connect your account and use {{provider}} models in ChipMate.",
   "provider.connect.oauth.auto.confirmationCode": "Confirmation code",
   "provider.connect.toast.connected.title": "{{provider}} connected",
   "provider.connect.toast.connected.description": "{{provider}} models are now available to use.",
@@ -358,6 +358,10 @@ export const dict = {
   "prompt.action.send.selectModel": "Select a model before sending",
   "prompt.action.send.recording": "Transcribe and send",
   "prompt.action.stop": "Stop",
+  "prompt.panel.collapse": "Collapse input panel",
+  "prompt.panel.expand": "Expand input panel",
+  "prompt.panel.collapsed": "Input panel collapsed",
+  "prompt.panel.responding": "Answering…",
   "prompt.action.enhance": "Enhance prompt",
   "prompt.action.indexing": "Indexing settings",
   "prompt.action.autoApprove.enable": "Enable auto-approve",
@@ -367,9 +371,9 @@ export const dict = {
   "prompt.action.sandbox.enable": "Enable sandbox",
   "prompt.action.sandbox.disable": "Disable sandbox",
   "prompt.action.sandbox.enabled":
-    "Sandbox is enabled. Agent shell commands are confined to the project and Kilo directories.",
+    "Sandbox is enabled. Agent shell commands are confined to the project and ChipMate state directories.",
   "prompt.action.sandbox.disabled":
-    "Sandbox is disabled. Click to confine agent shell command writes to the project and Kilo directories.",
+    "Sandbox is disabled. Click to confine agent shell command writes to the project and ChipMate state directories.",
   "prompt.action.sandbox.status.enabled": "Sandbox enabled",
   "prompt.action.sandbox.status.disabled": "Sandbox disabled",
   "prompt.action.sandbox.filesystem": "Filesystem",
@@ -378,7 +382,7 @@ export const dict = {
   "prompt.action.sandbox.network.blocked": "Blocked",
   "prompt.action.sandbox.network.allowed": "Allowed",
   "prompt.action.sandbox.unrestricted": "Unrestricted",
-  "prompt.action.sandbox.description.enabled": "Writes are limited to the project and Kilo directories.",
+  "prompt.action.sandbox.description.enabled": "Writes are limited to the project and ChipMate state directories.",
   "prompt.action.sandbox.description.disabled": "Click to restrict filesystem writes and network access.",
   "prompt.action.sandbox.description.disabledNetworkAllowed":
     "Click to restrict filesystem writes. Network access remains allowed by your sandbox settings.",
@@ -784,7 +788,7 @@ export const dict = {
   "settings.updates.action.checkNow": "Check now",
   "settings.updates.action.checking": "Checking...",
   "settings.updates.toast.latest.title": "You're up to date",
-  "settings.updates.toast.latest.description": "You're running the latest version of Kilo.",
+  "settings.updates.toast.latest.description": "You're running the latest version of ChipMate.",
   "font.option.ibmPlexMono": "IBM Plex Mono",
   "font.option.cascadiaCode": "Cascadia Code",
   "font.option.firaCode": "Fira Code",
@@ -895,6 +899,31 @@ export const dict = {
   "settings.providers.custom.description": "Add a custom provider by base URL.",
 
   "provider.custom.title": "Custom provider",
+  "provider.custom.quick.title": "Connect ChipMate",
+  "provider.custom.quick.description":
+    "Enter your API key. ChipMate will verify the server model catalog and configure QA for you.",
+  "provider.custom.quick.models.waiting": "Enter an API key to check /models.",
+  "provider.custom.quick.models.verified": "The configured DeepSeek model is available.",
+  "provider.custom.quick.models.missing":
+    "The configured model was not returned and no DeepSeek alternatives were found.",
+  "provider.custom.quick.models.choose": "The configured model was not returned. Choose a DeepSeek model to continue.",
+  "provider.custom.quick.models.selected": "Selected {{model}}.",
+  "provider.custom.quick.models.confirm": "Use selected model",
+  "provider.custom.quick.models.ready": "Ready",
+  "provider.custom.quick.autocomplete.ready": "Autocomplete · {{model}}",
+  "provider.custom.quick.autocomplete.enable": "Will be enabled automatically after this Provider is saved.",
+  "provider.custom.quick.autocomplete.preserve": "Configured; your existing manual autocomplete choice will be kept.",
+  "provider.custom.quick.autocomplete.missing": "Autocomplete model {{model}} was not returned.",
+  "provider.custom.quick.autocomplete.qaOnly": "QA can still be saved; autocomplete will not be changed.",
+  "provider.custom.quick.autocomplete.missingToast.title": "QA connected; autocomplete was not enabled",
+  "provider.custom.quick.autocomplete.missingToast.description":
+    "The server did not return the configured autocomplete model.",
+  "provider.custom.quick.autocomplete.failedToast.title": "QA connected; autocomplete could not be enabled",
+  "provider.custom.quick.autocomplete.failedToast.description": "Autocomplete settings failed to save: {{error}}",
+  "provider.custom.quick.reasoning.title": "Reasoning · low",
+  "provider.custom.quick.reasoning.description": "Enabled by default; medium, high, and max remain available in QA.",
+  "provider.custom.quick.advanced": "Advanced settings",
+  "provider.custom.quick.save": "Save and use in QA",
   "provider.custom.description.prefix": "Configure a custom provider. See the ",
   "provider.custom.description.link": "provider config docs",
   "provider.custom.description.suffix": ".",
@@ -1171,7 +1200,7 @@ export const dict = {
   "profile.balance.refresh": "Refresh balance",
   "profile.action.dashboard": "Dashboard",
   "profile.action.topUp": "Top up",
-  "profile.pass.subscribe": "Get Kilo Pass to add credits and earn bonuses",
+  "profile.pass.subscribe": "Get ChipMate Pass to add credits and earn bonuses",
   "profile.pass.bonus": "Bonus",
   "profile.pass.renews": "Renews",
   "profile.action.logout": "Log Out",
@@ -1268,11 +1297,15 @@ export const dict = {
   "settings.indexing.model.enter": "Enter model ID",
   "settings.indexing.model.provided": "Provided by ChipMate",
   "settings.indexing.documents.title": "Documents",
-  "settings.indexing.documents.description": "Index configured workspace document folders into a separate RAG store.",
-  "settings.indexing.documents.folders.title": "Document Folders",
-  "settings.indexing.documents.folders.description": "Workspace-relative folders scanned for Document RAG.",
-  "settings.indexing.documents.folders.empty": "No folders",
-  "settings.indexing.documents.folders.add": "Add Folder",
+  "settings.indexing.documents.description":
+    "Index text documents from the current workspace and approved external folders into a separate RAG store.",
+  "settings.indexing.documents.workspace.title": "Current Workspace",
+  "settings.indexing.documents.workspace.description": "Always indexed when Document RAG is enabled.",
+  "settings.indexing.documents.folders.title": "Additional Folders",
+  "settings.indexing.documents.folders.description":
+    "Approved external folders indexed in addition to the current workspace.",
+  "settings.indexing.documents.folders.empty": "No additional folders",
+  "settings.indexing.documents.folders.add": "Add External Folder",
   "settings.indexing.documents.folders.remove": "Remove",
   "settings.indexing.documents.rebuild": "Rebuild",
   "settings.indexing.documents.include.title": "Include",
@@ -1607,7 +1640,7 @@ export const dict = {
   "settings.experimental.continueOnDeny.description": "Continue the agent loop when a permission is denied",
   "settings.sandboxing.enabled.title": "Sandbox",
   "settings.sandboxing.enabled.description":
-    "Run agent shell commands inside an OS-level sandbox that restricts writes to the project and Kilo state directories",
+    "Run agent shell commands inside an OS-level sandbox that restricts writes to the project and ChipMate state directories",
   "settings.sandboxing.title": "Sandboxing",
   "settings.sandboxing.network.title": "Restrict Network Access",
   "settings.sandboxing.network.description":
@@ -1681,7 +1714,7 @@ export const dict = {
   "settings.agentBehaviour.removeSkill.failed": "The skill could not be removed.",
   "settings.agentBehaviour.removeSkill.phase.validating": "Validating the selected skill…",
   "settings.agentBehaviour.removeSkill.phase.removing": "Removing the installed snapshot…",
-  "settings.agentBehaviour.removeSkill.phase.refreshing": "Refreshing Kilo skills…",
+  "settings.agentBehaviour.removeSkill.phase.refreshing": "Refreshing ChipMate Skills…",
   "settings.agentBehaviour.removeSkill.phase.reconciling": "Updating local import records…",
   "settings.agentBehaviour.rules.description":
     "Rules are instruction files that guide agent behaviour. They are included in the system prompt for every conversation. Add file paths below to include additional rules.",
@@ -1890,7 +1923,7 @@ export const dict = {
     "Default model and reasoning effort for task-tool subagents. Leave unset to inherit the calling agent's model.",
   "settings.models.hidePromptTraining.title": "Hide Prompt-Training Models",
   "settings.models.hidePromptTraining.description":
-    "Hide Kilo Gateway models whose providers may use your prompts for training.",
+    "Hide ChipMate Gateway models whose providers may use your prompts for training.",
   "settings.providers.modeModels": "Model per Mode",
   "settings.providers.modeModels.description":
     "Override the default model for specific modes. If not set, the global default model is used.",

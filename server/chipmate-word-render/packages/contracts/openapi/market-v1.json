@@ -4081,7 +4081,7 @@
         "tags": [
           "extensions"
         ],
-        "description": "Upload one VSIX file. Web clients extract folders and archives locally, split unlimited selections into logical groups, and submit one VSIX per request. The service applies instance-wide concurrency and storage admission controls.",
+        "description": "Upload one VSIX file. The first successful publisher owns the extension ID; successful ChipMate uploads immediately enter the automatic update manifest. Same-version, same-target content conflicts are rejected without replacing either artifact.",
         "security": [
           {
             "cookieSession": []
@@ -6183,6 +6183,14 @@
                 "type": "string"
               },
               {
+                "const": "EXTENSION_OWNER_UNASSIGNED",
+                "type": "string"
+              },
+              {
+                "const": "EXTENSION_VERSION_CONFLICT",
+                "type": "string"
+              },
+              {
                 "const": "IDEMPOTENCY_CONFLICT",
                 "type": "string"
               },
@@ -6225,6 +6233,9 @@
             "items": {
               "$ref": "#/components/schemas/ValidationIssue"
             }
+          },
+          "conflict": {
+            "$ref": "#/components/schemas/ExtensionPublicationConflict"
           }
         }
       },
@@ -6451,6 +6462,7 @@
           "downloads",
           "publishedAt",
           "status",
+          "releaseNotesAvailable",
           "downloadUrl"
         ],
         "properties": {
@@ -6544,6 +6556,9 @@
                 "type": "string"
               }
             ]
+          },
+          "releaseNotesAvailable": {
+            "type": "boolean"
           },
           "downloadUrl": {
             "minLength": 1,
@@ -6695,6 +6710,101 @@
           },
           "artifact": {
             "$ref": "#/components/schemas/ExtensionArtifact"
+          }
+        }
+      },
+      "ExtensionPublicationConflict": {
+        "$id": "ExtensionPublicationConflict",
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "extensionId",
+          "version",
+          "target",
+          "existing",
+          "incoming"
+        ],
+        "properties": {
+          "extensionId": {
+            "minLength": 3,
+            "maxLength": 256,
+            "pattern": "^[a-z0-9][a-z0-9._-]+$",
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+            "type": "string"
+          },
+          "target": {
+            "minLength": 1,
+            "maxLength": 64,
+            "type": "string"
+          },
+          "existing": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "filename",
+              "sha256",
+              "publishedAt",
+              "source",
+              "canDelete"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "filename": {
+                "minLength": 6,
+                "maxLength": 180,
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "const": "system",
+                    "type": "string"
+                  },
+                  {
+                    "const": "web",
+                    "type": "string"
+                  }
+                ]
+              },
+              "canDelete": {
+                "type": "boolean"
+              }
+            }
+          },
+          "incoming": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "filename",
+              "sha256"
+            ],
+            "properties": {
+              "filename": {
+                "minLength": 6,
+                "maxLength": 180,
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              }
+            }
           }
         }
       },

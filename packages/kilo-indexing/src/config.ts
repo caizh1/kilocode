@@ -20,10 +20,24 @@ const providers = [
 ] as const satisfies readonly EmbedderProvider[]
 const stores = ["lancedb", "qdrant"] as const
 
+const ApprovedExternalRoot = z
+  .object({
+    path: z.string(),
+    workspace: z.string().optional(),
+  })
+  .strict()
+
 const DocumentConfig = z
   .object({
     enabled: z.boolean().optional().describe("Enable document RAG indexing"),
-    paths: z.array(z.string()).optional().describe("Workspace-relative document folders or files to index"),
+    paths: z
+      .array(z.string())
+      .optional()
+      .describe("Additional workspace-relative or explicitly approved external document paths; the workspace is always indexed"),
+    approvedExternalRoots: z
+      .array(ApprovedExternalRoot)
+      .optional()
+      .describe("Trusted global approvals for external document roots"),
     include: z.array(z.string()).optional().describe("Optional glob patterns to include inside document paths"),
     exclude: z.array(z.string()).optional().describe("Optional glob patterns to exclude from document indexing"),
     maxFiles: z.number().int().positive().optional().describe("Maximum documents per workspace (default: 5000)"),
@@ -165,7 +179,19 @@ const Score = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLes
 const DocumentSchema = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({ description: "Enable document RAG indexing" }),
   paths: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
-    description: "Workspace-relative document folders or files to index",
+    description: "Additional workspace-relative or explicitly approved external document paths; the workspace is always indexed",
+  }),
+  approvedExternalRoots: Schema.optional(
+    Schema.mutable(
+      Schema.Array(
+        Schema.Struct({
+          path: Schema.String,
+          workspace: Schema.optional(Schema.String),
+        }),
+      ),
+    ),
+  ).annotate({
+    description: "Trusted global approvals for external document roots",
   }),
   include: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Optional glob patterns to include inside document paths",

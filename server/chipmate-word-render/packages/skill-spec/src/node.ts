@@ -219,11 +219,12 @@ function portable(value: string) {
   return (
     value
       .trim()
-      .toLocaleLowerCase()
+      .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
       .replace(/-{2,}/g, "-")
-      .slice(0, 64) || "skill"
+      .slice(0, 64)
+      .replace(/-+$/g, "") || "skill"
   )
 }
 

@@ -4,6 +4,7 @@ import { Select } from "@kilocode/kilo-ui/select"
 import { Tag } from "@kilocode/kilo-ui/tag"
 import { Spinner } from "@kilocode/kilo-ui/spinner"
 import { Checkbox } from "@kilocode/kilo-ui/checkbox"
+import { Button } from "@kilocode/kilo-ui/button"
 import type {
   MarketplaceItem,
   McpMarketplaceItem,
@@ -15,6 +16,7 @@ import { useLanguage } from "../../context/language"
 import { filterMarketplaceItems, marketplaceTags } from "./filter"
 import { ItemCard } from "./ItemCard"
 import { MarketplaceContribute } from "./MarketplaceContribute"
+import { selectionKey, selectVisible } from "./batch-selection"
 
 interface StatusOption {
   value: string
@@ -36,6 +38,13 @@ interface Props {
   onUploadMarketplaceSkill?: (item: SkillMarketplaceItem) => void
   onStarMarketplaceSkill?: (item: MarketplaceItem) => void
   onOpenSkill?: (item: SkillMarketplaceItem) => void
+  batchActive?: boolean
+  batchRunning?: boolean
+  batchSelected?: string[]
+  onBatchStart?: () => void
+  onBatchChange?: (ids: string[]) => void
+  onBatchCancel?: () => void
+  onBatchSubmit?: (ids: string[]) => void
 }
 
 export const MarketplaceListView = (props: Props) => {
@@ -77,6 +86,22 @@ export const MarketplaceListView = (props: Props) => {
     if (!relevant()) return items
     return items.filter((item) => !!props.relevance?.[`${item.type}:${item.id}`])
   })
+  const selectable = createMemo(() =>
+    filtered().filter((item): item is SkillMarketplaceItem => item.type === "skill" && Boolean(item.uploadable)),
+  )
+  const selected = createMemo(() => new Set(props.batchSelected ?? []))
+  const change = (item: SkillMarketplaceItem, checked: boolean) => {
+    if (props.batchRunning) return
+    const ids = props.batchSelected ?? []
+    const key = selectionKey(item)
+    const next = checked
+      ? selectVisible(
+          ids,
+          selectable().filter((candidate) => selectionKey(candidate) === key),
+        )
+      : ids.filter((item) => item !== key)
+    props.onBatchChange?.(next)
+  }
 
   return (
     <div class="marketplace-list">
@@ -103,19 +128,70 @@ export const MarketplaceListView = (props: Props) => {
           </Checkbox>
         </div>
       </Show>
-      <Show when={allTags().length > 0}>
-        <div class="marketplace-active-tags">
-          <For each={allTags()}>
-            {(tag) => (
-              <button
-                class="marketplace-tag-filter"
-                classList={{ active: tags().includes(tag) }}
-                onClick={() => toggleTag(tag)}
-              >
-                <Tag>{tag}</Tag>
-              </button>
-            )}
-          </For>
+      <Show when={allTags().length > 0 || props.onBatchStart}>
+        <div class="marketplace-tags-row">
+          <Show when={allTags().length > 0}>
+            <div class="marketplace-active-tags">
+              <For each={allTags()}>
+                {(tag) => (
+                  <button
+                    class="marketplace-tag-filter"
+                    classList={{ active: tags().includes(tag) }}
+                    onClick={() => toggleTag(tag)}
+                  >
+                    <Tag>{tag}</Tag>
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+          <Show when={!props.batchActive && props.onBatchStart}>
+            <Button size="small" variant="secondary" onClick={() => props.onBatchStart?.()}>
+              <span class="codicon codicon-cloud-upload" aria-hidden="true" />
+              {t("marketplace.batch.open")}
+            </Button>
+          </Show>
+        </div>
+      </Show>
+      <Show when={props.batchActive}>
+        <div class="marketplace-batch-toolbar">
+          <strong>{t("marketplace.batch.selected", { count: selected().size })}</strong>
+          <div class="marketplace-batch-actions">
+            <Button
+              size="small"
+              variant="ghost"
+              disabled={props.batchRunning || selectable().length === 0}
+              onClick={() => props.onBatchChange?.(selectVisible(props.batchSelected ?? [], selectable()))}
+            >
+              {t("marketplace.batch.selectVisible")}
+            </Button>
+            <Button
+              size="small"
+              variant="ghost"
+              disabled={props.batchRunning || selected().size === 0}
+              onClick={() => props.onBatchChange?.([])}
+            >
+              {t("marketplace.batch.clear")}
+            </Button>
+            <Button
+              size="small"
+              variant="ghost"
+              disabled={props.batchRunning}
+              onClick={() => props.onBatchCancel?.()}
+            >
+              {t("marketplace.batch.cancel")}
+            </Button>
+            <Button
+              size="small"
+              disabled={props.batchRunning || selected().size === 0}
+              onClick={() => props.onBatchSubmit?.(props.batchSelected ?? [])}
+            >
+              <span class="codicon codicon-cloud-upload" aria-hidden="true" />
+              {props.batchRunning
+                ? t("marketplace.batch.uploading")
+                : t("marketplace.batch.upload", { count: selected().size })}
+            </Button>
+          </div>
         </div>
       </Show>
       <Show
@@ -152,6 +228,10 @@ export const MarketplaceListView = (props: Props) => {
                     onRemove={props.onRemove}
                     onStar={props.onStarMarketplaceSkill}
                     onUpload={props.onUploadMarketplaceSkill}
+                    batchActive={props.batchActive}
+                    batchSelected={skill ? selected().has(selectionKey(skill)) : false}
+                    batchDisabled={props.batchRunning}
+                    onBatchChange={skill?.uploadable ? (checked) => change(skill, checked) : undefined}
                     onOpen={props.onOpenSkill}
                     footer={<For each={marketplaceTags(item)}>{(tag) => <Tag>{tag}</Tag>}</For>}
                   />

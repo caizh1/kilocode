@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-18T00:29:00.051Z",
+  "generatedAt": "2026-07-23T01:02:59.741Z",
   "problems": [
     {
       "changeset": "agent-console-webview",
       "parent": "WIN-AGENT-CONSOLE",
-      "summary": "Present Agent Terminal as an interactive Agent Manager console with a real terminal, visual command approvals, high-risk confirmation dialogs, and a direct shortcut in the ChipMate sidebar toolbar.",
+      "summary": "Open Agent Console as an independent hybrid terminal that routes Linux commands directly to the local PTY, sends natural language to the Agent, and keeps replies, output, and approvals in one timeline.",
       "assertions": [
         {
           "id": "REG-AGENT-CONSOLE-WEBVIEW-01",
@@ -18,8 +18,8 @@
           ],
           "source": {
             "required": true,
-            "executor": "unassigned",
-            "state": "planned"
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts",
+            "state": "implemented"
           },
           "macos": {
             "required": true,
@@ -29,12 +29,12 @@
           "windows": {
             "required": true,
             "executor": "WIN-AGENT-CONSOLE",
-            "state": "planned"
+            "state": "implemented"
           }
         },
         {
           "id": "REG-AGENT-CONSOLE-WEBVIEW-02",
-          "title": "普通命令在审批后执行并显示输出",
+          "title": "Agent 审批命令执行并显示输出",
           "oracle": "boolean",
           "evidence": [
             "terminal-transcript",
@@ -43,8 +43,8 @@
           ],
           "source": {
             "required": true,
-            "executor": "unassigned",
-            "state": "planned"
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts",
+            "state": "implemented"
           },
           "macos": {
             "required": true,
@@ -54,7 +54,7 @@
           "windows": {
             "required": true,
             "executor": "WIN-AGENT-CONSOLE",
-            "state": "planned"
+            "state": "implemented"
           }
         },
         {
@@ -68,8 +68,8 @@
           ],
           "source": {
             "required": true,
-            "executor": "unassigned",
-            "state": "planned"
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts",
+            "state": "implemented"
           },
           "macos": {
             "required": true,
@@ -79,7 +79,7 @@
           "windows": {
             "required": true,
             "executor": "WIN-AGENT-CONSOLE",
-            "state": "planned"
+            "state": "implemented"
           }
         },
         {
@@ -93,8 +93,8 @@
           ],
           "source": {
             "required": true,
-            "executor": "unassigned",
-            "state": "planned"
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts",
+            "state": "implemented"
           },
           "macos": {
             "required": true,
@@ -104,7 +104,7 @@
           "windows": {
             "required": true,
             "executor": "WIN-AGENT-CONSOLE",
-            "state": "planned"
+            "state": "implemented"
           }
         },
         {
@@ -118,8 +118,8 @@
           ],
           "source": {
             "required": true,
-            "executor": "unassigned",
-            "state": "planned"
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts",
+            "state": "implemented"
           },
           "macos": {
             "required": true,
@@ -129,7 +129,7 @@
           "windows": {
             "required": true,
             "executor": "WIN-AGENT-CONSOLE",
-            "state": "planned"
+            "state": "implemented"
           }
         }
       ]
@@ -2570,6 +2570,263 @@
             "required": false,
             "executor": "WIN-RETRIEVAL-EVIDENCE",
             "state": "planned"
+          }
+        }
+      ]
+    },
+    {
+      "changeset": "fix-agent-console-windows-powershell",
+      "parent": "WIN-AGENT-CONSOLE",
+      "summary": "Stabilize the Windows Agent Console with one real Shell prompt, exactly-once mixed input, clean command history, and actionable CLI and PTY failures.",
+      "assertions": [
+        {
+          "id": "REG-AGENT-CONSOLE-SINGLE-SHELL-01",
+          "title": "Agent 模式不存在独立 textarea 且只有一个可见 Shell 提示符",
+          "oracle": "boolean",
+          "evidence": [
+            "terminal-transcript",
+            "approval-screenshot",
+            "filesystem-snapshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts,packages/kilo-vscode/tests/unit/agent-manager-terminal-font.test.ts",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": true,
+            "executor": "MAC-AGENT-CONSOLE",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-AGENT-CONSOLE",
+            "state": "implemented"
+          }
+        },
+        {
+          "id": "REG-AGENT-CONSOLE-SINGLE-SHELL-02",
+          "title": "已知命令直接执行且自然语言进入 Agent",
+          "oracle": "boolean",
+          "evidence": [
+            "terminal-transcript",
+            "approval-screenshot",
+            "filesystem-snapshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts,packages/kilo-vscode/tests/unit/agent-manager-terminal-font.test.ts",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": true,
+            "executor": "MAC-AGENT-CONSOLE",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-AGENT-CONSOLE",
+            "state": "implemented"
+          }
+        },
+        {
+          "id": "REG-AGENT-CONSOLE-SINGLE-SHELL-03",
+          "title": "连续 100 次 Enter 零丢失零重复",
+          "oracle": "boolean",
+          "evidence": [
+            "terminal-transcript",
+            "approval-screenshot",
+            "filesystem-snapshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts,packages/kilo-vscode/tests/unit/agent-manager-terminal-font.test.ts",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": true,
+            "executor": "MAC-AGENT-CONSOLE",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-AGENT-CONSOLE",
+            "state": "implemented"
+          }
+        },
+        {
+          "id": "REG-AGENT-CONSOLE-SINGLE-SHELL-04",
+          "title": "流式输出和 50 次模式切换没有空白帧或 DOM 重挂载",
+          "oracle": "boolean",
+          "evidence": [
+            "terminal-transcript",
+            "approval-screenshot",
+            "filesystem-snapshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts,packages/kilo-vscode/tests/unit/agent-manager-terminal-font.test.ts",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": true,
+            "executor": "MAC-AGENT-CONSOLE",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-AGENT-CONSOLE",
+            "state": "implemented"
+          }
+        },
+        {
+          "id": "REG-AGENT-CONSOLE-SINGLE-SHELL-05",
+          "title": "用户上滚后不被自动拉回底部",
+          "oracle": "boolean",
+          "evidence": [
+            "terminal-transcript",
+            "approval-screenshot",
+            "filesystem-snapshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts,packages/kilo-vscode/tests/unit/agent-manager-terminal-font.test.ts",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": true,
+            "executor": "MAC-AGENT-CONSOLE",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-AGENT-CONSOLE",
+            "state": "implemented"
+          }
+        },
+        {
+          "id": "REG-AGENT-CONSOLE-SINGLE-SHELL-06",
+          "title": "ARM VM 与原生 x64 结果分别记录且不能互相替代",
+          "oracle": "boolean",
+          "evidence": [
+            "terminal-transcript",
+            "approval-screenshot",
+            "filesystem-snapshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts,packages/kilo-vscode/tests/unit/agent-manager-terminal-font.test.ts",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": true,
+            "executor": "MAC-AGENT-CONSOLE",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-AGENT-CONSOLE",
+            "state": "implemented"
+          }
+        },
+        {
+          "id": "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-01",
+          "title": "Windows Agent Console 启动 PowerShell 7 或 Windows PowerShell 5.1",
+          "oracle": "boolean",
+          "evidence": [
+            "terminal-transcript",
+            "approval-screenshot",
+            "filesystem-snapshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts,packages/kilo-vscode/tests/unit/agent-manager-terminal-font.test.ts",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": true,
+            "executor": "MAC-AGENT-CONSOLE",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-AGENT-CONSOLE",
+            "state": "implemented"
+          }
+        },
+        {
+          "id": "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-02",
+          "title": "PSReadLine 捕获别名函数与 PATH 命令",
+          "oracle": "boolean",
+          "evidence": [
+            "terminal-transcript",
+            "approval-screenshot",
+            "filesystem-snapshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts,packages/kilo-vscode/tests/unit/agent-manager-terminal-font.test.ts",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": true,
+            "executor": "MAC-AGENT-CONSOLE",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-AGENT-CONSOLE",
+            "state": "implemented"
+          }
+        },
+        {
+          "id": "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-03",
+          "title": "中文 IME 第一 Enter 只提交候选且第二 Enter 才路由",
+          "oracle": "boolean",
+          "evidence": [
+            "terminal-transcript",
+            "approval-screenshot",
+            "filesystem-snapshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts,packages/kilo-vscode/tests/unit/agent-manager-terminal-font.test.ts",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": true,
+            "executor": "MAC-AGENT-CONSOLE",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-AGENT-CONSOLE",
+            "state": "implemented"
+          }
+        },
+        {
+          "id": "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-04",
+          "title": "PowerShell 捕获超时不清除当前编辑行",
+          "oracle": "boolean",
+          "evidence": [
+            "terminal-transcript",
+            "approval-screenshot",
+            "filesystem-snapshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "packages/kilo-vscode/tests/unit/agent-console-provider.test.ts,packages/kilo-vscode/tests/agent-console.spec.ts,packages/kilo-vscode/tests/unit/agent-manager-terminal-font.test.ts",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": true,
+            "executor": "MAC-AGENT-CONSOLE",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-AGENT-CONSOLE",
+            "state": "implemented"
           }
         }
       ]
@@ -7416,7 +7673,7 @@
     {
       "changeset": "source-backed-word-visual-quality",
       "parent": "WIN-DOCUMENTS",
-      "summary": "Strengthen source-backed detailed designs with context-parent versus target-module resolution, complete evidence-backed content for every confirmed submodule, mandatory five-view coverage, stable ordered Word assembly, readable Chinese output, verified native table-of-contents page numbers, and explicit page-evidence versus visual-review status.",
+      "summary": "Strengthen source-backed detailed designs with complete fourteen-topic prose, detailed five-view coverage, source-validated Mermaid node and edge claims, readable Word-fit rendering, resumable stages, stable text-first Word assembly, native table-of-contents placement, and strict DOCX integrity validation.",
       "assertions": [
         {
           "id": "REG-SOURCE-BACKED-WORD-VISUAL-QUALITY-01",

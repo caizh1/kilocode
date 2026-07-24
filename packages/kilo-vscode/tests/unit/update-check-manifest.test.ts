@@ -10,7 +10,7 @@ describe("update-check manifest contributions", () => {
   it("declares the manual check command", () => {
     expect(commands).toContainEqual({
       command: "chipmate.v2.checkForUpdates",
-      title: "Kilo: Check for Updates",
+      title: "ChipMate: Check for Updates",
     })
   })
 

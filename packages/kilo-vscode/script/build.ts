@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { $ } from "bun"
 import { join } from "node:path"
-import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
 import {
   copyCodeGraphParserWorker,
   copyIndexingProcess,
@@ -30,12 +30,14 @@ type Target = {
 }
 
 const packageJsonPath = join(import.meta.dir, "..", "package.json")
+const releaseNotesPath = join(import.meta.dir, "..", "RELEASE_NOTES.md")
 const rootDir = join(import.meta.dir, "..", "..", "..")
 const cleanPackageJson = await Bun.file(packageJsonPath).text()
 const packageJson = JSON.parse(cleanPackageJson)
 const version = process.env.KILO_VERSION ? process.env.KILO_VERSION : packageJson.version
 const prerelease = process.env.KILO_PRE_RELEASE === "true"
 const internal = process.argv.includes("--internal-offline") || process.env.CHIPMATE_INTERNAL_OFFLINE === "1"
+const x64only = process.argv.includes("--windows-x64-only") || process.env.CHIPMATE_WINDOWS_X64_ONLY === "1"
 const targetsArg = process.argv.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length)
 const requested = targetsArg
   ? new Set(
@@ -46,6 +48,12 @@ const requested = targetsArg
     )
   : undefined
 
+const releaseNotes = await Bun.file(releaseNotesPath).text().catch(() => "")
+if (!releaseNotes.trim()) throw new Error("RELEASE_NOTES.md is required and must not be empty.")
+if (releaseNotes.split(/\r?\n/, 1)[0] !== `# ChipMate ${version}`) {
+  throw new Error(`RELEASE_NOTES.md must start with "# ChipMate ${version}".`)
+}
+
 console.log(`Building VSCode extension version: ${version}${prerelease ? " (pre-release)" : ""}`)
 if (internal) console.log("Using internal offline baseline build mode")
 
@@ -55,9 +63,15 @@ if (packageJson.version !== version) {
 }
 const render = await localRenderDefaults(rootDir)
 const indexing = await localIndexingDefaults(rootDir)
+const provider = await localProviderDefaults(rootDir)
 const marketplace = await localMarketplaceDefaults(rootDir)
 const chipmate = await localChipmateServerDefaults(rootDir, render, marketplace)
 const hasLocalPackagedDefaults = Boolean(chipmate.baseUrl || indexing.openaiCompatibleBaseUrl)
+if (internal && (!provider.apiBaseUrl || !provider.chatModel)) {
+  throw new Error(
+    "Internal packaging requires provider.apiBaseUrl and provider.chatModel in .kilo-render-defaults.local.json or matching environment variables.",
+  )
+}
 
 const cliDistDir = process.env.CLI_DIST_DIR || join(import.meta.dir, "..", "..", "opencode", "dist")
 console.log(`Using CLI dist directory: ${cliDistDir}`)
@@ -113,6 +127,9 @@ const targets = requested
     ? internalTargets
     : available
 if (requested && targets.length === 0) throw new Error(`No VSIX targets matched --targets=${targetsArg}`)
+if (x64only && !targets.some((item) => item.target === "win32-x64-baseline")) {
+  throw new Error("--windows-x64-only requires the win32-x64-baseline internal target.")
+}
 
 const binDir = join(import.meta.dir, "..", "bin")
 const distDir = join(import.meta.dir, "..", "dist")
@@ -145,6 +162,10 @@ await $`node ${join(import.meta.dir, "..", "esbuild.js")} ${esbuildArgs}`.env({
     indexing.openaiCompatibleBaseUrl && {
       KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL: indexing.openaiCompatibleBaseUrl,
     }),
+  ...(internal && {
+    KILO_INTERNAL_PROVIDER_API_BASE_URL: provider.apiBaseUrl,
+    KILO_INTERNAL_PROVIDER_CHAT_MODEL: provider.chatModel,
+  }),
 })
 removeMaps(distDir)
 
@@ -188,6 +209,22 @@ try {
     await copySandboxResources(sourceBinary, targetBinary)
     await copyKiloSandboxWorker(sourceBinary, targetBinary)
 
+    if (config.target === "win32-x64-baseline" && !x64only) {
+      const arm = join(cliDistDir, "@kilocode", "cli-windows-arm64", "bin")
+      const cli = join(arm, "kilo.exe")
+      const indexer = join(arm, "kilo-indexer.exe")
+      const pty = join(arm, "node-pty-arm64")
+      if (!existsSync(cli) || !existsSync(indexer) || !existsSync(join(pty, "package.json"))) {
+        throw new Error(
+          "Windows baseline packaging requires fresh windows-arm64 CLI, indexing, and PTY sidecars for Windows ARM hosts.",
+        )
+      }
+      await $`cp ${cli} ${join(binDir, "kilo-arm64.exe")}`
+      await $`cp ${indexer} ${join(binDir, "kilo-indexer-arm64.exe")}`
+      cpSync(pty, join(binDir, "node-pty-arm64"), { recursive: true, dereference: true })
+      console.log("  ✅ Added native Windows ARM64 CLI, indexing, and PTY sidecars")
+    }
+
     if (config.binary !== "kilo.exe") {
       chmodSync(targetBinary, 0o755)
     }
@@ -206,7 +243,11 @@ try {
 
     if (config.internal) {
       console.log("Adding bundled LanceDB runtime...")
-      await copyLanceDBRuntime(binDir, config.vsceTarget ?? config.target)
+      await copyLanceDBRuntime(
+        binDir,
+        config.vsceTarget ?? config.target,
+        config.target === "win32-x64-baseline" && !x64only ? ["win32-arm64"] : [],
+      )
       console.log("Adding bundled Poppler pdftotext helper...")
       await ensurePopplerForTarget(config.vsceTarget ?? config.target, binDir)
     }
@@ -220,6 +261,7 @@ try {
       npm_config_ignore_scripts: "true",
     })
     await verifyPackageTarget(vsixPath, config.target)
+    await verifyReleaseNotes(vsixPath, version)
     if (chipmate.baseUrl) await verifyChipmateServer(vsixPath, chipmate)
     if (config.internal) {
       await verifyInternalVsix(vsixPath, config)
@@ -246,6 +288,11 @@ type IndexingDefaults = {
 
 type MarketplaceDefaults = {
   baseUrl?: string
+}
+
+type ProviderDefaults = {
+  apiBaseUrl?: string
+  chatModel?: string
 }
 
 async function localRenderDefaults(root: string): Promise<RenderDefaults> {
@@ -275,6 +322,21 @@ async function localIndexingDefaults(root: string): Promise<IndexingDefaults> {
       trim(process.env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL) ||
       trim(env.KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL) ||
       trim(json.indexing?.openaiCompatibleBaseUrl),
+  }
+}
+
+async function localProviderDefaults(root: string): Promise<ProviderDefaults> {
+  const env = await localEnv(join(root, ".env.local"))
+  const json = await localJson(join(root, ".kilo-render-defaults.local.json"))
+  return {
+    apiBaseUrl:
+      trim(process.env.KILO_INTERNAL_PROVIDER_API_BASE_URL) ||
+      trim(env.KILO_INTERNAL_PROVIDER_API_BASE_URL) ||
+      trim(json.provider?.apiBaseUrl),
+    chatModel:
+      trim(process.env.KILO_INTERNAL_PROVIDER_CHAT_MODEL) ||
+      trim(env.KILO_INTERNAL_PROVIDER_CHAT_MODEL) ||
+      trim(json.provider?.chatModel),
   }
 }
 
@@ -330,6 +392,7 @@ async function localJson(file: string): Promise<
     base?: string
     indexing?: IndexingDefaults
     marketplace?: MarketplaceDefaults
+    provider?: ProviderDefaults
     chipmateServer?: { baseUrl?: string }
   }
 > {
@@ -346,6 +409,10 @@ async function localJson(file: string): Promise<
     },
     marketplace: {
       baseUrl: trim(data.marketplace?.baseUrl),
+    },
+    provider: {
+      apiBaseUrl: trim(data.provider?.apiBaseUrl),
+      chatModel: trim(data.provider?.chatModel),
     },
     chipmateServer: {
       baseUrl: trim(data.chipmateServer?.baseUrl),
@@ -428,6 +495,7 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     "extension/bin/lancedb/node_modules/flatbuffers/js/flatbuffers.js",
     "extension/bin/lancedb/node_modules/reflect-metadata/Reflect.js",
     "extension/bin/lancedb/node_modules/tslib/tslib.js",
+    "extension/assets/agent-console/powershell.ps1",
     "extension/dist/extension.js",
     "extension/dist/webview.js",
     "extension/dist/agent-manager.js",
@@ -441,6 +509,16 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
       "extension/bin/poppler/pdftotext.exe",
       "extension/bin/lancedb/node_modules/@lancedb/lancedb-win32-x64-msvc/lancedb.win32-x64-msvc.node",
     )
+    if (!x64only) {
+      required.push(
+        "extension/bin/kilo-arm64.exe",
+        "extension/bin/kilo-indexer-arm64.exe",
+        "extension/bin/node-pty-arm64/lib/index.js",
+        "extension/bin/node-pty-arm64/prebuilds/win32-arm64/conpty.node",
+        "extension/bin/node-pty-arm64/prebuilds/win32-arm64/conpty/OpenConsole.exe",
+        "extension/bin/lancedb/node_modules/@lancedb/lancedb-win32-arm64-msvc/lancedb.win32-arm64-msvc.node",
+      )
+    }
   }
   if ((config.vsceTarget ?? config.target) === "linux-x64") {
     required.push(
@@ -468,6 +546,11 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
   const forbidden = files.filter(
     (file) => file === "extension/bin/ffmpeg" || file === "extension/bin/ffmpeg.exe" || file.endsWith(".map"),
   )
+  if (x64only) {
+    forbidden.push(
+      ...files.filter((file) => file.startsWith("extension/bin/") && file.toLowerCase().includes("arm64")),
+    )
+  }
   if (forbidden.length > 0) {
     throw new Error(`Internal VSIX contains forbidden files:\n${forbidden.join("\n")}`)
   }
@@ -522,6 +605,14 @@ async function verifyPackageTarget(vsix: string, target: string): Promise<void> 
   if (manifest.chipmatePackageTarget !== target) {
     throw new Error(`VSIX package target must be ${target}.`)
   }
+}
+
+async function verifyReleaseNotes(vsix: string, expected: string): Promise<void> {
+  const unzip = Bun.which("unzip")
+  if (!unzip) throw new Error("Cannot verify packaged release notes because unzip is not available.")
+  const out = await $`${unzip} -p ${vsix} extension/RELEASE_NOTES.md`.quiet()
+  const title = out.text().match(/^\s*#\s+ChipMate\s+([^\s]+)\s*$/m)?.[1]
+  if (title !== expected) throw new Error(`Packaged RELEASE_NOTES.md does not match ChipMate ${expected}.`)
 }
 
 async function verifyChipmateServer(vsix: string, expected: PackagedChipmateServerDefaults): Promise<void> {

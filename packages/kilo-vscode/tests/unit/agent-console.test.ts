@@ -14,6 +14,7 @@ import { queue } from "../../webview-ui/agent-console/queue"
 import { redact } from "../../webview-ui/agent-manager/terminal/diagnostic"
 import { contrast } from "../../webview-ui/agent-manager/terminal/theme"
 import { activityBlocks, mergeActivity } from "../../webview-ui/agent-console/activity"
+import { terminalLines } from "../../webview-ui/agent-console/output"
 
 const request = (command: string, toolName = "bash"): PermissionRequest => ({
   id: "permission-1",
@@ -42,6 +43,30 @@ describe("agent console command presentation", () => {
     expect(await routeAgentConsoleInput("!unknown-internal-command", { PATH: "" })).toEqual({
       route: "shell",
       input: "unknown-internal-command",
+    })
+  })
+
+  test("recognizes PowerShell commands and Windows paths on Windows", async () => {
+    const env = { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" }
+    for (const input of [
+      "Get-ChildItem -Force",
+      "Write-Output CHIPMATE_QA_OK",
+      "if ($env:CI) { Write-Output ready }",
+      "foreach ($item in $items) { Write-Output $item }",
+      "function Invoke-Build { Write-Output building }",
+      "$env:Path",
+      "C:\\workspace\\check.ps1",
+      "\\\\server\\share\\check.ps1",
+      ".\\check.ps1",
+      '"C:\\Program Files\\tool.exe" --version',
+      "firmware-tool.exe --version",
+      "build.cmd /?",
+    ]) {
+      expect(await routeAgentConsoleInput(input, env, "win32")).toEqual({ route: "shell", input })
+    }
+    expect(await routeAgentConsoleInput("帮我分析 PowerShell 输出", env, "win32")).toEqual({
+      route: "agent",
+      input: "帮我分析 PowerShell 输出",
     })
   })
 
@@ -88,6 +113,24 @@ describe("agent console command presentation", () => {
 })
 
 describe("agent console terminal bridge", () => {
+  test("archives ANSI, carriage returns, backspaces, Unicode, and long tails without constructing xterm", () => {
+    const lines = terminalLines(
+      `old progress\rnew\x1b[K\n\x1b[31m红色🙂\x1b[0m\nabc\bZ\n${Array.from({ length: 5002 }, (_, index) => `tail-${index}`).join("\n")}`,
+    )
+
+    expect(lines).toHaveLength(5000)
+    expect(lines[0]?.map((run) => run.text).join("")).toBe("tail-2")
+    expect(lines.at(-1)?.map((run) => run.text).join("")).toBe("tail-5001")
+    const styled = terminalLines("\x1b[31mred\x1b[0m plain")
+    expect(styled[0]?.[0]).toEqual({
+      text: "red",
+      style: { color: "var(--vscode-terminal-ansiRed, #cd3131)" },
+    })
+    expect(styled[0]?.[1]?.text).toBe(" plain")
+    expect(terminalLines("abc\rZ\x1b[K")[0]?.map((run) => run.text).join("")).toBe("Z")
+    expect(terminalLines("abc\bZ")[0]?.map((run) => run.text).join("")).toBe("abZ")
+  })
+
   test("deduplicates replayed activity and groups a live command in order", () => {
     const events = mergeActivity(
       [
@@ -140,6 +183,16 @@ describe("agent console terminal bridge", () => {
         command: "printf ok",
       },
     ])
+  })
+
+  test("does not archive uncorrelated shell lifecycle markers", () => {
+    expect(
+      activityBlocks([
+        { seq: 1, time: 1, kind: "begin", cwd: "/workspace" },
+        { seq: 2, time: 2, kind: "data", data: "" },
+        { seq: 3, time: 3, kind: "end", cwd: "/workspace", exitCode: 0 },
+      ]),
+    ).toEqual([])
   })
 
   test("forces Agent Console terminal text and ANSI white to pure white", () => {
@@ -220,7 +273,7 @@ describe("agent console terminal bridge", () => {
     expect(failed).toEqual([{ id: "fourth", message: "terminal connection error" }])
   })
 
-  test("sends twenty sequential commands exactly once", () => {
+  test("sends one hundred sequential commands exactly once", () => {
     const sent: string[] = []
     const bridge = queue(() => undefined)
     bridge.bind((data) => {
@@ -228,9 +281,9 @@ describe("agent console terminal bridge", () => {
       return true
     })
 
-    for (const index of Array.from({ length: 20 }, (_, index) => index)) {
+    for (const index of Array.from({ length: 100 }, (_, index) => index)) {
       expect(bridge.send(`run-${index}`, `printf ${index}\r`)).toBe(true)
     }
-    expect(sent).toEqual(Array.from({ length: 20 }, (_, index) => `printf ${index}\r`))
+    expect(sent).toEqual(Array.from({ length: 100 }, (_, index) => `printf ${index}\r`))
   })
 })

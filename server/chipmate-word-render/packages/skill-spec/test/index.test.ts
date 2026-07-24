@@ -90,6 +90,11 @@ test("validation preserves SKILL.md bytes when portable metadata needs no repair
     assert.equal(result.semver, "1.2.3")
     assert.ok(result.issues.some((issue) => issue.code === "skill-filename"))
     assert.ok(result.issues.some((issue) => issue.code === "skill-json-create"))
+    assert.ok(
+      result.issues
+        .filter((issue) => issue.code === "skill-filename" || issue.code === "skill-json-create")
+        .every((issue) => issue.severity === "info"),
+    )
 
     const output = join(root, "output.tar.gz")
     const extracted = join(root, "output")
@@ -169,18 +174,69 @@ test("security validation rejects secrets, XSS, hidden archives, malformed image
 test("credentials and scripts are publishable medium risks with Chinese guidance", () => {
   const result = validateSkillFiles("credential-skill", [
     { path: "SKILL.md", data: Buffer.from(body("credential-skill", "Credential instructions")) },
-    { path: "README.md", data: Buffer.from("password=abcdefghijklmnop\n") },
+    {
+      path: "README.md",
+      data: Buffer.from(
+        "password=abcdefghijklmnop\ntoken=${TOKEN}\nsecret=redacted-xxxxxxxxxxxxxxxxxxxx\napi_key=https://example.test/key\n",
+      ),
+    },
     { path: "scripts/connect.sh", data: Buffer.from("-----BEGIN OPENSSH PRIVATE KEY-----\nexample\n") },
   ])
   assert.equal(result.valid, true)
   assert.equal(result.stage, "complete")
   assert.equal(result.risk.level, "medium")
-  assert.equal(result.policyVersion, "skill-risk-v2")
+  assert.equal(result.risk.issueCount, 2)
+  assert.equal(result.policyVersion, "skill-risk-v3")
   const risks = result.issues.filter((issue) => issue.riskLevel === "medium")
   assert.ok(risks.some((issue) => issue.code === "security-secret"))
   assert.ok(risks.some((issue) => issue.code === "scripts-present"))
   assert.ok(risks.every((issue) => issue.severity === "warning"))
   assert.ok(risks.every((issue) => /[\u4e00-\u9fff]/.test(issue.message)))
+})
+
+test("generic credential scanning ignores placeholders and keeps high-confidence assignments", () => {
+  const placeholder = validateSkillFiles("placeholder-skill", [
+    { path: "SKILL.md", data: Buffer.from(body("placeholder-skill", "Placeholder instructions")) },
+    {
+      path: "README.md",
+      data: Buffer.from(
+        [
+          "password=abcdefghijklmnopqrst",
+          "token=12345678901234567890",
+          "secret=changeme-random-1234567890",
+          "api_key=your_api_key_goes_here_12345",
+          "passwd=xxxxxxxxxxxxxxxxxxxxxxxx",
+          "token=$TOKEN_FROM_ENVIRONMENT",
+          "secret=https://example.invalid/not-a-secret",
+        ].join("\n"),
+      ),
+    },
+  ])
+  assert.equal(placeholder.issues.some((issue) => issue.code === "security-secret"), false)
+
+  const credible = validateSkillFiles("credible-skill", [
+    { path: "SKILL.md", data: Buffer.from(body("credible-skill", "Credential review instructions")) },
+    { path: "config.ini", data: Buffer.from("api_key=Z9rT2mQ8vL4xC7pN5kD3\n") },
+  ])
+  assert.equal(credible.valid, true)
+  assert.equal(credible.risk.level, "medium")
+  assert.equal(credible.risk.issueCount, 1)
+  assert.ok(credible.issues.some((issue) => issue.code === "security-secret" && issue.severity === "warning"))
+})
+
+test("many scripts remain traceable but count as one risk category", () => {
+  const result = validateSkillFiles("script-pack", [
+    { path: "SKILL.md", data: Buffer.from(body("script-pack", "Script review instructions")) },
+    ...Array.from({ length: 20 }, (_, index) => ({
+      path: `scripts/check-${index + 1}.sh`,
+      data: Buffer.from("#!/bin/sh\necho review-only\n"),
+    })),
+  ])
+  const scripts = result.issues.filter((issue) => issue.code === "scripts-present")
+  assert.equal(scripts.length, 20)
+  assert.equal(result.risk.level, "medium")
+  assert.equal(result.risk.issueCount, 1)
+  assert.ok(scripts.every((issue) => issue.severity === "warning" && issue.file?.startsWith("scripts/")))
 })
 
 test("adversarial archives fail closed across paths, headers, limits, binaries, and image dimensions", () => {

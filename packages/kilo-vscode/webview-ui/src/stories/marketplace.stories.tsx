@@ -7,7 +7,7 @@
  */
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
-import { onMount } from "solid-js"
+import { createSignal, onMount } from "solid-js"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { StoryProviders } from "./StoryProviders"
 import { MarketplaceListView } from "../components/marketplace/MarketplaceListView"
@@ -545,6 +545,40 @@ export const InstalledAgentCard: Story = {
       </div>
     </StoryProviders>
   ),
+}
+
+export const BatchSkillSelection: Story = {
+  name: "Skill Market — batch upload selection",
+  render: () => {
+    const items = MOCK_SKILLS.slice(0, 4).map((item) => ({ ...item, uploadable: true }))
+    const [active, setActive] = createSignal(false)
+    const [selected, setSelected] = createSignal<string[]>([])
+    return (
+      <StoryProviders locale="zh">
+        <div style={{ width: "100%", height: "720px", overflow: "auto", padding: "12px" }}>
+          <MarketplaceListView
+            items={items}
+            metadata={PARTIAL_INSTALLED_SKILLS}
+            fetching={false}
+            type="skill"
+            searchPlaceholder="搜索…"
+            emptyMessage="未找到项目"
+            onInstall={noop}
+            onRemove={noop}
+            batchActive={active()}
+            batchSelected={selected()}
+            onBatchStart={() => setActive(true)}
+            onBatchChange={setSelected}
+            onBatchCancel={() => {
+              setActive(false)
+              setSelected([])
+            }}
+            onBatchSubmit={noop}
+          />
+        </div>
+      </StoryProviders>
+    )
+  },
 }
 
 export const AlignedSkillsHome: Story = {

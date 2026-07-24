@@ -45,6 +45,57 @@ const requestedTargets = targetsArg
 const plugin = createSolidTransformPlugin()
 
 // kilocode_change start - codebase indexing
+function armPtyPlugin() {
+  return {
+    name: "kilo-windows-arm64-pty",
+    setup(build: { onResolve: (opts: { filter: RegExp }, load: () => { path: string }) => void }) {
+      build.onResolve({ filter: /^#pty$/ }, () => ({
+        path: path.resolve(dir, "src/kilocode/windows-arm64-pty.ts"),
+      }))
+    },
+  }
+}
+
+async function stageArmPty(outputDir: string) {
+  const source = path.resolve(dir, "../../node_modules/.bun/node_modules/@lydell/node-pty-win32-arm64")
+  const target = path.join(outputDir, "node-pty-arm64")
+  if (!fs.existsSync(path.join(source, "package.json"))) {
+    throw new Error("Windows ARM64 PTY runtime is missing; run bun install --os='*' --cpu='*' before building")
+  }
+  await fs.promises.rm(target, { recursive: true, force: true })
+  await fs.promises.cp(source, target, { recursive: true, dereference: true })
+  const file = path.join(target, "lib", "windowsPtyAgent.js")
+  const text = await fs.promises.readFile(file, "utf8")
+  const needle = "var inSocketFD = fs.openSync(term.conin, 'w');"
+  if (!text.includes(needle)) {
+    throw new Error("Windows ARM64 PTY input pipe patch no longer matches the bundled runtime")
+  }
+  await fs.promises.writeFile(file, text.replace(needle, `${needle}\n        this._input = inSocketFD;`))
+  const worker = path.join(target, "lib", "windowsConoutConnection.js")
+  const code = await fs.promises.readFile(worker, "utf8")
+  const spawn =
+    "this._worker = new worker_threads_1.Worker(path_1.join(scriptPath, 'worker/conoutSocketWorker.js'), { workerData: workerData });"
+  if (!code.includes(spawn)) {
+    throw new Error("Windows ARM64 PTY output worker patch no longer matches the bundled runtime")
+  }
+  const body = [
+    "'use strict';",
+    "const { parentPort, workerData } = require('worker_threads');",
+    "const net = require('net');",
+    "const output = new net.Socket();",
+    "output.setEncoding('utf8');",
+    "output.connect(workerData.conoutPipeName, () => {",
+    "  const server = net.createServer((socket) => output.pipe(socket));",
+    "  server.listen(`${workerData.conoutPipeName}-worker`);",
+    "  if (!parentPort) throw new Error('worker_threads parentPort is null');",
+    "  parentPort.postMessage(1);",
+    "});",
+  ].join("\n")
+  const embedded = `this._worker = new worker_threads_1.Worker(${JSON.stringify(body)}, { eval: true, workerData: workerData });`
+  await fs.promises.writeFile(worker, code.replace(spawn, embedded))
+  console.log(`copied Windows ARM64 PTY runtime to ${target}`)
+}
+
 async function copyTreeSitterWasms(outputDir: string) {
   const runtimeWasmPath = require.resolve("web-tree-sitter/tree-sitter.wasm")
   const languagePackagePath = require.resolve("tree-sitter-wasms/package.json")
@@ -316,10 +367,11 @@ for (const item of targets) {
   const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
   const workerRelativePath = path.relative(dir, parserWorker).replaceAll("\\", "/")
 
-  await Bun.build({
+  // kilocode_change - fail when cross-compilation does not emit the CLI
+  const result = await Bun.build({
     conditions: ["bun", "node"], // kilocode_change - port anomalyco/opencode#30873; current form from #31566
     tsconfig: "./tsconfig.json",
-    plugins: [plugin],
+    plugins: item.os === "win32" && item.arch === "arm64" ? [armPtyPlugin(), plugin] : [plugin],
     // kilocode_change start - skip sourcemaps for release builds (each .js.map adds ~50 MB per target → ~600 MB total)
     sourcemap: Script.release ? "none" : "external",
     external: ["node-gyp", ...LanceDBRuntime.external],
@@ -369,9 +421,12 @@ for (const item of targets) {
       ...(item.os === "linux" ? { "process.env.OPENTUI_LIBC": JSON.stringify(item.abi ?? "glibc") } : {}),
     },
   })
+  // kilocode_change start - Bun.build reports compilation errors in the result instead of throwing
+  if (!result.success) throw new AggregateError(result.logs, `Failed to build ${name}`)
+  // kilocode_change end
 
   // kilocode_change start - isolate indexing native allocations from the main CLI process
-  await Bun.build({
+  const indexing = await Bun.build({
     conditions: ["browser"],
     tsconfig: "./tsconfig.json",
     plugins: [plugin],
@@ -396,6 +451,7 @@ for (const item of targets) {
       KILO_BUILD_KIND: Script.release ? `'release'` : `'source'`,
     },
   })
+  if (!indexing.success) throw new AggregateError(indexing.logs, `Failed to build ${indexingProcessName}`)
   // kilocode_change end
 
   await Bun.write(path.resolve(dir, `dist/${name}/bin/models-snapshot.json`), generated.modelsData) // kilocode_change
@@ -403,6 +459,9 @@ for (const item of targets) {
   // kilocode_change start
   await copyTreeSitterWasms(path.resolve(dir, `dist/${name}/bin`))
   await copyKiloConsole(kiloConsoleDist, path.resolve(dir, `dist/${name}/bin`))
+  if (item.os === "win32" && item.arch === "arm64") {
+    await stageArmPty(path.resolve(dir, `dist/${name}/bin`))
+  }
   await KiloSandboxWorker.copy(kiloSandboxWorker, path.resolve(dir, `dist/${name}/bin`))
   if (item.os === "linux") {
     await KiloSandboxNetwork.copy(kiloSandboxNetwork, path.resolve(dir, `dist/${name}/bin`), item.arch)

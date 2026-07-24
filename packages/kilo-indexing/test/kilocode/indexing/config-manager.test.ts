@@ -27,13 +27,26 @@ describe("CodeIndexConfigManager", () => {
     })
   })
 
-  test("preserves explicit RAG and document opt-outs", () => {
+  test("preserves explicit RAG opt-outs while keeping the workspace document root", () => {
     const input = toIndexingConfigInput({ enabled: false, documents: { enabled: false, paths: [] } })
     const cfg = new CodeIndexConfigManager(input)
 
     expect(input.enabled).toBe(false)
     expect(cfg.currentDocuments.enabled).toBe(false)
-    expect(cfg.currentDocuments.paths).toEqual([])
+    expect(cfg.currentDocuments.paths).toEqual(["."])
+  })
+
+  test("prepends and deduplicates the workspace root before additional document paths", () => {
+    const cfg = new CodeIndexConfigManager(
+      createInput({
+        documents: {
+          enabled: true,
+          paths: ["/shared/left", ".", "/shared/right", "/shared/left"],
+        },
+      }),
+    )
+
+    expect(cfg.currentDocuments.paths).toEqual([".", "/shared/left", "/shared/right"])
   })
 
   test("uses default ollama base URL when omitted", () => {

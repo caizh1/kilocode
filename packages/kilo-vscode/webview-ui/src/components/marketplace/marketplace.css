@@ -91,6 +91,7 @@
   flex-direction: column;
   gap: 14px;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .local-skill-import__steps {
@@ -177,6 +178,11 @@
     inset 0 1px 0 color-mix(in srgb, white 16%, transparent),
     0 18px 54px color-mix(in srgb, black 16%, transparent);
   backdrop-filter: blur(28px) saturate(150%);
+}
+
+.local-skill-import__result {
+  flex: 0 0 auto;
+  justify-content: flex-start;
 }
 
 .local-skill-import__source h3,
@@ -416,6 +422,30 @@
   background: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 12%, transparent);
 }
 
+.local-skill-import__result .local-skill-import__orb.warning {
+  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 48%, transparent);
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 12%, transparent);
+}
+
+.local-skill-import__notice.activation {
+  width: min(560px, 100%);
+  min-width: 0;
+  text-align: left;
+}
+
+.local-skill-import__notice.activation > span:last-child,
+.local-skill-import__notice.activation small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.local-skill-import__notice.activation small {
+  margin-top: 4px;
+  color: var(--vscode-descriptionForeground, var(--text-weak));
+}
+
 .local-skill-import__result-list {
   display: flex;
   width: min(560px, 100%);
@@ -426,12 +456,23 @@
 .local-skill-import__result-list > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  align-items: start;
   gap: 4px 12px;
   padding: 9px 11px;
   border: 1px solid color-mix(in srgb, var(--vscode-widget-border, var(--border-base)) 54%, transparent);
   border-radius: 11px;
   text-align: left;
   background: color-mix(in srgb, var(--vscode-editor-background) 64%, transparent);
+}
+
+.local-skill-import__result-list strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.local-skill-import__result-list > div > span {
+  white-space: nowrap;
 }
 
 .local-skill-import__result-list small {
@@ -657,6 +698,53 @@
   gap: 4px;
 }
 
+.marketplace-tags-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.marketplace-tags-row .marketplace-active-tags {
+  flex: 1 1 480px;
+  min-width: 0;
+}
+
+.marketplace-tags-row [data-component="button"],
+.marketplace-batch-actions [data-component="button"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.marketplace-batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, var(--border-focus)) 62%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 7%, transparent), transparent 52%),
+    color-mix(in srgb, var(--vscode-editor-background, var(--background-base)) 86%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+  backdrop-filter: blur(18px) saturate(125%);
+}
+
+.marketplace-batch-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
 .marketplace-tag-filter {
   all: unset;
   cursor: pointer;
@@ -721,7 +809,7 @@
 
 .marketplace-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
   gap: 12px;
   max-width: 1200px;
 }
@@ -735,6 +823,16 @@
   padding: 12px;
 }
 
+.marketplace-card[data-selected="true"] {
+  border-color: var(--vscode-focusBorder, var(--border-focus));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 6%, transparent), transparent 55%),
+    color-mix(in srgb, var(--vscode-list-activeSelectionBackground, var(--background-strong)) 24%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 9%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder, var(--border-focus)) 22%, transparent);
+}
+
 .marketplace-card-header {
   display: flex;
   flex-direction: column;
@@ -745,6 +843,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.marketplace-card-title [data-component="checkbox"] {
+  flex: 0 0 auto;
 }
 
 .marketplace-card-name {
@@ -846,6 +948,78 @@
   border-color: var(--vscode-focusBorder);
 }
 
+.marketplace-batch-result {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  border-color: var(--vscode-focusBorder, var(--border-focus));
+}
+
+.marketplace-batch-result__header,
+.marketplace-batch-result__counts,
+.marketplace-batch-result__items > div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.marketplace-batch-result__header {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.marketplace-batch-result__header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.marketplace-batch-result__header span,
+.marketplace-batch-result__items small {
+  color: var(--vscode-descriptionForeground, var(--text-weak));
+}
+
+.marketplace-batch-result__counts {
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.marketplace-batch-result__items {
+  display: grid;
+  gap: 6px;
+}
+
+.marketplace-batch-result__items > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--vscode-widget-border, var(--border-base)) 72%, transparent);
+}
+
+.marketplace-batch-result__items strong,
+.marketplace-batch-result__items small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.marketplace-batch-result__items small {
+  grid-column: 1 / -1;
+}
+
+.marketplace-batch-result .batch-published {
+  color: var(--vscode-testing-iconPassed, var(--text-success));
+}
+
+.marketplace-batch-result .batch-attention,
+.marketplace-batch-result .batch-skipped {
+  color: var(--vscode-editorWarning-foreground, var(--text-warning));
+}
+
+.marketplace-batch-result .batch-failed {
+  color: var(--vscode-testing-iconFailed, var(--text-danger));
+}
+
 .marketplace-publication-result > div:first-child {
   display: flex;
   align-items: center;
@@ -870,6 +1044,26 @@
 .marketplace-badge-installed {
   color: var(--text-on-success-base) !important;
   border-color: var(--border-success-base) !important;
+}
+
+.marketplace-scope-badge {
+  border-color: color-mix(in srgb, var(--vscode-focusBorder, var(--border-focus)) 42%, transparent) !important;
+  background: color-mix(in srgb, var(--vscode-focusBorder, var(--border-focus)) 10%, transparent) !important;
+}
+
+.marketplace-effective-badge {
+  color: var(--vscode-testing-iconPassed, var(--text-success)) !important;
+  border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 52%, transparent) !important;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 8%, transparent), transparent 62%),
+    color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 12%, transparent) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 9%, transparent);
+}
+
+.marketplace-shadowed-badge {
+  color: var(--vscode-descriptionForeground, var(--text-weak)) !important;
+  border-color: color-mix(in srgb, var(--vscode-descriptionForeground, var(--text-weak)) 38%, transparent) !important;
+  background: color-mix(in srgb, var(--vscode-descriptionForeground, var(--text-weak)) 8%, transparent) !important;
 }
 
 .marketplace-risk-badge {
@@ -1317,6 +1511,21 @@
 }
 
 @media (max-width: 480px) {
+  .marketplace-batch-toolbar,
+  .marketplace-batch-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .marketplace-batch-actions {
+    width: 100%;
+  }
+
+  .marketplace-batch-actions [data-component="button"] {
+    justify-content: center;
+    width: 100%;
+  }
+
   .marketplace-runtime-card__main,
   .marketplace-runtime-actions {
     align-items: stretch;
@@ -1370,6 +1579,10 @@ body.vscode-high-contrast,
 body.vscode-high-contrast-light {
   .marketplace-card {
     border: 1px solid var(--vscode-contrastBorder, transparent);
+  }
+
+  .marketplace-card[data-selected="true"] {
+    border-color: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
   }
 
   .marketplace-tag-filter {

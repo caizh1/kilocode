@@ -16,6 +16,7 @@ export type PackagedChipmateServerDefaults = {
   marketplace?: string
   word?: string
   mermaid?: string
+  plantuml?: string
 }
 
 type Manifest = {
@@ -45,6 +46,7 @@ export function resolvePackagedChipmateServer(input: PackagedChipmateServerInput
     marketplace: endpoints.marketplace,
     word: endpoints.word,
     mermaid: endpoints.mermaid,
+    plantuml: endpoints.plantuml,
   }
 }
 

@@ -59,6 +59,7 @@ import { normalize } from "./session-diff"
 import { deferredHighlight } from "../context/marked"
 import { escapeHtml } from "../util/escape-html"
 import { buildHighlightedTextSegments, type HighlightSegment } from "./message-highlight"
+import { PlantUml } from "../util/plantuml"
 
 // Windows CLI tools (e.g. winget) use \r to overwrite progress bars in-place.
 // Without this, every progress frame renders as a separate visual line.
@@ -1320,12 +1321,20 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     return props.turnDiffSummary
   })
 
-  // Assistant message is still in-flight when `time.completed` hasn't been set.
-  // Used as a render guard for synthetic status parts so stale ones don't
-  // linger in the scrollback after a hard-kill of the host process.
+  // Assistant messages are normally complete once `time.completed` is set.
+  // An explicitly idle session is the fallback when that update is delayed or
+  // omitted; other callers keep the existing timestamp-only behavior.
   const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
+    () =>
+      props.message.role === "assistant" &&
+      typeof (props.message as AssistantMessage).time.completed !== "number" &&
+      props.working !== false,
   )
+  const markdown = createMemo(() => {
+    const text = throttledText()
+    if (props.message.role !== "assistant") return text
+    return PlantUml.normalize(text)
+  })
 
   // Synthetic text parts (e.g. "Initializing snapshot…" from the slow-repo
   // guard) are transient status indicators. Hide them once the owning message
@@ -1384,7 +1393,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     <Show when={throttledText() && showSyntheticPart()}>
       <div data-component="text-part">
         <div data-slot="text-part-body">
-          <Markdown text={throttledText()} cacheKey={part().id} streaming={streaming()} onClick={handleMarkdownClick} />
+          <Markdown text={markdown()} cacheKey={part().id} streaming={streaming()} onClick={handleMarkdownClick} />
         </div>
         <Show when={showCopy()}>
           <div data-slot="assistant-copy-wrapper">

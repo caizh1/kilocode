@@ -108,9 +108,12 @@ describe("UpdateCheckService", () => {
     env.fetch.mockResolvedValueOnce(json(manifest({ sizeBytes: 1, sha256: "0".repeat(64) })))
     env.fetch.mockResolvedValueOnce(new Response(new ReadableStream({ start() {} }), { status: 200 }))
 
-    await env.service.checkManual()
+    const available = await env.service.probeManual()
+    expect(available.status).toBe("available")
+    if (available.status !== "available") throw new Error("expected update candidate")
+    const result = await env.service.installManual(available.candidateId)
 
-    expect(env.warnings).toEqual(["Failed to download VSIX: VSIX download was aborted."])
+    expect(result).toMatchObject({ status: "error", code: "download" })
     expect(await exists(env.final("0.0.17"))).toBe(false)
   })
 
@@ -169,7 +172,7 @@ describe("UpdateCheckService", () => {
 
     await env.service.checkManual()
 
-    expect(env.info[0]?.message).toBe(`No compatible ChipMate update package is available for ${TARGET}.`)
+    expect(env.info[0]?.message).toBe("ChipMate is already up to date.")
     expect(env.exec).not.toHaveBeenCalled()
   })
 
@@ -191,9 +194,12 @@ describe("UpdateCheckService", () => {
     )
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
 
-    await env.service.checkManual()
+    const available = await env.service.probeManual()
+    expect(available.status).toBe("available")
+    if (available.status !== "available") throw new Error("expected update candidate")
+    const result = await env.service.installManual(available.candidateId)
 
-    expect(env.warnings).toEqual(["VSIX sha256 verification failed."])
+    expect(result).toMatchObject({ status: "error", code: "sha256" })
     expect(await exists(env.final("0.0.18"))).toBe(false)
     expect(await exists(`${env.final("0.0.18")}.tmp`)).toBe(false)
     expect(env.exec).not.toHaveBeenCalled()
@@ -264,12 +270,13 @@ describe("UpdateCheckService", () => {
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
     env.exec.mockRejectedValueOnce(new Error("code not found"))
 
-    await env.service.checkManual()
+    const available = await env.service.probeManual()
+    expect(available.status).toBe("available")
+    if (available.status !== "available") throw new Error("expected update candidate")
+    const result = await env.service.installManual(available.candidateId)
 
     expect(env.exec.mock.calls[0]?.[0]).toBe(cli)
-    expect(env.warnings[0]).toContain("--install-extension")
-    expect(env.warnings[0]).toContain(env.final("0.0.20"))
-    expect(env.warnings[0]).toContain("code not found")
+    expect(result).toMatchObject({ status: "error", code: "install" })
     expect(await exists(env.final("0.0.20"))).toBe(true)
   })
 
@@ -279,9 +286,12 @@ describe("UpdateCheckService", () => {
     env.fetch.mockResolvedValueOnce(json(manifest({ sha256: sha(body), sizeBytes: body.length })))
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
 
-    await env.service.checkManual()
+    const available = await env.service.probeManual()
+    expect(available.status).toBe("available")
+    if (available.status !== "available") throw new Error("expected update candidate")
+    const result = await env.service.installManual(available.candidateId)
 
-    expect(env.warnings).toEqual(["VSIX package identity does not match the update manifest."])
+    expect(result).toMatchObject({ status: "error", code: "identity" })
     expect(env.exec).not.toHaveBeenCalled()
     expect(await exists(env.final("0.0.17"))).toBe(false)
   })
@@ -292,15 +302,18 @@ describe("UpdateCheckService", () => {
     env.fetch.mockResolvedValueOnce(json(manifest({ sha256: sha(body), sizeBytes: body.length + 1 })))
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
 
-    await env.service.checkManual()
+    const available = await env.service.probeManual()
+    expect(available.status).toBe("available")
+    if (available.status !== "available") throw new Error("expected update candidate")
+    const result = await env.service.installManual(available.candidateId)
 
-    expect(env.warnings).toEqual(["VSIX size does not match the manifest."])
+    expect(result).toMatchObject({ status: "error", code: "download-size" })
     expect(env.exec).not.toHaveBeenCalled()
   })
 
-  it("coalesces concurrent checks into one prompt, download, and install", async () => {
+  it("coalesces concurrent explicit installs into one download and install", async () => {
     const body = await vsix()
-    const env = await setup({ config: { autoInstall: false }, info: [INSTALL] })
+    const env = await setup({ config: { autoInstall: false } })
     env.fetch.mockImplementation(async (input) => {
       const url = String(input)
       if (url.endsWith("manifest.json")) {
@@ -310,12 +323,17 @@ describe("UpdateCheckService", () => {
     })
     env.exec.mockResolvedValue({ stdout: "", stderr: "" })
 
-    await Promise.all([env.service.checkManual(), env.service.checkManual()])
+    const available = await env.service.probeManual()
+    expect(available.status).toBe("available")
+    if (available.status !== "available") throw new Error("expected update candidate")
+    await Promise.all([
+      env.service.installManual(available.candidateId),
+      env.service.installManual(available.candidateId),
+    ])
 
     expect(env.exec).toHaveBeenCalledTimes(1)
     expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
-    expect(env.info.filter((item) => item.items.includes(INSTALL))).toHaveLength(1)
-    expect(env.info.filter((item) => item.items.includes(RELOAD))).toHaveLength(1)
+    expect(env.info).toHaveLength(0)
   })
 
   it("suppresses repeat install attempts while a successful update awaits reload", async () => {
@@ -329,15 +347,18 @@ describe("UpdateCheckService", () => {
       return new Response(body, { status: 200 })
     })
 
-    await env.service.checkManual()
-    await env.service.checkManual()
+    const available = await env.service.probeManual()
+    expect(available.status).toBe("available")
+    if (available.status !== "available") throw new Error("expected update candidate")
+    await env.service.installManual(available.candidateId)
+    await env.service.installManual(available.candidateId)
 
     expect(env.exec).toHaveBeenCalledTimes(1)
     expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
-    expect(env.info.at(-1)?.message).toBe("ChipMate update is installed and awaiting reload.")
+    expect(env.info).toHaveLength(0)
   })
 
-  it("retains manual-required state after install failure and never auto-retries it", async () => {
+  it("retries a retained verified VSIX only after another explicit install action", async () => {
     const body = await vsix({ version: "0.0.21" })
     const env = await setup()
     env.fetch.mockImplementation(async (input) => {
@@ -349,13 +370,65 @@ describe("UpdateCheckService", () => {
     })
     env.exec.mockRejectedValue(new Error("code not found"))
 
-    await env.service.checkManual()
-    await env.service.checkManual()
+    const available = await env.service.probeManual()
+    expect(available.status).toBe("available")
+    if (available.status !== "available") throw new Error("expected update candidate")
+    await env.service.installManual(available.candidateId)
+    await env.service.installManual(available.candidateId)
 
-    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.exec).toHaveBeenCalledTimes(2)
     expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
-    expect(env.warnings).toHaveLength(2)
     expect(await exists(env.final("0.0.21"))).toBe(true)
+  })
+
+  it("keeps a manual probe two-step even when automatic installation is enabled", async () => {
+    const env = await setup()
+    env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.22" })))
+
+    const result = await env.service.probeManual()
+
+    expect(result).toMatchObject({ status: "available", currentVersion: "0.0.16", version: "0.0.22" })
+    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns release notes with an opaque candidate and rejects forged candidates", async () => {
+    const env = await setup()
+    env.fetch.mockResolvedValueOnce(
+      json(
+        manifest({
+          version: "0.0.23",
+          releaseNotes: "# ChipMate 0.0.23\n\n- Safer updates",
+          publishedAt: "2026-07-24T08:00:00.000Z",
+        }),
+      ),
+    )
+
+    const result = await env.service.probeManual()
+
+    expect(result).toMatchObject({
+      status: "available",
+      version: "0.0.23",
+      releaseNotes: "# ChipMate 0.0.23\n\n- Safer updates",
+      publishedAt: "2026-07-24T08:00:00.000Z",
+    })
+    expect(await env.service.installManual("forged")).toMatchObject({ status: "error", code: "manifest" })
+    expect(env.exec).not.toHaveBeenCalled()
+  })
+
+  it("expires candidates before any package download", async () => {
+    const clock = { value: 1_000 }
+    const env = await setup({ now: () => clock.value })
+    env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.24" })))
+    const result = await env.service.probeManual()
+    expect(result.status).toBe("available")
+    if (result.status !== "available") throw new Error("expected update candidate")
+
+    clock.value += 31 * 60_000
+
+    expect(await env.service.installManual(result.candidateId)).toMatchObject({ status: "error", code: "manifest" })
+    expect(env.fetch).toHaveBeenCalledTimes(1)
+    expect(env.exec).not.toHaveBeenCalled()
   })
 })
 
@@ -367,7 +440,7 @@ describe("update-check version comparison", () => {
   })
 })
 
-async function setup(opts: { config?: Config; info?: unknown[]; target?: string } = {}) {
+async function setup(opts: { config?: Config; info?: unknown[]; target?: string; now?: () => number } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-update-check-"))
   roots.push(root)
   const state = memento()
@@ -410,7 +483,7 @@ async function setup(opts: { config?: Config; info?: unknown[]; target?: string 
   const service = new UpdateCheckService(context, {
     fetch: fetcher as unknown as typeof fetch,
     exec,
-    now: () => 1_000,
+    now: opts.now ?? (() => 1_000),
     updates: () => "http://server.test:6001/packages/manifest.json",
     log: {
       log: (...parts: unknown[]) => logs.log.push(parts.join(" ")),

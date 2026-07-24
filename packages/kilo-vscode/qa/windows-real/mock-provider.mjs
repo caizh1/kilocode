@@ -108,10 +108,18 @@ export function createMockProvider(opts = {}) {
 
 function chat(res, body, scenario) {
   if (scenario === "tool-call") {
+    const tools = Array.isArray(body?.tools) ? body.tools : []
+    const shell = tools.some((item) => item?.function?.name === "agent_console_shell")
     const call = {
       id: "call_qa_fixed",
       type: "function",
-      function: { name: "read", arguments: '{"filePath":"fixture/main.c"}' },
+      function: shell
+        ? {
+            name: "agent_console_shell",
+            arguments:
+              '{"command":"Add-Content -LiteralPath .chipmate-qa-agent.txt -Value approved","description":"QA approval probe"}',
+          }
+        : { name: "read", arguments: '{"filePath":"fixture/main.c"}' },
     }
     if (body?.stream) {
       return sse(res, [
@@ -185,11 +193,33 @@ function completion(res, body) {
 
 function scenarioFor(body, fallback) {
   const messages = Array.isArray(body?.messages) ? body.messages : []
-  const text = [body?.prompt, ...messages.map((item) => item?.content)]
+  const text = [
+    body?.prompt,
+    ...messages.flatMap((item) => {
+      const content = item?.content
+      if (typeof content === "string") return [content]
+      if (!Array.isArray(content)) return []
+      return content
+        .map((part) => (typeof part === "string" ? part : typeof part?.text === "string" ? part.text : ""))
+        .filter(Boolean)
+    }),
+  ]
     .filter((item) => typeof item === "string")
     .join("\n")
+  const latest = messages.findLast(
+    (item) =>
+      item?.role === "user" ||
+      item?.role === "tool" ||
+      (item?.role === "assistant" && Array.isArray(item?.tool_calls) && item.tool_calls.length > 0),
+  )
+  const done =
+    latest?.role === "tool" ||
+    (latest?.role === "assistant" && Array.isArray(latest.tool_calls) && latest.tool_calls.length > 0)
   const match = text.match(/\[QA:(SUCCESS|TOOL-CALL|HTTP-401|HTTP-403|HTTP-503|TIMEOUT|MALFORMED)\]/i)
-  return match ? match[1].toLowerCase() : fallback
+  if (!match) return fallback === "tool-call" && done ? "success" : fallback
+  const scenario = match[1].toLowerCase()
+  if (scenario !== "tool-call") return scenario
+  return done ? "success" : scenario
 }
 
 function vector(value) {

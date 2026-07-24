@@ -57,7 +57,7 @@ export namespace IndexingWorker {
 
   const worker = (directory: string, root: string, hooks: Hooks, options: Options = {}): Driver => {
     const budget = indexingBudget()
-    const task = Process.spawn(command(), {
+    const task = Process.spawn(indexingCommand(), {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
@@ -320,13 +320,18 @@ export namespace IndexingWorker {
   }
 }
 
-function command(): string[] {
-  if (typeof KILO_INDEXING_PROCESS_PATH === "undefined") {
-    return [process.execPath, fileURLToPath(new URL("./indexing-process.ts", import.meta.url))]
+export function indexingCommand(
+  configured = process.env.KILO_INDEXING_PROCESS_PATH?.trim(),
+  exec = process.execPath,
+): string[] {
+  const bundled = typeof KILO_INDEXING_PROCESS_PATH === "undefined" ? undefined : KILO_INDEXING_PROCESS_PATH
+  const executable = configured || bundled
+  if (!executable) {
+    return [exec, fileURLToPath(new URL("./indexing-process.ts", import.meta.url))]
   }
-  const file = path.isAbsolute(KILO_INDEXING_PROCESS_PATH)
-    ? KILO_INDEXING_PROCESS_PATH
-    : path.join(path.dirname(process.execPath), KILO_INDEXING_PROCESS_PATH)
+  const windows = [executable, exec].some((value) => /^[a-z]:[\\/]/i.test(value) || value.includes("\\"))
+  const paths = windows ? path.win32 : path
+  const file = paths.isAbsolute(executable) ? executable : paths.join(paths.dirname(exec), executable)
   return [file]
 }
 

@@ -58,12 +58,12 @@ describe("applyInternalIndexingDefaults", () => {
     })
   })
 
-  it("preserves explicit internal RAG opt-outs and document paths", () => {
+  it("preserves explicit internal RAG opt-outs and adds the workspace root to document paths", () => {
     expect(
       applyInternalIndexingDefaults({ enabled: false, documents: { enabled: false, paths: ["manuals"] } }, true),
     ).toEqual({
       enabled: false,
-      documents: { enabled: false, paths: ["manuals"] },
+      documents: { enabled: false, paths: [".", "manuals"] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
       dimension: 2048,
@@ -71,10 +71,10 @@ describe("applyInternalIndexingDefaults", () => {
     })
   })
 
-  it("preserves an explicit empty document path list", () => {
+  it("normalizes an explicit empty document path list to the workspace root", () => {
     expect(applyInternalIndexingDefaults({ documents: { paths: [] } }, true)).toEqual({
       enabled: true,
-      documents: { enabled: true, paths: [] },
+      documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
       dimension: 2048,

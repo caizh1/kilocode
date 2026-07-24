@@ -14,6 +14,10 @@ const nativeModules: Record<string, { module: string; binary: string }> = {
     module: "@lancedb/lancedb-win32-x64-msvc",
     binary: "lancedb.win32-x64-msvc.node",
   },
+  "win32-arm64": {
+    module: "@lancedb/lancedb-win32-arm64-msvc",
+    binary: "lancedb.win32-arm64-msvc.node",
+  },
   "linux-x64": {
     module: "@lancedb/lancedb-linux-x64-gnu",
     binary: "lancedb.linux-x64-gnu.node",
@@ -28,17 +32,19 @@ export function lancedbRuntimeEntry(bin: string): string {
   return join(lancedbRuntimeDir(bin), "node_modules", "@lancedb", "lancedb", "dist", "index.js")
 }
 
-export async function copyLanceDBRuntime(bin: string, target = "win32-x64"): Promise<void> {
-  const native = nativeModules[target]
-  if (!native) throw new Error(`Unsupported LanceDB runtime target for internal packaging: ${target}`)
+export async function copyLanceDBRuntime(bin: string, target = "win32-x64", extras: string[] = []): Promise<void> {
+  const targets = [target, ...extras]
+  const natives = targets.map((item) => nativeModules[item])
+  const missing = targets.find((_, index) => !natives[index])
+  if (missing) throw new Error(`Unsupported LanceDB runtime target for internal packaging: ${missing}`)
   const dir = lancedbRuntimeDir(bin)
   const dest = join(dir, "node_modules")
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dest, { recursive: true })
 
-  for (const name of [...baseModules, native.module]) copy(name, dest)
+  for (const name of [...baseModules, ...natives.map((native) => native.module)]) copy(name, dest)
   prune(dir)
-  verify(bin, native)
+  for (const native of natives) verify(bin, native)
 }
 
 function copy(name: string, dest: string): void {

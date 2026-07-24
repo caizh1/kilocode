@@ -5,6 +5,7 @@ import os from "os"
 import path from "path"
 import { promisify } from "util"
 import { TextReader, TextWriter, Uint8ArrayReader, Uint8ArrayWriter, ZipReader, ZipWriter } from "@zip.js/zip.js"
+import { extractDocxPlantUml } from "@kilocode/kilo-indexing/engine"
 import { declareArtifact } from "@/kilocode/documents/artifacts"
 import { assertValidWordDocumentBytes, prepareWordDocumentBytes } from "@/kilocode/documents/word-validation"
 import { Instance } from "@/kilocode/instance"
@@ -415,6 +416,8 @@ export type WordDocumentInspection = {
     altText?: string
     mediaPath?: string
     sha256?: string
+    plantUmlSource?: string
+    plantUmlVersion?: string
   }>
   imageDiagnostics: {
     drawingCount: number
@@ -531,6 +534,12 @@ export async function inspectWordDocument(input: {
     const paragraphsTruncated = paragraphs.length > inspectedParagraphs.length
     const tablesTruncated = tables.length > maxTables
     const imageInspection = await inspectImages(documentXml, relsXml ?? "", byName)
+    const plantuml = await extractDocxPlantUml(bytes).catch((err: unknown) => ({
+      diagrams: [],
+      warnings: [`Embedded PlantUML extraction failed: ${err instanceof Error ? err.message : String(err)}`],
+      truncated: true,
+    }))
+    const diagrams = new Map(plantuml.diagrams.map((diagram) => [diagram.mediaPath, diagram]))
     return {
       path: normalizePortable(path.relative(Instance.directory, absolute)),
       title: paragraphs.find((paragraph) => paragraph.styleId === "Title")?.text,
@@ -542,7 +551,14 @@ export async function inspectWordDocument(input: {
         rows: table,
         headingPath: [],
       })),
-      images: imageInspection.images,
+      images: imageInspection.images.map((image) => {
+        const diagram = image.mediaPath ? diagrams.get(image.mediaPath) : undefined
+        return {
+          ...image,
+          plantUmlSource: diagram?.source,
+          plantUmlVersion: diagram?.version,
+        }
+      }),
       imageDiagnostics: imageInspection.diagnostics,
       contentControls: parseContentControls(documentXml).map((item) => ({
         index: item.index,
@@ -551,7 +567,10 @@ export async function inspectWordDocument(input: {
         text: item.text,
       })),
       styles: parseStyles(stylesXml ?? ""),
-      warnings: [],
+      warnings: [
+        ...plantuml.warnings,
+        ...(plantuml.truncated ? ["Embedded PlantUML extraction was truncated by safety limits."] : []),
+      ],
       totalParagraphs: paragraphs.length,
       totalTables: tables.length,
       paragraphsTruncated,

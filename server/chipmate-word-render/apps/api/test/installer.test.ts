@@ -34,7 +34,7 @@ async function fixture() {
 set -eu
 if [ "$1" = "inspect" ] && [ "\${2:-}" != "--format" ]; then exit 0; fi
 if [ "$1" = "inspect" ] && [ "\${2:-}" = "--format" ]; then
-  printf '%s\n' 'PATH=/usr/bin' 'NEW_API_BASE_URL=http://new-api.internal' 'NEW_API_ADMIN_ACCESS_TOKEN=admin-secret' 'NEW_API_USER_ID=7' 'EXTENSION_MARKET_ENABLED=1' 'EXTENSION_MARKET_ROOT=/data/skill-market/extensions' 'EXTENSION_DROP_SCAN_MS=5000' 'EXTENSION_UPLOAD_MAX_ACTIVE=12'
+  printf '%s\n' 'PATH=/usr/bin' 'NEW_API_BASE_URL=http://new-api.internal' 'NEW_API_ADMIN_ACCESS_TOKEN=admin-secret' 'NEW_API_USER_ID=7' 'EXTENSION_MARKET_ENABLED=1' 'EXTENSION_MARKET_ROOT=/data/skill-market/extensions' 'EXTENSION_OWNER_BINDINGS_JSON={"chipmate.chipmate":"Alice"}' 'EXTENSION_DROP_SCAN_MS=5000' 'EXTENSION_UPLOAD_MAX_ACTIVE=12'
   exit 0
 fi
 if [ "$1" = "load" ]; then echo "load $*" >> "$DOCKER_LOG"; echo 'Loaded image: chipmate-word-render:0.1.8'; exit 0; fi
@@ -83,6 +83,7 @@ test("inherits resolver and extension directory settings while starting the mark
     assert.match(log, /NEW_API_USER_ID=7/)
     assert.doesNotMatch(log, /EXTENSION_MARKET_ENABLED=1/)
     assert.match(log, /EXTENSION_MARKET_ROOT=\/data\/skill-market\/extensions/)
+    assert.match(log, /EXTENSION_OWNER_BINDINGS_JSON=\{"chipmate\.chipmate":"Alice"\}/)
     assert.match(log, /EXTENSION_DROP_SCAN_MS=5000/)
     assert.match(log, /EXTENSION_UPLOAD_MAX_ACTIVE=12/)
     assert.match(log, /--env EXTENSION_MARKET_ENABLED=0/)

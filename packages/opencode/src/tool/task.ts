@@ -22,6 +22,7 @@ import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as SandboxPolicy from "@/kilocode/sandbox/policy" // kilocode_change
 import { Database } from "@opencode-ai/core/database/database"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -114,6 +115,15 @@ export const TaskTool = Tool.define(
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
+      // kilocode_change start - keep source-backed evidence and artifacts in the root session
+      if (WorkflowGuard.sourceBacked(ctx.sessionID, ctx.messages)) {
+        return yield* Effect.fail(
+          new Error(
+            "Task is blocked for the active source-backed-detail-design workflow. Keep scope, evidence, prose, diagrams, and Word assembly in this root session; continue with native read, grep, and document tools.",
+          ),
+        )
+      }
+      // kilocode_change end
       const cfg = yield* config.get()
       const runInBackground = params.background === true
       if (runInBackground && !flags.experimentalBackgroundSubagents) {

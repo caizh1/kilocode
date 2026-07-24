@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import {
+  documentRoots,
+  extraRoots,
   indexingConfig,
   indexingDescription,
   indexingEnabled,
@@ -7,6 +9,7 @@ import {
   indexingInheritance,
   indexingSource,
   indexingUpdate,
+  mergeExternalRoots,
 } from "../../webview-ui/src/components/settings/indexing-tab-state"
 import { dict as zh } from "../../webview-ui/src/i18n/zh"
 
@@ -14,6 +17,25 @@ const t = (key: string, params?: Record<string, string | number | boolean | unde
   (zh[key] ?? key).replace(/\{\{\s*([^}\s]+)\s*\}\}/g, (_, name: string) => String(params?.[name] ?? ""))
 
 describe("indexing tab scope state", () => {
+  it("keeps the workspace root fixed before deduplicated additional roots", () => {
+    expect(documentRoots([])).toEqual(["."])
+    expect(documentRoots(["/shared", ".", " /manuals ", "/shared"])).toEqual([".", "/shared", "/manuals"])
+    expect(extraRoots([".", "/shared", "/manuals"])).toEqual(["/shared", "/manuals"])
+  })
+
+  it("deduplicates external approvals without merging project scopes", () => {
+    expect(
+      mergeExternalRoots(
+        [{ path: "/shared" }, { path: "/manuals", workspace: "/repo-a" }],
+        [{ path: "/shared" }, { path: "/manuals", workspace: "/repo-b" }],
+      ),
+    ).toEqual([
+      { path: "/shared" },
+      { path: "/manuals", workspace: "/repo-a" },
+      { path: "/manuals", workspace: "/repo-b" },
+    ])
+  })
+
   it("uses the global value when project enablement is inherited", () => {
     expect(indexingEnabled("project", { enabled: true }, {})).toBe(true)
     expect(indexingEnabled("project", { enabled: false }, {})).toBe(false)

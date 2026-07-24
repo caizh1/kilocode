@@ -4,6 +4,34 @@ import type { AgentManagerProvider } from "../../agent-manager/AgentManagerProvi
 import { getEditorContext } from "./editor-utils"
 import { createPrompt } from "./support-prompt"
 
+function inline(value: string): string {
+  const width = Math.max(0, ...Array.from(value.matchAll(/`+/g), (match) => match[0].length)) + 1
+  const fence = "`".repeat(width)
+  return `${fence}${value}${fence}`
+}
+
+async function references(resource?: vscode.Uri, selected?: vscode.Uri[]): Promise<string[]> {
+  const resources = selected?.length ? selected : resource ? [resource] : []
+  const settled = await Promise.allSettled(
+    resources.map(async (uri) => {
+      if (!vscode.workspace.getWorkspaceFolder(uri)) return
+      const stat = await vscode.workspace.fs.stat(uri)
+      const path = vscode.workspace.asRelativePath(uri).replaceAll("\\", "/").replace(/\/+$/, "")
+      const folder = (stat.type & vscode.FileType.Directory) !== 0
+      if (!path) return folder ? "./" : undefined
+      return folder ? `${path}/` : path
+    }),
+  )
+  const seen = new Set<string>()
+  const paths: string[] = []
+  for (const result of settled) {
+    if (result.status !== "fulfilled" || !result.value || seen.has(result.value)) continue
+    seen.add(result.value)
+    paths.push(result.value)
+  }
+  return paths
+}
+
 export function registerCodeActions(
   context: vscode.ExtensionContext,
   provider: KiloProvider,
@@ -96,6 +124,20 @@ export function registerCodeActions(
       if (!(await revealTarget(view))) return
       view.postMessage({ type: "appendChatBoxMessage", text: prompt })
     }),
+
+    vscode.commands.registerCommand(
+      "chipmate.v2.addExplorerPathsToQa",
+      async (resource?: vscode.Uri, selected?: vscode.Uri[]) => {
+        const paths = await references(resource, selected)
+        if (paths.length === 0) {
+          void vscode.window.showInformationMessage("未找到可引用的工作区文件或文件夹。")
+          return
+        }
+        const view = target()
+        if (!(await revealTarget(view))) return
+        view.postMessage({ type: "appendChatBoxMessage", text: paths.map(inline).join("\n") })
+      },
+    ),
 
     vscode.commands.registerCommand("chipmate.v2.focusChatInput", async () => {
       const view = target()

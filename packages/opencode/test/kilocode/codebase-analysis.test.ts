@@ -37,9 +37,16 @@ describe("tool.codebase_analysis", () => {
   test("describes C/C++ analysis use cases", async () => {
     const tool = await initTool()
 
-    expect(tool.description).toContain("C/C++ symbol relationships")
+    expect(tool.description).toContain("optional supporting evidence")
+    expect(tool.description).toContain("not as a prerequisite")
     expect(tool.description).toContain("call chains")
+    expect(tool.description).toContain("When to use Grep instead")
+    expect(tool.description).toContain("only asks where an exact identifier")
+    expect(tool.description).toContain("Directly locating and reading")
+    expect(tool.description).toContain("If the index is not ready")
     expect(tool.description).toContain("semantic_search")
+    expect(tool.description).not.toContain("Use this tool first")
+    expect(tool.description).not.toMatch(/take priority/i)
   })
 
   test("throws when query is empty", async () => {

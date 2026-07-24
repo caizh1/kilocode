@@ -17,14 +17,19 @@ FROM node:24-bookworm-slim AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-    ca-certificates \
+RUN apt-get -o Acquire::Retries=5 update \
+  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates \
+  && sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+  && apt-get -o Acquire::Retries=5 update \
+  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
     fontconfig \
     fonts-dejavu \
     fonts-liberation \
     fonts-noto-cjk \
+    curl \
     chromium \
+    graphviz \
+    openjdk-17-jre-headless \
     libreoffice-writer \
     python3 \
     python3-uno \
@@ -36,6 +41,16 @@ RUN fc-cache -f \
   && test "$(fc-match --format '%{family[0]}' 'Microsoft YaHei')" = "Noto Sans CJK SC"
 
 WORKDIR /app
+
+ARG PLANTUML_VERSION=1.2026.6
+ARG PLANTUML_SHA256=695bcfc423172fff8c9eee6eb88eed4c256458784cbb30a07efe59994d069ee0
+RUN curl -fL --retry 5 --retry-all-errors --retry-delay 2 \
+      "https://github.com/plantuml/plantuml/releases/download/v${PLANTUML_VERSION}/plantuml-asl-${PLANTUML_VERSION}.jar" \
+      -o /app/plantuml-asl.jar \
+  && echo "${PLANTUML_SHA256}  /app/plantuml-asl.jar" | sha256sum -c - \
+  && mkdir -p /app/licenses \
+  && java -jar /app/plantuml-asl.jar -license > /app/licenses/plantuml-ASL-LICENSE.txt \
+  && grep -qi "Apache" /app/licenses/plantuml-ASL-LICENSE.txt
 COPY package.json package-lock.json tsconfig.base.json /app/
 COPY apps/api/package.json /app/apps/api/package.json
 COPY apps/web/package.json /app/apps/web/package.json
@@ -64,6 +79,15 @@ ENV PORT=6001 \
     MARKET_WEB_ROOT=/app/apps/web/dist \
     MAX_DOCX_BYTES=52428800 \
     MAX_MERMAID_SOURCE_BYTES=524288 \
+    MAX_PLANTUML_SOURCE_BYTES=131072 \
+    MAX_PLANTUML_PNG_BYTES=16777216 \
+    MAX_PLANTUML_DIMENSION=4096 \
+    MAX_PLANTUML_CONCURRENCY=2 \
+    MAX_PLANTUML_QUEUE=16 \
+    PLANTUML_JAR=/app/plantuml-asl.jar \
+    PLANTUML_VERSION=1.2026.6 \
+    PLANTUML_SECURITY_PROFILE=SANDBOX \
+    PLANTUML_LIMIT_SIZE=4096 \
     PYTHON_UNO_BIN=/usr/bin/python3 \
     RENDER_TIMEOUT_MS=120000 \
     MAX_WORD_RENDER_PAGES=500 \

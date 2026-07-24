@@ -1322,6 +1322,39 @@ describe("QdrantVectorStore", () => {
       })
     })
 
+    test("should split external document keys into portable path segments", async () => {
+      const point = {
+        id: "external-id",
+        vector: [0.1, 0.2, 0.3],
+        payload: {
+          filePath: "@external/0123456789abcdef/guide.md",
+          content: "external guide",
+          startLine: 1,
+          endLine: 1,
+        },
+      }
+      mockUpsert.mockResolvedValue({} as any)
+
+      await vectorStore.upsertPoints([point])
+
+      expect(mockUpsert).toHaveBeenCalledWith(expectedCollectionName, {
+        points: [
+          {
+            ...point,
+            payload: {
+              ...point.payload,
+              pathSegments: {
+                "0": "@external",
+                "1": "0123456789abcdef",
+                "2": "guide.md",
+              },
+            },
+          },
+        ],
+        wait: true,
+      })
+    })
+
     test("should handle error scenarios when qdrantClient.upsert fails", async () => {
       const mockPoints = [
         {

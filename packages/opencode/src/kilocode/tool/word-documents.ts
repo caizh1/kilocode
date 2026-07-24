@@ -12,6 +12,9 @@ import {
   renderWordDocument,
 } from "@/kilocode/documents/word"
 import { validateWordDocument } from "@/kilocode/documents/word-validation"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard"
+import * as Readiness from "@/kilocode/skill/workflow-readiness"
+import { Instance } from "@/kilocode/instance"
 
 const ImageBlock = Schema.Struct({
   type: Schema.Literal("image"),
@@ -367,6 +370,22 @@ export const CreateWordDocumentTool = Tool.define(
       ctx: Tool.Context,
     ): Effect.Effect<Tool.ExecuteResult<WordMeta>> =>
       Effect.gen(function* () {
+        if (WorkflowGuard.sourceBacked(ctx.sessionID, ctx.messages)) {
+          const root = WorkflowGuard.root(ctx.sessionID, ctx.messages)
+          if (!root) {
+            return wordFailure(
+              "Word Document Creation Blocked",
+              "Declare the canonical source-backed artifact root before Word creation.",
+            )
+          }
+          const ready = yield* Effect.promise(() => Readiness.figures(Instance.directory, root))
+          if (ready.issues.length) {
+            return wordFailure(
+              "Word Document Creation Blocked",
+              `The source-backed prose and five-view figure matrix are not ready. ${ready.issues.slice(0, 30).join("; ")}`,
+            )
+          }
+        }
         yield* ctx.ask({
           permission: "create_word_document",
           patterns: [params.title],

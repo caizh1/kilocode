@@ -3,11 +3,11 @@ import { Card } from "@kilocode/kilo-ui/card"
 import { TextField } from "@kilocode/kilo-ui/text-field"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Switch } from "@kilocode/kilo-ui/switch"
+import { Markdown } from "@kilocode/kilo-ui/markdown"
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
 import type { LanguageContextValue } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
-import SettingsRow from "./SettingsRow"
 import {
   CHIPMATE_SERVER_KEY,
   isCurrentChipmateServerTest,
@@ -15,8 +15,11 @@ import {
   type ChipmateServerState,
   type ChipmateServerTestResult,
 } from "../../../../src/shared/chipmate-server"
+import type { ChipmateUpdateResult } from "../../../../src/shared/update-check"
 
 const UPDATE_AUTO_INSTALL_KEY = "updateCheck.autoInstall"
+
+type Phase = "idle" | "checking" | "installing"
 
 export interface ChipmateServerTabProps {
   preview?: {
@@ -24,6 +27,9 @@ export interface ChipmateServerTabProps {
     state?: ChipmateServerState
     result?: ChipmateServerTestResult
     testing?: boolean
+    update?: ChipmateUpdateResult
+    updatePhase?: Exclude<Phase, "idle">
+    notesExpanded?: boolean
   }
 }
 
@@ -36,14 +42,21 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
   const vscode = useVSCode()
   const { settings, updateSetting } = useConfig()
   const [state, setState] = createSignal<ChipmateServerState | undefined>(props.preview?.state)
-  const [request, setRequest] = createSignal<string | undefined>(
+  const [testRequest, setTestRequest] = createSignal<string | undefined>(
     props.preview?.testing ? "storybook-preview" : undefined,
   )
   const [result, setResult] = createSignal<ChipmateServerTestResult | undefined>(props.preview?.result)
+  const [phase, setPhase] = createSignal<Phase>(props.preview?.updatePhase ?? "idle")
+  const [update, setUpdate] = createSignal<ChipmateUpdateResult | undefined>(props.preview?.update)
+  const [candidate, setCandidate] = createSignal<Extract<ChipmateUpdateResult, { status: "available" }> | undefined>(
+    props.preview?.update?.status === "available" ? props.preview.update : undefined,
+  )
+  const [updateRequest, setUpdateRequest] = createSignal<string | undefined>()
+  const [action, setAction] = createSignal<"check" | "install">("check")
+  const [expanded, setExpanded] = createSignal(Boolean(props.preview?.notesExpanded))
 
   const value = () => String(props.preview?.value ?? settings()[CHIPMATE_SERVER_KEY] ?? state()?.baseUrl ?? "")
   const ready = () => props.preview?.value !== undefined || settings()[CHIPMATE_SERVER_KEY] !== undefined || Boolean(state())
-  const autoInstall = () => settings()[UPDATE_AUTO_INSTALL_KEY] !== false
   const error = createMemo(() => {
     if (!ready()) return undefined
     try {
@@ -59,10 +72,20 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
       setState(message.state)
       return
     }
-    if (message.type !== "chipmateServerTestResult" || !isCurrentChipmateServerTest(request(), message.requestId))
+    if (message.type === "chipmateServerTestResult") {
+      if (!isCurrentChipmateServerTest(testRequest(), message.requestId)) return
+      setTestRequest(undefined)
+      setResult(message.result)
       return
-    setRequest(undefined)
-    setResult(message.result)
+    }
+    if (message.type !== "chipmateUpdateState" || message.requestId !== updateRequest()) return
+    setUpdateRequest(undefined)
+    setPhase("idle")
+    setUpdate(message.result)
+    if (message.result.status === "available") {
+      setCandidate(message.result)
+      setExpanded(false)
+    }
   })
   onCleanup(unsubscribe)
   vscode.postMessage({ type: "requestChipmateServerSettings" })
@@ -70,39 +93,60 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
   const change = (next: string) => {
     updateSetting(CHIPMATE_SERVER_KEY, next)
     setResult(undefined)
-    setRequest(undefined)
+    setTestRequest(undefined)
+    setUpdateRequest(undefined)
+    setPhase("idle")
+    setAction("check")
+    setUpdate(undefined)
+    setCandidate(undefined)
+    setExpanded(false)
   }
 
   const test = () => {
-    if (!ready() || error() || request()) return
-    const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-    setRequest(id)
+    if (!ready() || error() || testRequest()) return
+    const id = requestId()
+    setTestRequest(id)
     setResult(undefined)
     vscode.postMessage({ type: "testChipmateServer", baseUrl: value(), requestId: id })
   }
 
-  const status = () => {
-    if (error()) return { kind: "error", text: language.t("settings.chipmateServer.status.invalid") }
-    if (request()) return { kind: "testing", text: language.t("settings.chipmateServer.status.testing") }
-    const tested = result()
-    if (tested) return testStatus(tested, language.t)
-    if (state()?.source === "invalid") {
-      return { kind: "error", text: language.t("settings.chipmateServer.status.savedInvalid") }
-    }
-    if (state()?.source === "conflict") {
-      return { kind: "warning", text: language.t("settings.chipmateServer.status.conflict") }
-    }
-    if (state()?.source === "migrated") {
-      return { kind: "success", text: language.t("settings.chipmateServer.status.migrated") }
-    }
-    return undefined
+  const check = () => {
+    if (phase() !== "idle") return
+    const id = requestId()
+    setAction("check")
+    setPhase("checking")
+    setUpdateRequest(id)
+    setExpanded(false)
+    vscode.postMessage({ type: "checkChipmateUpdate", requestId: id })
   }
+
+  const install = () => {
+    const item = candidate()
+    if (!item || phase() !== "idle") return
+    const id = requestId()
+    setAction("install")
+    setPhase("installing")
+    setUpdateRequest(id)
+    vscode.postMessage({ type: "installChipmateUpdate", candidateId: item.candidateId, requestId: id })
+  }
+
+  const retry = () => {
+    const item = update()
+    if (item?.status === "error" && !item.retryable) {
+      check()
+      return
+    }
+    if (action() === "install" && candidate()) {
+      install()
+      return
+    }
+    check()
+  }
+
+  const status = () => serverStatus(error(), testRequest(), result(), state(), language.t)
 
   return (
     <div class="chipmate-server-page" data-ui="chipmate-server-page">
-      <p class="chipmate-server-intro" data-ui="chipmate-server-description">
-        {language.t("settings.chipmateServer.description")}
-      </p>
       <Card class="chipmate-server-card" data-ui="chipmate-server-form">
         <div class="chipmate-server-label-row">
           <div class="chipmate-server-label-copy">
@@ -132,10 +176,10 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
             class="chipmate-server-test"
             variant="secondary"
             onClick={test}
-            disabled={!ready() || Boolean(error()) || Boolean(request())}
+            disabled={!ready() || Boolean(error()) || Boolean(testRequest())}
             data-ui="chipmate-server-test"
           >
-            {request()
+            {testRequest()
               ? language.t("settings.chipmateServer.test.testing")
               : language.t("settings.chipmateServer.test.action")}
           </Button>
@@ -149,15 +193,7 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
                   aria-live="polite"
                 >
                   <Codicon
-                    name={
-                      item().kind === "success"
-                        ? "check"
-                        : item().kind === "testing"
-                          ? "sync"
-                          : item().kind === "error"
-                            ? "error"
-                            : "warning"
-                    }
+                    name={statusIcon(item().kind)}
                     spin={item().kind === "testing"}
                   />
                   <span>{item().text}</span>
@@ -167,28 +203,229 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
           </div>
         </div>
       </Card>
-      <Card class="chipmate-server-card" data-ui="chipmate-server-update">
-        <SettingsRow
-          title={language.t("settings.chipmateServer.autoUpdate.title")}
-          description={language.t("settings.chipmateServer.autoUpdate.description")}
-          last
-        >
+
+      <UpdateCard
+        phase={phase}
+        update={update}
+        expanded={expanded}
+        toggle={() => setExpanded((value) => !value)}
+        check={check}
+        install={install}
+        retry={retry}
+      />
+    </div>
+  )
+}
+
+const UpdateCard: Component<{
+  phase: () => Phase
+  update: () => ChipmateUpdateResult | undefined
+  expanded: () => boolean
+  toggle: () => void
+  check: () => void
+  install: () => void
+  retry: () => void
+}> = (props) => {
+  const language = useLanguage()
+  const vscode = useVSCode()
+  const { settings, updateSetting } = useConfig()
+  const autoInstall = () => settings()[UPDATE_AUTO_INSTALL_KEY] !== false
+  return (
+    <Card class="chipmate-server-card chipmate-update-card" data-ui="chipmate-server-update">
+        <div class="chipmate-update-heading">
+          <div>
+            <h3>{language.t("settings.chipmateServer.update.title")}</h3>
+            <p>{language.t("settings.chipmateServer.update.description")}</p>
+          </div>
+          <Button
+            class="chipmate-update-check"
+            variant="secondary"
+            onClick={props.check}
+            disabled={props.phase() !== "idle"}
+            data-ui="chipmate-update-check"
+          >
+            <Codicon name="sync" spin={props.phase() === "checking"} />
+            <span>
+              {props.phase() === "checking"
+                ? language.t("settings.chipmateServer.update.checking")
+                : language.t("settings.chipmateServer.update.check")}
+            </span>
+          </Button>
+        </div>
+
+        <div class="chipmate-update-auto">
+          <div>
+            <strong>{language.t("settings.chipmateServer.autoUpdate.title")}</strong>
+            <span>{language.t("settings.chipmateServer.autoUpdate.description")}</span>
+          </div>
           <Switch
             checked={autoInstall()}
             onChange={(checked: boolean) => updateSetting(UPDATE_AUTO_INSTALL_KEY, checked)}
+            disabled={props.phase() === "installing"}
             hideLabel
           >
             {language.t("settings.chipmateServer.autoUpdate.title")}
           </Switch>
-        </SettingsRow>
-      </Card>
-      <div id="chipmate-server-reload" class="chipmate-server-reload" data-ui="chipmate-server-hint">
-        <Codicon name="window" />
-        <span>{language.t("settings.chipmateServer.reloadHint")}</span>
-      </div>
-    </div>
+        </div>
+
+        <Show when={props.phase() === "checking"}>
+          <UpdateStatus
+            icon="sync"
+            spin
+            kind="progress"
+            title={language.t("settings.chipmateServer.update.checking")}
+            detail={language.t("settings.chipmateServer.update.checkingDetail")}
+          />
+        </Show>
+        <Show when={props.phase() === "installing"}>
+          <UpdateStatus
+            icon="loading"
+            spin
+            kind="progress"
+            title={language.t("settings.chipmateServer.update.installing")}
+            detail={language.t("settings.chipmateServer.update.installingDetail")}
+          />
+        </Show>
+        <Show when={props.phase() === "idle" && props.update()?.status === "latest"}>
+          <UpdateStatus
+            icon="pass-filled"
+            kind="latest"
+            title={language.t("settings.chipmateServer.update.latest")}
+            detail={`${language.t("settings.chipmateServer.update.currentVersion", {
+              version: (props.update() as Extract<ChipmateUpdateResult, { status: "latest" }>).currentVersion,
+            })} · ${checkedLabel(
+              (props.update() as Extract<ChipmateUpdateResult, { status: "latest" }>).checkedAt,
+              language.t,
+            )}`}
+          />
+        </Show>
+        <Show
+          when={
+            props.phase() === "idle" && props.update()?.status === "available"
+              ? (props.update() as Extract<ChipmateUpdateResult, { status: "available" }>)
+              : undefined
+          }
+        >
+          {(value) => {
+            const item = value
+            return (
+              <div class="chipmate-update-available" aria-live="polite" data-ui="chipmate-update-available">
+                <div class="chipmate-update-icon chipmate-update-icon-available">
+                  <Codicon name="cloud-download" />
+                </div>
+                <div class="chipmate-update-copy">
+                  <strong>
+                    {language.t("settings.chipmateServer.update.available", { version: item().version })}
+                  </strong>
+                  <span>
+                    {language.t("settings.chipmateServer.update.versionTransition", {
+                      current: item().currentVersion,
+                      latest: item().version,
+                    })}
+                  </span>
+                  <span>{language.t("settings.chipmateServer.update.installDetail")}</span>
+                  <button
+                    type="button"
+                    class="chipmate-update-notes-toggle"
+                    aria-expanded={props.expanded()}
+                    onClick={props.toggle}
+                  >
+                    <span>
+                      {props.expanded()
+                        ? language.t("settings.chipmateServer.update.notesHide")
+                        : language.t("settings.chipmateServer.update.notesShow")}
+                    </span>
+                    <Codicon name={props.expanded() ? "chevron-up" : "chevron-down"} />
+                  </button>
+                  <Show when={props.expanded()}>
+                    <div class="chipmate-update-notes" data-ui="chipmate-update-notes">
+                      <div class="chipmate-update-notes-title">
+                        <Codicon name="file" />
+                        <strong>
+                          {language.t("settings.chipmateServer.update.notesTitle", { version: item().version })}
+                        </strong>
+                      </div>
+                      <Show
+                        when={item().releaseNotes}
+                        fallback={<p>{language.t("settings.chipmateServer.update.notesEmpty")}</p>}
+                      >
+                        {(notes) => <Markdown text={safeNotes(notes())} />}
+                      </Show>
+                      <p class="chipmate-update-notes-meta">
+                        {publishedLabel(item().publishedAt, language.t)}
+                        {" · "}
+                        {language.t("settings.chipmateServer.update.currentPlatform")}
+                      </p>
+                    </div>
+                  </Show>
+                </div>
+                <Button class="chipmate-update-install" variant="primary" onClick={props.install}>
+                  <Codicon name="cloud-download" />
+                  <span>{language.t("settings.chipmateServer.update.install")}</span>
+                </Button>
+              </div>
+            )
+          }}
+        </Show>
+        <Show when={props.phase() === "idle" && props.update()?.status === "installed"}>
+          <div class="chipmate-update-result-row" aria-live="polite">
+            <UpdateStatus
+              icon="check-all"
+              kind="latest"
+              title={language.t("settings.chipmateServer.update.installed")}
+              detail={language.t("settings.chipmateServer.update.installedDetail", {
+                version: (props.update() as Extract<ChipmateUpdateResult, { status: "installed" }>).version,
+              })}
+            />
+            <Button variant="primary" onClick={() => vscode.postMessage({ type: "reloadChipmateWindow" })}>
+              <Codicon name="window" />
+              <span>{language.t("settings.chipmateServer.update.reload")}</span>
+            </Button>
+          </div>
+        </Show>
+        <Show when={props.phase() === "idle" && props.update()?.status === "error"}>
+          <div class="chipmate-update-result-row" aria-live="assertive">
+            <UpdateStatus
+              icon="error"
+              kind="error"
+              title={language.t("settings.chipmateServer.update.failed")}
+              detail={updateError(
+                props.update() as Extract<ChipmateUpdateResult, { status: "error" }>,
+                language.t,
+              )}
+            />
+            <Button variant="secondary" onClick={props.retry}>
+              <Codicon name="refresh" />
+              <span>{language.t("settings.chipmateServer.update.retry")}</span>
+            </Button>
+          </div>
+        </Show>
+
+        <div id="chipmate-server-reload" class="chipmate-server-reload" data-ui="chipmate-server-hint">
+          <Codicon name="window" />
+          <span>{language.t("settings.chipmateServer.update.reloadHint")}</span>
+        </div>
+    </Card>
   )
 }
+
+const UpdateStatus: Component<{
+  icon: string
+  spin?: boolean
+  kind: "latest" | "progress" | "error"
+  title: string
+  detail: string
+}> = (props) => (
+  <div class={`chipmate-update-status chipmate-update-status-${props.kind}`} role={props.kind === "error" ? "alert" : "status"}>
+    <div class="chipmate-update-icon">
+      <Codicon name={props.icon} spin={props.spin} />
+    </div>
+    <div>
+      <strong>{props.title}</strong>
+      <span>{props.detail}</span>
+    </div>
+  </div>
+)
 
 function testStatus(result: ChipmateServerTestResult, t: LanguageContextValue["t"]) {
   if (result.status === "success") {
@@ -202,6 +439,70 @@ function testStatus(result: ChipmateServerTestResult, t: LanguageContextValue["t
     kind: "error",
     text: t(key, { status: result.statusCode ?? "", message: result.message ?? "" }),
   }
+}
+
+function updateError(result: Extract<ChipmateUpdateResult, { status: "error" }>, t: LanguageContextValue["t"]) {
+  if (result.code === "availability" || result.code === "server") {
+    return t("settings.chipmateServer.update.error.server")
+  }
+  if (result.code === "download" || result.code === "install") {
+    return t("settings.chipmateServer.update.error.action")
+  }
+  if (result.code === "download-size" || result.code === "download-hash") {
+    return t("settings.chipmateServer.update.error.package")
+  }
+  return t("settings.chipmateServer.update.error.validation")
+}
+
+function serverStatus(
+  invalid: string | undefined,
+  request: string | undefined,
+  result: ChipmateServerTestResult | undefined,
+  state: ChipmateServerState | undefined,
+  t: LanguageContextValue["t"],
+) {
+  if (invalid) return { kind: "error", text: t("settings.chipmateServer.status.invalid") }
+  if (request) return { kind: "testing", text: t("settings.chipmateServer.status.testing") }
+  if (result) return testStatus(result, t)
+  if (state?.source === "invalid") return { kind: "error", text: t("settings.chipmateServer.status.savedInvalid") }
+  if (state?.source === "conflict") return { kind: "warning", text: t("settings.chipmateServer.status.conflict") }
+  if (state?.source === "migrated") return { kind: "success", text: t("settings.chipmateServer.status.migrated") }
+  return undefined
+}
+
+function statusIcon(kind: string): string {
+  if (kind === "success") return "check"
+  if (kind === "testing") return "sync"
+  if (kind === "error") return "error"
+  return "warning"
+}
+
+function requestId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function checkedLabel(value: number, t: LanguageContextValue["t"]): string {
+  if (Date.now() - value < 60_000) return t("settings.chipmateServer.update.justChecked")
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(value)
+}
+
+function publishedLabel(value: string | undefined, t: LanguageContextValue["t"]): string {
+  if (!value) return t("settings.chipmateServer.update.publishedUnknown")
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return t("settings.chipmateServer.update.publishedUnknown")
+  return t("settings.chipmateServer.update.publishedAt", {
+    date: date.toISOString().slice(0, 10),
+  })
+}
+
+function safeNotes(value: string): string {
+  return value
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/!\[([^\]]*)\]\[[^\]]*\]/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\[[^\]]*\]/g, "$1")
+    .replace(/^\s*\[[^\]]+\]:\s*\S+.*$/gm, "")
+    .replaceAll("<", "&lt;")
 }
 
 export default ChipmateServerTab

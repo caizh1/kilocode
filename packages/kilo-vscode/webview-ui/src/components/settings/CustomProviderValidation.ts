@@ -55,6 +55,43 @@ type ValidateResult = {
 
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
 
+export function createReasoningModel(id: string, name = id): ModelEntry {
+  return {
+    id,
+    name,
+    reasoning: true,
+    supportsImages: false,
+    modalities: {},
+    variants: [],
+  }
+}
+
+export function createAutocompleteModel(id: string, name = id): ModelEntry {
+  return {
+    id,
+    name,
+    reasoning: false,
+    supportsImages: false,
+    modalities: {},
+    variants: [],
+  }
+}
+
+export function resolveQuickModels(
+  models: Array<{ id: string; name: string }>,
+  target: string,
+  autocompleteTarget: string,
+) {
+  const exact = models.find((model) => model.id.trim() === target.trim())
+  const autocomplete = models.find((model) => model.id.trim() === autocompleteTarget.trim())
+  if (exact) return { exact, autocomplete, candidates: [] }
+  return {
+    exact: undefined,
+    autocomplete,
+    candidates: models.filter((model) => /deepseek/i.test(`${model.id} ${model.name}`)),
+  }
+}
+
 function checkVariant(v: VariantEntry, seen: Set<string>, t: Translator) {
   const n = v.name.trim()
   if (!n) return { name: t("provider.custom.error.required") }

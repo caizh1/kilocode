@@ -17,6 +17,7 @@ import { filterDiagnostics } from "./diagnostics" // kilocode_change
 import { ConfigValidation } from "../kilocode/config-validation" // kilocode_change
 import * as EncodedIO from "../kilocode/tool/encoded-io" // kilocode_change
 import * as Bom from "@/util/bom"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
 
@@ -44,6 +45,54 @@ export const WriteTool = Tool.define(
           const filepath = path.isAbsolute(params.filePath)
             ? params.filePath
             : path.join(instance.directory, params.filePath)
+          // kilocode_change start - keep source-backed document mutations inside the declared artifact root
+          const blocked = WorkflowGuard.mutation(ctx.sessionID, ctx.messages, instance.directory, filepath)
+          if (blocked) {
+            return {
+              title: "Write blocked for source-backed document workflow",
+              metadata: {
+                diagnostics: {},
+                filepath,
+                exists: false,
+                diff: "",
+                filediff: buildFileDiff(filepath, "", ""),
+              },
+              output: blocked,
+            }
+          }
+          const staged = yield* Effect.promise(() =>
+            WorkflowGuard.stage(ctx.sessionID, ctx.messages, instance.directory, filepath),
+          )
+          if (staged) {
+            return {
+              title: "Write blocked until source-backed prose is ready",
+              metadata: {
+                diagnostics: {},
+                filepath,
+                exists: false,
+                diff: "",
+                filediff: buildFileDiff(filepath, "", ""),
+              },
+              output: staged,
+            }
+          }
+          const checkpoint = yield* Effect.promise(() =>
+            WorkflowGuard.checkpoint(ctx.sessionID, ctx.messages, instance.directory, filepath, params.content),
+          )
+          if (checkpoint) {
+            return {
+              title: "Write blocked by source-backed checkpoint validation",
+              metadata: {
+                diagnostics: {},
+                filepath,
+                exists: false,
+                diff: "",
+                filediff: buildFileDiff(filepath, "", ""),
+              },
+              output: checkpoint,
+            }
+          }
+          // kilocode_change end
           yield* assertExternalDirectoryEffect(ctx, filepath)
 
           const exists = yield* fs.existsSafe(filepath)

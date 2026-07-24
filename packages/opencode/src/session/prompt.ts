@@ -1508,6 +1508,10 @@ export const layer = Layer.effect(
       let structured: unknown
       let step = 0
       const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      // kilocode_change start - recover an uninterrupted source-backed continuation before compacted tool context is built
+      const history = yield* sessions.messages({ sessionID })
+      KiloSessionPrompt.syncSourceBackedWorkflow(sessionID, history)
+      // kilocode_change end
 
       while (true) {
         yield* status.set(sessionID, { type: "busy" })
@@ -1801,7 +1805,7 @@ export const layer = Layer.effect(
             if (nextSize > REQUEST_PRUNE_BYTES) log.warn("payload still large after pruning", { size: nextSize })
           }
           // kilocode_change end
-          const system = [...env, ...mem, ...instructions, ...(skills ? [skills] : [])] // kilocode_change
+          const system = KiloSessionPrompt.system({ agent, env, mem, instructions, skills }) // kilocode_change
           const format = lastUser.format ?? { type: "text" as const }
           if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
           const result = yield* handle.process({

@@ -2,7 +2,7 @@
   "name": "chipmate",
   "displayName": "ChipMate: AI Coding Agent, Copilot, and Autocomplete",
   "description": "Open Source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
-  "version": "1.0.1",
+  "version": "1.0.7",
   "icon": "assets/icons/logo-outline-black.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -109,7 +109,7 @@
       },
       {
         "command": "chipmate.v2.kiloClawOpen",
-        "title": "KiloClaw",
+        "title": "ChipMateClaw",
         "category": "ChipMate",
         "icon": "$(comment-discussion)"
       },
@@ -153,7 +153,7 @@
       },
       {
         "command": "chipmate.v2.sidebarTitle.kiloClawOpen",
-        "title": "KiloClaw",
+        "title": "ChipMateClaw",
         "icon": "$(comment-discussion)"
       },
       {
@@ -419,6 +419,10 @@
         "category": "ChipMate"
       },
       {
+        "command": "chipmate.v2.addExplorerPathsToQa",
+        "title": "ChipMate: 引用路径到 QA"
+      },
+      {
         "command": "chipmate.v2.terminalAddToContext",
         "title": "Add Terminal Content to Context",
         "category": "ChipMate"
@@ -475,7 +479,7 @@
       },
       {
         "command": "chipmate.v2.checkForUpdates",
-        "title": "Kilo: Check for Updates"
+        "title": "ChipMate: Check for Updates"
       }
     ],
     "submenus": [
@@ -520,6 +524,10 @@
         },
         {
           "command": "chipmate.v2.sidebarTitle.settingsButtonClicked",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.addExplorerPathsToQa",
           "when": "false"
         },
         {
@@ -618,6 +626,12 @@
         {
           "submenu": "chipmate.v2.editorContextMenu",
           "group": "1_kilocode"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "chipmate.v2.addExplorerPathsToQa",
+          "group": "2_workspace@50"
         }
       ],
       "chipmate.v2.editorContextMenu": [
@@ -1021,7 +1035,7 @@
         "chipmate.v2.documents.tools.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable VS Code document artifact commands. The opencode document tools remain explicit sidecar tools; ordinary Kilo QA, Document RAG, autocomplete, and native terminal behavior are unchanged."
+          "description": "Enable VS Code document artifact commands. The opencode document tools remain explicit sidecar tools; ordinary ChipMate QA, Document RAG, autocomplete, and native terminal behavior are unchanged."
         },
         "chipmate.v2.marketplace.baseUrl": {
           "type": "string",
@@ -1104,7 +1118,7 @@
         "chipmate.v2.autocomplete.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Enable Kilo inline autocomplete."
+          "description": "Enable ChipMate inline autocomplete."
         },
         "chipmate.v2.autocomplete.qwen.model": {
           "type": "string",
@@ -1405,7 +1419,7 @@
           "enumDescriptions": [
             "Show work style onboarding so you can choose again",
             "Human in the Loop: review agent actions as they happen",
-            "High autonomy: let Kilo take most actions with fewer interruptions",
+            "High autonomy: let ChipMate take most actions with fewer interruptions",
             "Onboarding was skipped without changing work style settings"
           ],
           "description": "Preferred agent work style. Set to Unset to show the onboarding flow again."

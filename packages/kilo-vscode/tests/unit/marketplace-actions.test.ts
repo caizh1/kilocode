@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, mock } from "bun:test"
+import * as path from "path"
 import * as vscode from "vscode"
 import {
+  activatableSkillIds,
+  activateMarketplaceSkills,
   installMarketplaceItem,
   removeMarketplaceItem,
   removeMarketplaceItemFromAllScopes,
@@ -157,6 +160,84 @@ describe("Marketplace installation metadata", () => {
 })
 
 describe("Marketplace Skill cache refresh", () => {
+  it("activates newly installed and unchanged local Skills", () => {
+    expect(
+      activatableSkillIds([
+        { id: "new-skill", status: "installed" },
+        { id: "existing-skill", status: "unchanged" },
+        { id: "skipped-skill", status: "skipped" },
+        { id: "failed-skill", status: "failed" },
+      ]),
+    ).toEqual(["new-skill", "existing-skill"])
+  })
+
+  it("verifies local Skills after a strict refresh", async () => {
+    const refresh = mock(async () => ({ data: true }))
+    const skills = mock(async () => ({
+      data: [
+        { name: "new-skill", location: "/repo/.chipmate-v2/skills/new-skill/SKILL.md" },
+        { name: "Existing Skill", location: "/repo/.chipmate-v2/skills/existing-skill/SKILL.md" },
+      ],
+    }))
+    const ctx = {
+      connection: {
+        getClientAsync: mock(async () => ({ app: { skills }, kilocode: { refreshSkills: refresh } })),
+      },
+    } as unknown as MarketplaceActionContext
+
+    const result = await activateMarketplaceSkills(ctx, "project", project, ["new-skill", "existing-skill"])
+
+    expect(result).toEqual({ status: "ready" })
+    expect(refresh).toHaveBeenCalledWith({ directory: project, scope: "project" }, { throwOnError: true })
+    expect(skills).toHaveBeenCalledWith({ directory: project }, { throwOnError: true })
+  })
+
+  it("reports the actual refresh request error safely", async () => {
+    const ctx = {
+      connection: {
+        getClientAsync: mock(async () => ({
+          app: { skills: mock(async () => ({ data: [] })) },
+          kilocode: {
+            refreshSkills: mock(async () => {
+              throw new Error("HTTP 500 at https://internal.example/refresh using sk-secret123")
+            }),
+          },
+        })),
+      },
+    } as unknown as MarketplaceActionContext
+
+    const result = await activateMarketplaceSkills(ctx, "project", project, ["new-skill"])
+
+    expect(result).toEqual({
+      status: "failed",
+      phase: "refresh-request",
+      message: "HTTP 500 at <url> using sk-<redacted>",
+    })
+  })
+
+  it("reports missing Skill IDs when refresh succeeds with stale discovery", async () => {
+    const ctx = {
+      connection: {
+        getClientAsync: mock(async () => ({
+          app: {
+            skills: mock(async () => ({
+              data: [{ name: "new-skill", location: "/repo/.chipmate-v2/skills/new-skill/SKILL.md" }],
+            })),
+          },
+          kilocode: { refreshSkills: mock(async () => ({ data: true })) },
+        })),
+      },
+    } as unknown as MarketplaceActionContext
+
+    const result = await activateMarketplaceSkills(ctx, "project", project, ["new-skill", "missing-skill"])
+
+    expect(result).toEqual({
+      status: "failed",
+      phase: "post-refresh-verification",
+      missingIds: ["missing-skill"],
+    })
+  })
+
   it("refreshes only Skill state after project installation", async () => {
     const refresh = mock(async () => ({ data: true }))
     const dispose = mock(async () => ({ data: true }))
@@ -175,6 +256,50 @@ describe("Marketplace Skill cache refresh", () => {
 
     expect(refresh).toHaveBeenCalledWith({ directory: project, scope: "project" })
     expect(dispose).not.toHaveBeenCalled()
+  })
+
+  it("revalidates the selected physical instance and scope before update", async () => {
+    const install = mock(async () => ({ success: true, slug: skill.id }))
+    const selected = {
+      ...skill,
+      instanceId: "project:documents",
+      localScope: "project" as const,
+      localLocation: "/repo/.chipmate-v2/skills/documents/SKILL.md",
+      localSha256: "a".repeat(64),
+    }
+    const ctx = {
+      connection: {
+        getClientAsync: mock(async () => ({ kilocode: { refreshSkills: mock(async () => ({ data: true })) } })),
+      },
+      marketplace: {
+        skillInstance: mock(async () => ({
+          instanceId: selected.instanceId,
+          id: selected.id,
+          name: selected.id,
+          scope: selected.localScope,
+          root: path.dirname(selected.localLocation),
+          location: selected.localLocation,
+          sha256: selected.localSha256,
+          effective: true,
+        })),
+        install,
+      },
+    } as unknown as MarketplaceActionContext
+
+    expect(await installMarketplaceItem(ctx, selected, { target: "project" }, project, project)).toMatchObject({
+      success: true,
+    })
+    expect(install).toHaveBeenCalledWith(selected, { target: "project" }, project)
+
+    expect(await installMarketplaceItem(ctx, selected, { target: "global" }, project, project)).toMatchObject({
+      success: false,
+      error: "Skill scope does not match the selected instance",
+    })
+    const stale = { ...selected, localSha256: "b".repeat(64) }
+    expect(await installMarketplaceItem(ctx, stale, { target: "project" }, project, project)).toMatchObject({
+      success: false,
+      error: "Skill changed after the Marketplace list was loaded",
+    })
   })
 
   it("refreshes all Skill caches after global removal", async () => {
@@ -234,6 +359,44 @@ describe("Marketplace Skill cache refresh", () => {
 
     expect(result.success).toBe(false)
     expect(remove).toHaveBeenCalledWith(skill, "project", project, `/home/caizh/.agent/skills/${skill.id}/SKILL.md`)
+  })
+
+  it("revalidates the selected physical instance and hash before removal", async () => {
+    const remove = mock(async () => ({ success: true, slug: skill.id }))
+    const selected = {
+      ...skill,
+      instanceId: "global:documents",
+      localScope: "global" as const,
+      localLocation: "/storage/config/skills/documents/SKILL.md",
+      localSha256: "a".repeat(64),
+    }
+    const ctx = {
+      connection: {
+        getClientAsync: mock(async () => ({ kilocode: { refreshSkills: mock(async () => ({ data: true })) } })),
+      },
+      marketplace: {
+        skillInstance: mock(async () => ({
+          instanceId: "global:documents",
+          id: "documents",
+          name: "documents",
+          scope: "global",
+          root: "/storage/config/skills/documents",
+          location: selected.localLocation,
+          sha256: selected.localSha256,
+          effective: false,
+        })),
+        remove,
+      },
+    } as unknown as MarketplaceActionContext
+
+    expect(await removeMarketplaceItem(ctx, selected, "global", project, project)).toMatchObject({ success: true })
+    expect(remove).toHaveBeenCalledWith(selected, "global", project, selected.localLocation)
+
+    const stale = { ...selected, localSha256: "b".repeat(64) }
+    expect(await removeMarketplaceItem(ctx, stale, "global", project, project)).toMatchObject({
+      success: false,
+      error: "Skill changed after the Marketplace list was loaded",
+    })
   })
 })
 

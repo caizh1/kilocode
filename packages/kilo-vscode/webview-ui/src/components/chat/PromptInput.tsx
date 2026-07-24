@@ -317,6 +317,7 @@ interface PromptInputProps {
 }
 
 type MermaidRepairEvent = CustomEvent<{ sessionID: string; source: string; error: string }>
+type PlantUmlRepairEvent = CustomEvent<{ sessionID: string; source: string; error: string }>
 
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const session = useSession()
@@ -365,6 +366,27 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   let highlightRef: HTMLDivElement | undefined
   let dropdownRef: HTMLDivElement | undefined
   let slashDropdownRef: HTMLDivElement | undefined
+  let expandRef: HTMLButtonElement | undefined
+  let cursor: { start: number; end: number; direction: "forward" | "backward" | "none" } | undefined
+
+  const focusInput = () => {
+    const ref = textareaRef
+    if (!ref?.isConnected) return
+    ref.focus({ preventScroll: true })
+    if (!cursor) return
+    ref.setSelectionRange(cursor.start, cursor.end, cursor.direction)
+    cursor = undefined
+  }
+
+  const restoreInput = () => {
+    const ref = textareaRef
+    if (!ref?.isConnected) return
+    adjustHeight()
+    focusInput()
+    const scroll = scrollDrafts.get(draftKey()) ?? 0
+    ref.scrollTop = scroll
+    if (highlightRef) highlightRef.scrollTop = scroll
+  }
 
   const boxKey = () => props.boxId ?? "prompt:default"
   const blockedHelpId = () => `${boxKey().replace(/[^a-zA-Z0-9_-]/g, "-")}-blocked-help`
@@ -390,6 +412,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const [text, setText] = createSignal("")
   const [reviewComments, setReviewComments] = createSignal<ReviewComment[]>([])
   const [enhancing, setEnhancing] = createSignal(false)
+  const [collapsed, setCollapsed] = createSignal(false)
   const [autoApprove, setAutoApprove] = createSignal(false)
   const [sandboxes, setSandboxes] = createSignal<Record<string, SandboxState>>({})
   const [sandboxDefault, setSandboxDefault] = createSignal<SandboxDefaultState>()
@@ -542,6 +565,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       imageAttach.replace(images)
       setEnhancing(false)
       preEnhanceText = null
+      cursor = undefined
       history.reset()
       if (textareaRef) {
         textareaRef.value = draft
@@ -551,7 +575,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         textareaRef.scrollTop = scroll
         if (highlightRef) highlightRef.scrollTop = scroll
       }
-      window.dispatchEvent(new Event("focusPrompt"))
+      window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { preserveCollapsed: true } }))
     }),
   )
 
@@ -575,16 +599,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   // Focus textarea when any part of the app requests it
   const onFocusPrompt = (event: Event) => {
-    const focus = () => {
-      const ref = textareaRef
-      if (!ref) return
-      ref.focus({ preventScroll: true })
-    }
-    focus()
-    if (!(event instanceof CustomEvent) || !event.detail?.restore) return
+    const detail = event instanceof CustomEvent ? event.detail : undefined
+    if (collapsed() && detail?.preserveCollapsed) return
+    const wasCollapsed = collapsed()
+    if (wasCollapsed) setCollapsed(false)
+    if (wasCollapsed) queueMicrotask(restoreInput)
+    else focusInput()
+    if (!detail?.restore) return
     const restore = () => {
       window.focus()
-      focus()
+      focusInput()
     }
     queueMicrotask(restore)
     requestAnimationFrame(() => {
@@ -868,6 +892,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   window.addEventListener("kilo:prepare-mermaid-repair", prepareMermaid)
   onCleanup(() => window.removeEventListener("kilo:prepare-mermaid-repair", prepareMermaid))
+  const preparePlantUml = (event: Event) => {
+    if (!(event instanceof CustomEvent)) return
+    const detail = (event as PlantUmlRepairEvent).detail
+    if (!detail?.source?.trim() || !detail.error?.trim()) return
+    if (!detail.sessionID || detail.sessionID !== sid()) return
+    event.preventDefault()
+    appendPrompt(
+      i18n
+        .t("ui.mermaid.repairPrompt", { source: detail.source, error: detail.error })
+        .replaceAll("Mermaid", "PlantUML")
+        .replace("```mermaid", "```plantuml"),
+    )
+  }
+  window.addEventListener("kilo:prepare-plantuml-repair", preparePlantUml)
+  onCleanup(() => window.removeEventListener("kilo:prepare-plantuml-repair", preparePlantUml))
 
   const unsubscribe = vscode.onMessage((message) => {
     if (handleSandboxMessage(message)) return
@@ -1380,451 +1419,556 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (textareaRef) textareaRef.style.height = "auto"
   }
 
+  const collapse = () => {
+    if (speech.active()) return
+    const ref = textareaRef
+    if (ref) {
+      cursor = {
+        start: ref.selectionStart,
+        end: ref.selectionEnd,
+        direction: ref.selectionDirection,
+      }
+    }
+    saveDraft(draftKey(), text(), reviewComments(), imageAttach.images())
+    mention.closeMention()
+    slash.close()
+    ghost.dismiss()
+    setCollapsed(true)
+    queueMicrotask(() => expandRef?.focus({ preventScroll: true }))
+  }
+
+  const expand = () => {
+    setCollapsed(false)
+    queueMicrotask(restoreInput)
+  }
+
   return (
     <div
       class="prompt-input-container"
       data-ui="qa-composer"
-      classList={{ "prompt-input-container--dragging": imageAttach.dragging() }}
-      onDragOver={imageAttach.handleDragOver}
-      onDragLeave={imageAttach.handleDragLeave}
-      onDrop={imageAttach.handleDrop}
+      data-state={collapsed() ? "collapsed" : "expanded"}
+      classList={{
+        "prompt-input-container--dragging": !collapsed() && imageAttach.dragging(),
+        "prompt-input-container--collapsed": collapsed(),
+      }}
+      onDragOver={(event) => {
+        if (!collapsed()) return imageAttach.handleDragOver(event)
+        event.preventDefault()
+      }}
+      onDragLeave={(event) => {
+        if (!collapsed()) imageAttach.handleDragLeave(event)
+      }}
+      onDrop={(event) => {
+        if (!collapsed()) return imageAttach.handleDrop(event)
+        event.preventDefault()
+      }}
     >
-      <Show when={reviewComments().length > 0}>
-        <ReviewComments
-          comments={reviewComments()}
-          sessionID={sid()}
-          onRemove={removeReviewComment}
-          onClear={clearReviewComments}
-        />
-      </Show>
-      <Show when={mention.showMention()}>
-        <div class="file-mention-dropdown" ref={dropdownRef}>
-          <Show
-            when={mention.mentionResults().length > 0}
-            fallback={<div class="file-mention-empty">No files or folders found</div>}
-          >
-            <For each={mention.mentionResults()}>
-              {(item, index) => (
-                <>
-                  <div
-                    class="file-mention-item"
-                    classList={{ "file-mention-item--active": index() === mention.mentionIndex() }}
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      if (textareaRef) mention.selectMention(item, textareaRef, setText, adjustHeight)
-                    }}
-                    onMouseEnter={() => mention.setMentionIndex(index())}
-                  >
-                    {item.type === "terminal" ? (
-                      <>
-                        <Icon name="console" class="file-mention-icon" />
-                        <span class="file-mention-name">{item.label}</span>
-                        <span class="file-mention-dir">{item.description}</span>
-                      </>
-                    ) : item.type === "git-changes" ? (
-                      <>
-                        <Icon name="branch" class="file-mention-icon" />
-                        <span class="file-mention-name">{item.label}</span>
-                        <span class="file-mention-dir">{item.description}</span>
-                      </>
-                    ) : item.type === "file-picker" ? (
-                      <>
-                        <Icon name="folder" class="file-mention-icon" />
-                        <span class="file-mention-name">{item.label}</span>
-                        <span class="file-mention-dir">{item.description}</span>
-                      </>
-                    ) : (
-                      <>
-                        <FileIcon
-                          node={{ path: item.value, type: item.type === "folder" ? "directory" : "file" }}
-                          class="file-mention-icon"
-                        />
-                        <span class="file-mention-name">
-                          {item.type === "folder" ? `${fileName(item.value)}/` : fileName(item.value)}
-                        </span>
-                        <span class="file-mention-dir">{dirName(item.value)}</span>
-                      </>
-                    )}
-                  </div>
-                  <Show when={item.type === "file-picker" && index() < mention.mentionResults().length - 1}>
-                    <div class="file-mention-separator" />
-                  </Show>
-                </>
-              )}
-            </For>
-          </Show>
-        </div>
-      </Show>
-      <Show when={slash.show()}>
-        <div class="slash-command-dropdown" ref={slashDropdownRef}>
-          <Show when={slash.results().length > 0} fallback={<div class="slash-command-empty">No commands found</div>}>
-            {(() => {
-              const all = slash.results()
-              const actions = all.filter((c) => c.action)
-              const server = all.filter((c) => !c.action)
-              const offset = actions.length
-              return (
-                <>
-                  <Show when={actions.length > 0}>
-                    <div class="slash-command-group-label">Actions</div>
-                    <For each={actions}>
-                      {(cmd, idx) => (
-                        <div
-                          class="slash-command-item"
-                          classList={{ "slash-command-item--active": idx() === slash.index() }}
-                          onMouseDown={(e) => {
-                            e.preventDefault()
-                            if (textareaRef) slash.select(cmd, textareaRef, setText, adjustHeight)
-                          }}
-                          onMouseEnter={() => slash.setIndex(idx())}
-                        >
-                          <span class="slash-command-name">/{cmd.name}</span>
-                          <Show when={cmd.description}>
-                            <span class="slash-command-desc">{cmd.description}</span>
-                          </Show>
-                        </div>
-                      )}
-                    </For>
-                  </Show>
-                  <Show when={server.length > 0}>
-                    <Show when={actions.length > 0}>
-                      <div class="slash-command-separator" />
-                    </Show>
-                    <div class="slash-command-group-label">Commands</div>
-                    <For each={server}>
-                      {(cmd, idx) => (
-                        <div
-                          class="slash-command-item"
-                          classList={{ "slash-command-item--active": idx() + offset === slash.index() }}
-                          onMouseDown={(e) => {
-                            e.preventDefault()
-                            if (textareaRef) slash.select(cmd, textareaRef, setText, adjustHeight)
-                          }}
-                          onMouseEnter={() => slash.setIndex(idx() + offset)}
-                        >
-                          <span class="slash-command-name">/{cmd.name}</span>
-                          <Show when={cmd.description}>
-                            <span class="slash-command-desc">{cmd.description}</span>
-                          </Show>
-                        </div>
-                      )}
-                    </For>
-                  </Show>
-                </>
-              )
-            })()}
-          </Show>
-        </div>
-      </Show>
-      <Show when={imageAttach.images().length > 0}>
-        <div class="image-attachments">
-          <For each={imageAttach.images()}>
-            {(img) => (
-              <div class="image-attachment">
-                <img
-                  src={img.dataUrl}
-                  alt={img.filename}
-                  title={img.filename}
-                  onClick={() =>
-                    vscode.postMessage({ type: "previewImage", dataUrl: img.dataUrl, filename: img.filename })
-                  }
-                />
-                <button
-                  type="button"
-                  class="image-attachment-remove"
-                  onClick={() => imageAttach.remove(img.id)}
-                  aria-label="Remove image"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-      <div class="prompt-input-wrapper" data-ui="qa-composer-input">
-        <div class="prompt-input-ghost-wrapper">
-          <div class="prompt-input-highlight-overlay" ref={highlightRef} aria-hidden="true" dir="auto">
-            <Index each={buildHighlightSegments(text(), highlightMentions())}>
-              {(seg) => (
-                <Show when={seg().highlight} fallback={<span>{seg().text}</span>}>
-                  <span
-                    class="prompt-input-file-mention"
-                    classList={{ "prompt-input-file-mention--file": isPathMention(seg().text) }}
-                    onClick={(e) => {
-                      if (!isPathMention(seg().text)) return
-                      e.preventDefault()
-                      e.stopPropagation()
-                      vscode.postMessage({ type: "openFile", filePath: seg().text.replace(/^@/, "") })
-                    }}
-                  >
-                    {seg().text}
-                  </span>
-                </Show>
-              )}
-            </Index>
-            <Show when={ghost.text()}>
-              <span class="prompt-input-ghost-text">{ghost.text()}</span>
-            </Show>
-            {/* A <div> with white-space: pre-wrap collapses a trailing newline,
-                but a <textarea> renders it as a real empty line. This <br> is
-                added in that case so the overlay and textarea heights match. */}
-            <Show when={text().endsWith("\n")}>
-              <br />
-            </Show>
-          </div>
-          <textarea
-            ref={textareaRef}
-            class="prompt-input"
-            classList={{ "prompt-input--disabled": isDisabled() }}
-            placeholder={placeholder()}
-            value={text()}
-            onInput={handleInput}
-            onKeyDown={handleKeyDown}
-            onKeyUp={syncGhost}
-            onPaste={handlePaste}
-            onClick={syncGhost}
-            onFocus={syncGhost}
-            onBlur={syncGhost}
-            onSelect={() => {
-              syncGhost()
-              if (textareaRef) mention.snapSelection(textareaRef)
-            }}
-            onScroll={syncHighlightScroll}
-            aria-disabled={isDisabled()}
-            aria-describedby={props.blockedReason?.() ? blockedHelpId() : undefined}
-            rows={1}
-            dir="auto"
-          />
-        </div>
-      </div>
-      <Show when={props.blockedReason?.()} keyed>
-        {(reason) => (
-          <span id={blockedHelpId()} class="sr-only" role="status">
-            {reason}
-          </span>
-        )}
-      </Show>
-      <div class="prompt-input-hint" data-ui="qa-composer-footer">
-        <div class="prompt-input-hint-selectors" data-ui="qa-composer-selectors">
-          <ModeSwitcher sessionID={sid} />
-          <ModelSelector sessionID={sid} />
-          <ThinkingSelector sessionID={sid} />
-          <Show when={session.hasModelOverride(sid())}>
-            <Tooltip value={language.t("prompt.action.resetModel")} placement="top">
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={() => session.clearModelOverride(sid())}
-                aria-label={language.t("prompt.action.resetModel")}
-                class="prompt-selector-reset"
-                data-ui="qa-selector-reset"
-              >
-                <span class="codicon codicon-close prompt-action-codicon" aria-hidden="true" />
-              </Button>
-            </Tooltip>
-          </Show>
-        </div>
-        <div class="prompt-input-hint-actions" data-ui="qa-composer-actions">
-          <Show when={showIndexing()}>
-            <div class="prompt-input-indexing-actions" data-ui="qa-indexing-actions">
-              <IndexingSummaryMenu
-                items={() => [
-                  {
-                    title: "CodeGraph index",
-                    label: "CodeGraph",
-                    icon: "graph",
-                    status: indexing.pipelines().codeGraph,
-                  },
-                  {
-                    title: "RAG index",
-                    label: "RAG",
-                    icon: "database",
-                    status: indexing.pipelines().rag,
-                  },
-                  {
-                    title: "Documents index",
-                    label: "Documents",
-                    icon: "book",
-                    status: indexing.pipelines().documents,
-                  },
-                ]}
-                onSelect={handleOpenIndexingSettings}
-              />
-              <IndexingProgressButton
-                title="CodeGraph index"
-                label="CodeGraph"
-                icon="graph"
-                fillAxis="horizontal"
-                status={() => indexing.pipelines().codeGraph}
-                onClick={handleOpenIndexingSettings}
-              />
-              <IndexingProgressButton
-                title="RAG index"
-                label="RAG"
-                icon="database"
-                fillAxis="vertical"
-                status={() => indexing.pipelines().rag}
-                onClick={handleOpenIndexingSettings}
-              />
-              <IndexingProgressButton
-                title="Documents index"
-                label="Documents"
-                icon="book"
-                fillAxis="horizontal"
-                status={() => indexing.pipelines().documents}
-                onClick={handleOpenIndexingSettings}
-              />
+      <Show
+        when={!collapsed()}
+        fallback={
+          <div class="prompt-collapsed-rail" data-ui="qa-composer-collapsed">
+            <div class="prompt-collapsed-state">
+              <Icon name="layout-bottom-partial" size="small" />
+              <span class="prompt-collapsed-label">{language.t("prompt.panel.collapsed")}</span>
             </div>
-          </Show>
-          <div class="prompt-input-utility-actions" data-ui="qa-utility-actions">
-            <Tooltip
-              value={
-                autoApprove()
-                  ? language.t("prompt.action.autoApprove.enabled")
-                  : language.t("prompt.action.autoApprove.disabled")
-              }
-              placement="top"
-            >
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={() => vscode.postMessage({ type: "toggleAutoApprove" })}
-                aria-label={
-                  autoApprove()
-                    ? language.t("prompt.action.autoApprove.disable")
-                    : language.t("prompt.action.autoApprove.enable")
-                }
-                aria-pressed={autoApprove()}
-                class={`prompt-status-button ${autoApprove() ? "prompt-status-button--active" : ""}`}
-                data-ui="qa-action-auto-approve"
-              >
-                <Icon name="shield" size="small" />
-              </Button>
-            </Tooltip>
-            <Show when={sandboxVisible()}>
-              <SandboxButtonBase
-                enabled={sandboxEnabled()}
-                available={sandboxReady() ? sandboxAvailable() : undefined}
-                reason={sandboxReason()}
-                disabled={sandboxDisabled()}
-                tooltip={<SandboxTooltipContent enabled={sandboxEnabled()} network={sandboxNetworkEnabled()} />}
-                tooltipClass="prompt-sandbox-tooltip-content"
-                onToggle={toggleSandbox}
-              />
-            </Show>
-            <Tooltip value={language.t("prompt.action.enhance")} placement="top">
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={handleEnhance}
-                disabled={!canEnhance()}
-                aria-label={language.t("prompt.action.enhance")}
-                data-ui="qa-action-enhance"
-              >
-                <WandSparkles size={16} class={enhancing() ? "enhance-spinner" : ""} />
-              </Button>
-            </Tooltip>
-            <Show when={canUseSpeech()}>
-              <SpeechToTextButton speech={speech} disabled={isDisabled()} start={startSpeech} label={language.t} />
-            </Show>
-            <Show when={session.hasModelOverride(sid()) || sandboxVisible() || canUseSpeech()}>
-              <DropdownMenu gutter={6} placement="top-end">
-                <Tooltip value={language.t("common.moreOptions")} placement="top">
-                  <DropdownMenu.Trigger
-                    class={`prompt-overflow-button prompt-overflow-button--${speech.state()}`}
-                    data-ui="qa-action-more"
-                    aria-label={language.t("common.moreOptions")}
-                    aria-busy={speechAction.busy(speech)}
-                    aria-pressed={sandboxEnabled() || speech.active()}
-                  >
-                    <span class="codicon codicon-ellipsis" aria-hidden="true" />
-                    <Show
-                      when={speechAction.busy(speech) || speech.state() === "recording" || speech.state() === "error"}
-                    >
-                      <span
-                        class={`codicon codicon-${speech.state() === "error" ? "error" : speechAction.busy(speech) ? "sync" : "record"} prompt-overflow-state`}
-                        aria-hidden="true"
-                      />
-                    </Show>
-                  </DropdownMenu.Trigger>
-                </Tooltip>
-                <DropdownMenu.Portal>
-                  <DropdownMenu.Content class="prompt-compact-menu prompt-overflow-menu" data-ui="qa-action-more-menu">
-                    <Show when={session.hasModelOverride(sid())}>
-                      <DropdownMenu.Item onSelect={() => session.clearModelOverride(sid())}>
-                        <span class="codicon codicon-close prompt-compact-menu-icon" aria-hidden="true" />
-                        <DropdownMenu.ItemLabel>{language.t("prompt.action.resetModel")}</DropdownMenu.ItemLabel>
-                      </DropdownMenu.Item>
-                    </Show>
-                    <Show when={sandboxVisible()}>
-                      <DropdownMenu.Item disabled={sandboxDisabled()} onSelect={toggleSandbox}>
-                        <Icon name="lock" size="small" />
-                        <DropdownMenu.ItemLabel>
-                          {language.t(
-                            sandboxEnabled() ? "prompt.action.sandbox.disable" : "prompt.action.sandbox.enable",
-                          )}
-                        </DropdownMenu.ItemLabel>
-                        <span
-                          class={`codicon codicon-${sandboxEnabled() ? "check" : "circle-outline"} prompt-compact-menu-state`}
-                          aria-hidden="true"
-                        />
-                      </DropdownMenu.Item>
-                    </Show>
-                    <Show when={canUseSpeech()}>
-                      <DropdownMenu.Item
-                        disabled={speechAction.locked(speech, isDisabled())}
-                        onSelect={() => speechAction.run(speech, isDisabled(), startSpeech)}
-                      >
-                        <span class="codicon codicon-mic prompt-compact-menu-icon" aria-hidden="true" />
-                        <DropdownMenu.ItemLabel>{speechAction.label(speech, language.t)}</DropdownMenu.ItemLabel>
-                        <Show when={speechAction.busy(speech) || speech.state() === "recording"}>
-                          <span
-                            class={`codicon codicon-${speechAction.busy(speech) ? "sync" : "record"} prompt-compact-menu-state`}
-                            aria-hidden="true"
-                          />
-                        </Show>
-                      </DropdownMenu.Item>
-                    </Show>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Portal>
-              </DropdownMenu>
-            </Show>
-            <Show
-              when={showStop()}
-              fallback={
-                <Tooltip value={sendLabel()} placement="top">
+            <div class="prompt-collapsed-actions">
+              <Show when={isBusy()}>
+                <span class="prompt-collapsed-responding">{language.t("prompt.panel.responding")}</span>
+                <Tooltip value={language.t("prompt.action.stop")} placement="top">
                   <Button
                     variant="ghost"
                     size="small"
-                    onClick={handleSendClick}
-                    aria-disabled={!canSend()}
-                    aria-describedby={props.blockedReason?.() ? blockedHelpId() : undefined}
-                    aria-label={sendLabel()}
-                    class="prompt-send-button"
+                    onClick={() => session.abort()}
+                    aria-label={language.t("prompt.action.stop")}
+                    class="prompt-stop-button"
                     data-ui="qa-action-submit"
                   >
-                    <span class="codicon codicon-send prompt-action-codicon" aria-hidden="true" />
+                    <span class="codicon codicon-debug-stop prompt-action-codicon" aria-hidden="true" />
                   </Button>
                 </Tooltip>
-              }
-            >
-              <Tooltip value={language.t("prompt.action.stop")} placement="top">
+              </Show>
+              <Tooltip value={language.t("prompt.panel.expand")} placement="top">
                 <Button
+                  ref={(element: HTMLButtonElement) => {
+                    expandRef = element
+                  }}
                   variant="ghost"
                   size="small"
-                  onClick={() => session.abort()}
-                  aria-label={language.t("prompt.action.stop")}
-                  class="prompt-stop-button"
-                  data-ui="qa-action-submit"
+                  onClick={expand}
+                  aria-label={language.t("prompt.panel.expand")}
+                  aria-expanded="false"
+                  class="prompt-collapsed-expand"
+                  data-ui="qa-action-expand-input"
                 >
-                  <span class="codicon codicon-debug-stop prompt-action-codicon" aria-hidden="true" />
+                  <Icon name="layout-bottom-full" size="small" />
+                  <span class="prompt-collapsed-expand-label">{language.t("prompt.panel.expand")}</span>
                 </Button>
               </Tooltip>
-            </Show>
+            </div>
           </div>
-        </div>
-      </div>
+        }
+      >
+        <>
+          <Show when={reviewComments().length > 0}>
+            <ReviewComments
+              comments={reviewComments()}
+              sessionID={sid()}
+              onRemove={removeReviewComment}
+              onClear={clearReviewComments}
+            />
+          </Show>
+          <Show when={mention.showMention()}>
+            <div class="file-mention-dropdown" ref={dropdownRef}>
+              <Show
+                when={mention.mentionResults().length > 0}
+                fallback={<div class="file-mention-empty">No files or folders found</div>}
+              >
+                <For each={mention.mentionResults()}>
+                  {(item, index) => (
+                    <>
+                      <div
+                        class="file-mention-item"
+                        classList={{ "file-mention-item--active": index() === mention.mentionIndex() }}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          if (textareaRef) mention.selectMention(item, textareaRef, setText, adjustHeight)
+                        }}
+                        onMouseEnter={() => mention.setMentionIndex(index())}
+                      >
+                        {item.type === "terminal" ? (
+                          <>
+                            <Icon name="console" class="file-mention-icon" />
+                            <span class="file-mention-name">{item.label}</span>
+                            <span class="file-mention-dir">{item.description}</span>
+                          </>
+                        ) : item.type === "git-changes" ? (
+                          <>
+                            <Icon name="branch" class="file-mention-icon" />
+                            <span class="file-mention-name">{item.label}</span>
+                            <span class="file-mention-dir">{item.description}</span>
+                          </>
+                        ) : item.type === "file-picker" ? (
+                          <>
+                            <Icon name="folder" class="file-mention-icon" />
+                            <span class="file-mention-name">{item.label}</span>
+                            <span class="file-mention-dir">{item.description}</span>
+                          </>
+                        ) : (
+                          <>
+                            <FileIcon
+                              node={{ path: item.value, type: item.type === "folder" ? "directory" : "file" }}
+                              class="file-mention-icon"
+                            />
+                            <span class="file-mention-name">
+                              {item.type === "folder" ? `${fileName(item.value)}/` : fileName(item.value)}
+                            </span>
+                            <span class="file-mention-dir">{dirName(item.value)}</span>
+                          </>
+                        )}
+                      </div>
+                      <Show when={item.type === "file-picker" && index() < mention.mentionResults().length - 1}>
+                        <div class="file-mention-separator" />
+                      </Show>
+                    </>
+                  )}
+                </For>
+              </Show>
+            </div>
+          </Show>
+          <Show when={slash.show()}>
+            <div class="slash-command-dropdown" ref={slashDropdownRef}>
+              <Show
+                when={slash.results().length > 0}
+                fallback={<div class="slash-command-empty">No commands found</div>}
+              >
+                {(() => {
+                  const all = slash.results()
+                  const actions = all.filter((c) => c.action)
+                  const server = all.filter((c) => !c.action)
+                  const offset = actions.length
+                  return (
+                    <>
+                      <Show when={actions.length > 0}>
+                        <div class="slash-command-group-label">Actions</div>
+                        <For each={actions}>
+                          {(cmd, idx) => (
+                            <div
+                              class="slash-command-item"
+                              classList={{ "slash-command-item--active": idx() === slash.index() }}
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                if (textareaRef) slash.select(cmd, textareaRef, setText, adjustHeight)
+                              }}
+                              onMouseEnter={() => slash.setIndex(idx())}
+                            >
+                              <span class="slash-command-name">/{cmd.name}</span>
+                              <Show when={cmd.description}>
+                                <span class="slash-command-desc">{cmd.description}</span>
+                              </Show>
+                            </div>
+                          )}
+                        </For>
+                      </Show>
+                      <Show when={server.length > 0}>
+                        <Show when={actions.length > 0}>
+                          <div class="slash-command-separator" />
+                        </Show>
+                        <div class="slash-command-group-label">Commands</div>
+                        <For each={server}>
+                          {(cmd, idx) => (
+                            <div
+                              class="slash-command-item"
+                              classList={{ "slash-command-item--active": idx() + offset === slash.index() }}
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                if (textareaRef) slash.select(cmd, textareaRef, setText, adjustHeight)
+                              }}
+                              onMouseEnter={() => slash.setIndex(idx() + offset)}
+                            >
+                              <span class="slash-command-name">/{cmd.name}</span>
+                              <Show when={cmd.description}>
+                                <span class="slash-command-desc">{cmd.description}</span>
+                              </Show>
+                            </div>
+                          )}
+                        </For>
+                      </Show>
+                    </>
+                  )
+                })()}
+              </Show>
+            </div>
+          </Show>
+          <Show when={imageAttach.images().length > 0}>
+            <div class="image-attachments">
+              <For each={imageAttach.images()}>
+                {(img) => (
+                  <div class="image-attachment">
+                    <img
+                      src={img.dataUrl}
+                      alt={img.filename}
+                      title={img.filename}
+                      onClick={() =>
+                        vscode.postMessage({ type: "previewImage", dataUrl: img.dataUrl, filename: img.filename })
+                      }
+                    />
+                    <button
+                      type="button"
+                      class="image-attachment-remove"
+                      onClick={() => imageAttach.remove(img.id)}
+                      aria-label="Remove image"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+          <div class="prompt-input-wrapper" data-ui="qa-composer-input">
+            <div class="prompt-input-ghost-wrapper">
+              <div class="prompt-input-highlight-overlay" ref={highlightRef} aria-hidden="true" dir="auto">
+                <Index each={buildHighlightSegments(text(), highlightMentions())}>
+                  {(seg) => (
+                    <Show when={seg().highlight} fallback={<span>{seg().text}</span>}>
+                      <span
+                        class="prompt-input-file-mention"
+                        classList={{ "prompt-input-file-mention--file": isPathMention(seg().text) }}
+                        onClick={(e) => {
+                          if (!isPathMention(seg().text)) return
+                          e.preventDefault()
+                          e.stopPropagation()
+                          vscode.postMessage({ type: "openFile", filePath: seg().text.replace(/^@/, "") })
+                        }}
+                      >
+                        {seg().text}
+                      </span>
+                    </Show>
+                  )}
+                </Index>
+                <Show when={ghost.text()}>
+                  <span class="prompt-input-ghost-text">{ghost.text()}</span>
+                </Show>
+                {/* A <div> with white-space: pre-wrap collapses a trailing newline,
+                but a <textarea> renders it as a real empty line. This <br> is
+                added in that case so the overlay and textarea heights match. */}
+                <Show when={text().endsWith("\n")}>
+                  <br />
+                </Show>
+              </div>
+              <textarea
+                ref={textareaRef}
+                class="prompt-input"
+                classList={{ "prompt-input--disabled": isDisabled() }}
+                placeholder={placeholder()}
+                value={text()}
+                onInput={handleInput}
+                onKeyDown={handleKeyDown}
+                onKeyUp={syncGhost}
+                onPaste={handlePaste}
+                onClick={syncGhost}
+                onFocus={syncGhost}
+                onBlur={syncGhost}
+                onSelect={() => {
+                  syncGhost()
+                  if (textareaRef) mention.snapSelection(textareaRef)
+                }}
+                onScroll={syncHighlightScroll}
+                aria-disabled={isDisabled()}
+                aria-describedby={props.blockedReason?.() ? blockedHelpId() : undefined}
+                rows={1}
+                dir="auto"
+              />
+            </div>
+          </div>
+          <Show when={props.blockedReason?.()} keyed>
+            {(reason) => (
+              <span id={blockedHelpId()} class="sr-only" role="status">
+                {reason}
+              </span>
+            )}
+          </Show>
+          <div class="prompt-input-hint" data-ui="qa-composer-footer">
+            <div class="prompt-input-hint-selectors" data-ui="qa-composer-selectors">
+              <ModeSwitcher sessionID={sid} />
+              <ModelSelector sessionID={sid} />
+              <ThinkingSelector sessionID={sid} />
+              <Show when={session.hasModelOverride(sid())}>
+                <Tooltip value={language.t("prompt.action.resetModel")} placement="top">
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={() => session.clearModelOverride(sid())}
+                    aria-label={language.t("prompt.action.resetModel")}
+                    class="prompt-selector-reset"
+                    data-ui="qa-selector-reset"
+                  >
+                    <span class="codicon codicon-close prompt-action-codicon" aria-hidden="true" />
+                  </Button>
+                </Tooltip>
+              </Show>
+            </div>
+            <div class="prompt-input-hint-actions" data-ui="qa-composer-actions">
+              <Show when={showIndexing()}>
+                <div class="prompt-input-indexing-actions" data-ui="qa-indexing-actions">
+                  <IndexingSummaryMenu
+                    items={() => [
+                      {
+                        title: "CodeGraph index",
+                        label: "CodeGraph",
+                        icon: "graph",
+                        status: indexing.pipelines().codeGraph,
+                      },
+                      {
+                        title: "RAG index",
+                        label: "RAG",
+                        icon: "database",
+                        status: indexing.pipelines().rag,
+                      },
+                      {
+                        title: "Documents index",
+                        label: "Documents",
+                        icon: "book",
+                        status: indexing.pipelines().documents,
+                      },
+                    ]}
+                    onSelect={handleOpenIndexingSettings}
+                  />
+                  <IndexingProgressButton
+                    title="CodeGraph index"
+                    label="CodeGraph"
+                    icon="graph"
+                    fillAxis="horizontal"
+                    status={() => indexing.pipelines().codeGraph}
+                    onClick={handleOpenIndexingSettings}
+                  />
+                  <IndexingProgressButton
+                    title="RAG index"
+                    label="RAG"
+                    icon="database"
+                    fillAxis="vertical"
+                    status={() => indexing.pipelines().rag}
+                    onClick={handleOpenIndexingSettings}
+                  />
+                  <IndexingProgressButton
+                    title="Documents index"
+                    label="Documents"
+                    icon="book"
+                    fillAxis="horizontal"
+                    status={() => indexing.pipelines().documents}
+                    onClick={handleOpenIndexingSettings}
+                  />
+                </div>
+              </Show>
+              <div class="prompt-input-utility-actions" data-ui="qa-utility-actions">
+                <Tooltip value={language.t("prompt.panel.collapse")} placement="top">
+                  <IconButton
+                    icon="layout-bottom-partial"
+                    variant="ghost"
+                    size="small"
+                    onClick={collapse}
+                    disabled={speech.active()}
+                    aria-label={language.t("prompt.panel.collapse")}
+                    aria-expanded="true"
+                    class="prompt-collapse-button"
+                    data-ui="qa-action-collapse-input"
+                  />
+                </Tooltip>
+                <Tooltip
+                  value={
+                    autoApprove()
+                      ? language.t("prompt.action.autoApprove.enabled")
+                      : language.t("prompt.action.autoApprove.disabled")
+                  }
+                  placement="top"
+                >
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={() => vscode.postMessage({ type: "toggleAutoApprove" })}
+                    aria-label={
+                      autoApprove()
+                        ? language.t("prompt.action.autoApprove.disable")
+                        : language.t("prompt.action.autoApprove.enable")
+                    }
+                    aria-pressed={autoApprove()}
+                    class={`prompt-status-button ${autoApprove() ? "prompt-status-button--active" : ""}`}
+                    data-ui="qa-action-auto-approve"
+                  >
+                    <Icon name="shield" size="small" />
+                  </Button>
+                </Tooltip>
+                <Show when={sandboxVisible()}>
+                  <SandboxButtonBase
+                    enabled={sandboxEnabled()}
+                    available={sandboxReady() ? sandboxAvailable() : undefined}
+                    reason={sandboxReason()}
+                    disabled={sandboxDisabled()}
+                    tooltip={<SandboxTooltipContent enabled={sandboxEnabled()} network={sandboxNetworkEnabled()} />}
+                    tooltipClass="prompt-sandbox-tooltip-content"
+                    onToggle={toggleSandbox}
+                  />
+                </Show>
+                <Tooltip value={language.t("prompt.action.enhance")} placement="top">
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={handleEnhance}
+                    disabled={!canEnhance()}
+                    aria-label={language.t("prompt.action.enhance")}
+                    data-ui="qa-action-enhance"
+                  >
+                    <WandSparkles size={16} class={enhancing() ? "enhance-spinner" : ""} />
+                  </Button>
+                </Tooltip>
+                <Show when={canUseSpeech()}>
+                  <SpeechToTextButton speech={speech} disabled={isDisabled()} start={startSpeech} label={language.t} />
+                </Show>
+                <DropdownMenu gutter={6} placement="top-end">
+                  <Tooltip value={language.t("common.moreOptions")} placement="top">
+                    <DropdownMenu.Trigger
+                      class={`prompt-overflow-button prompt-overflow-button--${speech.state()}`}
+                      data-ui="qa-action-more"
+                      aria-label={language.t("common.moreOptions")}
+                      aria-busy={speechAction.busy(speech)}
+                      aria-pressed={sandboxEnabled() || speech.active()}
+                    >
+                      <span class="codicon codicon-ellipsis" aria-hidden="true" />
+                      <Show
+                        when={speechAction.busy(speech) || speech.state() === "recording" || speech.state() === "error"}
+                      >
+                        <span
+                          class={`codicon codicon-${speech.state() === "error" ? "error" : speechAction.busy(speech) ? "sync" : "record"} prompt-overflow-state`}
+                          aria-hidden="true"
+                        />
+                      </Show>
+                    </DropdownMenu.Trigger>
+                  </Tooltip>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      class="prompt-compact-menu prompt-overflow-menu"
+                      data-ui="qa-action-more-menu"
+                    >
+                      <DropdownMenu.Item disabled={speech.active()} onSelect={collapse}>
+                        <Icon name="layout-bottom-partial" size="small" />
+                        <DropdownMenu.ItemLabel>{language.t("prompt.panel.collapse")}</DropdownMenu.ItemLabel>
+                        <span class="prompt-compact-menu-state" aria-hidden="true" />
+                      </DropdownMenu.Item>
+                      <Show when={session.hasModelOverride(sid())}>
+                        <DropdownMenu.Item onSelect={() => session.clearModelOverride(sid())}>
+                          <span class="codicon codicon-close prompt-compact-menu-icon" aria-hidden="true" />
+                          <DropdownMenu.ItemLabel>{language.t("prompt.action.resetModel")}</DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                      </Show>
+                      <Show when={sandboxVisible()}>
+                        <DropdownMenu.Item disabled={sandboxDisabled()} onSelect={toggleSandbox}>
+                          <Icon name="lock" size="small" />
+                          <DropdownMenu.ItemLabel>
+                            {language.t(
+                              sandboxEnabled() ? "prompt.action.sandbox.disable" : "prompt.action.sandbox.enable",
+                            )}
+                          </DropdownMenu.ItemLabel>
+                          <span
+                            class={`codicon codicon-${sandboxEnabled() ? "check" : "circle-outline"} prompt-compact-menu-state`}
+                            aria-hidden="true"
+                          />
+                        </DropdownMenu.Item>
+                      </Show>
+                      <Show when={canUseSpeech()}>
+                        <DropdownMenu.Item
+                          disabled={speechAction.locked(speech, isDisabled())}
+                          onSelect={() => speechAction.run(speech, isDisabled(), startSpeech)}
+                        >
+                          <span class="codicon codicon-mic prompt-compact-menu-icon" aria-hidden="true" />
+                          <DropdownMenu.ItemLabel>{speechAction.label(speech, language.t)}</DropdownMenu.ItemLabel>
+                          <Show when={speechAction.busy(speech) || speech.state() === "recording"}>
+                            <span
+                              class={`codicon codicon-${speechAction.busy(speech) ? "sync" : "record"} prompt-compact-menu-state`}
+                              aria-hidden="true"
+                            />
+                          </Show>
+                        </DropdownMenu.Item>
+                      </Show>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu>
+                <Show
+                  when={showStop()}
+                  fallback={
+                    <Tooltip value={sendLabel()} placement="top">
+                      <Button
+                        variant="ghost"
+                        size="small"
+                        onClick={handleSendClick}
+                        aria-disabled={!canSend()}
+                        aria-describedby={props.blockedReason?.() ? blockedHelpId() : undefined}
+                        aria-label={sendLabel()}
+                        class="prompt-send-button"
+                        data-ui="qa-action-submit"
+                      >
+                        <span class="codicon codicon-send prompt-action-codicon" aria-hidden="true" />
+                      </Button>
+                    </Tooltip>
+                  }
+                >
+                  <Tooltip value={language.t("prompt.action.stop")} placement="top">
+                    <Button
+                      variant="ghost"
+                      size="small"
+                      onClick={() => session.abort()}
+                      aria-label={language.t("prompt.action.stop")}
+                      class="prompt-stop-button"
+                      data-ui="qa-action-submit"
+                    >
+                      <span class="codicon codicon-debug-stop prompt-action-codicon" aria-hidden="true" />
+                    </Button>
+                  </Tooltip>
+                </Show>
+              </div>
+            </div>
+          </div>
+        </>
+      </Show>
     </div>
   )
 }

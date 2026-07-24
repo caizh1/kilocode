@@ -21,9 +21,10 @@ describe("Agent Console same-PTY bridge", () => {
       token,
       write: async (data) => {
         writes.push(data)
-        if (data !== "printf slow\r") return
+        if (data !== "printf slow\x18\x05") return
         socket.send(`printf slow\r\n${osc("begin", cwd(directory))}first\r\n`)
         setTimeout(() => socket.send(`second\r\n${osc("end", 0, cwd(directory))}`), 520)
+        setTimeout(() => socket.send(osc("ready", cwd(directory))), 650)
       },
     })
     socket.send(osc("ready", cwd(directory)))
@@ -38,8 +39,8 @@ describe("Agent Console same-PTY bridge", () => {
       timeout: 2_000,
     })
 
-    expect(Date.now() - started).toBeGreaterThanOrEqual(450)
-    expect(writes).toEqual(["printf slow\r"])
+    expect(Date.now() - started).toBeGreaterThanOrEqual(600)
+    expect(writes).toEqual(["printf slow\x18\x05"])
     expect(result.output).toBe("first\nsecond")
     expect(result.exitCode).toBe(0)
     expect(result.cwd).toBe(directory)
@@ -57,8 +58,8 @@ describe("Agent Console same-PTY bridge", () => {
       token,
       write: async (data) => {
         writes.push(data)
-        if (data === "sleep 60\r") socket.send(osc("begin", cwd(directory)))
-        if (data === "\x03") socket.send(osc("end", 130, cwd(directory)))
+        if (data === "sleep 60\x18\x05") socket.send(osc("begin", cwd(directory)))
+        if (data === "\x03") socket.send(`${osc("end", 130, cwd(directory))}${osc("ready", cwd(directory))}`)
       },
     })
     socket.send(osc("ready", cwd(directory)))
@@ -73,7 +74,7 @@ describe("Agent Console same-PTY bridge", () => {
     controller.abort()
 
     await expect(running).rejects.toThrow("cancelled")
-    expect(writes).toEqual(["sleep 60\r", "\x03"])
+    expect(writes).toEqual(["sleep 60\x18\x05", "\x03"])
     expect(ConsolePty.inspect({ directory, sessionID: "session-abort" }).cwd).toBe(directory)
     socket.close()
   })
@@ -85,7 +86,7 @@ describe("Agent Console same-PTY bridge", () => {
       ptyID: "pty-close",
       token,
       write: async (data) => {
-        if (data === "wait\r") socket.send(osc("begin", cwd(directory)))
+        if (data === "wait\x18\x05") socket.send(osc("begin", cwd(directory)))
       },
     })
     socket.send(osc("ready", cwd(directory)))
@@ -123,11 +124,13 @@ describe("Agent Console same-PTY bridge", () => {
       token,
       write: async (data) => {
         writes.push(data)
-        if (data === "hang\r") socket.send(osc("begin", cwd(directory)))
-        if (data === "__chipmate_resync\r") socket.send(osc("resync", cwd(directory)))
-        if (data === "next\r") {
+        if (data === "hang\x18\x05") socket.send(osc("begin", cwd(directory)))
+        if (data === "__chipmate_resync\x18\x05") {
+          socket.send(`${osc("resync", cwd(directory))}${osc("ready", cwd(directory))}`)
+        }
+        if (data === "next\x18\x05") {
           socket.send(osc("begin", cwd(directory)))
-          socket.send(`next-ok${osc("end", 0, cwd(directory))}`)
+          socket.send(`next-ok${osc("end", 0, cwd(directory))}${osc("ready", cwd(directory))}`)
         }
       },
     })
@@ -151,7 +154,7 @@ describe("Agent Console same-PTY bridge", () => {
       abort: new AbortController().signal,
     })
     expect(next.output).toBe("next-ok")
-    expect(writes).toEqual(["hang\r", "\x03", "__chipmate_resync\r", "next\r"])
+    expect(writes).toEqual(["hang\x18\x05", "\x03", "__chipmate_resync\x18\x05", "next\x18\x05"])
     socket.close()
   })
 
@@ -162,11 +165,11 @@ describe("Agent Console same-PTY bridge", () => {
       ptyID: "pty-active",
       token,
       write: async (data) => {
-        if (data !== "stream\r") return
+        if (data !== "stream\x18\x05") return
         socket.send(osc("begin", cwd(directory)))
         setTimeout(() => socket.send("one\n"), 25)
         setTimeout(() => socket.send("two\n"), 60)
-        setTimeout(() => socket.send(`three\n${osc("end", 0, cwd(directory))}`), 95)
+        setTimeout(() => socket.send(`three\n${osc("end", 0, cwd(directory))}${osc("ready", cwd(directory))}`), 95)
       },
     })
     socket.send(osc("ready", cwd(directory)))

@@ -13,6 +13,7 @@ import {
 } from "solid-js"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
+import { Button } from "@kilocode/kilo-ui/button"
 import { Tabs } from "@kilocode/kilo-ui/tabs"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { PermissionDock } from "../src/components/chat/PermissionDock"
@@ -27,12 +28,12 @@ import type { TerminalWriter } from "../agent-manager/terminal/state"
 import type { TerminalFont } from "../src/types/messages/agent-manager"
 import type {
   AgentConsoleActivityEvent,
+  AgentConsoleInputRoutedMessage,
   AgentConsoleTerminalRecoveryMessage,
   AgentConsoleTerminalStateMessage,
 } from "../src/types/messages/extension-messages"
 import type { PermissionRequest } from "../src/types/messages"
-import { HybridPrompt } from "./HybridPrompt"
-import { HybridTimeline } from "./HybridTimeline"
+import { HybridTimeline, type Failure } from "./HybridTimeline"
 import { mergeActivity } from "./activity"
 import { queue } from "./queue"
 
@@ -46,9 +47,8 @@ interface TerminalState {
 
 interface Props {
   initialMode?: Mode
-  shell?: JSX.Element
+  shell?: (bind: (next: TerminalWriter) => () => void) => JSX.Element
   activities?: AgentConsoleActivityEvent[]
-  routeTimeout?: number
 }
 
 type ShellState =
@@ -64,6 +64,15 @@ function name(path: string | undefined): string {
   return clean.split(/[\\/]/).pop() || clean
 }
 
+function fontStyle(terminal: TerminalState | undefined): JSX.CSSProperties {
+  return {
+    "--agent-console-terminal-font":
+      terminal?.font.fontFamily ?? '"Cascadia Mono", Consolas, Menlo, Monaco, monospace',
+    "--agent-console-terminal-size": `${terminal?.font.fontSize ?? 13}px`,
+    "--agent-console-terminal-line-height": String(terminal?.font.lineHeight ?? 1),
+  } as JSX.CSSProperties
+}
+
 export const AgentConsoleContent: Component<Props> = (props) => {
   const vscode = useVSCode()
   const server = useServer()
@@ -74,6 +83,12 @@ export const AgentConsoleContent: Component<Props> = (props) => {
   const [pending, setPending] = createSignal(false)
   const [error, setError] = createSignal<string>()
   const [inputError, setInputError] = createSignal<string>()
+  const [capture, setCapture] = createSignal<string>()
+  const [relay, setRelay] = createSignal<"connecting" | "open" | "error" | "closed">(
+    props.shell ? "open" : "connecting",
+  )
+  const [failures, setFailures] = createSignal<Failure[]>([])
+  const [alternate, setAlternate] = createSignal(false)
   const [shellState, setShellState] = createSignal<ShellState>(
     props.shell ? { status: "ready", cwd: server.workspaceDirectory() ?? "/project" } : { status: "starting" },
   )
@@ -81,6 +96,10 @@ export const AgentConsoleContent: Component<Props> = (props) => {
   const [activities, setActivities] = createSignal<AgentConsoleActivityEvent[]>(props.activities ?? [])
   const state = () => server.connectionState()
   const connected = () => state() === "connected"
+  const available = () => {
+    const shell = shellState().status
+    return connected() && relay() === "open" && (shell === "ready" || shell === "busy")
+  }
 
   const bridge = queue((_id, message) => setInputError(message))
 
@@ -102,6 +121,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
     setPending(true)
     setError(undefined)
     setInputError(undefined)
+    setRelay("connecting")
     setShellState({ status: "starting" })
     vscode.postMessage({ type: "agentConsole.shell.restart" })
   }
@@ -116,6 +136,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
     session.clearCurrentSession()
     bridge.clear()
     setInputError(undefined)
+    setFailures([])
     vscode.postMessage({ type: "agentConsole.session.new" })
     requestAnimationFrame(() => window.dispatchEvent(new Event("focusPrompt")))
   }
@@ -125,61 +146,71 @@ export const AgentConsoleContent: Component<Props> = (props) => {
     untrack(() => session.selectAgent("agent-console", id))
   })
 
+  createEffect(() => {
+    if (props.activities) setActivities(props.activities)
+  })
+
   const bind = (next: TerminalWriter) => {
     return bridge.bind(next)
   }
 
-  const shell = (command: string) => {
-    setInputError(undefined)
-    const state = shellState()
-    if (dirty()) {
-      setInputError("Shell 中还有未提交的输入，请切换到 Shell 标签按 Enter 或 Ctrl+C 清理后重试。")
-      return
-    }
-    if (state.status !== "ready") {
-      setInputError(state.status === "error" ? state.message : "Shell 当前不在可执行命令的提示符状态。")
-      return
-    }
-    const id = crypto.randomUUID()
-    const current = terminal()
-    if (current) {
-      vscode.postMessage({
-        type: "agentConsole.command.expect",
-        terminalId: current.id,
-        runId: id,
-        source: "direct",
-        command,
-      })
-    }
-    const sent = bridge.send(id, `${command}\r`)
-    setShellState({ status: "busy", cwd: state.cwd })
-    if (sent) return
-    vscode.postMessage({
-      type: "agentConsole.terminal.diagnostic",
-      terminalId: terminal()?.id ?? "pending",
-      event: "send-skipped",
-      detail: `queued-command bytes=${command.length}`,
-    })
+  const archive = (input: string, message: string) => {
+    setFailures((current) => [...current, { id: crypto.randomUUID(), input, message, created: Date.now() }])
   }
 
-  const agent = (input: string) => {
+  const agent = (input: string, report = true) => {
     setInputError(undefined)
-    const state = shellState()
-    if (dirty()) {
-      setInputError("Shell 中还有未提交的输入，请切换到 Shell 标签按 Enter 或 Ctrl+C 清理后重试。")
-      return
+    if (!connected()) {
+      if (report) archive(input, "Agent 连接已断开，请恢复连接后重试。")
+      return false
     }
+    if (session.status() !== "idle" || permission()) {
+      if (report) archive(input, "Agent 正在处理上一项请求，请稍后重试。")
+      return false
+    }
+    const state = shellState()
     if (state.status !== "ready") {
-      setInputError(state.status === "error" ? state.message : "等待 Shell 回到命令提示符后再调用 Agent。")
-      return
+      const message = state.status === "error" ? state.message : "等待 Shell 回到命令提示符后再调用 Agent。"
+      if (report) archive(input, message)
+      return false
     }
     session.selectAgent("agent-console", session.currentSessionID())
     const selected = session.selected()
     if (!selected) {
-      setInputError("尚未选择可用模型，请先在 ChipMate 设置中配置内网模型。")
-      return
+      if (report) archive(input, "尚未选择可用模型，请先在 ChipMate 设置中配置内网模型。")
+      return false
     }
     session.sendMessage(input, selected.providerID, selected.modelID)
+    return true
+  }
+
+  const retry = (failure: Failure) => {
+    if (!agent(failure.input, false)) {
+      setFailures((current) =>
+        current.map((item) =>
+          item.id === failure.id ? { ...item, message: "Agent 仍不可用，请检查连接和模型配置后重试。" } : item,
+        ),
+      )
+      return
+    }
+    setFailures((current) => current.filter((item) => item.id !== failure.id))
+  }
+
+  const captureInput = (): "accepted" | "busy" | "unavailable" => {
+    const current = terminal()
+    if (capture()) {
+      setInputError("正在判断上一条输入，请稍候。")
+      return "busy"
+    }
+    if (!current || !gate().submit) {
+      setInputError(gate().label ?? "Shell 尚未准备好接收输入。")
+      return "unavailable"
+    }
+    const id = crypto.randomUUID()
+    setCapture(id)
+    setInputError(undefined)
+    vscode.postMessage({ type: "agentConsole.input.capture", terminalId: current.id, requestId: id })
+    return "accepted"
   }
 
   const interrupt = () => {
@@ -200,6 +231,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
   }
 
   const connection = (next: "open" | "error" | "closed", detail?: string) => {
+    setRelay(next)
     if (next === "open") {
       setError(undefined)
       return
@@ -219,35 +251,26 @@ export const AgentConsoleContent: Component<Props> = (props) => {
 
   const gate = createMemo(() => {
     if (mode() !== "agent") return { submit: false, label: undefined, action: undefined }
-    if (!connected()) return { submit: false, label: "连接已断开，输入内容会保留", action: undefined }
+    const shell = shellState()
+    if (shell.status === "error") return { submit: false, label: shell.message, action: "restart" as const }
+    if (shell.status === "recovering") return { submit: false, label: "正在恢复 Shell…", action: undefined }
+    if (shell.status === "starting") return { submit: false, label: "Shell 正在连接…", action: undefined }
+    if (!connected() || relay() !== "open") {
+      return { submit: false, label: "Shell 正在连接，当前输入不会提交", action: undefined }
+    }
     const status = session.status()
     if (status !== "idle") {
       const label = status === "retry" ? "Agent 正在重试，Ctrl+C 可中断" : "Agent 执行中，Ctrl+C 可中断"
       return { submit: false, label, action: undefined }
     }
     if (permission()) return { submit: false, label: "等待处理命令审批", action: undefined }
-    if (dirty()) return { submit: false, label: "Shell 中有未提交输入，请切换到 Shell 清理", action: undefined }
-    const shell = shellState()
+    if (capture()) return { submit: false, label: "正在判断输入类型…", action: undefined }
     if (shell.status === "ready") return { submit: true, label: undefined, action: undefined }
     if (shell.status === "busy") {
       return { submit: false, label: "Shell 命令运行中，Ctrl+C 可中断", action: "recover" as const }
     }
-    if (shell.status === "recovering") return { submit: false, label: "正在恢复 Shell…", action: undefined }
-    if (shell.status === "starting") return { submit: false, label: "Shell 正在连接…", action: undefined }
-    return { submit: false, label: shell.message, action: "restart" as const }
+    return { submit: false, label: undefined, action: undefined }
   })
-
-  const promptError = (message: string) => {
-    setInputError(message)
-    const current = terminal()
-    if (!current) return
-    vscode.postMessage({
-      type: "agentConsole.terminal.diagnostic",
-      terminalId: current.id,
-      event: "route-timeout",
-      detail: "input routing response timed out",
-    })
-  }
 
   let signature = ""
   createEffect(() => {
@@ -288,7 +311,10 @@ export const AgentConsoleContent: Component<Props> = (props) => {
       request,
       session.respondingPermissions().has(request.id),
       () => session.respondToPermission(request.id, "reject", [], []),
-      (text) => window.dispatchEvent(new CustomEvent("prefillPrompt", { detail: { text, route: "agent" } })),
+      (text) => {
+        bridge.write(`\x18\x15${text}`)
+        setDirty(!!text)
+      },
     )
   }
 
@@ -330,6 +356,13 @@ export const AgentConsoleContent: Component<Props> = (props) => {
     requestAnimationFrame(() => window.dispatchEvent(new Event("focusPrompt")))
   }
 
+  const routeInput = (message: AgentConsoleInputRoutedMessage) => {
+    if (capture() !== message.requestId) return
+    setCapture(undefined)
+    setDirty(false)
+    if (message.route === "agent") agent(message.input)
+  }
+
   onMount(() => {
     const key = (event: KeyboardEvent) => {
       if (mode() !== "agent" || (session.status() === "idle" && shellState().status !== "busy")) return
@@ -353,6 +386,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
         })
         setPending(false)
         setError(undefined)
+        setRelay("connecting")
         setActivities([])
         return
       }
@@ -371,6 +405,21 @@ export const AgentConsoleContent: Component<Props> = (props) => {
         setActivities((current) => mergeActivity(current, [message.event]))
         return
       }
+      if (message.type === "agentConsole.input.routed") {
+        routeInput(message)
+        return
+      }
+      if (message.type === "agentConsole.input.error") {
+        if (capture() !== message.requestId) return
+        setCapture(undefined)
+        if (message.recovery === "archive" && message.input) {
+          archive(message.input, message.message)
+          setDirty(false)
+          return
+        }
+        setInputError(message.message)
+        return
+      }
       if (message.type === "agentConsole.terminal.state") {
         updateShell(message)
         return
@@ -383,6 +432,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
         if (terminal()?.id === message.terminalId) setTerminal(undefined)
         setActivities([])
         setShellState({ status: "error", message: language.t("agentManager.terminal.ended") })
+        setRelay("closed")
         setPending(false)
         fail(language.t("agentManager.terminal.ended"))
         return
@@ -391,6 +441,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
         setPending(false)
         setError(message.message)
         setShellState({ status: "error", message: message.message })
+        setRelay("error")
         fail(message.message)
         return
       }
@@ -406,7 +457,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
   })
 
   return (
-    <main data-component="agent-console" data-mode={mode()}>
+    <main data-component="agent-console" data-mode={mode()} style={fontStyle(terminal())}>
       <header data-slot="agent-console-toolbar">
         <div data-slot="agent-console-leading">
           <Tabs
@@ -434,9 +485,9 @@ export const AgentConsoleContent: Component<Props> = (props) => {
         </div>
 
         <div data-slot="agent-console-actions">
-          <span data-slot="agent-console-connection" data-state={state()}>
+          <span data-slot="agent-console-connection" data-state={available() ? "connected" : "connecting"}>
             <span data-slot="agent-console-connection-dot" />
-            {connected()
+            {available()
               ? language.t("agentConsole.connection.connected")
               : language.t("agentConsole.connection.connecting")}
           </span>
@@ -494,8 +545,39 @@ export const AgentConsoleContent: Component<Props> = (props) => {
             <span>{language.t("agentConsole.shell.directWarning")}</span>
           </div>
         </Show>
-        <div data-slot="agent-console-layers">
-          <div data-slot="agent-console-terminal" data-active={mode() === "shell" ? "" : undefined}>
+        <div
+          data-slot="agent-console-layers"
+          data-expanded={shellState().status === "busy" || alternate() ? "" : undefined}
+          data-alternate={alternate() ? "" : undefined}
+        >
+          <section data-slot="agent-console-activity" data-active={mode() === "agent" ? "" : undefined}>
+            <HybridTimeline
+              activities={activities}
+              footer={permissionCard}
+              footerTarget={() => permission()?.tool}
+              error={inputError}
+              failures={failures}
+              retry={retry}
+            />
+          </section>
+          <Show when={mode() === "agent" && gate().label}>
+            {(label) => (
+              <div data-slot="agent-console-route-status">
+                <span>{label()}</span>
+                <Show when={gate().action === "recover"}>
+                  <Button size="small" variant="ghost" onClick={recover}>
+                    恢复
+                  </Button>
+                </Show>
+                <Show when={gate().action === "restart"}>
+                  <Button size="small" variant="ghost" onClick={restart}>
+                    重启
+                  </Button>
+                </Show>
+              </div>
+            )}
+          </Show>
+          <div data-slot="agent-console-terminal" data-active="">
             <Show
               when={props.shell ?? terminal()}
               fallback={
@@ -505,7 +587,7 @@ export const AgentConsoleContent: Component<Props> = (props) => {
                 </div>
               }
             >
-              {props.shell ??
+              {props.shell?.(bind) ??
                 (() => {
                   const current = terminal()
                   if (!current) return null
@@ -515,13 +597,20 @@ export const AgentConsoleContent: Component<Props> = (props) => {
                       socket={() => new AgentConsoleSocket(vscode, current.id)}
                       font={current.font}
                       active={true}
-                      focus={mode() === "shell"}
+                      focus={true}
                       resizeType="agentConsole.terminal.resize"
                       fontType="agentConsole.terminal.fontChanged"
                       shortcuts={false}
                       bind={bind}
-                      inputEnabled={mode() === "shell" && session.status() !== "busy" && !permission()}
+                      inputEnabled={
+                        mode() === "shell"
+                          ? shellState().status === "ready" || shellState().status === "busy"
+                          : shellState().status === "busy" || gate().submit
+                      }
+                      captureInput={mode() === "agent" && shellState().status === "ready"}
+                      capture={captureInput}
                       dirty={setDirty}
+                      screen={setAlternate}
                       foreground="#fff"
                       connection={connection}
                       diagnostic={(event, detail) =>
@@ -537,35 +626,6 @@ export const AgentConsoleContent: Component<Props> = (props) => {
                 })()}
             </Show>
           </div>
-          <section data-slot="agent-console-activity" data-active={mode() === "agent" ? "" : undefined}>
-            <HybridTimeline
-              activities={activities}
-              footer={permissionCard}
-              footerTarget={() => permission()?.tool}
-              error={inputError}
-              prompt={() => (
-                <HybridPrompt
-                  canSubmit={() => gate().submit}
-                  busy={() => shellState().status === "busy" || shellState().status === "recovering"}
-                  cwd={() => {
-                    const state = shellState()
-                    return state.status === "ready" || state.status === "busy" || state.status === "recovering"
-                      ? state.cwd
-                      : undefined
-                  }}
-                  status={() => gate().label}
-                  action={() => gate().action}
-                  onAgent={agent}
-                  onShell={shell}
-                  onInterrupt={interrupt}
-                  onRecover={recover}
-                  onRestart={restart}
-                  onError={promptError}
-                  timeout={props.routeTimeout}
-                />
-              )}
-            />
-          </section>
         </div>
       </section>
     </main>

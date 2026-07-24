@@ -49,7 +49,10 @@ interface Props {
   shortcuts?: boolean
   output?: (data: string) => void
   inputEnabled?: boolean
+  captureInput?: boolean
+  capture?: () => "accepted" | "busy" | "unavailable"
   dirty?: (value: boolean) => void
+  screen?: (alternate: boolean) => void
   foreground?: string
   connection?: (state: "open" | "error" | "closed", detail?: string) => void
   diagnostic?: (event: "connecting" | "open" | "error" | "close" | "send-skipped", detail?: string) => void
@@ -163,6 +166,7 @@ export const TerminalTab: Component<Props> = (props) => {
       cursorBlink: true,
       fontFamily: props.font.fontFamily,
       fontSize: props.font.fontSize,
+      lineHeight: props.font.lineHeight ?? 1,
       scrollback: 5000,
       minimumContrastRatio: props.foreground ? 7 : 1,
       theme: readTheme(props.foreground),
@@ -204,6 +208,33 @@ export const TerminalTab: Component<Props> = (props) => {
     term.loadAddon(new UnicodeGraphemesAddon())
     term.unicode.activeVersion = "15-graphemes"
     term.open(host)
+    let composing = false
+    let committed = false
+    let consumed = false
+    let commitTimer: ReturnType<typeof setTimeout> | undefined
+    const textarea = term.textarea
+    const compositionStart = () => {
+      composing = true
+      committed = false
+      consumed = false
+      clearTimeout(commitTimer)
+    }
+    const compositionEnd = () => {
+      composing = false
+      if (consumed) {
+        consumed = false
+        committed = false
+        clearTimeout(commitTimer)
+        return
+      }
+      committed = true
+      clearTimeout(commitTimer)
+      commitTimer = setTimeout(() => {
+        committed = false
+      }, 500)
+    }
+    textarea?.addEventListener("compositionstart", compositionStart)
+    textarea?.addEventListener("compositionend", compositionEnd)
     // Fit on the next frame — `host` might still have 0px dimensions
     // during the initial layout pass otherwise.
     requestAnimationFrame(() => {
@@ -254,6 +285,15 @@ export const TerminalTab: Component<Props> = (props) => {
     let closed = false
     let unbind: (() => void) | undefined
     let inputDirty = false
+    let alternate = false
+    let scrollFrame: number | undefined
+    let follow = true
+    const screen = () => {
+      const next = term.buffer.active.type === "alternate"
+      if (next === alternate) return
+      alternate = next
+      props.screen?.(next)
+    }
     const setDirty = (value: boolean) => {
       if (inputDirty === value) return
       inputDirty = value
@@ -269,7 +309,27 @@ export const TerminalTab: Component<Props> = (props) => {
       props.connection?.("open")
     }
     const disposeData = term.onData((data) => {
-      if (props.inputEnabled === false && data !== "\x03") return
+      if (props.captureInput === true && data === "\r") {
+        if (composing) {
+          consumed = true
+          return
+        }
+        if (committed) {
+          committed = false
+          clearTimeout(commitTimer)
+          return
+        }
+        const result = props.capture?.() ?? "unavailable"
+        if (result === "accepted") return
+        term.write("\x07")
+        props.diagnostic?.("send-skipped", `capture=${result}`)
+        return
+      }
+      if (props.inputEnabled === false && data !== "\x03") {
+        term.write("\x07")
+        props.diagnostic?.("send-skipped", `input-disabled bytes=${data.length}`)
+        return
+      }
       if (/[\r\n\x03\x15]/.test(data)) setDirty(false)
       else if (data !== "\x7f") setDirty(true)
       if (ws.readyState === WebSocket.OPEN) {
@@ -278,18 +338,33 @@ export const TerminalTab: Component<Props> = (props) => {
       }
       props.diagnostic?.("send-skipped", `readyState=${ws.readyState} bytes=${data.length}`)
     })
+    const disposeScroll = term.onScroll(() => {
+      follow = term.buffer.active.viewportY >= term.buffer.active.baseY
+    })
+    const write = (data: string | Uint8Array) => {
+      const pinned = follow
+      term.write(data, () => {
+        screen()
+        if (!pinned || scrollFrame !== undefined) return
+        scrollFrame = requestAnimationFrame(() => {
+          scrollFrame = undefined
+          if (!follow) return
+          term.scrollToBottom()
+        })
+      })
+    }
     ws.onmessage = (event) => {
       // Text frames carry PTY output; binary frames starting with 0x00
       // are control metadata (cursor position). See pty/index.ts:46.
       if (typeof event.data === "string") {
-        term.write(event.data)
+        write(event.data)
         props.output?.(event.data)
         return
       }
       if (event.data instanceof ArrayBuffer) {
         const bytes = new Uint8Array(event.data)
         if (bytes.length > 0 && bytes[0] === 0x00) return
-        term.write(bytes)
+        write(bytes)
         props.output?.(new TextDecoder().decode(bytes))
       }
     }
@@ -390,6 +465,7 @@ export const TerminalTab: Component<Props> = (props) => {
       if (message.type === (props.fontType ?? "agentManager.terminal.fontChanged")) {
         term.options.fontFamily = message.font.fontFamily
         term.options.fontSize = message.font.fontSize
+        term.options.lineHeight = message.font.lineHeight ?? 1
         scheduleRepaint()
         return
       }
@@ -445,6 +521,10 @@ export const TerminalTab: Component<Props> = (props) => {
 
     onCleanup(() => {
       if (pendingFrame !== null) cancelAnimationFrame(pendingFrame)
+      if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
+      clearTimeout(commitTimer)
+      textarea?.removeEventListener("compositionstart", compositionStart)
+      textarea?.removeEventListener("compositionend", compositionEnd)
       document.removeEventListener("visibilitychange", onVisibilityChange)
       window.removeEventListener("focus", onWindowFocus)
       fontSub()
@@ -453,7 +533,9 @@ export const TerminalTab: Component<Props> = (props) => {
       clearTimeout(resizeTimer)
       ro.disconnect()
       disposeData.dispose()
+      disposeScroll.dispose()
       props.dirty?.(false)
+      props.screen?.(false)
       closed = true
       try {
         ws.close()

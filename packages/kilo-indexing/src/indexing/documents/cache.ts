@@ -64,6 +64,9 @@ export class DocumentIndexCache {
   }
 
   private relative(filePath: string): string {
+    if (filePath === "@external" || filePath.startsWith("@external/") || filePath.startsWith("@external\\")) {
+      return filePath.replaceAll("\\", "/")
+    }
     return path.normalize(path.isAbsolute(filePath) ? path.relative(this.workspace, filePath) : filePath)
   }
 }

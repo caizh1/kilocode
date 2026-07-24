@@ -97,6 +97,12 @@ function resolveConfig(config?: IndexingConfig, global?: IndexingConfig) {
     if (!parent && !child) continue
     Object.assign(merged, { [key]: { ...parent, ...child } })
   }
+  if (merged.documents) {
+    merged.documents = {
+      ...merged.documents,
+      approvedExternalRoots: global?.documents?.approvedExternalRoots,
+    }
+  }
   return applyInternalIndexingDefaults(merged)
 }
 
@@ -470,8 +476,10 @@ export namespace KiloIndexing {
 
   const boot = async (hit: Cache): Promise<Entry> => {
     const ctx = Instance.current
-    const bind = <Args extends unknown[], Result>(fn: (...args: Args) => Result) =>
-      (...args: Args): Result => Instance.restore(ctx, () => fn(...args))
+    const bind =
+      <Args extends unknown[], Result>(fn: (...args: Args) => Result) =>
+      (...args: Args): Result =>
+        Instance.restore(ctx, () => fn(...args))
     const dir = Instance.directory
     void MemoryDebug.event({ name: "indexing.boot.begin", data: { workspace: MemoryDebug.hash(dir) } })
     const baseline = emptyWorkspace(dir) ? undefined : await AppRuntime.runPromise(baselineDirectory(dir))

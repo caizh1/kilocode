@@ -18,14 +18,22 @@ describe("Agent Manager terminal font", () => {
     expect(resolveTerminalFont(undefined, undefined, undefined)).toEqual({
       fontFamily: "Menlo, Monaco, 'Courier New', monospace",
       fontSize: process.platform === "darwin" ? 12 : 14,
+      lineHeight: 1,
+    })
+    expect(resolveTerminalFont(undefined, undefined, undefined, "win32")).toEqual({
+      fontFamily: "Consolas, 'Cascadia Mono', 'Courier New', monospace",
+      fontSize: 14,
+      lineHeight: 1,
     })
     expect(resolveTerminalFont("MesloLGS NF", 16, "Menlo")).toEqual({
       fontFamily: "MesloLGS NF",
       fontSize: 16,
+      lineHeight: 1,
     })
     expect(resolveTerminalFont(undefined, 16, "Menlo")).toEqual({
       fontFamily: "Menlo",
       fontSize: 16,
+      lineHeight: 1,
     })
   })
 
@@ -37,6 +45,7 @@ describe("Agent Manager terminal font", () => {
 
     expect(affectsTerminalFont(event("terminal.integrated.fontFamily"))).toBe(true)
     expect(affectsTerminalFont(event("terminal.integrated.fontSize"))).toBe(true)
+    expect(affectsTerminalFont(event("terminal.integrated.lineHeight"))).toBe(true)
     expect(affectsTerminalFont(event("editor.fontFamily"))).toBe(true)
     expect(affectsTerminalFont(event("editor.fontSize"))).toBe(false)
     expect(affectsTerminalFont(event("terminal.integrated.letterSpacing"))).toBe(false)

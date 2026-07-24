@@ -15,6 +15,7 @@ describe("ChipMate Server package defaults", () => {
       marketplace: "http://package.test:6001/marketplace",
       word: "http://package.test:6001/render/word",
       mermaid: "http://package.test:6001/render/mermaid",
+      plantuml: "http://package.test:6001/render/plantuml",
     })
   })
 
@@ -23,6 +24,7 @@ describe("ChipMate Server package defaults", () => {
       baseUrl: "https://legacy.test:7443",
       marketplace: "https://legacy.test:7443/marketplace",
       mermaid: "https://legacy.test:7443/render/mermaid",
+      plantuml: "https://legacy.test:7443/render/plantuml",
     })
   })
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -7,8 +8,11 @@ import JSZip from "jszip"
 import { MarketDb } from "@chipmate/market-db"
 import { build } from "../src/index.ts"
 
-async function fixture(opts: { active?: number; free?: number; idle?: number; maximum?: number } = {}) {
+async function fixture(opts: { active?: number; free?: number; idle?: number; maximum?: number; bindings?: Record<string, string>; packages?: Array<{ name: string; data: Buffer }> } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "chipmate-extension-market-"))
+  const packages = join(dir, "packages")
+  await mkdir(packages, { recursive: true })
+  for (const item of opts.packages ?? []) await writeFile(join(packages, item.name), item.data)
   const db = new MarketDb({ dir: join(dir, "db") })
   const resolveUser = async (key: string) =>
     key === "alice-key" || key === "bob-key"
@@ -22,6 +26,8 @@ async function fixture(opts: { active?: number; free?: number; idle?: number; ma
     resolveUser,
     extensionMarket: true,
     extensionRoot: join(dir, "extensions"),
+    packageRoot: packages,
+    ...(opts.bindings ? { extensionOwnerBindings: opts.bindings } : {}),
     extensionScanMs: 60_000,
     ...(opts.active === undefined ? {} : { extensionActiveUploads: opts.active }),
     ...(opts.free === undefined ? {} : { extensionMinimumFreeBytes: opts.free }),
@@ -31,7 +37,7 @@ async function fixture(opts: { active?: number; free?: number; idle?: number; ma
   return { app, db, dir }
 }
 
-async function vsix(opts: { publisher?: string; name?: string; version?: string; target?: string; description?: string; manifest?: boolean; unsafe?: boolean; bomb?: boolean } = {}) {
+async function vsix(opts: { publisher?: string; name?: string; version?: string; target?: string; updateTarget?: string; description?: string; releaseNotes?: string | Buffer; manifest?: boolean; unsafe?: boolean; bomb?: boolean } = {}) {
   const zip = new JSZip()
   const publisher = opts.publisher ?? "chipmate"
   const name = opts.name ?? "cpp-hybrid"
@@ -48,6 +54,7 @@ async function vsix(opts: { publisher?: string; name?: string; version?: string;
       keywords: ["C++", "analysis"],
       icon: "icon.png",
       extensionDependencies: ["ms-vscode.cpptools"],
+      ...(opts.updateTarget ? { chipmatePackageTarget: opts.updateTarget } : {}),
     }),
   )
   if (opts.manifest !== false) {
@@ -57,6 +64,7 @@ async function vsix(opts: { publisher?: string; name?: string; version?: string;
     )
   }
   zip.file("extension/README.md", "# C/C++ Hybrid Intelligence\n\nSource-backed analysis.")
+  if (opts.releaseNotes !== undefined) zip.file("extension/RELEASE_NOTES.md", opts.releaseNotes)
   if (opts.unsafe) zip.file("../outside.txt", "unsafe")
   if (opts.bomb) zip.file("extension/bomb.bin", Buffer.alloc(12 * 1024 * 1024))
   zip.file(
@@ -65,6 +73,165 @@ async function vsix(opts: { publisher?: string; name?: string; version?: string;
   )
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })
 }
+
+test("official ChipMate upload immediately drives the dynamic update manifest and owner-only fallback", async () => {
+  const data = await fixture()
+  try {
+    const alice = await login(data.app)
+    const bob = await login(data.app, "bob-key")
+    const notes = "# ChipMate 1.2.3\n\n- Manual update checks\n- Verified installation"
+    const source = await vsix({
+      name: "chipmate",
+      version: "1.2.3",
+      updateTarget: "darwin-arm64",
+      releaseNotes: notes,
+    })
+    const first = await upload(data.app, alice, source, "official-00000001")
+    assert.equal(first.statusCode, 200, first.body)
+    assert.equal(first.json().artifact.releaseNotesAvailable, true)
+    const manifest = await data.app.inject({ method: "GET", url: "/packages/manifest.json" })
+    assert.equal(manifest.statusCode, 200, manifest.body)
+    assert.equal(manifest.json().schemaVersion, 2)
+    assert.equal(manifest.json().latestByTarget["darwin-arm64"].version, "1.2.3")
+    assert.equal(manifest.json().latestByTarget["darwin-arm64"].releaseNotes, notes)
+    assert.match(manifest.json().latestByTarget["darwin-arm64"].publishedAt, /^20\d\d-/)
+    assert.equal(manifest.json().packages[0].releaseNotes, undefined)
+    assert.match(manifest.json().latestByTarget["darwin-arm64"].url, /^\/packages\/artifacts\/.+\.vsix$/)
+    const download = await data.app.inject({
+      method: "GET",
+      url: manifest.json().latestByTarget["darwin-arm64"].url,
+    })
+    assert.equal(download.statusCode, 200)
+    assert.equal(download.rawPayload.equals(source), true)
+    assert.equal(createHash("sha256").update(download.rawPayload).digest("hex"), first.json().artifact.sha256)
+
+    const conflict = await upload(
+      data.app,
+      alice,
+      await vsix({ name: "chipmate", version: "1.2.3", updateTarget: "darwin-arm64", description: "changed" }),
+      "official-00000002",
+    )
+    assert.equal(conflict.statusCode, 409)
+    assert.equal(conflict.json().code, "EXTENSION_VERSION_CONFLICT")
+    assert.deepEqual(await readdir(join(data.dir, "extensions", ".tmp")), [])
+    assert.equal((await data.app.inject({ method: "GET", url: "/packages/manifest.json" })).json().packages.length, 1)
+
+    const notesConflict = await upload(
+      data.app,
+      alice,
+      await vsix({
+        name: "chipmate",
+        version: "1.2.3",
+        updateTarget: "linux-x64-baseline",
+        releaseNotes: "# ChipMate 1.2.3\n\n- Different notes",
+      }),
+      "official-00000005",
+    )
+    assert.equal(notesConflict.statusCode, 409)
+    assert.equal(notesConflict.json().code, "EXTENSION_RELEASE_NOTES_CONFLICT")
+
+    const withoutNotes = await upload(
+      data.app,
+      alice,
+      await vsix({ name: "chipmate", version: "1.2.3", updateTarget: "linux-x64-baseline" }),
+      "official-00000006",
+    )
+    assert.equal(withoutNotes.statusCode, 200, withoutNotes.body)
+    assert.equal(withoutNotes.json().artifact.releaseNotesAvailable, false)
+    const fallback = (await data.app.inject({ method: "GET", url: "/packages/manifest.json" })).json()
+    assert.equal(fallback.latestByTarget["linux-x64-baseline"].releaseNotes, notes)
+
+    const forbidden = await upload(
+      data.app,
+      bob,
+      await vsix({ name: "chipmate", version: "1.2.4", updateTarget: "darwin-arm64" }),
+      "official-00000003",
+    )
+    assert.equal(forbidden.statusCode, 403)
+    const second = await upload(
+      data.app,
+      alice,
+      await vsix({ name: "chipmate", version: "1.2.4", updateTarget: "darwin-arm64" }),
+      "official-00000004",
+    )
+    assert.equal(second.statusCode, 200)
+    assert.equal((await data.app.inject({ method: "GET", url: "/packages/manifest.json" })).json().latestByTarget["darwin-arm64"].version, "1.2.4")
+    const removed = await data.app.inject({
+      method: "DELETE",
+      url: `/api/v1/extension-artifacts/${second.json().artifact.id}`,
+      headers: { cookie: alice.cookie, origin: "http://market.test", host: "market.test", "x-csrf-token": alice.csrf },
+    })
+    assert.equal(removed.statusCode, 200)
+    assert.equal((await data.app.inject({ method: "GET", url: "/packages/manifest.json" })).json().latestByTarget["darwin-arm64"].version, "1.2.3")
+  } finally {
+    await data.app.close()
+    await data.db.close()
+    await rm(data.dir, { recursive: true, force: true })
+  }
+})
+
+test("legacy system ChipMate records require the one-time owner binding before web releases", async () => {
+  const legacy = await vsix({ name: "chipmate", version: "1.0.0", updateTarget: "linux-x64-baseline" })
+  const blocked = await fixture({ packages: [{ name: "chipmate-1.0.0-linux.vsix", data: legacy }] })
+  try {
+    const alice = await login(blocked.app)
+    const response = await upload(
+      blocked.app,
+      alice,
+      await vsix({ name: "chipmate", version: "1.0.1", updateTarget: "linux-x64-baseline" }),
+      "binding-00000001",
+    )
+    assert.equal(response.statusCode, 409)
+    assert.equal(response.json().code, "EXTENSION_OWNER_UNASSIGNED")
+  } finally {
+    await blocked.app.close()
+    await blocked.db.close()
+    await rm(blocked.dir, { recursive: true, force: true })
+  }
+
+  const bound = await fixture({
+    packages: [{ name: "chipmate-1.0.0-linux.vsix", data: legacy }],
+    bindings: { "chipmate.chipmate": "Alice" },
+  })
+  try {
+    const alice = await login(bound.app)
+    const response = await upload(
+      bound.app,
+      alice,
+      await vsix({ name: "chipmate", version: "1.0.1", updateTarget: "linux-x64-baseline" }),
+      "binding-00000002",
+    )
+    assert.equal(response.statusCode, 200, response.body)
+    const manifest = (await bound.app.inject({ method: "GET", url: "/packages/manifest.json" })).json()
+    assert.equal(manifest.packages.length, 2)
+    assert.equal(manifest.latestByTarget["linux-x64-baseline"].version, "1.0.1")
+  } finally {
+    await bound.app.close()
+    await bound.db.close()
+    await rm(bound.dir, { recursive: true, force: true })
+  }
+})
+
+test("an invalid legacy package is quarantined without blocking a new web release", async () => {
+  const data = await fixture({ packages: [{ name: "broken.vsix", data: Buffer.from("not a zip") }] })
+  try {
+    const alice = await login(data.app)
+    const response = await upload(
+      data.app,
+      alice,
+      await vsix({ name: "chipmate", version: "1.3.0", updateTarget: "win32-x64-baseline" }),
+      "broken-legacy-0001",
+    )
+    assert.equal(response.statusCode, 200, response.body)
+    const manifest = (await data.app.inject({ method: "GET", url: "/packages/manifest.json" })).json()
+    assert.equal(manifest.packages.length, 1)
+    assert.equal(manifest.latestByTarget["win32-x64-baseline"].version, "1.3.0")
+  } finally {
+    await data.app.close()
+    await data.db.close()
+    await rm(data.dir, { recursive: true, force: true })
+  }
+})
 
 async function login(app: Awaited<ReturnType<typeof fixture>>["app"], key = "alice-key") {
   const response = await app.inject({ method: "POST", url: "/api/v1/auth/session", payload: { apiKey: key } })
@@ -131,13 +298,22 @@ test("VSIX upload publishes metadata, preserves variants, social state, and comp
       await vsix({ description: "Different build with the same version" }),
       "0000000000000003",
     )
-    assert.equal(conflict.json().status, "PUBLISHED")
-    assert.notEqual(conflict.json().artifact.sha256, first.json().artifact.sha256)
+    assert.equal(conflict.statusCode, 409)
+    assert.equal(conflict.json().code, "EXTENSION_VERSION_CONFLICT")
+    assert.equal(conflict.json().conflict.existing.sha256, first.json().artifact.sha256)
+    assert.notEqual(conflict.json().conflict.incoming.sha256, first.json().artifact.sha256)
+    const next = await upload(
+      data.app,
+      alice,
+      await vsix({ version: "2.5.0-beta.1", description: "New owner release" }),
+      "0000000000000007",
+    )
+    assert.equal(next.json().status, "PUBLISHED")
 
     const detail = await data.app.inject({ method: "GET", url: "/api/v1/extensions/chipmate.cpp-hybrid" })
     assert.equal(detail.statusCode, 200)
     assert.equal(detail.json().artifacts.length, 2)
-    assert.equal(detail.json().artifacts.every((item: { conflict: boolean }) => item.conflict), true)
+    assert.equal(detail.json().artifacts.every((item: { conflict: boolean }) => !item.conflict), true)
     assert.equal(detail.json().artifacts.every((item: Record<string, unknown>) => !("path" in item)), true)
     assert.deepEqual(detail.json().targets, ["linux-x64"])
     assert.match(detail.json().iconData, /^data:image\/png;base64,/)
@@ -193,38 +369,40 @@ test("VSIX upload publishes metadata, preserves variants, social state, and comp
 
     const bob = await login(data.app, "bob-key")
     const bobDuplicate = await upload(data.app, bob, source, "0000000000000004")
-    assert.equal(bobDuplicate.json().status, "DUPLICATE")
+    assert.equal(bobDuplicate.statusCode, 403)
+    assert.equal(bobDuplicate.json().code, "OWNERSHIP_REQUIRED")
     const forbidden = await data.app.inject({
       method: "DELETE",
-      url: `/api/v1/extension-artifacts/${first.json().artifact.id}`,
+      url: `/api/v1/extension-artifacts/${next.json().artifact.id}`,
       headers: { cookie: bob.cookie, origin: "http://market.test", host: "market.test", "x-csrf-token": bob.csrf },
     })
     assert.equal(forbidden.statusCode, 403)
     const removed = await data.app.inject({
       method: "DELETE",
-      url: `/api/v1/extension-artifacts/${first.json().artifact.id}`,
+      url: `/api/v1/extension-artifacts/${next.json().artifact.id}`,
       headers: { cookie: alice.cookie, origin: "http://market.test", host: "market.test", "x-csrf-token": alice.csrf },
     })
     assert.equal(removed.statusCode, 200)
     const recomputed = await data.app.inject({ method: "GET", url: "/api/v1/extensions/chipmate.cpp-hybrid" })
     assert.equal(recomputed.json().artifacts.length, 1)
     assert.equal(recomputed.json().artifacts[0].conflict, false)
-    assert.equal(recomputed.json().description, "Different build with the same version")
+    assert.equal(recomputed.json().description, "Hybrid C/C++ intelligence")
     const bobVersion = await upload(
       data.app,
       bob,
       await vsix({ version: "3.0.0-beta.1", target: "universal", description: "Bob prerelease" }),
       "0000000000000006",
     )
-    assert.equal(bobVersion.json().status, "PUBLISHED")
+    assert.equal(bobVersion.statusCode, 403)
+    assert.equal(bobVersion.json().code, "OWNERSHIP_REQUIRED")
     const latest = await data.app.inject({ method: "GET", url: "/api/v1/extensions/chipmate.cpp-hybrid" })
-    assert.equal(latest.json().version, "3.0.0-beta.1")
-    assert.equal(latest.json().uploader, "Bob")
+    assert.equal(latest.json().version, "2.4.0-beta.2")
+    assert.equal(latest.json().uploader, "Alice")
     assert.equal(latest.json().prerelease, true)
     const owned = await data.app.inject({
       method: "DELETE",
-      url: `/api/v1/extension-artifacts/${bobVersion.json().artifact.id}`,
-      headers: { cookie: bob.cookie, origin: "http://market.test", host: "market.test", "x-csrf-token": bob.csrf },
+      url: `/api/v1/extension-artifacts/${first.json().artifact.id}`,
+      headers: { cookie: alice.cookie, origin: "http://market.test", host: "market.test", "x-csrf-token": alice.csrf },
     })
     assert.equal(owned.statusCode, 200)
   } finally {
@@ -243,12 +421,26 @@ test("VSIX validation rejects missing, unsafe, bomb, and invalid-version archive
       await vsix({ unsafe: true }),
       await vsix({ bomb: true }),
       await vsix({ version: "release-next" }),
+      await vsix({ version: "1.0.0-01" }),
+      await vsix({ version: "1.0.0-alpha..1" }),
+      await vsix({ version: "1.0.0", releaseNotes: "# ChipMate 2.0.0\n\n- Wrong version" }),
+      await vsix({ version: "1.0.0", releaseNotes: "\n# ChipMate 1.0.0\n\n- Heading is not first" }),
+      await vsix({ version: "1.0.0", releaseNotes: `# ChipMate 1.0.0\n\n${"x".repeat(65_537)}` }),
+      await vsix({ version: "1.0.0", releaseNotes: Buffer.from([0xc3, 0x28]) }),
     ]
     for (const [index, payload] of cases.entries()) {
       const response = await upload(data.app, auth, payload, `invalid-${String(index).padStart(8, "0")}`)
       assert.equal(response.statusCode, 400, response.body)
       assert.equal(response.json().code, "VALIDATION_FAILED")
     }
+    const target = await upload(
+      data.app,
+      auth,
+      await vsix({ name: "chipmate", version: "1.0.0" }),
+      "invalid-target-00000001",
+    )
+    assert.equal(target.statusCode, 400)
+    assert.match(target.json().message, /chipmatePackageTarget/)
     assert.deepEqual(await readdir(join(data.dir, "extensions", ".tmp")), [])
   } finally {
     await data.app.close()

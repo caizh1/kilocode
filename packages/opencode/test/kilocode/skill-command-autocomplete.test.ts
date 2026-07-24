@@ -1,12 +1,24 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
+import fs from "fs/promises"
 import path from "path"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Command } from "../../src/command"
+import { Config } from "../../src/config/config"
+import { MCP } from "../../src/mcp"
+import { Skill } from "../../src/skill"
 import { provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(Layer.mergeAll(Command.defaultLayer, CrossSpawnSpawner.defaultLayer))
+const dynamic = testEffect(
+  Command.layer.pipe(
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(MCP.defaultLayer),
+    Layer.provideMerge(Skill.defaultLayer),
+    Layer.provideMerge(CrossSpawnSpawner.defaultLayer),
+  ),
+)
 
 describe("skill slash commands", () => {
   it.live("lists and resolves the built-in grill-me skill", () =>
@@ -70,6 +82,60 @@ Skill content.
           },
         },
       },
+    ),
+  )
+
+  dynamic.live("tracks installed and removed skills after refresh", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const root = path.join(dir, ".kilo", "skill")
+          const stale = path.join(root, "stale-skill")
+          yield* Effect.promise(() =>
+            Bun.write(
+              path.join(stale, "SKILL.md"),
+              `---
+name: stale-skill
+description: Removed after command initialization.
+---
+
+# Stale Skill
+`,
+            ),
+          )
+
+          const command = yield* Command.Service
+          const skill = yield* Skill.Service
+          expect((yield* command.list()).some((item) => item.name === "stale-skill")).toBe(true)
+
+          yield* Effect.promise(() => fs.rm(stale, { recursive: true }))
+          yield* skill.refresh("project")
+
+          expect((yield* command.list()).some((item) => item.name === "stale-skill")).toBe(false)
+          expect(yield* command.get("stale-skill")).toBeUndefined()
+          expect(yield* command.get("stale-skill:skill")).toBeUndefined()
+
+          const fresh = path.join(root, "fresh-skill", "SKILL.md")
+          yield* Effect.promise(() =>
+            Bun.write(
+              fresh,
+              `---
+name: fresh-skill
+description: Installed after command initialization.
+---
+
+# Fresh Skill
+`,
+            ),
+          )
+          yield* skill.refresh("project")
+
+          expect((yield* command.list()).some((item) => item.name === "fresh-skill" && item.source === "skill")).toBe(
+            true,
+          )
+          expect((yield* command.get("fresh-skill"))?.source).toBe("skill")
+        }),
+      { git: true },
     ),
   )
 })

@@ -305,6 +305,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                                         forceOpenFile={forceOpen() ? props.forceOpenFile : undefined}
                                         reasoningAutoCollapse={display.reasoningAutoCollapse()}
                                         feedback={props.feedback}
+                                        working={session.status() !== "idle"}
                                         animate={
                                           part.type === "tool" &&
                                           ((part as unknown as ToolPart).state?.status === "pending" ||

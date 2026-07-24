@@ -51,6 +51,52 @@ test("supports streaming, tool calls and controlled failures without recording s
     const tool = await post(`${root}/v1/chat/completions`, { messages: [{ role: "user", content: "[QA:TOOL-CALL]" }] })
     assert.equal(tool.choices[0].message.tool_calls[0].function.name, "read")
 
+    const shell = await post(`${root}/v1/chat/completions`, {
+      messages: [{ role: "user", content: [{ type: "text", text: "[QA:TOOL-CALL]" }] }],
+      tools: [{ type: "function", function: { name: "agent_console_shell" } }],
+    })
+    assert.equal(shell.choices[0].message.tool_calls[0].function.name, "agent_console_shell")
+
+    const resumed = await post(`${root}/v1/chat/completions`, {
+      messages: [
+        { role: "user", content: "[QA:TOOL-CALL]" },
+        { role: "assistant", content: null, tool_calls: shell.choices[0].message.tool_calls },
+        { role: "tool", content: "approved" },
+      ],
+      tools: [{ type: "function", function: { name: "agent_console_shell" } }],
+    })
+    assert.equal(resumed.choices[0].message.content, "固定回复。")
+
+    await post(`${root}/__qa/scenario`, { scenario: "tool-call" })
+    const forced = await post(`${root}/v1/chat/completions`, {
+      messages: [
+        { role: "assistant", content: "普通回复", tool_calls: [] },
+        { role: "user", content: "请提出一个安全命令" },
+      ],
+      tools: [{ type: "function", function: { name: "agent_console_shell" } }],
+    })
+    assert.equal(forced.choices[0].message.tool_calls[0].function.name, "agent_console_shell")
+    const forcedResume = await post(`${root}/v1/chat/completions`, {
+      messages: [
+        { role: "user", content: "请提出一个安全命令" },
+        { role: "assistant", content: null, tool_calls: forced.choices[0].message.tool_calls },
+        { role: "tool", content: "approved" },
+      ],
+      tools: [{ type: "function", function: { name: "agent_console_shell" } }],
+    })
+    assert.equal(forcedResume.choices[0].message.content, "固定回复。")
+    const repeated = await post(`${root}/v1/chat/completions`, {
+      messages: [
+        { role: "user", content: "请提出一个安全命令" },
+        { role: "assistant", content: null, tool_calls: forced.choices[0].message.tool_calls },
+        { role: "tool", content: "rejected" },
+        { role: "assistant", content: "已拒绝", tool_calls: [] },
+        { role: "user", content: "请再次提出同一个安全命令" },
+      ],
+      tools: [{ type: "function", function: { name: "agent_console_shell" } }],
+    })
+    assert.equal(repeated.choices[0].message.tool_calls[0].function.name, "agent_console_shell")
+
     const failure = await fetch(`${root}/v1/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json" },

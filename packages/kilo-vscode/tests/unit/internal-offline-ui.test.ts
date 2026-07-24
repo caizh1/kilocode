@@ -3,10 +3,28 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { canUseGatewayUi, gatewayTarget } from "../../webview-ui/src/utils/internal-offline-ui"
+import { internalOfflineProviderDefaults, shouldUseQuickProviderMode } from "../../src/shared/internal-offline"
+import { QWEN_FIM_MODEL_ID } from "../../src/shared/qwen-autocomplete"
 
 const ROOT = path.resolve(import.meta.dir, "../..")
 
 describe("internal offline webview gateway UI", () => {
+  it("enables key-only provider setup only for complete internal defaults", () => {
+    expect(internalOfflineProviderDefaults(false, "https://example.com/v1", "vendor/deepseek")).toBeUndefined()
+    expect(internalOfflineProviderDefaults(true, "", "vendor/deepseek")).toBeUndefined()
+    const defaults = internalOfflineProviderDefaults(true, " https://example.com/v1 ", " vendor/deepseek ")
+    expect(defaults).toMatchObject({
+      providerID: "chipmate",
+      npm: "@ai-sdk/openai-compatible",
+      baseURL: "https://example.com/v1",
+      modelID: "vendor/deepseek",
+      autocompleteModelID: QWEN_FIM_MODEL_ID,
+      variant: "low",
+    })
+    expect(shouldUseQuickProviderMode(defaults)).toBe(true)
+    expect(shouldUseQuickProviderMode(defaults, "chipmate")).toBe(true)
+    expect(shouldUseQuickProviderMode(defaults, "another-provider")).toBe(false)
+  })
   it("keeps Gateway UI available in public builds", () => {
     expect(canUseGatewayUi(false)).toBe(true)
     expect(gatewayTarget(false)).toEqual({ view: "profile" })

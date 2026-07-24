@@ -23,6 +23,8 @@ export type ReviewTelemetry = {
 
 export namespace KiloSessionProcessor {
   const log = Log.create({ service: "session.processor.kilo" })
+  const PAYLOAD_BYTES = 128_000
+  const PAYLOAD_RETRIES = 2
   export const INCOMPLETE_RESPONSE_RETRIES = 2
   export const INCOMPLETE_RESPONSE_MESSAGE =
     "The provider repeatedly ended the response before returning usable output."
@@ -193,8 +195,11 @@ export namespace KiloSessionProcessor {
     abort: AbortSignal
     set: (sessionID: SessionID, status: SessionStatus.Info) => Effect.Effect<void>
     used?: number
+    bytes?: number
+    summary?: boolean
   }) {
-    const limit = Flag.KILO_SESSION_RETRY_LIMIT
+    const fallback = input.summary || (input.bytes ?? 0) >= PAYLOAD_BYTES ? PAYLOAD_RETRIES : undefined
+    const limit = Flag.KILO_SESSION_RETRY_LIMIT ?? fallback
     return {
       limit: limit === undefined ? undefined : Math.max(0, limit - (input.used ?? 0)),
       offline: (info: { error: unknown; message: string }) =>
@@ -203,8 +208,19 @@ export namespace KiloSessionProcessor {
           sessionID: input.sessionID,
           abort: input.abort,
           set: input.set,
-        }),
+      }),
     }
+  }
+
+  export function compact(input: {
+    error: SessionRetry.Err
+    bytes: number
+    auto: boolean
+  }) {
+    if (!input.auto || input.bytes < PAYLOAD_BYTES) return false
+    if (!MessageV2.APIError.isInstance(input.error)) return false
+    const status = input.error.data.statusCode
+    return status !== undefined && status >= 500
   }
 
   export function hasUsage(usage: Usage | undefined) {

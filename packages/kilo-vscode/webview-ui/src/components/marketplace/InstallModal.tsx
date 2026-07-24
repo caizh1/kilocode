@@ -37,14 +37,16 @@ export const InstallModal = (props: Props) => {
   const session = useMarketplaceSession()
 
   const workspace = () => server.workspaceDirectory()
-  const options = (): ScopeOption[] =>
-    workspace()
-      ? [
-          { value: "project", label: t("marketplace.scope.project") },
-          { value: "global", label: t("marketplace.scope.global") },
-        ]
-      : [{ value: "global", label: t("marketplace.scope.global") }]
-  const initial = workspace() ? options()[0] : options()[0]
+  const options = (): ScopeOption[] => {
+    const fixed = props.item.type === "skill" && props.item.instanceId ? props.item.localScope : undefined
+    if (fixed) return [{ value: fixed, label: t(`marketplace.scope.${fixed}`) }]
+    if (!workspace()) return [{ value: "global", label: t("marketplace.scope.global") }]
+    return [
+      { value: "project", label: t("marketplace.scope.project") },
+      { value: "global", label: t("marketplace.scope.global") },
+    ]
+  }
+  const initial = options()[0]
   const [scope, setScope] = createSignal<ScopeOption>(initial)
   const [installing, setInstalling] = createSignal(false)
   const [result, setResult] = createSignal<{

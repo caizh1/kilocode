@@ -20,7 +20,31 @@ export function mergeActivity(current: AgentConsoleActivityEvent[], incoming: Ag
   return [...by.values()].sort((a, b) => a.seq - b.seq).slice(-5000)
 }
 
-export function activityBlocks(events: AgentConsoleActivityEvent[]): AgentConsoleActivityBlock[] {
+function equal(a: AgentConsoleActivityBlock, b: AgentConsoleActivityBlock): boolean {
+  return (
+    a.id === b.id &&
+    a.time === b.time &&
+    a.kind === b.kind &&
+    a.data === b.data &&
+    a.cwd === b.cwd &&
+    a.exitCode === b.exitCode &&
+    a.running === b.running &&
+    a.runId === b.runId &&
+    a.source === b.source &&
+    a.callId === b.callId &&
+    a.command === b.command
+  )
+}
+
+function stabilize(blocks: AgentConsoleActivityBlock[], prev: AgentConsoleActivityBlock[]) {
+  const prior = new Map(prev.map((block) => [block.id, block]))
+  return blocks.map((block) => {
+    const old = prior.get(block.id)
+    return old && equal(old, block) ? old : block
+  })
+}
+
+function group(events: AgentConsoleActivityEvent[]): AgentConsoleActivityBlock[] {
   const blocks: AgentConsoleActivityBlock[] = []
   const active = new Map<string, AgentConsoleActivityBlock>()
   let latest: AgentConsoleActivityBlock | undefined
@@ -44,6 +68,10 @@ export function activityBlocks(events: AgentConsoleActivityEvent[]): AgentConsol
     }
 
     if (event.kind === "begin") {
+      if (!event.runId) {
+        latest = undefined
+        continue
+      }
       const block: AgentConsoleActivityBlock = {
         id: `terminal:${event.runId ?? event.seq}`,
         time: event.time,
@@ -63,20 +91,7 @@ export function activityBlocks(events: AgentConsoleActivityEvent[]): AgentConsol
     }
 
     const block = (event.runId ? active.get(event.runId) : undefined) ?? latest
-    if (!block) {
-      const fallback: AgentConsoleActivityBlock = {
-        id: `terminal:${event.seq}`,
-        time: event.time,
-        kind: "run",
-        data: event.data ?? "",
-        cwd: event.cwd,
-        exitCode: event.exitCode,
-        running: event.kind !== "end",
-      }
-      blocks.push(fallback)
-      latest = fallback.running ? fallback : undefined
-      continue
-    }
+    if (!block) continue
     if (event.kind === "data") {
       block.data += event.data ?? ""
       continue
@@ -89,4 +104,11 @@ export function activityBlocks(events: AgentConsoleActivityEvent[]): AgentConsol
   }
 
   return blocks.slice(-120)
+}
+
+export function activityBlocks(
+  events: AgentConsoleActivityEvent[],
+  prev: AgentConsoleActivityBlock[] = [],
+): AgentConsoleActivityBlock[] {
+  return stabilize(group(events), prev)
 }

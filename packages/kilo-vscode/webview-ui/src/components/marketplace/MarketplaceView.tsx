@@ -2,6 +2,7 @@ import { createSignal, createMemo, createEffect, onCleanup, onMount, Show } from
 import { Tabs } from "@kilocode/kilo-ui/tabs"
 import { Card } from "@kilocode/kilo-ui/card"
 import { Button } from "@kilocode/kilo-ui/button"
+import { Tag } from "@kilocode/kilo-ui/tag"
 import { useVSCode } from "../../context/vscode"
 import { useServer } from "../../context/server"
 import { useLanguage } from "../../context/language"
@@ -19,6 +20,7 @@ import type {
   MarketStatus,
   InstallationState,
   AnalyticsSeries,
+  BatchPublicationResult,
   PublicationRun,
   SkillDetail,
 } from "../../types/marketplace"
@@ -58,6 +60,8 @@ export const MarketplaceView = () => {
   const [marketplaceSkillsOnly, setMarketplaceSkillsOnly] = createSignal<boolean | undefined>()
   const [marketplaceMode, setMarketplaceMode] = createSignal<"skills-only" | "full" | undefined>()
   const [publication, setPublication] = createSignal<PublicationRun | undefined>()
+  const [batchResult, setBatchResult] = createSignal<BatchPublicationResult | undefined>()
+  const [batchPending, setBatchPending] = createSignal(false)
   const [protocol, setProtocol] = createSignal<"aligned-v1" | "legacy">("legacy")
   const [capabilities, setCapabilities] = createSignal<MarketCapabilities>()
   const [installations, setInstallations] = createSignal<InstallationState[]>([])
@@ -124,11 +128,24 @@ export const MarketplaceView = () => {
     if (msg.type === "marketplaceRuntimeState") applyRuntime(msg)
   }
 
+  const handlePublicationMessage = (msg: ExtensionMessage) => {
+    if (msg.type === "marketplacePublicationResult") {
+      if (!batchPending()) setPublication(msg.run)
+      setPublications((items) => [msg.run, ...items.filter((item) => item.id !== msg.run.id)])
+      return
+    }
+    if (msg.type !== "marketplaceBatchPublicationResult") return
+    setBatchPending(false)
+    setPublication(undefined)
+    setBatchResult(msg.result)
+  }
+
   // Listen for messages
   createEffect(() => {
     const unsub = vscode.onMessage((msg) => {
       handleLocalRemoveMessage(msg)
       handleRuntimeMessage(msg)
+      handlePublicationMessage(msg)
       if (msg.type === "marketplaceData") {
         setItems(msg.marketplaceItems ?? [])
         setMetadata(msg.marketplaceInstalledMetadata ?? EMPTY_METADATA)
@@ -147,10 +164,6 @@ export const MarketplaceView = () => {
         setAnalytics(msg.marketplaceAnalytics ?? [])
         applyRuntime(msg)
         if (msg.marketplaceSkillsOnly) setTab("skill")
-      }
-      if (msg.type === "marketplacePublicationResult") {
-        setPublication(msg.run)
-        setPublications((items) => [msg.run, ...items.filter((item) => item.id !== msg.run.id)])
       }
       if (msg.type === "marketplaceSync") {
         applySync(msg, setInstallations, setPublications, setAnalytics)
@@ -253,7 +266,7 @@ export const MarketplaceView = () => {
       ))
       return
     }
-    if (item.type === "skill" && item.origin !== "market") {
+    if (item.type === "skill" && item.origin !== "market" && !item.instanceId) {
       setErrors((prev) => [...prev, t("marketplace.remove.sourceChanged")])
       fetchData()
       return
@@ -286,7 +299,17 @@ export const MarketplaceView = () => {
   }
 
   const uploadMarketplaceSkill = (item: SkillMarketplaceItem) => {
-    vscode.postMessage({ type: "uploadMarketplaceSkill", mpSkillId: item.id })
+    vscode.postMessage({
+      type: "uploadMarketplaceSkill",
+      mpSkillId: item.id,
+      ...(item.instanceId ? { mpSkillInstanceId: item.instanceId } : {}),
+    })
+  }
+
+  const uploadMarketplaceSkills = (ids: string[]) => {
+    setBatchResult(undefined)
+    setBatchPending(true)
+    vscode.postMessage({ type: "uploadMarketplaceSkills", mpSkillIds: ids })
   }
 
   const starMarketplaceSkill = (item: MarketplaceItem) => {
@@ -369,6 +392,41 @@ export const MarketplaceView = () => {
             <Button variant="ghost" size="small" onClick={() => setPublication(undefined)}>
               {t("marketplace.aligned.closeReport")}
             </Button>
+          </Card>
+        )}
+      </Show>
+      <Show when={batchResult()}>
+        {(result) => (
+          <Card class="marketplace-batch-result">
+            <div class="marketplace-batch-result__header">
+              <div>
+                <strong>{t("marketplace.batch.resultTitle")}</strong>
+                <span>{t("marketplace.batch.resultTotal", { count: result().items.length })}</span>
+              </div>
+              <Button variant="ghost" size="small" onClick={() => setBatchResult(undefined)}>
+                {t("marketplace.aligned.closeReport")}
+              </Button>
+            </div>
+            <div class="marketplace-batch-result__counts">
+              {(["published", "unchanged", "attention", "failed", "skipped"] as const).map((state) => (
+                <Tag class={`batch-${state}`}>
+                  {t(`marketplace.batch.state.${state}`, {
+                    count: result().items.filter((item) => item.state === state).length,
+                  })}
+                </Tag>
+              ))}
+            </div>
+            <div class="marketplace-batch-result__items">
+              {result().items.map((item) => (
+                <div>
+                  <strong>{item.name}</strong>
+                  <Tag class={`batch-${item.state}`}>{t(`marketplace.batch.label.${item.state}`)}</Tag>
+                  <Show when={item.error ?? item.run?.status}>
+                    {(detail) => <small>{detail()}</small>}
+                  </Show>
+                </div>
+              ))}
+            </div>
           </Card>
         )}
       </Show>
@@ -480,12 +538,14 @@ export const MarketplaceView = () => {
                   detail={detail()}
                   detailId={detailId()}
                   detailError={detailError()}
+                  batchResult={batchResult()}
                   onOpen={openSkill}
                   onCloseDetail={closeSkill}
                   onInstall={handleInstall}
                   onRemove={handleRemove}
                   onStar={starMarketplaceSkill}
                   onUpload={capabilities()?.features.publications ? uploadMarketplaceSkill : undefined}
+                  onUploadBatch={capabilities()?.features.publications ? uploadMarketplaceSkills : undefined}
                   onUnpublish={unpublishMarketplaceSkill}
                 />
               </Show>

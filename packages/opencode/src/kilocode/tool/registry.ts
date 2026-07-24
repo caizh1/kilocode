@@ -40,20 +40,17 @@ type Loaders = {
   artifact?: () => Promise<Pick<typeof import("@/kilocode/tool/document-artifacts"), "DocumentArtifactTools">>
   word?: () => Promise<Pick<typeof import("@/kilocode/tool/word-documents"), "WordDocumentTools">>
   mermaid?: () => Promise<Pick<typeof import("@/kilocode/tool/mermaid-documents"), "MermaidDocumentTools">>
+  plantuml?: () => Promise<Pick<typeof import("@/kilocode/tool/plantuml-diagram"), "PlantUmlDiagramTools">>
 }
 
 export namespace KiloToolRegistry {
   const hint = [
-    "- For C/C++ symbols, callers/callees/call chains, macro/register/MMIO usage, state machines, error paths, cleanup paths, module flow, or impact analysis, use the `codebase_analysis` tool first.",
     "- For configured workspace PDF, DOCX, XLSX, ODS, Markdown, CSV, TSV, RST, or text documents, use the `document_search` tool before answering document-grounded questions.",
     "- When you are doing an open-ended conceptual search where you do not know the exact symbol name, use the `semantic_search` tool first to narrow down the search scope, then follow up with `Grep` and/or `Read`.",
   ].join("\n")
 
   const route = (ids: Set<string>) =>
     [
-      ids.has("codebase_analysis")
-        ? "- For C/C++ symbols, call chains, state machines, registers, MMIO, or impact analysis, use `codebase_analysis` first."
-        : undefined,
       ids.has("document_search")
         ? "- For questions grounded in workspace documents, use `document_search` first."
         : undefined,
@@ -232,7 +229,20 @@ export namespace KiloToolRegistry {
       const artifacts = yield* artifactTools(deps, loaders)
       const word = yield* wordTools(deps, loaders)
       const mermaid = yield* mermaidTools(deps, loaders)
-      return { ...base, terminal, ...notebooks, markets, analysis, semantic, document, artifacts, word, mermaid }
+      const plantuml = yield* plantumlTools(deps, loaders)
+      return {
+        ...base,
+        terminal,
+        ...notebooks,
+        markets,
+        analysis,
+        semantic,
+        document,
+        artifacts,
+        word,
+        mermaid,
+        plantuml,
+      }
     })
   }
 
@@ -418,10 +428,32 @@ export namespace KiloToolRegistry {
     })
   }
 
+  function plantumlTools(deps: Deps, loaders: Loaders) {
+    return Effect.gen(function* () {
+      const plantuml = loaders.plantuml ?? (() => import("@/kilocode/tool/plantuml-diagram"))
+      const mod = yield* Effect.tryPromise(() => plantuml()).pipe(
+        Effect.catch((err) =>
+          Effect.sync(() => {
+            log.warn("PlantUML diagram tool unavailable", { err })
+            return undefined
+          }),
+        ),
+      )
+      if (!mod) return []
+
+      const infos = yield* mod.PlantUmlDiagramTools.pipe(
+        Effect.provideService(Agent.Service, deps.agent),
+        Effect.provideService(Truncate.Service, deps.truncate),
+      )
+      return yield* Effect.all([Tool.init(infos.render)])
+    })
+  }
+
   /** Hide human-driven tools from agents that cannot interact with the user directly. */
   export function available(tool: Tool.Def, agent: Agent.Info) {
     if (agent.name === "agent-console") return tool.id === "agent_console_shell"
     if (tool.id === "agent_console_shell") return false
+    if (tool.id === "render_plantuml_diagram") return ["ask", "code", "plan"].includes(agent.name)
     if (tool.id !== "interactive_terminal") return true
     return agent.mode === "primary"
   }
@@ -436,6 +468,7 @@ export namespace KiloToolRegistry {
       artifacts?: Tool.Def[]
       word?: Tool.Def[]
       mermaid?: Tool.Def[]
+      plantuml?: Tool.Def[]
       recall: Tool.Def
       managerModels: Tool.Def
       memory: Tool.Def
@@ -468,6 +501,7 @@ export namespace KiloToolRegistry {
       ...(tools.artifacts ?? []),
       ...(tools.word ?? []),
       ...(tools.mermaid ?? []),
+      ...(tools.plantuml ?? []),
       tools.memory,
       tools.save,
       tools.recall,

@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Card } from "@kilocode/kilo-ui/card"
 import { Icon } from "@kilocode/kilo-ui/icon"
@@ -10,6 +10,7 @@ import { useVSCode } from "../../context/vscode"
 import type {
   InstallationState,
   AnalyticsSeries,
+  BatchPublicationResult,
   MarketCapabilities,
   MarketplaceInstalledMetadata,
   MarketplaceUser,
@@ -20,6 +21,7 @@ import type {
 } from "../../types/marketplace"
 import { MarketplaceDiagnostics } from "./MarketplaceDiagnostics"
 import { MarketplaceListView } from "./MarketplaceListView"
+import { reconcileSelection, uploadable } from "./batch-selection"
 
 type Section = "home" | "favorites" | "installed" | "publications" | "analytics" | "diagnostics"
 
@@ -38,12 +40,14 @@ interface Props {
   detail?: SkillDetail
   detailId?: string
   detailError?: string
+  batchResult?: BatchPublicationResult
   onOpen(item: SkillMarketplaceItem): void
   onCloseDetail(): void
   onInstall(item: SkillMarketplaceItem): void
   onRemove(item: SkillMarketplaceItem, scope: "project" | "global"): void
   onStar(item: SkillMarketplaceItem): void
   onUpload?(item: SkillMarketplaceItem): void
+  onUploadBatch?(ids: string[]): void
   onUnpublish(id: string): void
 }
 
@@ -61,6 +65,9 @@ export const AlignedSkillMarket = (props: Props) => {
   const { t } = useLanguage()
   const vscode = useVSCode()
   const [section, setSection] = createSignal<Section>("home")
+  const [batch, setBatch] = createSignal(false)
+  const [running, setRunning] = createSignal(false)
+  const [selected, setSelected] = createSignal<string[]>([])
   const installed = createMemo(() => {
     const ids = new Set(props.installations.filter((item) => item.status !== "removed").map((item) => item.skillId))
     for (const [id, item] of Object.entries(props.metadata.project)) if (item.type === "skill") ids.add(id)
@@ -70,13 +77,39 @@ export const AlignedSkillMarket = (props: Props) => {
   const favorites = createMemo(() => props.items.filter((item) => item.favorite))
   const detailItem = createMemo(() => props.items.find((item) => item.id === props.detailId))
 
+  createEffect(() => {
+    const current = selected()
+    const next = reconcileSelection(current, props.items)
+    if (next.length !== current.length || next.some((id, index) => id !== current[index])) setSelected(next)
+    if (batch() && uploadable(props.items).length === 0) setBatch(false)
+  })
+
+  createEffect(() => {
+    if (!props.batchResult) return
+    setBatch(false)
+    setRunning(false)
+    setSelected([])
+  })
+
+  const cancelBatch = () => {
+    setBatch(false)
+    setRunning(false)
+    setSelected([])
+  }
+
+  const submitBatch = (ids: string[]) => {
+    if (!props.onUploadBatch || ids.length === 0 || running()) return
+    setRunning(true)
+    props.onUploadBatch(ids)
+  }
+
   const browse = () => {
     if (!props.baseUrl) return
     const root = props.baseUrl.replace(/\/marketplace\/?$/i, "")
     vscode.postMessage({ type: "openExternal", url: `${root}/extensions?source=vscode` })
   }
 
-  const list = (items: SkillMarketplaceItem[], empty: string) => (
+  const list = (items: SkillMarketplaceItem[], empty: string, selectable = false) => (
     <MarketplaceListView
       items={items}
       metadata={props.metadata}
@@ -95,6 +128,20 @@ export const AlignedSkillMarket = (props: Props) => {
       }}
       onUploadMarketplaceSkill={props.onUpload}
       onOpenSkill={props.onOpen}
+      batchActive={selectable && batch()}
+      batchRunning={running()}
+      batchSelected={selected()}
+      onBatchStart={
+        selectable && props.onUploadBatch && uploadable(items).length > 0
+          ? () => {
+              setBatch(true)
+              setSelected([])
+            }
+          : undefined
+      }
+      onBatchChange={setSelected}
+      onBatchCancel={cancelBatch}
+      onBatchSubmit={submitBatch}
     />
   )
 
@@ -114,7 +161,9 @@ export const AlignedSkillMarket = (props: Props) => {
                 size="small"
                 variant={section() === item.id ? "primary" : "ghost"}
                 onClick={() => {
+                  if (running()) return
                   props.onCloseDetail()
+                  if (item.id !== "home" && item.id !== "installed") cancelBatch()
                   setSection(item.id)
                 }}
               >
@@ -148,7 +197,7 @@ export const AlignedSkillMarket = (props: Props) => {
           />
         }
       >
-        <Show when={section() === "home"}>{list(props.items, t("marketplace.empty"))}</Show>
+        <Show when={section() === "home"}>{list(props.items, t("marketplace.empty"), true)}</Show>
         <Show when={section() === "favorites"}>
           <Show when={props.user} fallback={<Empty text={t("marketplace.aligned.signInHint")} />}>
             {list(favorites(), t("marketplace.aligned.noFavorites"))}
@@ -156,7 +205,7 @@ export const AlignedSkillMarket = (props: Props) => {
         </Show>
         <Show when={section() === "installed"}>
           <Show when={props.user} fallback={<Empty text={t("marketplace.aligned.signInHint")} />}>
-            {list(installed(), t("marketplace.aligned.noInstalled"))}
+            {list(installed(), t("marketplace.aligned.noInstalled"), true)}
           </Show>
         </Show>
         <Show when={section() === "publications"}>

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { CrashRecovery, MAX_FAILURES } from "./recovery"
 
 describe("CrashRecovery", () => {
-  test("allows four restarts then opens the circuit on the fifth consecutive failure", () => {
+  test("allows one restart then opens the circuit on the second consecutive failure", () => {
     const state = new CrashRecovery()
     for (let index = 1; index < MAX_FAILURES; index++) expect(state.failed()).toBe(true)
     expect(state.failed()).toBe(false)

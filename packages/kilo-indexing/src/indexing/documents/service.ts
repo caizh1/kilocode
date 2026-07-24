@@ -1,5 +1,5 @@
 import { createHash } from "crypto"
-import { readFile, stat } from "fs/promises"
+import { readFile, realpath, stat } from "fs/promises"
 import path from "path"
 import { globIterate } from "glob"
 import { minimatch } from "minimatch"
@@ -15,14 +15,22 @@ import type {
 import { DOCUMENT_CHUNK_NAMESPACE } from "../constants"
 import { FileIgnore } from "../../file/ignore"
 import { Log } from "../../util/log"
-import { generateRelativeIgnorePath } from "../shared/get-relative-path"
 import { checkpointMetaHash, normalizedRoot, workspaceId } from "../rag-checkpoint"
 import { constrained, type IndexingPressure } from "../memory"
-import type { IgnoreMatcher } from "../shared/load-ignore"
+import { loadIgnoreWithFingerprint, type IgnoreMatcher } from "../shared/load-ignore"
 import { IndexingRunLock } from "../run-lock"
 import { DocumentIndexCache } from "./cache"
 import { chunkDocument } from "./chunker"
 import { extractDocument } from "./extractors"
+import {
+  external as isExternalKey,
+  id,
+  key as externalKey,
+  relative as externalRelative,
+  same,
+  token,
+  within,
+} from "./paths"
 import {
   DOCUMENT_EXTENSIONS,
   UNSUPPORTED_DOCUMENT_EXTENSIONS,
@@ -43,6 +51,20 @@ type Telemetry = IndexingTelemetryEvent extends infer Event
     : never
   : never
 
+type Root = {
+  path: string
+  external: boolean
+  directory: boolean
+  ignore: IgnoreMatcher
+  fingerprint: string
+}
+
+type File = {
+  path: string
+  key: string
+  source: string
+}
+
 export class DocumentIndexService {
   private readonly cache: DocumentIndexCache
   private task: Promise<void> | undefined
@@ -50,6 +72,7 @@ export class DocumentIndexService {
   private disposed = false
   private status: DocumentIndexStatus = disabled("Document RAG disabled.")
   private pressure: IndexingPressure = "normal"
+  private root?: string
 
   constructor(
     private readonly workspace: string,
@@ -118,25 +141,26 @@ export class DocumentIndexService {
   async search(query: string, options: DocumentSearchOptions = {}): Promise<DocumentSearchResult[]> {
     if (!this.embedder || !this.store) return []
     if (!this.config.currentDocuments.enabled) return []
+    const resolved = await this.resolveRoots()
+    const prefix = await this.searchPrefix(options.directoryPrefix, resolved.roots)
     const embedding = await this.embedder.createEmbeddings([query])
     const vector = embedding.embeddings[0]
     if (!vector) throw new Error("Failed to generate embedding for document query.")
     const max = options.maxResults ?? this.config.currentDocuments.searchMaxResults
-    const raw = await this.store.search(vector, options.directoryPrefix, this.config.currentSearchMinScore, max)
-    return raw.flatMap((item) => convert(item))
+    const raw = await this.store.search(vector, prefix, this.config.currentSearchMinScore, max)
+    return raw.flatMap((item) => convert(item, resolved.roots))
   }
 
   private initialStatus(): DocumentIndexStatus {
     const cfg = this.config.currentDocuments
     if (!cfg.enabled) return disabled("Document RAG disabled.")
-    if (cfg.paths.length === 0) return completeEmpty()
     if (!this.embedder || !this.store) return error("Document RAG requires configured embeddings.")
     return standby("Document RAG ready.")
   }
 
   private async run(trigger: IndexingTelemetryTrigger, force: boolean): Promise<void> {
     const cfg = this.config.currentDocuments
-    if (!cfg.enabled || cfg.paths.length === 0 || !this.embedder || !this.store) {
+    if (!cfg.enabled || !this.embedder || !this.store) {
       await this.index(trigger, force)
       return
     }
@@ -170,19 +194,10 @@ export class DocumentIndexService {
       this.setStatus(disabled("Document RAG disabled."))
       return
     }
-    if (cfg.paths.length === 0) {
-      this.setStatus(completeEmpty())
-      return
-    }
     if (!this.embedder || !this.store) {
       this.setStatus(error("Document RAG requires configured embeddings."))
       return
     }
-
-    const meta = this.meta()
-    await this.cache.initialize(meta)
-    if (this.disposed) return
-    this.emit({ type: "started", source: "scan", trigger })
 
     const started = Date.now()
     let indexed = 0
@@ -192,7 +207,13 @@ export class DocumentIndexService {
 
     try {
       this.setStatus(progress("Discovering document files...", 0, 0))
-      const discovery = await this.discover()
+      const resolved = await this.resolveRoots()
+      skipped += resolved.skipped
+      const meta = this.meta(resolved.roots)
+      await this.cache.initialize(meta)
+      if (this.disposed) return
+      this.emit({ type: "started", source: "scan", trigger })
+      const discovery = await this.discover(resolved.roots)
       if (this.disposed) return
       if (discovery.limited) {
         const message = `Document RAG paused after finding more than ${cfg.maxFiles} documents. Narrow document paths or excludes before rebuilding.`
@@ -214,28 +235,36 @@ export class DocumentIndexService {
 
       const files = discovery.files
       skipped += discovery.skipped
-      this.setStatus(progress("Starting Document RAG indexing...", 0, files.length))
-      const seen = new Set(files.map((file) => path.normalize(path.relative(this.workspace, file))))
+      const status = progress("Starting Document RAG indexing...", 0, files.length)
+      status.recentErrors = this.status.recentErrors
+      this.setStatus(status)
+      const seen = new Set(files.map((file) => file.key))
       let checkpoint = Date.now()
 
       for (const [index, file] of files.entries()) {
         if (this.disposed) return
-        const rel = path.normalize(path.relative(this.workspace, file))
+        const key = file.key
         const item = await (async () => {
           try {
-            const info = await stat(file)
+            const info = await stat(file.path)
             if (info.size > cfg.maxFileBytes) return { kind: "large" as const }
-            const hash = await fileHash(file)
-            if (this.cache.get(rel) === hash) return { kind: "unchanged" as const, hash }
-            const sections = await extractDocument(file, cfg.maxExtractedBytesPerFile)
+            const hash = await fileHash(file.path)
+            if (this.cache.get(key) === hash) return { kind: "unchanged" as const, hash }
+            const sections = await extractDocument(file.path, cfg.maxExtractedBytesPerFile)
             const items = sections.flatMap((section) =>
-              chunkDocument(section, this.workspace, cfg.chunkChars, cfg.chunkOverlapChars),
+              chunkDocument(section, this.workspace, cfg.chunkChars, cfg.chunkOverlapChars, file.source),
             )
             return { kind: "changed" as const, hash, items }
           } catch (err) {
             errors += 1
-            this.record("documents:extract", err, rel)
-            this.report(index + 1, files.length, `Document extraction issue: ${path.basename(file)}`, skipped, errors)
+            this.record("documents:extract", err, file.source)
+            this.report(
+              index + 1,
+              files.length,
+              `Document extraction issue: ${path.basename(file.path)}`,
+              skipped,
+              errors,
+            )
             return undefined
           }
         })()
@@ -243,20 +272,20 @@ export class DocumentIndexService {
         if (!item) continue
         if (item.kind === "large") {
           skipped += 1
-          this.cache.delete(rel)
-          await this.store.deletePointsByFilePath(rel)
+          this.cache.delete(key)
+          await this.store.deletePointsByFilePath(key)
           if (this.disposed) return
-          this.report(index + 1, files.length, `Skipped large document: ${path.basename(file)}`, skipped, errors)
+          this.report(index + 1, files.length, `Skipped large document: ${path.basename(file.path)}`, skipped, errors)
           continue
         }
         if (item.kind === "unchanged") {
           indexed += 1
-          this.report(index + 1, files.length, `Document unchanged: ${path.basename(file)}`, skipped, errors)
+          this.report(index + 1, files.length, `Document unchanged: ${path.basename(file.path)}`, skipped, errors)
           continue
         }
         await this.upsert(file, item.hash, item.items, meta)
         if (this.disposed) return
-        this.cache.set(rel, item.hash)
+        this.cache.set(key, item.hash)
         if ((index + 1) % 8 === 0 || Date.now() - checkpoint >= 2_000) {
           await this.cache.flush()
           if (this.disposed) return
@@ -264,12 +293,12 @@ export class DocumentIndexService {
         }
         indexed += 1
         chunks += item.items.length
-        this.report(index + 1, files.length, `Indexed document: ${path.basename(file)}`, skipped, errors)
+        this.report(index + 1, files.length, `Indexed document: ${path.basename(file.path)}`, skipped, errors)
       }
 
       for (const file of Object.keys(this.cache.all())) {
         if (this.disposed) return
-        if (seen.has(path.normalize(file))) continue
+        if (seen.has(file)) continue
         await this.store.deletePointsByFilePath(file)
         if (this.disposed) return
         this.cache.delete(file)
@@ -327,19 +356,37 @@ export class DocumentIndexService {
     }
   }
 
-  private async discover(): Promise<{ files: string[]; skipped: number; limited: boolean }> {
+  private async discover(roots: Root[]): Promise<{ files: File[]; skipped: number; limited: boolean }> {
     const cfg = this.config.currentDocuments
-    const out = new Set<string>()
+    const out = new Map<string, File>()
+    const seen = new Set<string>()
     let skipped = 0
 
-    const add = (file: string) => {
-      const relative = generateRelativeIgnorePath(file, this.workspace)
-      if (!relative) return false
-      if (FileIgnore.match(relative)) return false
-      if (this.ignore.ignores(relative)) return false
-      if (!included(relative, cfg.include)) return false
-      if (excluded(relative, cfg.exclude)) return false
-      const ext = path.extname(file).toLowerCase()
+    const add = async (root: Root, file: string) => {
+      const canonical = await realpath(file).catch(() => undefined)
+      if (!canonical) {
+        skipped += 1
+        this.record("documents:discover", new Error("Document path is not accessible."), file)
+        return false
+      }
+      if (!within(root.path, canonical)) {
+        skipped += 1
+        this.record("documents:discover", new Error("Document symlink escapes the configured root."), file)
+        return false
+      }
+      if (seen.has(canonical)) return false
+      const relative = root.external
+        ? root.directory
+          ? path.normalize(path.relative(root.path, canonical))
+          : path.basename(canonical)
+        : path.normalize(path.relative(await this.workspacePath(), canonical))
+      if (!relative || relative === ".") return false
+      const match = relative.replaceAll("\\", "/")
+      if (FileIgnore.match(match)) return false
+      if (root.ignore.ignores(match)) return false
+      if (!included(match, cfg.include)) return false
+      if (excluded(match, cfg.exclude)) return false
+      const ext = path.extname(canonical).toLowerCase()
       const doc = DOCUMENT_EXTENSIONS.includes(ext as never)
       const unsupported = UNSUPPORTED_DOCUMENT_EXTENSIONS.includes(ext as never)
       if (!doc && !unsupported) return false
@@ -347,46 +394,47 @@ export class DocumentIndexService {
         skipped += 1
         return false
       }
-      out.add(file)
+      const key = root.external
+        ? root.directory
+          ? externalKey(root.path, canonical)
+          : `${externalKey(root.path, canonical)}${path.basename(canonical)}`
+        : relative
+      seen.add(canonical)
+      out.set(key, {
+        path: canonical,
+        key,
+        source: root.external ? canonical : relative,
+      })
       return out.size > cfg.maxFiles
     }
 
-    for (const item of cfg.paths) {
-      if (this.disposed) return { files: [...out].sort(), skipped, limited: false }
-      const root = path.resolve(this.workspace, item)
-      const rel = path.relative(this.workspace, root)
-      if (path.isAbsolute(rel) || rel === ".." || rel.startsWith(`..${path.sep}`)) {
-        throw new Error(`document path must be within the current workspace: ${item}`)
-      }
-      const info = await stat(root).catch(() => undefined)
-      if (this.disposed) return { files: [...out].sort(), skipped, limited: false }
-      if (!info) continue
-      if (!info.isDirectory()) {
-        if (add(root)) return { files: [...out].sort(), skipped, limited: true }
+    for (const root of roots) {
+      if (this.disposed) return { files: sorted(out), skipped, limited: false }
+      if (!root.directory) {
+        if (await add(root, root.path)) return { files: sorted(out), skipped, limited: true }
         continue
       }
       for await (const file of globIterate(patterns, {
-        cwd: root,
+        cwd: root.path,
         absolute: true,
         nodir: true,
         dot: false,
         nocase: true,
         ignore: FileIgnore.PATTERNS,
       })) {
-        if (this.disposed) return { files: [...out].sort(), skipped, limited: false }
-        if (add(file)) return { files: [...out].sort(), skipped, limited: true }
+        if (this.disposed) return { files: sorted(out), skipped, limited: false }
+        if (await add(root, file)) return { files: sorted(out), skipped, limited: true }
       }
     }
-    return { files: [...out].sort(), skipped, limited: false }
+    return { files: sorted(out), skipped, limited: false }
   }
 
-  private async upsert(file: string, hash: string, chunks: DocumentChunk[], meta: string): Promise<void> {
+  private async upsert(file: File, hash: string, chunks: DocumentChunk[], meta: string): Promise<void> {
     if (this.disposed || !this.embedder || !this.store) return
-    const rel = path.normalize(path.relative(this.workspace, file))
-    const generation = digest(`${meta}\0${rel}\0${hash}`)
+    const generation = digest(`${meta}\0${file.key}\0${hash}`)
     const texts = chunks.map((item) => item.content)
     if (texts.length === 0) {
-      await this.store.deletePointsByFilePath(rel)
+      await this.store.deletePointsByFilePath(file.key)
       return
     }
     const batch = Math.max(
@@ -401,15 +449,112 @@ export class DocumentIndexService {
       const points = embeddings.flatMap<PointStruct>((vector, offset) => {
         const chunk = chunks[index + offset]
         if (!chunk) return []
-        return [point(chunk, vector, this.workspace, meta, generation)]
+        return [point(chunk, vector, this.workspace, file.key, meta, generation)]
       })
       await this.store.upsertPoints(points)
       if (this.disposed) return
     }
     if (this.disposed) return
-    await this.store.activateFileGeneration?.(rel, generation, "documents")
+    await this.store.activateFileGeneration?.(file.key, generation, "documents")
     if (this.disposed) return
-    await this.store.deleteInactiveFilePoints?.(rel, generation)
+    await this.store.deleteInactiveFilePoints?.(file.key, generation)
+  }
+
+  private async workspacePath(): Promise<string> {
+    if (this.root) return this.root
+    this.root = await realpath(this.workspace).catch(() => path.resolve(this.workspace))
+    return this.root
+  }
+
+  private async resolveRoots(): Promise<{ roots: Root[]; skipped: number }> {
+    const workspace = await this.workspacePath()
+    const cfg = this.config.currentDocuments
+    const approvals = await Promise.all(
+      cfg.approvedExternalRoots.map(async (item) => {
+        if (!path.isAbsolute(item.path)) return
+        if (item.workspace && !path.isAbsolute(item.workspace)) return
+        const scope = item.workspace
+          ? await realpath(item.workspace).catch(() => path.resolve(item.workspace!))
+          : undefined
+        if (scope && !same(scope, workspace)) return
+        const alias = path.resolve(item.path)
+        const root = await realpath(item.path).catch(() => alias)
+        return { root, alias }
+      }),
+    )
+    const allowed = approvals.filter((item): item is { root: string; alias: string } => Boolean(item))
+    const roots: Root[] = []
+    let skipped = 0
+
+    for (const item of cfg.paths) {
+      const absolute = path.isAbsolute(item)
+      const requested = absolute ? item : path.resolve(workspace, item)
+      const target = path.resolve(requested)
+      const internal = within(workspace, target) || within(path.resolve(this.workspace), target)
+      if (!absolute && !internal) {
+        throw new Error(`relative document path must stay within the current workspace: ${item}`)
+      }
+      const approved = allowed.some((approval) => within(approval.root, target) || within(approval.alias, target))
+      if (!internal && !approved) {
+        throw new Error(`external document path is not approved for this workspace: ${item}`)
+      }
+      const root = await realpath(requested).catch(() => undefined)
+      if (!root) {
+        skipped += 1
+        this.record("documents:root", new Error("Configured document root is not accessible."), requested)
+        continue
+      }
+      const external = !within(workspace, root)
+      if (external && !allowed.some((approval) => within(approval.root, root))) {
+        throw new Error(`external document path is not approved for this workspace: ${item}`)
+      }
+      if (roots.some((entry) => same(entry.path, root))) continue
+      const entry = await (async () => {
+        const info = await stat(root)
+        const loaded = external
+          ? await loadIgnoreWithFingerprint(info.isDirectory() ? root : path.dirname(root))
+          : { ignore: this.ignore, fingerprint: "workspace" }
+        return {
+          path: root,
+          external,
+          directory: info.isDirectory(),
+          ignore: loaded.ignore,
+          fingerprint: loaded.fingerprint,
+        }
+      })().catch((err) => {
+        skipped += 1
+        this.record("documents:root", err, requested)
+        return undefined
+      })
+      if (entry) roots.push(entry)
+    }
+    return { roots, skipped }
+  }
+
+  private async searchPrefix(input: string | undefined, roots: Root[]): Promise<string | undefined> {
+    if (!input) return
+    if (isExternalKey(input)) return input.replaceAll("\\", "/")
+    if (!path.isAbsolute(input)) {
+      const rel = path.normalize(input)
+      if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+        throw new Error(`document search path must stay within an indexed root: ${input}`)
+      }
+      return rel
+    }
+
+    const workspace = await this.workspacePath()
+    const raw = path.resolve(input)
+    const internal = within(workspace, raw) || within(path.resolve(this.workspace), raw)
+    const approved = roots.some((entry) => entry.external && within(entry.path, raw))
+    if (!internal && !approved) throw new Error(`document search path is not an approved indexed root: ${input}`)
+    const target = await realpath(input).catch(() => raw)
+    if (within(workspace, target)) {
+      const rel = path.normalize(path.relative(workspace, target))
+      return !rel || rel === "." ? undefined : rel
+    }
+    const root = roots.find((entry) => entry.external && within(entry.path, target))
+    if (!root) throw new Error(`document search path is not an approved indexed root: ${input}`)
+    return externalKey(root.path, target)
   }
 
   private report(done: number, total: number, message: string, skipped: number, errors: number): void {
@@ -441,7 +586,7 @@ export class DocumentIndexService {
     this.onStatus?.()
   }
 
-  private meta(): string {
+  private meta(roots: Root[]): string {
     const cfg = this.config.currentDocuments
     return checkpointMetaHash({
       root: this.workspace,
@@ -453,7 +598,16 @@ export class DocumentIndexService {
       embeddingDimension: this.config.currentModelDimension ?? 0,
       vectorStoreProvider: this.config.getConfig().vectorStoreProvider ?? "lancedb",
       collectionName: this.store?.getCollectionName?.() ?? "documents",
-      ignoreFingerprint: digest(JSON.stringify(cfg)),
+      ignoreFingerprint: digest(
+        JSON.stringify({
+          cfg,
+          roots: roots.map((root) => ({
+            path: root.path,
+            external: root.external,
+            fingerprint: root.fingerprint,
+          })),
+        }),
+      ),
     })
   }
 
@@ -473,13 +627,13 @@ function point(
   chunk: DocumentChunk,
   vector: number[],
   workspace: string,
+  key: string,
   meta: string,
   generation: string,
 ): PointStruct {
-  const rel = path.normalize(path.relative(workspace, chunk.filePath))
   const range = `${chunk.startLine}:${chunk.endLine}`
   const id = uuidv5(
-    [workspaceId(workspace), rel, chunk.chunkHash, range, generation].join("\0"),
+    [workspaceId(workspace), key, chunk.chunkHash, range, generation].join("\0"),
     DOCUMENT_CHUNK_NAMESPACE,
   )
   return {
@@ -488,8 +642,8 @@ function point(
     payload: {
       workspaceId: workspaceId(workspace),
       normalizedRoot: normalizedRoot(workspace),
-      filePath: rel,
-      fileHash: digest(`${rel}\0${generation}`),
+      filePath: key,
+      fileHash: digest(`${key}\0${generation}`),
       chunkHash: chunk.chunkHash,
       chunkRange: range,
       runId: "documents",
@@ -508,7 +662,7 @@ function point(
   }
 }
 
-function convert(item: VectorStoreSearchResult): DocumentSearchResult[] {
+function convert(item: VectorStoreSearchResult, roots: Root[]): DocumentSearchResult[] {
   const payload = item.payload
   if (!payload) return []
   if (
@@ -520,18 +674,22 @@ function convert(item: VectorStoreSearchResult): DocumentSearchResult[] {
   ) {
     return []
   }
-  const ext = path.extname(payload.filePath).toLowerCase()
+  const source = sourcePath(payload.filePath, roots)
+  if (!source) return []
+  const ext = path.extname(source).toLowerCase()
   const sourceRef =
-    typeof payload.sourceRef === "string"
+    typeof payload.sourceRef === "string" && !isExternalKey(payload.filePath)
       ? payload.sourceRef
       : ext === ".pdf"
-        ? `${payload.filePath}#page=${payload.startLine}`
+        ? `${source}#page=${typeof payload.page === "number" ? payload.page : payload.startLine}`
         : ext === ".xlsx" || ext === ".ods"
-          ? `${payload.filePath}#rows=${payload.startLine}-${payload.endLine}`
-          : `${payload.filePath}:${payload.startLine}-${payload.endLine}`
+          ? typeof payload.sheet === "string"
+            ? `${source}#sheet=${encodeURIComponent(payload.sheet)} rows=${payload.startLine}-${payload.endLine}`
+            : `${source}#rows=${payload.startLine}-${payload.endLine}`
+          : `${source}:${payload.startLine}-${payload.endLine}`
   return [
     {
-      filePath: payload.filePath.replaceAll("\\", "/"),
+      filePath: source.replaceAll("\\", "/"),
       sourceRef: sourceRef.replaceAll("\\", "/"),
       score: item.score,
       content: payload.codeChunk,
@@ -539,6 +697,20 @@ function convert(item: VectorStoreSearchResult): DocumentSearchResult[] {
       endLine: payload.endLine,
     },
   ]
+}
+
+function sourcePath(key: string, roots: Root[]): string | undefined {
+  if (!isExternalKey(key)) return key
+  const hash = id(key)
+  const rel = externalRelative(key)
+  const root = roots.find((item) => item.external && token(item.path) === hash)
+  if (!root || rel === undefined) return
+  if (!root.directory) return root.path
+  return path.join(root.path, ...rel.split("/"))
+}
+
+function sorted(files: Map<string, File>): File[] {
+  return [...files.values()].sort((left, right) => left.key.localeCompare(right.key))
 }
 
 function disabled(message: string): DocumentIndexStatus {
@@ -559,16 +731,6 @@ function standby(message: string): DocumentIndexStatus {
   return {
     ...disabled(message),
     state: "Standby",
-  }
-}
-
-function completeEmpty(): DocumentIndexStatus {
-  return {
-    ...disabled("Document RAG complete: 0 files."),
-    state: "Complete",
-    percent: 100,
-    validFileCount: 0,
-    lastFullScanAt: new Date().toISOString(),
   }
 }
 

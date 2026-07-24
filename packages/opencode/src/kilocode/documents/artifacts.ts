@@ -4,6 +4,7 @@ import { Instance } from "@/kilocode/instance"
 import { ProductProfile } from "@/kilocode/product-profile"
 
 export const DEFAULT_ARTIFACT_ROOT = `${ProductProfile.label()}/artifacts`
+let nonce = 0
 
 export type ArtifactQualityStatus = "ok" | "warning" | "failed" | "unknown"
 
@@ -62,13 +63,14 @@ export async function declareArtifact(input: {
   qualityStatus?: ArtifactQualityStatus
 }): Promise<DeclaredArtifact> {
   const now = new Date().toISOString()
-  const root = artifactRootAbsolute()
+  const workspace = Instance.directory
+  const root = artifactRootAbsolute(workspace)
   await fs.mkdir(root, { recursive: true })
 
   const absoluteDir = input.artifactDir
-    ? resolveArtifactDir(input.artifactDir)
-    : path.join(root, `${stamp()}-${slug(input.taskSlug ?? input.title ?? input.kind)}`)
-  assertInside(root, absoluteDir, "artifactDir")
+    ? resolveArtifactDir(input.artifactDir, workspace, root)
+    : path.join(root, `${stamp()}-${slug(input.taskSlug ?? input.title ?? input.kind)}-${unique()}`)
+  assertInside(root, absoluteDir, "artifactDir", workspace)
   await fs.mkdir(absoluteDir, { recursive: true })
 
   const manifestPath = path.join(absoluteDir, "artifact.json")
@@ -92,14 +94,19 @@ export async function declareArtifact(input: {
 
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8")
   return {
-    artifactDir: relativeWorkspacePath(absoluteDir),
-    manifestPath: relativeWorkspacePath(manifestPath),
+    artifactDir: relativeWorkspacePath(absoluteDir, workspace),
+    manifestPath: relativeWorkspacePath(manifestPath, workspace),
     manifest,
   }
 }
 
 export async function listArtifacts(): Promise<ListedArtifact[]> {
-  const root = artifactRootAbsolute()
+  const workspace = Instance.directory
+  return scan(workspace)
+}
+
+async function scan(workspace: string): Promise<ListedArtifact[]> {
+  const root = artifactRootAbsolute(workspace)
   let entries: string[]
   try {
     entries = await fs.readdir(root)
@@ -119,8 +126,8 @@ export async function listArtifacts(): Promise<ListedArtifact[]> {
     if (!manifest) continue
 
     artifacts.push({
-      artifactDir: relativeWorkspacePath(absoluteDir),
-      manifestPath: relativeWorkspacePath(absoluteManifestPath),
+      artifactDir: relativeWorkspacePath(absoluteDir, workspace),
+      manifestPath: relativeWorkspacePath(absoluteManifestPath, workspace),
       absoluteManifestPath,
       manifest,
     })
@@ -132,62 +139,64 @@ export async function resolveOpenArtifact(input: {
   path: string
   target?: "path" | "folder"
 }): Promise<OpenArtifactResult> {
-  const absolute = resolveWorkspaceRelative(input.path)
-  const stat = await statOrThrow(absolute)
+  const workspace = Instance.directory
+  const absolute = resolveWorkspaceRelative(input.path, workspace)
+  const stat = await statOrThrow(absolute, workspace)
   const openPath = input.target === "folder" && !stat.isDirectory() ? path.dirname(absolute) : absolute
-  const openStat = await statOrThrow(openPath)
+  const openStat = await statOrThrow(openPath, workspace)
   return {
-    path: relativeWorkspacePath(openPath),
+    path: relativeWorkspacePath(openPath, workspace),
     absolutePath: openPath,
     isDirectory: openStat.isDirectory(),
   }
 }
 
 export async function exportArtifactDiagnostics(): Promise<ArtifactDiagnosticsResult> {
-  const root = artifactRootAbsolute()
+  const workspace = Instance.directory
+  const root = artifactRootAbsolute(workspace)
   await fs.mkdir(root, { recursive: true })
   const diagnostics: ArtifactDiagnostics = {
     generatedAt: new Date().toISOString(),
-    workspace: Instance.directory,
-    root: relativeWorkspacePath(root),
-    artifacts: await listArtifacts(),
+    workspace,
+    root: relativeWorkspacePath(root, workspace),
+    artifacts: await scan(workspace),
   }
   const absolutePath = path.join(root, `artifact-diagnostics-${stamp()}.json`)
   await fs.writeFile(absolutePath, `${JSON.stringify(diagnostics, null, 2)}\n`, "utf8")
   return {
-    path: relativeWorkspacePath(absolutePath),
+    path: relativeWorkspacePath(absolutePath, workspace),
     absolutePath,
     diagnostics,
   }
 }
 
-function artifactRootAbsolute(): string {
-  return path.join(Instance.directory, DEFAULT_ARTIFACT_ROOT)
+function artifactRootAbsolute(workspace: string): string {
+  return path.join(workspace, DEFAULT_ARTIFACT_ROOT)
 }
 
-function resolveArtifactDir(input: string): string {
+function resolveArtifactDir(input: string, workspace: string, root: string): string {
   if (!input.trim()) throw new Error("artifactDir is required")
-  const absolute = path.resolve(Instance.directory, input)
-  assertInside(artifactRootAbsolute(), absolute, "artifactDir")
+  const absolute = path.resolve(workspace, input)
+  assertInside(root, absolute, "artifactDir", workspace)
   return absolute
 }
 
-function resolveWorkspaceRelative(input: string): string {
+function resolveWorkspaceRelative(input: string, workspace: string): string {
   if (!input.trim()) throw new Error("path is required")
-  const absolute = path.resolve(Instance.directory, input)
-  assertInside(Instance.directory, absolute, "path")
+  const absolute = path.resolve(workspace, input)
+  assertInside(workspace, absolute, "path", workspace)
   return absolute
 }
 
-function relativeWorkspacePath(input: string): string {
-  return normalizePortable(path.relative(Instance.directory, input))
+function relativeWorkspacePath(input: string, workspace: string): string {
+  return normalizePortable(path.relative(workspace, input))
 }
 
-function assertInside(base: string, target: string, label: string): void {
+function assertInside(base: string, target: string, label: string, workspace: string): void {
   const relative = path.relative(base, target)
   if (relative === "") return
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error(`${label} must be inside ${normalizePortable(path.relative(Instance.directory, base) || ".")}`)
+    throw new Error(`${label} must be inside ${normalizePortable(path.relative(workspace, base) || ".")}`)
   }
 }
 
@@ -253,9 +262,9 @@ async function statOrNull(input: string) {
   }
 }
 
-async function statOrThrow(input: string) {
+async function statOrThrow(input: string, workspace: string) {
   const stat = await statOrNull(input)
-  if (!stat) throw new Error(`path does not exist: ${relativeWorkspacePath(input)}`)
+  if (!stat) throw new Error(`path does not exist: ${relativeWorkspacePath(input, workspace)}`)
   return stat
 }
 
@@ -277,4 +286,9 @@ function slug(input: string): string {
 
 function stamp(): string {
   return new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "").replace("T", "-")
+}
+
+function unique(): string {
+  nonce = (nonce + 1) % Number.MAX_SAFE_INTEGER
+  return `${process.pid}-${Date.now()}-${nonce}`
 }

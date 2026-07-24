@@ -100,3 +100,19 @@ export function indexingEnabled(scope: IndexingScope, global: IndexingConfig, pr
 export function indexingEnabledInherited(scope: IndexingScope, global: IndexingConfig, project: IndexingConfig) {
   return indexingInheritance(scope, global, project, [["enabled"]]) === "inherited"
 }
+
+export function mergeExternalRoots(
+  current: NonNullable<NonNullable<IndexingConfig["documents"]>["approvedExternalRoots"]>,
+  next: NonNullable<NonNullable<IndexingConfig["documents"]>["approvedExternalRoots"]>,
+) {
+  return [...new Map([...current, ...next].map((item) => [`${item.workspace ?? "*"}\0${item.path}`, item])).values()]
+}
+
+export function documentRoots(paths: string[] = []) {
+  const roots = paths.map((item) => item.trim()).filter((item) => item && item !== ".")
+  return [".", ...new Set(roots)]
+}
+
+export function extraRoots(paths: string[] = []) {
+  return documentRoots(paths).slice(1)
+}

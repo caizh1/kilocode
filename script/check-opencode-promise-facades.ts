@@ -31,7 +31,6 @@ const allow: Record<string, string> = {
 const testAllow: Record<string, { count: number; reason: string }> = {
   "kilocode/config-resilience.test.ts": { count: 4, reason: "existing runtime integration test" },
   "kilocode/config-validation.test.ts": { count: 2, reason: "existing runtime integration test" },
-  "kilocode/internal-offline-provider.test.ts": { count: 2, reason: "provider filter integration test" },
   "kilocode/cli-shutdown.test.ts": { count: 1, reason: "mocked runtime boundary for shutdown unit tests" },
   "kilocode/plan-followup.test.ts": { count: 3, reason: "existing runtime integration test" },
   "kilocode/session-compaction-chunks.test.ts": {

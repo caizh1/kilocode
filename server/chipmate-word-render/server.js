@@ -8,6 +8,7 @@ const os = require("node:os")
 const path = require("node:path")
 const { spawn, spawnSync } = require("node:child_process")
 const { pathToFileURL } = require("node:url")
+const zlib = require("node:zlib")
 const JSZip = require("jszip")
 const yauzl = require("yauzl")
 const { PNG } = require("pngjs")
@@ -33,6 +34,13 @@ const MAX_SKILL_UPLOAD_TOTAL_BYTES = Number(process.env.MAX_SKILL_UPLOAD_TOTAL_B
 const MAX_SKILL_UPLOAD_FILE_BYTES = Number(process.env.MAX_SKILL_UPLOAD_FILE_BYTES || 10 * 1024 * 1024)
 const MAX_DOCX_BYTES = Number(process.env.MAX_DOCX_BYTES || 50 * 1024 * 1024)
 const MAX_MERMAID_SOURCE_BYTES = Number(process.env.MAX_MERMAID_SOURCE_BYTES || 512 * 1024)
+const MAX_PLANTUML_SOURCE_BYTES = Number(process.env.MAX_PLANTUML_SOURCE_BYTES || 128 * 1024)
+const MAX_PLANTUML_PNG_BYTES = Number(process.env.MAX_PLANTUML_PNG_BYTES || 16 * 1024 * 1024)
+const MAX_PLANTUML_DIMENSION = Number(process.env.MAX_PLANTUML_DIMENSION || 4096)
+const MAX_PLANTUML_CONCURRENCY = Number(process.env.MAX_PLANTUML_CONCURRENCY || 2)
+const MAX_PLANTUML_QUEUE = Number(process.env.MAX_PLANTUML_QUEUE || 16)
+const PLANTUML_JAR = process.env.PLANTUML_JAR || "/app/plantuml-asl.jar"
+const PLANTUML_VERSION = process.env.PLANTUML_VERSION || ""
 const RENDER_TIMEOUT_MS = Number(process.env.RENDER_TIMEOUT_MS || 120000)
 const MAX_RESPONSE_PAGE_BYTES = Number(process.env.MAX_RESPONSE_PAGE_BYTES || 16 * 1024 * 1024)
 const MAX_WORD_RENDER_PAGES = Number(process.env.MAX_WORD_RENDER_PAGES || 500)
@@ -43,6 +51,7 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const WEBSOCKET_OPEN = 1
 const WEBSOCKET_CLOSED = 3
 const defaultTokenResolverState = createTokenResolverState()
+const plantumlSlots = { active: 0, queue: [] }
 
 const server = http.createServer(async (request, response) => {
   try {
@@ -56,6 +65,10 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === "POST" && request.url === "/render/mermaid") {
       await handleRenderMermaid(request, response)
+      return
+    }
+    if (request.method === "POST" && request.url === "/render/plantuml") {
+      await handleRenderPlantUml(request, response)
       return
     }
     if (request.method === "POST" && request.url === "/auth/new-api/resolve-user") {
@@ -771,6 +784,294 @@ async function handleRenderMermaid(request, response) {
   }
 }
 
+async function handleRenderPlantUml(request, response) {
+  const startedAt = Date.now()
+  const timeoutMs = clampNumber(undefined, 5000, 60000, 60000)
+  try {
+    const payload = JSON.parse(await readBody(request, MAX_PLANTUML_SOURCE_BYTES + 4096))
+    const source = normalizePlantUmlSource(typeof payload.source === "string" ? payload.source : "")
+    if (!source) throw renderError("plantuml-source-empty", "source is required")
+    if (Buffer.byteLength(source, "utf8") > MAX_PLANTUML_SOURCE_BYTES) {
+      throw renderError(
+        "plantuml-source-too-large",
+        `source exceeds ${MAX_PLANTUML_SOURCE_BYTES} bytes`,
+      )
+    }
+    assertSinglePlantUml(source)
+    const requested = clampNumber(payload.timeoutMs, 5000, 60000, timeoutMs)
+    const bytes = await withPlantUmlSlot(requested, (remaining) => renderPlantUml(source, remaining))
+    assertPng(bytes)
+    if (bytes.length > MAX_PLANTUML_PNG_BYTES) {
+      throw renderError("plantuml-png-too-large", `PNG exceeds ${MAX_PLANTUML_PNG_BYTES} bytes`)
+    }
+    const dimensions = pngDimensions(bytes)
+    if (
+      dimensions.width < 1 ||
+      dimensions.height < 1 ||
+      dimensions.width > MAX_PLANTUML_DIMENSION ||
+      dimensions.height > MAX_PLANTUML_DIMENSION
+    ) {
+      throw renderError(
+        "plantuml-dimensions-invalid",
+        `PNG dimensions ${dimensions.width}x${dimensions.height} exceed ${MAX_PLANTUML_DIMENSION}`,
+      )
+    }
+    const metadata = extractPlantUmlMetadata(bytes, MAX_PLANTUML_SOURCE_BYTES)
+    if (!metadata || normalizePlantUmlSource(metadata.source) !== source) {
+      throw renderError("plantuml-metadata-mismatch", "Generated PNG did not preserve the requested PlantUML source.")
+    }
+    sendJson(response, 200, {
+      ok: true,
+      png: { contentType: "image/png", base64: bytes.toString("base64") },
+      width: dimensions.width,
+      height: dimensions.height,
+      issues: [],
+      elapsedMs: Date.now() - startedAt,
+      metadata: {
+        format: "png-itxt",
+        keyword: "plantuml",
+        version: metadata.version,
+        verified: true,
+      },
+      renderer: {
+        kind: "remote-opencode",
+        diagramToPng: "plantuml-java",
+        plantumlVersion: plantUmlVersion(),
+        javaPath: commandPath("java") || "java",
+        graphvizPath: commandPath("dot") || undefined,
+        securityProfile: "SANDBOX",
+      },
+    })
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && typeof error.code === "string" ? error.code : "plantuml-render-failed"
+    sendJson(response, 200, {
+      ok: false,
+      issues: [{ severity: "error", code, message: formatError(error) }],
+      elapsedMs: Date.now() - startedAt,
+      renderer: {
+        kind: "remote-opencode",
+        diagramToPng: "plantuml-java",
+        plantumlVersion: plantUmlVersion(),
+        securityProfile: "SANDBOX",
+      },
+    })
+  }
+}
+
+async function withPlantUmlSlot(timeoutMs, task) {
+  const started = Date.now()
+  const release = await acquirePlantUmlSlot(timeoutMs)
+  try {
+    const remaining = timeoutMs - (Date.now() - started)
+    if (remaining <= 0) throw renderError("plantuml-render-timeout", `timed out after ${timeoutMs}ms`)
+    return await task(remaining)
+  } finally {
+    release()
+  }
+}
+
+function acquirePlantUmlSlot(timeoutMs) {
+  if (plantumlSlots.active < MAX_PLANTUML_CONCURRENCY) {
+    plantumlSlots.active += 1
+    return Promise.resolve(releasePlantUmlSlot)
+  }
+  if (plantumlSlots.queue.length >= MAX_PLANTUML_QUEUE) {
+    throw renderError("plantuml-render-busy", "PlantUML renderer queue is full.")
+  }
+  return new Promise((resolve, reject) => {
+    const entry = {
+      resolve,
+      timer: setTimeout(() => {
+        const index = plantumlSlots.queue.indexOf(entry)
+        if (index >= 0) plantumlSlots.queue.splice(index, 1)
+        reject(renderError("plantuml-render-timeout", `timed out after ${timeoutMs}ms`))
+      }, timeoutMs),
+    }
+    plantumlSlots.queue.push(entry)
+  })
+}
+
+function releasePlantUmlSlot() {
+  const next = plantumlSlots.queue.shift()
+  if (next) {
+    clearTimeout(next.timer)
+    next.resolve(releasePlantUmlSlot)
+    return
+  }
+  plantumlSlots.active = Math.max(0, plantumlSlots.active - 1)
+}
+
+function renderPlantUml(source, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const java = commandPath("java") || "java"
+    if (!fs.existsSync(PLANTUML_JAR)) {
+      reject(renderError("plantuml-runtime-missing", `PlantUML runtime missing: ${PLANTUML_JAR}`))
+      return
+    }
+    const child = spawn(
+      java,
+      [
+        "-DPLANTUML_SECURITY_PROFILE=SANDBOX",
+        `-DPLANTUML_LIMIT_SIZE=${MAX_PLANTUML_DIMENSION}`,
+        "-Xmx512m",
+        "-jar",
+        PLANTUML_JAR,
+        "--pipe",
+        "--format",
+        "png",
+        "--no-error-image",
+        "--stop-on-error",
+      ],
+      {
+        stdio: ["pipe", "pipe", "pipe"],
+        detached: process.platform !== "win32",
+        env: plantUmlEnv(),
+      },
+    )
+    const out = []
+    const err = []
+    let size = 0
+    let settled = false
+    let overflow = false
+    const finish = (fn) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+    const timer = setTimeout(() => {
+      killProcessTree(child)
+      finish(() => reject(renderError("plantuml-render-timeout", `timed out after ${timeoutMs}ms`)))
+    }, timeoutMs)
+    child.stdout.on("data", (chunk) => {
+      if (overflow) return
+      size += chunk.length
+      if (size > MAX_PLANTUML_PNG_BYTES) {
+        overflow = true
+        killProcessTree(child)
+        return
+      }
+      out.push(chunk)
+    })
+    child.stderr.on("data", (chunk) => {
+      const used = err.reduce((total, item) => total + item.length, 0)
+      if (used < 64 * 1024) err.push(chunk.subarray(0, 64 * 1024 - used))
+    })
+    child.once("error", (error) => {
+      finish(() => reject(renderError("plantuml-render-failed", error.message)))
+    })
+    child.stdin.on("error", (error) => {
+      if (error && error.code === "EPIPE") return
+      finish(() => reject(renderError("plantuml-render-failed", formatError(error))))
+    })
+    child.once("close", (code) => {
+      if (overflow) {
+        finish(() =>
+          reject(renderError("plantuml-png-too-large", `PNG exceeds ${MAX_PLANTUML_PNG_BYTES} bytes`)),
+        )
+        return
+      }
+      if (code !== 0) {
+        const detail = bounded(Buffer.concat(err).toString("utf8") || `PlantUML exited with code ${code}`)
+        finish(() => reject(renderError("plantuml-syntax-error", detail)))
+        return
+      }
+      finish(() => resolve(Buffer.concat(out)))
+    })
+    child.stdin.end(`${source}\n`)
+  })
+}
+
+function plantUmlEnv() {
+  const locale = process.env.LC_ALL || process.env.LANG || "C.UTF-8"
+  return {
+    HOME: os.tmpdir(),
+    LANG: process.env.LANG || locale,
+    LC_ALL: locale,
+    PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    PLANTUML_LIMIT_SIZE: String(MAX_PLANTUML_DIMENSION),
+    PLANTUML_SECURITY_PROFILE: "SANDBOX",
+    TMPDIR: os.tmpdir(),
+    ...(process.env.JAVA_HOME ? { JAVA_HOME: process.env.JAVA_HOME } : {}),
+  }
+}
+
+function killProcessTree(child) {
+  if (child.killed) return
+  if (process.platform !== "win32" && child.pid) {
+    try {
+      process.kill(-child.pid, "SIGKILL")
+      return
+    } catch (error) {
+      if (!error || error.code !== "ESRCH") console.warn(`Failed to kill PlantUML process group: ${formatError(error)}`)
+    }
+  }
+  child.kill("SIGKILL")
+}
+
+function assertSinglePlantUml(source) {
+  const starts = [...source.matchAll(/@startuml\b/gi)]
+  const ends = [...source.matchAll(/@enduml\b/gi)]
+  if (starts.length !== 1 || ends.length !== 1 || starts[0].index !== 0) {
+    throw renderError("plantuml-source-invalid", "source must contain exactly one @startuml/@enduml diagram")
+  }
+  const finish = (ends[0].index || 0) + ends[0][0].length
+  if (source.slice(finish).trim()) {
+    throw renderError("plantuml-source-invalid", "source must end after @enduml")
+  }
+}
+
+function normalizePlantUmlSource(source) {
+  return String(source).replace(/\r\n?/g, "\n").replace(/\u0000/g, "").trim()
+}
+
+function extractPlantUmlMetadata(bytes, maxBytes) {
+  for (let offset = PNG_SIGNATURE.length; offset + 12 <= bytes.length; ) {
+    const length = bytes.readUInt32BE(offset)
+    const end = offset + 12 + length
+    if (end > bytes.length) throw renderError("plantuml-metadata-invalid", "PNG contains a truncated chunk.")
+    const kind = bytes.subarray(offset + 4, offset + 8).toString("ascii")
+    const data = bytes.subarray(offset + 8, offset + 8 + length)
+    offset = end
+    if (kind !== "iTXt") continue
+    const keywordEnd = data.indexOf(0)
+    if (keywordEnd < 1) continue
+    if (data.subarray(0, keywordEnd).toString("latin1").toLowerCase() !== "plantuml") continue
+    let cursor = keywordEnd + 1
+    const compressed = data[cursor++]
+    const method = data[cursor++]
+    const languageEnd = data.indexOf(0, cursor)
+    if (languageEnd < 0) throw renderError("plantuml-metadata-invalid", "PlantUML iTXt language is invalid.")
+    cursor = languageEnd + 1
+    const translatedEnd = data.indexOf(0, cursor)
+    if (translatedEnd < 0) throw renderError("plantuml-metadata-invalid", "PlantUML iTXt keyword is invalid.")
+    cursor = translatedEnd + 1
+    if (compressed !== 0 && compressed !== 1) {
+      throw renderError("plantuml-metadata-invalid", "PlantUML iTXt compression flag is invalid.")
+    }
+    if (compressed === 1 && method !== 0) {
+      throw renderError("plantuml-metadata-invalid", "PlantUML iTXt compression method is unsupported.")
+    }
+    const raw =
+      compressed === 1
+        ? zlib.inflateSync(data.subarray(cursor), { maxOutputLength: maxBytes + 4096 })
+        : data.subarray(cursor)
+    const decoded = normalizePlantUmlSource(raw.toString("utf8"))
+    const start = decoded.search(/@startuml\b/i)
+    const endMatch = /@enduml\b/i.exec(decoded)
+    if (start < 0 || !endMatch) {
+      throw renderError("plantuml-metadata-invalid", "PlantUML iTXt does not contain a UML diagram.")
+    }
+    const finish = (endMatch.index || 0) + endMatch[0].length
+    return {
+      source: decoded.slice(start, finish).trim(),
+      version: decoded.slice(finish).trim().split(/\n/)[0]?.trim() || undefined,
+    }
+  }
+  return undefined
+}
+
 async function handlePackageFile(request, response) {
   const parsed = new URL(request.url, "http://localhost")
   const relative = decodeURIComponent(parsed.pathname.replace(/^\/packages\/+/, ""))
@@ -1340,6 +1641,7 @@ function healthPayload() {
     endpoints: [
       "/render/word",
       "/render/mermaid",
+      "/render/plantuml",
       "/auth/new-api/resolve-user",
       "/packages/manifest.json",
       "/packages/<file>",
@@ -1354,6 +1656,9 @@ function healthPayload() {
       pythonUno: commandVersion(process.env.PYTHON_UNO_BIN || "python3"),
       chromium: commandVersion("chromium") || commandVersion("chromium-browser") || commandVersion("google-chrome"),
       mermaid: packageVersion("mermaid"),
+      java: commandVersion("java"),
+      graphviz: commandVersion("dot"),
+      plantuml: plantUmlVersion(),
       soffice: commandVersion("soffice") || commandVersion("libreoffice"),
       pdftoppm: commandVersion("pdftoppm"),
       pdfinfo: commandVersion("pdfinfo"),
@@ -1366,6 +1671,20 @@ function healthPayload() {
         cssSizeFields: ["width", "height"],
         pixelSizeFields: ["pixelWidth", "pixelHeight"],
         crop: { mode: "svg-content-bounds", padding: 32, fields: ["contentBounds", "cropBounds"] },
+      },
+      plantuml: {
+        endpoint: "/render/plantuml",
+        available: Boolean(commandPath("java") && commandPath("dot") && plantUmlVersion()),
+        format: "png",
+        metadata: "iTXt/plantuml",
+        maxSourceBytes: MAX_PLANTUML_SOURCE_BYTES,
+        maxPngBytes: MAX_PLANTUML_PNG_BYTES,
+        maxDimension: MAX_PLANTUML_DIMENSION,
+        concurrency: MAX_PLANTUML_CONCURRENCY,
+        queue: MAX_PLANTUML_QUEUE,
+        active: plantumlSlots.active,
+        queued: plantumlSlots.queue.length,
+        securityProfile: "SANDBOX",
       },
       autoUpdateManifest: {
         endpoint: "/packages/manifest.json",
@@ -2645,7 +2964,7 @@ function pngDimensions(bytes) {
 
 function assertPng(bytes) {
   if (!bytes || bytes.length < PNG_SIGNATURE.length || PNG_SIGNATURE.some((value, index) => bytes[index] !== value)) {
-    throw renderError("png-invalid", "Mermaid renderer did not return a valid PNG.")
+    throw renderError("png-invalid", "Diagram renderer did not return a valid PNG.")
   }
 }
 
@@ -2737,7 +3056,8 @@ function commandPath(command) {
 function commandVersion(command) {
   const pathValue = commandPath(command)
   if (!pathValue) return undefined
-  const result = spawnSync(command, command === "pdftoppm" || command === "pdfinfo" ? ["-v"] : ["--version"], {
+  const args = command === "dot" ? ["-V"] : command === "pdftoppm" || command === "pdfinfo" ? ["-v"] : ["--version"]
+  const result = spawnSync(command, args, {
     encoding: "utf8",
   })
   return [result.stdout, result.stderr].filter(Boolean).join("\n").trim().split("\n")[0] || pathValue
@@ -2756,6 +3076,11 @@ function packageVersion(packageName) {
   } catch {
     return undefined
   }
+}
+
+function plantUmlVersion() {
+  if (!fs.existsSync(PLANTUML_JAR)) return undefined
+  return PLANTUML_VERSION || path.basename(PLANTUML_JAR)
 }
 
 function renderMermaidHtml(mermaidRuntimeUrl, source) {
@@ -2935,20 +3260,25 @@ function comparePrereleaseIdentifier(left, right) {
 }
 
 module.exports = {
+  assertSinglePlantUml,
   compareExtensionVersions,
   contentTypeFor,
   createTokenResolverState,
+  extractPlantUmlMetadata,
   generateSkillMarketCatalog,
   generatePackageManifest,
+  plantUmlEnv,
   publishSkillMarketUpload,
   skillMarketFilesPayload,
   starSkillMarketItem,
   healthPayload,
   inspectWordDocx,
+  normalizePlantUmlSource,
   normalizeNewApiKey,
   packageEntryFromVsix,
   readVsixExtensionManifest,
   resolveNewApiUser,
   server,
   verifyRefreshedWordDocx,
+  withPlantUmlSlot,
 }

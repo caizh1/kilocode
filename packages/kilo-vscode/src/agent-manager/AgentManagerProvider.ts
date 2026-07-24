@@ -595,6 +595,7 @@ export class AgentManagerProvider implements Disposable {
     }
     if (m.type === "previewImage") return msg
     if (m.type === "saveImage") return msg
+    if (m.type === "renderPlantUml") return msg
     if (m.type === "agentManager.showExistingLocalTerminal") {
       return null
     }

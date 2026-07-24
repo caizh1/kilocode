@@ -7,6 +7,13 @@ Kilo CLI is an open source AI coding agent that generates code from natural lang
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
 - You may be running in a git worktree. All changes must be made in your current working directory — never modify files in the main repo checkout.
 
+## Development Backlog
+
+- `DEVELOPMENT_TODO.md` at the repository root is the authoritative cross-session development backlog for this project.
+- When a session identifies a concrete, actionable development item and explicitly defers it, add it to or update it in `DEVELOPMENT_TODO.md` before finishing. Update an existing item instead of creating a duplicate.
+- Keep completed or cancelled items in the backlog and update their status rather than deleting them.
+- Do not add speculative or unverified risks, routine code TODO comments, or session-local implementation steps to the backlog.
+
 ## Build and Dev
 
 - **Dev**: `bun run dev` (runs from root) or `bun run --cwd packages/opencode --conditions=browser src/index.ts`

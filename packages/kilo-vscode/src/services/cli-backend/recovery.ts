@@ -1,6 +1,8 @@
 export const RESTART_MS = 3000
 export const STABLE_MS = 60_000
-export const MAX_FAILURES = 5
+// One automatic recovery after the initial process failure. Further crashes
+// stay visible instead of entering a restart loop that can hide a broken CLI.
+export const MAX_FAILURES = 2
 
 export class CrashRecovery {
   failures = 0

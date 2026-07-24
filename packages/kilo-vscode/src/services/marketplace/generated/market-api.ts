@@ -506,7 +506,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Upload one VSIX file. Web clients extract folders and archives locally, split unlimited selections into logical groups, and submit one VSIX per request. The service applies instance-wide concurrency and storage admission controls. */
+        /** @description Upload one VSIX file. The first successful publisher owns the extension ID; successful ChipMate uploads immediately enter the automatic update manifest. Same-version, same-target content conflicts are rejected without replacing either artifact. */
         post: operations["publishExtension"];
         delete?: never;
         options?: never;
@@ -719,9 +719,10 @@ export interface components {
         ApiError: {
             /** @constant */
             ok: false;
-            code: "CAPABILITY_UNSUPPORTED" | "AUTH_REQUIRED" | "AUTH_INVALID" | "SESSION_EXPIRED" | "STALE_PUBLICATION" | "CSRF_INVALID" | "ORIGIN_INVALID" | "NOT_FOUND" | "CONFLICT" | "VALIDATION_FAILED" | "SECURITY_REJECTED" | "OWNERSHIP_REQUIRED" | "IDEMPOTENCY_CONFLICT" | "INTENT_EXPIRED" | "INTENT_REPLAYED" | "HASH_MISMATCH" | "ARCHIVE_UNSAFE" | "RATE_LIMITED" | "MARKET_UNAVAILABLE" | "INTERNAL_ERROR";
+            code: "CAPABILITY_UNSUPPORTED" | "AUTH_REQUIRED" | "AUTH_INVALID" | "SESSION_EXPIRED" | "STALE_PUBLICATION" | "CSRF_INVALID" | "ORIGIN_INVALID" | "NOT_FOUND" | "CONFLICT" | "VALIDATION_FAILED" | "SECURITY_REJECTED" | "OWNERSHIP_REQUIRED" | "EXTENSION_OWNER_UNASSIGNED" | "EXTENSION_VERSION_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "INTENT_EXPIRED" | "INTENT_REPLAYED" | "HASH_MISMATCH" | "ARCHIVE_UNSAFE" | "RATE_LIMITED" | "MARKET_UNAVAILABLE" | "INTERNAL_ERROR";
             message: string;
             issues?: components["schemas"]["ValidationIssue"][];
+            conflict?: components["schemas"]["ExtensionPublicationConflict"];
         };
         FavoriteState: {
             skillId: string;
@@ -786,6 +787,7 @@ export interface components {
             /** Format: date-time */
             publishedAt: string;
             status: "published" | "removed";
+            releaseNotesAvailable: boolean;
             downloadUrl: string;
         };
         ExtensionDetail: components["schemas"]["ExtensionSummary"] & {
@@ -810,6 +812,24 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             artifact?: components["schemas"]["ExtensionArtifact"];
+        };
+        ExtensionPublicationConflict: {
+            extensionId: string;
+            version: string;
+            target: string;
+            existing: {
+                id: string;
+                filename: string;
+                sha256: string;
+                /** Format: date-time */
+                publishedAt: string;
+                source: "system" | "web";
+                canDelete: boolean;
+            };
+            incoming: {
+                filename: string;
+                sha256: string;
+            };
         };
         ExtensionReview: {
             userId: string;

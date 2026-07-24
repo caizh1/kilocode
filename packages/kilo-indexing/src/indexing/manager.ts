@@ -748,7 +748,6 @@ export class CodeIndexManager {
     const cfg = this._configManager.currentDocuments
     if (!cfg.enabled) return documentDisabled("Document RAG disabled.")
     if (!this.isFeatureEnabled) return documentDisabled("Document RAG disabled because Code RAG is disabled.")
-    if (cfg.paths.length === 0) return documentStandby("No document folders configured.")
     if (!this.isFeatureConfigured) return documentStandby("Document RAG blocked: embeddings are not configured.")
     return documentStandby("Document RAG starting.")
   }

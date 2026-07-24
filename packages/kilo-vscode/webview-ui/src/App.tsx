@@ -209,6 +209,7 @@ export const DataBridge: Component<{ children: any }> = (props) => {
 }
 
 type MermaidImageEvent = CustomEvent<{ dataUrl: string; filename: string }>
+type PlantUmlRenderEvent = CustomEvent<{ requestId: string; source: string }>
 
 export const MermaidDownloadBridge: Component = () => {
   const vscode = useVSCode()
@@ -223,6 +224,30 @@ export const MermaidDownloadBridge: Component = () => {
     window.addEventListener("kilo:save-image", save)
     onCleanup(() => {
       window.removeEventListener("kilo:save-image", save)
+    })
+  })
+
+  return null
+}
+
+export const PlantUmlBridge: Component = () => {
+  const vscode = useVSCode()
+
+  onMount(() => {
+    const render = (event: Event) => {
+      const detail = (event as PlantUmlRenderEvent).detail
+      if (!detail?.requestId || !detail.source) return
+      event.preventDefault()
+      vscode.postMessage({ type: "renderPlantUml", requestId: detail.requestId, source: detail.source })
+    }
+    const unsubscribe = vscode.onMessage((message) => {
+      if (message.type !== "plantUmlRendered") return
+      window.dispatchEvent(new CustomEvent("kilo:plantuml-rendered", { detail: message }))
+    })
+    window.addEventListener("kilo:render-plantuml", render)
+    onCleanup(() => {
+      unsubscribe()
+      window.removeEventListener("kilo:render-plantuml", render)
     })
   })
 
@@ -392,6 +417,7 @@ const App: Component = () => {
       <DialogProvider>
         <VSCodeProvider>
           <MermaidDownloadBridge />
+          <PlantUmlBridge />
           <ServerProvider>
             <LanguageBridge>
               <MarkedProvider>

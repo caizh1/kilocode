@@ -8,14 +8,16 @@ import {
   ShieldWarning,
 } from "@phosphor-icons/react"
 import type { MarketUser, PublicationRun } from "@chipmate/market-contracts"
-import { useState, type DragEvent, type FormEvent } from "react"
+import { useRef, useState, type DragEvent, type FormEvent } from "react"
 import { bytes, InlineError } from "../shared"
 import { track } from "../analytics"
 import { uuid } from "../id"
 import { dropSkillFolder, packSkillFolder, scanSkillFolder, type SkillFolderScan } from "../skill-folder"
 
-type Input = { kind: "archive"; file: File } | { kind: "folder"; scan: SkillFolderScan }
+type Input = ({ kind: "archive"; file: File } | { kind: "folder"; scan: SkillFolderScan }) & { key: string }
 type Progress = { stage: "packing" | "uploading" | "validating"; label: string; loaded: number; total: number }
+type Issue = NonNullable<PublicationRun["report"]>["issues"][number]
+type Group = { issue: Issue; files: string[]; count: number }
 
 const labels: Record<PublicationRun["status"], string> = {
   VALIDATING: "正在校验",
@@ -34,13 +36,16 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
   const [run, setRun] = useState<PublicationRun>()
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
   const [progress, setProgress] = useState<Progress>()
   const [drag, setDrag] = useState(false)
+  const lock = useRef(false)
 
   const publish = async (event: FormEvent) => {
     event.preventDefault()
     if (!props.user) return props.requestLogin()
-    if (!input) return
+    if (!input || done || lock.current) return
+    lock.current = true
     setBusy(true)
     setError("")
     track("publication_start", { context: { source: "web" } })
@@ -51,11 +56,12 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
           : await packSkillFolder(input.scan, (value) =>
               setProgress({ stage: "packing", label: value.path, loaded: value.loaded, total: value.bytes }),
             )
-      const result = await upload(archive, props.csrf, (value) => setProgress(value))
+      const result = await upload(archive, input.key, props.csrf, (value) => setProgress(value))
       const payload = result.payload
       if (result.status < 200 || result.status >= 300)
         throw new Error(payload.message ?? `发布失败（HTTP ${result.status}）`)
       setRun(payload)
+      setDone(terminal(payload.status))
       track("publication_success", {
         ...(payload.skillId ? { skillId: payload.skillId } : {}),
         ...(payload.release ? { revision: payload.release.revision } : {}),
@@ -65,7 +71,9 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
       setError(err instanceof Error ? err.message : String(err))
       track("publication_validation_failed", { context: { reason: "request-failed" } })
     } finally {
+      lock.current = false
       setBusy(false)
+      setProgress(undefined)
     }
   }
 
@@ -73,7 +81,8 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
     setError("")
     setRun(undefined)
     const scan = scanSkillFolder(files)
-    setInput({ kind: "folder", scan })
+    setInput({ kind: "folder", scan, key: uuid() })
+    setDone(false)
     setProgress(undefined)
   }
 
@@ -148,9 +157,10 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
                 onChange={(event) => {
                   const file = event.target.files?.[0]
                   if (file) {
-                    setInput({ kind: "archive", file })
+                    setInput({ kind: "archive", file, key: uuid() })
                     setRun(undefined)
                     setError("")
+                    setDone(false)
                     setProgress(undefined)
                   }
                 }}
@@ -217,8 +227,16 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
               先登录市场身份
             </button>
           )}
-          <button className="primary-button" disabled={busy || !input}>
-            {busy ? "正在执行权威校验…" : "校验并发布"}
+          <button className="primary-button" disabled={busy || !input || done}>
+            {busy
+              ? "正在执行权威校验…"
+              : done && run?.status === "PUBLISHED"
+                ? "发布成功"
+                : done && run?.status === "UNCHANGED"
+                  ? "已发布，无内容变化"
+                  : done
+                    ? "请重新选择修改后的 Skill"
+                    : "校验并发布"}
           </button>
           <small>不会执行归档内 scripts/，不会保存 New API key，也不会修改你的本地目录。</small>
         </form>
@@ -231,6 +249,27 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
           {error && <InlineError message={error} />}
           {run && (
             <>
+              {run.status === "PUBLISHED" && (
+                <div className="publication-success" role="status">
+                  <CheckCircle weight="fill" />
+                  <span>
+                    <strong>发布成功</strong>
+                    <p>
+                      {run.skillId ?? "Skill"}
+                      {run.release ? ` · revision r${run.release.revision} · SHA ${run.release.sha256.slice(0, 16)}…` : ""}
+                    </p>
+                  </span>
+                </div>
+              )}
+              {run.status === "UNCHANGED" && (
+                <div className="publication-duplicate" role="status">
+                  <CheckCircle weight="fill" />
+                  <span>
+                    <strong>内容未变化，已发布过</strong>
+                    <p>{run.release ? `继续使用 revision r${run.release.revision}，未创建重复版本。` : "未创建重复版本。"}</p>
+                  </span>
+                </div>
+              )}
               <div className={`publication-status status-${run.status.toLocaleLowerCase()}`}>
                 <strong>{labels[run.status]}</strong>
                 <span>
@@ -253,17 +292,7 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
                   项；本地文件未改变。
                 </p>
               )}
-              <div className="issue-list">
-                {(run.report?.issues ?? []).map((issue) => (
-                  <article key={`${issue.code}-${issue.file ?? ""}`}>
-                    <ShieldWarning />
-                    <span>
-                      <strong>{issue.message}</strong>
-                      <small>{issue.file ?? issue.field ?? "归档"}</small>
-                    </span>
-                  </article>
-                ))}
-              </div>
+              <Report run={run} />
               {run.status === "NEEDS_AI_CONFIRMATION" && (
                 <aside className="manual-repair" role="note">
                   <strong>无法使用 Kilo 时的手工修复</strong>
@@ -294,13 +323,13 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
   )
 }
 
-function upload(file: Blob, csrf: string, progress: (value: Progress) => void) {
+function upload(file: Blob, key: string, csrf: string, progress: (value: Progress) => void) {
   return new Promise<{ status: number; payload: PublicationRun & { message?: string } }>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open("POST", "/api/v1/publications")
     xhr.setRequestHeader("accept", "application/json")
     xhr.setRequestHeader("content-type", "application/gzip")
-    xhr.setRequestHeader("idempotency-key", uuid())
+    xhr.setRequestHeader("idempotency-key", key)
     xhr.setRequestHeader("x-csrf-token", csrf)
     xhr.upload.onprogress = (event) =>
       progress({
@@ -318,4 +347,86 @@ function upload(file: Blob, csrf: string, progress: (value: Progress) => void) {
     }
     xhr.send(file)
   })
+}
+
+function Report(props: { run: PublicationRun }) {
+  const issues = props.run.report?.issues ?? []
+  const groups = group(issues)
+  const errors = groups.filter((item) => item.issue.severity === "error").length
+  const warnings = groups.filter((item) => item.issue.severity === "warning").length
+  const invalid = failed(props.run.status) && errors === 0
+  if (!groups.length && !invalid) return null
+  return (
+    <div className="validation-report">
+      <div className="validation-summary">
+        <strong>校验报告</strong>
+        <span className={errors ? "summary-error" : ""}>{errors} 类阻断错误</span>
+        <span>{warnings} 类警告</span>
+      </div>
+      {invalid && (
+        <div className="publication-protocol-error" role="alert">
+          <ShieldWarning />
+          <span>
+            <strong>服务端返回失败，但没有提供可展示的阻断错误。</strong>
+            <small>发布记录 {props.run.id}，请刷新状态或联系管理员检查服务端日志。</small>
+          </span>
+        </div>
+      )}
+      <div className="issue-list">
+        {groups.map((item) => (
+          <article className={`issue-${item.issue.severity}`} key={`${item.issue.severity}-${item.issue.code}-${item.issue.message}`}>
+            <ShieldWarning weight={item.issue.severity === "error" ? "fill" : "regular"} />
+            <span>
+              <strong>
+                <em>{item.issue.severity === "error" ? "阻止发布" : item.issue.severity === "warning" ? "警告" : "提示"}</em>
+                {item.issue.code === "scripts-present"
+                  ? `包含 ${item.count} 个脚本文件；市场服务不会执行这些脚本，使用前请自行审查。`
+                  : item.issue.message}
+              </strong>
+              {item.files.length <= 1 && <small>{item.files[0] ?? item.issue.field ?? "归档"}</small>}
+              {item.files.length > 1 && (
+                <details>
+                  <summary>查看 {item.files.length} 个文件</summary>
+                  <ul>
+                    {item.files.map((file) => (
+                      <li key={file}>{file}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </span>
+          </article>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function group(issues: Issue[]): Group[] {
+  const map = new Map<string, Group>()
+  for (const issue of issues) {
+    const key = `${issue.severity}\0${issue.code}`
+    const current = map.get(key)
+    if (current) {
+      current.count += 1
+      if (issue.file && !current.files.includes(issue.file)) current.files.push(issue.file)
+      continue
+    }
+    map.set(key, { issue, files: issue.file ? [issue.file] : [], count: 1 })
+  }
+  return [...map.values()].sort((a, b) => rank(a.issue.severity) - rank(b.issue.severity))
+}
+
+function rank(value: string) {
+  if (value === "error") return 0
+  if (value === "warning") return 1
+  return 2
+}
+
+function terminal(status: PublicationRun["status"]) {
+  return status !== "VALIDATING" && status !== "PUBLISHING"
+}
+
+function failed(status: PublicationRun["status"]) {
+  return ["NEEDS_AUTHOR_FIX", "NEEDS_AI_CONFIRMATION", "SECURITY_REJECTED", "FAILED"].includes(status)
 }

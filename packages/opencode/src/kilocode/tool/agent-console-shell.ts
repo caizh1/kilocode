@@ -3,8 +3,18 @@ import * as AgentConsolePty from "@/kilocode/agent-console/pty"
 import { Tool } from "@/tool/tool"
 import { Effect, Schema } from "effect"
 
+export function semantics(platform: NodeJS.Platform = process.platform) {
+  const shell = platform === "win32" ? "PowerShell" : "Bash"
+  return {
+    parameter: `Exact single-line ${shell} command to run in the Agent Console shell`,
+    description: `Propose one exact, non-interactive ${shell} command for the persistent Agent Console terminal. The user must approve every command. The approved command runs in the same shell, preserving its cwd and environment.`,
+  }
+}
+
+const copy = semantics()
+
 const Params = Schema.Struct({
-  command: Schema.String.annotate({ description: "Exact single-line Bash command to run in the Agent Console shell" }),
+  command: Schema.String.annotate({ description: copy.parameter }),
   description: Schema.optional(Schema.String).annotate({
     description: "Short explanation shown above the approval command",
   }),
@@ -27,8 +37,7 @@ type Meta = {
 export const AgentConsoleShellTool = Tool.define<typeof Params, Meta, never, "agent_console_shell">(
   "agent_console_shell",
   Effect.succeed({
-    description:
-      "Propose one exact, non-interactive Bash command for the persistent Agent Console terminal. The user must approve every command. The approved command runs in the same shell, preserving its cwd and environment.",
+    description: copy.description,
     parameters: Params,
     execute: (params, ctx) =>
       Effect.gen(function* () {

@@ -7,6 +7,9 @@ function setup(commands: SlashCommandInfo[] = []) {
   const posted: WebviewMessage[] = []
   const handlers = new Set<(message: ExtensionMessage) => void>()
   const cleanup: { run?: () => void } = {}
+  const emit = (next: SlashCommandInfo[]) => {
+    for (const handler of handlers) handler({ type: "commandsLoaded", commands: next })
+  }
   const slash = createRoot((root) => {
     cleanup.run = root
     return useSlashCommand({
@@ -18,11 +21,9 @@ function setup(commands: SlashCommandInfo[] = []) {
     })
   })
 
-  if (commands.length > 0) {
-    for (const handler of handlers) handler({ type: "commandsLoaded", commands })
-  }
+  if (commands.length > 0) emit(commands)
 
-  return { slash, posted, cleanup }
+  return { slash, posted, cleanup, emit }
 }
 
 function field(value: string, pos: number) {
@@ -62,6 +63,32 @@ const skill: SlashCommandEntry = {
 }
 
 describe("useSlashCommand selection", () => {
+  it("refreshes server commands once whenever the Slash menu is reopened", () => {
+    const ctx = setup()
+    const fresh: SlashCommandEntry = {
+      name: "fresh-market-skill",
+      description: "Newly installed from the Skill Market",
+      source: "skill",
+      hints: [],
+    }
+
+    ctx.slash.onInput("/", 1)
+    ctx.emit([skill])
+    ctx.slash.onInput("/chip", 5)
+
+    expect(ctx.posted.filter((message) => message.type === "requestCommands")).toHaveLength(1)
+    expect(ctx.slash.results().map((entry) => entry.name)).toContain(skill.name)
+
+    ctx.slash.close()
+    ctx.slash.onInput("/", 1)
+    ctx.emit([fresh])
+
+    expect(ctx.posted.filter((message) => message.type === "requestCommands")).toHaveLength(2)
+    expect(ctx.slash.commands().map((entry) => entry.name)).toContain(fresh.name)
+    expect(ctx.slash.commands().map((entry) => entry.name)).not.toContain(skill.name)
+    ctx.cleanup.run?.()
+  })
+
   it("preserves Chinese and English draft text when a skill is selected directly", () => {
     const ctx = setup()
     const raw = "/chip请分析代码 and keep this context"

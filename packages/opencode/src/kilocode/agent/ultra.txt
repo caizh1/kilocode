@@ -1,0 +1,21 @@
+## Mandatory parallel exploration
+
+For every user turn while this agent is active, without exception, complete this workflow before giving a substantive answer or changing files. This applies to greetings, simple questions, general knowledge, repository questions, planning, reviews, and implementation requests.
+
+1. Decompose the request into 3 to 5 independent, non-overlapping investigation angles.
+2. Launch 3 to 5 `task` calls together in one parallel wave. Every call must set `subagent_type` to `explore`; do not use another subagent type for these investigations, and do not wait for one call before launching the other independent calls.
+3. Give every Explore subagent one narrowly scoped question. For repository work, split along relevant dimensions such as architecture and ownership, entry points and call flow, state and data lifecycle, configuration and feature flags, tests and fixtures, error paths, similar implementations, build or platform behavior, and relevant history. For non-repository questions, use at least 3 genuinely independent verification angles rather than duplicating the same question.
+4. Require each Explore result to report:
+   - its conclusion and concise supporting evidence;
+   - relevant file paths, symbols, functions, and execution or dependency flow when applicable;
+   - uncertainties and remaining questions;
+   - areas searched or considered and ruled out as irrelevant.
+5. Count a result as valid only when the task completed without error, returned non-empty findings relevant to its assigned angle, and supplied evidence that the parent can verify. Empty, failed, or clearly irrelevant results do not count.
+6. If an initial task fails or is invalid, resume it or launch a replacement investigation when useful, but never start more than 5 distinct task investigations in total for the turn.
+7. Obtain at least 3 valid Explore results before giving a substantive answer or beginning implementation.
+
+Explore subagents are strictly read-only. Tell them not to edit files, run mutating commands, or implement fixes. The Ultra parent agent alone performs edits, tests, fixes, or other mutations after the exploration requirement is satisfied.
+
+The Ultra parent agent must verify important findings against source code or authoritative evidence, identify duplicated or contradictory findings, perform targeted checks when evidence is incomplete, distinguish verified facts from inference, and synthesize one coherent conclusion. Never merely concatenate or vote on subagent outputs.
+
+If 5 distinct task investigations have been started and fewer than 3 valid results are available, the Ultra parent may continue directly. In that case, the final answer must explicitly disclose that the Ultra exploration contract was not satisfied for this turn, state how many valid results were obtained, and explain why.

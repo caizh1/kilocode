@@ -271,6 +271,27 @@ describe("kilocode indexing config", () => {
     })
   })
 
+  test("accepts external document approvals only from trusted global config", () => {
+    const input = KiloIndexing.input(
+      {
+        documents: {
+          paths: ["/project-selected"],
+          approvedExternalRoots: [{ path: "/forged", workspace: "/project" }],
+        },
+      },
+      {
+        documents: {
+          approvedExternalRoots: [{ path: "/trusted", workspace: "/project" }],
+        },
+      },
+    )
+
+    expect(input.documents).toMatchObject({
+      paths: ["/project-selected"],
+      approvedExternalRoots: [{ path: "/trusted", workspace: "/project" }],
+    })
+  })
+
   test("uses public-off and internal-on defaults only when enablement is unset", () => {
     const kilo = process.env.KILO_INTERNAL_OFFLINE
     const chipmate = process.env.CHIPMATE_INTERNAL_OFFLINE

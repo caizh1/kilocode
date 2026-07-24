@@ -3,6 +3,7 @@ import * as path from "path"
 import type { MarketplaceInstalledMetadata } from "./types"
 import { MarketplacePaths } from "./paths"
 import { normalizeSkillKey } from "./skills"
+import type { SkillInstance } from "./skill-instances"
 
 type Entry = [string, { type: string }]
 
@@ -28,9 +29,13 @@ export class InstallationDetector {
    * Skills come from the CLI backend (via GET /skill), which is the
    * authoritative source — it scans all skill directories.
    */
-  async detect(workspace?: string, skills?: CliSkill[]): Promise<MarketplaceInstalledMetadata> {
+  async detect(
+    workspace?: string,
+    skills?: CliSkill[],
+    instances: readonly SkillInstance[] = [],
+  ): Promise<MarketplaceInstalledMetadata> {
     const root = workspace ? await this.canonical(workspace) : undefined
-    const entries = await this.skillEntries(skills, root)
+    const entries = await this.skillEntries(skills, root, instances)
     const project = workspace
       ? Object.fromEntries([
           ...(await this.detectAgentFiles("project", workspace)),
@@ -65,13 +70,24 @@ export class InstallationDetector {
   private async skillEntries(
     skills: CliSkill[] | undefined,
     workspace: string | undefined,
+    instances: readonly SkillInstance[],
   ): Promise<{ project: Entry[]; global: Entry[] }> {
-    if (!skills) return { project: [], global: [] }
+    if (!skills) {
+      return {
+        project: instances.filter((item) => item.scope === "project").map((item) => [item.id, { type: "skill" }]),
+        global: instances.filter((item) => item.scope === "global").map((item) => [item.id, { type: "skill" }]),
+      }
+    }
     const resolved = await Promise.all(
-      skills.map(async (skill) => ({
-        skill,
-        location: skill.location === "builtin" ? skill.location : await this.canonical(skill.location),
-      })),
+      skills
+        .filter(
+          (skill) =>
+            instances.length === 0 || skill.location === "builtin" || skill.location === "<built-in>",
+        )
+        .map(async (skill) => ({
+          skill,
+          location: skill.location === "builtin" ? skill.location : await this.canonical(skill.location),
+        })),
     )
     const map = (project: boolean) =>
       resolved
@@ -82,7 +98,16 @@ export class InstallationDetector {
         )
         .map(({ skill }): Entry => [normalizeSkillKey(skill.name), { type: "skill" }])
         .filter(([id]) => Boolean(id))
-    return { project: map(true), global: map(false) }
+    return {
+      project: [
+        ...map(true),
+        ...instances.filter((item) => item.scope === "project").map((item): Entry => [item.id, { type: "skill" }]),
+      ],
+      global: [
+        ...map(false),
+        ...instances.filter((item) => item.scope === "global").map((item): Entry => [item.id, { type: "skill" }]),
+      ],
+    }
   }
 
   /** Scan .chipmate-v2/agents/*.md files to detect installed marketplace agents. */

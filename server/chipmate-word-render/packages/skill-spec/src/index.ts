@@ -4,10 +4,10 @@ import { parseDocument, YAMLMap } from "yaml"
 import { parseZip } from "./zip.ts"
 
 export const SKILL_SPEC_VERSION = "agent-skills-1"
-export const SKILL_RISK_POLICY_VERSION = "skill-risk-v2"
+export const SKILL_RISK_POLICY_VERSION = "skill-risk-v3"
 export const SKILL_ROOT_FILE = "SKILL.md"
 export const SKILL_METADATA_FILE = "skill.json"
-export const SKILL_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/
+export const SKILL_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 export const SKILL_IGNORES = [".DS_Store", ".git", "__MACOSX", "node_modules", "Thumbs.db"] as const
 export const SKILL_LIMITS = {
   files: 500,
@@ -109,9 +109,10 @@ const BINARY = /\.(?:exe|dll|dylib|so|bin|class|jar|wasm|node)$/i
 const SECRET = [
   /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
   /AKIA[0-9A-Z]{16}/,
-  /(?:api[_-]?key|password|passwd|secret|token)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{12,}/i,
   /\bsk-[A-Za-z0-9_-]{16,}\b/,
 ]
+const SECRET_ASSIGNMENT = /(?:api[_-]?key|password|passwd|secret|token)\s*[:=]\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s#;,]+))/gi
+const PLACEHOLDER = /(?:example|sample|dummy|placeholder|change[\s_-]?me|replace|your[\s_-]|redacted|fake|test|todo|not[\s_-]?a[\s_-]?real)/i
 
 export function validateSkillArchive(input: Buffer): SkillSnapshot {
   const sourceSha256 = sha(input)
@@ -126,7 +127,7 @@ export function validateSkillArchive(input: Buffer): SkillSnapshot {
   } else if (candidate.path !== SKILL_ROOT_FILE) {
     candidate.path = SKILL_ROOT_FILE
     issues.push(
-      issue("skill-filename", "warning", "Renamed the root skill file to SKILL.md.", {
+      issue("skill-filename", "info", "Renamed the root skill file to SKILL.md.", {
         file: candidate.path,
         fixable: true,
       }),
@@ -138,10 +139,10 @@ export function validateSkillArchive(input: Buffer): SkillSnapshot {
   const markdown = candidate ? decode(candidate, issues) : ""
   const source = frontmatter(markdown)
   const root = parsed[0]?.path.split("/")[0] ?? "skill"
-  const id = slug(clean(metadata.id) || clean(source.fields.id) || root || clean(source.fields.name) || "skill")
+  const id = skillId(clean(metadata.id) || clean(source.fields.id) || root || clean(source.fields.name) || "skill")
   const sourceName = clean(source.fields.name)
   const sourceDescription = clean(source.fields.description)
-  const name = slug(sourceName || title(id))
+  const name = skillId(sourceName || title(id))
   const description = sourceDescription || bodyDescription(source.body) || "Reusable ChipMate skill."
   const category = slug(clean(metadata.category) || clean(source.fields.category) || "general")
   const tags = tagList(metadata.tags ?? source.fields.tags)
@@ -156,7 +157,7 @@ export function validateSkillArchive(input: Buffer): SkillSnapshot {
     const repair = sourceName !== spec.name || sourceDescription !== spec.description
     if (repair)
       issues.push(
-        issue("frontmatter-normalize", "warning", "Repaired portable name and description fields.", {
+        issue("frontmatter-normalize", "info", "Repaired portable name and description fields.", {
           file: SKILL_ROOT_FILE,
           fixable: true,
         }),
@@ -185,7 +186,7 @@ export function validateSkillArchive(input: Buffer): SkillSnapshot {
   else {
     files.push({ path: SKILL_METADATA_FILE, data: normalizedMetadata, mode: 0o644 })
     issues.push(
-      issue("skill-json-create", "warning", "Generated missing skill.json.", {
+      issue("skill-json-create", "info", "Generated missing skill.json.", {
         file: SKILL_METADATA_FILE,
         fixable: true,
       }),
@@ -202,16 +203,16 @@ export function validateSkillArchive(input: Buffer): SkillSnapshot {
     return [{ path: file.path, beforeSha256, afterSha256, patch: `replace-base64:${file.data.toString("base64")}` }]
   })
   const valid = !issues.some((item) => item.severity === "error")
-  const critical = issues.filter((item) => item.riskLevel === "critical").length
-  const medium = issues.filter((item) => item.riskLevel === "medium").length
+  const critical = new Set(issues.filter((item) => item.riskLevel === "critical").map((item) => item.code))
+  const medium = new Set(issues.filter((item) => item.riskLevel === "medium").map((item) => item.code))
   const risk: SkillRiskSummary = {
-    level: critical ? "critical" : medium ? "medium" : "none",
-    issueCount: critical + medium,
+    level: critical.size ? "critical" : medium.size ? "medium" : "none",
+    issueCount: new Set([...critical, ...medium]).size,
     policyVersion: SKILL_RISK_POLICY_VERSION,
   }
   const stage = valid
     ? "complete"
-    : critical
+    : critical.size
       ? "security"
       : issues.some((item) => item.repairKind === "ai")
         ? "semantic"
@@ -339,7 +340,7 @@ function parse(input: Buffer, issues: SkillIssue[]): Entry[] {
       issues.push(issue("security-link", "error", "Archive links are not allowed.", { file: path }))
     else if (type === "x" || type === "g")
       issues.push(
-        issue("ignored-files-remove", "warning", "Removed archive metadata from the publication snapshot.", {
+        issue("ignored-files-remove", "info", "Removed archive metadata from the publication snapshot.", {
           file: path,
           fixable: true,
         }),
@@ -365,7 +366,7 @@ function normalize(entries: Entry[], issues: SkillIssue[]) {
     const path = strip ? entry.path.split("/").slice(1).join("/") : entry.path
     if (!path || ignored(path)) {
       issues.push(
-        issue("ignored-files-remove", "warning", "Removed an ignored file from the publication snapshot.", {
+        issue("ignored-files-remove", "info", "Removed an ignored file from the publication snapshot.", {
           file: path || entry.path,
           fixable: true,
         }),
@@ -408,7 +409,7 @@ function scan(files: Entry[], issues: SkillIssue[]) {
       (!IMAGE.test(file.path) && !document && utf8(file.data))
     ) {
       const value = decode(file, issues)
-      if (SECRET.some((pattern) => pattern.test(value)))
+      if (secret(value))
         issues.push(
           issue("security-secret", "error", "Potential credential or private key detected.", { file: file.path }),
         )
@@ -438,6 +439,27 @@ function utf8(data: Buffer) {
   } catch {
     return false
   }
+}
+
+function secret(value: string) {
+  if (SECRET.some((pattern) => pattern.test(value))) return true
+  for (const match of value.matchAll(SECRET_ASSIGNMENT)) {
+    const candidate = (match[1] ?? match[2] ?? match[3] ?? "").trim()
+    if (credible(candidate)) return true
+  }
+  return false
+}
+
+function credible(value: string) {
+  if (value.length < 20 || PLACEHOLDER.test(value)) return false
+  if (/^(?:https?|file):\/\//i.test(value) || /^(?:\.\.?\/|\/)/.test(value)) return false
+  if (/^\$\{?[A-Z_][A-Z0-9_]*\}?$/i.test(value) || /^process\.env\b/i.test(value)) return false
+  if (/^[x*_.-]+$/i.test(value) || /^\d+$/.test(value)) return false
+  const compact = value.toLocaleLowerCase().replace(/[-_.]/g, "")
+  if ("abcdefghijklmnopqrstuvwxyz".includes(compact) || /^(?:0123456789)+$/.test(compact)) return false
+  if (new Set(value).size < 8) return false
+  const classes = [/[a-z]/.test(value), /[A-Z]/.test(value), /\d/.test(value), /[^A-Za-z0-9]/.test(value)]
+  return classes.filter(Boolean).length >= 2
 }
 
 function scanDocument(file: Entry, issues: SkillIssue[]) {
@@ -787,6 +809,18 @@ function slug(value: string) {
       .replace(/[^a-z0-9._-]+/g, "-")
       .replace(/^[._-]+|[._-]+$/g, "")
       .slice(0, 128) || "skill"
+  )
+}
+
+function skillId(value: string) {
+  return (
+    clean(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .replace(/-{2,}/g, "-")
+      .slice(0, 64)
+      .replace(/-+$/g, "") || "skill"
   )
 }
 

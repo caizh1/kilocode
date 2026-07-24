@@ -230,6 +230,18 @@ export class MarketDb {
     return this.call<ExtensionArtifactItem[]>("extensionArtifacts", id)
   }
 
+  extensionUpdateArtifacts(id: string) {
+    return this.call<ExtensionArtifactItem[]>("extensionUpdateArtifacts", id)
+  }
+
+  extensionOwner(id: string) {
+    return this.call<{ extensionId: string; ownerId?: string } | undefined>("extensionOwner", id)
+  }
+
+  bindExtensionOwner(id: string, userId: string, stamp: string) {
+    return this.call<{ extensionId: string; ownerId: string }>("bindExtensionOwner", { id, userId, stamp })
+  }
+
   publishExtension(input: ExtensionArtifactInput) {
     return this.call<{ artifact: ExtensionArtifactItem; duplicate: boolean }>("publishExtension", input)
   }

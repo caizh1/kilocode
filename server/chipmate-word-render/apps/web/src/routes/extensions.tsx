@@ -31,6 +31,7 @@ import type {
 import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react"
 import { bytes, compact, date, InlineError, mutate, Skeleton, useApi } from "../shared"
 import { uuid } from "../id"
+import { trend } from "../trend"
 import {
   dropInputs,
   listInputs,
@@ -331,7 +332,14 @@ export function ExtensionDetail(props: Shared & { id: string }) {
 }
 
 type UploadState = "READY" | "EXTRACTING" | "PAUSED" | ExtensionPublicationRun["status"]
-type UploadItem = BatchItem & { selected: boolean; status: UploadState; loaded: number; error: string | undefined; runId: string | undefined; batch: number | undefined }
+type PublicationConflict = {
+  extensionId: string
+  version: string
+  target: string
+  existing: { id: string; filename: string; sha256: string; publishedAt: string; source: "system" | "web"; canDelete: boolean }
+  incoming: { filename: string; sha256: string }
+}
+type UploadItem = BatchItem & { selected: boolean; status: UploadState; loaded: number; error: string | undefined; warning: string | undefined; conflict: PublicationConflict | undefined; runId: string | undefined; batch: number | undefined }
 type Auth = { user: MarketUser; csrf: string }
 type Counts = Record<UploadState, number>
 
@@ -367,6 +375,7 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
   const start = Math.max(0, Math.floor(scroll / ROW) - 4)
   const end = Math.min(order.current.length, start + 16)
   const visible = order.current.slice(start, end).map((id) => table.current.get(id)).filter((item): item is UploadItem => Boolean(item))
+  const conflicts = order.current.map((id) => table.current.get(id)).filter((item): item is UploadItem => Boolean(item?.conflict))
 
   useEffect(() => {
     auth.current = { user: props.user, csrf: props.csrf }
@@ -431,7 +440,7 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
       const result = await scanInputs(inputs, (path, loaded, size) => {
         report({ path, loaded, total: size, percent: size ? Math.min(100, Math.round((loaded / size) * 100)) : 0, speed: 0, eta: 0 })
       })
-      for (const item of result.items) table.current.set(item.id, { ...item, selected: true, status: "READY", loaded: 0, error: undefined, runId: undefined, batch: undefined })
+      for (const item of result.items) table.current.set(item.id, { ...item, selected: true, status: "READY", loaded: 0, error: undefined, warning: undefined, conflict: undefined, runId: undefined, batch: undefined })
       order.current = result.items.map((item) => item.id)
       setScan(result)
       setSelection({ count: result.items.length, bytes: result.items.reduce((sum, item) => sum + item.size, 0) })
@@ -487,7 +496,14 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
           continue
         }
         state.missing = 0
-        update(id, { status: payload.status, error: payload.error })
+        update(id, {
+          status: payload.status,
+          error: payload.error,
+          warning:
+            payload.artifact && !payload.artifact.releaseNotesAvailable
+              ? "已发布，但 VSIX 未包含 RELEASE_NOTES.md；客户端将显示“暂无更新说明”。"
+              : undefined,
+        })
         if (TERMINAL.has(payload.status)) {
           runs.current.delete(runId)
           return
@@ -534,7 +550,7 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
     const runId = uuid()
     const key = uuid()
     runs.current.set(runId, item.id)
-    update(item.id, { status: "UPLOADING", loaded: 0, runId, error: undefined })
+    update(item.id, { status: "UPLOADING", loaded: 0, runId, error: undefined, warning: undefined, conflict: undefined })
     clock.high = 0
     while (!cancelled.current) {
       const result = await send(item, blob, runId, key, clock, total)
@@ -586,10 +602,22 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
         return
       }
       if (result.status < 200 || result.status >= 300) {
-        update(item.id, { status: "FAILED", error: result.payload.message ?? `上传失败（HTTP ${result.status}）` })
+        update(item.id, {
+          status: "FAILED",
+          error: result.payload.message ?? `上传失败（HTTP ${result.status}）`,
+          conflict: result.payload.conflict,
+        })
         return
       }
-      update(item.id, { status: result.payload.status ?? "FAILED", loaded: item.size, error: result.payload.error })
+      update(item.id, {
+        status: result.payload.status ?? "FAILED",
+        loaded: item.size,
+        error: result.payload.error,
+        warning:
+          result.payload.artifact && !result.payload.artifact.releaseNotesAvailable
+            ? "已发布，但 VSIX 未包含 RELEASE_NOTES.md；客户端将显示“暂无更新说明”。"
+            : undefined,
+      })
       clock.completed += item.size
       clock.high = 0
       return
@@ -609,7 +637,7 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
     const items = only ?? scan.items.map((item) => table.current.get(item.id)).filter((item): item is UploadItem => Boolean(item?.selected))
     if (!items.length) return
     const batches = partition(items)
-    for (const batch of batches) for (const item of batch.items) update(item.id, { batch: batch.index, status: "READY", loaded: 0, error: undefined })
+    for (const batch of batches) for (const item of batch.items) update(item.id, { batch: batch.index, status: "READY", loaded: 0, error: undefined, warning: undefined })
     queue.current = new Set(items.map((item) => item.id))
     cancelled.current = false
     setGroups(batches.length)
@@ -685,7 +713,7 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
 
   return (
     <section className="extension-publish page-width">
-      <div className="page-heading"><span className="eyebrow">VS CODE 插件发布</span><h1>上传 VS Code 插件</h1><p>可一次选择任意数量的 VSIX、文件夹、ZIP 或 TAR.GZ；系统自动拆成每组最多 20 个的上传队列。</p></div>
+      <div className="page-heading"><span className="eyebrow">VS CODE 插件发布</span><h1>上传 VS Code 插件</h1><p>只需上传各平台 VSIX。Server 会自动校验、归档并刷新更新清单；官方 ChipMate 包上传成功后立即进入客户端自动更新通道。</p></div>
       {(active || status === "complete") && <div className="glass-panel extension-progress-card extension-batch-progress">
         <div className="extension-progress-heading"><span className="upload-file-mark"><Code weight="duotone" /></span><div><h2>{status === "paused" ? "批量上传已暂停" : active ? "正在批量发布" : "批量发布完成"}</h2><p>{completed} / {selection.count} 个已处理 · {groups} 个逻辑批次 · {bytes(selection.bytes)}</p></div></div>
         <div className="prominent-progress"><div style={{ width: `${progress.percent}%` }}><strong>{progress.percent}%</strong></div></div>
@@ -707,25 +735,34 @@ export function ExtensionPublish(props: Pick<Shared, "user" | "csrf" | "requestL
             <div className="batch-summary"><span><strong>{selection.count}</strong> 个待上传</span><span><strong>{bytes(selection.bytes)}</strong> 合计</span><span><strong>{planned}</strong> 个逻辑批次</span><span><strong>{scan.ignored}</strong> 个已忽略</span><span><strong>{scan.errors.length}</strong> 个扫描错误</span></div>
             <div className="extension-batch-list virtual-batch-list" onScroll={(event) => setScroll(event.currentTarget.scrollTop)}>
               <div style={{ paddingTop: start * ROW, paddingBottom: Math.max(0, (order.current.length - end) * ROW) }}>
-                {visible.map((item) => <div key={item.id} className={`batch-item ${item.status.toLocaleLowerCase()}`}><input type="checkbox" aria-label={`选择 ${item.name}`} checked={item.selected} disabled={active} onChange={(event) => toggle(item, event.target.checked)} /><span><strong>{item.name}</strong><small>{item.path}</small><small>{bytes(item.size)} · {sourceLabel(item.kind)}{item.batch ? ` · 第 ${item.batch} 组` : ""}</small>{item.error && <em>{item.error}</em>}</span><b>{stateLabel(item.status)}</b>{item.status === "FAILED" && item.selected && !active && <button type="button" onClick={() => void upload([item])}>重试</button>}</div>)}
+                {visible.map((item) => <div key={item.id} className={`batch-item ${item.status.toLocaleLowerCase()}`}><input type="checkbox" aria-label={`选择 ${item.name}`} checked={item.selected} disabled={active} onChange={(event) => toggle(item, event.target.checked)} /><span><strong>{item.name}</strong><small>{item.path}</small><small>{bytes(item.size)} · {sourceLabel(item.kind)}{item.batch ? ` · 第 ${item.batch} 组` : ""}</small>{item.error && <em>{item.error}</em>}{item.warning && <em className="batch-warning">{item.warning}</em>}</span><b>{stateLabel(item.status)}</b>{item.status === "FAILED" && item.selected && !active && <button type="button" onClick={() => void upload([item])}>重试</button>}</div>)}
               </div>
             </div>
+            {conflicts.map((item) => <PublicationConflictCard key={item.id} conflict={item.conflict!} />)}
             {(scan.notes.length > 0 || scan.errors.length > 0) && <details className="batch-notes"><summary>查看忽略与扫描明细</summary>{[...scan.errors, ...scan.notes].map((item, index) => <p key={`${item.path}-${index}`}><strong>{item.path}</strong><span>{item.reason}</span></p>)}</details>}
             {!active && status !== "complete" && <button className="primary-button publish-vsix" disabled={!selection.count} onClick={() => void upload()}>开始批量上传</button>}
           </div>}
         </div>
-        <div className="glass-panel extension-upload-rules"><h2>上传说明</h2><Rule icon={<Package />} title="仅上传 VSIX">文件夹和归档只在浏览器本地扫描，其他内容不会进入网络请求。</Rule><Rule icon={<CheckCircle />} title="自动分组并逐项上架">一次可选择任意数量，系统按最多 20 个 / 10 GiB 分组，单项失败不阻断后续文件。</Rule><Rule icon={<UserCircle />} title="上传者公开可见">你的市场身份会显示为每个新构建的上传者。</Rule><Rule icon={<Clock />} title="服务资源保护">服务端同时最多接收 20 个上传；繁忙时队列会自动等待，不限制用户每小时总数。</Rule></div>
+        <div className="glass-panel extension-upload-rules"><h2>上传说明</h2><Rule icon={<Package />} title="上传即发布">文件夹和归档只在浏览器本地扫描；VSIX 上传成功后由 Server 自动维护产物和动态 manifest。</Rule><Rule icon={<CheckCircle />} title="自动进入更新通道">官方 ChipMate 包会按内部 target 自动进入客户端更新候选，无需复制文件、编辑 manifest 或重启服务。</Rule><Rule icon={<UserCircle />} title="首次发布绑定 owner">扩展 ID 首次成功上传后归当前账号所有，后续只有原始发布者可以发布或下架。</Rule><Rule icon={<Clock />} title="冲突不自动覆盖">同版本、同平台但 SHA 不同的包会被拒绝；请提升版本，或先由 owner 下架原包后重试。</Rule></div>
       </div>
     </section>
   )
 }
 
 function Rule(props: { icon: ReactNode; title: string; children: ReactNode }) { return <div className="upload-rule"><span>{props.icon}</span><div><strong>{props.title}</strong><p>{props.children}</p></div></div> }
+function PublicationConflictCard(props: { conflict: PublicationConflict }) {
+  const value = props.conflict
+  return <section className="publication-conflict" aria-label={`${value.extensionId} 发布冲突`}>
+    <header><span><Warning weight="fill" /></span><div><h3>同版本构建冲突</h3><p>{value.extensionId} · v{value.version} · {value.target}</p></div></header>
+    <div className="conflict-files"><article><small>服务器现有文件</small><strong>{value.existing.filename}</strong><code>{value.existing.sha256}</code></article><ArrowRight /><article><small>本次上传文件</small><strong>{value.incoming.filename}</strong><code>{value.incoming.sha256}</code></article></div>
+    <ol><li><strong>提升版本后重新打包上传（推荐）</strong><span>保持已发布版本不可变，客户端会正常识别为新更新。</span></li><li><strong>{value.existing.canDelete ? "在“我的插件”下架原版本后重试" : "联系管理员处理旧系统包后重试"}</strong><span>{value.existing.canDelete ? "下架是明确的人工操作，Server 不会自动覆盖或删除旧包。" : "旧 /packages 系统包不能从上传页删除。"}</span></li></ol>
+  </section>
+}
 function sourceLabel(value: BatchItem["kind"]) { return value === "folder" ? "文件夹" : value === "zip" ? "ZIP" : value === "tar" ? "TAR.GZ" : "本地文件" }
 function stateLabel(value: UploadState) { return value === "READY" ? "等待上传" : value === "EXTRACTING" ? "正在提取" : value === "PAUSED" ? "已暂停" : value === "UPLOADING" ? "上传中" : value === "VALIDATING" ? "校验中" : value === "PUBLISHING" ? "发布中" : value === "PUBLISHED" ? "已发布" : value === "DUPLICATE" ? "已存在" : value === "CANCELLED" ? "已取消" : "失败" }
-function parseRun(value: string): Partial<ExtensionPublicationRun> & { code?: string; message?: string } {
+function parseRun(value: string): Partial<ExtensionPublicationRun> & { code?: string; message?: string; conflict?: PublicationConflict } {
   try {
-    return JSON.parse(value || "{}") as Partial<ExtensionPublicationRun> & { code?: string; message?: string }
+    return JSON.parse(value || "{}") as Partial<ExtensionPublicationRun> & { code?: string; message?: string; conflict?: PublicationConflict }
   } catch (err) {
     console.error("Invalid extension publication response", err)
     return {}
@@ -778,11 +815,20 @@ export function ExtensionAnalyticsPage(props: Pick<Shared, "user" | "requestLogi
   if (data.loading) return <section className="page-width"><Skeleton label="正在载入插件市场分析" /></section>
   if (data.error || !data.data) return <section className="page-width"><InlineError message={data.error || "暂无分析数据"} /></section>
   const item = data.data
+  const chart = trend(item.trend)
   return <section className="extension-analytics page-width">
     <div className="analytics-heading"><div><span className="eyebrow">公开聚合数据</span><h1>插件市场分析</h1><p>洞察市场趋势，发现增长机会。</p></div><span className="analytics-range">30 天</span></div>
     <div className="extension-kpis"><Metric icon={<DownloadSimple />} label="总下载量" value={item.totals.downloads} /><Metric icon={<Heart />} label="总收藏数" value={item.totals.favorites} /><Metric icon={<Star />} label="平均评分" value={item.totals.rating.toFixed(2)} /><Metric icon={<Package />} label="活跃插件数" value={item.totals.active} /><Metric icon={<ChartLineUp />} label="30 天增长" value={`${item.totals.growth30d >= 0 ? "+" : ""}${item.totals.growth30d.toFixed(1)}%`} /></div>
     <div className="analytics-grid">
-      <section className="glass-panel trend-panel"><div className="panel-heading"><ChartLineUp /><h2>下载趋势</h2></div><div className="bar-trend">{item.trend.slice(-30).map((point) => <span key={point.date} style={{ height: `${Math.max(8, point.downloads)}%` }} title={`${point.date}: ${point.downloads}`} />)}{item.trend.length === 0 && <p>完成下载后会在这里形成趋势。</p>}</div></section>
+      <section className="glass-panel trend-panel">
+        <div className="panel-heading"><ChartLineUp /><h2>下载趋势</h2>{chart.total > 0 && <span className="trend-peak">峰值 <strong>{chart.peak}</strong></span>}</div>
+        {chart.total === 0 ? <div className="trend-empty"><p>近30天暂无下载</p><span>产生下载后会在这里形成趋势。</span></div> : <>
+          <div className="bar-trend" role="list" aria-label={`最近30天下载趋势，合计 ${chart.total} 次，单日峰值 ${chart.peak} 次`}>
+            {chart.points.map((point) => <span className="trend-bar" role="listitem" aria-label={`${point.date}，${point.downloads} 次下载`} key={point.date} style={{ height: `${point.height}%` }} title={`${point.date}：${point.downloads} 次下载`} />)}
+          </div>
+          <div className="trend-axis"><time dateTime={chart.points[0]?.date}>{chart.points[0]?.date}</time><span>近30天合计 {chart.total}</span><time dateTime={chart.points.at(-1)?.date}>{chart.points.at(-1)?.date}</time></div>
+        </>}
+      </section>
       <Ranking title="下载排行榜" items={item.downloads} />
       <Ranking title="高评分排行榜" items={item.ratings} />
       <section className="glass-panel target-panel"><div className="panel-heading"><Package /><h2>平台分布</h2></div>{item.targets.map((target) => <div key={target.target}><span>{target.target}</span><progress max={Math.max(...item.targets.map((entry) => entry.value), 1)} value={target.value} /><strong>{target.value}</strong></div>)}</section>

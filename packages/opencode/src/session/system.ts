@@ -27,11 +27,11 @@ import { isLing } from "../kilocode/model-match"
 
 // kilocode_change start
 export function instructions() {
-  return PROMPT_CODEX.trim()
+  return KilocodeSystemPrompt.brand(PROMPT_CODEX).trim()
 }
 
 export function soul() {
-  return SOUL.trim()
+  return KilocodeSystemPrompt.soul(SOUL).trim()
 }
 // kilocode_change end
 

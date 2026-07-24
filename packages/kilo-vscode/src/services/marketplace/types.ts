@@ -94,6 +94,11 @@ export interface SkillMarketplaceItem extends MarketplaceItemBase {
   removeToken?: string
   removeSkillId?: string
   localScope?: "global" | "project"
+  instanceId?: string
+  localLocation?: string
+  localSha256?: string
+  effective?: boolean
+  shadowedBy?: string
 }
 
 export type MarketplaceItem = McpMarketplaceItem | AgentMarketplaceItem | SkillMarketplaceItem
@@ -254,9 +259,19 @@ export interface LocalSkillImportItemResult {
   error?: string
 }
 
+export type SkillImportActivation =
+  | { status: "ready" }
+  | {
+      status: "failed"
+      phase: "refresh-request" | "post-refresh-verification"
+      message?: string
+      missingIds?: string[]
+    }
+
 export interface SkillImportResult {
   token: string
   items: LocalSkillImportItemResult[]
+  activation?: SkillImportActivation
 }
 
 export interface LocalSkillImportProgress {
@@ -427,6 +442,16 @@ export interface PublicationRun {
   }
   createdAt: string
   updatedAt: string
+}
+
+export type BatchPublicationState = "published" | "unchanged" | "attention" | "failed" | "skipped"
+
+export interface BatchPublicationItem {
+  id: string
+  name: string
+  state: BatchPublicationState
+  run?: PublicationRun
+  error?: string
 }
 
 export interface InstallResult {

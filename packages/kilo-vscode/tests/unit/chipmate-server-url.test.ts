@@ -34,6 +34,7 @@ describe("ChipMate Server URL", () => {
       marketplace: "http://server.test:6001/marketplace",
       word: "http://server.test:6001/render/word",
       mermaid: "http://server.test:6001/render/mermaid",
+      plantuml: "http://server.test:6001/render/plantuml",
       health: "http://server.test:6001/health",
       updates: "http://server.test:6001/packages/manifest.json",
     })

@@ -1,4 +1,5 @@
 import { execFile } from "child_process"
+import { createHash } from "node:crypto"
 import fs from "fs/promises"
 import path from "path"
 import { declareArtifact } from "@/kilocode/documents/artifacts"
@@ -6,6 +7,16 @@ import { insertWordPngImage } from "@/kilocode/documents/word"
 import { Instance } from "@/kilocode/instance"
 import { ProductProfile } from "@/kilocode/product-profile"
 import { userEnv } from "@/kilocode/product-env"
+import {
+  type MermaidSemanticFingerprint,
+  type MermaidSemanticIssue,
+  type MermaidSemanticQuery,
+  type MermaidSemanticResult,
+  type MermaidSemanticStatus,
+  mermaidContainers,
+  validateSourceBackedMermaid,
+} from "@/kilocode/documents/mermaid-semantics"
+import * as SemanticGuard from "@/kilocode/documents/mermaid-semantic-guard"
 
 type Photon = typeof import("@silvia-odwyer/photon-node")
 type PhotonLoad = { module: Photon } | { error: unknown }
@@ -36,6 +47,7 @@ export type MermaidDiagnosticCode =
   | "mermaid-render-image-processing-unavailable"
   | "png-invalid"
   | "artifact-write-failed"
+  | "mermaid-semantic-invalid"
 
 export type MermaidDiagnostic = {
   code: MermaidDiagnosticCode
@@ -61,12 +73,22 @@ export type ValidateMermaidDiagramInput = {
   diagramType?: string
 }
 
+export type ValidateMermaidDiagramRequest = ValidateMermaidDiagramInput & {
+  semanticMode?: "source-backed"
+  semanticEvidencePath?: string
+  semanticQuery?: MermaidSemanticQuery
+  semanticSessionId?: string
+  allowSourceHashPlaceholder?: boolean
+}
+
 export type ValidatedMermaidDiagram = {
   valid: boolean
   diagramType?: string
   diagnostics: MermaidDiagnostic[]
   warnings: string[]
 }
+
+export type ValidatedMermaidDiagramRequest = ValidatedMermaidDiagram & MermaidSemanticResult
 
 export type SaveMermaidArtifactInput = {
   source: string
@@ -100,6 +122,77 @@ export type RenderMermaidDiagramInput = {
   background?: string
   scale?: number
   timeoutMs?: number
+  semanticMode?: "source-backed"
+  semanticEvidencePath?: string
+  semanticSessionId?: string
+  allowSourceHashPlaceholder?: boolean
+}
+
+export type SourceBackedMermaidBatchInput = {
+  manifestPath: string
+  remoteEndpoint?: string
+  theme?: string
+  background?: string
+  scale?: number
+  timeoutMs?: number
+  semanticSessionId: string
+}
+
+export type SourceBackedMermaidBatchItem = {
+  diagramId: string
+  sourcePath: string
+  semanticEvidencePath: string
+  title?: string
+  taskSlug?: string
+  sourceFile?: string
+  pngFile?: string
+  scale?: number
+}
+
+export type SourceBackedMermaidBatchItemResult = {
+  index: number
+  diagramId: string
+  sourcePath: string
+  semanticEvidencePath: string
+  rendered: boolean
+  semanticStatus: MermaidSemanticStatus
+  sourceHash?: string
+  pngPath?: string
+  diagnosticsPath?: string
+  semanticDiagnosticsPath?: string
+  wordFitStatus?: "readable" | "split-required"
+  wordFitReasons?: string[]
+  documentReady: boolean
+  claimCount?: number
+  validatedClaimCount?: number
+  issues: MermaidSemanticIssue[]
+  warnings: string[]
+}
+
+export type RenderedSourceBackedMermaidBatch = {
+  manifestPath: string
+  basePath?: string
+  resultPath: string
+  requestedCount: number
+  processedCount: number
+  renderedCount: number
+  readyCount: number
+  invalidCount: number
+  splitRequiredCount: number
+  complete: boolean
+  pendingSplitDiagramIds: string[]
+  pendingSplitDetails: Array<{
+    diagramId: string
+    missingNodes: Array<{ id: string; symbol?: string; designUnitId?: string }>
+    missingEdges: MermaidSemanticFingerprint["edges"]
+    suggestedChildren: Array<{
+      suggestedDiagramId: string
+      splitFromDiagramId: string
+      nodes: Array<{ id: string; symbol?: string; designUnitId?: string }>
+      edges: MermaidSemanticFingerprint["edges"]
+    }>
+  }>
+  items: SourceBackedMermaidBatchItemResult[]
 }
 
 export type RenderedMermaidDiagram = SavedMermaidArtifact & {
@@ -116,6 +209,19 @@ export type RenderedMermaidDiagram = SavedMermaidArtifact & {
   elapsedMs?: number
   renderer?: Record<string, unknown>
   issues: MermaidRenderIssue[]
+  semanticStatus: MermaidSemanticStatus
+  sourceHash: string
+  claimCount: number
+  validatedClaimCount: number
+  semanticIssues: MermaidSemanticIssue[]
+  semanticDiagnosticsPath?: string
+  semanticFingerprint?: MermaidSemanticFingerprint
+  wordFitScale?: number
+  wordFitDensity?: number
+  wordFitAspectRatio?: number
+  wordFitStatus?: "readable" | "split-required"
+  wordFitReasons?: string[]
+  documentReady?: boolean
 }
 
 export type InsertMermaidIntoWordInput = {
@@ -201,6 +307,11 @@ const MIN_SCALE = 1
 const MAX_SCALE = 4
 const CROP_PADDING_CSS = 32
 const MAX_RENDER_PIXELS = 12_000
+const WORD_WIDTH = 624
+const WORD_HEIGHT = 720
+const WORD_MIN_SCALE = 0.65
+const WORD_MAX_DENSITY = 30
+const WORD_MAX_ASPECT = 4
 
 const DIAGRAM_STARTERS = [
   "graph",
@@ -258,12 +369,62 @@ export function validateMermaidDiagram(input: ValidateMermaidDiagramInput): Vali
   }
   const balance = bracketBalance(source)
   if (!balance.valid) diagnostics.push({ code: "mermaid-render-failed", severity: "error", message: balance.message })
+  if (/\\["']/.test(source)) {
+    diagnostics.push({
+      code: "mermaid-render-failed",
+      severity: "error",
+      message: "Mermaid labels must not use backslash-escaped quotes; use a plain quoted label or an HTML entity.",
+    })
+  }
   return {
     valid: diagnostics.every((item) => item.severity !== "error"),
     diagramType: input.diagramType ?? starter,
     diagnostics,
     warnings: diagnostics.filter((item) => item.severity === "warning").map((item) => `${item.code}: ${item.message}`),
   }
+}
+
+export async function validateMermaidDiagramRequest(
+  input: ValidateMermaidDiagramRequest,
+): Promise<ValidatedMermaidDiagramRequest> {
+  const syntax = validateMermaidDiagram(input)
+  const sourceHash = createHash("sha256").update(input.source).digest("hex")
+  if (!input.semanticMode) {
+    return { ...syntax, semanticStatus: "not-requested", sourceHash, claimCount: 0, validatedClaimCount: 0, issues: [] }
+  }
+  if (!syntax.valid) {
+    return { ...syntax, semanticStatus: "invalid", sourceHash, claimCount: 0, validatedClaimCount: 0, issues: [] }
+  }
+  if (!input.semanticEvidencePath?.trim()) {
+    return {
+      ...syntax,
+      valid: false,
+      semanticStatus: "invalid",
+      sourceHash,
+      claimCount: 0,
+      validatedClaimCount: 0,
+      issues: [{ code: "semantic-evidence-missing", severity: "error", message: "semanticEvidencePath is required for source-backed validation." }],
+    }
+  }
+  const semantic = await validateSourceBackedMermaid({
+    source: input.source,
+    semanticEvidencePath: input.semanticEvidencePath,
+    query: input.semanticQuery,
+    allowSourceHashPlaceholder: input.allowSourceHashPlaceholder,
+  })
+  const pending = input.semanticSessionId
+    ? SemanticGuard.advance(input.semanticSessionId, semantic.semanticFingerprint)
+    : undefined
+  if (pending) {
+    return {
+      ...syntax,
+      ...semantic,
+      valid: false,
+      semanticStatus: "invalid",
+      issues: [...semantic.issues, pending],
+    }
+  }
+  return { ...syntax, ...semantic, valid: syntax.valid && semantic.semanticStatus !== "invalid" }
 }
 
 export async function saveMermaidArtifact(input: SaveMermaidArtifactInput): Promise<SavedMermaidArtifact> {
@@ -334,10 +495,63 @@ export async function saveMermaidArtifact(input: SaveMermaidArtifactInput): Prom
 }
 
 export async function renderMermaidDiagram(input: RenderMermaidDiagramInput): Promise<RenderedMermaidDiagram> {
-  const validation = validateMermaidDiagram({ source: input.source })
+  const validation = await validateMermaidDiagramRequest(input)
   if (!validation.valid) {
-    const saved = await saveMermaidArtifact({ ...input, diagnostics: validation.diagnostics })
-    return { ...saved, rendered: false, issues: [] }
+    const diagnostics = [
+      ...validation.diagnostics,
+      ...validation.issues.map((item) => ({ code: "mermaid-semantic-invalid" as const, severity: item.severity, message: `${item.code}: ${item.message}` })),
+    ]
+    const saved = await saveMermaidArtifact({ ...input, diagnostics })
+    return { ...saved, rendered: false, issues: [], semanticStatus: validation.semanticStatus, sourceHash: validation.sourceHash, claimCount: validation.claimCount, validatedClaimCount: validation.validatedClaimCount, semanticIssues: validation.issues, semanticDiagnosticsPath: validation.diagnosticsPath, semanticFingerprint: validation.semanticFingerprint }
+  }
+  const regression = input.semanticSessionId
+    ? SemanticGuard.coverage(input.semanticSessionId, validation.semanticFingerprint)
+    : undefined
+  if (regression) {
+    const diagnostics = [
+      ...validation.diagnostics,
+      { code: "mermaid-semantic-invalid" as const, severity: regression.severity, message: `${regression.code}: ${regression.message}` },
+    ]
+    const saved = await saveMermaidArtifact({ ...input, diagnostics })
+    return {
+      ...saved,
+      rendered: false,
+      issues: [],
+      semanticStatus: "invalid",
+      sourceHash: validation.sourceHash,
+      claimCount: validation.claimCount,
+      validatedClaimCount: validation.validatedClaimCount,
+      semanticIssues: [...validation.issues, regression],
+      semanticDiagnosticsPath: validation.diagnosticsPath,
+      semanticFingerprint: validation.semanticFingerprint,
+    }
+  }
+  const budget =
+    input.semanticSessionId && input.semanticMode && input.semanticEvidencePath
+      ? SemanticGuard.render(input.semanticSessionId, input.semanticEvidencePath)
+      : undefined
+  if (budget) {
+    const diagnostics = [
+      ...validation.diagnostics,
+      {
+        code: "mermaid-semantic-invalid" as const,
+        severity: budget.severity,
+        message: `${budget.code}: ${budget.message}`,
+      },
+    ]
+    const saved = await saveMermaidArtifact({ ...input, diagnostics })
+    return {
+      ...saved,
+      rendered: false,
+      issues: [],
+      semanticStatus: "invalid",
+      sourceHash: validation.sourceHash,
+      claimCount: validation.claimCount,
+      validatedClaimCount: validation.validatedClaimCount,
+      semanticIssues: [...validation.issues, budget],
+      semanticDiagnosticsPath: validation.diagnosticsPath,
+      semanticFingerprint: validation.semanticFingerprint,
+    }
   }
   const timeoutMs = input.timeoutMs ?? 120_000
   const endpoint = input.remoteEndpoint?.trim() || process.env["KILO_MERMAID_RENDER_ENDPOINT"]?.trim()
@@ -388,11 +602,19 @@ export async function renderMermaidDiagram(input: RenderMermaidDiagramInput): Pr
     diagnostics.push(...local.diagnostics)
   }
   const saved = await saveMermaidArtifact({ ...request, pngBase64, diagnostics })
+  const width = response?.width ?? local?.width
+  const height = response?.height ?? local?.height
+  const fit = mermaidWordFit({
+    width,
+    height,
+    status: validation.semanticStatus,
+    fingerprint: validation.semanticFingerprint,
+  })
   return {
     ...saved,
     rendered: Boolean(saved.pngPath && !saved.diagnostics.some((item) => item.severity === "error")),
-    width: response?.width ?? local?.width,
-    height: response?.height ?? local?.height,
+    width,
+    height,
     pixelWidth: response?.pixelWidth ?? local?.pixelWidth,
     pixelHeight: response?.pixelHeight ?? local?.pixelHeight,
     scale: response?.scale ?? local?.scale ?? scale,
@@ -403,6 +625,220 @@ export async function renderMermaidDiagram(input: RenderMermaidDiagramInput): Pr
     elapsedMs: response?.elapsedMs,
     renderer: response?.renderer ?? local?.renderer,
     issues: response?.issues ?? local?.issues ?? [],
+    semanticStatus: validation.semanticStatus,
+    sourceHash: validation.sourceHash,
+    claimCount: validation.claimCount,
+    validatedClaimCount: validation.validatedClaimCount,
+    semanticIssues: validation.issues,
+    semanticDiagnosticsPath: validation.diagnosticsPath,
+    semanticFingerprint: validation.semanticFingerprint,
+    ...fit,
+  }
+}
+
+export async function renderSourceBackedMermaidBatch(
+  input: SourceBackedMermaidBatchInput,
+): Promise<RenderedSourceBackedMermaidBatch> {
+  const file = resolveWorkspacePath(input.manifestPath)
+  const raw = await limitedText(file, 512 * 1024, "batch manifest")
+  const parsed = JSON.parse(raw) as unknown
+  const manifest = sourceBackedBatchManifest(parsed)
+  const base = await secureBatchDirectory(manifest.basePath ?? ".", "batch basePath")
+  const resultPath = await secureBatchOutput(base, resolveBatchResultPath(file, base, manifest.resultPath))
+  const reserved = new Set([
+    file,
+    ...manifest.items.flatMap((item) => [
+      resolveBatchPath(base, item.sourcePath, "batch sourcePath"),
+      resolveBatchPath(base, item.semanticEvidencePath, "batch semanticEvidencePath"),
+    ]),
+  ])
+  if (reserved.has(resultPath)) throw new Error("batch resultPath must not overwrite the manifest, Mermaid source, or semantic evidence")
+
+  const results: SourceBackedMermaidBatchItemResult[] = []
+  const pending: MermaidSemanticFingerprint[] = []
+  for (const [index, item] of manifest.items.entries()) {
+    const result = await (async (): Promise<SourceBackedMermaidBatchItemResult> => {
+      const sourceFile = await secureBatchFile(base, item.sourcePath, `Mermaid source for ${item.diagramId}`)
+      const evidenceFile = await secureBatchFile(base, item.semanticEvidencePath, `semantic evidence for ${item.diagramId}`)
+      const source = await limitedText(sourceFile, 256 * 1024, `Mermaid source for ${item.diagramId}`)
+      const parsedEvidence = JSON.parse(
+        await limitedText(evidenceFile, 2 * 1024 * 1024, `semantic evidence for ${item.diagramId}`),
+      ) as unknown
+      if (!parsedEvidence || typeof parsedEvidence !== "object" || Array.isArray(parsedEvidence)) {
+        throw new Error(`semantic evidence for ${item.diagramId} must be a JSON object`)
+      }
+      const evidence = parsedEvidence as { diagramId?: unknown; sourceHash?: unknown }
+      if (evidence.diagramId !== item.diagramId) {
+        return {
+          index,
+          diagramId: item.diagramId,
+          sourcePath: portableWorkspacePath(sourceFile),
+          semanticEvidencePath: portableWorkspacePath(evidenceFile),
+          rendered: false,
+          semanticStatus: "invalid",
+          documentReady: false,
+          issues: [
+            {
+              code: "semantic-batch-diagram-id-mismatch",
+              severity: "error",
+              message: `Batch item ${item.diagramId} references a claim manifest for ${String(evidence.diagramId ?? "(missing)")}.`,
+            },
+          ],
+          warnings: [],
+        }
+      }
+      const normalized = await normalizeBatchEvidence(evidence, base, source)
+      if (normalized) {
+        await fs.writeFile(evidenceFile, `${JSON.stringify(evidence, null, 2)}\n`, "utf8")
+      }
+      const validation = SemanticGuard.validate(input.semanticSessionId, portableWorkspacePath(evidenceFile))
+      if (validation) {
+        return {
+          index,
+          diagramId: item.diagramId,
+          sourcePath: portableWorkspacePath(sourceFile),
+          semanticEvidencePath: portableWorkspacePath(evidenceFile),
+          rendered: false,
+          semanticStatus: "invalid",
+          documentReady: false,
+          issues: [validation],
+          warnings: [validation.message],
+        }
+      }
+      const rendered = await renderMermaidDiagram({
+        source,
+        title: item.title ?? item.diagramId,
+        taskSlug: item.taskSlug ?? manifest.taskSlug,
+        sourceFile: item.sourceFile ?? path.basename(sourceFile),
+        pngFile: item.pngFile ?? `${path.basename(sourceFile, path.extname(sourceFile))}.png`,
+        remoteEndpoint: input.remoteEndpoint,
+        theme: input.theme,
+        background: input.background,
+        scale: item.scale ?? input.scale,
+        timeoutMs: input.timeoutMs,
+        semanticMode: "source-backed",
+        semanticEvidencePath: portableWorkspacePath(evidenceFile),
+        semanticSessionId: input.semanticSessionId,
+        allowSourceHashPlaceholder: true,
+      })
+      const semantic = rendered.semanticStatus === "valid" || rendered.semanticStatus === "valid-with-unknowns"
+      const ready = Boolean(rendered.rendered && semantic && rendered.documentReady !== false && rendered.pngPath)
+      if (ready) {
+        SemanticGuard.allow(
+          input.semanticSessionId,
+          rendered.sourceHash,
+          rendered.pngPath!,
+          rendered.semanticFingerprint,
+        )
+      }
+      if (rendered.rendered && semantic && !ready && rendered.semanticFingerprint) {
+        pending.push(rendered.semanticFingerprint)
+      }
+      return {
+        index,
+        diagramId: item.diagramId,
+        sourcePath: portableWorkspacePath(sourceFile),
+        semanticEvidencePath: portableWorkspacePath(evidenceFile),
+        rendered: rendered.rendered,
+        semanticStatus: rendered.semanticStatus,
+        sourceHash: rendered.sourceHash,
+        pngPath: rendered.pngPath,
+        diagnosticsPath: rendered.diagnosticsPath,
+        semanticDiagnosticsPath: rendered.semanticDiagnosticsPath,
+        wordFitStatus: rendered.wordFitStatus,
+        wordFitReasons: rendered.wordFitReasons,
+        documentReady: ready,
+        claimCount: rendered.claimCount,
+        validatedClaimCount: rendered.validatedClaimCount,
+        issues: rendered.semanticIssues,
+        warnings: rendered.warnings,
+      }
+    })().catch((err): SourceBackedMermaidBatchItemResult => {
+      const message = err instanceof Error ? err.message : String(err)
+      return {
+        index,
+        diagramId: item.diagramId,
+        sourcePath: item.sourcePath,
+        semanticEvidencePath: item.semanticEvidencePath,
+        rendered: false,
+        semanticStatus: "invalid",
+        documentReady: false,
+        issues: [
+          {
+            code: "semantic-batch-item-failed",
+            severity: "error",
+            message,
+          },
+        ],
+        warnings: [message],
+      }
+    })
+    results.push(result)
+  }
+  for (const fingerprint of pending) SemanticGuard.hold(input.semanticSessionId, fingerprint)
+
+  const renderedCount = results.filter((item) => item.rendered).length
+  const readyCount = results.filter((item) => item.documentReady).length
+  const invalidCount = results.filter((item) => item.semanticStatus === "invalid").length
+  const splitRequiredCount = results.filter((item) => item.wordFitStatus === "split-required").length
+  const pendingSplitDiagramIds = SemanticGuard.pending(input.semanticSessionId)
+  const pendingSplitDetails = SemanticGuard.pendingDetails(input.semanticSessionId)
+  const value: RenderedSourceBackedMermaidBatch = {
+    manifestPath: portableWorkspacePath(file),
+    basePath: manifest.basePath ? portableWorkspacePath(base) : undefined,
+    resultPath: portableWorkspacePath(resultPath),
+    requestedCount: manifest.items.length,
+    processedCount: results.length,
+    renderedCount,
+    readyCount,
+    invalidCount,
+    splitRequiredCount,
+    complete: readyCount === manifest.items.length && pendingSplitDiagramIds.length === 0,
+    pendingSplitDiagramIds,
+    pendingSplitDetails,
+    items: results,
+  }
+  await fs.mkdir(path.dirname(resultPath), { recursive: true })
+  await fs.writeFile(resultPath, `${JSON.stringify(value, null, 2)}\n`, "utf8")
+  return value
+}
+
+export function mermaidWordFit(input: {
+  width?: number
+  height?: number
+  status: MermaidSemanticStatus
+  fingerprint?: MermaidSemanticFingerprint
+}) {
+  if (input.status === "not-requested" || input.status === "invalid") return {}
+  if (!input.width || !input.height) {
+    return {
+      wordFitStatus: "split-required" as const,
+      wordFitReasons: ["Renderer did not return cropped CSS dimensions."],
+      documentReady: false,
+    }
+  }
+  const scale = Math.min(1, WORD_WIDTH / input.width, WORD_HEIGHT / input.height)
+  const count = (input.fingerprint?.nodeIds.length ?? 0) + (input.fingerprint?.edges.length ?? 0)
+  const density = count ? count / ((input.width * input.height) / 100_000) : 0
+  const aspect = Math.max(input.width / input.height, input.height / input.width)
+  const reasons = [
+    ...(scale < WORD_MIN_SCALE
+      ? [`Word-fit scale ${scale.toFixed(3)} is below ${WORD_MIN_SCALE}; split into a readable overview and focused figures.`]
+      : []),
+    ...(density > WORD_MAX_DENSITY
+      ? [`Semantic density ${density.toFixed(1)} claims per 100k CSS px is above ${WORD_MAX_DENSITY}; split the layout.`]
+      : []),
+    ...(aspect > WORD_MAX_ASPECT
+      ? [`Aspect ratio ${aspect.toFixed(2)} is above ${WORD_MAX_ASPECT}; regroup or split disconnected flow families.`]
+      : []),
+  ]
+  return {
+    wordFitScale: scale,
+    wordFitDensity: density,
+    wordFitAspectRatio: aspect,
+    wordFitStatus: reasons.length ? "split-required" as const : "readable" as const,
+    wordFitReasons: reasons,
+    documentReady: reasons.length === 0,
   }
 }
 
@@ -824,10 +1260,220 @@ function resolveWorkspacePath(input: string): string {
   return absolute
 }
 
+function sourceBackedBatchManifest(input: unknown): {
+  version: 1
+  basePath?: string
+  taskSlug?: string
+  resultPath?: string
+  items: SourceBackedMermaidBatchItem[]
+} {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("source-backed Mermaid batch manifest must be a JSON object")
+  }
+  const value = input as {
+    version?: unknown
+    basePath?: unknown
+    taskSlug?: unknown
+    resultPath?: unknown
+    items?: unknown
+  }
+  if (value.version !== 1) throw new Error("source-backed Mermaid batch manifest version must be 1")
+  if (!Array.isArray(value.items) || value.items.length < 1 || value.items.length > 20) {
+    throw new Error("source-backed Mermaid batch manifest items must contain 1 to 20 diagrams")
+  }
+  if (value.basePath !== undefined && (typeof value.basePath !== "string" || !value.basePath.trim())) {
+    throw new Error("source-backed Mermaid batch basePath must be a non-empty string")
+  }
+  if (value.taskSlug !== undefined && typeof value.taskSlug !== "string") {
+    throw new Error("source-backed Mermaid batch taskSlug must be a string")
+  }
+  if (value.resultPath !== undefined && typeof value.resultPath !== "string") {
+    throw new Error("source-backed Mermaid batch resultPath must be a string")
+  }
+  const items = value.items.map((entry, index) => sourceBackedBatchItem(entry, index))
+  const ids = new Set(items.map((item) => item.diagramId))
+  if (ids.size !== items.length) throw new Error("source-backed Mermaid batch diagramId values must be unique")
+  return {
+    version: 1,
+    basePath: typeof value.basePath === "string" ? value.basePath.trim() : undefined,
+    taskSlug: value.taskSlug?.trim() || undefined,
+    resultPath: value.resultPath?.trim() || undefined,
+    items,
+  }
+}
+
+function sourceBackedBatchItem(input: unknown, index: number): SourceBackedMermaidBatchItem {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error(`source-backed Mermaid batch item ${index} must be a JSON object`)
+  }
+  const value = input as Record<string, unknown>
+  const required = (key: "diagramId" | "sourcePath" | "semanticEvidencePath") => {
+    const field = value[key]
+    if (typeof field !== "string" || !field.trim()) {
+      throw new Error(`source-backed Mermaid batch item ${index} ${key} is required`)
+    }
+    return field.trim()
+  }
+  const optional = (key: "title" | "taskSlug" | "sourceFile" | "pngFile") => {
+    const field = value[key]
+    if (field === undefined) return
+    if (typeof field !== "string") throw new Error(`source-backed Mermaid batch item ${index} ${key} must be a string`)
+    return field.trim() || undefined
+  }
+  const diagramId = required("diagramId")
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(diagramId)) {
+    throw new Error(`source-backed Mermaid batch item ${index} diagramId contains unsupported characters`)
+  }
+  if (value.scale !== undefined && (typeof value.scale !== "number" || !Number.isFinite(value.scale))) {
+    throw new Error(`source-backed Mermaid batch item ${index} scale must be a finite number`)
+  }
+  return {
+    diagramId,
+    sourcePath: required("sourcePath"),
+    semanticEvidencePath: required("semanticEvidencePath"),
+    title: optional("title"),
+    taskSlug: optional("taskSlug"),
+    sourceFile: optional("sourceFile"),
+    pngFile: optional("pngFile"),
+    scale: value.scale as number | undefined,
+  }
+}
+
+async function limitedText(file: string, limit: number, label: string) {
+  const stat = await fs.stat(file)
+  if (!stat.isFile()) throw new Error(`${label} must be a file`)
+  if (stat.size > limit) throw new Error(`${label} exceeds the ${limit}-byte limit`)
+  return fs.readFile(file, "utf8")
+}
+
+function resolveBatchResultPath(manifest: string, base: string, input?: string) {
+  if (!input) {
+    const ext = path.extname(manifest)
+    return path.join(path.dirname(manifest), `${path.basename(manifest, ext)}.results.json`)
+  }
+  return resolveBatchPath(base, input, "batch resultPath")
+}
+
+function resolveBatchPath(base: string, input: string, label: string) {
+  if (!input.trim()) throw new Error(`${label} is required`)
+  const file = path.resolve(base, input)
+  assertBatchInside(base, file, label)
+  return file
+}
+
+async function secureBatchDirectory(input: string, label: string) {
+  const file = resolveWorkspacePath(input)
+  const [root, real] = await Promise.all([fs.realpath(Instance.directory), fs.realpath(file)])
+  assertInside(root, real, label)
+  const stat = await fs.stat(real)
+  if (!stat.isDirectory()) throw new Error(`${label} must be a workspace directory`)
+  return real
+}
+
+async function secureBatchFile(base: string, input: string, label: string) {
+  const file = resolveBatchPath(base, input, label)
+  const real = await fs.realpath(file)
+  assertBatchInside(base, real, label)
+  return real
+}
+
+async function secureBatchOutput(base: string, file: string) {
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  const parent = await fs.realpath(path.dirname(file))
+  assertBatchInside(base, parent, "batch resultPath")
+  const output = path.join(parent, path.basename(file))
+  const stat = await fs.lstat(output).then(
+    (value) => value,
+    () => undefined,
+  )
+  if (stat?.isSymbolicLink()) throw new Error("batch resultPath must not be a symbolic link")
+  return output
+}
+
+async function normalizeBatchEvidence(input: Record<string, unknown>, base: string, source: string) {
+  let changed = false
+  const rewrite = async (value: string) => {
+    if (!value.trim()) return value
+    const workspace = resolveWorkspacePath(value)
+    if (await exists(workspace)) {
+      const next = portableWorkspacePath(workspace) || "."
+      changed ||= next !== value
+      return next
+    }
+    const rooted = resolveBatchPath(base, value, "semantic evidence path")
+    if (await exists(rooted)) {
+      const next = portableWorkspacePath(rooted) || "."
+      changed ||= next !== value
+      return next
+    }
+    return value
+  }
+  const visit = async (value: unknown): Promise<void> => {
+    if (!value || typeof value !== "object") return
+    if (Array.isArray(value)) {
+      for (const item of value) await visit(item)
+      return
+    }
+    const record = value as Record<string, unknown>
+    for (const [key, item] of Object.entries(record)) {
+      if ((key === "path" || key === "scopePath" || key === "designUnitCensusPath") && typeof item === "string") {
+        record[key] = await rewrite(item)
+        continue
+      }
+      await visit(item)
+    }
+  }
+  await visit(input)
+  const containers = mermaidContainers(source)
+  const nodes = Array.isArray(input.nodes) ? input.nodes : []
+  for (const item of nodes) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue
+    const node = item as Record<string, unknown>
+    if (typeof node.id !== "string" || node.container !== undefined) continue
+    const container = containers.get(node.id)
+    if (!container) continue
+    node.container = container
+    changed = true
+  }
+  const groups = Array.isArray(input.nodeGroups) ? input.nodeGroups : []
+  for (const group of groups) {
+    if (!group || typeof group !== "object" || Array.isArray(group)) continue
+    const items = (group as Record<string, unknown>).items
+    if (!Array.isArray(items)) continue
+    for (const item of items) {
+      if (!Array.isArray(item) || typeof item[0] !== "string" || item[2] !== undefined) continue
+      const container = containers.get(item[0])
+      if (!container) continue
+      item[2] = container
+      changed = true
+    }
+  }
+  return changed
+}
+
+async function exists(file: string) {
+  return fs.access(file).then(
+    () => true,
+    () => false,
+  )
+}
+
+function portableWorkspacePath(input: string) {
+  return normalizePortable(path.relative(Instance.directory, input))
+}
+
 function assertInside(base: string, target: string, label: string): void {
   const relative = path.relative(base, target)
   if (relative === "") return
   if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`${label} must be inside workspace`)
+}
+
+function assertBatchInside(base: string, target: string, label: string): void {
+  const relative = path.relative(base, target)
+  if (relative === "") return
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`${label} must stay inside batch basePath`)
+  }
 }
 
 function isPng(bytes: Uint8Array): boolean {

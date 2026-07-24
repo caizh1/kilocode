@@ -26,12 +26,30 @@ import { MemoryPaths } from "@kilocode/kilo-memory/effect/paths"
 import { MemoryMarker } from "@/kilocode/memory/marker"
 import { KilocodeSystemPrompt } from "@/kilocode/system-prompt"
 import { KiloToolRegistry } from "@/kilocode/tool/registry"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard"
 import CODE_SWITCH from "@/session/prompt/code-switch.txt"
 
 export namespace KiloSessionPrompt {
   const modes = ["ask", "plan", "architect"]
   type Intake = { cancelled: boolean; fiber?: Fiber.Fiber<unknown, unknown> }
   const intakes = new Map<SessionID, Set<Intake>>()
+
+  export function system(input: {
+    agent: Pick<Agent.Info, "name" | "native" | "options">
+    env: string[]
+    mem: string[]
+    instructions: string[]
+    skills?: string
+  }) {
+    const skills = input.skills ? [input.skills] : []
+    if (KilocodeSystemPrompt.appends(input.agent))
+      return [...input.env, ...input.instructions, ...skills, ...input.mem]
+    return [...input.env, ...input.mem, ...input.instructions, ...skills]
+  }
+
+  export function syncSourceBackedWorkflow(sessionID: SessionID, messages: MessageV2.WithParts[]) {
+    WorkflowGuard.sync(sessionID, messages)
+  }
 
   export function intake<A, E, R>(sessionID: SessionID, work: Effect.Effect<A, E, R>) {
     return Effect.scoped(
@@ -419,7 +437,7 @@ export namespace KiloSessionPrompt {
     const ctx = Instance.bind(() => Instance.current)()
     const plan = Session.plan(input.session, ctx)
 
-    if (mode(input.agent.name) === "plan") add(NATIVE_PLAN_PROMPT)
+    if (mode(input.agent.name) === "plan") add(KilocodeSystemPrompt.brand(NATIVE_PLAN_PROMPT))
 
     const file = input.messages ? PlanFile.latest(input.messages) : undefined
     const saved = PlanFile.resolve(file, ctx)

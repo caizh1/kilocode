@@ -507,7 +507,9 @@ export class QdrantVectorStore implements IVectorStore {
     try {
       const processedPoints = points.map((point) => {
         if (point.payload?.filePath) {
-          const segments = point.payload.filePath.split(path.sep).filter(Boolean)
+          const file = point.payload.filePath
+          const external = file === "@external" || file.startsWith("@external/") || file.startsWith("@external\\")
+          const segments = (external ? file.replaceAll("\\", "/").split("/") : file.split(path.sep)).filter(Boolean)
           const pathSegments = segments.reduce((acc: Record<string, string>, segment: string, index: number) => {
             acc[index.toString()] = segment
             return acc
@@ -737,6 +739,9 @@ export class QdrantVectorStore implements IVectorStore {
   }
 
   private relativeFilePath(filePath: string): string {
+    if (filePath === "@external" || filePath.startsWith("@external/") || filePath.startsWith("@external\\")) {
+      return filePath.replaceAll("\\", "/")
+    }
     const relativePath = path.isAbsolute(filePath) ? path.relative(this.workspacePath, filePath) : filePath
     return path.normalize(relativePath)
   }

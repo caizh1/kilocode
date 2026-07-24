@@ -7,6 +7,7 @@ export function chunkDocument(
   workspace: string,
   size: number,
   overlap: number,
+  source?: string,
 ): DocumentChunk[] {
   const lines = section.text.split(/\r?\n/)
   const chunks: DocumentChunk[] = []
@@ -30,7 +31,7 @@ export function chunkDocument(
     if (content) {
       const startLine = section.kind === "text" ? section.startLine + start : section.startLine
       const endLine = section.kind === "text" ? section.startLine + Math.max(start, end - 1) : section.endLine
-      const sourceRef = ref(section, workspace, startLine, endLine)
+      const sourceRef = ref(section, workspace, startLine, endLine, source)
       chunks.push({
         ...section,
         content,
@@ -60,13 +61,17 @@ function backtrack(lines: string[], end: number, overlap: number): number {
   return Math.max(index, end - 1)
 }
 
-function ref(section: DocumentSection, workspace: string, startLine: number, endLine: number): string {
-  const rel = path.normalize(
-    path.isAbsolute(section.filePath) ? path.relative(workspace, section.filePath) : section.filePath,
-  )
+function ref(section: DocumentSection, workspace: string, startLine: number, endLine: number, source?: string): string {
+  const rel =
+    source ??
+    path.normalize(path.isAbsolute(section.filePath) ? path.relative(workspace, section.filePath) : section.filePath)
   if (section.kind === "pdf") return `${rel}#page=${section.page ?? startLine}`
   if (section.kind === "spreadsheet")
     return `${rel}#sheet=${encodeURIComponent(section.sheet ?? "Sheet")} rows=${startLine}-${endLine}`
+  if (section.kind === "diagram") {
+    const media = (section.mediaPath ?? "unknown").split("/").map(encodeURIComponent).join("/")
+    return `${rel}#media=${media}`
+  }
   return `${rel}:${startLine}-${endLine}`
 }
 

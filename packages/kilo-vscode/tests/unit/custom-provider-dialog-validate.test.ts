@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test"
-import { validateCustomProvider } from "../../webview-ui/src/components/settings/CustomProviderValidation"
+import {
+  createAutocompleteModel,
+  createReasoningModel,
+  resolveQuickModels,
+  validateCustomProvider,
+} from "../../webview-ui/src/components/settings/CustomProviderValidation"
 import type { FormState } from "../../webview-ui/src/components/settings/CustomProviderValidation"
 
 // Simple translator that returns the key so tests can assert on key names
@@ -31,6 +36,86 @@ function args(form: FormState) {
 }
 
 describe("validateCustomProvider – variant name validation", () => {
+  it("creates a reasoning model without overriding runtime variants", () => {
+    const model = createReasoningModel("deepseek-v4-flash")
+    expect(model.reasoning).toBe(true)
+    expect(model.variants).toEqual([])
+
+    const form = base()
+    form.models = [model]
+    const config = validateCustomProvider(args(form)).result?.config.models["deepseek-v4-flash"]
+    expect(config).toEqual({ name: "deepseek-v4-flash", reasoning: true })
+  })
+
+  it("serializes the managed QA and autocomplete models without custom variants", () => {
+    const form = base()
+    form.providerID = "chipmate"
+    form.models = [
+      createReasoningModel("deepseek-v4-flash", "DeepSeek V4 Flash"),
+      createAutocompleteModel("qwen-coder-30b0", "Qwen Coder 30B"),
+    ]
+
+    expect(validateCustomProvider(args(form)).result?.config.models).toEqual({
+      "deepseek-v4-flash": { name: "DeepSeek V4 Flash", reasoning: true },
+      "qwen-coder-30b0": { name: "Qwen Coder 30B" },
+    })
+  })
+
+  it("requires an exact configured model match before falling back to DeepSeek candidates", () => {
+    const models = [
+      { id: "vendor/deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+      { id: "deepseek-r1", name: "DeepSeek R1" },
+    ]
+    expect(resolveQuickModels(models, "vendor/deepseek-v4-flash", "qwen-coder-30b0")).toEqual({
+      exact: models[0],
+      autocomplete: undefined,
+      candidates: [],
+    })
+    expect(resolveQuickModels(models, "missing", "qwen-coder-30b0")).toEqual({
+      exact: undefined,
+      autocomplete: undefined,
+      candidates: models,
+    })
+    expect(resolveQuickModels([{ id: "qwen", name: "Qwen" }], "missing", "qwen-coder-30b0")).toEqual({
+      exact: undefined,
+      autocomplete: undefined,
+      candidates: [],
+    })
+  })
+
+  it("selects DeepSeek when Qwen and DeepSeek are separate model IDs", () => {
+    const models = [
+      { id: "qwen-chat", name: "Qwen Chat" },
+      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    ]
+
+    expect(resolveQuickModels(models, "deepseek-v4-flash", "qwen-coder-30b0")).toEqual({
+      exact: models[1],
+      autocomplete: undefined,
+      candidates: [],
+    })
+    expect(resolveQuickModels(models, "qwen-chat/deepseek-v4-flash", "qwen-coder-30b0")).toEqual({
+      exact: undefined,
+      autocomplete: undefined,
+      candidates: [models[1]],
+    })
+  })
+
+  it("selects only the exact configured autocomplete model", () => {
+    const models = [
+      { id: "qwen-coder-30b0-preview", name: "Qwen Preview" },
+      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+      { id: "qwen-coder-30b0", name: "Qwen Coder 30B" },
+      { id: "vendor/qwen-coder-30b0", name: "Vendor Qwen" },
+    ]
+
+    expect(resolveQuickModels(models, "deepseek-v4-flash", "qwen-coder-30b0")).toEqual({
+      exact: models[1],
+      autocomplete: models[2],
+      candidates: [],
+    })
+  })
+
   it("persists the selected provider package", () => {
     const form = base()
     form.npm = "@ai-sdk/openai"

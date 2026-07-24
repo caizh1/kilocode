@@ -11,19 +11,25 @@ import * as vscode from "vscode"
 export interface TerminalFont {
   fontFamily: string
   fontSize: number
+  lineHeight?: number
 }
 
-const FALLBACK = "Menlo, Monaco, 'Courier New', monospace"
-const SIZE = process.platform === "darwin" ? 12 : 14
+function fallback(platform: NodeJS.Platform): string {
+  if (platform === "win32") return "Consolas, 'Cascadia Mono', 'Courier New', monospace"
+  return "Menlo, Monaco, 'Courier New', monospace"
+}
 
 export function resolveTerminalFont(
   family: string | undefined,
   size: number | undefined,
   editor: string | undefined,
+  platform: NodeJS.Platform = process.platform,
+  lineHeight = 1,
 ): TerminalFont {
   return {
-    fontFamily: family?.trim() || editor?.trim() || FALLBACK,
-    fontSize: size ?? SIZE,
+    fontFamily: family?.trim() || editor?.trim() || fallback(platform),
+    fontSize: size ?? (platform === "darwin" ? 12 : 14),
+    lineHeight,
   }
 }
 
@@ -36,6 +42,8 @@ export function readTerminalFont(): TerminalFont {
     term.get<string>("fontFamily"),
     term.get<number>("fontSize"),
     editor.get<string>("fontFamily"),
+    process.platform,
+    term.get<number>("lineHeight", 1),
   )
 }
 
@@ -44,6 +52,7 @@ export function affectsTerminalFont(e: vscode.ConfigurationChangeEvent): boolean
   return (
     e.affectsConfiguration("terminal.integrated.fontFamily") ||
     e.affectsConfiguration("terminal.integrated.fontSize") ||
+    e.affectsConfiguration("terminal.integrated.lineHeight") ||
     e.affectsConfiguration("editor.fontFamily")
   )
 }

@@ -1,8 +1,15 @@
 import { expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
-import { IndexingWorker } from "../../src/kilocode/indexing-worker-client"
+import { IndexingWorker, indexingCommand } from "../../src/kilocode/indexing-worker-client"
 import { tmpdir } from "../fixture/fixture"
+
+test("allows a packaged native indexing sidecar to override the compiled default", () => {
+  const arm = String.raw`C:\extension\bin\kilo-indexer-arm64.exe`
+
+  expect(indexingCommand(arm, String.raw`C:\extension\bin\kilo-arm64.exe`)).toEqual([arm])
+  expect(indexingCommand("kilo-indexer-arm64.exe", String.raw`C:\extension\bin\kilo-arm64.exe`)).toEqual([arm])
+})
 
 test.serial("runs indexing engine requests in its isolated process", async () => {
   await using tmp = await tmpdir()

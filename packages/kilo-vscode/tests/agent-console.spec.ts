@@ -11,7 +11,7 @@ async function load(page: Page, id: string) {
   await page.waitForSelector("#storybook-root *", { state: "attached" })
 }
 
-test("Agent Console exposes explicit Agent and Shell input modes", async ({ page }) => {
+test("Agent Console keeps one real Shell input across Agent and Shell modes", async ({ page }) => {
   await page.setViewportSize({ width: 1510, height: 614 })
   await load(page, "agentconsole--approval")
 
@@ -22,11 +22,14 @@ test("Agent Console exposes explicit Agent and Shell input modes", async ({ page
   await expect(shell).toHaveAttribute("aria-selected", "true")
   await expect(page.getByText("Shell 命令将以当前用户身份直接执行，不经过 Agent 审批。")).toBeVisible()
 
-  const input = page.getByRole("textbox", { name: "输入 Shell 命令" })
-  await input.fill("printf 'still mounted'")
+  const input = page.locator(".xterm-helper-textarea")
+  await expect(page.locator(".xterm-screen")).toHaveCount(1)
+  await input.fill("printf still-mounted")
   await agent.click()
+  await expect(page.locator('[data-component="agent-console"] textarea:not(.xterm-helper-textarea)')).toHaveCount(0)
+  await expect(page.locator(".xterm-screen")).toHaveCount(1)
   await shell.click()
-  await expect(input).toHaveValue("printf 'still mounted'")
+  await expect(page.locator(".xterm-screen")).toContainText("printf still-mounted")
 })
 
 test("Agent Console aligns compact tabs and renders readable shell output", async ({ page }) => {
@@ -36,8 +39,7 @@ test("Agent Console aligns compact tabs and renders readable shell output", asyn
   const shell = page.getByRole("tab", { name: "Shell" })
   const agent = page.getByRole("tab", { name: "Agent" })
   const workspace = page.locator('[data-slot="agent-console-workspace"]')
-  const output = page.getByText("ChipMate local shell", { exact: true })
-  const error = page.getByText("Command failed", { exact: true })
+  const output = page.locator(".xterm-screen")
   const [shellBox, agentBox, workspaceBox] = await Promise.all([
     shell.boundingBox(),
     agent.boundingBox(),
@@ -52,8 +54,9 @@ test("Agent Console aligns compact tabs and renders readable shell output", asyn
   expect(
     Math.abs(shellBox!.y + shellBox!.height / 2 - (workspaceBox!.y + workspaceBox!.height / 2)),
   ).toBeLessThanOrEqual(1)
+  await expect(output).toContainText("Typecheck passed")
+  await expect(output).toContainText("Command failed")
   await expect(output).toHaveCSS("color", "rgb(255, 255, 255)")
-  await expect(error).toHaveCSS("color", "rgb(241, 76, 76)")
   expect(
     await page
       .locator('[data-slot="agent-console-mode"] [data-slot="tabs-list"]')
@@ -78,71 +81,96 @@ test("Agent output is pure white on the terminal activity surface", async ({ pag
   await expect(output).toHaveCSS("opacity", "1")
 })
 
-test("Agent Console keeps typed input pure white under a light VS Code theme", async ({ page }) => {
+test("Agent Console keeps the real terminal readable under a light VS Code theme", async ({ page }) => {
   await page.goto(
     "/iframe.html?id=agentconsole--approval&viewMode=story&globals=colorScheme:light;theme:kilo-vscode;vscodeTheme:light-modern",
     { waitUntil: "load" },
   )
-  const input = page.getByRole("textbox", { name: "Agent Console 输入" })
   const console = page.locator('[data-component="agent-console"]')
-  await input.evaluate((node: HTMLTextAreaElement) => {
-    node.value = "test"
-  })
+  const screen = page.locator(".xterm-screen")
   await expect(console).toHaveCSS("background-color", "rgb(16, 17, 19)")
-  await expect(input).toHaveCSS("color", "rgb(255, 255, 255)")
-  await expect(input).toHaveCSS("-webkit-text-fill-color", "rgb(255, 255, 255)")
+  await expect(screen).toHaveCSS("color", "rgb(255, 255, 255)")
 })
 
-test("Agent mode renders one inline terminal timeline without a detached input panel", async ({ page }) => {
+test("Agent mode renders one inline real terminal without a detached input panel", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await load(page, "agentconsole--inline")
 
   const timeline = page.locator('[data-slot="agent-console-timeline"]')
-  const prompt = page.locator('[data-component="agent-console-prompt"]')
-  const input = page.getByRole("textbox", { name: "Agent Console 输入" })
   const shell = page.locator('[data-slot="agent-console-terminal"]')
 
   await expect(timeline).toBeVisible()
-  await expect(prompt).toBeVisible()
-  await expect(prompt).toContainText("/project")
+  await expect(shell).toBeVisible()
+  await expect(shell.locator(".xterm-screen")).toContainText("/project $")
+  await expect(page.locator('[data-component="agent-console"] textarea:not(.xterm-helper-textarea)')).toHaveCount(0)
   await expect(page.getByText("status ok", { exact: true })).toHaveCSS("color", "rgb(13, 188, 121)")
   await expect(page.getByText("one warning", { exact: true })).toHaveCSS("color", "rgb(205, 49, 49)")
-  await expect(page.getByText("完成", { exact: true })).toBeVisible()
-  await expect(shell).toHaveCSS("opacity", "0")
-  await expect(prompt).toHaveCSS("background-color", "rgba(0, 0, 0, 0)")
-  await expect(input).toHaveCSS("color", "rgb(255, 255, 255)")
-  const [last, line] = await Promise.all([page.getByText("完成", { exact: true }).boundingBox(), prompt.boundingBox()])
+  await expect(page.getByText("完成", { exact: true })).toHaveCount(0)
+  await expect(page.getByText(/退出码 \d+/)).toHaveCount(0)
+  await expect(shell).toHaveCSS("pointer-events", "auto")
+  const [last, line] = await Promise.all([
+    page.locator('[data-component="agent-console-terminal-activity"]').boundingBox(),
+    shell.boundingBox(),
+  ])
   expect(last).not.toBeNull()
   expect(line).not.toBeNull()
   expect(line!.y).toBeGreaterThanOrEqual(last!.y + last!.height)
-  expect(line!.y - (last!.y + last!.height)).toBeLessThan(80)
-  expect(line!.y).toBeLessThan(560)
-  expect(await prompt.evaluate((node) => node.parentElement?.getAttribute("data-slot"))).toBe(
-    "agent-console-timeline-content",
-  )
+  expect(line!.height).toBeLessThan(120)
 })
 
-test("Agent prompt remains editable while submission is blocked", async ({ page }) => {
+test("streaming output updates the existing timeline DOM node", async ({ page }) => {
+  await load(page, "agentconsole--inline")
+
+  const run = page.locator('[data-component="agent-console-terminal-activity"][data-kind="run"]')
+  await expect(run).toHaveCount(1)
+  await run.evaluate((node) => node.setAttribute("data-stream-node", "stable"))
+  await page.locator('[data-ui="agent-console-stream-chunk"]').evaluate((node: HTMLButtonElement) => node.click())
+
+  await expect(run).toHaveAttribute("data-stream-node", "stable")
+  await expect(run).toContainText("streamed tail")
+})
+
+test("Agent busy state keeps one prompt and exposes deterministic input status", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await load(page, "agentconsole--busy")
 
-  const input = page.getByRole("textbox", { name: "Agent Console 输入" })
-  await expect(input).toBeEnabled()
-  await expect(page.locator('[data-component="agent-console-prompt"]')).toHaveAttribute("data-submit", "blocked")
-  await input.fill("下一条问题先保留在这里")
-  await expect(input).toHaveValue("下一条问题先保留在这里")
+  await expect(page.locator(".xterm-screen")).toHaveCount(1)
+  await expect(page.locator('[data-component="agent-console"] textarea:not(.xterm-helper-textarea)')).toHaveCount(0)
   await expect(page.getByText("Agent 执行中，Ctrl+C 可中断", { exact: true })).toBeVisible()
 })
 
-test("input routing timeout unlocks submission and preserves the draft", async ({ page }) => {
+test("Windows IME candidate Enter is not routed until the following Enter", async ({ page }) => {
+  await load(page, "agentconsole--ime")
+
+  const input = page.locator(".xterm-helper-textarea")
+  const count = page.locator('[data-ui="agent-console-ime-captures"]')
+  await input.focus()
+
+  // Windows can deliver the Enter data before compositionend.
+  await input.dispatchEvent("compositionstart")
+  await page.keyboard.press("Enter")
+  await input.dispatchEvent("compositionend", { data: "你" })
+  await expect(count).toHaveText("0")
+  await page.keyboard.press("Enter")
+  await expect(count).toHaveText("1")
+
+  // Chromium can also deliver compositionend before the candidate Enter.
+  await input.dispatchEvent("compositionstart")
+  await input.dispatchEvent("compositionend", { data: "好" })
+  await page.keyboard.press("Enter")
+  await expect(count).toHaveText("1")
+  await page.keyboard.press("Enter")
+  await expect(count).toHaveText("2")
+})
+
+test("mode switching has no opacity fade or blank duplicate input layer", async ({ page }) => {
   await load(page, "agentconsole--route-timeout")
 
-  const input = page.getByRole("textbox", { name: "Agent Console 输入" })
-  await input.fill("不会因为响应丢失而卡死")
-  await input.press("Enter")
-  await expect(page.getByText("正在识别…", { exact: true })).toBeVisible()
-  await expect(page.getByText("输入分流超时，内容已保留，请重试。", { exact: true })).toBeVisible()
-  await expect(input).toHaveValue("不会因为响应丢失而卡死")
+  const terminal = page.locator('[data-slot="agent-console-terminal"]')
+  const activity = page.locator('[data-slot="agent-console-activity"]')
+  await expect(terminal).toHaveCSS("transition-duration", "0s")
+  await expect(activity).toHaveCSS("transition-duration", "0s")
+  await expect(page.locator(".xterm-screen")).toHaveCount(1)
 })
 
 test("shell startup failure leaves connecting state and exposes restart", async ({ page }) => {
@@ -154,7 +182,7 @@ test("shell startup failure leaves connecting state and exposes restart", async 
 
   await expect(page.locator('[data-slot="agent-console-input-error"]')).toHaveText("backend startup failed")
   await expect(page.getByText("Shell 正在连接…", { exact: true })).toBeHidden()
-  const restart = page.getByRole("button", { name: "重启 Shell" })
+  const restart = page.getByRole("button", { name: "重启", exact: true })
   await expect(restart).toBeVisible()
 
   await restart.click()
@@ -162,7 +190,7 @@ test("shell startup failure leaves connecting state and exposes restart", async 
   await expect(page.locator('[data-slot="agent-console-input-error"]')).toBeHidden()
 })
 
-test("high-risk permission edit rejects the original surface and prefills the Agent prompt", async ({ page }) => {
+test("high-risk permission edit rejects the original surface without creating a second input", async ({ page }) => {
   await load(page, "agentconsole--approval")
 
   const card = page.locator('[data-component="permission-shortcuts"]')
@@ -172,5 +200,6 @@ test("high-risk permission edit rejects the original surface and prefills the Ag
   await card.getByRole("button", { name: "修改" }).click()
 
   await expect(card).toBeHidden()
-  await expect(page.getByRole("textbox", { name: "Agent Console 输入" })).toHaveValue("sudo rm -rf /tmp/example")
+  await expect(page.locator(".xterm-screen")).toContainText("sudo rm -rf /tmp/example")
+  await expect(page.locator('[data-component="agent-console"] textarea:not(.xterm-helper-textarea)')).toHaveCount(0)
 })

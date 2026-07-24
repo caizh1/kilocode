@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { cp, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
@@ -15,11 +16,62 @@ const archive = resolve(repo, "docs/chipmate-skill-market-alignment-evidence/g0/
 const source = resolve(repo, ".kilo/skills/source-backed-detail-design")
 
 test("database schema uses ordered migrations", () => {
-  assert.equal(MARKET_DB_SCHEMA_VERSION, 7)
+  assert.equal(MARKET_DB_SCHEMA_VERSION, 9)
   assert.deepEqual(
     MIGRATIONS.map((migration) => migration.version),
-    [1, 2, 3, 4, 5, 6, 7],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9],
   )
+})
+
+test("publication request aliases backfill existing idempotency keys", async () => {
+  const root = await mkdtemp(join(tmpdir(), "chipmate-market-v7-"))
+  const path = join(root, "market.sqlite")
+  const sqlite = new DatabaseSync(path)
+  const now = "2026-07-21T00:00:00.000Z"
+  const bytes = Buffer.from("existing request")
+  const hash = createHash("sha256").update(bytes).digest("hex")
+  sqlite.exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT NOT NULL,applied_at TEXT NOT NULL)")
+  for (const migration of MIGRATIONS.slice(0, 7)) {
+    sqlite.exec(migration.sql)
+    sqlite.prepare("INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)").run(migration.version, migration.name, now)
+  }
+  sqlite
+    .prepare("INSERT INTO users(id,display_name,first_seen_at,last_seen_at) VALUES(?,?,?,?)")
+    .run("user-migration-0001", "Alice", now, now)
+  sqlite
+    .prepare(
+      `INSERT INTO publication_runs(id,owner_id,status,stage,snapshot_path,snapshot_sha256,created_at,updated_at,idempotency_key,source_sha256)
+       VALUES(?,?,?,?,?,?,?,?,?,?)`,
+    )
+    .run(
+      "publication-migration",
+      "user-migration-0001",
+      "VALIDATING",
+      "uploaded",
+      join(root, "snapshot.tar.gz"),
+      "a".repeat(64),
+      now,
+      now,
+      "idempotency-migration",
+      hash,
+    )
+  sqlite.close()
+
+  const db = new MarketDb({ dir: root })
+  try {
+    assert.equal((await db.health()).schemaVersion, 9)
+    const run = await db.startPublication({
+      id: "publication-migration-retry",
+      ownerId: "user-migration-0001",
+      ownerName: "Alice",
+      idempotencyKey: "idempotency-migration",
+      archive: bytes,
+    })
+    assert.equal(run.id, "publication-migration")
+  } finally {
+    await db.close()
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test("worker owns import, revisions, FTS, state, metrics, and legacy export", { timeout: 60_000 }, async () => {
@@ -45,7 +97,7 @@ test("worker owns import, revisions, FTS, state, metrics, and legacy export", { 
         foreignKeys: health.foreignKeys,
         busyTimeout: health.busyTimeout,
       },
-      { available: true, schemaVersion: 7, journalMode: "wal", foreignKeys: true, busyTimeout: 5000 },
+      { available: true, schemaVersion: 9, journalMode: "wal", foreignKeys: true, busyTimeout: 5000 },
     )
 
     const first = await db.importLegacy(legacy)
@@ -193,6 +245,7 @@ test("worker owns import, revisions, FTS, state, metrics, and legacy export", { 
     "favorites",
     "installations",
     "publication_runs",
+    "publication_request_keys",
     "validation_issues",
     "events",
     "daily_metrics",
@@ -262,9 +315,17 @@ test("worker validates, repairs, publishes, deduplicates, versions, and unpublis
     assert.deepEqual(metadata.vendor, { icon: "glass" })
     assert.equal(metadata.semver, "1.0.0")
 
-    const unchanged = await db.startPublication({ ...input, id: "publication-2", idempotencyKey: "idempotency-0002" })
-    assert.equal(unchanged.status, "UNCHANGED")
-    assert.equal(unchanged.release?.revision, 1)
+    const canonical = validateSkillArchive(input.archive).archive
+    assert.notEqual(canonical.compare(input.archive), 0)
+    const unchanged = await db.startPublication({
+      ...input,
+      id: "publication-2",
+      idempotencyKey: "idempotency-0002",
+      archive: canonical,
+    })
+    assert.equal(unchanged.id, first.id)
+    assert.equal(unchanged.status, "PUBLISHED")
+    assert.equal((await db.publications(input.ownerId)).filter((item) => item.skillId === "new-skill").length, 1)
 
     await writeFile(
       join(source, "skill.md"),
@@ -275,6 +336,7 @@ test("worker validates, repairs, publishes, deduplicates, versions, and unpublis
       `${JSON.stringify({ id: "new-skill", semver: "1.1.0", category: "general", tags: ["portable"], vendor: { icon: "glass" } })}\n`,
     )
     pack()
+    const secondArchive = await readFile(archive)
     await assert.rejects(
       db.startPublication({
         ...input,
@@ -288,7 +350,7 @@ test("worker validates, repairs, publishes, deduplicates, versions, and unpublis
       ...input,
       id: "publication-3",
       idempotencyKey: "idempotency-0003",
-      archive: await readFile(archive),
+      archive: secondArchive,
     })
     assert.equal(second.status, "PUBLISHED")
     assert.equal(second.release?.revision, 2)
@@ -299,7 +361,7 @@ test("worker validates, repairs, publishes, deduplicates, versions, and unpublis
         id: "publication-4",
         ownerId: "user-publication-0002",
         idempotencyKey: "idempotency-0004",
-        archive: await readFile(archive),
+        archive: secondArchive,
       }),
       /OWNERSHIP_REQUIRED/,
     )
@@ -353,6 +415,26 @@ test("worker validates, repairs, publishes, deduplicates, versions, and unpublis
     })
     assert.equal(unpublished.status, "UNPUBLISHED")
     assert.equal((await db.release("new-skill", 1))?.revision, 1)
+    const restored = await db.startPublication({
+      ...input,
+      id: "publication-restore",
+      idempotencyKey: "idempotency-restore",
+      archive: secondArchive,
+    })
+    assert.equal(restored.status, "PUBLISHED")
+    assert.equal(restored.release?.revision, 2)
+    assert.equal((await db.releases("new-skill")).length, 2)
+    assert.equal(
+      (
+        await db.unpublish({
+          id: "publication-restore-unpublish",
+          ownerId: input.ownerId,
+          ownerName: input.ownerName,
+          skillId: "new-skill",
+        })
+      ).status,
+      "UNPUBLISHED",
+    )
     await writeFile(
       join(source, "skill.md"),
       "---\nname: New Skill\ndescription: Republished release\nversion: 1.2.0\n---\n\n# New Skill\n\nRepublished body.\n",

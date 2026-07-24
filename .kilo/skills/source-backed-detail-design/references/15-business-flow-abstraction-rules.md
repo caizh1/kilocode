@@ -96,9 +96,29 @@ item_type,item_name,section_file,has_description,description_chars,has_evidence,
 
 item_type 包括 capability/submodule/target_flow。quality_status 包括 pass/weak/missing。每个业务能力、target module 和每个已确认子模块都必须有一行覆盖记录；所属上级模块只作为外部参与者或 handoff 证据，不占 target_flow 覆盖行。
 
+### 3.6 14-business-flow-family-census.csv
+
+```csv
+flow_family_id,owning_design_unit,entry_trigger,input_business_object,entry_step_ids,participating_units,decision_edge_ids,async_handoff_edge_ids,wait_retry_timeout_cancel_edge_ids,failure_recovery_cleanup_edge_ids,terminal_step_ids,state_data_resource_effects,evidence_ids,diagram_ids,status
+```
+
+流程族是由同一业务触发、业务对象、处理目标和终态集合界定的端到端业务路径，不是文件、函数、状态或任意子图的别名。必须先从全部 entry、BF step、BF edge、跨单元 handoff、异步完成、异常恢复和终态证据反向建立流程族 census，再画总图。每个适用 step、edge、handoff 和 terminal 必须归入至少一个流程族；合并流程族必须证明触发、目标和终态语义兼容，不能为了减少图片而合并。
+
+该文件必须是可稳定解析的 CSV。多值 ID/名称统一在单元格内用分号 `;` 分隔；数据单元格不得包含未按 CSV 规则引用的逗号或换行。写完后必须验证每一行解析后的列数严格等于表头列数。任一行列数漂移、引用未闭合或字段跨列时记录 `flowCensusParseStatus=failed`，不得宣称流程 census closed，Word 保持 `not_started`。
+
+固定闭环指标：
+
+- `flowFamilyCount = coveredFlowFamilyCount + evidencedNonApplicableFlowFamilyCount`；
+- `unmappedFlowFamilyCount = 0`；
+- `missingBusinessEdgeCount = 0`；
+- `missingAsyncHandoffCount = 0`；
+- `missingBusinessTerminalCount = 0`。
+
+每个流程族必须映射到 target overview 或至少一张 focused figure；当 overview 只保留阶段级导航时，全部决策边、异步 handoff、异常恢复边和终态仍必须由 focused figures 覆盖。`status` 只能是 `covered`、`partial`、`missing` 或证据化 `not_applicable`；后三者不能进入完整交付 `PASS`。
+
 ## 4. 子模块业务流程图规则
 
-每个已确认子模块必须先生成一张 high-level 子模块业务流程图。
+每个已确认子模块必须先生成一张 high-level 子模块业务流程总览图。若该单元有多个入口或流程族，总览图必须提供可导航的完整闭环，并为正文宽度下无法清晰展开的流程族生成聚焦图；不能挑一个代表流程冒充整个业务槽位。
 
 输出位置：
 
@@ -126,11 +146,13 @@ business-submodule-<submodule-name>.png
 8. 与其他子模块的交接点；
 9. BF edge coverage。
 
+子模块内每个 `flow_family_id`、影响业务结果的 `business_edge_id` 和 terminal step 都必须映射到总览图或聚焦图。总览图可以省略函数级细节，但不能省略业务结果不同的分支、异步交接、失败恢复或终态。
+
 子模块业务图不展开函数内部细节。函数内部细节应放到 code-level 子模块图或 function-detail-flow 图。增加文字简介时不得把大段说明塞入 Mermaid 节点，避免影响当前图片质量。
 
 ## 5. 总模块业务流程图规则
 
-总模块业务流程图必须在所有已确认子模块的业务语义、证据、边覆盖和 Mermaid source 完成后生成。子模块 PNG 渲染失败不能阻塞总模块业务图的生成或渲染，但会使对应子模块槽位保持 `MISSING`。
+总模块业务流程图必须在所有已确认子模块的业务语义、流程族 census、边/终态覆盖和 Mermaid source 完成后生成。子模块 PNG 渲染失败不能阻塞总模块业务图的生成或渲染，但会使对应子模块槽位保持 `MISSING`。
 
 输出位置：
 
@@ -159,6 +181,8 @@ business-target-module-master-flow.png
 9. 等待、重试、错误、终止、成功完成出口；
 10. 每个子模块节点必须能回链到对应子模块业务图。
 
+该图是目标 DesignUnit 的端到端闭环导航，不是任选一个子流程、状态机、组件拓扑或调用链。它必须让读者看出全部 source-confirmed 流程族如何从入口进入、在哪些关键决策处分叉、如何跨单元或异步交接、如何成功/失败/取消/恢复并到达全部终态。若全部语义无法在 Word 正文宽度下清晰展示，保留 target overview 并按流程族、异常恢复链或异步链拆出聚焦图；所有图合起来必须满足 flow-family/edge/terminal 零缺失。
+
 总模块业务图禁止展开所有函数细节。它只能聚合已完成语义与证据规划的子模块业务流程、核心状态机概览和关键异常路径，不得因某张子模块 PNG 渲染失败而省略整个父图。
 
 ## 6. Mermaid 表达规则
@@ -177,9 +201,12 @@ flowchart TD
 
 子模块业务图不设置节点或边的最低数量。它必须完整表达一个业务子模块的真实阶段、分支和结果；当正文宽度下标签、条件边或分支关系不可读时，拆成“子模块总览 + 场景/分支详图”，不得删掉异常路径或无限缩小图片。
 
-总模块业务图同样不设置节点数量门槛。它应使用 subgraph 表达子模块，并展示影响端到端业务结果的关键条件；代码内部细枝末节放入子模块或代码流程图。总图在 Word 正文宽度下不可读时，可按语义拆为：
+总模块业务图同样不设置节点数量门槛。它应使用真实 subgraph 表达子模块，并展示影响端到端业务结果的关键条件；代码细节放入子模块或代码流程图。总图不可读时拆为：
   - target overview；
-  - 由当前源码识别出的独立场景或分支详图。
+  - 每个未在 overview 完整展开的流程族详图；
+  - 独立异步 handoff、异常/恢复或数据状态详图。
+
+拆图后 `business-flow-plan.md` 必须逐项列出 Flow family IDs、Decision/edge IDs、Async handoff IDs、Terminal step IDs、覆盖 Diagram IDs 和 Coverage status。总图加聚焦图的集合覆盖而不是单图尺寸决定是否完整。
 
 ## 8. 无效业务图判定
 
@@ -188,6 +215,8 @@ flowchart TD
 - 只有函数调用，没有业务动作；
 - 只有目录或组件拓扑，没有业务流转；
 - 只有 happy path，没有错误/等待/重试/终止；
+- 只覆盖一个代表性流程族，其他入口、业务结果不同的分支、异步 handoff 或终态没有图形映射；
+- 用状态机、组件拓扑或单一子流程冒充目标模块端到端闭环；
 - 关键节点无源码证据；
 - 边没有业务条件；
 - 子模块业务语义、证据、边覆盖或 Mermaid source 未完成就生成总图；
@@ -258,10 +287,12 @@ high-level 业务流程图先生成，用于说明“业务上发生了什么”
 - 11-business-flow-edges.csv 非空；
 - 12-business-flow-edge-coverage.csv 非空；
 - 13-business-text-coverage.csv 非空；
+- 14-business-flow-family-census.csv 非空且流程族、业务边、异步 handoff 和终态的闭环指标均为 0 缺失；
 - 每个已确认子模块存在 high-level 业务流程 mmd/png；
 - 总模块业务流程 mmd/png 存在；
 - mmd/png 一一对应；
 - 业务图 edge coverage 无 unverified；
+- 每个流程族、关键 handoff 和终态都有可见 Diagram ID 覆盖；
 - 正文引用业务总图和子模块业务图；
 - 业务能力纵览表包含 capability_description；
 - 每个已确认子模块正文包含图前简介和图后流程解读；

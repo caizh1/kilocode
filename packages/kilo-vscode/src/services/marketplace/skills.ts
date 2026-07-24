@@ -1,5 +1,7 @@
 import * as path from "path"
+import { normalizeSkillId } from "@opencode-ai/core/kilocode/skill-identity"
 import type { CliSkill } from "./detection"
+import type { SkillInstance } from "./skill-instances"
 import type { MarketplaceInstalledMetadata, MarketplaceItem, SkillMarketplaceItem } from "./types"
 
 interface MarketplaceSkillMerge {
@@ -15,11 +17,7 @@ export interface SkillRoots {
 }
 
 export function normalizeSkillKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+  return normalizeSkillId(value)
 }
 
 function isUploadableSkill(skill: CliSkill): boolean {
@@ -28,7 +26,7 @@ function isUploadableSkill(skill: CliSkill): boolean {
 }
 
 export function isListedUploadableSkill(id: string, ids: ReadonlySet<string>): boolean {
-  const key = normalizeSkillKey(id)
+  const key = /^(?:project|global):[a-z0-9-]+$/.test(id) ? id : normalizeSkillKey(id)
   return Boolean(key && ids.has(key))
 }
 
@@ -51,6 +49,7 @@ export function mergeMarketplaceSkills(
   metadata: MarketplaceInstalledMetadata,
   skillsFetched: boolean,
   roots?: SkillRoots,
+  instances: readonly SkillInstance[] = [],
 ): MarketplaceSkillMerge {
   const remote = items.filter((item): item is SkillMarketplaceItem => item.type === "skill")
   const index = new Map<string, string>()
@@ -63,6 +62,7 @@ export function mergeMarketplaceSkills(
 
   const local = new Map<string, CliSkill>()
   for (const skill of skills ?? []) {
+    if (instances.length > 0 && skill.location !== "builtin" && skill.location !== "<built-in>") continue
     const key = normalizeSkillKey(skill.name)
     if (key && !local.has(key)) local.set(key, skill)
   }
@@ -80,7 +80,7 @@ export function mergeMarketplaceSkills(
     }
   }
 
-  const installed = {
+  const mapped = {
     project: mapInstalledSkills(metadata.project, aliases),
     global: mapInstalledSkills(metadata.global, aliases),
   }
@@ -88,10 +88,44 @@ export function mergeMarketplaceSkills(
     if (aliases.has(key)) return []
     return [localSkill(key, skill, skillsFetched, roots)]
   })
+  const physical = instances.map((instance) => instanceSkill(instance, remote, skillsFetched))
+  const ids = new Set(instances.map((instance) => instance.id))
+  const catalog = items.filter((item) => item.type !== "skill" || !ids.has(item.id))
 
   return {
-    marketplaceItems: [...items, ...extras],
-    marketplaceInstalledMetadata: installed,
+    marketplaceItems: [...catalog, ...physical, ...extras],
+    marketplaceInstalledMetadata: mapped,
+  }
+}
+
+function instanceSkill(
+  instance: SkillInstance,
+  remote: readonly SkillMarketplaceItem[],
+  skillsFetched: boolean,
+): SkillMarketplaceItem {
+  const source = remote.find((item) => item.id === instance.id)
+  const description = instance.description?.trim() || source?.description || "本地已安装的 Skill"
+  return {
+    ...(source ?? {
+      type: "skill" as const,
+      id: instance.id,
+      name: instance.name,
+      displayName: instance.name,
+      description,
+      category: "local",
+      displayCategory: "本地",
+      content: "",
+      localOnly: true,
+    }),
+    description,
+    instanceId: instance.instanceId,
+    localScope: instance.scope,
+    localLocation: instance.location,
+    localSha256: instance.sha256,
+    effective: instance.effective,
+    ...(instance.shadowedBy ? { shadowedBy: instance.shadowedBy } : {}),
+    uploadable: skillsFetched,
+    origin: "local",
   }
 }
 

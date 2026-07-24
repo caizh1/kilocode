@@ -40,6 +40,7 @@ await createClient({
   ],
 })
 
+// kilocode_change start - tolerate generators where the SSE generic bug is already fixed
 // Patch a @hey-api/openapi-ts codegen bug: SseFn incorrectly passes the
 // endpoint's TError into the second generic of ServerSentEventsResult, which
 // is the AsyncGenerator's TReturn slot. Iterator return values have nothing
@@ -49,14 +50,15 @@ await createClient({
 const sseTypesPath = "./src/v2/gen/client/types.gen.ts"
 const sseTypesFile = Bun.file(sseTypesPath)
 const sseTypesSource = await sseTypesFile.text()
-const sseTypesPatched = sseTypesSource.replace(
-  "=> Promise<ServerSentEventsResult<TData, TError>>",
-  "=> Promise<ServerSentEventsResult<TData>>",
-)
-if (sseTypesPatched === sseTypesSource) {
+const fixed = "=> Promise<ServerSentEventsResult<TData>>"
+const sseTypesPatched = sseTypesSource.includes(fixed)
+  ? sseTypesSource
+  : sseTypesSource.replace("=> Promise<ServerSentEventsResult<TData, TError>>", fixed)
+if (!sseTypesPatched.includes(fixed)) {
   throw new Error(`SseFn patch did not apply; @hey-api/openapi-ts output may have changed (${sseTypesPath})`)
 }
 await Bun.write(sseTypesPath, sseTypesPatched)
+// kilocode_change end
 
 // The legacy SDK generator is retired, but this public Config type remains exported.
 // Keep Kilo's released sandbox settings aligned with the current generated client.

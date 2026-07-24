@@ -857,5 +857,13 @@ describe("LocalVectorStore", () => {
       // Backslashes should be preserved, only quotes escaped
       expect(mockTable.delete).toHaveBeenCalledWith(`\`filePath\` IN ('C:\\Users\\test\\file.ts')`)
     })
+
+    test("should preserve external document keys", async () => {
+      mockTable.delete.mockResolvedValue(undefined)
+
+      await store.deletePointsByFilePath("@external/0123456789abcdef/guide.md")
+
+      expect(mockTable.delete).toHaveBeenCalledWith("`filePath` IN ('@external/0123456789abcdef/guide.md')")
+    })
   })
 })

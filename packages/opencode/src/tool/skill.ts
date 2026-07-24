@@ -6,6 +6,8 @@ import { Ripgrep } from "@opencode-ai/core/filesystem/ripgrep"
 import { Skill } from "../skill"
 import * as Tool from "./tool"
 import DESCRIPTION from "./skill.txt"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
+import { Session } from "@/session/session" // kilocode_change
 
 export const Parameters = Schema.Struct({
   name: Schema.String.annotate({ description: "The name of the skill from available_skills" }),
@@ -16,6 +18,7 @@ export const SkillTool = Tool.define(
   Effect.gen(function* () {
     const skill = yield* Skill.Service
     const rg = yield* Ripgrep.Service
+    const sessions = yield* Session.Service // kilocode_change
 
     return {
       description: DESCRIPTION,
@@ -32,6 +35,15 @@ export const SkillTool = Tool.define(
             always: [params.name],
             metadata: {},
           })
+          // kilocode_change start - restore the canonical document root from persisted turns
+          const messages = yield* Effect.gen(function* () {
+            if (info.name !== "source-backed-detail-design") return ctx.messages
+            const history = yield* sessions.messages({ sessionID: ctx.sessionID })
+            const seen = new Set(history.map((message) => message.info.id))
+            return [...history, ...ctx.messages.filter((message) => !seen.has(message.info.id))]
+          })
+          WorkflowGuard.activate(ctx.sessionID, info.name, messages)
+          // kilocode_change end
 
           // kilocode_change start - built-in skills have no filesystem directory
           if (info.location === Skill.BUILTIN_LOCATION) {

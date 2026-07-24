@@ -677,7 +677,7 @@ function report(item: ReleaseItem): ValidationReport {
 
 function validation(value: Record<string, unknown>, fallback: string): ValidationReport {
   const policyVersion = typeof value.policyVersion === "string" ? value.policyVersion : undefined
-  const current = policyVersion === "skill-risk-v2"
+  const current = policyVersion === "skill-risk-v2" || policyVersion === "skill-risk-v3"
   const issues =
     current && Array.isArray(value.issues)
       ? value.issues.flatMap((entry) => {
@@ -731,7 +731,9 @@ function validation(value: Record<string, unknown>, fallback: string): Validatio
 }
 
 function risk(value: Record<string, unknown>): SkillRiskSummary {
-  if (value.policyVersion !== "skill-risk-v2") return { level: "unknown", issueCount: 0 }
+  const policyVersion =
+    value.policyVersion === "skill-risk-v2" || value.policyVersion === "skill-risk-v3" ? value.policyVersion : undefined
+  if (!policyVersion) return { level: "unknown", issueCount: 0 }
   const source =
     value.risk && typeof value.risk === "object" && !Array.isArray(value.risk)
       ? (value.risk as Record<string, unknown>)
@@ -740,7 +742,7 @@ function risk(value: Record<string, unknown>): SkillRiskSummary {
     source.level === "medium" || source.level === "critical" || source.level === "none" ? source.level : "none"
   const issueCount =
     Number.isSafeInteger(source.issueCount) && Number(source.issueCount) >= 0 ? Number(source.issueCount) : 0
-  return { level, issueCount, policyVersion: "skill-risk-v2" }
+  return { level, issueCount, policyVersion }
 }
 
 function cached(reply: FastifyReply, match: string | undefined, payload: unknown, version?: string) {

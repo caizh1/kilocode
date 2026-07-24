@@ -28,6 +28,7 @@ export interface ExtensionManifest {
   description: string
   version: string
   target: string
+  updateTarget?: string
   engineVscode: string
   categories: string[]
   keywords: string[]
@@ -35,7 +36,13 @@ export interface ExtensionManifest {
   prerelease: boolean
   systemPlugin: boolean
   readme: string
+  releaseNotes?: string
   iconData?: string
+}
+
+export interface ExtensionOwnerItem {
+  extensionId: string
+  ownerId?: string
 }
 
 export interface ExtensionArtifactInput {

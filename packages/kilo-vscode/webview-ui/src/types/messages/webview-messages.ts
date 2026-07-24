@@ -465,6 +465,21 @@ export interface TestChipmateServerMessage {
   requestId: string
 }
 
+export interface CheckChipmateUpdateMessage {
+  type: "checkChipmateUpdate"
+  requestId: string
+}
+
+export interface InstallChipmateUpdateMessage {
+  type: "installChipmateUpdate"
+  candidateId: string
+  requestId: string
+}
+
+export interface ReloadChipmateWindowMessage {
+  type: "reloadChipmateWindow"
+}
+
 export interface RequestTimelineSettingMessage {
   type: "requestTimelineSetting"
 }
@@ -511,6 +526,7 @@ export interface RequestIndexingStatusMessage {
 
 export interface SelectDocumentRagFolderMessage {
   type: "selectDocumentRagFolder"
+  scope: "global" | "project"
 }
 
 export interface RebuildDocumentRagMessage {
@@ -817,10 +833,10 @@ export interface AgentConsoleModeChangedRequest {
   mode: "agent" | "shell"
 }
 
-export interface AgentConsoleInputRouteRequest {
-  type: "agentConsole.input.route"
+export interface AgentConsoleInputCaptureRequest {
+  type: "agentConsole.input.capture"
+  terminalId: string
   requestId: string
-  input: string
 }
 
 export interface AgentConsoleCommandExpectRequest {
@@ -1094,6 +1110,12 @@ export interface SaveImageRequest {
   filename: string
 }
 
+export interface RenderPlantUmlRequest {
+  type: "renderPlantUml"
+  requestId: string
+  source: string
+}
+
 // Set default base branch (webview → extension)
 export interface SetDefaultBaseBranchRequest {
   type: "agentManager.setDefaultBaseBranch"
@@ -1202,6 +1224,7 @@ export interface SaveCustomProviderMessage {
   config: ProviderConfig
   apiKey?: string
   apiKeyChanged?: boolean
+  activateModelID?: string
 }
 
 export interface FetchCustomProviderModelsMessage {
@@ -1344,6 +1367,12 @@ export interface CancelLocalSkillImportMessage {
 export interface UploadMarketplaceSkillMessage {
   type: "uploadMarketplaceSkill"
   mpSkillId: string
+  mpSkillInstanceId?: string
+}
+
+export interface UploadMarketplaceSkillsMessage {
+  type: "uploadMarketplaceSkills"
+  mpSkillIds: string[]
 }
 
 export interface StarMarketplaceSkillMessage {
@@ -1447,6 +1476,9 @@ export type WebviewMessage =
   | UpdateSettingRequest
   | RequestChipmateServerSettingsMessage
   | TestChipmateServerMessage
+  | CheckChipmateUpdateMessage
+  | InstallChipmateUpdateMessage
+  | ReloadChipmateWindowMessage
   | RequestTimelineSettingMessage
   | RequestWorkStyleMessage
   | SetWorkStyleMessage
@@ -1547,6 +1579,7 @@ export type WebviewMessage =
   | OpenSubAgentViewerRequest
   | PreviewImageRequest
   | SaveImageRequest
+  | RenderPlantUmlRequest
   | SetDefaultBaseBranchRequest
   | AgentManagerOpenSessionsMessage
   | SidebarOpenSessionsMessage
@@ -1567,6 +1600,7 @@ export type WebviewMessage =
   | InstallMarketplaceItemMessage
   | RemoveInstalledMarketplaceItemMessage
   | UploadMarketplaceSkillMessage
+  | UploadMarketplaceSkillsMessage
   | StarMarketplaceSkillMessage
   | UnpublishMarketplaceSkillMessage
   | DismissAgentMigrationBannerMessage
@@ -1614,7 +1648,7 @@ export type WebviewMessage =
   | AgentConsoleShellRestartRequest
   | AgentConsoleSessionNewRequest
   | AgentConsoleModeChangedRequest
-  | AgentConsoleInputRouteRequest
+  | AgentConsoleInputCaptureRequest
   | AgentConsoleCommandExpectRequest
   | AgentConsoleCommandCancelRequest
   | AgentManagerTerminalCloseRequest

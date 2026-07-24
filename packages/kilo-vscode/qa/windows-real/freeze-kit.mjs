@@ -65,7 +65,9 @@ const frozen = {
     dirty: git(["status", "--porcelain=v1"]).length > 0,
   },
   source: {
-    diffSha256: createHash("sha256").update(git(["diff", "--binary", "HEAD"])).digest("hex"),
+    diffSha256: createHash("sha256")
+      .update(git(["diff", "--binary", "HEAD"]))
+      .digest("hex"),
     status: git(["status", "--porcelain=v1"]),
   },
   extension: {
@@ -82,7 +84,7 @@ writeFileSync(
 )
 writeFileSync(
   join(stage, "RUN-WINDOWS.ps1"),
-  `[CmdletBinding()]\nparam([string] $CodePath, [string] $FixtureRoot, [string] $Output)\n$root = $PSScriptRoot\n$args = @{ Vsix = Join-Path $root '${files[0].name}'; Lane = 'smoke' }\nif ($CodePath) { $args.CodePath = $CodePath }\nif ($FixtureRoot) { $args.FixtureRoot = $FixtureRoot }\nif ($Output) { $args.Output = $Output }\n${files.find((file) => file.role === "previous") ? `$args.PreviousVsix = Join-Path $root '${files.find((file) => file.role === "previous").name}'` : ""}\n${files.find((file) => file.role === "kilo") ? `$args.KiloVsix = Join-Path $root '${files.find((file) => file.role === "kilo").name}'` : ""}\n& (Join-Path $root 'qa\\windows-real\\run.ps1') @args\nexit $LASTEXITCODE\n`,
+  `[CmdletBinding()]\nparam([string] $CodePath, [string] $FixtureRoot, [string] $Output, [ValidateSet('arm64-vm', 'native-x64')] [string] $Gate = 'arm64-vm', [ValidateSet('default', 'disabled')] [string] $Gpu = 'default')\n$root = $PSScriptRoot\n$args = @{ Vsix = Join-Path $root '${files[0].name}'; Lane = 'smoke'; Gate = $Gate; Gpu = $Gpu }\nif ($CodePath) { $args.CodePath = $CodePath }\nif ($FixtureRoot) { $args.FixtureRoot = $FixtureRoot }\nif ($Output) { $args.Output = $Output }\n${files.find((file) => file.role === "previous") ? `$args.PreviousVsix = Join-Path $root '${files.find((file) => file.role === "previous").name}'` : ""}\n${files.find((file) => file.role === "kilo") ? `$args.KiloVsix = Join-Path $root '${files.find((file) => file.role === "kilo").name}'` : ""}\n& (Join-Path $root 'qa\\windows-real\\run.ps1') @args\nexit $LASTEXITCODE\n`,
 )
 writeFileSync(
   join(stage, "RUN-MACOS.sh"),
@@ -118,7 +120,8 @@ function git(argv) {
 function readManifest(path, target) {
   const manifest = JSON.parse(execFileSync("unzip", ["-p", path, "extension/package.json"], { encoding: "utf8" }))
   if (manifest.publisher !== "chipmate" || manifest.name !== "chipmate") throw new Error("Unexpected VSIX identity")
-  if (manifest.version !== "0.0.88") throw new Error(`Expected version 0.0.88, got ${manifest.version}`)
-  if (manifest.chipmatePackageTarget !== target) throw new Error(`Expected target ${target}, got ${manifest.chipmatePackageTarget}`)
+  if (manifest.version !== "1.0.9") throw new Error(`Expected version 1.0.9, got ${manifest.version}`)
+  if (manifest.chipmatePackageTarget !== target)
+    throw new Error(`Expected target ${target}, got ${manifest.chipmatePackageTarget}`)
   return manifest
 }

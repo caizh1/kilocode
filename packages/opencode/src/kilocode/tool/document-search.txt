@@ -1,19 +1,19 @@
-Search indexed workspace documents by semantic meaning and return ranked snippets with source references.
+Search indexed workspace and explicitly approved external documents by semantic meaning and return ranked snippets with source references.
 
 ## When to use
 
 - Answer questions about configured PDF, DOCX, XLSX, ODS, Markdown, CSV, TSV, RST, or text documents
 - Find policy, design, specification, spreadsheet, or report content stored outside source code
 - Retrieve document evidence with page, sheet row, or line references before answering
-- Limit document search to one configured workspace subdirectory with `path`
+- Limit document search to one configured workspace subdirectory or approved external directory with `path`
 
 ## When NOT to use
 
 - Search source code snippets — use `semantic_search` or `codebase_analysis`
 - Read a known local file directly — use `Read` or the file-specific readers
-- Search documents outside the current workspace
+- Search external documents that the user has not explicitly approved for indexing
 
 ## Constraints
 
-- Use `path` only for subdirectories inside the current workspace.
+- Use `path` only for workspace subdirectories or approved indexed external paths.
 - Treat answers as ungrounded unless the returned snippets include source references.

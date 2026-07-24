@@ -111,7 +111,7 @@ Docker 镜像是服务的核心可交付物。Dockerfile 第一阶段安装完�
 ```bash
 cd /Users/archer/Work/kilocode/server/chipmate-word-render
 
-VERSION="$(node -p \"require('./package.json').version\")"
+VERSION=$(node -p 'require("./package.json").version')
 IMAGE="chipmate-word-render:${VERSION}"
 ARCHIVE="chipmate-word-render-${VERSION}-linux-amd64.docker.tar.gz"
 
@@ -183,7 +183,7 @@ BACKUP_ROOT_ON_HOST=/srv/kilo/backups \
 ./install-render-server.sh ./chipmate-word-render-<version>-linux-amd64.docker.tar.gz
 ```
 
-如需启用 New API 身份解析，将配置放入目标机受限权限的环境文件并用 `ENV_FILE=/path/to/render.env` 传入。至少需要 `NEW_API_BASE_URL`；服务优先使用当前用户 key 调用 New API 只读 token usage 接口。旧 New API 不支持该接口时，才使用 `NEW_API_ADMIN_ACCESS_TOKEN` 和 `NEW_API_USER_ID` 进入管理接口兼容回退。安装脚本不会把环境文件复制进镜像或交付包；覆盖升级未显式传 `ENV_FILE` 时，会从旧容器继承 `NEW_API_*`、`EXTENSION_MARKET_*` 和 `EXTENSION_DROP_*`，不会输出这些值。
+如需启用 New API 身份解析，将配置放入目标机受限权限的环境文件并用 `ENV_FILE=/path/to/render.env` 传入。至少需要 `NEW_API_BASE_URL`；服务优先使用当前用户 key 调用 New API 只读 token usage 接口。旧 New API 不支持该接口时，才使用 `NEW_API_ADMIN_ACCESS_TOKEN` 和 `NEW_API_USER_ID` 进入管理接口兼容回退。安装脚本不会把环境文件复制进镜像或交付包；覆盖升级未显式传 `ENV_FILE` 时，会从旧容器继承 `NEW_API_*`、`EXTENSION_MARKET_*`、`EXTENSION_OWNER_BINDINGS_JSON` 和 `EXTENSION_DROP_*`，不会输出这些值。
 
 插件市场在镜像和安装脚本中默认关闭。首次升级保持 `EXTENSION_MARKET_ENABLED=0`，完成 `/health`、`/api/v1/status` 和既有 Skill/渲染回归后，再以 `EXTENSION_MARKET_ENABLED=1 ./install-render-server.sh <同一归档>` 重启启用；默认扫描周期为 `EXTENSION_DROP_SCAN_MS=5000`。上传资源保护默认值为 `EXTENSION_UPLOAD_MAX_ACTIVE=20`、`EXTENSION_UPLOAD_MIN_FREE_BYTES=2147483648`、`EXTENSION_UPLOAD_IDLE_MS=60000`、`EXTENSION_UPLOAD_MAX_MS=7200000`，可在受限权限的 `ENV_FILE` 中调整。安装脚本不会从旧容器继承已启用状态，因此升级不会意外提前开放插件路由。默认宿主机目录如下：
 
@@ -203,17 +203,13 @@ BACKUP_ROOT_ON_HOST=/srv/kilo/backups \
 - `chipmate.v2.documents.wordRender.remoteEndpoint`
 - `chipmate.v2.documents.mermaidRender.remoteEndpoint`
 
-内网 VSIX 更新使用 `GET /packages/manifest.json`；把已验证的完整 VSIX 原子放入宿主机包目录即可：先上传为临时文件，再校验并重命名为 `.vsix`。服务每次请求都会扫描目录，不需要重启容器或维护手写 `latest.json`。它只会纳入 `extension/package.json` 中扩展 ID 为固定值 `chipmate.chipmate`、并带有有效 `chipmatePackageTarget` 的内部发行包：`win32-x64-baseline`、`linux-x64-baseline`、`darwin-x64` 或 `darwin-arm64`。
+内网 VSIX 更新使用动态的 `GET /packages/manifest.json`。日常发布只需登录 ChipMate Server 的插件上传页并上传各平台 VSIX；Server 会解析扩展 ID、SemVer、大小、SHA-256 和 `chipmatePackageTarget`，把网页市场存储中的原始文件直接纳入更新候选，不复制到 `/packages`，不生成 `latest.json`，也不需要重启。官方 `chipmate.chipmate` 包必须带以下内部发行目标之一：`win32-x64-baseline`、`linux-x64-baseline`、`darwin-x64` 或 `darwin-arm64`。
 
-使用仓库的发布辅助脚本可完成临时上传、远端 SHA-256 校验与同目录原子重命名：
+扩展 ID 首次成功上传时绑定当前 Server 登录身份。后续只有原始发布者可以上传或下架；同版本、同 target、不同 SHA-256 会返回 `EXTENSION_VERSION_CONFLICT`，Server 不会自动覆盖或删除任何一方。下架后动态 manifest 立即回退到该 target 的剩余最高版本，已安装客户端不会自动降级。
 
-```bash
-./publish-vsix.sh ./chipmate-<version>-win32-x64-baseline.vsix user@render-host /home/share/chipmate/packages
-```
+旧只读 `/packages` 目录仍作为兼容来源并与网页产物合并。升级已有系统记录时，可在受限环境文件中临时设置一次 `EXTENSION_OWNER_BINDINGS_JSON`，值为“扩展 ID 到 New API 登录名”的 JSON 对象；绑定成功后即可移除该设置。旧 `/packages` 文件仍保持原下载 URL，数据库网页产物使用 `/packages/artifacts/<artifactId>.vsix` 直接流式下载。
 
-脚本不会改动容器，也不会生成 `latest.json`；发布后仍应访问真实的 `/packages/manifest.json` 确认清单项。
-
-当前扩展 ID 固定为 `chipmate.chipmate`，且不改变 publisher、name、SecretStorage key 或配置命名空间。把已验证的 VSIX 放到只读 packages 卷后，必须以真实 `/packages/manifest.json` 响应确认目标、版本、SHA-256 和下载 URL。
+当前自更新扩展 ID 固定为 `chipmate.chipmate`，且不改变 publisher、name、SecretStorage key 或配置命名空间。发布后应访问真实 `/packages/manifest.json` 确认 target、版本、SHA-256 和下载 URL。
 
 Skill Market 的宿主机目录结构如下：
 
@@ -244,7 +240,7 @@ Skill Market 的宿主机目录结构如下：
 - Mermaid 返回 `mermaid-runtime-missing`：检查镜像内的 `npm install --omit=dev` 是否成功，及 `node_modules/mermaid` 是否存在。
 - Word 渲染超时：确认 DOCX 大小、`RENDER_TIMEOUT_MS`、LibreOffice 和 `pdftoppm` 可用性；不要无上限提高超时或响应大小。
 - Word 返回 `fieldRefreshStatus: failed`：查看 `fieldRefreshDiagnostics`。服务会继续渲染原始 DOCX，但不会返回一个未经标题、Heading、drawing 和真实目录页码验证的 `updatedDocxBase64`。
-- `/packages/manifest.json` 未发现包：确认 VSIX 位于挂载的包根目录，且其 `publisher.name` 为 `chipmate.chipmate`，并且包内 `chipmatePackageTarget` 是允许的内部目标。
+- `/packages/manifest.json` 未发现网页上传包：确认插件市场已启用、扩展 ID 为 `chipmate.chipmate`、上传者是 owner，并且包内 `chipmatePackageTarget` 是允许的内部目标；旧系统包仍检查只读 `/packages` 根目录。
 - Skill Market 为空：检查 `skill-market/skills.json` 的 JSON 格式、归档是否位于 `skill-market/skills/`，再访问 `/marketplace/manifest.json` 查看告警。
 - 登录或上传返回 `token-resolver-disabled`：`NEW_API_BASE_URL` 未设置；如果目标 New API 不支持直接 token usage 接口，还需要补齐 admin fallback 的另外两项配置。
 - 登录返回 `new-api-rate-limited` 或日志出现 `new-api-http-429`：New API 正在限流。0.1.8 会合并同一 key 的并发解析，不会在 429 后切换分页参数重试；停止重复点击并等待上游 `Retry-After` 后再试。

@@ -350,10 +350,54 @@ export const LocalSkillImportDialog = (props: Props) => {
         <Show when={result()}>
           {(value) => (
             <section class="local-skill-import__result" aria-live="polite">
-              <div class="local-skill-import__orb success" aria-hidden="true">
-                <span class="codicon codicon-check" />
+              <div
+                classList={{
+                  "local-skill-import__orb": true,
+                  success: value().activation?.status !== "failed",
+                  warning: value().activation?.status === "failed",
+                }}
+                aria-hidden="true"
+              >
+                <span
+                  classList={{
+                    codicon: true,
+                    "codicon-check": value().activation?.status !== "failed",
+                    "codicon-warning": value().activation?.status === "failed",
+                  }}
+                />
               </div>
-              <h3>{t("marketplace.local.resultTitle")}</h3>
+              <h3>
+                {value().activation?.status === "failed"
+                  ? t("marketplace.local.activationFailedTitle")
+                  : t("marketplace.local.resultTitle")}
+              </h3>
+              <Show when={activationFailure(value())}>
+                {(activation) => (
+                  <div class="local-skill-import__notice error activation" role="alert">
+                    <span class="codicon codicon-error" aria-hidden="true" />
+                    <span>
+                      <Show
+                        when={activation().phase === "refresh-request"}
+                        fallback={
+                          <>
+                            {t("marketplace.local.activationVerificationFailed", {
+                              count: activation().missingIds?.length ?? 0,
+                            })}
+                            <Show when={activation().missingIds?.length}>
+                              <small>{activation().missingIds?.join(", ")}</small>
+                            </Show>
+                          </>
+                        }
+                      >
+                        {t("marketplace.local.activationRequestFailed", {
+                          error: activation().message ?? t("marketplace.local.activationUnknown"),
+                        })}
+                      </Show>
+                      <small>{t("marketplace.local.activationReloadHint")}</small>
+                    </span>
+                  </div>
+                )}
+              </Show>
               <div class="local-skill-import__result-list">
                 <For each={value().items}>
                   {(item) => (
@@ -385,4 +429,10 @@ function formatBytes(bytes: number) {
   if (bytes < 1_024) return `${bytes} B`
   if (bytes < 1_048_576) return `${(bytes / 1_024).toFixed(1)} KiB`
   return `${(bytes / 1_048_576).toFixed(1)} MiB`
+}
+
+function activationFailure(result: SkillImportResult) {
+  const activation = result.activation
+  if (activation?.status !== "failed") return undefined
+  return activation
 }

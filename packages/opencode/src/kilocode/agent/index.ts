@@ -16,6 +16,7 @@ import PROMPT_ORCHESTRATOR from "../../agent/prompt/orchestrator.txt"
 import PROMPT_ASK from "../../agent/prompt/ask.txt"
 import PROMPT_EXPLORE from "../../agent/prompt/explore.txt"
 import PROMPT_AGENT_CONSOLE from "./agent-console.txt"
+import PROMPT_ULTRA from "./ultra.txt"
 import { applyInternalIndexingDefaults, isInternalOffline } from "../internal-offline"
 import { ProductProfile } from "../product-profile"
 
@@ -166,6 +167,7 @@ function askGuard(mcp: Record<string, "allow" | "ask" | "deny"> = {}) {
     codebase_search: "allow",
     codebase_analysis: "allow",
     semantic_search: "allow",
+    render_plantuml_diagram: "allow",
     ...(isInternalOffline() ? { document_search: "allow" as const } : {}),
     external_directory: {
       [Truncate.GLOB]: "allow",
@@ -222,6 +224,7 @@ function planGuard(worktree: string, mcp: Record<string, "allow" | "ask" | "deny
     codebase_search: "allow",
     codebase_analysis: "allow",
     semantic_search: "allow",
+    render_plantuml_diagram: "allow",
     ...(isInternalOffline() ? { document_search: "allow" as const } : {}),
     external_directory: {
       [Truncate.GLOB]: "allow",
@@ -362,7 +365,7 @@ export function telemetryOptions(_cfg: Config.Info) {
 // - Patch plan with readOnlyBash, mcpRules, .kilo paths
 // - Patch explore with codebase_search and conditional prompt
 // - Patch appropriate agents with semantic_search and codebase_analysis
-// - Add debug, orchestrator, ask agents
+// - Add ChipMate ultra and the debug, orchestrator, ask agents
 export function patchAgents(
   agents: Record<string, AgentInfo>,
   defaults: Permission.Ruleset,
@@ -393,6 +396,21 @@ export function patchAgents(
     delete agents.build
   }
 
+  if (ProductProfile.chipmate && agents.code) {
+    agents.ultra = {
+      ...agents.code,
+      name: "ultra",
+      description: "Code agent with mandatory parallel Explore investigations before every response.",
+      prompt: PROMPT_ULTRA,
+      options: {
+        ...agents.code.options,
+        id: "ultra",
+      },
+      mode: "primary",
+      native: true,
+    }
+  }
+
   // Patch plan mode
   if (agents.plan) {
     agents.plan = {
@@ -416,7 +434,6 @@ export function patchAgents(
     const indexing = applyInternalIndexingDefaults(cfg.indexing, internal)
     const retrieval = [
       "Use the retrieval route that best matches the question before broad manual exploration:",
-      "- Use codebase_analysis first for C/C++ symbols, call chains, state machines, registers, MMIO, or impact analysis.",
       indexing?.enabled === true
         ? "- Use semantic_search first for unfamiliar concepts when you do not know the exact identifier."
         : undefined,

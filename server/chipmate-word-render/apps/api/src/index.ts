@@ -6,6 +6,7 @@ import { register } from "./legacy.ts"
 import { registerWeb } from "./web.ts"
 import { MarketEvents } from "./events.ts"
 import { registerExtensions } from "./extensions.ts"
+import { registerUpdatePackages } from "./update-packages.ts"
 
 export function build(
   db?: MarketDb,
@@ -19,6 +20,8 @@ export function build(
     extensionMinimumFreeBytes?: number
     extensionUploadIdleMs?: number
     extensionUploadMaxMs?: number
+    extensionOwnerBindings?: Record<string, string>
+    packageRoot?: string
   } = {},
 ) {
   const app = Fastify({ logger: false, bodyLimit: 50 * 1024 * 1024 })
@@ -28,10 +31,10 @@ export function build(
     (_req, body, done) => done(null, body),
   )
   const web = registerWeb(app)
-  register(app, !web)
+  const enabled = Boolean(db) && (opts.extensionMarket ?? process.env.EXTENSION_MARKET_ENABLED === "1")
+  register(app, !web, !enabled)
   if (db) {
     const events = new MarketEvents()
-    const enabled = opts.extensionMarket ?? process.env.EXTENSION_MARKET_ENABLED === "1"
     const scan = Number(process.env.EXTENSION_DROP_SCAN_MS)
     const runtime = enabled
       ? registerExtensions(app, db, {
@@ -48,8 +51,11 @@ export function build(
           minimumFreeBytes: opts.extensionMinimumFreeBytes ?? number(process.env.EXTENSION_UPLOAD_MIN_FREE_BYTES, 2 * 1024 * 1024 * 1024),
           uploadIdleMs: opts.extensionUploadIdleMs ?? number(process.env.EXTENSION_UPLOAD_IDLE_MS, 60_000),
           uploadMaxMs: opts.extensionUploadMaxMs ?? number(process.env.EXTENSION_UPLOAD_MAX_MS, 2 * 60 * 60 * 1_000),
+          ownerBindings: opts.extensionOwnerBindings ?? bindings(process.env.EXTENSION_OWNER_BINDINGS_JSON),
+          packageRoot: opts.packageRoot ?? process.env.PACKAGE_ROOT?.trim() ?? "/packages",
         })
       : undefined
+    if (runtime) registerUpdatePackages(app, db, runtime, opts.packageRoot ?? process.env.PACKAGE_ROOT?.trim() ?? "/packages")
     registerAligned(app, db, {
       events,
       extensionMarket: enabled,
@@ -70,4 +76,20 @@ export function build(
 function number(value: string | undefined, fallback: number): number {
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function bindings(value: string | undefined): Record<string, string> {
+  if (!value?.trim()) return {}
+  try {
+    const parsed = JSON.parse(value)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string" && entry[0].trim().length > 0,
+      ),
+    )
+  } catch (err) {
+    console.warn("EXTENSION_OWNER_BINDINGS_JSON is invalid", err)
+    return {}
+  }
 }

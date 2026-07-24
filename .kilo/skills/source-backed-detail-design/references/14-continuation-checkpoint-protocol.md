@@ -1,19 +1,27 @@
 # 14 Continuation Checkpoint Protocol
 
-本 skill 可以支持多 session。普通 QA、单章节和明确窄范围短文档不要强制创建续跑文件；完整多子模块 Word 任务无论预计是否能在当前轮次完成，都必须在正文阶段写入续跑文件，避免未填充的 Word skeleton 成为交付物。
-
-完整多子模块 Word 必须更新：
+本 Skill 支持多 session 续作。普通 QA、单章节和明确的窄范围图片任务不创建续作文件；完整多子模块 Word 任务维护：
 
 - `resume-state.md`
 - `continue-prompt.md`
 - `review-notes.md`
 
-完整多子模块任务必须在图形和 Word assembly 前，在输出根目录创建并维护这些续作文件，同时保存 `02-source-evidence/module-scope.md` 和每个 `05-enhanced-detail-design/units/<designUnitId>.md`。`resume-state.md` 至少记录用户原始模块表达、冻结后的所属上级模块、唯一目标模块、目标内部已确认子模块、层级证据与解析置信度、有序 DesignUnit census、unit 文件路径、每个设计单元十四项正文的实际状态、证据缺口、五类图/聚焦图状态、Word body-audit 状态、最后成功的原生工具输出路径和首个未完成项。所属上级模块不进入 DesignUnit census。全部 unit 文件达到 prose readiness 且必需图形输入就绪前，Word 状态保持 `not_started`。目标仍需澄清时不得开始正文或 Word；运行时没有安全 workspace file-writing tool 时，也不得开始正文落盘或 Word。
+三者首部写入 `SBDD_RULESET_REVISION=2026-07-source-semantic-v117`，并提示续作先按原机制重新加载 `source-backed-detail-design`。同时保存 `02-source-evidence/module-scope.md`、`02-source-evidence/design-unit-census.json` 和每个 `05-enhanced-detail-design/units/<designUnitId>.md`。
 
-`resume-state.md`、`continue-prompt.md` 和 `review-notes.md` 首部必须写入 `SBDD_RULESET_REVISION=2026-07-long-task-gate-v1`，并明确提示：任何上下文压缩、摘要恢复或跨会话续作后，先通过原有 Skill 机制重新加载 `source-backed-detail-design`，再读取这些文件；不得只依赖被截断的旧工具输出继续 Word。
+`resume-state.md` 记录用户原始表达、所属上级模块、唯一目标模块、目标内部确认子模块、有序 DesignUnit census、层级证据、unit 路径、十四项正文状态、流程族和业务边闭合状态、五类图槽位、最后成功的原生工具路径及首个未完成项。所属上级模块不进入 DesignUnit census。目标仍需澄清时不得开始正文或 Word；正文、业务流程或图形未就绪时 Word 状态保持 `not_started`。
 
-续跑时：如果这些文件存在，先读取它们，再从有序 DesignUnit census、十四项正文状态、发现信号清单、候选表、复杂度实例清单或完整覆盖账本中第一个未完成项继续。正文完成状态必须由实际内容和证据决定，不能只看 checkbox。不要调用旧的 artifact validator，不要把缺失图表或缺失 Word 输出转成自动合同规划提示。
+`D > 1` 时根会话写入不可变 `orchestration-manifest.json`，整个流程保持在根会话内，不调用 `task` 或 `agent_manager`。第一轮可先写完多个 unit 草稿，但必须逐文件完成独立 `read → grep → repair/re-read/re-grep → review audit`，再一次性更新 canonical checkpoint。每个图形批次含冻结的 1–3 个 DesignUnit；根会话按顺序逐单元、逐槽位完成 source-backed validate/render，并写唯一 `figure-result.json`。不得用模型自述替代持久化结果。
 
-禁止因为 checkbox、已完成、✅、已生成 Word、已有 target 五图或所属上级模块定位图等字样跳过仍有失败项的阶段。当“已完成”和“待补事项”冲突时，以实际 unit 内容和待补事项为准。原生工具可用且有界尝试尚未失败时，从正文、发现信号、候选、复杂度实例或覆盖账本第一个未完成项继续。达到执行边界时保存证据、unit 草稿、图片和最后成功状态；如果 prose readiness 尚未就绪，不调用 `create_word_document`，不生成或宣称完整 Word，也不把剩余设计单元压缩为清单。
+完整多单元 Word 使用 3–5 轮自管理协议。第一轮完成 scope、census、全部正文与审计；随后按 `figureBatchCount = min(3, max(1, ceil(D / 3)))` 完成 1–3 个冻结图形批次；最后一轮合并、目录、渲染、验证并交付。`expectedTurnCount = 2 + figureBatchCount`。批次在第一轮结束前按 DesignUnit 冻结顺序均衡分配，之后不得换序、换单元、缩范围或重新规划。
 
-若异常中断发生在 text-only `*-working.docx` 创建之后但 body audit 之前，记录该路径仅供续作，`artifactStatus` 不得升级为 `generated`，最终回答不得输出该 Word 路径。恢复时从第一个未消费 `[[SBDD-CONTENT:*]]` anchor 继续，全部 anchor 清零且每个 heading range 具备解释性正文后才进入插图。正文完成后的明确图片/渲染阻塞可保留文本完整的 `generated + PARTIAL` DOCX，并记录明确续作点。
+Canonical checkpoint 只保存一组权威状态：`currentTurn`、`expectedTurnCount`、`phase`、`figureBatchCount`、`nextFigureBatchIndex`、`completedUnitIds`、`remainingUnitIds`、`firstIncompleteItem`、`nextAction`。`resume-state.md`、`review-notes.md` 和阶段回答中的数字必须由同一 ledger 重读生成，禁止手写三套计数。成功的非最终阶段只允许 `phase=prose_complete_waiting_continue` 或 `phase=figure_batch_complete_waiting_continue`，且 `nextAction` 必须唯一、可直接执行。
+
+第一轮阶段回答前必须重新加载本 reference，并证实 `orchestration-manifest.json`、已回读且解析通过的 `14-business-flow-family-census.csv` 与三个 checkpoint 文件均存在。流程 census 行数必须至少为 `D`，owning DesignUnit 集合必须与冻结集合严格相等，每个单元至少拥有一个真实本地流程族；它还必须覆盖决策边、异步 handoff、失败/恢复/清理和全部终态，且四个 missing 计数均为零。manifest 和三个 checkpoint 必须逐字记录 `flowCensusStatus: PASS`、`flowCensusParseStatus: PASS`、`flowFamilyCount >= D`、`flowOwningDesignUnitCount = D`、同一 census path 与相同零计数；缺行、缺单元或空集合不能用零计数冒充闭环。任何 `not_started`、省略、占位或未回读状态都必须在当前回合修复，禁止请求“继续”。每个 unit 必须有原生 `read` 完成证据、独立 `grep` 结果和 `review-notes.md` 中替换掉全部 `tbd/not_started` 占位行的逐单元审计；shell/bash 审计或只存在草稿一律不计完成。重新读取所有 status 行和标题行，要求每单元恰好 14 个独立编号标题及 14 行相邻状态，范围/catch-all 标题一律失败，01–07/09–14 全部 `PASS`，只有 08 可证据化 `N/A`。随后必须先把相同完成集合、不可变批次、首个未完成项和唯一下一动作写入 `resume-state.md` 与 `continue-prompt.md`，并分别重新读取三个文件确认无 `not_started/tbd/N/A` 陈旧阶段值，才可输出阶段完成或请求“继续”。写回并回读后立即结束第一轮；本轮禁止加载 07/08、创建图形账本或写入任何 MMD/claim/PNG。助手回答中的表格、PASS 或计数不属于 checkpoint，不能补救任何缺失写回。
+
+每个图形续作回合必须先重载主 Skill、07 和 08，再回读 canonical `resume-state.md`、`review-notes.md` 以及当前批次的每个 unit 文件；这些读取必须全部早于该回合的任何 `04-diagrams` ledger、MMD 或 claim 写入，事后补读不能修复顺序。若回读内容没有逐字确认 `flowCensusStatus: PASS` 与四个零计数，先完成并回读 flow census、重写并回读 checkpoint，期间仍不得写任何图形文件。第一张 MMD 前还必须写入并回读覆盖全部 DesignUnit 的完整 `5D` base-slot 表，不得只写当前批次。随后按主 Skill 的 Figure Evidence Core 续作。每个 DesignUnit 在首个 MMD 前先写入并回读 source-call ledger 与 visible-edge evidence。写完并回读当前冻结批次的全部最终 MMD 和相邻唯一 claim 后，写入并回读一个 1–20 item 的 v1 batch manifest；一次 `render_mermaid_diagram` 使用 `batchManifestPath` 与 `semanticMode: "source-backed"`，不得同时传 inline source 或 top-level claim path。工具逐项完成语法、语义校验与顺序渲染；回读其 `batchResultPath`，集合必须精确覆盖本批 required IDs。Invalid 或 split-required 只进入 repair-only batch，禁止普通 Mermaid fallback。每个非 `N/A` 槽位记录唯一 Diagram ID、节点/边 `path:line` 证据表、MMD、PNG、CSS/像素尺寸、Word-fit、人工检查状态和 SHA-256。调用箭头必须有调用方直接证据；数据或异步关系保持其真实关系类型。证据表方向自相矛盾、图片不可读、明显源码错误或第四次修正仍失败时停止，不能进入 Word。
+
+Canonical checkpoint 保留五张基础图 semantic-set audit，并记录 `canonicalPhaseStatusMatchCount=1`、`stalePhaseStatusCount=0`、`staleRemainingCount=0`；没有平行的 Phase Progress 摘要。只有全部正文通过或一个冻结图形批次全部通过，才允许形成预定阶段边界。此时面向用户只报告 `第 n/N 阶段已完成，请回复“继续”` 以及简洁已完成计数，不要求选择、诊断、修复、重新描述目标或确认缩减范围。
+
+用户回复普通的 `继续` 后，根会话只读取主 Skill、上述 checkpoint、当前批次或最终组装所需结果及必要源码切片；不要求用户重复原始提示或指出下一步。总数与完成状态只从 canonical ledgers/checkpoint 取得。若中断项属于已开始的 unit/slot，根会话从同一记录恢复，不新建平行结果。不得再次全库探索、展开旧 tool output、切换模型，或用 shell/第三方脚本替代原生文档工具。根会话必须自行处理可恢复错误；只有明确不可恢复的工具或证据阻塞才停止并直接说明原因，不向用户索要实施指导。
+
+如果 `*-working.docx` 已存在，它仍不是交付物。恢复时从首个未消费正文锚点继续；正文检查、图片关系、目录、页面检查和 XML 验证全部通过后才产生最终权威 DOCX，并在最终回答中输出其绝对路径。

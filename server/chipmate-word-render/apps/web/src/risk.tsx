@@ -14,7 +14,7 @@ export function RiskBadge(props: { risk?: SkillRiskSummary }) {
     risk.level === "none"
       ? "未发现风险"
       : risk.level === "medium"
-        ? `存在风险 · ${risk.issueCount} 项`
+        ? `存在风险 · ${risk.issueCount} 类`
         : risk.level === "critical"
           ? "严重风险"
           : "未评估"
@@ -53,7 +53,7 @@ export function RiskPanel(props: { report: ValidationReport }) {
             ? "自动扫描未发现风险"
             : unassessed
               ? "此版本尚未评估"
-              : `发现 ${risk.issueCount} 项风险`}
+              : `发现 ${risk.issueCount} 类风险`}
         </h2>
       </div>
       <p>

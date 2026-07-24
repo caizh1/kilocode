@@ -2,11 +2,17 @@ import { describe, it, expect } from "bun:test"
 import { parseServerPort } from "../../src/services/cli-backend/server-utils"
 import {
   buildBundledToolEnv,
+  cliRuntimeEnv,
   emptyWorkspaceEnv,
+  isAccessViolation,
   isIndexingDiagnosticLine,
+  isWindowsArm,
+  resolveCliPath,
   resolveServerCwd,
   resolveManagedServerEnv,
   ServerManager,
+  serverDetached,
+  taskkillArgs,
   toErrorMessage,
 } from "../../src/services/cli-backend/server-manager"
 import {
@@ -29,6 +35,49 @@ import * as os from "os"
 import * as path from "path"
 import { pathToFileURL } from "url"
 import * as vscode from "vscode"
+
+describe("server process platform policy", () => {
+  it("keeps Windows attached and kills only the exact process tree", () => {
+    expect(serverDetached("win32")).toBe(false)
+    expect(serverDetached("darwin")).toBe(true)
+    expect(taskkillArgs(4321, false)).toEqual(["/PID", "4321", "/T"])
+    expect(taskkillArgs(4321, true)).toEqual(["/PID", "4321", "/T", "/F"])
+  })
+
+  it("recognizes signed and unsigned Windows access violation exit codes", () => {
+    expect(isAccessViolation(3221225477)).toBe(true)
+    expect(isAccessViolation(-1073741819)).toBe(true)
+    expect(isAccessViolation(1)).toBe(false)
+    expect(isAccessViolation(null)).toBe(false)
+  })
+
+  it("selects the native ARM64 sidecar on Windows ARM even from an x64 extension host", () => {
+    const root = String.raw`C:\extension`
+    const env = {
+      PROCESSOR_ARCHITECTURE: "AMD64",
+      PROCESSOR_IDENTIFIER: "ARMv8 (64-bit) Family 8 Model 0 Revision 0",
+    }
+    const arm = String.raw`C:\extension\bin\kilo-arm64.exe`
+
+    expect(isWindowsArm(env, "win32")).toBe(true)
+    expect(resolveCliPath(root, env, "win32", (file) => file === arm)).toBe(arm)
+    expect(cliRuntimeEnv(arm)).toEqual({
+      KILO_INDEXING_PROCESS_PATH: String.raw`C:\extension\bin\kilo-indexer-arm64.exe`,
+    })
+  })
+
+  it("keeps the baseline CLI on native Windows x64 and non-Windows hosts", () => {
+    const root = String.raw`C:\extension`
+    const env = { PROCESSOR_ARCHITECTURE: "AMD64", PROCESSOR_IDENTIFIER: "Intel64 Family 6" }
+
+    expect(isWindowsArm(env, "win32")).toBe(false)
+    expect(resolveCliPath(root, env, "win32", () => true)).toBe(String.raw`C:\extension\bin\kilo.exe`)
+    expect(resolveCliPath("/extension", { PROCESSOR_ARCHITECTURE: "ARM64" }, "darwin", () => true)).toBe(
+      "/extension/bin/kilo",
+    )
+    expect(cliRuntimeEnv(String.raw`C:\extension\bin\kilo.exe`)).toEqual({})
+  })
+})
 
 function captureOutput() {
   const original = vscode.window.createOutputChannel
@@ -323,11 +372,14 @@ describe("server workspace helpers", () => {
 
   it("forces an isolated ChipMate v2 profile while preserving unrelated environment", () => {
     expect(
-      resolveManagedServerEnv({
-        PATH: "/usr/bin",
-        KILO_DISABLE_CHANNEL_DB: "false",
-        KILO_DISABLE_CODEBASE_INDEXING: "maintenance-window",
-      }, "/global-storage/v2"),
+      resolveManagedServerEnv(
+        {
+          PATH: "/usr/bin",
+          KILO_DISABLE_CHANNEL_DB: "false",
+          KILO_DISABLE_CODEBASE_INDEXING: "maintenance-window",
+        },
+        "/global-storage/v2",
+      ),
     ).toEqual({
       PATH: "/usr/bin",
       KILO_DISABLE_CHANNEL_DB: "true",

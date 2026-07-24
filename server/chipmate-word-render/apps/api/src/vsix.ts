@@ -4,10 +4,12 @@ import type { ExtensionManifest } from "@chipmate/market-db"
 
 const MANIFEST_LIMIT = 2 * 1024 * 1024
 const README_LIMIT = 4 * 1024 * 1024
+const RELEASE_NOTES_LIMIT = 64 * 1024
 const ICON_LIMIT = 2 * 1024 * 1024
 const EXPANDED_LIMIT = 4 * 1024 * 1024 * 1024
 const ENTRY_LIMIT = 100_000
-const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+const UPDATE_TARGETS = new Set(["win32-x64-baseline", "linux-x64-baseline", "darwin-x64", "darwin-arm64"])
 
 interface PackageJson {
   publisher?: unknown
@@ -22,6 +24,7 @@ interface PackageJson {
   icon?: unknown
   extensionDependencies?: unknown
   extensionPack?: unknown
+  chipmatePackageTarget?: unknown
 }
 
 export async function inspectVsix(path: string): Promise<ExtensionManifest> {
@@ -33,6 +36,7 @@ export async function inspectVsix(path: string): Promise<ExtensionManifest> {
       ["extension.vsixmanifest", MANIFEST_LIMIT],
       ["extension/readme.md", README_LIMIT],
       ["extension/readme.txt", README_LIMIT],
+      ["extension/release_notes.md", RELEASE_NOTES_LIMIT],
     ]),
   )
   const raw = first.get("extension/package.json")
@@ -51,9 +55,23 @@ export async function inspectVsix(path: string): Promise<ExtensionManifest> {
   const id = `${publisher}.${name}`.toLocaleLowerCase()
   if (!/^[a-z0-9][a-z0-9._-]{1,255}$/.test(id)) throw new Error("INVALID_VSIX: extension id is invalid")
   const target = normalizeTarget(attribute(xml, "TargetPlatform"))
+  const updateTarget = text(pkg.chipmatePackageTarget).toLocaleLowerCase()
+  if (id === "chipmate.chipmate" && !UPDATE_TARGETS.has(updateTarget)) {
+    throw new Error(
+      `INVALID_UPDATE_TARGET: official ChipMate package requires chipmatePackageTarget (${[...UPDATE_TARGETS].join(", ")})`,
+    )
+  }
   const icon = safeEntry(text(pkg.icon))
   const iconData = icon ? await iconUrl(path, `extension/${icon}`) : undefined
   const readme = first.get("extension/readme.md") ?? first.get("extension/readme.txt")
+  const notes = first.get("extension/release_notes.md")
+  const decoded = notes ? utf8(notes, "extension/RELEASE_NOTES.md") : ""
+  const releaseNotes = decoded.trim()
+  if (releaseNotes) {
+    if (decoded.split(/\r?\n/, 1)[0] !== `# ChipMate ${version}`) {
+      throw new Error(`INVALID_RELEASE_NOTES: RELEASE_NOTES.md must start with "# ChipMate ${version}"`)
+    }
+  }
   const deps = [...strings(pkg.extensionDependencies), ...strings(pkg.extensionPack)]
   return {
     id,
@@ -63,6 +81,7 @@ export async function inspectVsix(path: string): Promise<ExtensionManifest> {
     description: localized(text(pkg.description) || "暂无描述", nls),
     version,
     target,
+    ...(updateTarget ? { updateTarget } : {}),
     engineVscode: text(pkg.engines?.vscode) || "*",
     categories: strings(pkg.categories).slice(0, 32),
     keywords: strings(pkg.keywords).slice(0, 64),
@@ -70,6 +89,7 @@ export async function inspectVsix(path: string): Promise<ExtensionManifest> {
     prerelease: version.includes("-") || pkg.preview === true || /PreRelease[^>]*Value=["']true["']/i.test(xml),
     systemPlugin: id === "chipmate.chipmate",
     readme: readme?.toString("utf8") ?? "",
+    ...(releaseNotes ? { releaseNotes } : {}),
     ...(iconData ? { iconData } : {}),
   }
 }
@@ -173,6 +193,14 @@ function json<T>(value: Buffer, name: string): T {
     return JSON.parse(value.toString("utf8")) as T
   } catch (err) {
     throw new Error(`INVALID_VSIX: ${name} is not valid JSON`, { cause: err })
+  }
+}
+
+function utf8(value: Buffer, name: string): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(value)
+  } catch (err) {
+    throw new Error(`INVALID_RELEASE_NOTES: ${name} must be valid UTF-8`, { cause: err })
   }
 }
 

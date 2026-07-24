@@ -20,6 +20,7 @@ const log = Log.create({ service: "kilocode.compaction.chunks" })
 const TOOL_OUTPUT_MAX_CHARS = 2_000
 const TRANSCRIPT_MAX_CHARS = 16_000
 const RATIO = 0.6
+const CHUNK_TOKENS = 48_000
 const CONCURRENCY = 3
 const DEPTH = 3
 const OUTPUT = 2_048
@@ -107,10 +108,8 @@ export namespace KiloCompactionChunks {
 
   export function budget(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
     const mdl = model(input.model, input.outputTokenMax)
-    return Math.max(
-      1_000,
-      Math.floor(usable({ cfg: input.cfg, model: mdl, outputTokenMax: input.outputTokenMax }) * RATIO),
-    )
+    const available = Math.floor(usable({ cfg: input.cfg, model: mdl, outputTokenMax: input.outputTokenMax }) * RATIO)
+    return Math.max(1_000, Math.min(available, CHUNK_TOKENS))
   }
 
   function model(input: Provider.Model, outputTokenMax?: number) {

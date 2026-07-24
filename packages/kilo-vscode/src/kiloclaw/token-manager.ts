@@ -45,7 +45,7 @@ export class TokenManager {
       return this.cached
     }
     if (this.lastFailedAt && Date.now() - this.lastFailedAt < RETRY_BACKOFF_MS) {
-      throw new Error("Kilo chat token fetch on cooldown after recent failure")
+      throw new Error("ChipMateClaw chat token fetch on cooldown after recent failure")
     }
     if (!this.inflight) {
       this.inflight = this.fetch()
@@ -67,7 +67,7 @@ export class TokenManager {
 
   private async fetch(): Promise<ChatToken> {
     const client = this.getClient()
-    if (!client) throw new Error("Kilo backend not connected")
+    if (!client) throw new Error("ChipMate backend not connected")
     const res = await client.kilo.claw.chatCredentials()
     const errResponse = (res as Record<string, unknown> | null)?.error
     if (!res || errResponse || !res.data) {
@@ -75,7 +75,7 @@ export class TokenManager {
       // Output channel makes it obvious whether this is an auth problem,
       // "no active instance" (404), or a transient 5xx.
       const detail = this.formatErrorDetail(errResponse)
-      throw new Error(`kilo-chat credentials fetch failed${detail ? `: ${detail}` : ""}`)
+      throw new Error(`ChipMateClaw credentials fetch failed${detail ? `: ${detail}` : ""}`)
     }
     const data = res.data as Partial<ChatToken>
     const missing: string[] = []
@@ -85,7 +85,7 @@ export class TokenManager {
     if (!data.eventServiceUrl) missing.push("eventServiceUrl")
     if (missing.length > 0) {
       throw new Error(
-        `Malformed kilo-chat credentials response: missing ${missing.join(", ")} (received keys: ${Object.keys(data).join(", ") || "<empty>"})`,
+        `Malformed ChipMateClaw credentials response: missing ${missing.join(", ")} (received keys: ${Object.keys(data).join(", ") || "<empty>"})`,
       )
     }
     return {

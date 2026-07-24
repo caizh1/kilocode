@@ -4,9 +4,12 @@ import { PhotonImage } from "@silvia-odwyer/photon-node"
 import fs from "fs/promises"
 import { createServer } from "node:http"
 import path from "path"
+import { deflateSync } from "node:zlib"
 import { Effect } from "effect"
+import { extractDocxPlantUml } from "@kilocode/kilo-indexing/engine"
 import {
   insertMermaidIntoWord,
+  mermaidWordFit,
   renderMermaidDiagram,
   saveMermaidArtifact,
   validateMermaidDiagram,
@@ -17,6 +20,37 @@ import { provideTestInstance, tmpdir } from "../fixture/fixture"
 const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const SIMPLE_MERMAID = "flowchart TD\n  A[Start] --> B[Done]"
+const SIMPLE_PLANTUML = "@startuml\nclass Controller\nController --> Service\n@enduml"
+
+function crc32(input: Uint8Array) {
+  let crc = 0xffffffff
+  for (const byte of input) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function pngChunk(kind: string, data: Uint8Array) {
+  const name = Buffer.from(kind, "ascii")
+  const out = Buffer.alloc(12 + data.byteLength)
+  out.writeUInt32BE(data.byteLength, 0)
+  name.copy(out, 4)
+  Buffer.from(data).copy(out, 8)
+  out.writeUInt32BE(crc32(Buffer.concat([name, Buffer.from(data)])), 8 + data.byteLength)
+  return out
+}
+
+function plantumlPng() {
+  const png = Buffer.from(PNG_1X1, "base64")
+  const iend = png.lastIndexOf(Buffer.from("IEND", "ascii")) - 4
+  const payload = Buffer.concat([
+    Buffer.from("plantuml\0", "latin1"),
+    Buffer.from([1, 0, 0, 0]),
+    deflateSync(Buffer.from(`${SIMPLE_PLANTUML}\n\n1.2026.6`, "utf8")),
+  ])
+  return Buffer.concat([png.subarray(0, iend), pngChunk("iTXt", payload), png.subarray(iend)])
+}
 
 function provideTmpdirInstance<A, E>(
   self: (dir: string) => Effect.Effect<A, E>,
@@ -53,6 +87,84 @@ async function serveJson(payload: unknown, requests?: Array<Record<string, unkno
 }
 
 describe("kilocode Mermaid documents", () => {
+  test("classifies source-backed Word fit without changing ordinary Mermaid", () => {
+    const ordinary = mermaidWordFit({ width: 784, height: 1085, status: "not-requested" })
+    expect(ordinary).toEqual({})
+
+    const readable = mermaidWordFit({
+      width: 784,
+      height: 293,
+      status: "valid",
+      fingerprint: {
+        diagramId: "architecture",
+        nodeIds: Array.from({ length: 11 }, (_, index) => `n${index}`),
+        edges: Array.from({ length: 13 }, (_, index) => ({
+          from: `n${index % 11}`,
+          to: `n${(index + 1) % 11}`,
+          relation: "dependency",
+        })),
+      },
+    })
+    expect(readable.wordFitStatus).toBe("readable")
+    expect(readable.documentReady).toBe(true)
+    expect(readable.wordFitScale).toBeCloseTo(624 / 784)
+
+    const calibrated = mermaidWordFit({
+      width: 911,
+      height: 748,
+      status: "valid",
+      fingerprint: {
+        diagramId: "calibrated",
+        nodeIds: Array.from({ length: 11 }, (_, index) => `n${index}`),
+        edges: Array.from({ length: 13 }, (_, index) => ({
+          from: `n${index % 11}`,
+          to: `n${(index + 1) % 11}`,
+          relation: "dependency",
+        })),
+      },
+    })
+    expect(calibrated.wordFitStatus).toBe("readable")
+    expect(calibrated.documentReady).toBe(true)
+    expect(calibrated.wordFitScale).toBeCloseTo(624 / 911)
+
+    const portrait = mermaidWordFit({
+      width: 784,
+      height: 1200,
+      status: "valid",
+      fingerprint: {
+        diagramId: "business",
+        nodeIds: Array.from({ length: 70 }, (_, index) => `n${index}`),
+        edges: Array.from({ length: 76 }, (_, index) => ({
+          from: `n${index % 70}`,
+          to: `n${(index + 1) % 70}`,
+          relation: "dependency",
+        })),
+      },
+    })
+    expect(portrait.wordFitStatus).toBe("split-required")
+    expect(portrait.documentReady).toBe(false)
+    expect(portrait.wordFitReasons?.some((item) => item.includes("Word-fit scale"))).toBe(true)
+
+    const panoramic = mermaidWordFit({
+      width: 784,
+      height: 131,
+      status: "valid",
+      fingerprint: {
+        diagramId: "code",
+        nodeIds: Array.from({ length: 60 }, (_, index) => `n${index}`),
+        edges: Array.from({ length: 62 }, (_, index) => ({
+          from: `n${index % 60}`,
+          to: `n${(index + 1) % 60}`,
+          relation: "dependency",
+        })),
+      },
+    })
+    expect(panoramic.wordFitStatus).toBe("split-required")
+    expect(panoramic.documentReady).toBe(false)
+    expect(panoramic.wordFitReasons?.some((item) => item.includes("Semantic density"))).toBe(true)
+    expect(panoramic.wordFitReasons?.some((item) => item.includes("Aspect ratio"))).toBe(true)
+  })
+
   test("validates Mermaid source and saves source/png artifacts", async () => {
     await Effect.runPromise(
       provideTmpdirInstance(
@@ -65,6 +177,13 @@ describe("kilocode Mermaid documents", () => {
             const invalid = validateMermaidDiagram({ source: "this is not Mermaid" })
             expect(invalid.valid).toBe(false)
             expect(invalid.diagnostics.some((item) => item.code === "mermaid-render-failed")).toBe(true)
+
+            const escaped = validateMermaidDiagram({
+              source: String.raw`flowchart TD
+  A["value \"quoted\""] --> B["done"]`,
+            })
+            expect(escaped.valid).toBe(false)
+            expect(escaped.diagnostics.some((item) => item.message.includes("backslash-escaped quotes"))).toBe(true)
 
             const saved = await saveMermaidArtifact({
               source: SIMPLE_MERMAID,
@@ -177,57 +296,64 @@ describe("kilocode Mermaid documents", () => {
               await nested.stop()
             }
 
-            const rejected = await serveJson({
-              ok: false,
-              issues: [{ severity: "error", code: "mermaid-source-empty", message: "source is required" }],
-            })
+            const previousCommand = process.env["KILO_MERMAID_MMDC"]
+            process.env["KILO_MERMAID_MMDC"] = path.join(dir, "missing-mmdc")
             try {
-              const rendered = await renderMermaidDiagram({
-                source: SIMPLE_MERMAID,
-                remoteEndpoint: rejected.origin,
+              const rejected = await serveJson({
+                ok: false,
+                issues: [{ severity: "error", code: "mermaid-source-empty", message: "source is required" }],
               })
-              expect(rendered.rendered).toBe(false)
-              expect(rendered.issues).toEqual([
-                { severity: "error", code: "mermaid-source-empty", message: "source is required" },
-              ])
-              expect(rendered.diagnostics).toContainEqual(
-                expect.objectContaining({
+              try {
+                const rendered = await renderMermaidDiagram({
+                  source: SIMPLE_MERMAID,
+                  remoteEndpoint: rejected.origin,
+                })
+                expect(rendered.rendered).toBe(false)
+                expect(rendered.issues).toEqual([
+                  { severity: "error", code: "mermaid-source-empty", message: "source is required" },
+                ])
+                expect(rendered.diagnostics).toContainEqual(
+                  expect.objectContaining({
+                    code: "mermaid-render-failed",
+                    severity: "error",
+                    message: expect.stringContaining("mermaid-source-empty: source is required"),
+                  }),
+                )
+              } finally {
+                await rejected.stop()
+              }
+
+              const empty = await serveJson({ ok: true, issues: [] })
+              try {
+                const rendered = await renderMermaidDiagram({
+                  source: SIMPLE_MERMAID,
+                  remoteEndpoint: empty.origin,
+                })
+                expect(rendered.rendered).toBe(false)
+                expect(rendered.diagnostics).toContainEqual({
                   code: "mermaid-render-failed",
                   severity: "error",
-                  message: expect.stringContaining("mermaid-source-empty: source is required"),
-                }),
-              )
-            } finally {
-              await rejected.stop()
-            }
+                  message: "remote Mermaid renderer returned no PNG",
+                })
+              } finally {
+                await empty.stop()
+              }
 
-            const empty = await serveJson({ ok: true, issues: [] })
-            try {
-              const rendered = await renderMermaidDiagram({
-                source: SIMPLE_MERMAID,
-                remoteEndpoint: empty.origin,
-              })
-              expect(rendered.rendered).toBe(false)
-              expect(rendered.diagnostics).toContainEqual({
-                code: "mermaid-render-failed",
-                severity: "error",
-                message: "remote Mermaid renderer returned no PNG",
-              })
+              const slow = await serveJson({ pngBase64: PNG_1X1 }, undefined, 50)
+              try {
+                const timedOut = await renderMermaidDiagram({
+                  source: SIMPLE_MERMAID,
+                  remoteEndpoint: slow.origin,
+                  timeoutMs: 1,
+                })
+                expect(timedOut.rendered).toBe(false)
+                expect(timedOut.diagnostics.some((item) => item.code === "mermaid-render-timeout")).toBe(true)
+              } finally {
+                await slow.stop()
+              }
             } finally {
-              await empty.stop()
-            }
-
-            const slow = await serveJson({ pngBase64: PNG_1X1 }, undefined, 50)
-            try {
-              const timedOut = await renderMermaidDiagram({
-                source: SIMPLE_MERMAID,
-                remoteEndpoint: slow.origin,
-                timeoutMs: 1,
-              })
-              expect(timedOut.rendered).toBe(false)
-              expect(timedOut.diagnostics.some((item) => item.code === "mermaid-render-timeout")).toBe(true)
-            } finally {
-              await slow.stop()
+              if (previousCommand === undefined) delete process.env["KILO_MERMAID_MMDC"]
+              else process.env["KILO_MERMAID_MMDC"] = previousCommand
             }
           }),
         { git: true },
@@ -362,6 +488,37 @@ describe("kilocode Mermaid documents", () => {
             const inspection = await inspectWordDocument({ path: inserted.wordPath! })
             expect(inspection.images.length).toBe(1)
             expect(inspection.paragraphs.some((item) => item.text === "Figure 1. Mermaid flow")).toBe(true)
+          }),
+        { git: true },
+      ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
+    )
+  })
+
+  test("preserves and inspects PlantUML source metadata in an inserted Word PNG", async () => {
+    await Effect.runPromise(
+      provideTmpdirInstance(
+        (dir) =>
+          Effect.promise(async () => {
+            const word = await createWordDocument({
+              title: "PlantUML Word",
+              outputFile: "plantuml-word.docx",
+              sections: [{ title: "Diagrams", paragraphs: ["Before diagram"] }],
+            })
+            const inserted = await insertMermaidIntoWord({
+              wordPath: word.path,
+              source: SIMPLE_MERMAID,
+              pngBase64: plantumlPng().toString("base64"),
+              heading: "Diagrams",
+              caption: "Figure 1. PlantUML class diagram",
+              outputFile: "plantuml-word-updated.docx",
+            })
+
+            const inspection = await inspectWordDocument({ path: inserted.wordPath! })
+            expect(inspection.images[0]?.plantUmlSource).toBe(SIMPLE_PLANTUML)
+            expect(inspection.images[0]?.plantUmlVersion).toBe("1.2026.6")
+            const bytes = await fs.readFile(path.join(dir, inserted.wordPath!))
+            const extracted = await extractDocxPlantUml(bytes)
+            expect(extracted.diagrams[0]?.source).toBe(SIMPLE_PLANTUML)
           }),
         { git: true },
       ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),

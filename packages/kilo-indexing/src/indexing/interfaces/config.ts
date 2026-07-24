@@ -3,6 +3,10 @@ import type { EmbedderProvider } from "./manager"
 export type DocumentIndexConfig = {
   enabled?: boolean
   paths?: string[]
+  approvedExternalRoots?: Array<{
+    path: string
+    workspace?: string
+  }>
   include?: string[]
   exclude?: string[]
   maxFiles?: number

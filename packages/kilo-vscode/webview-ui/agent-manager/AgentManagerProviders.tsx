@@ -25,7 +25,7 @@ import { SessionProvider } from "../src/context/session"
 import { AgentRequirementsProvider } from "../src/context/agent-requirements"
 import { WorktreeModeProvider } from "../src/context/worktree-mode"
 import { IndexingProvider } from "../src/context/indexing"
-import { DataBridge, MermaidDownloadBridge } from "../src/App"
+import { DataBridge, MermaidDownloadBridge, PlantUmlBridge } from "../src/App"
 import { LanguageBridge } from "../src/context/language-bridge"
 import { SpeechToTextPrewarm } from "../src/components/speech-to-text/SpeechToTextPrewarm"
 import { AgentManagerContent } from "./AgentManagerApp"
@@ -36,6 +36,7 @@ export const AgentManagerApp: Component = () => {
       <DialogProvider>
         <VSCodeProvider>
           <MermaidDownloadBridge />
+          <PlantUmlBridge />
           <ServerProvider>
             <LanguageBridge>
               <MarkedProvider>

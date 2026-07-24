@@ -6,11 +6,14 @@ import type { MarketplaceService } from "."
 import type {
   InstallMarketplaceItemOptions,
   InstallResult,
+  LocalSkillImportItemResult,
   MarketplaceDataResponse,
   MarketplaceItem,
   MarketplaceItemRef,
   RemoveResult,
+  SkillImportActivation,
 } from "./types"
+import { safeMarketplaceErrorText } from "./errors"
 import { normalizeSkillKey } from "./skills"
 
 export interface MarketplaceActionContext {
@@ -52,6 +55,8 @@ export async function installMarketplaceItem(
   }
 
   try {
+    const target = await instanceTarget(ctx, item, scope, project)
+    if (target.error) return { success: false, slug: item.id, error: target.error }
     const result = await ctx.marketplace.install(item, opts, project)
     if (result.success) await invalidate(ctx, item, scope, scope === "project" ? project! : dir)
     return result
@@ -73,16 +78,48 @@ export async function removeMarketplaceItem(
 
   try {
     if (item.type === "mcp") await removeLegacyMcp(ctx, item.id, project, scope)
-    const location = item.type === "skill" ? await discoveredSkillLocation(ctx, item, dir) : undefined
-    if (item.type === "skill" && !location) {
-      return { success: false, slug: item.id, error: "Skill is not currently discovered" }
-    }
-    const result = await ctx.marketplace.remove(item, scope, project, location)
+    const target = await removalTarget(ctx, item, scope, project, dir)
+    if (target.error) return { success: false, slug: item.id, error: target.error }
+    const result = await ctx.marketplace.remove(item, scope, project, target.location)
     if (result.success) await invalidate(ctx, item, scope, scope === "project" ? project! : dir)
     return result
   } catch (err) {
     return { success: false, slug: item.id, error: String(err) }
   }
+}
+
+async function removalTarget(
+  ctx: MarketplaceActionContext,
+  item: MarketplaceItem,
+  scope: "project" | "global",
+  project: string | undefined,
+  dir: string,
+): Promise<{ location?: string; error?: string }> {
+  if (item.type !== "skill") return {}
+  if (!item.instanceId) {
+    const location = await discoveredSkillLocation(ctx, item, dir)
+    return location ? { location } : { error: "Skill instance is not available" }
+  }
+  return instanceTarget(ctx, item, scope, project)
+}
+
+async function instanceTarget(
+  ctx: MarketplaceActionContext,
+  item: MarketplaceItem,
+  scope: "project" | "global",
+  project: string | undefined,
+): Promise<{ location?: string; error?: string }> {
+  if (item.type !== "skill" || !item.instanceId) return {}
+  if (item.localScope !== scope) return { error: "Skill scope does not match the selected instance" }
+  const instance = await ctx.marketplace.skillInstance(item.instanceId, project)
+  if (!instance) return { error: "Skill instance is no longer installed" }
+  if (instance.id !== item.id || instance.scope !== scope) {
+    return { error: "Skill instance identity does not match the request" }
+  }
+  if (item.localSha256 !== instance.sha256) {
+    return { error: "Skill changed after the Marketplace list was loaded" }
+  }
+  return { location: instance.location }
 }
 
 async function discoveredSkillLocation(
@@ -174,6 +211,43 @@ export async function invalidateMarketplaceSkills(
   dir: string,
 ) {
   await refresh(ctx, scope, dir)
+}
+
+export async function activateMarketplaceSkills(
+  ctx: { connection: KiloConnectionService },
+  scope: "project" | "global",
+  dir: string,
+  ids: readonly string[],
+): Promise<SkillImportActivation> {
+  const expected = [...new Set(ids.map(normalizeSkillKey).filter(Boolean))]
+  if (expected.length === 0) return { status: "ready" }
+
+  try {
+    const client = await retry(() => ctx.connection.getClientAsync(dir))
+    await retry(() => client.kilocode.refreshSkills({ directory: dir, scope }, { throwOnError: true }))
+    const { data } = await retry(() => client.app.skills({ directory: dir }, { throwOnError: true }))
+    const found = new Set((data ?? []).map((skill) => normalizeSkillKey(skill.name)).filter(Boolean))
+    const missingIds = expected.filter((id) => !found.has(id))
+    if (missingIds.length === 0) return { status: "ready" }
+
+    console.warn("[Kilo New] Local Skill refresh completed with missing Skills:", {
+      scope,
+      directory: dir,
+      missingIds,
+    })
+    return { status: "failed", phase: "post-refresh-verification", missingIds }
+  } catch (err) {
+    console.warn("[Kilo New] Local Skill refresh request failed:", { scope, directory: dir, err })
+    return {
+      status: "failed",
+      phase: "refresh-request",
+      message: safeMarketplaceErrorText(err instanceof Error ? err.message : err) || "Unknown refresh error",
+    }
+  }
+}
+
+export function activatableSkillIds(items: readonly LocalSkillImportItemResult[]): string[] {
+  return items.filter((item) => item.status === "installed" || item.status === "unchanged").map((item) => item.id)
 }
 
 async function removeLegacyMcp(

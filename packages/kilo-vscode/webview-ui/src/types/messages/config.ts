@@ -105,6 +105,7 @@ export interface IndexingConfig {
   documents?: {
     enabled?: boolean
     paths?: string[]
+    approvedExternalRoots?: Array<{ path: string; workspace?: string }>
     include?: string[]
     exclude?: string[]
     maxFiles?: number

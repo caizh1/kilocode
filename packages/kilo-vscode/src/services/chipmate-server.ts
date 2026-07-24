@@ -9,7 +9,7 @@ import {
   type ChipmateServerTestResult,
 } from "../shared/chipmate-server"
 
-const REQUIRED = ["chromium", "mermaid", "soffice", "pdftoppm", "pdfinfo"] as const
+const REQUIRED = ["chromium", "mermaid", "soffice", "pdftoppm", "pdfinfo", "java", "plantuml", "graphviz"] as const
 
 export function resolveChipmateServer(): ChipmateServerState {
   const config = vscode.workspace.getConfiguration("chipmate.v2.chipmateServer")

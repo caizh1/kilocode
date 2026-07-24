@@ -35,9 +35,18 @@ Coverage `PASS` means every changeset and runtime path has a structurally valid 
 
 - Windows 11 with an interactive desktop;
 - Visual Studio Code Stable, or pass `-CodePath`;
-- Node.js 20 or newer available as `node.exe`;
-- the frozen `chipmate-0.0.88-win32-x64-baseline.vsix`;
-- optional `0.0.86` and Kilo VSIX files for upgrade and coexistence lanes.
+- Node.js 20 or newer available as `node.exe`, or VS Code Stable's Electron Node runtime;
+- the frozen `chipmate-1.0.9-win32-x64-baseline.vsix`;
+- optional `1.0.8` and Kilo VSIX files for upgrade and coexistence lanes.
+
+For the recurring Mac-hosted lane, install the official [Windows 11 ARM64 ISO](https://learn.microsoft.com/en-us/windows/arm/iso) in a Parallels release that explicitly supports the host Mac and macOS version. Run x64 VS Code so the same x64 baseline artifact is exercised through Windows Prism; Microsoft documents the [x64 compatibility layer on Windows ARM](https://learn.microsoft.com/en-us/windows/arm/apps-on-arm-program-compat-troubleshooter). The artifact contains both baseline x64 and native ARM64 CLI sidecars: Windows ARM selects the native sidecar, while native Windows x64 selects the baseline sidecar. Parallels and Windows licenses are separate prerequisites.
+
+Every run must declare exactly one gate:
+
+- `arm64-vm`: Windows 11 ARM64 in Parallels on the Mac, running x64 VS Code and the x64-targeted baseline VSIX. VS Code remains under Prism while the extension selects the packaged native ARM64 backend. This is the recurring functional and visual regression gate.
+- `native-x64`: native Windows 11 x64 with x64 VS Code and hardware acceleration. This is the final release gate and cannot be replaced by an ARM VM result.
+
+Keep both result sets. Any required `FAIL`, `FLAKY`, `REVIEW`, or `BLOCKED` result blocks signoff.
 
 Use a dedicated, sanitized fixture. The runner creates its own profile and never reads the normal VS Code user-data or extensions directories.
 
@@ -48,27 +57,43 @@ Set-ExecutionPolicy -Scope Process Bypass
 cd packages\kilo-vscode\qa\windows-real
 
 .\run.ps1 `
-  -Vsix C:\qa\chipmate-0.0.88-win32-x64-baseline.vsix `
+  -Vsix C:\qa\chipmate-1.0.9-win32-x64-baseline.vsix `
+  -PreviousVsix C:\qa\chipmate-1.0.8-win32-x64-baseline.vsix `
   -CodePath "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe" `
   -FixtureRoot C:\qa\fixtures\chipmate-regression `
-  -Output C:\qa\runs\chipmate-0.0.88-smoke `
-  -Lane smoke
+  -Output C:\qa\runs\chipmate-1.0.9-arm64-smoke `
+  -Gate arm64-vm `
+  -Gpu default `
+  -Lane agent-console
 ```
+
+Repeat the same frozen kit with `-Gpu disabled`, then repeat both GPU lanes with `-Gate native-x64` on the native x64 release machine. Do not merge the four result directories.
+
+Before the installed UI run, verify the selected CLI independently with fresh storage on the target machine:
+
+```powershell
+.\cli-startup-matrix.ps1 `
+  -Cli C:\qa\installed-extension\bin\kilo-arm64.exe `
+  -Root C:\qa\runs\cli-startup-arm64 `
+  -Runs 10
+```
+
+The matrix records the exact CLI and launcher PID, SHA-256, port readiness, stdout/stderr, signed exit code, hexadecimal exit code, and explicit `0xC0000005` classification. Any run that does not become ready is a failure; retries do not turn a crash into a pass.
 
 For a standalone handoff ZIP, freeze the current VSIX and ledger on macOS:
 
 ```bash
 cd packages/kilo-vscode
 bun run qa:windows:freeze -- \
-  --windows ../../chipmate-0.0.88-win32-x64-baseline.vsix \
-  --macos ../../chipmate-0.0.88-darwin-arm64.vsix \
-  --previous ../../chipmate-0.0.86-win32-x64-baseline.vsix \
-  --output ../../chipmate-proxy-regression-kit-0.0.88.zip
+  --windows ../../chipmate-1.0.9-win32-x64-baseline.vsix \
+  --macos ../../chipmate-1.0.9-darwin-arm64.vsix \
+  --previous ../../chipmate-1.0.8-win32-x64-baseline.vsix \
+  --output ../../chipmate-proxy-regression-kit-1.0.9.zip
 ```
 
 After extracting the ZIP on Windows, run `RUN-WINDOWS.ps1`. Add `--kilo <path>` while freezing when the Kilo coexistence artifact is available.
 
-Use `-Lane package` for archive inspection only, or `-Lane core` for package, installed-host, typing, visual, update, and failure-path preparation. `-NoGui` intentionally blocks GUI cases rather than pretending they passed.
+Use `-Lane agent-console` for the installed Agent Console, real PowerShell/IME, CLI lifecycle, CDP, scroll, stress, and visual evidence gate without inheriting unrelated unfinished matrix work. Use `-Lane package` for archive inspection only, or `-Lane core` for package, installed-host, typing, visual, update, and failure-path preparation. `-NoGui` intentionally blocks GUI cases rather than pretending they passed.
 
 The runner prints the paths to:
 

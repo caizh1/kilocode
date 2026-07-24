@@ -9,7 +9,7 @@
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
 import type { AssistantMessage } from "@kilocode/sdk/v2"
-import { onMount } from "solid-js"
+import { createSignal, onCleanup, onMount, type Component } from "solid-js"
 import { MemoryContract } from "@kilocode/kilo-memory/effect/httpapi"
 import { MemorySchema } from "@kilocode/kilo-memory/schema"
 import { StoryProviders, defaultMockData, mockSessionValue } from "./StoryProviders"
@@ -823,6 +823,230 @@ export const QAMermaidStreaming: Story = {
   render: () => renderMermaidChat(true),
 }
 
+const plantUmlUserID = "user-msg-plantuml-001"
+const plantUmlAssistantID = "asst-msg-plantuml-001"
+const plantUmlNow = 1_700_000_320_000
+const plantUmlSource = `@startuml
+class Controller
+Controller --> Service
+@enduml`
+const plantUmlStreamText = `类图：
+
+\`\`\`PlantUML
+${plantUmlSource}
+\`\`\``
+const plantUmlMessages = [
+  {
+    id: plantUmlUserID,
+    sessionID: SESSION_ID,
+    role: "user",
+    time: { created: plantUmlNow },
+  },
+  {
+    id: plantUmlAssistantID,
+    sessionID: SESSION_ID,
+    role: "assistant",
+    parentID: plantUmlUserID,
+    time: { created: plantUmlNow + 1000, completed: plantUmlNow + 2000 },
+    modelID: "deepseek-v4-flash",
+    providerID: "myprovider",
+    mode: "code",
+    agent: "code",
+    path: { cwd: "/project", root: "/project" },
+  },
+]
+const plantUmlParts = {
+  [plantUmlUserID]: [
+    {
+      id: "part-user-plantuml-001",
+      sessionID: SESSION_ID,
+      messageID: plantUmlUserID,
+      type: "text",
+      text: `请在 Code 模式画 UML 类图和时序图；不要渲染我消息里的源码：
+@startuml
+User -> UI
+@enduml`,
+    },
+  ],
+  [plantUmlAssistantID]: [
+    {
+      id: "part-text-plantuml-001",
+      sessionID: SESSION_ID,
+      messageID: plantUmlAssistantID,
+      type: "text",
+      text: `${plantUmlStreamText}
+
+uml 别名：
+
+\`\`\`uml
+@startuml
+Alice -> Bob: 认证请求
+@enduml
+\`\`\`
+
+裸源码错误图：
+@startuml
+Broken ->
+@enduml`,
+    },
+  ],
+}
+const plantUmlData = {
+  ...defaultMockData,
+  message: { [SESSION_ID]: plantUmlMessages },
+  part: plantUmlParts,
+}
+const plantUmlPng =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+
+const PlantUmlStoryBridge: Component<{ delay: number }> = (props) => {
+  const timers = new Set<ReturnType<typeof setTimeout>>()
+  const render = (event: Event) => {
+    const detail = (event as CustomEvent<{ requestId: string; source: string }>).detail
+    if (!detail?.requestId || !detail.source) return
+    event.preventDefault()
+    const timer = setTimeout(() => {
+      timers.delete(timer)
+      const broken = detail.source.includes("Broken ->")
+      window.dispatchEvent(
+        new CustomEvent("kilo:plantuml-rendered", {
+          detail: broken
+            ? {
+                type: "plantUmlRendered",
+                requestId: detail.requestId,
+                ok: false,
+                issues: ["Syntax Error near line 2"],
+              }
+            : {
+                type: "plantUmlRendered",
+                requestId: detail.requestId,
+                ok: true,
+                dataUrl: plantUmlPng,
+                width: 480,
+                height: 280,
+                issues: [],
+              },
+        }),
+      )
+    }, props.delay)
+    timers.add(timer)
+  }
+  window.addEventListener("kilo:render-plantuml", render)
+  onCleanup(() => {
+    window.removeEventListener("kilo:render-plantuml", render)
+    for (const timer of timers) clearTimeout(timer)
+  })
+  return null
+}
+
+function renderPlantUmlChat(status: "idle" | "busy" = "idle", delay = 500, completed = true) {
+  const messages = completed
+    ? plantUmlMessages
+    : [plantUmlMessages[0], { ...plantUmlMessages[1], time: { created: plantUmlNow + 1000 } }]
+  const session = {
+    ...mockSessionValue({ id: SESSION_ID, status }),
+    messages: () => messages,
+    visibleMessages: () => messages,
+    userMessages: () => messages.filter((message) => message?.role === "user"),
+    getParts: (id: string) => plantUmlParts[id as keyof typeof plantUmlParts] ?? [],
+  }
+  return (
+    <StoryProviders data={plantUmlData} sessionID={SESSION_ID} status={status} noPadding>
+      <SessionContext.Provider value={session as any}>
+        <PlantUmlStoryBridge delay={delay} />
+        <div style={{ height: "760px", display: "flex", "flex-direction": "column" }}>
+          <ChatView />
+        </div>
+      </SessionContext.Provider>
+    </StoryProviders>
+  )
+}
+
+function QAPlantUmlStreamingStory() {
+  const [text, setText] = createSignal(plantUmlStreamText)
+  const messages = [
+    plantUmlMessages[0],
+    { ...plantUmlMessages[1], time: { created: plantUmlNow + 1000 } },
+  ]
+  const session = {
+    ...mockSessionValue({ id: SESSION_ID, status: "busy" }),
+    messages: () => messages,
+    visibleMessages: () => messages,
+    userMessages: () => messages.filter((message) => message?.role === "user"),
+    getParts: (id: string) => {
+      if (id !== plantUmlAssistantID) return plantUmlParts[id as keyof typeof plantUmlParts] ?? []
+      return [{ ...plantUmlParts[plantUmlAssistantID][0], text: text() }]
+    },
+  }
+
+  onMount(() => {
+    const target = window as Window & {
+      plantUmlStreamNext?: () => void
+      plantUmlStreamChange?: () => void
+      plantUmlStreamDuplicate?: () => void
+    }
+    target.plantUmlStreamNext = () => setText((value) => `${value}\n\n继续生成说明。`)
+    target.plantUmlStreamChange = () =>
+      setText(`类图：
+
+\`\`\`plantuml
+@startuml
+class Controller
+Controller --> Repository
+@enduml
+\`\`\``)
+    target.plantUmlStreamDuplicate = () =>
+      setText((value) => `${value}
+
+缓存中的相同类图：
+
+\`\`\`plantuml
+${plantUmlSource}
+\`\`\``)
+    onCleanup(() => {
+      delete target.plantUmlStreamNext
+      delete target.plantUmlStreamChange
+      delete target.plantUmlStreamDuplicate
+    })
+  })
+
+  return (
+    <StoryProviders data={plantUmlData} sessionID={SESSION_ID} status="busy" locale="zh" noPadding>
+      <SessionContext.Provider value={session as any}>
+        <PlantUmlStoryBridge delay={30_000} />
+        <div style={{ height: "720px", display: "flex", "flex-direction": "column" }}>
+          <ChatView />
+        </div>
+      </SessionContext.Provider>
+    </StoryProviders>
+  )
+}
+
+export const QAPlantUMLComplete: Story = {
+  name: "QA — Code mode normalizes and renders PlantUML",
+  render: () => renderPlantUmlChat(),
+}
+
+export const QAPlantUMLIdleFallback: Story = {
+  name: "QA — idle renders without message completion timestamp",
+  render: () => renderPlantUmlChat("idle", 500, false),
+}
+
+export const QAPlantUMLLongWait: Story = {
+  name: "QA — PlantUML long server render",
+  render: () => renderPlantUmlChat("idle", 10_000),
+}
+
+export const QAPlantUMLTimeout: Story = {
+  name: "QA — PlantUML server timeout",
+  render: () => renderPlantUmlChat("idle", 120_000),
+}
+
+export const QAPlantUMLStreaming: Story = {
+  name: "QA — PlantUML renders while streaming",
+  render: () => <QAPlantUmlStreamingStory />,
+}
+
 export const QAUserMessageLengths: Story = {
   name: "QA — user message length states",
   render: () => {
@@ -1530,9 +1754,11 @@ const mockMemory: MemoryContextValue = {
 }
 
 const memoryHeader = (width: string) => {
+  const msgs = [{ id: "msg-001", role: "assistant" }] as any[]
   const session = {
     ...mockSessionValue({ id: SESSION_ID, status: "idle" }),
-    messages: () => [{ id: "msg-001" }] as any[],
+    messages: () => msgs,
+    visibleMessages: () => msgs,
     contextUsage: () => ({ tokens: 34300, percentage: 17 }),
     costBreakdown: () => [{ label: "Session", cost: 0.64 }],
     currentSession: () => ({

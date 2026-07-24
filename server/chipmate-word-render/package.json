@@ -1,6 +1,6 @@
 {
   "name": "chipmate-word-render",
-  "version": "0.1.14",
+  "version": "0.1.18",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -13,6 +13,7 @@
     "generate:check": "tsx scripts/generate-contracts.ts --check",
     "lint": "eslint apps packages scripts",
     "preview:seed": "tsx scripts/seed-preview.ts",
+    "smoke:plantuml": "node scripts/smoke-plantuml.mjs",
     "test": "npm run --workspaces --if-present test",
     "test:e2e:web": "playwright test --config playwright.web.config.ts",
     "test:e2e:web:chrome": "playwright test --config playwright.web.config.ts --project chrome",

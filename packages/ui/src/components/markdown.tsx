@@ -9,6 +9,7 @@ import { isServer } from "solid-js/web"
 import { stream } from "./markdown-stream"
 import { tryFastRender } from "../kilocode/markdown-fast-path" // kilocode_change
 import { disposeMermaid, hasMermaid, preserveMermaid, renderMermaid, type MermaidLabels } from "../kilocode/markdown-mermaid" // kilocode_change
+import { disposePlantUml, hasPlantUml, preservePlantUml, renderPlantUml, type PlantUmlLabels } from "../kilocode/markdown-plantuml" // kilocode_change
 import { preserveStreamingHighlight } from "../kilocode/markdown-stream-highlight" // kilocode_change
 import { createIncrementalMarkdown, type MarkdownBlock } from "../kilocode/markdown-incremental-dom" // kilocode_change
 
@@ -307,6 +308,9 @@ export function Markdown(
   // kilocode_change start: Mermaid diagram rendering
   const mermaidState = { gen: 0, signal: { aborted: false } }
   // kilocode_change end
+  // kilocode_change start: PlantUML diagram rendering
+  const plantUmlState = { gen: 0, signal: { aborted: false } }
+  // kilocode_change end
 
   // kilocode_change start: rAF-coalesced morphdom render.
   // During LLM token streaming, content updates arrive at 60–200Hz. Each
@@ -320,7 +324,7 @@ export function Markdown(
   let pendingLabels: { copy: string; copied: string } | undefined
   // kilocode_change end
   // kilocode_change start
-  const incremental = createIncrementalMarkdown<MermaidLabels>(decorate, {
+  const incremental = createIncrementalMarkdown<{ mermaid: MermaidLabels; plantuml: PlantUmlLabels }>(decorate, {
     cancel: () => {
       if (pendingFrame === undefined) return
       cancelAnimationFrame(pendingFrame)
@@ -328,9 +332,10 @@ export function Markdown(
       pendingContent = undefined
       pendingLabels = undefined
     },
-    ready: (container, labels, mermaid) => {
+    ready: (container, labels, diagrams) => {
       copyCleanup ??= setupCodeCopy(container, () => labels)
-      kickMermaid(container, true, mermaid)
+      kickMermaid(container, true, diagrams.mermaid)
+      kickPlantUml(container, diagrams.plantuml)
       kickHighlight(container, labels)
     },
   })
@@ -355,11 +360,14 @@ export function Markdown(
       // kilocode_change end
       incremental.reset() // kilocode_change
       disposeMermaid(container) // kilocode_change
+      disposePlantUml(container) // kilocode_change
       container.innerHTML = ""
       // kilocode_change start: Mermaid diagram rendering
       mermaidState.signal.aborted = true
       mermaidState.gen++
       // kilocode_change end
+      plantUmlState.signal.aborted = true // kilocode_change
+      plantUmlState.gen++ // kilocode_change
       return
     }
 
@@ -394,6 +402,35 @@ export function Markdown(
       repairPrompt: (source: string, error: string) => i18n.t("ui.mermaid.repairPrompt", { source, error }),
     }
     // kilocode_change end
+    // kilocode_change start: PlantUML diagram rendering
+    const plant = (value: string) => value.replaceAll("Mermaid", "PlantUML")
+    const zh = i18n.locale().toLowerCase().startsWith("zh")
+    const plantuml = {
+      rendering: zh
+        ? "正在通过 ChipMate Server 渲染 UML 图片…"
+        : "Rendering PlantUML diagram through ChipMate Server...",
+      waiting: zh ? "服务器仍在渲染，请稍候…" : "The server is still rendering. Please wait...",
+      renderError: (message: string) => plant(i18n.t("ui.mermaid.renderError", { message })),
+      errorDefault: plant(i18n.t("ui.mermaid.errorDefault")),
+      copied: i18n.t("ui.message.copied"),
+      copySource: plant(i18n.t("ui.mermaid.copySource")),
+      downloadPng: i18n.t("ui.mermaid.downloadPng"),
+      zoomOut: i18n.t("ui.mermaid.zoomOut"),
+      zoomIn: i18n.t("ui.mermaid.zoomIn"),
+      fit: i18n.t("ui.mermaid.fit"),
+      openViewer: i18n.t("ui.mermaid.openViewer"),
+      viewerTitle: plant(i18n.t("ui.mermaid.viewerTitle")),
+      viewerControls: i18n.t("ui.mermaid.viewerControls"),
+      showSource: plant(i18n.t("ui.mermaid.showSource")),
+      hideSource: plant(i18n.t("ui.mermaid.hideSource")),
+      retry: zh ? "重试" : "Retry",
+      prepareRepair: i18n.t("ui.mermaid.prepareRepair"),
+      repairPrompt: (source: string, error: string) =>
+        zh
+          ? `请修复下面的 PlantUML 语法错误，并保持图表原意不变。只返回一个有效的 PlantUML fenced code block，不要添加其他解释。\n\n渲染错误：\n${error}\n\n源码：\n\`\`\`plantuml\n${source}\n\`\`\``
+          : `Fix the PlantUML syntax error below while preserving the diagram's meaning. Return exactly one valid fenced PlantUML block and no additional explanation.\n\nRender error:\n${error}\n\nSource:\n\`\`\`plantuml\n${source}\n\`\`\``,
+    }
+    // kilocode_change end
 
     // kilocode_change start
     const fast = tryFastRender(container, content, local.streaming, decorate, setupCodeCopy, () => labels, copyCleanup)
@@ -409,13 +446,14 @@ export function Markdown(
       incremental.reset() // kilocode_change
       copyCleanup = fast.copyCleanup
       kickMermaid(container, local.streaming ?? false, mermaid)
+      kickPlantUml(container, plantuml)
       kickHighlight(container, labels)
       return
     }
     // kilocode_change end
 
     if (local.streaming && hasMermaid(container)) disposeMermaid(container) // kilocode_change
-    if (incremental.render(local.streaming ?? false, container, rendered.blocks, labels, mermaid)) return // kilocode_change
+    if (incremental.render(local.streaming ?? false, container, rendered.blocks, labels, { mermaid, plantuml })) return // kilocode_change
     incremental.reset() // kilocode_change
 
     // kilocode_change start: queue the latest content for a single rAF tick.
@@ -443,7 +481,10 @@ export function Markdown(
       morphdom(container, temp, {
         childrenOnly: true,
         onNodeDiscarded: (node) => {
-          if (node instanceof HTMLElement) disposeMermaid(node)
+          if (node instanceof HTMLElement) {
+            disposeMermaid(node)
+            disposePlantUml(node)
+          }
         },
         onBeforeElUpdated: (fromEl, toEl) => {
           if (
@@ -460,6 +501,7 @@ export function Markdown(
           // normal markdown morphdom refreshes so they do not flicker back to
           // their source code while being re-rendered.
           if (preserveMermaid(fromEl, toEl)) return false
+          if (preservePlantUml(fromEl, toEl)) return false
           // kilocode_change end
           // Preserve Shiki-highlighted blocks — don't let morphdom revert them
           // to plain <pre><code> during streaming re-renders.
@@ -491,6 +533,7 @@ export function Markdown(
       // kilocode_change end
 
       kickMermaid(container, local.streaming ?? false, mermaid) // kilocode_change
+      kickPlantUml(container, plantuml) // kilocode_change
       kickHighlight(container, nextLabels)
     })
     // kilocode_change end
@@ -536,6 +579,22 @@ export function Markdown(
   }
   // kilocode_change end
 
+  // kilocode_change start: PlantUML diagram rendering
+  function kickPlantUml(container: HTMLDivElement, labels: PlantUmlLabels) {
+    plantUmlState.signal.aborted = true
+    plantUmlState.gen++
+    if (!hasPlantUml(container)) return
+
+    const gen = plantUmlState.gen
+    const signal = { aborted: false }
+    plantUmlState.signal = signal
+    void renderPlantUml(container, signal, labels).catch((err) => {
+      if (gen !== plantUmlState.gen || signal.aborted) return
+      console.warn("PlantUML render failed", err)
+    })
+  }
+  // kilocode_change end
+
   onCleanup(() => {
     // kilocode_change: cancel any in-flight deferredHighlight pass so its
     // completion callback doesn't touch the unmounted DOM.
@@ -547,6 +606,9 @@ export function Markdown(
     const container = root()
     if (container) disposeMermaid(container)
     // kilocode_change end
+    plantUmlState.signal.aborted = true // kilocode_change
+    plantUmlState.gen++ // kilocode_change
+    if (container) disposePlantUml(container) // kilocode_change
     // kilocode_change: cancel any queued rAF parse so it doesn't touch the
     // unmounted DOM after dispose.
     if (pendingFrame !== undefined) {

@@ -2,18 +2,18 @@
 
 状态约定：`✅ 已实现`、`⬜ 未实现`、`🟨 待复核`、`🚫 非当前范围`。已完成项后续不得退回套件级笼统描述；每次执行必须按原子 ID 上报结果。
 
-- 历史 changeset：85
-- 原子断言：296
+- 历史 changeset：86
+- 原子断言：306
 - macOS 是全部原子断言的代理验收主通道。
 - Windows 只要求安装、设置输入、索引和 Agent Console 高风险断言。
 
 | 原子 ID | 历史修复 | 父 case | 单一判定 | 源码测试 | macOS 安装态 | Windows 冒烟 |
 |---|---|---|---|---|---|---|
-| `REG-AGENT-CONSOLE-WEBVIEW-01` | `agent-console-webview` | `WIN-AGENT-CONSOLE` | Agent Console 使用真实交互终端 | ⬜ 未实现 | ⬜ 未实现 | ⬜ 未实现 |
-| `REG-AGENT-CONSOLE-WEBVIEW-02` | `agent-console-webview` | `WIN-AGENT-CONSOLE` | 普通命令在审批后执行并显示输出 | ⬜ 未实现 | ⬜ 未实现 | ⬜ 未实现 |
-| `REG-AGENT-CONSOLE-WEBVIEW-03` | `agent-console-webview` | `WIN-AGENT-CONSOLE` | 高风险命令触发二次确认 | ⬜ 未实现 | ⬜ 未实现 | ⬜ 未实现 |
-| `REG-AGENT-CONSOLE-WEBVIEW-04` | `agent-console-webview` | `WIN-AGENT-CONSOLE` | 取消审批后命令没有执行 | ⬜ 未实现 | ⬜ 未实现 | ⬜ 未实现 |
-| `REG-AGENT-CONSOLE-WEBVIEW-05` | `agent-console-webview` | `WIN-AGENT-CONSOLE` | 侧边栏快捷入口打开同一个 Agent Console | ⬜ 未实现 | ⬜ 未实现 | ⬜ 未实现 |
+| `REG-AGENT-CONSOLE-WEBVIEW-01` | `agent-console-webview` | `WIN-AGENT-CONSOLE` | Agent Console 使用真实交互终端 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-AGENT-CONSOLE-WEBVIEW-02` | `agent-console-webview` | `WIN-AGENT-CONSOLE` | Agent 审批命令执行并显示输出 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-AGENT-CONSOLE-WEBVIEW-03` | `agent-console-webview` | `WIN-AGENT-CONSOLE` | 高风险命令触发二次确认 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-AGENT-CONSOLE-WEBVIEW-04` | `agent-console-webview` | `WIN-AGENT-CONSOLE` | 取消审批后命令没有执行 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-AGENT-CONSOLE-WEBVIEW-05` | `agent-console-webview` | `WIN-AGENT-CONSOLE` | 侧边栏快捷入口打开同一个 Agent Console | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
 | `REG-ALIGN-QA-LIQUID-GLASS-01` | `align-qa-liquid-glass` | `WIN-QA-SESSION` | 940px 下 Composer 工具栏保持单行且控件可操作 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-ALIGN-QA-LIQUID-GLASS-02` | `align-qa-liquid-glass` | `WIN-QA-SESSION` | 560px 下语义选择器、索引和工具组不重叠 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-ALIGN-QA-LIQUID-GLASS-03` | `align-qa-liquid-glass` | `WIN-QA-SESSION` | 420px 下关键动作不越界 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
@@ -104,6 +104,16 @@
 | `REG-FAST-CODEGRAPH-FULL-SCAN-03` | `fast-codegraph-full-scan` | `WIN-RETRIEVAL-EVIDENCE` | 删除文件在扫描完成后被清理 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-FAST-CODEGRAPH-FULL-SCAN-04` | `fast-codegraph-full-scan` | `WIN-RETRIEVAL-EVIDENCE` | 支持文件通过 worker pool 解析 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-FAST-CODEGRAPH-FULL-SCAN-05` | `fast-codegraph-full-scan` | `WIN-RETRIEVAL-EVIDENCE` | worker pool 不可用时回退扫描完成 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
+| `REG-AGENT-CONSOLE-SINGLE-SHELL-01` | `fix-agent-console-windows-powershell` | `WIN-AGENT-CONSOLE` | Agent 模式不存在独立 textarea 且只有一个可见 Shell 提示符 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-AGENT-CONSOLE-SINGLE-SHELL-02` | `fix-agent-console-windows-powershell` | `WIN-AGENT-CONSOLE` | 已知命令直接执行且自然语言进入 Agent | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-AGENT-CONSOLE-SINGLE-SHELL-03` | `fix-agent-console-windows-powershell` | `WIN-AGENT-CONSOLE` | 连续 100 次 Enter 零丢失零重复 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-AGENT-CONSOLE-SINGLE-SHELL-04` | `fix-agent-console-windows-powershell` | `WIN-AGENT-CONSOLE` | 流式输出和 50 次模式切换没有空白帧或 DOM 重挂载 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-AGENT-CONSOLE-SINGLE-SHELL-05` | `fix-agent-console-windows-powershell` | `WIN-AGENT-CONSOLE` | 用户上滚后不被自动拉回底部 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-AGENT-CONSOLE-SINGLE-SHELL-06` | `fix-agent-console-windows-powershell` | `WIN-AGENT-CONSOLE` | ARM VM 与原生 x64 结果分别记录且不能互相替代 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-01` | `fix-agent-console-windows-powershell` | `WIN-AGENT-CONSOLE` | Windows Agent Console 启动 PowerShell 7 或 Windows PowerShell 5.1 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-02` | `fix-agent-console-windows-powershell` | `WIN-AGENT-CONSOLE` | PSReadLine 捕获别名函数与 PATH 命令 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-03` | `fix-agent-console-windows-powershell` | `WIN-AGENT-CONSOLE` | 中文 IME 第一 Enter 只提交候选且第二 Enter 才路由 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
+| `REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-04` | `fix-agent-console-windows-powershell` | `WIN-AGENT-CONSOLE` | PowerShell 捕获超时不清除当前编辑行 | ✅ 已实现 | ⬜ 未实现 | ✅ 已实现 |
 | `REG-FIX-CHIPMATE-WORK-STYLE-WELCOME-01` | `fix-chipmate-work-style-welcome` | `WIN-BRANDING-FIRST-RUN` | 首次安装 Welcome 全部显示 ChipMate | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-FIX-CHIPMATE-WORK-STYLE-WELCOME-02` | `fix-chipmate-work-style-welcome` | `WIN-BRANDING-FIRST-RUN` | 无有效偏好时 chat model 保持未选择 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-FIX-CHIPMATE-WORK-STYLE-WELCOME-03` | `fix-chipmate-work-style-welcome` | `WIN-BRANDING-FIRST-RUN` | 未选择模型时发送动作不可执行 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |

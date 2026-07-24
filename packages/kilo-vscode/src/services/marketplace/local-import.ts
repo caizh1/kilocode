@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto"
+import { normalizeSkillId } from "@opencode-ai/core/kilocode/skill-identity"
 import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
@@ -232,7 +233,7 @@ function repaired(candidate: SkillCandidate, values: { name?: string; descriptio
   const file = candidate.files.find((item) => item.path === "SKILL.md")
   if (!file) return candidate
   const current = readPortableMetadata(file.data.toString("utf8"))
-  const name = portable(values.name?.trim() || current.name || candidate.name)
+  const name = normalizeSkillId(values.name?.trim() || current.name || candidate.name) || "skill"
   const description = values.description?.trim() || current.description || candidate.description
   const files = candidate.files.map((item) =>
     item.path === "SKILL.md"
@@ -248,17 +249,6 @@ function repaired(candidate: SkillCandidate, values: { name?: string; descriptio
     files: readSkillArchive(snapshot.archive),
     snapshot,
   }
-}
-
-function portable(value: string) {
-  return (
-    value
-      .toLocaleLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .replace(/-{2,}/g, "-")
-      .slice(0, 64) || "skill"
-  )
 }
 
 async function exists(file: string) {

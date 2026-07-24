@@ -11,7 +11,7 @@ import { File } from "@kilocode/kilo-ui/file"
 import { MarkedProvider } from "@kilocode/kilo-ui/context/marked"
 import { ThemeProvider } from "@kilocode/kilo-ui/theme"
 import { Toast } from "@kilocode/kilo-ui/toast"
-import { DataBridge, MermaidDownloadBridge } from "../src/App"
+import { DataBridge, MermaidDownloadBridge, PlantUmlBridge } from "../src/App"
 import { AgentRequirementsProvider } from "../src/context/agent-requirements"
 import { ConfigProvider } from "../src/context/config"
 import { DisplayProvider } from "../src/context/display"
@@ -35,6 +35,7 @@ export const AgentConsoleApp: Component = () => (
     <DialogProvider>
       <VSCodeProvider>
         <MermaidDownloadBridge />
+        <PlantUmlBridge />
         <ServerProvider>
           <LanguageBridge>
             <MarkedProvider>

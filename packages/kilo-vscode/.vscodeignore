@@ -6,6 +6,8 @@ benchmark-results/**
 storybook-static/**
 test-results/**
 playwright-report/**
+.runtime/**
+.turbo/**
 node_modules/**
 src/**
 webview-ui/**
@@ -21,6 +23,7 @@ vsc-extension-quickstart.md
 **/*.ts
 **/.vscode-test.*
 AGENTS.md
+design-qa.md
 .prettierignore
 .env
 .env.*

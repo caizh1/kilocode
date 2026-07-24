@@ -59,13 +59,16 @@ async function frontmatter(file: string) {
   return yaml.parse(match?.[1] ?? "") as Record<string, unknown>
 }
 
-async function archive(name = "skill", content = "# Test Skill\n"): Promise<Buffer> {
+async function archive(name = "test-skill", content = "# Test Skill\n"): Promise<Buffer> {
   const root = path.join(tmpDir, "archive")
   const source = path.join(root, "source")
   const dir = path.join(source, name)
   const tarball = path.join(root, "skill.tar.gz")
   await fs.mkdir(dir, { recursive: true })
-  await fs.writeFile(path.join(dir, "SKILL.md"), content)
+  await fs.writeFile(
+    path.join(dir, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${name} fixture\n---\n\n${content}`,
+  )
   await exec("tar", ["-czf", tarball, "-C", source, name])
   return fs.readFile(tarball)
 }
@@ -246,7 +249,10 @@ describe("MarketplaceInstaller skills", () => {
     const dir = path.join(paths.skillsDir("project", tmpDir), "test-skill")
     await fs.mkdir(path.join(dir, "references"), { recursive: true })
     await Promise.all([
-      fs.writeFile(path.join(dir, "SKILL.md"), "# Installed\n"),
+      fs.writeFile(
+        path.join(dir, "SKILL.md"),
+        "---\nname: test-skill\ndescription: Installed fixture\n---\n\n# Installed\n",
+      ),
       fs.writeFile(path.join(dir, "references", "guide.md"), "# Guide\n"),
     ])
     const installer = new MarketplaceInstaller(paths)
@@ -344,7 +350,7 @@ describe("MarketplaceInstaller skills", () => {
     const result = await installer.installSkill(skill(url), "project", tmpDir)
 
     expect(result.success).toBe(true)
-    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf-8")).toBe(
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf-8")).toContain(
       "# Test Skill\n",
     )
     expect(
@@ -377,9 +383,9 @@ describe("MarketplaceInstaller skills", () => {
       expect(results.find((result) => !result.success)?.error).toBe(
         "Skill already installed. Uninstall it before installing again.",
       )
-      expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf-8")).toBe(
-        "# Test Skill\n",
-      )
+      expect(
+        await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf-8"),
+      ).toContain("# Test Skill\n")
       expect(
         (await fs.readdir(paths.skillsDir("project", tmpDir))).filter((name) => name.startsWith(".staging-")),
       ).toEqual([])
@@ -400,26 +406,26 @@ describe("MarketplaceInstaller skills", () => {
     })
 
     expect((await installer.installVerifiedSkill(payload(first, 1), "project", tmpDir)).success).toBe(true)
-    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toBe(
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toContain(
       "# First\n",
     )
 
     const second = await archive("test-skill", "# Second\n")
     expect((await installer.installVerifiedSkill(payload(second, 2), "project", tmpDir)).success).toBe(true)
-    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toBe(
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toContain(
       "# Second\n",
     )
 
     const rejected = await installer.installVerifiedSkill(payload(second, 3, "0".repeat(64)), "project", tmpDir)
     expect(rejected.error).toBe("Skill archive SHA-256 mismatch")
-    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toBe(
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toContain(
       "# Second\n",
     )
 
     const wrong = await archive("unexpected-root", "# Unsafe\n")
     const unsafe = await installer.installVerifiedSkill(payload(wrong, 3), "project", tmpDir)
     expect(unsafe.error).toContain("unexpected root")
-    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toBe(
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toContain(
       "# Second\n",
     )
   })

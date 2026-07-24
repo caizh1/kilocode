@@ -128,6 +128,14 @@ function execute(msg: DbRequest): unknown {
       return repo.extensionArtifactBySha(String(msg.payload))
     case "extensionArtifacts":
       return repo.extensionArtifacts(String(msg.payload))
+    case "extensionUpdateArtifacts":
+      return repo.extensionUpdateArtifacts(String(msg.payload))
+    case "extensionOwner":
+      return repo.extensionOwner(String(msg.payload))
+    case "bindExtensionOwner": {
+      const value = msg.payload as { id: string; userId: string; stamp: string }
+      return repo.bindExtensionOwner(value.id, value.userId, value.stamp)
+    }
     case "publishExtension":
       return repo.publishExtension(msg.payload as ExtensionArtifactInput)
     case "touchExtensionSource": {

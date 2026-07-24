@@ -451,7 +451,7 @@ export const openapi = {
       post: {
         operationId: "publishExtension",
         tags: ["extensions"],
-        description: "Upload one VSIX file. Web clients extract folders and archives locally, split unlimited selections into logical groups, and submit one VSIX per request. The service applies instance-wide concurrency and storage admission controls.",
+        description: "Upload one VSIX file. The first successful publisher owns the extension ID; successful ChipMate uploads immediately enter the automatic update manifest. Same-version, same-target content conflicts are rejected without replacing either artifact.",
         security: [{ cookieSession: [] }],
         parameters: [
           param("Idempotency-Key", "header", true),

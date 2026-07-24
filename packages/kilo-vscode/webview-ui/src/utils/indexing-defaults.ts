@@ -13,10 +13,11 @@ export function applyInternalIndexingDefaults(
 
   const def = internalOfflineIndexingDefaults()
   const provider = cfg.provider ?? def.provider
+  const paths = [".", ...(cfg.documents?.paths ?? []).filter((item) => item !== ".")]
   const documents = {
     ...cfg.documents,
     enabled: cfg.documents?.enabled ?? true,
-    paths: cfg.documents?.paths === undefined ? ["."] : cfg.documents.paths,
+    paths,
   }
   const base = {
     ...cfg,
