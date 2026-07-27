@@ -1,6 +1,6 @@
 import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { Button } from "@kilocode/kilo-ui/button"
-import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Spinner } from "@kilocode/kilo-ui/dynamic-spinner"
 import { Show } from "solid-js"
 import type { MarketplaceItem } from "../../types/marketplace"
 import { useLanguage } from "../../context/language"

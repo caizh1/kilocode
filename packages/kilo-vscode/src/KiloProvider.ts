@@ -4911,6 +4911,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       scriptUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "webview.js")),
       styleUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "webview.css")),
       iconsBaseUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "assets", "icons")),
+      motionBaseUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "assets", "loading-motion")),
       workerUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "shiki-worker.js")),
       title: "ChipMate",
       port: this.connectionService.getServerInfo()?.port,

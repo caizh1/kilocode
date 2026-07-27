@@ -312,6 +312,13 @@ export const dict = {
   "prompt.mode.shell": "Shell",
   "prompt.mode.shell.warning": "Shell 模式会立即执行命令，不经过 Agent 权限审批。",
   "prompt.mode.shell.exit": "按 esc 退出",
+  "prompt.ultra.confirm.title": "进入 Ultra 模式",
+  "prompt.ultra.confirm.description": "Ultra 会先进行更广泛的探索，再基于可验证的证据给出结论。",
+  "prompt.ultra.confirm.benefit.explore": "更全面地探索代码库",
+  "prompt.ultra.confirm.benefit.verify": "优先核实关键结论",
+  "prompt.ultra.confirm.benefit.cost": "通常需要更多时间与 Token",
+  "prompt.ultra.confirm.note": "适合复杂排障、架构分析和高风险评审。",
+  "prompt.ultra.confirm.action": "确认并进入 Ultra",
 
   "prompt.example.1": "修复代码库中的一个 TODO",
   "prompt.example.2": "这个项目的技术栈是什么？",

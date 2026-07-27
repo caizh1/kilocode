@@ -26,10 +26,20 @@ import { applyInternalIndexingDefaults, isInternalOffline } from "../internal-of
 import { InstanceState } from "@/effect/instance-state"
 import { KiloMemory } from "@kilocode/kilo-memory/effect"
 import { MemoryPaths } from "@kilocode/kilo-memory/effect/paths"
+import type { Parameters as TaskParameters } from "@/tool/task"
+import { UltraCouncilTools } from "./ultra-council"
+import { UltraCouncil } from "../agent/ultra-council"
+import { ProductProfile } from "../product-profile"
 
 const log = Log.create({ service: "kilocode-tool-registry" })
 type ConfigSource = Pick<Config.Interface, "get" | "getGlobal">
-type Deps = { agent: Agent.Interface; truncate: Truncate.Interface; internal?: boolean; indexing?: boolean }
+type Deps = {
+  agent: Agent.Interface
+  truncate: Truncate.Interface
+  task?: Tool.Def<typeof TaskParameters>
+  internal?: boolean
+  indexing?: boolean
+}
 type Loaders = {
   indexing?: () => Promise<{
     KiloIndexing: { ready: () => boolean; analysisReady?: () => boolean; documentReady?: () => boolean }
@@ -41,6 +51,7 @@ type Loaders = {
   word?: () => Promise<Pick<typeof import("@/kilocode/tool/word-documents"), "WordDocumentTools">>
   mermaid?: () => Promise<Pick<typeof import("@/kilocode/tool/mermaid-documents"), "MermaidDocumentTools">>
   plantuml?: () => Promise<Pick<typeof import("@/kilocode/tool/plantuml-diagram"), "PlantUmlDiagramTools">>
+  plantumlSource?: () => Promise<Pick<typeof import("@/kilocode/tool/plantuml-source"), "ExtractPlantUmlSourceTool">>
 }
 
 export namespace KiloToolRegistry {
@@ -230,6 +241,22 @@ export namespace KiloToolRegistry {
       const word = yield* wordTools(deps, loaders)
       const mermaid = yield* mermaidTools(deps, loaders)
       const plantuml = yield* plantumlTools(deps, loaders)
+      const plantumlSource = yield* plantumlSourceTool(deps, loaders)
+      const ultra =
+        deps.task && ProductProfile.chipmate
+          ? yield* Effect.gen(function* () {
+              const infos = yield* UltraCouncilTools(deps.task!, document).pipe(
+                Effect.provideService(Agent.Service, deps.agent),
+                Effect.provideService(Truncate.Service, deps.truncate),
+              )
+              return yield* Effect.all([
+                Tool.init(infos.explore),
+                Tool.init(infos.adjudicate),
+                Tool.init(infos.revise),
+                Tool.init(infos.arbitrate),
+              ])
+            })
+          : []
       return {
         ...base,
         terminal,
@@ -241,7 +268,8 @@ export namespace KiloToolRegistry {
         artifacts,
         word,
         mermaid,
-        plantuml,
+        plantuml: [...plantuml, ...plantumlSource],
+        ultra,
       }
     })
   }
@@ -449,11 +477,41 @@ export namespace KiloToolRegistry {
     })
   }
 
+  function plantumlSourceTool(deps: Deps, loaders: Loaders) {
+    return Effect.gen(function* () {
+      const source = loaders.plantumlSource ?? (() => import("@/kilocode/tool/plantuml-source"))
+      const mod = yield* Effect.tryPromise(() => source()).pipe(
+        Effect.catch((err) =>
+          Effect.sync(() => {
+            log.warn("PlantUML source extraction tool unavailable", { err })
+            return undefined
+          }),
+        ),
+      )
+      if (!mod) return []
+
+      const info = yield* mod.ExtractPlantUmlSourceTool.pipe(
+        Effect.provideService(Agent.Service, deps.agent),
+        Effect.provideService(Truncate.Service, deps.truncate),
+      )
+      return [yield* Tool.init(info)]
+    })
+  }
+
   /** Hide human-driven tools from agents that cannot interact with the user directly. */
   export function available(tool: Tool.Def, agent: Agent.Info) {
     if (agent.name === "agent-console") return tool.id === "agent_console_shell"
     if (tool.id === "agent_console_shell") return false
+    if (
+      tool.id === "ultra_council_explore" ||
+      tool.id === "ultra_council_adjudicate" ||
+      tool.id === "ultra_council_revise" ||
+      tool.id === "ultra_submit_arbitration"
+    ) {
+      return UltraCouncil.active(agent)
+    }
     if (tool.id === "render_plantuml_diagram") return ["ask", "code", "plan"].includes(agent.name)
+    if (tool.id === "extract_plantuml_source") return ["ask", "code", "ultra"].includes(agent.name)
     if (tool.id !== "interactive_terminal") return true
     return agent.mode === "primary"
   }
@@ -469,6 +527,7 @@ export namespace KiloToolRegistry {
       word?: Tool.Def[]
       mermaid?: Tool.Def[]
       plantuml?: Tool.Def[]
+      ultra?: Tool.Def[]
       recall: Tool.Def
       managerModels: Tool.Def
       memory: Tool.Def
@@ -502,6 +561,7 @@ export namespace KiloToolRegistry {
       ...(tools.word ?? []),
       ...(tools.mermaid ?? []),
       ...(tools.plantuml ?? []),
+      ...(tools.ultra ?? []),
       tools.memory,
       tools.save,
       tools.recall,

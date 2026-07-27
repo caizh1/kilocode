@@ -316,6 +316,14 @@ export const dict = {
   "prompt.mode.shell": "Shell",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "esc for at afslutte",
+  "prompt.ultra.confirm.title": "Skift til Ultra-tilstand",
+  "prompt.ultra.confirm.description":
+    "Ultra udforsker først bredere og præsenterer derefter konklusioner understøttet af verificerbar dokumentation.",
+  "prompt.ultra.confirm.benefit.explore": "Udforsk kodebasen mere grundigt",
+  "prompt.ultra.confirm.benefit.verify": "Verificer vigtige konklusioner først",
+  "prompt.ultra.confirm.benefit.cost": "Kræver normalt mere tid og flere tokens",
+  "prompt.ultra.confirm.note": "Velegnet til kompleks fejlfinding, arkitekturanalyse og højrisiko-reviews.",
+  "prompt.ultra.confirm.action": "Bekræft og skift til Ultra",
 
   "prompt.example.1": "Ret en TODO i koden",
   "prompt.example.2": "Hvad er teknologistakken for dette projekt?",

@@ -22,7 +22,7 @@ import {
   onCleanup,
 } from "solid-js"
 import { Icon } from "@kilocode/kilo-ui/icon"
-import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Spinner } from "@kilocode/kilo-ui/dynamic-spinner"
 import { createAutoScroll } from "@kilocode/kilo-ui/hooks"
 import { useSession } from "../../context/session"
 import { useServer } from "../../context/server"

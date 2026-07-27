@@ -233,10 +233,10 @@ describe("ChipMate product prompts", () => {
     'const ultraAgent = { ...agent, name: "ultra", native: true, prompt: ULTRA }',
     'const order = { env: ["ENV"], mem: ["MEMORY"], instructions: ["AGENTS"], skills: "SKILLS" }',
     "const ultraOrder = KiloSessionPrompt.system({ ...order, agent: ultraAgent })",
-    "const codeOrder = KiloSessionPrompt.system({ ...order, agent: { ...agent, name: \"code\", native: true } })",
+    'const codeOrder = KiloSessionPrompt.system({ ...order, agent: { ...agent, name: "code", native: true } })',
     "const ultra = await Effect.runPromise(LLMRequestPrep.prepare({ ...base, agent: ultraAgent, auth: undefined }))",
     "const ultraOauth = await Effect.runPromise(LLMRequestPrep.prepare({ ...base, agent: ultraAgent, auth }))",
-    'const ultraCustom = await Effect.runPromise(LLMRequestPrep.prepare({ ...base, agent: { ...ultraAgent, prompt: custom }, auth: undefined }))',
+    "const ultraCustom = await Effect.runPromise(LLMRequestPrep.prepare({ ...base, agent: { ...ultraAgent, prompt: custom }, auth: undefined }))",
     'const agents = await Promise.all(["ask", "code", "plan"].map((name) => Effect.runPromise(LLMRequestPrep.prepare({ ...base, agent: { ...agent, name }, auth: undefined }))))',
     "const modes = await Promise.all([plan, review, memory].map((entry) => Effect.runPromise(LLMRequestPrep.prepare({ ...base, system: [entry], auth: undefined }))))",
     "console.log(JSON.stringify({ soul: SystemPrompt.soul(), soulRaw: SOUL.trim(), instructions: SystemPrompt.instructions(), prompts, plan, review, memory, custom: KilocodeSystemPrompt.provider({ custom, defaults: [DEFAULT] })[0], technical: KilocodeSystemPrompt.brand(technical), standard: standard.system[0], standardMessage: standard.messages[0], oauth: String(oauth.params.options.instructions), oauthRoles: oauth.messages.map((message) => message.role), customRequest: customRequest.system[0], base: KilocodeSystemPrompt.provider({ defaults: SystemPrompt.provider(model) })[0], ultraRaw: ULTRA, ultra: ultra.system[0], ultraOauth: String(ultraOauth.params.options.instructions), ultraCustom: ultraCustom.system[0], ultraOrder, codeOrder, agents: agents.map((request) => request.system[0]), modes: modes.map((request) => request.system[0]) }))",
@@ -299,13 +299,20 @@ describe("ChipMate product prompts", () => {
     )
     expect(output.ultraRaw).toContain("For every user turn")
     expect(output.ultraRaw).toContain("without exception")
-    expect(output.ultraRaw).toContain("Launch 3 to 5 `task` calls together in one parallel wave")
-    expect(output.ultraRaw).toContain("Every call must set `subagent_type` to `explore`")
-    expect(output.ultraRaw).toContain("Obtain at least 3 valid Explore results")
-    expect(output.ultraRaw).toContain("never start more than 5 distinct task investigations")
-    expect(output.ultraRaw).toContain("Explore subagents are strictly read-only")
-    expect(output.ultraRaw).toContain("must verify important findings")
-    expect(output.ultraRaw).toContain("explicitly disclose that the Ultra exploration contract was not satisfied")
+    expect(output.ultraRaw).toContain("exactly three blind investigations in one parallel wave")
+    expect(output.ultraRaw).toContain("Each Explore subagent is independent and read-only")
+    expect(output.ultraRaw).toContain("After three valid reports")
+    expect(output.ultraRaw).toContain("fourth independent adjudicator")
+    expect(output.ultraRaw).toContain("runtime seals and delivers it without another model rewrite")
+    expect(output.ultraRaw).not.toContain("Reproduce complete boolean guards")
+    expect(output.ultraRaw).not.toContain("Avoid ornamental counts")
+    expect(output.ultraRaw).toContain("short contiguous source excerpts")
+    expect(output.ultraRaw).toContain("fifth independent verifier")
+    expect(output.ultraRaw).toContain("Never treat agreement as evidence")
+    expect(output.ultraRaw).toContain("Never start more than five Council investigations")
+    expect(output.ultraRaw).toContain("call `ultra_submit_arbitration`")
+    expect(output.ultraRaw).toContain("Document RAG are optional evidence sources")
+    expect(output.ultraRaw).toContain("contract-failure disclosure")
     expect(output.ultraOrder).toEqual(["ENV", "AGENTS", "SKILLS", "MEMORY"])
     expect(output.codeOrder).toEqual(["ENV", "MEMORY", "AGENTS", "SKILLS"])
     expect(output.modes[0]).toContain(output.plan)

@@ -313,6 +313,13 @@ export const dict = {
   "prompt.mode.shell": "Shell",
   "prompt.mode.shell.warning": "Shell 模式會立即執行命令，不經過 Agent 權限審批。",
   "prompt.mode.shell.exit": "按 esc 離開",
+  "prompt.ultra.confirm.title": "進入 Ultra 模式",
+  "prompt.ultra.confirm.description": "Ultra 會先進行更廣泛的探索，再根據可驗證的證據得出結論。",
+  "prompt.ultra.confirm.benefit.explore": "更全面地探索程式碼庫",
+  "prompt.ultra.confirm.benefit.verify": "優先核實關鍵結論",
+  "prompt.ultra.confirm.benefit.cost": "通常需要更多時間與 Token",
+  "prompt.ultra.confirm.note": "適合複雜疑難排解、架構分析和高風險審查。",
+  "prompt.ultra.confirm.action": "確認並進入 Ultra",
 
   "prompt.example.1": "修復程式碼庫中的一個 TODO",
   "prompt.example.2": "這個專案的技術堆疊是什麼？",

@@ -5,7 +5,7 @@
 import { Component, For, Match, Show, Switch, createSignal } from "solid-js"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
-import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Spinner } from "@kilocode/kilo-ui/dynamic-spinner"
 import { Tooltip, TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
 import { HoverCard } from "@kilocode/kilo-ui/hover-card"
 import { ContextMenu } from "@kilocode/kilo-ui/context-menu"

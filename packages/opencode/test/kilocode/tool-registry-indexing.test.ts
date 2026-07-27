@@ -56,6 +56,7 @@ describe("kilocode tool registry indexing", () => {
             expect(ids).toContain("validate_mermaid_diagram")
             expect(ids).toContain("render_mermaid_diagram")
             expect(ids).toContain("render_plantuml_diagram")
+            expect(ids).toContain("extract_plantuml_source")
             expect(ids).toContain("save_mermaid_artifact")
             expect(ids).toContain("insert_mermaid_into_word")
             expect(avail).not.toHaveBeenCalled()

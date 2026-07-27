@@ -3,7 +3,7 @@
 
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
-import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Spinner } from "@kilocode/kilo-ui/dynamic-spinner"
 import { createAutoScroll } from "@kilocode/kilo-ui/hooks"
 import { useClaw } from "../context/claw"
 import { useKiloClawLanguage } from "../context/language"

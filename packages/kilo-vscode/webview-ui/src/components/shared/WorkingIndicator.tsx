@@ -5,7 +5,7 @@
  */
 
 import { type Component, Show, createSignal, createEffect, onCleanup } from "solid-js"
-import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Spinner, cycle } from "@kilocode/kilo-ui/dynamic-spinner"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { Progress } from "@kilocode/kilo-ui/progress"
@@ -109,7 +109,11 @@ export const WorkingIndicator: Component = () => {
           when={compaction()}
           fallback={
             <div class="working-indicator">
-              <Spinner />
+              <Spinner
+                variant={cycle(session.busySince(), "working-indicator")}
+                class="working-spinner"
+                style={{ width: "24px", height: "24px" }}
+              />
               <span class="working-text">{statusText()}</span>
               <Show when={elapsed() > 0}>
                 <span class="working-elapsed">{formatElapsed()}</span>

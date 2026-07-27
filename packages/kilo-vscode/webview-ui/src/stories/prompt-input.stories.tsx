@@ -17,7 +17,8 @@ import { StoryProviders, mockSessionValue } from "./StoryProviders"
 import { SessionContext } from "../context/session"
 import { ServerContext } from "../context/server"
 import { PromptInput } from "../components/chat/PromptInput"
-import type { Config, IndexingStatus } from "../types/messages"
+import { UltraModeDialog } from "../components/shared/UltraModeDialog"
+import type { AgentInfo, Config, IndexingStatus } from "../types/messages"
 import { SandboxTooltipContent } from "../components/shared/SandboxButton"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Icon } from "@kilocode/kilo-ui/icon"
@@ -26,6 +27,12 @@ import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 const agents = [
   { name: "code", description: "Write, edit and review code", mode: "primary" as const },
   { name: "ask", description: "Answer questions without making changes", mode: "primary" as const },
+  {
+    name: "ultra",
+    description: "Investigate broadly and answer with verified evidence",
+    mode: "primary" as const,
+    native: true,
+  },
   { name: "architect", description: "Plan and design before implementation", mode: "primary" as const },
 ]
 
@@ -141,6 +148,8 @@ const PromptProviders: ParentComponent<{
   none?: boolean
   autoFree?: boolean
   switchable?: boolean
+  agents?: AgentInfo[]
+  agent?: string
   locale?: "en" | "zh" | "zht"
   index?: IndexingStatus
   variant?: string
@@ -149,6 +158,8 @@ const PromptProviders: ParentComponent<{
   const [variant, setVariant] = createSignal(props.variant ?? "medium")
   const [sid, update] = createSignal("story-session-001")
   const [aborts, tally] = createSignal(0)
+  const [agent, setAgent] = createSignal(props.agent ?? "code")
+  const [selects, count] = createSignal(0)
   const selected = () => {
     if (props.none) return null
     if (props.autoFree) return { providerID: "kilo", modelID: "kilo-auto/free" }
@@ -158,8 +169,12 @@ const PromptProviders: ParentComponent<{
     ...base,
     currentSessionID: sid,
     setCurrentSessionID: update,
-    agents: () => agents,
-    selectedAgent: () => "code",
+    agents: () => props.agents ?? agents,
+    selectedAgent: agent,
+    selectAgent: (name: string) => {
+      count((value) => value + 1)
+      setAgent(name)
+    },
     selected,
     getSessionModel: selected,
     variantList: () => (props.variants ? ["low", "medium", "high"] : []),
@@ -188,6 +203,9 @@ const PromptProviders: ParentComponent<{
                   <span hidden data-ui="qa-abort-count">
                     {aborts()}
                   </span>
+                  <span hidden data-ui="qa-agent-select-count">
+                    {selects()}
+                  </span>
                   {props.switchable ? (
                     <button
                       hidden
@@ -204,6 +222,9 @@ const PromptProviders: ParentComponent<{
                 {props.children}
                 <span hidden data-ui="qa-abort-count">
                   {aborts()}
+                </span>
+                <span hidden data-ui="qa-agent-select-count">
+                  {selects()}
                 </span>
                 {props.switchable ? (
                   <button
@@ -258,6 +279,49 @@ export const Default200: Story = {
   name: "Default — 200px",
   render: () => (
     <PromptProviders>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const UltraConfirmation420: Story = {
+  name: "Ultra confirmation — 420px",
+  render: () => (
+    <PromptProviders locale="zh">
+      <PromptInput />
+      <UltraModeDialog open onConfirm={noop} />
+    </PromptProviders>
+  ),
+}
+
+export const UltraConfirmation200: Story = {
+  name: "Ultra confirmation — 200px",
+  render: () => (
+    <PromptProviders locale="zh">
+      <PromptInput />
+      <UltraModeDialog open onConfirm={noop} />
+    </PromptProviders>
+  ),
+}
+
+export const UltraSessionSwitch420: Story = {
+  name: "Ultra confirmation — session switch",
+  render: () => (
+    <PromptProviders switchable>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const CustomUltra420: Story = {
+  name: "Custom Ultra agent — 420px",
+  render: () => (
+    <PromptProviders
+      agents={[
+        { name: "code", description: "Write, edit and review code", mode: "primary" },
+        { name: "ultra", description: "A custom agent with the same name", mode: "primary", native: false },
+      ]}
+    >
       <PromptInput />
     </PromptProviders>
   ),

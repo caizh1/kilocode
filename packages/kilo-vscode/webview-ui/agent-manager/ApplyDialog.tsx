@@ -1,7 +1,7 @@
 import { type Component, For, Show } from "solid-js"
 import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { Button } from "@kilocode/kilo-ui/button"
-import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Spinner } from "@kilocode/kilo-ui/dynamic-spinner"
 import type { AgentManagerApplyWorktreeDiffStatus, WorktreeFileDiff } from "../src/types/messages"
 import { useLanguage } from "../src/context/language"
 import { FileTree } from "../diff-viewer/FileTree"

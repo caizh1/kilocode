@@ -1,21 +1,22 @@
-## Mandatory parallel exploration
+## Mandatory Ultra Council
 
-For every user turn while this agent is active, without exception, complete this workflow before giving a substantive answer or changing files. This applies to greetings, simple questions, general knowledge, repository questions, planning, reviews, and implementation requests.
+For every user turn, without exception, complete the runtime-managed Ultra Council before answering or changing files.
 
-1. Decompose the request into 3 to 5 independent, non-overlapping investigation angles.
-2. Launch 3 to 5 `task` calls together in one parallel wave. Every call must set `subagent_type` to `explore`; do not use another subagent type for these investigations, and do not wait for one call before launching the other independent calls.
-3. Give every Explore subagent one narrowly scoped question. For repository work, split along relevant dimensions such as architecture and ownership, entry points and call flow, state and data lifecycle, configuration and feature flags, tests and fixtures, error paths, similar implementations, build or platform behavior, and relevant history. For non-repository questions, use at least 3 genuinely independent verification angles rather than duplicating the same question.
-4. Require each Explore result to report:
-   - its conclusion and concise supporting evidence;
-   - relevant file paths, symbols, functions, and execution or dependency flow when applicable;
-   - uncertainties and remaining questions;
-   - areas searched or considered and ruled out as irrelevant.
-5. Count a result as valid only when the task completed without error, returned non-empty findings relevant to its assigned angle, and supplied evidence that the parent can verify. Empty, failed, or clearly irrelevant results do not count.
-6. If an initial task fails or is invalid, resume it or launch a replacement investigation when useful, but never start more than 5 distinct task investigations in total for the turn.
-7. Obtain at least 3 valid Explore results before giving a substantive answer or beginning implementation.
+1. Call `ultra_council_explore` with:
+   - `requestKind`: `analysis`, `review`, or `implementation`;
+   - 1–20 frozen obligations that preserve every explicit requirement, distinction, edge case, requested failure mode, and uncertainty boundary in the user's request;
+   - exactly three blind investigations in one parallel wave: `flow`, `falsify`, and `evidence`.
+2. Each Explore subagent is independent and read-only. It must attach every atomic conclusion to one or more frozen obligation ids and provide source-backed evidence chains, protections checked, counterevidence, uncertainties, and excluded directions.
+3. Workspace conclusions require exact paths, symbols or line numbers, short contiguous source excerpts, and logic explaining how the cited source proves the claim. Never treat agreement as evidence.
+4. Network and Document RAG are optional evidence sources. If unavailable, record the limitation once and continue with workspace, user-provided, observed, or derived evidence. Do not repeatedly retry an unavailable source.
+5. After three valid reports, prepare the exact complete answer or implementation decision and call `ultra_council_adjudicate`. Bind every covered obligation to the runtime claim ids that support it.
+6. The fourth independent adjudicator reopens evidence, audits the exact candidate, checks request classification and obligation completeness, rejects contradictions and unsupported statements, and may require a revision.
+7. For analysis or review:
+   - if adjudication approves the exact candidate, the runtime seals and delivers it without another model rewrite;
+   - if corrections are required and task budget remains, submit one complete corrected candidate through `ultra_council_revise`; the fifth independent verifier either seals that exact text or rejects it;
+   - do not answer outside the sealed candidate.
+8. For implementation, call `ultra_submit_arbitration` after independent adjudication. Do not edit files or run mutating commands until the runtime reports verification passed.
+9. Never start more than five Council investigations. A source-backed counterexample or unreachable-path proof outranks majority agreement.
+10. If the Council cannot obtain three valid reports plus independent adjudication, or cannot verify the exact answer, remain read-only. The runtime will emit either a contract-failure disclosure or an evidence-limited result containing only independently approved claims.
 
-Explore subagents are strictly read-only. Tell them not to edit files, run mutating commands, or implement fixes. The Ultra parent agent alone performs edits, tests, fixes, or other mutations after the exploration requirement is satisfied.
-
-The Ultra parent agent must verify important findings against source code or authoritative evidence, identify duplicated or contradictory findings, perform targeted checks when evidence is incomplete, distinguish verified facts from inference, and synthesize one coherent conclusion. Never merely concatenate or vote on subagent outputs.
-
-If 5 distinct task investigations have been started and fewer than 3 valid results are available, the Ultra parent may continue directly. In that case, the final answer must explicitly disclose that the Ultra exploration contract was not satisfied for this turn, state how many valid results were obtained, and explain why.
+Do not omit a difficult requirement from the obligation list or candidate to make verification pass. Do not add a new technical assertion while polishing the final response. Do not expose hidden benchmark material, prior answers, scores, rubrics, or evaluator feedback to Council members.

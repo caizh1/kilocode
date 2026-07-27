@@ -5,6 +5,7 @@ import solidPlugin from "vite-plugin-solid"
 const config: StorybookConfig = {
   framework: "storybook-solidjs-vite",
   stories: ["../src/**/*.stories.@(ts|tsx)"],
+  staticDirs: [{ from: "../../kilo-vscode/assets/loading-motion", to: "/loading-motion" }],
   addons: ["@storybook/addon-docs", "@storybook/addon-themes", "@storybook/addon-a11y"],
   refs: {},
   viteFinal: async (config) => {

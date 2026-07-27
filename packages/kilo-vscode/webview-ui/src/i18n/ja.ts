@@ -315,6 +315,14 @@ export const dict = {
   "prompt.mode.shell": "Shell",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "escで終了",
+  "prompt.ultra.confirm.title": "Ultra モードに入る",
+  "prompt.ultra.confirm.description":
+    "Ultra はまず幅広く調査し、検証可能な根拠に基づいて結論を提示します。",
+  "prompt.ultra.confirm.benefit.explore": "コードベースをより包括的に調査",
+  "prompt.ultra.confirm.benefit.verify": "重要な結論を優先して検証",
+  "prompt.ultra.confirm.benefit.cost": "通常より多くの時間とトークンが必要",
+  "prompt.ultra.confirm.note": "複雑なトラブルシューティング、アーキテクチャ分析、高リスクのレビューに適しています。",
+  "prompt.ultra.confirm.action": "確認して Ultra に入る",
 
   "prompt.example.1": "コードベースのTODOを修正",
   "prompt.example.2": "このプロジェクトの技術スタックは何ですか？",

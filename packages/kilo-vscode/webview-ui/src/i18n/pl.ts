@@ -316,6 +316,15 @@ export const dict = {
   "prompt.mode.shell": "Terminal",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "esc aby wyjść",
+  "prompt.ultra.confirm.title": "Przejdź do trybu Ultra",
+  "prompt.ultra.confirm.description":
+    "Ultra najpierw prowadzi szerszą eksplorację, a następnie przedstawia wnioski poparte weryfikowalnymi dowodami.",
+  "prompt.ultra.confirm.benefit.explore": "Dokładniej zbadaj bazę kodu",
+  "prompt.ultra.confirm.benefit.verify": "Najpierw zweryfikuj kluczowe wnioski",
+  "prompt.ultra.confirm.benefit.cost": "Zwykle wymaga więcej czasu i tokenów",
+  "prompt.ultra.confirm.note":
+    "Sprawdza się przy złożonym debugowaniu, analizie architektury i przeglądach wysokiego ryzyka.",
+  "prompt.ultra.confirm.action": "Potwierdź i przejdź do Ultra",
 
   "prompt.example.1": "Napraw TODO w bazie kodu",
   "prompt.example.2": "Jaki jest stos technologiczny tego projektu?",

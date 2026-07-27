@@ -1,5 +1,5 @@
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
-import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Spinner } from "@kilocode/kilo-ui/dynamic-spinner"
 import { TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
 import { Show, type Component, type JSX } from "solid-js"
 

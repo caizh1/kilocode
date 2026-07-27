@@ -317,6 +317,15 @@ export const dict = {
   "prompt.mode.shell": "Оболонка",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "esc для виходу",
+  "prompt.ultra.confirm.title": "Перейти в режим Ultra",
+  "prompt.ultra.confirm.description":
+    "Ultra спочатку виконує ширше дослідження, а потім формує висновки на основі перевірених доказів.",
+  "prompt.ultra.confirm.benefit.explore": "Повніше дослідити кодову базу",
+  "prompt.ultra.confirm.benefit.verify": "Спочатку перевіряти ключові висновки",
+  "prompt.ultra.confirm.benefit.cost": "Зазвичай потребує більше часу й токенів",
+  "prompt.ultra.confirm.note":
+    "Підходить для складної діагностики, аналізу архітектури та перевірок із високим ризиком.",
+  "prompt.ultra.confirm.action": "Підтвердити й перейти в Ultra",
 
   "prompt.example.1": "Виправити TODO у кодовій базі",
   "prompt.example.2": "Який технологічний стек у цьому проєкті?",

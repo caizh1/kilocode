@@ -1,6 +1,6 @@
 import { Button } from "@kilocode/kilo-ui/button"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
-import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Spinner } from "@kilocode/kilo-ui/dynamic-spinner"
 import { onCleanup, type Component } from "solid-js"
 import type { SpeechToText } from "./useSpeechToText"
 

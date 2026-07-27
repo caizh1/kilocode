@@ -86,6 +86,7 @@ import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
+import { UltraCouncil } from "@/kilocode/agent/ultra-council" // kilocode_change
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1498,6 +1499,30 @@ export const layer = Layer.effect(
     )(function* (input: LoopInput) {
       const sessionID = input.sessionID
       // kilocode_change end
+      // kilocode_change start - deliver independently approved Ultra analysis text without a provider rewrite
+      const deliver = Effect.fnUntraced(function* (council: UltraCouncil.State, message: MessageV2.Assistant) {
+        const result = UltraCouncil.delivery(council)
+        if (!result) return false
+        const current = yield* sessions.findMessage(sessionID, (item) => item.info.id === message.id)
+        if (Option.isSome(current)) {
+          for (const part of current.value.parts) {
+            if (part.type !== "text" || part.id === result.partID) continue
+            yield* sessions.removePart({ sessionID, messageID: message.id, partID: part.id })
+          }
+        }
+        yield* sessions.updatePart({
+          id: PartID.make(result.partID),
+          messageID: message.id,
+          sessionID,
+          type: "text",
+          text: result.text,
+        })
+        message.finish = "stop"
+        message.time.completed ??= Date.now()
+        yield* sessions.updateMessage(message)
+        return true
+      })
+      // kilocode_change end
       // kilocode_change — cache environment details per turn (prompt caching)
       const envCache: KiloSessionPrompt.EnvCache = {}
       const memoryCache = KiloSessionPrompt.memoryCache() // kilocode_change
@@ -1662,6 +1687,17 @@ export const layer = Layer.effect(
           yield* events.publish(Session.Event.Error, { sessionID, error: error.toObject() })
           throw error
         }
+        const council = UltraCouncil.active(agent)
+          ? UltraCouncil.load({ sessionID, messageID: lastUser.id, messages: msgs })
+          : undefined // kilocode_change - isolate Council runtime policy to native ChipMate Ultra
+        if (
+          council &&
+          (lastUser.format ?? { type: "text" as const }).type === "text" &&
+          lastAssistantMsg?.info.role === "assistant" &&
+          (yield* deliver(council, lastAssistantMsg.info))
+        ) {
+          break
+        }
         const maxSteps = agent.steps ?? Infinity
         const isLastStep = step >= maxSteps
         msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
@@ -1742,6 +1778,7 @@ export const layer = Layer.effect(
               },
             })
           }
+          const enabled = council ? UltraCouncil.filter(council, tools) : tools // kilocode_change
 
           if (step === 1)
             yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
@@ -1807,7 +1844,10 @@ export const layer = Layer.effect(
           // kilocode_change end
           const system = KiloSessionPrompt.system({ agent, env, mem, instructions, skills }) // kilocode_change
           const format = lastUser.format ?? { type: "text" as const }
-          if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+          if (format.type === "json_schema" && (!council || !UltraCouncil.required(council))) {
+            system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+          }
+          if (council) system.push(UltraCouncil.reminder(council)) // kilocode_change
           const result = yield* handle.process({
             // kilocode_change start - keep Ask/Plan tool filtering hardened against session allows
             user: lastUser,
@@ -1818,9 +1858,10 @@ export const layer = Layer.effect(
             parentSessionID: session.parentID,
             system,
             messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
-            tools,
+            tools: enabled, // kilocode_change
             model,
-            toolChoice: format.type === "json_schema" ? "required" : undefined,
+            toolChoice:
+              format.type === "json_schema" && (!council || !UltraCouncil.required(council)) ? "required" : undefined, // kilocode_change - DeepSeek thinking mode rejects required during the Ultra Council phase
             // kilocode_change start - feed the provider-reported context size from the last finished
             // turn into the output-token cap, so image/vision input is measured by the provider
             // rather than by encoded payload bytes (see KiloLLM.capOutputTokens). Summary messages
@@ -1924,7 +1965,51 @@ export const layer = Layer.effect(
           Effect.ensuring(instruction.clear(handle.message.id)),
           Effect.onInterrupt(() => finalize),
         )
-        if (outcome === "break") break
+        const gated = council
+          ? UltraCouncil.gate(
+              council,
+              outcome,
+              Boolean(handle.message.error) || closeReasons.get(sessionID) === "interrupted",
+              handle.message.finish,
+            )
+          : outcome // kilocode_change
+        if (
+          council &&
+          (lastUser.format ?? { type: "text" as const }).type === "text" &&
+          !handle.message.error &&
+          (yield* deliver(council, handle.message))
+        ) {
+          break
+        }
+        if (council && UltraCouncil.stopping(outcome, handle.message.finish) && gated === "continue") {
+          handle.message.finish = "tool-calls"
+          yield* sessions.updateMessage(handle.message)
+        }
+        // kilocode_change start - runtime-enforce deterministic Ultra degraded output instead of trusting model prose
+        if (
+          council &&
+          gated === "break" &&
+          (council.phase === "degraded" || council.phase === "limited") &&
+          !handle.message.error &&
+          closeReasons.get(sessionID) !== "interrupted"
+        ) {
+          const current = yield* sessions.findMessage(sessionID, (item) => item.info.id === handle.message.id)
+          if (Option.isSome(current)) {
+            for (const part of current.value.parts) {
+              if (part.type !== "text") continue
+              yield* sessions.removePart({ sessionID, messageID: handle.message.id, partID: part.id })
+            }
+          }
+          yield* sessions.updatePart({
+            id: PartID.make(UltraCouncil.outputID(council, council.phase)),
+            messageID: handle.message.id,
+            sessionID,
+            type: "text",
+            text: UltraCouncil.result(council),
+          })
+        }
+        // kilocode_change end
+        if (gated === "break") break
         continue
       }
 

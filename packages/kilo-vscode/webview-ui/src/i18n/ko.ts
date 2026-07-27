@@ -319,6 +319,14 @@ export const dict = {
   "prompt.mode.shell": "셸",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "종료하려면 esc",
+  "prompt.ultra.confirm.title": "Ultra 모드로 전환",
+  "prompt.ultra.confirm.description":
+    "Ultra는 먼저 더 폭넓게 탐색한 다음 검증 가능한 근거를 바탕으로 결론을 제시합니다.",
+  "prompt.ultra.confirm.benefit.explore": "코드베이스를 더 포괄적으로 탐색",
+  "prompt.ultra.confirm.benefit.verify": "핵심 결론을 우선 검증",
+  "prompt.ultra.confirm.benefit.cost": "일반적으로 더 많은 시간과 토큰이 필요",
+  "prompt.ultra.confirm.note": "복잡한 문제 해결, 아키텍처 분석 및 고위험 리뷰에 적합합니다.",
+  "prompt.ultra.confirm.action": "확인하고 Ultra로 전환",
 
   "prompt.example.1": "코드베이스의 TODO 수정",
   "prompt.example.2": "이 프로젝트의 기술 스택이 무엇인가요?",

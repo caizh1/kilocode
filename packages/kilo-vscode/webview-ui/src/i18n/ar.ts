@@ -314,6 +314,14 @@ export const dict = {
   "prompt.mode.shell": "Shell",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "esc للخروج",
+  "prompt.ultra.confirm.title": "الدخول إلى وضع Ultra",
+  "prompt.ultra.confirm.description":
+    "يستكشف Ultra أولًا على نطاق أوسع، ثم يقدم استنتاجات مدعومة بأدلة قابلة للتحقق.",
+  "prompt.ultra.confirm.benefit.explore": "استكشاف قاعدة الشفرة بصورة أشمل",
+  "prompt.ultra.confirm.benefit.verify": "التحقق من الاستنتاجات الرئيسية أولًا",
+  "prompt.ultra.confirm.benefit.cost": "يتطلب عادةً وقتًا ورموزًا أكثر",
+  "prompt.ultra.confirm.note": "مناسب لاستكشاف الأخطاء المعقدة وتحليل البنية والمراجعات عالية المخاطر.",
+  "prompt.ultra.confirm.action": "تأكيد والدخول إلى Ultra",
 
   "prompt.example.1": "إصلاح TODO في قاعدة التعليمات البرمجية",
   "prompt.example.2": "ما هو المكدس التقني لهذا المشروع؟",

@@ -10,6 +10,7 @@
     "./diff": "./src/components/diff.tsx",
     "./diff-ssr": "./src/components/diff-ssr.tsx",
     "./dialog": "./src/components/dialog.tsx",
+    "./dynamic-spinner": "./src/components/dynamic-spinner.tsx",
     "./icon": "./src/components/icon.tsx",
     "./icon-button": "./src/components/icon-button.tsx",
     "./list": "./src/components/list.tsx",

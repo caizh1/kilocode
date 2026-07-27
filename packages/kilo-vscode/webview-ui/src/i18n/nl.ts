@@ -318,6 +318,15 @@ export const dict = {
   "prompt.mode.shell": "Shell",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "esc om af te sluiten",
+  "prompt.ultra.confirm.title": "Ultra-modus activeren",
+  "prompt.ultra.confirm.description":
+    "Ultra onderzoekt eerst breder en presenteert daarna conclusies die met verifieerbaar bewijs zijn onderbouwd.",
+  "prompt.ultra.confirm.benefit.explore": "De codebase grondiger onderzoeken",
+  "prompt.ultra.confirm.benefit.verify": "Belangrijke conclusies eerst verifiëren",
+  "prompt.ultra.confirm.benefit.cost": "Vereist doorgaans meer tijd en tokens",
+  "prompt.ultra.confirm.note":
+    "Geschikt voor complexe probleemoplossing, architectuuranalyse en risicovolle reviews.",
+  "prompt.ultra.confirm.action": "Bevestigen en Ultra activeren",
 
   "prompt.example.1": "Fix een TODO in de codebase",
   "prompt.example.2": "Wat is de tech-stack van dit project?",

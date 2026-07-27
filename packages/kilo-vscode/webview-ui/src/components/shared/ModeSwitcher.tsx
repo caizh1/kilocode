@@ -7,13 +7,14 @@
  * ModeSwitcher     — thin wrapper wired to session context for chat usage.
  */
 
-import { type Accessor, Component, createSignal, onCleanup, For, Show } from "solid-js"
+import { type Accessor, Component, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
 import { PopupSelector } from "./PopupSelector"
 import { Button } from "@kilocode/kilo-ui/button"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import type { AgentInfo } from "../../types/messages"
 import { isEnterKeyCommitNotIme } from "../../utils/ime-enter"
+import { UltraModeDialog } from "./UltraModeDialog"
 
 /** Format an agent for display. Uses displayName if available, otherwise title-cases the slug. */
 function formatAgentLabel(agent: AgentInfo): string {
@@ -31,6 +32,7 @@ const icons = {
   code: "code",
   debug: "debug-alt",
   plan: "checklist",
+  ultra: "sparkle",
 } as const
 
 // ---------------------------------------------------------------------------
@@ -128,7 +130,8 @@ export const ModeSwitcherBase: Component<ModeSwitcherBaseProps> = (props) => {
     if (agent) return formatAgentLabel(agent)
     return props.value || "Code"
   }
-  const glyph = () => icons[props.value.toLowerCase() as keyof typeof icons] ?? "comment-discussion"
+  const key = () => props.value.trim().toLowerCase()
+  const glyph = () => icons[key() as keyof typeof icons] ?? "comment-discussion"
   const desc = () => `Mode: ${triggerLabel()}`
 
   return (
@@ -151,6 +154,9 @@ export const ModeSwitcherBase: Component<ModeSwitcherBaseProps> = (props) => {
           },
           get ["aria-label"]() {
             return desc()
+          },
+          get ["data-agent"]() {
+            return key()
           },
         }}
         trigger={
@@ -179,6 +185,7 @@ export const ModeSwitcherBase: Component<ModeSwitcherBaseProps> = (props) => {
                   aria-selected={agent.name === props.value}
                   tabindex={focused() === i() ? 0 : -1}
                   data-autofocus={focused() === i() ? "" : undefined}
+                  data-agent={agent.name.trim().toLowerCase()}
                   onClick={() => pick(agent.name)}
                   onFocus={() => setFocused(i())}
                 >
@@ -222,15 +229,49 @@ interface ModeSwitcherProps {
 export const ModeSwitcher: Component<ModeSwitcherProps> = (props) => {
   const session = useSession()
   const id = () => props.sessionID?.()
+  const [pending, setPending] = createSignal<string | undefined>()
+
+  createEffect(
+    on(id, (next) => {
+      const origin = pending()
+      if (origin === undefined || origin === next) return
+      setPending(undefined)
+    }),
+  )
+
+  const focus = () => {
+    requestAnimationFrame(() => window.dispatchEvent(new Event("focusPrompt")))
+  }
+
+  const select = (name: string) => {
+    const current = session.selectedAgent(id())
+    const target = session.agents().find((agent) => agent.name === name)
+    if (current !== "ultra" && target?.name === "ultra" && target.native === true) {
+      setPending(id() ?? "")
+      return
+    }
+    session.selectAgent(name, id())
+    focus()
+  }
+
+  const confirm = () => {
+    const origin = pending()
+    if (origin === undefined) return
+    const sid = id() ?? ""
+    const target = session.agents().find((agent) => agent.name === "ultra")
+    setPending(undefined)
+    if (origin !== sid || target?.native !== true) {
+      focus()
+      return
+    }
+    session.selectAgent("ultra", id())
+    focus()
+  }
 
   return (
-    <ModeSwitcherBase
-      agents={session.agents()}
-      value={session.selectedAgent(id())}
-      onSelect={(name) => {
-        session.selectAgent(name, id())
-        requestAnimationFrame(() => window.dispatchEvent(new Event("focusPrompt")))
-      }}
-    />
+    <>
+      <ModeSwitcherBase agents={session.agents()} value={session.selectedAgent(id())} onSelect={select} />
+      <UltraModeDialog open={pending() !== undefined} onConfirm={confirm} />
+    </>
   )
 }

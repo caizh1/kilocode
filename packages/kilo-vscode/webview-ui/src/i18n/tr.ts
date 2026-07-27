@@ -316,6 +316,15 @@ export const dict = {
   "prompt.mode.shell": "Kabuk",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "çıkmak için esc",
+  "prompt.ultra.confirm.title": "Ultra moduna geç",
+  "prompt.ultra.confirm.description":
+    "Ultra önce daha geniş kapsamlı araştırma yapar, ardından doğrulanabilir kanıtlara dayalı sonuçlar sunar.",
+  "prompt.ultra.confirm.benefit.explore": "Kod tabanını daha kapsamlı incele",
+  "prompt.ultra.confirm.benefit.verify": "Önemli sonuçları önce doğrula",
+  "prompt.ultra.confirm.benefit.cost": "Genellikle daha fazla zaman ve token gerektirir",
+  "prompt.ultra.confirm.note":
+    "Karmaşık hata ayıklama, mimari analiz ve yüksek riskli incelemeler için uygundur.",
+  "prompt.ultra.confirm.action": "Onayla ve Ultra'ya geç",
 
   "prompt.example.1": "Kod tabanındaki bir TODO'yu düzelt",
   "prompt.example.2": "Bu projenin teknoloji yığını nedir?",

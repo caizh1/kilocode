@@ -2,7 +2,11 @@ import { describe, expect, it } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 
-import { canUseGatewayUi, gatewayTarget } from "../../webview-ui/src/utils/internal-offline-ui"
+import {
+  canUseGatewayUi,
+  canUseSidebarSessionActions,
+  gatewayTarget,
+} from "../../webview-ui/src/utils/internal-offline-ui"
 import { internalOfflineProviderDefaults, shouldUseQuickProviderMode } from "../../src/shared/internal-offline"
 import { QWEN_FIM_MODEL_ID } from "../../src/shared/qwen-autocomplete"
 
@@ -33,6 +37,11 @@ describe("internal offline webview gateway UI", () => {
   it("redirects Gateway login entry points to Providers in internal offline builds", () => {
     expect(canUseGatewayUi(true)).toBe(false)
     expect(gatewayTarget(true)).toEqual({ view: "settings", tab: "providers" })
+  })
+
+  it("hides sidebar session actions only in internal offline builds", () => {
+    expect(canUseSidebarSessionActions(false)).toBe(true)
+    expect(canUseSidebarSessionActions(true)).toBe(false)
   })
 
   it("hides KiloClaw and Profile entry points from internal builds", () => {

@@ -2,7 +2,7 @@ import { createSignal, createMemo, For, Show } from "solid-js"
 import { TextField } from "@kilocode/kilo-ui/text-field"
 import { Select } from "@kilocode/kilo-ui/select"
 import { Tag } from "@kilocode/kilo-ui/tag"
-import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Spinner } from "@kilocode/kilo-ui/dynamic-spinner"
 import { Checkbox } from "@kilocode/kilo-ui/checkbox"
 import { Button } from "@kilocode/kilo-ui/button"
 import type {

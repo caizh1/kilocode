@@ -71,12 +71,21 @@ export namespace KiloTask {
   }
 
   /** Extra permission rules appended to subagent sessions */
-  export function permissions(rules: Permission.Ruleset): Permission.Ruleset {
+  export function permissions(rules: Permission.Ruleset, readonly = false): Permission.Ruleset {
     return [
       { permission: "task", pattern: "*", action: "deny" },
       { permission: "question", pattern: "*", action: "deny" },
       { permission: "interactive_terminal", pattern: "*", action: "deny" },
       ...rules,
+      ...(readonly
+        ? [
+            { permission: "edit", pattern: "*", action: "deny" } as const,
+            { permission: "bash", pattern: "*", action: "deny" } as const,
+            { permission: "suggest", pattern: "*", action: "deny" } as const,
+            { permission: "plan_enter", pattern: "*", action: "deny" } as const,
+            { permission: "plan_exit", pattern: "*", action: "deny" } as const,
+          ]
+        : []),
     ]
   }
 

@@ -3,7 +3,8 @@ import { expect, test, type Page } from "@playwright/test"
 const GLOBALS = "colorScheme:dark;theme:kilo-vscode;vscodeTheme:dark-modern"
 
 function story(id: string, theme = "dark-modern") {
-  const globals = theme === "dark-modern" ? GLOBALS : `colorScheme:dark;theme:kilo-vscode;vscodeTheme:${theme}`
+  const scheme = theme === "light-modern" || theme === "hc-light" ? "light" : "dark"
+  const globals = theme === "dark-modern" ? GLOBALS : `colorScheme:${scheme};theme:kilo-vscode;vscodeTheme:${theme}`
   return `/iframe.html?id=${id}&viewMode=story&globals=${globals}`
 }
 
@@ -335,6 +336,190 @@ test("mode picker focuses the selected mode as it opens", async ({ page }) => {
 
   await page.getByRole("button", { name: "Code", exact: true }).click()
   await expect(page.locator(".mode-switcher-item.selected")).toBeFocused()
+})
+
+test("Ultra selection is blocked by a non-dismissible confirmation until accepted", async ({ page }) => {
+  await load(page, "prompt-input--default-420")
+
+  const trigger = page.locator(".prompt-selector-trigger--mode")
+  const count = page.locator('[data-ui="qa-agent-select-count"]')
+  const prompt = page.locator("textarea.prompt-input")
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="ultra"]').click()
+
+  const dialog = page.getByRole("alertdialog", { name: "Enter Ultra mode" })
+  const confirm = page.getByRole("button", { name: "Confirm and enter Ultra" })
+  await expect(dialog).toBeVisible()
+  await expect(trigger).toHaveAttribute("data-agent", "code")
+  await expect(count).toHaveText("0")
+  await expect(confirm).toBeFocused()
+
+  await page.keyboard.press("Escape")
+  await expect(dialog).toBeVisible()
+  await page.locator(".ultra-mode-dialog-overlay").click({ position: { x: 2, y: 2 }, force: true })
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press("Tab")
+  await expect(confirm).toBeFocused()
+  await page.keyboard.press("Shift+Tab")
+  await expect(confirm).toBeFocused()
+
+  await confirm.click()
+  await expect(dialog).toBeHidden()
+  await expect(trigger).toHaveAttribute("data-agent", "ultra")
+  await expect(count).toHaveText("1")
+  await expect(prompt).toBeFocused()
+
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="ultra"]').click()
+  await expect(dialog).toBeHidden()
+  await expect(count).toHaveText("2")
+
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="code"]').click()
+  await expect(dialog).toBeHidden()
+  await expect(trigger).toHaveAttribute("data-agent", "code")
+  await expect(count).toHaveText("3")
+
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="ultra"]').click()
+  await expect(dialog).toBeVisible()
+  await expect(count).toHaveText("3")
+  await confirm.click()
+  await expect(trigger).toHaveAttribute("data-agent", "ultra")
+  await expect(count).toHaveText("4")
+})
+
+test("Ultra confirmation covers keyboard, slash, native identity, session changes, and narrow layouts", async ({
+  page,
+}) => {
+  await load(page, "prompt-input--default-420")
+  const trigger = page.locator(".prompt-selector-trigger--mode")
+  await trigger.click()
+  await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("alertdialog", { name: "Enter Ultra mode" })).toBeVisible()
+  await page.getByRole("button", { name: "Confirm and enter Ultra" }).click()
+
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="code"]').click()
+  const prompt = page.locator("textarea.prompt-input")
+  await prompt.evaluate((el) => el.setAttribute("aria-disabled", "false"))
+  await prompt.fill("/agents")
+  await prompt.press("Enter")
+  await page.locator('.mode-switcher-item[data-agent="ultra"]').click()
+  await expect(page.getByRole("alertdialog", { name: "Enter Ultra mode" })).toBeVisible()
+  await page.getByRole("button", { name: "Confirm and enter Ultra" }).click()
+
+  await load(page, "prompt-input--custom-ultra-420")
+  await page.locator(".prompt-selector-trigger--mode").click()
+  await page.locator('.mode-switcher-item[data-agent="ultra"]').click()
+  await expect(page.getByRole("alertdialog")).toHaveCount(0)
+  await expect(page.locator(".prompt-selector-trigger--mode")).toHaveAttribute("data-agent", "ultra")
+
+  await load(page, "prompt-input--ultra-session-switch-420")
+  await page.locator(".prompt-selector-trigger--mode").click()
+  await page.locator('.mode-switcher-item[data-agent="ultra"]').click()
+  await expect(page.getByRole("alertdialog", { name: "Enter Ultra mode" })).toBeVisible()
+  await page.locator('[data-ui="qa-switch-session"]').evaluate((element: HTMLButtonElement) => element.click())
+  await expect(page.getByRole("alertdialog")).toHaveCount(0)
+  await expect(page.locator('[data-ui="qa-agent-select-count"]')).toHaveText("0")
+
+  await page.setViewportSize({ width: 200, height: 720 })
+  await load(page, "prompt-input--ultra-confirmation-200")
+  const dialog = page.getByRole("alertdialog", { name: "进入 Ultra 模式" })
+  const box = await dialog.boundingBox()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(200)
+  expect(box!.y).toBeGreaterThanOrEqual(0)
+  expect(box!.y + box!.height).toBeLessThanOrEqual(720)
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(200)
+})
+
+test("Ultra uses its sparkle icon and theme-aware semantic color without affecting other modes", async ({ page }) => {
+  const select = async () => {
+    await page.locator(".prompt-selector-trigger--mode").click()
+    const row = page.locator('.mode-switcher-item[data-agent="ultra"]')
+    await expect(row).toHaveAttribute("aria-selected", "false")
+    await row.click()
+    await expect(page.getByRole("alertdialog", { name: "Enter Ultra mode" })).toBeVisible()
+    await page.getByRole("button", { name: "Confirm and enter Ultra" }).click()
+    return page.locator('.prompt-selector-trigger--mode[data-agent="ultra"]')
+  }
+
+  const verify = async (theme: string, color: string) => {
+    await load(page, "prompt-input--default-420", theme)
+    const trigger = await select()
+    const icon = trigger.locator(".prompt-selector-icon")
+    const label = trigger.locator(".mode-switcher-trigger-label")
+
+    await expect(trigger.locator(".codicon-sparkle")).toBeVisible()
+    await expect(trigger.locator(".codicon-comment-discussion")).toHaveCount(0)
+    await expect(icon).toHaveCSS("color", color)
+    await expect(label).toHaveCSS("color", color)
+    await expect(trigger.locator(".prompt-selector-chevron")).not.toHaveCSS("color", color)
+
+    await trigger.click()
+    const ultra = page.locator('.mode-switcher-item[data-agent="ultra"]')
+    await expect(ultra).toHaveAttribute("aria-selected", "true")
+    await expect(ultra.locator(".mode-switcher-item-name")).toHaveCSS("color", color)
+    await expect(page.locator('.mode-switcher-item[data-agent="code"] .mode-switcher-item-name')).not.toHaveCSS(
+      "color",
+      color,
+    )
+    await expect(page.locator('.mode-switcher-item[data-agent="ask"] .mode-switcher-item-name')).not.toHaveCSS(
+      "color",
+      color,
+    )
+    await expect(ultra.locator(".mode-switcher-item-desc")).not.toHaveCSS("color", color)
+  }
+
+  await verify("dark-modern", "rgb(167, 139, 250)")
+  await verify("light-modern", "rgb(109, 40, 217)")
+
+  for (const theme of ["hc-black", "hc-light"]) {
+    await load(page, "prompt-input--default-420", theme)
+    const trigger = await select()
+    const label = trigger.locator(".mode-switcher-trigger-label")
+    const foreground = await page.locator("body").evaluate((el) => getComputedStyle(el).color)
+    await expect(label).toHaveCSS("color", foreground)
+    await expect(label).not.toHaveCSS("color", "rgb(167, 139, 250)")
+    await expect(label).not.toHaveCSS("color", "rgb(109, 40, 217)")
+  }
+
+  await load(page, "prompt-input--default-420")
+  await page.locator(".prompt-selector-trigger--mode").click()
+  await expect(page.locator('.mode-switcher-item[data-agent="code"]')).toBeFocused()
+  await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("ArrowDown")
+  await expect(page.locator('.mode-switcher-item[data-agent="ultra"]')).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("alertdialog", { name: "Enter Ultra mode" })).toBeVisible()
+  await page.getByRole("button", { name: "Confirm and enter Ultra" }).click()
+  await expect(page.locator('.prompt-selector-trigger--mode[data-agent="ultra"]')).toBeVisible()
+
+  const prompt = page.locator("textarea.prompt-input")
+  await prompt.evaluate((el) => el.setAttribute("aria-disabled", "false"))
+  await prompt.fill("/agents")
+  await prompt.press("Enter")
+  const selected = page.locator('.mode-switcher-item[data-agent="ultra"]')
+  await expect(selected).toBeFocused()
+  await selected.press("Escape")
+  await expect(prompt).toBeFocused()
+
+  await page.setViewportSize({ width: 200, height: 720 })
+  await load(page, "prompt-input--default-200")
+  const trigger = await select()
+  await expect(trigger.locator(".codicon-sparkle")).toBeHidden()
+  await expect(trigger.locator(".mode-switcher-trigger-label")).toBeVisible()
+  await expect(trigger.locator(".prompt-selector-chevron")).toBeHidden()
+  const box = await trigger.boundingBox()
+  const label = await trigger.locator(".mode-switcher-trigger-label").boundingBox()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(200)
+  expect(label!.x).toBeGreaterThanOrEqual(box!.x)
+  expect(label!.x + label!.width).toBeLessThanOrEqual(box!.x + box!.width)
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(200)
 })
 
 test("variant picker focuses the selected effort as it opens", async ({ page }) => {

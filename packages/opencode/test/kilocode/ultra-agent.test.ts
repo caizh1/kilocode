@@ -30,12 +30,20 @@ const schema = z.object({
       ultra: z.string().nullable(),
     }),
   ),
+  council: z.record(
+    z.string(),
+    z.object({
+      code: z.boolean(),
+      ultra: z.boolean().nullable(),
+    }),
+  ),
 })
 
 const script = [
   'import { Effect } from "effect"',
   'import { Agent } from "./src/agent/agent.ts"',
   'import { KilocodeSystemPrompt } from "./src/kilocode/system-prompt.ts"',
+  'import { KiloToolRegistry } from "./src/kilocode/tool/registry.ts"',
   'import { Permission } from "./src/permission/index.ts"',
   'import { disposeAllInstances, disposeTestRuntime, provideInstance, testInstanceStoreLayer, tmpdir } from "./test/fixture/fixture.ts"',
   "await using dir = await tmpdir({})",
@@ -46,7 +54,9 @@ const script = [
   "const selected = yield* svc.defaultAgent()",
   'const checks = [["edit", "src/main.ts"], ["bash", "pwd"], ["task", "explore"], ["skill", "using-superpowers"], ["interactive_terminal", "*"], ["codebase_analysis", "*"], ["semantic_search", "*"]]',
   "const permissions = Object.fromEntries(checks.map(([tool, pattern]) => [tool, { code: Permission.evaluate(tool, pattern, code.permission).action, ultra: ultra ? Permission.evaluate(tool, pattern, ultra.permission).action : null }]))",
-  "return { names: list.map((item) => item.name), selected, code: { mode: code.mode, native: code.native === true }, ultra: ultra ? { mode: ultra.mode, native: ultra.native === true, hidden: ultra.hidden === true, name: ultra.name, id: typeof ultra.options.id === \"string\" ? ultra.options.id : undefined, appends: KilocodeSystemPrompt.appends(ultra), prompt: ultra.prompt } : null, permissions }",
+  'const ids = ["ultra_council_explore", "ultra_council_adjudicate", "ultra_council_revise", "ultra_submit_arbitration"]',
+  "const council = Object.fromEntries(ids.map((id) => [id, { code: KiloToolRegistry.available({ id }, code), ultra: ultra ? KiloToolRegistry.available({ id }, ultra) : null }]))",
+  'return { names: list.map((item) => item.name), selected, code: { mode: code.mode, native: code.native === true }, ultra: ultra ? { mode: ultra.mode, native: ultra.native === true, hidden: ultra.hidden === true, name: ultra.name, id: typeof ultra.options.id === "string" ? ultra.options.id : undefined, appends: KilocodeSystemPrompt.appends(ultra), prompt: ultra.prompt } : null, permissions, council }',
   "}))).pipe(Effect.provide(Agent.defaultLayer), Effect.provide(testInstanceStoreLayer)))",
   "await disposeAllInstances()",
   "await disposeTestRuntime()",
@@ -97,7 +107,15 @@ describe("ChipMate Ultra agent", () => {
       id: "ultra",
       appends: true,
     })
-    expect(output.ultra?.prompt).toContain("## Mandatory parallel exploration")
+    expect(output.ultra?.prompt).toContain("## Mandatory Ultra Council")
+    expect(output.ultra?.prompt).toContain("ultra_council_explore")
+    expect(output.ultra?.prompt).toContain("ultra_council_adjudicate")
+    expect(output.ultra?.prompt).toContain("ultra_council_revise")
+    expect(output.ultra?.prompt).toContain("ultra_submit_arbitration")
+    expect(output.ultra?.prompt).toContain("Network and Document RAG are optional evidence sources")
+    for (const access of Object.values(output.council)) {
+      expect(access).toEqual({ code: false, ultra: true })
+    }
     for (const actions of Object.values(output.permissions)) {
       expect(actions.ultra).toBe(actions.code)
     }
@@ -131,6 +149,9 @@ describe("ChipMate Ultra agent", () => {
       id: "ultra",
       appends: true,
     })
+    for (const access of Object.values(output.council)) {
+      expect(access).toEqual({ code: false, ultra: true })
+    }
   })
 
   test("does not register Ultra outside ChipMate", async () => {
@@ -141,5 +162,8 @@ describe("ChipMate Ultra agent", () => {
     expect(output.names).not.toContain("ultra")
     expect(output.ultra).toBeNull()
     expect(output.selected).toBe("code")
+    for (const access of Object.values(output.council)) {
+      expect(access).toEqual({ code: false, ultra: null })
+    }
   })
 })

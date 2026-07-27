@@ -144,6 +144,7 @@ export class KiloClawProvider implements vscode.Disposable {
       scriptUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.uri, "dist", "kiloclaw.js")),
       styleUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.uri, "dist", "kiloclaw.css")),
       iconsBaseUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.uri, "assets", "icons")),
+      motionBaseUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.uri, "assets", "loading-motion")),
       workerUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.uri, "dist", "shiki-worker.js")),
       title: "ChipMateClaw",
     })

@@ -381,7 +381,7 @@
     },
     "packages/kilo-vscode": {
       "name": "chipmate",
-      "version": "1.0.7",
+      "version": "1.0.19",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.39.0",
         "@chipmate/skill-spec": "workspace:*",
@@ -392,6 +392,7 @@
         "@kilocode/kilo-ui": "workspace:*",
         "@kilocode/plugin": "workspace:*",
         "@kilocode/sdk": "workspace:*",
+        "@kobalte/core": "catalog:",
         "@opencode-ai/core": "workspace:*",
         "@opencode-ai/ui": "workspace:*",
         "@pierre/diffs": "catalog:",

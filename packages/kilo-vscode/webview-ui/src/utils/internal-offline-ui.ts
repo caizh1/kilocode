@@ -6,6 +6,10 @@ export function canUseGatewayUi(internal = isInternalOfflineBuild()) {
   return !internal
 }
 
+export function canUseSidebarSessionActions(internal = isInternalOfflineBuild()) {
+  return !internal
+}
+
 export function gatewayTarget(internal = isInternalOfflineBuild()): GatewayTarget {
   if (internal) return { view: "settings", tab: "providers" }
   return { view: "profile" }

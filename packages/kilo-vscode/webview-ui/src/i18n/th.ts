@@ -315,6 +315,15 @@ export const dict = {
   "prompt.mode.shell": "เชลล์",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "กด esc เพื่อออก",
+  "prompt.ultra.confirm.title": "เข้าสู่โหมด Ultra",
+  "prompt.ultra.confirm.description":
+    "Ultra จะสำรวจอย่างกว้างขวางก่อน แล้วจึงสรุปผลโดยอ้างอิงหลักฐานที่ตรวจสอบได้",
+  "prompt.ultra.confirm.benefit.explore": "สำรวจโค้ดเบสอย่างครอบคลุมยิ่งขึ้น",
+  "prompt.ultra.confirm.benefit.verify": "ตรวจสอบข้อสรุปสำคัญก่อน",
+  "prompt.ultra.confirm.benefit.cost": "โดยทั่วไปต้องใช้เวลาและโทเคนมากขึ้น",
+  "prompt.ultra.confirm.note":
+    "เหมาะสำหรับการแก้ปัญหาที่ซับซ้อน การวิเคราะห์สถาปัตยกรรม และการตรวจสอบที่มีความเสี่ยงสูง",
+  "prompt.ultra.confirm.action": "ยืนยันและเข้าสู่ Ultra",
 
   "prompt.example.1": "แก้ไข TODO ในโค้ดเบส",
   "prompt.example.2": "เทคโนโลยีของโปรเจกต์นี้คืออะไร?",

@@ -315,6 +315,15 @@ export const dict = {
   "prompt.mode.shell": "Оболочка",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "esc для выхода",
+  "prompt.ultra.confirm.title": "Перейти в режим Ultra",
+  "prompt.ultra.confirm.description":
+    "Ultra сначала проводит более широкий поиск, а затем формирует выводы на основе проверяемых доказательств.",
+  "prompt.ultra.confirm.benefit.explore": "Более полно исследовать кодовую базу",
+  "prompt.ultra.confirm.benefit.verify": "Сначала проверять ключевые выводы",
+  "prompt.ultra.confirm.benefit.cost": "Обычно требуется больше времени и токенов",
+  "prompt.ultra.confirm.note":
+    "Подходит для сложной диагностики, анализа архитектуры и проверок с высоким риском.",
+  "prompt.ultra.confirm.action": "Подтвердить и перейти в Ultra",
 
   "prompt.example.1": "Исправить TODO в коде",
   "prompt.example.2": "Какой технологический стек этого проекта?",

@@ -317,6 +317,15 @@ export const dict = {
   "prompt.mode.shell": "Shell",
   "prompt.mode.shell.warning": "Shell commands run immediately without Agent approval.",
   "prompt.mode.shell.exit": "esc za izlaz",
+  "prompt.ultra.confirm.title": "Uđi u Ultra način rada",
+  "prompt.ultra.confirm.description":
+    "Ultra prvo istražuje šire, a zatim donosi zaključke potkrijepljene provjerljivim dokazima.",
+  "prompt.ultra.confirm.benefit.explore": "Detaljnije istraži bazu koda",
+  "prompt.ultra.confirm.benefit.verify": "Prvo provjeri ključne zaključke",
+  "prompt.ultra.confirm.benefit.cost": "Obično zahtijeva više vremena i tokena",
+  "prompt.ultra.confirm.note":
+    "Pogodno za složeno otklanjanje grešaka, analizu arhitekture i visokorizične preglede.",
+  "prompt.ultra.confirm.action": "Potvrdi i uđi u Ultra",
 
   "prompt.example.1": "Popravi TODO u bazi koda",
   "prompt.example.2": "Koji je tehnološki stack ovog projekta?",

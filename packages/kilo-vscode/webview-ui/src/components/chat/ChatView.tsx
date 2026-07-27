@@ -8,7 +8,7 @@
 import { type Component, type JSX, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Icon } from "@kilocode/kilo-ui/icon"
-import { Spinner } from "@kilocode/kilo-ui/spinner"
+import { Spinner } from "@kilocode/kilo-ui/dynamic-spinner"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { showToast } from "@kilocode/kilo-ui/toast"
 import { DropdownMenu } from "@kilocode/kilo-ui/dropdown-menu"
@@ -31,6 +31,7 @@ import { useAgentRequirements } from "../../context/agent-requirements"
 import { TranscriptSearchProvider } from "../../context/transcript-search"
 import { isPromptBlocked, isSuggesting, isQuestioning } from "./prompt-input-utils"
 import { showTabStrip } from "../../utils/local-tabs"
+import { canUseSidebarSessionActions } from "../../utils/internal-offline-ui"
 
 interface ChatViewProps {
   onSelectSession?: (id: string) => void
@@ -226,8 +227,10 @@ export const ChatView: Component<ChatViewProps> = (props) => {
 
   const canMoveToWorktree = (hasChat: boolean) => hasChat && canContinueInWorktree() && server.gitInstalled()
 
-  const hasActions = (hasChat: boolean) =>
-    canStartSession(hasChat) || canFork(hasChat) || canStartWorktree() || canMoveToWorktree(hasChat)
+  const hasActions = (hasChat: boolean) => {
+    if (isSidebar() && !canUseSidebarSessionActions()) return false
+    return canStartSession(hasChat) || canFork(hasChat) || canStartWorktree() || canMoveToWorktree(hasChat)
+  }
 
   const renderActions = (hasChat: boolean) => (
     <Show when={hasActions(hasChat)}>

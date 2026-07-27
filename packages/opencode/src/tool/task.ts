@@ -180,7 +180,7 @@ export const TaskTool = Tool.define(
             parentAgent,
             subagent: next,
           }),
-          KiloTask.permissions(rules),
+          KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true), // kilocode_change - harden Ultra Council children read-only
         )
         session.permission = permission
         yield* sessions.setPermission({ sessionID: session.id, permission })
@@ -207,7 +207,7 @@ export const TaskTool = Tool.define(
               action: "allow" as const,
               permission: item,
             })) ?? [],
-            KiloTask.permissions(rules),
+            KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true), // kilocode_change - harden Ultra Council children read-only
           ),
           // kilocode_change end
         }))
@@ -256,37 +256,41 @@ export const TaskTool = Tool.define(
       const ops = ctx.extra?.promptOps as TaskPromptOps
       if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
 
-      const runTask = Effect.fn("TaskTool.runTask")(function* () {
-        const parts = yield* ops.resolvePromptParts(params.prompt)
-        KiloSessionProcessor.markReviewTelemetry(parts, params.command) // kilocode_change - carry review command into child session telemetry
-        const result = yield* ops.prompt({
-          messageID: MessageID.ascending(),
-          sessionID: nextSession.id,
-          model: {
-            modelID: model.modelID,
-            providerID: model.providerID,
-          },
-          variant, // kilocode_change
-          agent: next.name,
-          tools: {
-            question: false, // kilocode_change - subagents cannot prompt the user directly
-            interactive_terminal: false, // kilocode_change - subagents cannot take over the user's terminal
-            ...(canTodo ? {} : { todowrite: false }),
-            ...(canTask ? {} : { task: false }),
-            ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
-          },
-          parts,
-        })
-        // kilocode_change start - expose terminal child assistant errors through the task tool boundary,
-        // including the resumable task_id so the parent agent can continue the subagent (#11620)
-        if (result.info.role === "assistant" && result.info.error) {
-          return yield* Effect.fail(
-            new Error(`${errorMessage(result.info.error)}\n${resumeHint(nextSession.id)}`),
-          )
-        }
-        // kilocode_change end
-        return result.parts.findLast((item) => item.type === "text")?.text ?? ""
-      }, Effect.ensuring(KiloTaskBackgroundProcess.finish(nextSession.id))) // kilocode_change - transfer inherited processes when the child run ends
+      const runTask = Effect.fn("TaskTool.runTask")(
+        function* () {
+          const parts = yield* ops.resolvePromptParts(params.prompt)
+          KiloSessionProcessor.markReviewTelemetry(parts, params.command) // kilocode_change - carry review command into child session telemetry
+          const result = yield* ops.prompt({
+            messageID: MessageID.ascending(),
+            sessionID: nextSession.id,
+            model: {
+              modelID: model.modelID,
+              providerID: model.providerID,
+            },
+            variant, // kilocode_change
+            agent: next.name,
+            tools: {
+              question: false, // kilocode_change - subagents cannot prompt the user directly
+              interactive_terminal: false, // kilocode_change - subagents cannot take over the user's terminal
+              ...(ctx.extra?.ultraCouncilReadOnly === true
+                ? { suggest: false, plan_enter: false, plan_exit: false }
+                : {}), // kilocode_change - Council investigations cannot pause for human-driven mode actions
+              ...(canTodo ? {} : { todowrite: false }),
+              ...(canTask ? {} : { task: false }),
+              ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
+            },
+            parts,
+          })
+          // kilocode_change start - expose terminal child assistant errors through the task tool boundary,
+          // including the resumable task_id so the parent agent can continue the subagent (#11620)
+          if (result.info.role === "assistant" && result.info.error) {
+            return yield* Effect.fail(new Error(`${errorMessage(result.info.error)}\n${resumeHint(nextSession.id)}`))
+          }
+          // kilocode_change end
+          return result.parts.findLast((item) => item.type === "text")?.text ?? ""
+        },
+        Effect.ensuring(KiloTaskBackgroundProcess.finish(nextSession.id)),
+      ) // kilocode_change - transfer inherited processes when the child run ends
 
       // kilocode_change start - inject completed background task results into the parent session
       const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (
