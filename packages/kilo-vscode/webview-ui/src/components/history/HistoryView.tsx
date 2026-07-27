@@ -1,10 +1,10 @@
 /**
  * HistoryView component
- * Unified panel for local and cloud session history.
- * Contains a tab bar ("Local" | "Cloud") and an always-visible "Import session" button.
+ * Unified panel for local, cloud, and optional worktree session history.
+ * Contains a source tab bar and an always-visible "Import session" button.
  */
 
-import { Component, createEffect, createSignal, onCleanup } from "solid-js"
+import { Component, Show, createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useLanguage } from "../../context/language"
@@ -18,22 +18,35 @@ import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 interface HistoryViewProps {
   onSelectSession: (id: string) => void
   onBack?: () => void
+  worktreeSessionIds?: Accessor<ReadonlySet<string> | undefined>
 }
+
+type Source = "local" | "cloud" | "worktree"
+
+const EMPTY_SESSION_IDS = new Set<string>()
 
 const HistoryView: Component<HistoryViewProps> = (props) => {
   const language = useLanguage()
   const dialog = useDialog()
   const session = useSession()
   const tabs = useLocalTabs()
-  const [tab, setTab] = createSignal<"local" | "cloud">("local")
+  const [tab, setTab] = createSignal<Source>("local")
   const internal = isInternalOfflineBuild()
   let local: HTMLButtonElement | undefined
   let cloud: HTMLButtonElement | undefined
+  let worktree: HTMLButtonElement | undefined
   let localPanel: HTMLDivElement | undefined
   let cloudPanel: HTMLDivElement | undefined
+  let worktreePanel: HTMLDivElement | undefined
+
+  const worktreeIds = () => props.worktreeSessionIds?.()
 
   createEffect(() => {
-    const panel = tab() === "local" ? localPanel : cloudPanel
+    if (tab() === "worktree" && !worktreeIds()) setTab("local")
+  })
+
+  createEffect(() => {
+    const panel = tab() === "local" ? localPanel : tab() === "cloud" ? cloudPanel : worktreePanel
 
     const frame = requestAnimationFrame(() => {
       panel
@@ -62,18 +75,20 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
     props.onBack?.()
   }
 
-  function move(event: KeyboardEvent, current: "local" | "cloud") {
-    if (internal) return
-    const next =
+  function move(event: KeyboardEvent, current: Source) {
+    const sources: Source[] = internal ? ["local"] : worktreeIds() ? ["local", "cloud", "worktree"] : ["local", "cloud"]
+    const index = sources.indexOf(current)
+    const source =
       event.key === "Home"
-        ? local
+        ? sources[0]
         : event.key === "End"
-          ? cloud
-          : event.key === "ArrowLeft" || event.key === "ArrowRight"
-            ? current === "local"
-              ? cloud
-              : local
-            : undefined
+          ? sources.at(-1)
+          : event.key === "ArrowLeft"
+            ? sources[(index - 1 + sources.length) % sources.length]
+            : event.key === "ArrowRight"
+              ? sources[(index + 1) % sources.length]
+              : undefined
+    const next = source === "local" ? local : source === "cloud" ? cloud : source === "worktree" ? worktree : undefined
     if (!next) return
     event.preventDefault()
     next.focus()

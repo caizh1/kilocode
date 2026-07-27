@@ -623,6 +623,7 @@ export function Markdown(
   return (
     <div
       data-component="markdown"
+      dir={"auto" /* kilocode_change */}
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,

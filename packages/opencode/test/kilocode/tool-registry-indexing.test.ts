@@ -5,6 +5,7 @@ import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
 import { KiloIndexing } from "../../src/kilocode/indexing"
 import { KilocodeBootstrap } from "../../src/kilocode/bootstrap"
+import { KilocodeWatcher } from "../../src/kilocode/watcher"
 import { KiloSessions } from "../../src/kilo-sessions/kilo-sessions"
 import { KiloMemory } from "@kilocode/kilo-memory/effect"
 import { MemoryService } from "@kilocode/kilo-memory/effect/service"
@@ -85,13 +86,11 @@ describe("kilocode tool registry indexing", () => {
             expect(ids).not.toContain("codebase_analysis")
             expect(ids).not.toContain("semantic_search")
             expect(ids).not.toContain("document_search")
-            expect(ids).toContain("semantic_search")
             expect(ids).toContain("question")
             expect(ids).toContain("read")
             expect(ids).toContain("suggest")
             expect(warn.mock.calls[0]?.[0]).toBe("indexing tools unavailable")
             expect(warn.mock.calls[0]?.[1]?.err).toBeDefined()
-            expect(warn).not.toHaveBeenCalled()
           } finally {
             ready.mockRestore()
             warn.mockRestore()
@@ -116,13 +115,11 @@ describe("kilocode tool registry indexing", () => {
             expect(ids).not.toContain("codebase_analysis")
             expect(ids).not.toContain("semantic_search")
             expect(ids).not.toContain("document_search")
-            expect(ids).toContain("semantic_search")
             expect(ids).toContain("question")
             expect(ids).toContain("read")
             expect(ids).toContain("suggest")
             expect(warn.mock.calls[0]?.[0]).toBe("indexing tools unavailable")
             expect(warn.mock.calls[0]?.[1]?.err).toBeDefined()
-            expect(warn).not.toHaveBeenCalled()
           } finally {
             ready.mockRestore()
             warn.mockRestore()
@@ -405,6 +402,7 @@ describe("kilocode tool registry indexing", () => {
       process: def("background_process"),
       image: def("generate_image"),
       terminal: def("interactive_terminal"),
+      notify: def("notify_user"),
       notebookRead: def("notebook_read"),
       notebookEdit: def("notebook_edit"),
       notebookExecute: def("notebook_execute"),
@@ -439,6 +437,7 @@ describe("kilocode tool registry indexing", () => {
         "recall",
         "background_process",
         "interactive_terminal",
+        "notify_user",
       ])
       expect(KiloToolRegistry.extra(tools, { experimental: { codebase_search: true } }).map((tool) => tool.id)).toEqual(
         [
@@ -464,14 +463,12 @@ describe("kilocode tool registry indexing", () => {
           "render_mermaid_diagram",
           "save_mermaid_artifact",
           "insert_mermaid_into_word",
-          "recall",
-          "background_process",
-          "semantic_search",
           "kilo_memory_recall",
           "kilo_memory_save",
           "recall",
           "background_process",
           "interactive_terminal",
+          "notify_user",
         ],
       )
       expect(
@@ -480,13 +477,34 @@ describe("kilocode tool registry indexing", () => {
         ),
       ).toEqual([
         "codebase_search",
+        "codebase_analysis",
         "generate_image",
         "semantic_search",
+        "document_search",
+        "declare_artifact",
+        "list_artifacts",
+        "open_artifact",
+        "export_artifact_diagnostics",
+        "create_word_document",
+        "inspect_word_document",
+        "validate_word_document",
+        "apply_word_document_edits",
+        "apply_word_template_styles",
+        "materialize_word_fields",
+        "merge_word_documents",
+        "diff_word_documents",
+        "normalize_word_table_spec",
+        "render_word_document",
+        "validate_mermaid_diagram",
+        "render_mermaid_diagram",
+        "save_mermaid_artifact",
+        "insert_mermaid_into_word",
         "kilo_memory_recall",
         "kilo_memory_save",
         "recall",
         "background_process",
         "interactive_terminal",
+        "notify_user",
       ])
 
       process.env["KILO_CLIENT"] = "vscode"
@@ -514,15 +532,13 @@ describe("kilocode tool registry indexing", () => {
           "render_mermaid_diagram",
           "save_mermaid_artifact",
           "insert_mermaid_into_word",
-          "recall",
-          "background_process",
-          "semantic_search",
           "kilo_memory_recall",
           "kilo_memory_save",
           "recall",
           "background_process",
           "agent_manager_models",
           "agent_manager",
+          "notify_user",
         ],
       )
       expect(
@@ -531,7 +547,27 @@ describe("kilocode tool registry indexing", () => {
         }).map((tool) => tool.id),
       ).toEqual([
         "codebase_search",
+        "codebase_analysis",
         "semantic_search",
+        "document_search",
+        "declare_artifact",
+        "list_artifacts",
+        "open_artifact",
+        "export_artifact_diagnostics",
+        "create_word_document",
+        "inspect_word_document",
+        "validate_word_document",
+        "apply_word_document_edits",
+        "apply_word_template_styles",
+        "materialize_word_fields",
+        "merge_word_documents",
+        "diff_word_documents",
+        "normalize_word_table_spec",
+        "render_word_document",
+        "validate_mermaid_diagram",
+        "render_mermaid_diagram",
+        "save_mermaid_artifact",
+        "insert_mermaid_into_word",
         "kilo_memory_recall",
         "kilo_memory_save",
         "recall",
@@ -541,6 +577,7 @@ describe("kilocode tool registry indexing", () => {
         "notebook_read",
         "notebook_edit",
         "notebook_execute",
+        "notify_user",
       ])
       expect(KiloToolRegistry.extra({ ...tools, semantic: undefined }, {}).map((tool) => tool.id)).toEqual([
         "codebase_analysis",
@@ -569,6 +606,7 @@ describe("kilocode tool registry indexing", () => {
         "background_process",
         "agent_manager_models",
         "agent_manager",
+        "notify_user",
       ])
 
       process.env["KILO_CLIENT"] = "desktop"
@@ -594,26 +632,68 @@ describe("kilocode tool registry indexing", () => {
         "render_mermaid_diagram",
         "save_mermaid_artifact",
         "insert_mermaid_into_word",
-        "semantic_search",
         "kilo_memory_recall",
         "kilo_memory_save",
         "recall",
+        "notify_user",
       ])
 
       process.env["KILO_CLIENT"] = "run"
       expect(KiloToolRegistry.extra(tools, {}).map((tool) => tool.id)).toEqual([
+        "codebase_analysis",
         "semantic_search",
+        "document_search",
+        "declare_artifact",
+        "list_artifacts",
+        "open_artifact",
+        "export_artifact_diagnostics",
+        "create_word_document",
+        "inspect_word_document",
+        "validate_word_document",
+        "apply_word_document_edits",
+        "apply_word_template_styles",
+        "materialize_word_fields",
+        "merge_word_documents",
+        "diff_word_documents",
+        "normalize_word_table_spec",
+        "render_word_document",
+        "validate_mermaid_diagram",
+        "render_mermaid_diagram",
+        "save_mermaid_artifact",
+        "insert_mermaid_into_word",
         "kilo_memory_recall",
         "kilo_memory_save",
         "recall",
+        "notify_user",
       ])
 
       process.env["KILO_CLIENT"] = "acp"
       expect(KiloToolRegistry.extra(tools, {}).map((tool) => tool.id)).toEqual([
+        "codebase_analysis",
         "semantic_search",
+        "document_search",
+        "declare_artifact",
+        "list_artifacts",
+        "open_artifact",
+        "export_artifact_diagnostics",
+        "create_word_document",
+        "inspect_word_document",
+        "validate_word_document",
+        "apply_word_document_edits",
+        "apply_word_template_styles",
+        "materialize_word_fields",
+        "merge_word_documents",
+        "diff_word_documents",
+        "normalize_word_table_spec",
+        "render_word_document",
+        "validate_mermaid_diagram",
+        "render_mermaid_diagram",
+        "save_mermaid_artifact",
+        "insert_mermaid_into_word",
         "kilo_memory_recall",
         "kilo_memory_save",
         "recall",
+        "notify_user",
       ])
     } finally {
       if (prev === undefined) delete process.env["KILO_CLIENT"]
@@ -640,6 +720,7 @@ describe("kilocode tool registry indexing", () => {
       manager: info("agent_manager"),
       process: info("background_process"),
       image: info("generate_image"),
+      notify: info("notify_user"),
     }
     const deps = {
       agent: {} as Agent.Interface,
@@ -767,7 +848,10 @@ describe("kilocode tool registry indexing", () => {
     const calls: string[] = []
     const sessions = Layer.succeed(
       KiloSessions.Service,
-      KiloSessions.Service.of({ init: () => Effect.sync(() => calls.push("sessions")) }),
+      KiloSessions.Service.of({
+        init: () => Effect.sync(() => calls.push("sessions")),
+        sendAgentNotification: () => Effect.succeed({ ok: false as const, reason: "not_connected" }),
+      }),
     )
     const bus = Layer.succeed(
       Bus.Service,
@@ -783,6 +867,7 @@ describe("kilocode tool registry indexing", () => {
     const session = Layer.succeed(Session.Service, {} as Session.Interface)
     const summary = Layer.succeed(SessionSummary.Service, {} as SessionSummary.Interface)
     const provider = Layer.succeed(Provider.Service, {} as Provider.Interface)
+    const watcher = Layer.succeed(KilocodeWatcher.Service, KilocodeWatcher.Service.of({ init: () => Effect.void }))
     const indexing = spyOn(KiloIndexing, "init").mockRejectedValue(err)
     const warn = spyOn(logger, "warn").mockImplementation(() => {})
 
@@ -790,7 +875,7 @@ describe("kilocode tool registry indexing", () => {
       await Effect.runPromise(
         KilocodeBootstrap.Service.use((svc) => svc.init()).pipe(
           Effect.provide(
-            KilocodeBootstrap.layer.pipe(Layer.provide([sessions, bus, memory, session, summary, provider])),
+            KilocodeBootstrap.layer.pipe(Layer.provide([sessions, bus, memory, session, summary, provider, watcher])),
           ),
           Effect.scoped,
         ),

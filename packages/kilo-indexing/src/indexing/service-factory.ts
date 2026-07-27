@@ -15,9 +15,9 @@ import { OpenRouterEmbedder } from "./embedders/openrouter"
 import { VoyageEmbedder } from "./embedders/voyage"
 import { QdrantVectorStore } from "./vector-store/qdrant-client"
 import { LanceDBVectorStore } from "./vector-store/lancedb-vector-store"
-import { codeParser, DirectoryScanner, FileWatcher } from "./processors"
+import { codeParser, CodeParser, DirectoryScanner, FileWatcher } from "./processors"
 import { DocumentIndexService } from "./documents"
-import type { ICodeParser, IEmbedder, IFileWatcher, IVectorStore } from "./interfaces"
+import type { AvailableEmbedders, ICodeParser, IEmbedder, IFileWatcher, IVectorStore } from "./interfaces"
 import type { ICodeGraphStorage, ICodePostingsStorage } from "./codegraph"
 import type { CodeIndexConfigManager } from "./config-manager"
 import type { CacheManager } from "./cache-manager"
@@ -49,10 +49,28 @@ function isolated(dir: string): string {
   return profile ? path.join(dir, profile) : dir
 }
 
-function timeout(provider: string): number {
-  if (provider === "ollama") return OLLAMA_EMBEDDER_REQUEST_TIMEOUT_MS
-  return REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS
-}
+// RATIONALE: The OpenAI SDK applies the per-attempt timeout and retries internally.
+const policy = {
+  openai: undefined,
+  openrouter: undefined,
+  "openai-compatible": undefined,
+  kilo: undefined,
+  gemini: undefined,
+  mistral: undefined,
+  "vercel-ai-gateway": undefined,
+  ollama: {
+    timeout: OLLAMA_EMBEDDER_REQUEST_TIMEOUT_MS,
+    error: "Connection to embedding service failed (timeout)",
+  },
+  voyage: {
+    timeout: REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS,
+    error: "Connection failed. Please check the endpoint URL and network connectivity.",
+  },
+  bedrock: {
+    timeout: REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS,
+    error: "Connection failed. Please check the endpoint URL and network connectivity.",
+  },
+} satisfies Record<AvailableEmbedders, { timeout: number; error: string } | undefined>
 
 /**
  * Factory class responsible for creating and configuring code indexing service dependencies.
@@ -149,26 +167,26 @@ export class CodeIndexServiceFactory {
   }
 
   public async validateEmbedder(embedder: IEmbedder): Promise<{ valid: boolean; error?: string }> {
-    const ms = timeout(embedder.embedderInfo.name)
+    const deadline = policy[embedder.embedderInfo.name]
     let timer: ReturnType<typeof setTimeout> | undefined
     const wait = embedder.validateConfiguration()
-    const fail = new Promise<{ valid: boolean; error?: string }>((resolve) => {
-      timer = setTimeout(
-        () =>
-          resolve({
-            valid: false,
-            error:
-              embedder.embedderInfo.name === "ollama"
-                ? "Connection to embedding service failed (timeout)"
-                : "Connection failed. Please check the endpoint URL and network connectivity.",
-          }),
-        ms,
-      )
-    })
+    const fail =
+      deadline === undefined
+        ? undefined
+        : new Promise<{ valid: boolean; error?: string }>((resolve) => {
+            timer = setTimeout(
+              () =>
+                resolve({
+                  valid: false,
+                  error: deadline.error,
+                }),
+              deadline.timeout,
+            )
+          })
 
     try {
       log.info("validating embedder", { provider: embedder.embedderInfo.name })
-      const result = await Promise.race([wait, fail])
+      const result = fail ? await Promise.race([wait, fail]) : await wait
       if (result.valid) {
         log.info("embedder validation succeeded", { provider: embedder.embedderInfo.name })
       }
@@ -321,6 +339,7 @@ export class CodeIndexServiceFactory {
       this.graph,
       this.postings,
       opts,
+      config.fileExtensions,
     )
     scanner.setRunContext(globalThis.crypto.randomUUID(), rag)
     return scanner
@@ -331,6 +350,7 @@ export class CodeIndexServiceFactory {
     vectorStore: IVectorStore | undefined,
     cacheManager: CacheManager,
     ignoreInstance: IgnoreMatcher,
+    parser: ICodeParser,
     opts: { writeCache?: boolean } = {},
   ): IFileWatcher {
     const config = this.configManager.getConfig()
@@ -349,6 +369,8 @@ export class CodeIndexServiceFactory {
       this.graph,
       this.postings,
       { ...opts, lockCacheDirectory: this.cacheDirectory },
+      config.fileExtensions,
+      parser,
     )
     watcher.setRunContext(globalThis.crypto.randomUUID(), rag)
     return watcher
@@ -366,7 +388,7 @@ export class CodeIndexServiceFactory {
     const parser = codeParser
     const opts = { writeCache: false }
     const scanner = this.createDirectoryScanner(undefined, undefined, parser, ignoreInstance, opts)
-    const fileWatcher = this.createFileWatcher(undefined, undefined, cacheManager, ignoreInstance, opts)
+    const fileWatcher = this.createFileWatcher(undefined, undefined, cacheManager, ignoreInstance, parser, opts)
     const ragMeta = fallbackCheckpointMeta(this.workspacePath)
     return { parser, scanner, fileWatcher, ragMeta }
   }
@@ -399,9 +421,9 @@ export class CodeIndexServiceFactory {
     const vectorStore = this.createVectorStore()
     const ragMeta = this.createRagCheckpointMeta(vectorStore)
     this.cacheManager.setCheckpointMeta(ragMeta)
-    const parser = codeParser
+    const parser = new CodeParser(config.fileExtensions)
     const scanner = this.createDirectoryScanner(embedder, vectorStore, parser, ignoreInstance)
-    const fileWatcher = this.createFileWatcher(embedder, vectorStore, cacheManager, ignoreInstance)
+    const fileWatcher = this.createFileWatcher(embedder, vectorStore, cacheManager, ignoreInstance, parser)
 
     log.info("indexing services created", {
       workspacePath: this.workspacePath,

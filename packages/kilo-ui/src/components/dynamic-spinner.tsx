@@ -17,10 +17,12 @@ import { next, type SpinnerVariant } from "./spinner-sequence"
 export type { SpinnerVariant } from "./spinner-sequence"
 export { cycle } from "./spinner-sequence"
 
-export type SpinnerProps = Omit<ComponentProps<"svg">, "children"> & {
+export type SpinnerProps = Omit<ComponentProps<"span">, "children"> & {
   variant?: SpinnerVariant
   assetBase?: string
   scope?: string
+  width?: string | number
+  height?: string | number
 }
 
 type Theme = "dark" | "light" | "contrast"

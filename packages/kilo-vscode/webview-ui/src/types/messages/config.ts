@@ -114,7 +114,8 @@ export interface IndexingConfig {
     chunkChars?: number
     chunkOverlapChars?: number
     searchMaxResults?: number
-  }
+  };
+  fileExtensions?: string[]
 }
 
 export type KiloEmbeddingModel = {

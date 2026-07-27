@@ -509,7 +509,7 @@ export class QdrantVectorStore implements IVectorStore {
         if (point.payload?.filePath) {
           const file = point.payload.filePath
           const external = file === "@external" || file.startsWith("@external/") || file.startsWith("@external\\")
-          const segments = (external ? file.replaceAll("\\", "/").split("/") : file.split(path.sep)).filter(Boolean)
+          const segments = (external ? file.replaceAll("\\", "/").split("/") : file.split(/[\\/]+/)).filter(Boolean)
           const pathSegments = segments.reduce((acc: Record<string, string>, segment: string, index: number) => {
             acc[index.toString()] = segment
             return acc
@@ -709,7 +709,24 @@ export class QdrantVectorStore implements IVectorStore {
 
       // Build filters using pathSegments to match the indexed fields
       const filters = filePaths.map((filePath) => {
-        return { must: [{ key: "filePath", match: { value: this.relativeFilePath(filePath) } }] }
+        // IMPORTANT: Use the relative path to match what's stored in upsertPoints
+        // upsertPoints stores the relative filePath, not the absolute path
+        const relativePath = this.relativeFilePath(filePath)
+
+        // Normalize the relative path
+        const normalizedRelativePath = path.normalize(relativePath)
+
+        // Split the path into segments like we do in upsertPoints
+        const segments = normalizedRelativePath.split(/[\\/]+/).filter(Boolean)
+
+        // Create a filter that matches all segments of the path
+        // This ensures we only delete points that match the exact file path
+        const mustConditions = segments.map((segment, index) => ({
+          key: `pathSegments.${index}`,
+          match: { value: segment },
+        }))
+
+        return { must: mustConditions }
       })
 
       // Use 'should' to match any of the file paths (OR condition)

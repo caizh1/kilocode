@@ -28,6 +28,7 @@ import { speechAction, SpeechToTextButton } from "../speech-to-text/SpeechToText
 import { canUseSpeechToText, selectedSpeechToTextModel } from "../speech-to-text/availability"
 import { ThinkingSelector } from "../shared/ThinkingSelector"
 import { useFileMention } from "../../hooks/useFileMention"
+import type { MentionResult } from "../../hooks/file-mention-utils"
 import { useTerminalContext } from "../../hooks/useTerminalContext"
 import { useGitChangesContext } from "../../hooks/useGitChangesContext"
 import { hasTerminalMention } from "../../hooks/terminal-context-utils"
@@ -38,7 +39,9 @@ import { useGhostText } from "../../hooks/useGhostText"
 import { useSpeechToText } from "../speech-to-text/useSpeechToText"
 import { useImageAttachments, type ImageAttachment } from "../../hooks/useImageAttachments"
 import { convertToMentionPath } from "../../utils/path-mentions"
+import { SessionMentionPicker } from "./SessionMentionPicker"
 import { usePromptHistory } from "../../hooks/usePromptHistory"
+import { cycleVariant } from "../../context/session-variant-store"
 import { WandSparkles } from "@kilocode/kilo-ui/lucide"
 import {
   fileName,
@@ -83,7 +86,7 @@ import {
 import { ReviewComments } from "./ReviewComments"
 import { partReview, reviewBody } from "../../../../src/shared/review-comments"
 import { isEnterKeyCommitNotIme } from "../../utils/ime-enter"
-import { MEMORY_USAGE, parseMemoryCommand } from "../../utils/memory-command"
+import { parseMemoryCommand } from "../../utils/memory-command"
 import { useMemory } from "../../context/memory"
 
 const IndexingProgressButton: Component<{
@@ -712,6 +715,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     textareaRef ? atEnd(textareaRef.selectionStart, textareaRef.selectionEnd, textareaRef.value.length) : false
   const highlightMentions = () => {
     const paths = new Set(mention.mentionedPaths())
+    for (const token of mention.mentionedSessions().keys()) paths.add(token)
     if (hasTerminalMention(text())) paths.add("terminal")
     if (hasGit() && hasGitChangesMention(text())) paths.add("git-changes")
     return paths
@@ -919,6 +923,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       // filename and cannot be relied on to reconstruct spaced paths correctly.
       if (message.paths?.length) mention.seedFromParts(message.paths, message.text)
       else mention.seedFromText(message.text)
+      if (message.sessions?.length) mention.seedSessions(message.sessions, message.text)
       if (textareaRef) {
         textareaRef.value = message.text
         adjustHeight()
@@ -1141,7 +1146,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
     }
 
-    if (e.key === "Tab" && ghost.text()) {
+    // Shift+Tab cycles reasoning effort variants (setting: chat.shiftTabCyclesVariant).
+    // When disabled or no variants exist, fall through to default focus navigation.
+    if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (settings()["chat.shiftTabCyclesVariant"] === false) return
+      const list = session.variantList(sid())
+      if (list.length === 0) return
+      const next = cycleVariant(session.currentVariant(sid()), list)
+      if (!next) return
+      e.preventDefault()
+      session.selectVariant(next, sid())
+      return
+    }
+
+    if (e.key === "Tab" && !e.shiftKey && ghost.text()) {
       if (!isAtEnd()) return
       e.preventDefault()
       acceptSuggestion()
@@ -1250,8 +1268,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return false
     }
     if (memory.kind === "help") {
-      showToast({ variant: "default", title: "/memory", description: MEMORY_USAGE })
-      return true
+      const value = "/memory "
+      setText(value)
+      if (textareaRef) {
+        textareaRef.value = value
+        textareaRef.setSelectionRange(value.length, value.length)
+        textareaRef.focus()
+      }
+      slash.onInput(value, value.length)
+      adjustHeight()
+      return false
     }
     if (isDisabled() || speech.active() || terminal.pending() || git.pending() || props.blocked?.()) return false
     const status = projectMemory.status()
@@ -1264,13 +1290,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       showToast({ variant: "error", title: language.t("chat.memory.project.disabled") })
       return false
     }
-    if (memory.kind === "show") vscode.postMessage({ type: "memoryShow", sessionID: sid() })
+    if (memory.kind === "show") vscode.postMessage({ type: "memoryShow", mode: "show", sessionID: sid() })
     if (memory.kind === "operation") {
+      if (memory.operation === "status") {
+        vscode.postMessage({ type: "memoryShow", mode: "status", sessionID: sid() })
+        return true
+      }
       vscode.postMessage({
         type: "memoryOperation",
         operation: memory.operation,
         sessionID: sid(),
-        ...(memory.operation === "auto" || memory.operation === "verbose" ? { mode: memory.mode } : {}),
+        ...(memory.operation === "auto" ? { mode: memory.mode } : {}),
         ...(memory.operation === "purge" ? { confirm: memory.confirm } : {}),
         ...(memory.operation === "remember" || memory.operation === "correct" ? { text: memory.text } : {}),
         ...(memory.operation === "forget" ? { query: memory.query } : {}),

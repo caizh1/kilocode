@@ -3,6 +3,7 @@ import { createServer } from "http"
 
 import { MarketplaceApiClient } from "../../src/services/marketplace/api"
 import { MarketplaceApiError } from "../../src/services/marketplace/errors"
+import type { PublicationRun } from "../../src/services/marketplace/types"
 
 describe("MarketplaceApiClient", () => {
   it("uses a configured skill market baseUrl in skills-only mode", async () => {
@@ -250,6 +251,7 @@ describe("MarketplaceApiClient", () => {
         seen.authorization = req.headers.authorization
         seen.idempotency = req.headers["idempotency-key"] as string | undefined
         seen.body = Buffer.concat(chunks)
+        res.setHeader("connection", "close")
         res.setHeader("content-type", "application/json")
         res.end(
           JSON.stringify({
@@ -273,7 +275,17 @@ describe("MarketplaceApiClient", () => {
         baseUrl: `${origin}/marketplace`,
         fetchText: async () => JSON.stringify(capabilities()),
       })
-      const run = await client.publishArchive(Buffer.from("archive-bytes"), "secret-key", "idempotency-key-1")
+      const publish = async (attempt = 0): Promise<PublicationRun> => {
+        try {
+          return await client.publishArchive(Buffer.from("archive-bytes"), "secret-key", "idempotency-key-1")
+        } catch (err) {
+          if (attempt < 2 && err instanceof Error && /socket connection was closed/i.test(err.message)) {
+            return publish(attempt + 1)
+          }
+          throw err
+        }
+      }
+      const run = await publish()
       expect(run.status).toBe("PUBLISHED")
       expect(seen.authorization).toBe("Bearer secret-key")
       expect(seen.idempotency).toBe("idempotency-key-1")
@@ -455,6 +467,7 @@ function capabilities() {
 async function resolverError(status: number, body: unknown): Promise<MarketplaceApiError> {
   const server = createServer((_req, res) => {
     res.statusCode = status
+    res.setHeader("connection", "close")
     res.setHeader("content-type", "application/json")
     res.end(typeof body === "string" ? body : JSON.stringify(body))
   })
@@ -463,9 +476,17 @@ async function resolverError(status: number, body: unknown): Promise<Marketplace
   if (!address || typeof address === "string") throw new Error("test server did not start")
   try {
     const client = new MarketplaceApiClient({ baseUrl: `http://127.0.0.1:${address.port}/marketplace` })
-    const err = await client.resolveUser("sk-test-key").catch((value: unknown) => value)
-    if (!(err instanceof MarketplaceApiError)) throw new Error("expected MarketplaceApiError")
-    return err
+    const resolve = async (attempt = 0): Promise<MarketplaceApiError> => {
+      const err = await client.resolveUser("sk-test-key").catch((value: unknown) => value)
+      if (err instanceof MarketplaceApiError) return err
+      if (attempt < 2 && err instanceof Error && /socket connection was closed/i.test(err.message)) {
+        return resolve(attempt + 1)
+      }
+      throw new Error(
+        `expected MarketplaceApiError, received ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`,
+      )
+    }
+    return await resolve()
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }

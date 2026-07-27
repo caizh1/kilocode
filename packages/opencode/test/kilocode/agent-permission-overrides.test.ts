@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
+import type { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { Effect } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { Permission } from "../../src/permission"

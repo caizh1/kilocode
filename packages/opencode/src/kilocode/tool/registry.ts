@@ -1,4 +1,3 @@
-// kilocode_change - new file
 import { CodebaseSearchTool } from "../../tool/warpgrep"
 import { RecallTool } from "../../tool/recall"
 import { AgentManagerModelsTool } from "./agent-manager-models"
@@ -11,12 +10,14 @@ import { NotebookEditTool, NotebookExecuteTool, NotebookReadTool } from "./noteb
 import { SkillMarketTools } from "./skill-market"
 import { MemoryRecallTool } from "./memory-recall"
 import { MemorySaveTool } from "./memory-save"
+import { NotifyUserTool } from "./notify-user"
 import * as Tool from "../../tool/tool"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Effect } from "effect"
 import { Notebook } from "@/kilocode/notebook/service"
 import { SkillMarket, HostError as SkillMarketHostError } from "@/kilocode/skill-market/service"
 import { AgentManager, HostError } from "@/kilocode/agent-manager/service"
+import { KiloSessions } from "@/kilo-sessions/kilo-sessions"
 import * as Log from "@opencode-ai/core/util/log"
 import type { Config } from "@/config/config"
 import { Agent } from "@/agent/agent"
@@ -133,6 +134,8 @@ export namespace KiloToolRegistry {
       const image = yield* GenerateImageTool
       const terminal = yield* InteractiveTerminalTool
       const consoleShell = yield* AgentConsoleShellTool
+      const sessions = yield* KiloSessions.Service
+      const notify = yield* NotifyUserTool.pipe(Effect.provideService(KiloSessions.Service, sessions))
       const markets = yield* SkillMarketTools.pipe(
         Effect.provideService(SkillMarket.Service, market ?? unavailableMarket),
       )
@@ -148,6 +151,7 @@ export namespace KiloToolRegistry {
           image,
           terminal,
           consoleShell,
+          notify,
           markets,
         }
       const tools = yield* Effect.all({
@@ -166,6 +170,7 @@ export namespace KiloToolRegistry {
         image,
         terminal,
         consoleShell,
+        notify,
         markets,
         ...tools,
       }
@@ -186,6 +191,7 @@ export namespace KiloToolRegistry {
       image: Tool.Info
       terminal?: Tool.Info
       consoleShell?: Tool.Info
+      notify: Tool.Info
       notebookRead?: Tool.Info
       notebookEdit?: Tool.Info
       notebookExecute?: Tool.Info
@@ -210,6 +216,7 @@ export namespace KiloToolRegistry {
         manager: Tool.init(tools.manager),
         process: Tool.init(tools.process),
         image: Tool.init(tools.image),
+        notify: Tool.init(tools.notify),
         ...(tools.consoleShell ? { consoleShell: Tool.init(tools.consoleShell) } : {}),
       })
       const terminal = tools.terminal ? yield* Tool.init(tools.terminal) : undefined
@@ -500,6 +507,7 @@ export namespace KiloToolRegistry {
 
   /** Hide human-driven tools from agents that cannot interact with the user directly. */
   export function available(tool: Tool.Def, agent: Agent.Info) {
+    if (tool.id === "notify_user") return KiloSessions.remoteStatus().enabled
     if (agent.name === "agent-console") return tool.id === "agent_console_shell"
     if (tool.id === "agent_console_shell") return false
     if (
@@ -537,6 +545,7 @@ export namespace KiloToolRegistry {
       image: Tool.Def
       terminal?: Tool.Def
       consoleShell?: Tool.Def
+      notify: Tool.Def
       notebookRead?: Tool.Def
       notebookEdit?: Tool.Def
       notebookExecute?: Tool.Def
@@ -578,6 +587,7 @@ export namespace KiloToolRegistry {
       tools.notebookExecute
         ? [tools.notebookRead, tools.notebookEdit, tools.notebookExecute]
         : []),
+      tools.notify,
     ]
   }
 

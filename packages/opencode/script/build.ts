@@ -341,6 +341,7 @@ if (!skipInstall) {
   // kilocode_change
   await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
+  await $`bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
 }
 for (const item of targets) {
   const name = packageNameForTarget(item) // kilocode_change
@@ -357,7 +358,7 @@ for (const item of targets) {
   const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
   const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js") // kilocode_change
   const parserWorker = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
-  const workerPath = "./src/cli/cmd/tui/worker.ts"
+  const workerPath = "./src/cli/tui/worker.ts"
   const sessionExportWorkerPath = "./src/kilocode/session-export/worker.ts" // kilocode_change
   const indexingProcessName = item.os === "win32" ? "kilo-indexer.exe" : "kilo-indexer" // kilocode_change
   const codeGraphParserWorkerPath = "codegraph-parser-worker.mjs" // kilocode_change
@@ -402,6 +403,7 @@ for (const item of targets) {
     entrypoints: ["./src/index.ts", parserWorker, workerPath, sessionExportWorkerPath],
     // kilocode_change end
     define: {
+      FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
       KILO_VERSION: `'${Script.version}'`, // kilocode_change
       KILO_MODELS_DEV: generated.modelsData,
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,

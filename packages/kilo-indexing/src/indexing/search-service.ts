@@ -23,6 +23,12 @@ export class CodeIndexSearchService {
     private readonly baseline?: BaselineSearch,
   ) {}
 
+  private allowed(result: VectorStoreSearchResult, extensions: ReadonlySet<string>): boolean {
+    const file = result.payload?.filePath
+    if (typeof file !== "string") return false
+    return extensions.has(path.extname(file).toLowerCase())
+  }
+
   public async searchIndex(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]> {
     return this.searchIndexForEvidence(query, directoryPrefix)
   }
@@ -52,7 +58,11 @@ export class CodeIndexSearchService {
       }
 
       const normalizedPrefix = directoryPrefix ? path.normalize(directoryPrefix) : undefined
-      if (!this.baseline) return await this.vectorStore.search(vector, normalizedPrefix, minScore, maxResults)
+      const extensions = new Set(this.configManager.getConfig().fileExtensions)
+      if (!this.baseline) {
+        const results = await this.vectorStore.search(vector, normalizedPrefix, minScore, maxResults)
+        return results.filter((result) => this.allowed(result, extensions))
+      }
       if (!this.baseline.overlay.ready) throw new Error("Worktree index reconciliation is not complete.")
 
       const ceiling = Math.max(maxResults, Math.min(maxResults * 16, 1000))
@@ -85,9 +95,12 @@ export class CodeIndexSearchService {
           "\0",
         )
 
-      for (const result of baseline) merged.set(key(result), result)
+      for (const result of baseline) {
+        if (this.allowed(result, extensions)) merged.set(key(result), result)
+      }
       for (const result of current) {
-        if (this.baseline.overlay.deltaResult(result)) merged.set(key(result), result)
+        if (this.allowed(result, extensions) && this.baseline.overlay.deltaResult(result))
+          merged.set(key(result), result)
       }
       return [...merged.values()].sort((left, right) => right.score - left.score).slice(0, maxResults)
     } catch (err) {

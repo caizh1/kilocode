@@ -39,13 +39,13 @@ const BACKGROUND_DESCRIPTION = [
 ].join(" ")
 const BACKGROUND_STARTED = [
   "The task is working in the background. You will be notified automatically when it finishes.",
-  "Do not poll for progress, ask the task for status, or duplicate this task's work — avoid working with the same files or topics it is using.",
+  "DO NOT sleep, poll for progress, ask the task for status, or duplicate this task's work — avoid working with the same files or topics it is using.",
   "Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.",
 ].join("\n")
 const BACKGROUND_UPDATED = [
   "Additional context sent to the running background task.",
   "The task is still working in the background. You will be notified automatically when it finishes.",
-  "Do not poll for progress, ask the task for status, or duplicate this task's work — avoid working with the same files or topics it is using.",
+  "DO NOT sleep, poll for progress, ask the task for status, or duplicate this task's work — avoid working with the same files or topics it is using.",
   "Work on non-overlapping tasks, or briefly tell the user what you sent and end your response.",
 ].join("\n")
 
@@ -65,7 +65,8 @@ const BaseParameters = Schema.Struct(BaseParameterFields)
 export const Parameters = Schema.Struct({
   ...BaseParameterFields,
   background: Schema.optional(Schema.Boolean).annotate({
-    description: "Run the agent in the background. You will be notified when it completes.",
+    description:
+      "Run the agent in the background. You will be notified when it completes. DO NOT sleep, poll, or proactively check on its progress",
   }),
 })
 
@@ -162,26 +163,27 @@ export const TaskTool = Tool.define(
         ) // kilocode_change - prevent cross-session task resume
       }
       const parent = yield* sessions.get(ctx.sessionID)
-      const parentAgent = parent.agent
-        ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-        : undefined
       // kilocode_change start — inherit edit/bash/MCP restrictions from calling agent
       const caller = yield* agent.get(ctx.agent)
       const rules = KiloTask.inherited({ caller, session: parent, mcp: cfg.mcp })
+      const childPermission = KiloTask.merge(
+        deriveSubagentSessionPermission({
+          parentSessionPermission: parent.permission ?? [],
+          subagent: next,
+        }),
+        cfg.experimental?.primary_tools?.map((permission) => ({
+          permission,
+          pattern: "*",
+          action: "deny" as const,
+        })) ?? [],
+        KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true),
+      )
       // kilocode_change end
       // kilocode_change start - refresh current parent restrictions when resuming an existing task session
       const fallback = SandboxPolicy.fallback(cfg)
       if (session) {
         yield* SandboxPolicy.inherit(ctx.sessionID, session.id, fallback)
-        const permission = KiloTask.merge(
-          session.permission ?? [],
-          deriveSubagentSessionPermission({
-            parentSessionPermission: parent.permission ?? [],
-            parentAgent,
-            subagent: next,
-          }),
-          KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true), // kilocode_change - harden Ultra Council children read-only
-        )
+        const permission = KiloTask.merge(session.permission ?? [], childPermission)
         session.permission = permission
         yield* sessions.setPermission({ sessionID: session.id, permission })
       }
@@ -195,21 +197,7 @@ export const TaskTool = Tool.define(
           title: params.description + ` (@${next.name} subagent)`,
           agent: next.name,
           platform, // kilocode_change
-          // kilocode_change start - dedupe inherited restrictions before child prompt toggles persist
-          permission: KiloTask.merge(
-            deriveSubagentSessionPermission({
-              parentSessionPermission: parent.permission ?? [],
-              parentAgent,
-              subagent: next,
-            }),
-            cfg.experimental?.primary_tools?.map((item) => ({
-              pattern: "*",
-              action: "allow" as const,
-              permission: item,
-            })) ?? [],
-            KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true), // kilocode_change - harden Ultra Council children read-only
-          ),
-          // kilocode_change end
+          permission: childPermission,
         }))
       // kilocode_change end
       // kilocode_change start - rebuild in-memory ancestry and inherit confinement after creation/resume

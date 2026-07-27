@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test"
+import { mkdtemp, rm } from "node:fs/promises"
 import os from "node:os"
+import path from "node:path"
 import * as vscode from "vscode"
 import { InstallRegistry } from "../../src/services/marketplace/registry"
 import { LocalImportRegistry } from "../../src/services/marketplace/local-import-registry"
@@ -16,12 +18,14 @@ const original = {
   writeFile: fs.writeFile,
   rename: fs.rename,
 }
+const dirs: string[] = []
 
-afterEach(() => {
+afterEach(async () => {
   fs.createDirectory = original.createDirectory
   fs.readFile = original.readFile
   fs.writeFile = original.writeFile
   fs.rename = original.rename
+  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
 describe("Marketplace globalStorage installation metadata", () => {
@@ -76,6 +80,8 @@ describe("Marketplace globalStorage installation metadata", () => {
   })
 
   it("stores versioned local import fingerprints without absolute source or workspace paths", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chipmate-marketplace-"))
+    dirs.push(root)
     const files = new Map<string, Uint8Array>()
     fs.createDirectory = async () => {}
     fs.writeFile = async (uri, data) => {
@@ -92,7 +98,7 @@ describe("Marketplace globalStorage installation metadata", () => {
       files.set(target.fsPath, data)
       files.delete(source.fsPath)
     }
-    const context = { globalStorageUri: vscode.Uri.file("/storage") } as unknown as vscode.ExtensionContext
+    const context = { globalStorageUri: vscode.Uri.file(root) } as unknown as vscode.ExtensionContext
     const registry = new LocalImportRegistry(context)
     const workspaceId = registry.workspaceId("/private/team/secret-project")
     await registry.put({
@@ -112,7 +118,7 @@ describe("Marketplace globalStorage installation metadata", () => {
     const restored = await new LocalImportRegistry(context).list()
     expect(restored).toHaveLength(1)
     expect(restored[0]).toMatchObject({ skillId: "portable-skill", sourceKind: "zip", workspaceId })
-    const raw = Buffer.from(files.get("/storage/marketplace/local-imports.json") ?? []).toString("utf8")
+    const raw = Buffer.from(files.get(path.join(root, "marketplace", "local-imports.json")) ?? []).toString("utf8")
     expect(raw).not.toContain("/private/team/secret-project")
     expect(raw).not.toContain(os.homedir())
     expect(raw).not.toContain("fileContent")

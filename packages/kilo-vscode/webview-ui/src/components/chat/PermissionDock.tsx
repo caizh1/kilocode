@@ -295,7 +295,9 @@ export const PermissionDock: Component<{
             <code>{directory()}</code>
           </div>
         </Show>
-        <Show when={command()}>{(cmd) => <PermissionCommand command={cmd()} />}</Show>
+        <Show when={command()}>
+          {(cmd) => <PermissionCommand command={cmd()} plain={props.request.args.heredoc === true} />}
+        </Show>
 
         {(() => {
           const desc = description()

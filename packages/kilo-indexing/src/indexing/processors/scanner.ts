@@ -37,6 +37,8 @@ import { fallbackCheckpointMeta, generationForFile, pointForBlock, vectorContext
 import { discoverScanFiles, type DiscoveryResult } from "./discovery"
 import { constrained, type IndexingPressure } from "../memory"
 import type { IgnoreMatcher } from "../shared/load-ignore"
+import { isBinary } from "../shared/is-binary"
+import { scannerExtensions } from "../shared/supported-extensions"
 
 const log = Log.create({ service: "indexing-scanner" })
 const CODE_GRAPH_WORKER_CONCURRENCY = 2
@@ -73,12 +75,13 @@ export class DirectoryScanner implements IDirectoryScanner {
   private _cancelled = false
   private batchSegmentThreshold: number
   private maxBatchRetries: number
-  private runId: string = globalThis.crypto.randomUUID()
-  private ragMeta: RagCheckpointMeta | undefined
-  private readonly writeCache: boolean
-  private readonly graphPool = new CodeGraphParserWorkerPool()
-  private pressure: IndexingPressure = "normal"
-  private readonly limiters = new Set<{ limit: LimitFunction; kind: "parse" | "batch" }>()
+  private runId: string = globalThis.crypto.randomUUID();
+  private ragMeta: RagCheckpointMeta | undefined;
+  private readonly writeCache: boolean;
+  private readonly graphPool = new CodeGraphParserWorkerPool();
+  private pressure: IndexingPressure = "normal";
+  private readonly limiters = new Set<{ limit: LimitFunction; kind: "parse" | "batch" }>();
+  private readonly extensions: ReadonlySet<string>
 
   constructor(
     private readonly embedder: IEmbedder | undefined,
@@ -93,10 +96,12 @@ export class DirectoryScanner implements IDirectoryScanner {
     private readonly graph?: ICodeGraphStorage,
     private readonly postings?: ICodePostingsStorage,
     opts: { writeCache?: boolean } = {},
+    extensions: readonly string[] = scannerExtensions,
   ) {
     this.batchSegmentThreshold = batchSegmentThreshold ?? BATCH_SEGMENT_THRESHOLD
     this.maxBatchRetries = maxBatchRetries ?? MAX_BATCH_RETRIES
     this.writeCache = opts.writeCache ?? true
+    this.extensions = new Set(extensions)
   }
 
   private checkpointCache(): Promise<void> {
@@ -264,6 +269,7 @@ export class DirectoryScanner implements IDirectoryScanner {
       workspacePath: directory,
       target,
       ignoreInstance: this.ignoreInstance,
+      extensions: this.extensions,
     })
   }
 
@@ -562,7 +568,12 @@ export class DirectoryScanner implements IDirectoryScanner {
           }
 
           // Read file content using fs/promises
-          const content = await readFile(filePath, "utf-8")
+          const bytes = await readFile(filePath)
+          if (isBinary(bytes)) {
+            skippedCount++
+            return
+          }
+          const content = bytes.toString("utf-8")
 
           if (this._cancelled) {
             return

@@ -7,6 +7,7 @@ import { Context, Effect, Layer } from "effect"
 import { AI_SDK_PROVIDERS, KILO_OPENROUTER_BASE, PROMPTS } from "@kilocode/kilo-gateway"
 import { overlay } from "@/kilocode/anaconda-desktop/provider"
 import { isInternalOffline } from "@/kilocode/internal-offline"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 
 export const Model = Core.Model
 export type Model = Core.Model
@@ -122,6 +123,8 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Auth.defaultLayer),
   Layer.provide(ModelCache.defaultLayer),
 )
+
+export const node = LayerNode.make(layer, [Core.node, Config.node, Auth.node, ModelCache.node])
 
 export { AI_SDK_PROVIDERS, PROMPTS }
 export * as ModelsDev from "./models"

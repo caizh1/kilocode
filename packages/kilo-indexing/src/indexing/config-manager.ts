@@ -3,6 +3,7 @@ import type { CodeIndexConfig, DocumentIndexConfig, PreviousConfigSnapshot } fro
 import { DEFAULT_SEARCH_MIN_SCORE, DEFAULT_MAX_SEARCH_RESULTS, DEFAULT_VECTOR_STORE } from "./constants"
 import { getDefaultModelId, getModelDimension, getModelScoreThreshold } from "./model-registry"
 import { isEmbeddingProfileEqual, resolveEmbeddingProfile } from "./embedding-profile"
+import { resolveFileExtensions } from "./shared/supported-extensions"
 
 /**
  * Raw input fed to CodeIndexConfigManager from the host environment.
@@ -22,6 +23,7 @@ export interface IndexingConfigInput {
   searchMaxResults?: number
   embeddingBatchSize?: number
   scannerMaxBatchRetries?: number
+  fileExtensions?: string[]
   kiloApiKey?: string
   kiloBaseUrl?: string
   kiloOrganizationId?: string
@@ -90,7 +92,8 @@ export class CodeIndexConfigManager {
     chunkChars: DEFAULT_DOCUMENT_CHUNK_CHARS,
     chunkOverlapChars: DEFAULT_DOCUMENT_CHUNK_OVERLAP_CHARS,
     searchMaxResults: DEFAULT_DOCUMENT_SEARCH_MAX_RESULTS,
-  }
+  };
+  private fileExtensions: string[] = resolveFileExtensions(undefined)
 
   constructor(input: IndexingConfigInput) {
     this.applyInput(input)
@@ -118,6 +121,7 @@ export class CodeIndexConfigManager {
     this.embeddingBatchSize = input.embeddingBatchSize
     this.scannerMaxBatchRetries = input.scannerMaxBatchRetries
     this.documents = this.normalizeDocuments(input.documents)
+    this.fileExtensions = resolveFileExtensions(input.fileExtensions)
     this.modelId = input.modelId
 
     // Validate and set model dimension
@@ -176,6 +180,7 @@ export class CodeIndexConfigManager {
       qdrantUrl: this.qdrantUrl ?? "",
       qdrantApiKey: this.qdrantApiKey ?? "",
       documents: this.documents,
+      fileExtensions: [...this.fileExtensions],
     }
   }
 
@@ -253,6 +258,8 @@ export class CodeIndexConfigManager {
     if ((prev.qdrantUrl ?? "") !== (this.qdrantUrl ?? "") || (prev.qdrantApiKey ?? "") !== (this.qdrantApiKey ?? ""))
       return true
 
+    if (prev.fileExtensions.join("\0") !== this.fileExtensions.join("\0")) return true
+
     if (this.hasEmbeddingProfileChanged(prevProvider, prev.modelId, prev.modelDimension)) return true
 
     return false
@@ -300,6 +307,7 @@ export class CodeIndexConfigManager {
       embeddingBatchSize: this.currentEmbeddingBatchSize,
       scannerMaxBatchRetries: this.currentScannerMaxBatchRetries,
       documents: this.currentDocuments,
+      fileExtensions: [...this.fileExtensions],
     }
   }
 

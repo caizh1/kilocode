@@ -553,6 +553,9 @@ export function activate(source: vscode.ExtensionContext) {
     vscode.commands.registerCommand("chipmate.v2.agentManager.newWorktree", () => {
       agentManagerProvider.postMessage({ type: "action", action: "newWorktree" })
     }),
+    vscode.commands.registerCommand("chipmate.v2.agentManager.quickWorktree", () => {
+      agentManagerProvider.postMessage({ type: "action", action: "quickWorktree" })
+    }),
     vscode.commands.registerCommand("chipmate.v2.agentManager.openWorktree", () => {
       agentManagerProvider.postMessage({ type: "action", action: "openWorktree" })
     }),

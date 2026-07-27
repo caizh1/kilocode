@@ -41,6 +41,7 @@ export async function discoverScanFiles(input: {
   runGit?: GitRunner
   runRg?: RgRunner
   timeoutMs?: number
+  extensions?: ReadonlySet<string>
 }): Promise<DiscoveryResult> {
   const started = Date.now()
   const patterns = input.target === "codeGraph" ? graphPatterns() : ["**/*"]
@@ -51,6 +52,7 @@ export async function discoverScanFiles(input: {
     workspacePath: input.workspacePath,
     target: input.target,
     ignoreInstance: input.ignoreInstance,
+    extensions: input.extensions,
   })
 
   return {
@@ -199,6 +201,7 @@ function filter(input: {
   workspacePath: string
   target: IndexingScanTarget
   ignoreInstance: IgnoreMatcher
+  extensions?: ReadonlySet<string>
 }): string[] {
   const out = new Set<string>()
   for (const item of input.paths) {
@@ -208,7 +211,8 @@ function filter(input: {
     if (!rel) continue
     if (FileIgnore.match(rel)) continue
     if (input.target === "codeGraph" && !shouldIndexCodeGraphPath(rel)) continue
-    const supported = input.target === "codeGraph" ? graphExt(ext) : scannerExtensions.includes(ext)
+    const supported =
+      input.target === "codeGraph" ? graphExt(ext) : (input.extensions?.has(ext) ?? scannerExtensions.includes(ext))
     if (!supported || input.ignoreInstance.ignores(rel)) continue
     out.add(file)
   }

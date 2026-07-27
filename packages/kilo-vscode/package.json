@@ -321,6 +321,11 @@
       },
       {
         "command": "chipmate.v2.agentManager.newWorktree",
+        "title": "Agent Manager: Configure New Worktree",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.quickWorktree",
         "title": "Agent Manager: New Worktree",
         "category": "ChipMate"
       },
@@ -801,7 +806,7 @@
         "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
       },
       {
-        "command": "chipmate.v2.agentManager.advancedWorktree",
+        "command": "chipmate.v2.agentManager.quickWorktree",
         "key": "ctrl+shift+n",
         "mac": "cmd+shift+n",
         "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
@@ -1445,9 +1450,8 @@
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "bun run compile-tests && bun run compile && bun run lint",
     "check-types": "tsc --noEmit",
-    "check-types:webview": "bun script/typecheck.ts --project webview-ui/tsconfig.json",
-    "typecheck": "bun run check-types:extension && bun run check-types:webview",
-    "check-types:extension": "bun script/typecheck.ts",
+    "check-types:webview": "tsc --noEmit --project webview-ui/tsconfig.json",
+    "typecheck": "bun run check-types && bun run check-types:webview",
     "benchmark:qwen-autocomplete": "bun --preload ./script/qwen-benchmark-vscode-preload.ts script/benchmark-qwen-autocomplete.ts",
     "benchmark:low-end:webview": "node qa/low-end/run-webview.mjs",
     "benchmark:low-end:installed": "node qa/low-end/run-installed.mjs",

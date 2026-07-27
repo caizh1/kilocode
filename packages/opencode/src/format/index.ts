@@ -1,3 +1,4 @@
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Effect, Layer, Context, Schema } from "effect"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { ChildProcess } from "effect/unstable/process"
@@ -8,11 +9,8 @@ import { mergeDeep } from "remeda"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { errorMessage } from "@/util/error"
-import * as Log from "@opencode-ai/core/util/log"
 import * as Formatter from "./formatter"
 import { userEnv } from "@/kilocode/product-env" // kilocode_change
-
-const log = Log.create({ service: "format" })
 
 export const Status = Schema.Struct({
   name: Schema.String,
@@ -61,11 +59,7 @@ export const layer = Layer.effect(
           const matching = Object.values(formatters).filter((item) => item.extensions.includes(ext))
           const checks = await Promise.all(
             matching.map(async (item) => {
-              log.info("checking", { name: item.name, ext })
               const cmd = await getCommand(item)
-              if (cmd) {
-                log.info("enabled", { name: item.name, ext })
-              }
               return {
                 item,
                 cmd,
@@ -79,13 +73,13 @@ export const layer = Layer.effect(
 
         function formatFile(filepath: string) {
           return Effect.gen(function* () {
-            log.info("formatting", { file: filepath })
+            yield* Effect.logInfo("formatting", { file: filepath })
             const formatters = yield* Effect.promise(() => getFormatter(path.extname(filepath)))
 
             if (!formatters.length) return false
 
             for (const { item, cmd } of formatters) {
-              log.info("running", { command: cmd })
+              yield* Effect.logInfo("running", { command: cmd })
               const replaced = cmd.map((x) => x.replace("$FILE", filepath))
               const dir = yield* InstanceState.directory
               const result = yield* appProcess
@@ -103,20 +97,17 @@ export const layer = Layer.effect(
                 )
                 .pipe(
                   Effect.catch((error) =>
-                    Effect.sync(() => {
-                      log.error("failed to format file", {
-                        error: "spawn failed",
-                        command: cmd,
-                        ...item.environment,
-                        file: filepath,
-                        cause: errorMessage(error.cause ?? error),
-                      })
-                      return undefined
-                    }),
+                    Effect.logError("failed to format file", {
+                      error: "spawn failed",
+                      command: cmd,
+                      ...item.environment,
+                      file: filepath,
+                      cause: errorMessage(error.cause ?? error),
+                    }).pipe(Effect.as(undefined)),
                   ),
                 )
               if (result && result.exitCode !== 0) {
-                log.error("failed", {
+                yield* Effect.logError("failed", {
                   command: cmd,
                   ...item.environment,
                 })
@@ -130,8 +121,8 @@ export const layer = Layer.effect(
         const cfg = yield* config.get()
 
         if (!cfg.formatter) {
-          log.info("all formatters are disabled")
-          log.info("init")
+          yield* Effect.logInfo("all formatters are disabled")
+          yield* Effect.logInfo("init")
           return {
             formatters,
             isEnabled,
@@ -169,7 +160,7 @@ export const layer = Layer.effect(
           }
         }
 
-        log.info("init")
+        yield* Effect.logInfo("init")
 
         return {
           formatters,
@@ -211,5 +202,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(AppProcess.defaultLayer),
   Layer.provide(RuntimeFlags.defaultLayer),
 )
+
+export const node = LayerNode.make(layer, [Config.node, AppProcess.node, RuntimeFlags.node])
 
 export * as Format from "."

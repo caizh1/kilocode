@@ -8,6 +8,7 @@ import { markNoIndex } from "./kilocode/spotlight" // kilocode_change
 import { ensureRealDir } from "./kilocode/global" // kilocode_change
 import { Product } from "./kilocode/product" // kilocode_change
 import { Flag } from "./flag/flag"
+import { LayerNode } from "./effect/layer-node"
 
 const app = "kilo" // kilocode_change
 // kilocode_change start
@@ -94,6 +95,7 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = layer
+export const node = LayerNode.make(layer, [])
 
 export const layerWith = (input: Partial<Interface>) =>
   Layer.effect(

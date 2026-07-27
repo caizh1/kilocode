@@ -5,14 +5,13 @@ import { useSession } from "./session"
 import { useVSCode } from "./vscode"
 import { useLanguage } from "./language"
 import { showToast } from "@kilocode/kilo-ui/toast"
-import type { MemoryShowResponse, MemoryStatusResponse } from "@kilocode/sdk/v2"
+import type { MemoryStatusResponse } from "@kilocode/sdk/v2"
 import type { ExtensionMessage, Message, Part } from "../types/messages"
 import { addMemoryActivity, markerActivity, type MemoryActivity } from "../utils/memory-activity"
 import { visibleParts } from "./session-queue"
 
 export interface MemoryContextValue {
   status: Accessor<MemoryStatusResponse | undefined>
-  show: Accessor<MemoryShowResponse | undefined>
   loading: Accessor<boolean>
   pending: Accessor<boolean>
   error: Accessor<string | undefined>
@@ -20,15 +19,12 @@ export interface MemoryContextValue {
   sessionTokens: Accessor<number>
   totalTokens: Accessor<number>
   activity: Accessor<MemoryActivity[]>
-  refresh: (includeSources?: boolean) => void
-  showMemory: () => void
+  refresh: () => void
+  inspect: () => void
   enable: () => void
   disable: () => void
   auto: (mode: "on" | "off") => void
-  verbose: (mode: "on" | "off") => void
   rebuild: () => void
-  remember: () => void
-  forget: () => void
 }
 
 export const MemoryContext = createContext<MemoryContextValue>()
@@ -42,7 +38,6 @@ export const MemoryProvider: ParentComponent = (props) => {
   const session = useSession()
   const language = useLanguage()
   const [status, setStatus] = createSignal<MemoryStatusResponse | undefined>()
-  const [show, setShow] = createSignal<MemoryShowResponse | undefined>()
   const [loading, setLoading] = createSignal(false)
   const [pending, setPending] = createSignal<string | undefined>()
   const [error, setError] = createSignal<string | undefined>()
@@ -129,7 +124,6 @@ export const MemoryProvider: ParentComponent = (props) => {
 
   const clear = () => {
     setStatus(undefined)
-    setShow(undefined)
     setError(undefined)
     setPending(undefined)
     setSaved([])
@@ -137,21 +131,20 @@ export const MemoryProvider: ParentComponent = (props) => {
     last = undefined
   }
 
-  const refresh = (includeSources = false) => {
+  const refresh = () => {
     if (!server.isConnected()) return
     setLoading(true)
     setError(undefined)
-    vscode.postMessage({ type: "requestMemory", sessionID: id(), includeSources })
+    vscode.postMessage({ type: "requestMemory", sessionID: id() })
   }
 
-  const operation = (op: "enable" | "disable" | "rebuild" | "verbose", mode?: "on" | "off") => {
+  const operation = (op: "enable" | "disable" | "rebuild") => {
     if (!server.isConnected()) return
     setPending(key(id()))
     setError(undefined)
     vscode.postMessage({
       type: "memoryOperation",
       operation: op,
-      ...(mode ? { mode } : {}),
       sessionID: id(),
     })
   }
@@ -163,18 +156,11 @@ export const MemoryProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "memoryOperation", operation: "auto", mode, sessionID: id() })
   }
 
-  const prompt = (op: "remember" | "forget") => {
+  const inspect = () => {
     if (!server.isConnected()) return
     setPending(key(id()))
     setError(undefined)
-    vscode.postMessage({ type: "memoryPrompt", operation: op, sessionID: id() })
-  }
-
-  const showMemory = () => {
-    if (!server.isConnected()) return
-    setLoading(true)
-    setError(undefined)
-    vscode.postMessage({ type: "memoryShow", sessionID: id() })
+    vscode.postMessage({ type: "memoryOperation", operation: "inspect", sessionID: id() })
   }
 
   const event = (message: Extract<ExtensionMessage, { type: "memoryEvent" }>) => {
@@ -198,11 +184,9 @@ export const MemoryProvider: ParentComponent = (props) => {
     if (message.error) {
       setError(message.error)
       setStatus(undefined)
-      setShow(undefined)
       return
     }
     if (message.status) setStatus(message.status)
-    if (message.show) setShow(message.show)
     setError(undefined)
   }
 
@@ -217,7 +201,6 @@ export const MemoryProvider: ParentComponent = (props) => {
       return
     }
     if (message.status) setStatus(message.status)
-    if (message.show) setShow(message.show)
     setError(undefined)
   }
 
@@ -235,7 +218,7 @@ export const MemoryProvider: ParentComponent = (props) => {
       done(message)
       return
     }
-    if (message.type === "extensionDataReady" && server.isConnected() && !status()) refresh(false)
+    if (message.type === "extensionDataReady" && server.isConnected() && !status()) refresh()
   }
 
   const unsubscribe = vscode.onMessage(receive)
@@ -256,7 +239,7 @@ export const MemoryProvider: ParentComponent = (props) => {
       setLoading(false)
       return
     }
-    refresh(false)
+    refresh()
   })
 
   const sessionTokens = (snapshot?: MemoryStatusResponse) => {
@@ -283,7 +266,6 @@ export const MemoryProvider: ParentComponent = (props) => {
 
   const value: MemoryContextValue = {
     status,
-    show,
     loading,
     pending: createMemo(() => pending() === key(id())),
     error,
@@ -292,14 +274,11 @@ export const MemoryProvider: ParentComponent = (props) => {
     totalTokens: total,
     activity,
     refresh,
-    showMemory,
+    inspect,
     enable: () => operation("enable"),
     disable: () => operation("disable"),
     auto,
-    verbose: (mode) => operation("verbose", mode),
     rebuild: () => operation("rebuild"),
-    remember: () => prompt("remember"),
-    forget: () => prompt("forget"),
   }
 
   return <MemoryContext.Provider value={value}>{props.children}</MemoryContext.Provider>

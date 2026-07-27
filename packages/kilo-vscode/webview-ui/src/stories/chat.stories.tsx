@@ -1725,7 +1725,6 @@ const mockMemory: MemoryContextValue = {
     exists: { state: true, index: true },
     index: { bytes: 49_600, estimatedTokens: 12_400, preview: "" },
   }),
-  show: () => undefined,
   loading: () => false,
   pending: () => false,
   error: () => undefined,
@@ -1743,14 +1742,11 @@ const mockMemory: MemoryContextValue = {
     },
   ],
   refresh: () => {},
-  showMemory: () => {},
+  inspect: () => {},
   enable: () => {},
   disable: () => {},
   auto: () => {},
-  verbose: () => {},
   rebuild: () => {},
-  remember: () => {},
-  forget: () => {},
 }
 
 const memoryHeader = (width: string) => {

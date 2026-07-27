@@ -11,6 +11,7 @@ import { getErrorMessage, sessionToWebview, mapCloudSessionMessageToWebviewMessa
 import type { MessageFile } from "../message-files"
 import { reviewMetadata, type ReviewMessageData } from "../../shared/review-comments"
 import { modelSelection } from "../../shared/provider-model"
+import { completesWithoutStatus } from "../command-completion"
 
 const TIMEOUT = 30_000
 
@@ -242,6 +243,9 @@ export async function handleImportAndSend(
         { throwOnError: true },
       )
     })
+    if (messageID && command && completesWithoutStatus(command)) {
+      ctx.postMessage({ type: "sessionCommandCompleted", messageID })
+    }
   } catch (err) {
     console.error("[Kilo New] Failed to send message after cloud import:", err)
     ctx.postMessage({

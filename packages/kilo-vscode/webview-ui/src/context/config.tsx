@@ -145,6 +145,18 @@ export const ConfigProvider: ParentComponent = (props) => {
       finish(next, pendingConfig())
       return true
     }
+    if (message.type === "chatSettingsLoaded") {
+      mergeSettings({
+        "chat.shiftTabCyclesVariant": message.settings.shiftTabCyclesVariant,
+      })
+      return true
+    }
+    if (message.type === "throughputSettingLoaded") {
+      mergeSettings({
+        showTokenThroughput: message.visible,
+      })
+      return true
+    }
     if (message.type !== "settingUpdateFailed") return false
     if (!saving() || message.requestId !== request()) return true
     setSaving(false)
@@ -266,6 +278,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "requestAutocompleteSettings" })
     vscode.postMessage({ type: "requestIndexingSettings" })
     vscode.postMessage({ type: "requestChipmateServerSettings" })
+    vscode.postMessage({ type: "requestChatSettings" })
   }
 
   // Request config immediately; if the extension's httpClient is not yet ready,

@@ -4,14 +4,15 @@ import * as ProviderSave from "@/kilocode/server/provider-save-lifecycle" // kil
 import {
   invalidateAfterProviderAuthChange,
   invalidatePresence,
-} from "@/kilocode/server/provider-auth-lifecycle" // kilocode_change
-import * as Log from "@opencode-ai/core/util/log"
+} from "@/kilocode/server/provider-auth-lifecycle"
+// kilocode_change end
 import { Effect } from "effect"
 import { HttpServerRequest } from "effect/unstable/http" // kilocode_change
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { RootHttpApi } from "../api"
 import { LogInput } from "../groups/control"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { remove as removeAuth } from "@/kilocode/auth/remove" // kilocode_change
 
 export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (handlers) =>
   Effect.gen(function* () {
@@ -39,6 +40,7 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
         }),
       )
       yield* auth.set(ctx.params.providerID, ctx.payload).pipe(Effect.orDie)
+      if (ctx.params.providerID === "kilo") yield* invalidatePresence()
       yield* invalidateAfterProviderAuthChange(ctx.params.providerID, { dispose: !defer })
       if (defer)
         yield* Effect.promise(() =>
@@ -55,9 +57,6 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
           data: { provider: MemoryDebug.hash(ctx.params.providerID), durationMs: Date.now() - began },
         }),
       )
-      // kilocode_change start - drop old presence socket before instance disposal on Kilo auth changes
-      if (ctx.params.providerID === "kilo") yield* invalidatePresence()
-      // kilocode_change end
       return true
     })
 
@@ -75,7 +74,8 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
           data: { provider: MemoryDebug.hash(ctx.params.providerID) },
         }),
       )
-      yield* auth.remove(ctx.params.providerID).pipe(Effect.orDie)
+      yield* removeAuth(ctx.params.providerID)
+      if (ctx.params.providerID === "kilo") yield* invalidatePresence()
       yield* invalidateAfterProviderAuthChange(ctx.params.providerID, { dispose: !defer })
       if (defer)
         yield* Effect.promise(() =>
@@ -92,16 +92,20 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
           data: { provider: MemoryDebug.hash(ctx.params.providerID), durationMs: Date.now() - began },
         }),
       )
-      // kilocode_change start - drop old presence socket before instance disposal on Kilo auth changes
-      if (ctx.params.providerID === "kilo") yield* invalidatePresence()
-      // kilocode_change end
       return true
     })
     // kilocode_change end
 
     const log = Effect.fn("ControlHttpApi.log")(function* (ctx: { payload: typeof LogInput.Type }) {
-      const logger = Log.create({ service: ctx.payload.service })
-      logger[ctx.payload.level](ctx.payload.message, ctx.payload.extra)
+      const write =
+        ctx.payload.level === "debug"
+          ? Effect.logDebug
+          : ctx.payload.level === "info"
+            ? Effect.logInfo
+            : ctx.payload.level === "warn"
+              ? Effect.logWarning
+              : Effect.logError
+      yield* write(ctx.payload.message).pipe(Effect.annotateLogs(ctx.payload.extra ?? {}))
       return true
     })
 

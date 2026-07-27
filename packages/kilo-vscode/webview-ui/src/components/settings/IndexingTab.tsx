@@ -1,7 +1,7 @@
 import { Component, For, Show, createMemo, createSignal, onCleanup } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Card } from "@kilocode/kilo-ui/card"
-import { DEFAULT_VECTOR_STORE } from "@kilocode/kilo-indexing/config"
+import { DEFAULT_VECTOR_STORE, isFileExtension, parseFileExtensions } from "@kilocode/kilo-indexing/config"
 import { formatKiloEmbeddingModelLabel, getKiloEmbeddingModel } from "@kilocode/kilo-indexing/embedding-models"
 import { Select } from "@kilocode/kilo-ui/select"
 import { Switch } from "@kilocode/kilo-ui/switch"
