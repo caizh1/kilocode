@@ -1,299 +1,114 @@
 # AGENTS.md
 
-Kilo CLI is an open source AI coding agent that generates code from natural language, automates tasks, and supports 500+ AI models.
+本文件只定义 `/Users/archer/Work/kilocode` 的仓库级规则。进入含有更深层 `AGENTS.md` 的目录时，同时遵循更具体的子目录规则；易变化的架构、文件清单和实现细节应由源码、测试、脚本或专项文档维护，不要继续堆入本文件。
 
-- ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
-- The default branch in this repo is `main`.
-- Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
-- You may be running in a git worktree. All changes must be made in your current working directory — never modify files in the main repo checkout.
+## 工作原则
 
-## Development Backlog
+- 能并行执行的独立读取、搜索和验证应并行执行。
+- 默认分支是 `main`。
+- 在安全、权限和信息充分的前提下优先自动完成请求，不为可逆的常规步骤反复确认。
+- 只修改当前工作目录，不跨到其他 checkout 或 worktree；保留用户已有的脏工作区和无关改动。
+- 构建产物、日志、截图、缓存、QA 临时目录和传输文件默认保持本地且不进入 Git。
 
-- `DEVELOPMENT_TODO.md` at the repository root is the authoritative cross-session development backlog for this project.
-- When a session identifies a concrete, actionable development item and explicitly defers it, add it to or update it in `DEVELOPMENT_TODO.md` before finishing. Update an existing item instead of creating a duplicate.
-- Keep completed or cancelled items in the backlog and update their status rather than deleting them.
-- Do not add speculative or unverified risks, routine code TODO comments, or session-local implementation steps to the backlog.
+## 跨会话开发待办
 
-## Build and Dev
+- 根目录 `DEVELOPMENT_TODO.md` 是唯一的跨会话开发待办。
+- 只有在本次任务发现了具体、可执行且被明确延期的开发项时才新增或更新；优先更新已有项，避免重复。
+- 已完成或已取消的事项更新状态，不删除历史。
+- 不记录猜测风险、普通代码 TODO、一次性执行步骤或当前会话仍在完成的工作。
 
-- **Dev**: `bun run dev` (runs from root) or `bun run --cwd packages/opencode --conditions=browser src/index.ts`
-- **Dev with params**: `bun dev -- help`
-- **Extension**: `bun run extension` (build + launch VS Code with the extension in dev mode). Pass `--no-build` to skip the build.
-- **Typecheck**: `bun turbo typecheck` (uses `tsgo`, not `tsc`). Includes the JetBrains plugin and requires Java 21; do not run `java -version` as a routine preflight. Only check Java when a Gradle/Java command fails with a Java-version or missing-Java error. If missing, install via SDKMAN: `sdk install java 21-tem && sdk use java 21-tem`. If SDKMAN is not installed, see https://sdkman.io/install.
-- **Test**: `bun test` from `packages/opencode/` (NOT from root -- root blocks tests)
-- **Single test**: `bun test ./test/tool/tool-define.test.ts` from `packages/opencode/`
-- **CLI build artifact size check**: after `bun run script/build.ts --single --skip-install` in `packages/opencode/`, use `du -h dist/*/*/bin/kilo` (scoped package output lives under `dist/@kilocode/`)
-- **SDK regen**: After changing server endpoints in `packages/opencode/src/server/`, run `./script/generate.ts` from root to regenerate `packages/sdk/js/`
-- **Knip** (unused exports): `bun run knip` from `packages/kilo-vscode/`. CI runs this — all exported types/functions must be imported somewhere. Remove or unexport unused exports before pushing.
-- **Source links**: After adding or changing URLs in `packages/kilo-vscode/`, `packages/kilo-vscode/webview-ui/`, or `packages/opencode/src/`, run `bun run script/extract-source-links.ts` from the repo root and commit the updated `packages/kilo-docs/source-links.md`. CI runs this check — the build fails if the file is stale.
-- **kilocode_change check**: `bun run check-kilocode-change` from `packages/kilo-vscode/`. CI runs this — `kilocode_change` is a marker for upstream merge conflicts and must not appear in `packages/kilo-vscode/` or `packages/kilo-ui/` (these are entirely Kilo Code additions). Remove the markers before pushing.
-- **opencode annotation check**: `bun run script/check-opencode-annotations.ts --worktree` from repo root when verifying local agent changes. CI runs `bun run script/check-opencode-annotations.ts` on PRs touching `packages/opencode/` — every Kilo-specific change in shared opencode files must be annotated with `kilocode_change` markers. Exempt paths (no markers needed): `packages/opencode/src/kilocode/`, `packages/opencode/test/kilocode/`, and any path containing `kilocode` in the name.
-- **Effect facade ratchet**: Do not add runtime-backed Promise facades to shared `packages/opencode/src` Effect services; use service dependencies, `AppRuntime`, or Kilo-owned boundaries. Run `bun run script/check-opencode-promise-facades.ts` when touching service adapters.
-- **workflow allowlist**: `bun run script/check-workflows.ts` from repo root. CI runs this as part of the annotations workflow — any `.yml` / `.yaml` file added to or removed from `.github/workflows/` must be reflected in the hardcoded list in `script/check-workflows.ts`. Prevents upstream-merged workflows from silently starting to run in our CI.
-- **Backend/SDK programmatic testing**: see [TESTING.md](./TESTING.md) for spawning the local main-branch backend (`bun dev serve`) and driving it via `curl` — use this instead of `kilo serve` (prod binary) when testing backend fixes.
+## 命令与质量门禁
 
-## VS Code Extension Packaging
+- 开发：根目录运行 `bun run dev`；传参示例为 `bun run dev -- help`。
+- 扩展开发：根目录运行 `bun run extension`；可传 `--no-build`。
+- 仓库类型检查：`bun run typecheck`（等价于 `bun turbo typecheck`）。
+- 后端与 SDK 的程序化验证遵循 `TESTING.md`，使用开发入口，不用已安装的生产 `kilo serve` 替代源码验证。
+- 禁止在根目录运行 `bun test`；根脚本会主动失败。测试必须在对应 package 中运行。
 
-- When the user asks to package the VS Code extension (`打包`) without explicitly narrowing the target, produce two VSIX artifacts by default: macOS and `win32-x64-baseline`.
-- For local/internal VSIX or offline packaging, inject Word/Mermaid render service defaults only from ignored local inputs such as `.env.local`, `.kilo-render-defaults.local.json`, or the current shell environment. Never write private render endpoints into tracked source, `package.json`, `AGENTS.md`, README files, tests, documentation, or any diff intended for remote git. The concrete endpoint may exist only in ignored local files, the current process environment, generated local VSIX/offline artifacts, or the local VS Code/user environment.
-- If local render defaults are present, package-time injection should set the packaged defaults for `kilo.documents.wordRender.remoteEndpoint` and `kilo.documents.mermaidRender.remoteEndpoint`, then restore tracked `package.json` defaults before the packaging script exits. Do not commit generated VSIX/offline artifacts unless explicitly requested.
-- The Windows artifact must use the baseline x64 CLI/VSIX target for wider CPU compatibility; do not substitute the generic `win32-x64` target unless the user explicitly requests it.
-- Every packaging run must build fresh target CLI artifacts first and package from those newly built `packages/opencode/dist/@kilocode/cli-*` outputs. Do not reuse CLI binaries, `bin/` directories, or files extracted from older VSIX artifacts; if a target CLI cannot be freshly built, report the blocker instead of producing a recycled package.
-- For the default internal/offline Windows baseline package, run `bun script/build.ts --internal-offline` from `packages/kilo-vscode/`. This packages only `win32-x64-baseline` with the internal custom-provider-only UI/runtime and pruned resources; use the normal public packaging path only when the user explicitly asks for a public/multicloud package.
-- The Windows baseline VSIX must bundle `extension/bin/rg.exe` and the LanceDB runtime under `extension/bin/lancedb/node_modules/` for offline Windows environments. Verify the final VSIX contains `extension/bin/lancedb/node_modules/@lancedb/lancedb/dist/index.js` and `extension/bin/lancedb/node_modules/@lancedb/lancedb-win32-x64-msvc/lancedb.win32-x64-msvc.node` so the CLI does not need to download ripgrep from GitHub or `@lancedb/lancedb` from npm at runtime.
-- The default Windows baseline VSIX is a no-audio package: do not bundle `extension/bin/ffmpeg.exe` unless the user explicitly asks for speech or audio support. Chat, QA, RAG, CodeGraph, Agent Manager, and diff panels should still work without FFmpeg; speech/audio features may require a system FFmpeg or a separate audio-enabled package.
-- Do not remove `extension/dist/*.js`; these are the extension runtime and webview bundles. Exclude `extension/dist/**/*.map` source maps by default to reduce package size unless the user explicitly asks for a debug package.
-- The default internal Windows baseline VSIX only needs Simplified Chinese UI. When optimizing package size, build a Chinese-only language bundle that keeps `en` as the fallback dictionary and `zh` as the only non-English locale; do not bundle other locale dictionaries unless the user explicitly asks for multilingual, public-marketplace, or debug packaging. Do not delete source i18n files from the repo just to package a Chinese-only VSIX; prune or alias locale imports at build/package time.
-- The default internal Windows baseline VSIX targets an offline intranet environment where only custom providers are usable. Do not surface Kilo/ChipMate Gateway, public "popular providers", or public model recommendations by default in the packaged internal build unless the user explicitly asks for a public/multicloud package. Prefer a custom-provider-only provider picker/settings experience, and use `enabled_providers`/provider config to restrict runtime provider lists instead of deleting provider source code. A minimal or pruned `models-snapshot.json` is acceptable for the internal package as long as custom provider configuration and model selection still work.
-- For internal/offline indexing defaults, use `openai-compatible` with model `qwen3-embedding-8b`, dimension `2048`, and `lancedb` unless the user explicitly configures another embedding model or dimension.
-- When verifying the Windows baseline VSIX, confirm it contains `extension/bin/kilo.exe`, `extension/bin/rg.exe`, `extension/bin/models-snapshot.json`, `extension/bin/tree-sitter/tree-sitter.wasm`, `extension/bin/lancedb/node_modules/@lancedb/lancedb/dist/index.js`, `extension/bin/lancedb/node_modules/@lancedb/lancedb-win32-x64-msvc/lancedb.win32-x64-msvc.node`, `extension/dist/extension.js`, `extension/dist/webview.js`, `extension/dist/agent-manager.js`, `extension/dist/diff-viewer.js`, and `extension/dist/diff-virtual.js`; confirm it does not contain `extension/bin/ffmpeg.exe` or `extension/dist/*.map` for the default no-audio package.
-- Internal update hosting publishes each complete VSIX directly to the render-service packages host through a temporary file, verifies SHA-256 there, and atomically renames it to the final `.vsix` name. The service dynamically generates `/packages/manifest.json`; do not create or transfer `latest.json` or a wrapper `.tar.gz`.
-- When creating Linux/offline deployment archives on macOS, do not use the system `tar` if the archive will be extracted on Linux. macOS `bsdtar` can preserve `com.apple.*` extended attributes such as `com.apple.provenance`, causing Linux extraction errors like `lsetxattr ... operation not supported`. Use a packaging path that strips Apple xattrs, such as Python `tarfile` with empty pax headers, and verify both outer archives and nested `.tar.gz` files with `gzip -dc <archive> | strings | rg 'com\\.apple|LIBARCHIVE\\.xattr|SCHILY\\.xattr|AppleDouble|__MACOSX'` before handoff.
-
-## Quality Checks
-
-Before saying an implementation is ready, run the smallest relevant checks that can catch lint, typecheck, and test failures for the touched package. Do not rely on manual extension launch to discover build problems. Fix failures you introduced before the final response, or state exactly which check is still failing or could not be run.
-
-| Area | Checks |
+| 范围 | 最小相关检查 |
 |---|---|
-| Root / cross-package | `bun run lint`, `bun run typecheck` |
-| CLI | From `packages/opencode/`: `bun run typecheck`, `bun test` or targeted `bun test ./path/to/file.test.ts` |
-| VS Code extension | From `packages/kilo-vscode/`: `bun run typecheck`, `bun run lint`, `bun run test:unit` or `bun run test` |
-| Extension build/package | From `packages/kilo-vscode/`: `bun run compile` or `bun run package` when touching build, packaging, SDK, or webview integration paths |
-| JetBrains plugin | From `packages/kilo-jetbrains/`: `./gradlew typecheck`, `./gradlew test`. Requires Java 21; do not run `java -version` as a routine preflight. Check Java only after a Java-version or missing-Java failure. |
-| CI/local guards | Run affected guards documented above, such as `bun run knip`, `bun run check-kilocode-change`, `bun run script/check-opencode-annotations.ts --worktree`, or source link extraction |
+| 根目录或跨包 | `bun run lint`、`bun run typecheck` |
+| CLI | 在 `packages/opencode/` 运行 `bun run typecheck`，并运行目标测试或 `bun test` |
+| VS Code 扩展 | 在 `packages/kilo-vscode/` 运行 `bun run typecheck`、`bun run lint`、目标单测或 `bun run test:unit` |
+| 扩展构建/打包 | 在 `packages/kilo-vscode/` 运行 `bun run compile` 或实际打包命令 |
+| JetBrains | 在 `packages/kilo-jetbrains/` 运行 `./gradlew typecheck`、`./gradlew test` |
 
-Never run root `bun test`; the root script prints `do not run tests from root` and exits with code 1. Use package-level tests instead.
+- 修改 `packages/opencode/src/server/` 端点后，从根目录运行 `./script/generate.ts` 更新 JS SDK。
+- 修改 `packages/kilo-vscode/`、其 webview 或 `packages/opencode/src/` 中的 URL 后，运行 `bun run script/extract-source-links.ts` 并提交更新后的 `packages/kilo-docs/source-links.md`。
+- VS Code 扩展按需运行 `bun run knip` 和 `bun run check-kilocode-change`。
+- 修改共享 OpenCode 文件时运行 `bun run script/check-opencode-annotations.ts --worktree`；修改 Effect service adapter 时再运行 `bun run script/check-opencode-promise-facades.ts`。
+- 增删 `.github/workflows/` 文件时运行 `bun run script/check-workflows.ts`。
+- Markdown 表格只使用紧凑格式；运行 `bun run script/check-md-table-padding.ts --fix` 修复填充空格。
+- 只运行能覆盖本次改动的最小相关检查；无法运行或存在既有失败时，明确报告范围和原因。
 
-## Products
+## 子目录规则与架构真源
 
-All products are clients of the **CLI** (`packages/opencode/`), which contains the AI agent runtime, HTTP server, and session management. Each client spawns or connects to a `kilo serve` process and communicates via HTTP + SSE using `@kilocode/sdk`.
-
-| Product | Package | Description |
-|---|---|---|
-| Kilo CLI | `packages/opencode/` | Core engine. TUI, `kilo run`, `kilo serve`. Fork of upstream OpenCode. |
-| Kilo VS Code Extension | `packages/kilo-vscode/` | VS Code extension. Bundles the CLI binary, spawns `kilo serve` as a child process. Includes the **Agent Manager** — a multi-session orchestration panel with git worktree isolation. |
-
-**Agent Manager** refers to a feature inside `packages/kilo-vscode/` (extension code in `src/agent-manager/`, webview in `webview-ui/agent-manager/`). It is not a standalone product. See the extension's `AGENTS.md` for details.
-
-In each VS Code extension host, one `KiloConnectionService` is created for the sidebar, every Kilo editor tab, and Agent Manager; it lazily starts and reuses one current `kilo serve` backend at a time. Agent Manager worktree sessions pass a directory context to this shared backend rather than starting one per worktree. State captured by the active service layer, such as Snapshot `trackState`, is shared across those requests; only directory-keyed `InstanceState` data is isolated.
-
-Extension-specific settings should live in the Kilo extension settings, not default VS Code settings, unless they are intentionally VS Code-wide. Experimental flags should follow existing flag patterns, not VS Code settings; they usually belong in the Kilo Experimental settings section.
-
-## VS Code 工具栏/图标规则
-
-- VS Code 风格界面里的工具栏动作，不要设计自定义彩色图标。
-- 除非周围原生 UI 已经使用圆形徽标，否则不要使用圆形徽标。
-- 优先使用 VS Code Codicons 或项目已有的 `IconButton` 组件。
-- 图标必须是单色、继承 `currentColor`，并遵循主题 token。
-- 图标的尺寸、描边视觉重量、内边距、hover、active、disabled 和间距必须匹配现有工具栏动作。
-- 如果在现有原生图标旁新增图标，必须先检查相邻图标的实现，并复用它们的样式。
-
-## Package Instructions
-
-- When a task primarily touches `packages/kilo-jetbrains/`, read `packages/kilo-jetbrains/AGENTS.md` before planning or editing. It covers split-mode architecture, IntelliJ source lookup, threading fundamentals, UI guidelines, and session component architecture.
-
-## Monorepo Structure
-
-Turborepo + Bun workspaces. The packages you'll work with most:
-
-| Package | Name | Purpose |
-|---|---|---|
-| `packages/opencode/` | `@kilocode/cli` | Core CLI -- agents, tools, sessions, server, TUI. This is where most work happens. |
-| `packages/sdk/js/` | `@kilocode/sdk` | Auto-generated TypeScript SDK (client for the server API). Do not edit `src/gen/` by hand. |
-| `packages/kilo-vscode/` | `kilo-code` | VS Code extension with sidebar chat + Agent Manager. See its own `AGENTS.md` for details. |
-| `packages/kilo-gateway/` | `@kilocode/kilo-gateway` | Kilo auth, provider routing, API integration |
-| `packages/kilo-telemetry/` | `@kilocode/kilo-telemetry` | PostHog analytics + OpenTelemetry |
-| `packages/kilo-i18n/` | `@kilocode/kilo-i18n` | Internationalization / translations |
-| `packages/kilo-ui/` | `@kilocode/kilo-ui` | SolidJS component library shared by the extension webview and docs screenshot stories |
-| `packages/util/` | `@opencode-ai/util` | Shared utilities (error, path, retry, slug, etc.) |
-| `packages/plugin/` | `@kilocode/plugin` | Plugin/tool interface definitions |
-
-## Commits and PR Titles
-
-Use conventional commit-style messages and PR titles: `type(scope): summary`.
-
-Valid types are `feat`, `fix`, `docs`, `chore`, `refactor`, and `test`. Scopes are optional; use the affected package or area when helpful, e.g. `core`, `opencode`, `tui`, `app`, `desktop`, `sdk`, or `plugin`.
-
-Examples: `fix(tui): simplify thinking toggle styling`, `docs: update contributing guide`, `chore(sdk): regenerate types`.
-
-## Style Guide
-
-- Keep things in one function unless composable or reusable
-- Avoid unnecessary destructuring. Instead of `const { a, b } = obj`, use `obj.a` and `obj.b` to preserve context
-- Avoid `try`/`catch` where possible
-- Avoid using the `any` type
-- Prefer single word variable names where possible
-- Use Bun APIs when possible, like `Bun.file()`
-- Rely on type inference when possible; avoid explicit type annotations or interfaces unless necessary for exports or clarity
-
-### Avoid let statements
-
-Prefer `const`. Replace `let` + if/else assignment with a ternary or an IIFE. Reassignment is the only legitimate reason to reach for `let`.
-
-### Naming Enforcement (Read This)
-
-THIS RULE IS MANDATORY FOR AGENT WRITTEN CODE.
-
-- Use single word names by default for new locals, params, and helper functions.
-- Multi-word names are allowed only when a single word would be unclear or ambiguous.
-- Do not introduce new camelCase compounds when a short single-word alternative is clear.
-- Before finishing edits, review touched lines and shorten newly introduced identifiers where possible.
-- Good short names to prefer: `pid`, `cfg`, `err`, `opts`, `dir`, `root`, `child`, `state`, `timeout`.
-- Examples to avoid unless truly required: `inputPID`, `existingClient`, `connectTimeout`, `workerPath`.
-
-### Avoid else statements
-
-Prefer early returns (or an IIFE) over `else`. After an `if` that returns/throws, the `else` is redundant.
-
-### No empty catch blocks
-
-Never leave a `catch` block empty. An empty `catch` silently swallows errors and hides bugs. If you're tempted to write one, ask yourself:
-
-1. Is the `try`/`catch` even needed? (prefer removing it)
-2. Should the error be handled explicitly? (recover, retry, rethrow)
-3. At minimum, log it via `log.error("...", { err })` so failures are visible — never `catch {}` or `catch (e) {}` with no body.
-
-### Prefer single word naming
-
-Default to a single-word name for variables, parameters, and helper functions. Reach for a multi-word name only when a single word would be genuinely ambiguous in context — not just because the longer name "reads nicer". The rule is about meaning, not character count: don't introduce camelCase compounds like `inputPID`, `existingClient`, `connectTimeout`, or `workerPath` when `pid`, `client`, `timeout`, or `path` is already clear from the surrounding code. See the "Naming Enforcement" section above for the preferred vocabulary.
-
-## Testing
-
-You MUST avoid using `mocks` as much as possible.
-Tests MUST test actual implementation, do not duplicate logic into a test.
-
-## Markdown Tables
-
-Do not pad markdown table cells for column alignment. Use the compact form with single-space-padded content cells and a minimal separator row:
-
-```
-| Command | What it runs |
+| 范围 | 必读规则 |
 |---|---|
-| `kilo serve` | The prod CLI on `$PATH`. |
-```
+| `packages/opencode/` | `packages/opencode/AGENTS.md` |
+| `packages/kilo-vscode/` | `packages/kilo-vscode/AGENTS.md` |
+| `packages/kilo-jetbrains/` | `packages/kilo-jetbrains/AGENTS.md` |
+| `server/chipmate-word-render/` | `server/chipmate-word-render/AGENTS.md` |
 
-Do **not** right-pad cells to line up columns:
+- 当前产品和进程架构以 `packages/kilo-docs/pages/contributing/architecture/` 下的文档及当前源码为准，不在根规则中复制易漂移的产品表、进程拓扑或具体行号。
+- `packages/sdk/js/src/gen/` 是生成代码，不手工编辑。
+- VS Code 原生相邻的工具栏和图标规则以 `packages/kilo-vscode/AGENTS.md` 为准；其 Codicon、主题 token 和原生交互要求优先于通用视觉风格。
 
-```
-| Command                       | What it runs             |
-| ----------------------------- | ------------------------ |
-| `kilo serve`                  | The prod CLI on `$PATH`. |
-```
+## VS Code 扩展打包
 
-Padding makes every content change rewrite the entire table, which blows up diffs on untouched rows. Markdown files are excluded from prettier (see `.prettierignore`) so running the formatter won't re-pad them, and `script/check-md-table-padding.ts` enforces the rule in CI. Run `bun run script/check-md-table-padding.ts --fix` to auto-rewrite padded tables.
+- 开始任何 VSIX 打包前先读取 `packages/kilo-vscode/AGENTS.md`，并以 `packages/kilo-vscode/script/build.ts` 的当前校验为包内容真源。
+- 用户只说“打包”且未限定平台时，默认构建 macOS Apple Silicon 和 `win32-x64-baseline`；用户限定版本、平台或包类型时严格缩小到该范围，不额外构建。
+- 每次都先全新构建目标 CLI，再从本次生成的 `packages/opencode/dist/@kilocode/cli-*` 打包；不得复用旧 VSIX、旧 CLI、旧 `bin/` 或历史包解压内容。
+- 内网/离线默认值只能来自忽略的本地配置或当前进程环境。不得把私有 provider、模型或 endpoint 写入 tracked source、`package.json` 默认值、测试、README 或可提交文档；打包结束必须恢复 manifest。
+- 内网索引默认使用 `openai-compatible`、`qwen3-embedding-8b`、`dimensionMode: auto` 和 `lancedb`。向量服务的真实返回长度用于 LanceDB schema 和一致性校验；自动模式不发送 OpenAI `dimensions` 字段。
+- 当前内网还支持 `bge-m3`；该模型不接受 `dimensions` 请求字段。只有用户明确选择固定维度且目标服务确认支持时，才允许发送该字段。
+- Windows 内网基线包默认无 FFmpeg、无 source map，保留 `en` fallback 与 `zh`，并包含离线 ripgrep、LanceDB、Tree-sitter、扩展运行时和 webview 资源；具体必需/禁止文件由打包脚本审计，不在本文件复制清单。
+- 从 macOS 生成供 Linux 解压的归档时必须去除 Apple xattr，并检查内外层归档不含 `com.apple`、`LIBARCHIVE.xattr`、`SCHILY.xattr`、AppleDouble 或 `__MACOSX` 元数据。
 
-## Commit Conventions
+## 最终包发布
 
-[Conventional Commits](https://www.conventionalcommits.org/) with scopes matching packages: `vscode`, `cli`, `agent-manager`, `sdk`, `ui`, `i18n`, `kilo-docs`, `gateway`, `telemetry`, `desktop`. Omit scope when spanning multiple packages.
+- 所有完成的 VSIX、离线归档、Docker 归档和 ZIP 最终包都必须发布到 `/Users/archer/Work/kilocode/public-packages`；先写临时文件，核对大小与 SHA-256，再原子改名并生成同名 `.sha256`。
+- 每次打包都必须对每个最终包运行：
 
-## Commit and Push Hygiene
+  ```bash
+  /Users/archer/.local/bin/kilo-publish-package <最终包绝对路径> <产品> <版本> <平台>
+  ```
 
-- Before committing or pushing, inspect the staged and unstaged file list and exclude files unrelated to the code change.
-- Do not push local build/package artifacts, logs, screenshots, caches, temporary files, or transfer-only files. This includes packaged extension artifacts such as `*.vsix`, unless the user explicitly asks to commit that artifact and the repo already tracks it for release.
-- If a packaging command creates artifacts while validating a change, leave those artifacts untracked or remove them before staging.
+- 产品、版本和平台必须来自用户要求、构建目标或包内 manifest，不能只猜文件名。发布脚本负责 SSH 临时上传、服务器原子发布、macOS 钥匙串登录、清单/SHA-256/长度核对和受保护 Range 下载验证。
+- 只有发布脚本最终输出 `ECS 公网发布与鉴权下载验收通过` 才能报告 ECS 发布完成；脚本、专用 SSH 权限或钥匙串凭据失败时，保留已验证本地包并准确报告阻塞，不得绕过脚本手工上传。
+- 发布命令缺失时，只能从 `/Users/archer/.local/share/kilo-package-deploy/publish-local.sh` 恢复到上述固定路径；恢复源也不存在时直接报告阻塞，不自行另写上传流程。
+- 不得读取、输出、复制或记录密码、Cookie、会话密钥和 SSH 私钥，也不得通过匿名 `curl` 把受保护资源的 `401` 或登录跳转误判为发布失败。
+- 稳定私有平台使用 `https://106.14.118.87/`，清单和下载需要登录。不得降级到 HTTP 传输凭据或包文件，也不得为包发布修改服务器 `/v1/`、HTTPS `443` 或其他既有服务。
+- Cloudflare Quick Tunnel 只作为本机目录的临时备用入口。需要启用时只运行一个端口 `8765` 的 Tunnel，并使用 `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8765 --http-host-header 127.0.0.1:8765 --protocol http2`；从最新日志确认 `protocol=http2`，`lax` 等美国节点不得判定可用，应优先重连到 `hkg`，再验证目录、长度和实际下载。使用当前动态 URL，不复用旧地址。
+- 自动化任务只有在用户明确指定准确包并要求永久删除时才有删除权限；普通打包、上传、保留版本或磁盘清理不包含删除授权。
+- 最终答复应给出 HTTPS 平台首页、登录后下载 URL、文件名、大小和 SHA-256，并分开说明源码/构建验证、本地发布、ECS 验收和目标机安装运行验收。
+- `/Users/archer/Work/opencode` 只作只读参考，禁止把 Kilo 产物发布到该 checkout。
 
-## Changesets
+## 代码风格与测试
 
-User-facing changes (features, fixes, breaking changes) require a changeset file for release notes. Prefer one concise changeset per PR, grouping related changes when possible. Run `bunx changeset add` or manually create `.changeset/<slug>.md`. Use `patch` for bug fixes, `minor` for new features, `major` for breaking changes. See `.changeset/README.md` for details.
+- 保持函数内聚；只有可复用或可组合的逻辑才提取。
+- 优先 `const`、提前返回和类型推断；确需重赋值时才使用 `let`。
+- 避免不必要的解构、`try/catch`、`else`、`any` 和冗余显式类型。
+- `catch` 不得为空；必须恢复、重试、重新抛出或通过现有 logger 记录错误。
+- 新增局部变量、参数和 helper 默认使用清晰的单词名；只有单词名会歧义时才使用复合名。
+- 优先使用 Bun API 和仓库现有抽象，不假定依赖存在。
+- 测试应覆盖真实实现，尽量避免 mock，不在测试中复制生产逻辑。
+- 新增或修改代码前先检查相邻实现、导入、现有测试和 package 约定。
 
-Changeset descriptions appear directly in release notes and are read by end users. Keep them concise and feature-oriented — describe **what changed from the user's perspective**, not implementation details. Write in imperative mood (e.g. "Support exporting conversations as markdown" not "Add a new export handler that serializes session messages to .md files").
+## OpenCode fork 隔离
 
-## Pull Requests
+- 修改共享 OpenCode 文件是最后手段。优先把 Kilo 逻辑放在 `packages/opencode/src/kilocode/`，测试放在 `packages/opencode/test/kilocode/`，或使用其他路径名含 `kilo` 的 Kilo-owned package。
+- 必须修改共享文件时，保持改动最小，并使用 `kilocode_change` 单行、区块或新文件标记；路径名含 `kilocode` 的文件不需要标记。
+- `packages/kilo-vscode/` 和 `packages/kilo-ui/` 完全属于 Kilo，不得加入 `kilocode_change`。
+- 向 `packages/opencode/src/config/config.ts` 的 `Config.Info` 添加 Kilo 配置键时，同时更新 cloud 仓库 `apps/web/src/app/config.json/extras.ts` 的 schema。
+- 详细的抽取决策、标记方式和验证命令以 `.kilo/skills/kilocode-merge-minimizer/SKILL.md` 为准。
+- `bun install` 会把仓库本地 `merge.conflictStyle` 设为 `zdiff3`；不要覆盖回其他冲突格式。
 
-PR descriptions should explain **what** changed, **why** the change is needed, and the intent or constraints a reviewer cannot infer from the diff alone. Keep simple PRs brief, but give non-trivial changes enough context to stand on their own. Skip file-by-file inventories, test result summaries, and anything obvious from the code itself.
+## 提交与发布说明
 
-## GitHub Issues
-
-When creating or managing GitHub issues for the VS Code extension or JetBrains plugin via `gh`, load `.kilo/skills/gh-issues/SKILL.md`. It covers templates, project boards (`VS Code Extension`, `Jetbrains Plugin`), title conventions, and the `gh auth refresh -s project` recovery path.
-
-## Fork Merge Process
-
-Kilo CLI is a fork of [opencode](https://github.com/anomalyco/opencode).
-
-**Very important**: when planning or coding, update shared files with OpenCode as last resort! Everything is shared code from OpenCode, except folders that contain `kilo` in the name or have a parent directory that contains `kilo` in the name. Example of kilo specific folders: `packages/opencode/src/kilocode/` and `packages/kilo-docs/`. Always look for ways to implement your feature or fix in a way that minimizes changes to shared code.
-
-### Minimizing Merge Conflicts
-
-We regularly merge upstream changes from opencode. To minimize merge conflicts and keep the sync process smooth:
-
-1. **Prefer `kilocode` directories** - Place Kilo-specific code in dedicated directories whenever possible:
-   - `packages/opencode/src/kilocode/` - Kilo-specific source code
-   - `packages/opencode/test/kilocode/` - Kilo-specific tests
-   - `packages/kilo-gateway/` - The Kilo Gateway package
-
-2. **Minimize changes to shared files** - When you must modify files that exist in upstream opencode, keep changes as small and isolated as possible.
-
-3. **Use `kilocode_change` markers** - When modifying shared code, mark your changes with `kilocode_change` comments so they can be easily identified during merges.
-   Do not use these markers in files within directories with kilo in the name
-
-4. **Avoid restructuring upstream code** - Don't refactor or reorganize code that comes from opencode unless absolutely necessary.
-
-5. **Mirror new config keys to the cloud schema** - When adding a `kilocode_change` key to `Config.Info` in `packages/opencode/src/config/config.ts`, also add the matching JSON Schema entry in `apps/web/src/app/config.json/extras.ts` in the [cloud repo](https://github.com/Kilo-Org/cloud). See [CLI Config Schema](packages/kilo-docs/pages/contributing/architecture/config-schema.md) for the step-by-step.
-
-The goal is to keep our diff from upstream as small as possible, making regular merges straightforward and reducing the risk of conflicts.
-
-### Git conflict style
-
-`bun install` sets `merge.conflictStyle=zdiff3` repo-locally via `script/setup-git.ts` (wired into `postinstall`). Conflicts include the common ancestor between `|||||||` and `=======`, which is what `script/upstream/` and `mergiraf` rely on for structural resolution and what makes manual resolution on shared opencode files tractable. If you've overridden it in your user config, the repo-local setting takes precedence — don't override it back.
-
-### Kilocode Change Markers
-
-When editing shared upstream files, mark Kilo-specific lines with `kilocode_change` comments so future merges can find them. The basic forms are:
-
-- Single line: `const value = 42 // kilocode_change`
-- Multi-line block: wrap with `// kilocode_change start` / `// kilocode_change end`
-- New file in a shared path: `// kilocode_change - new file` at the top
-- JSX/TSX: use `{/* kilocode_change */}` (and `{/* kilocode_change start */}` / `end`)
-
-Markers are NOT needed in paths that contain `kilocode` in the name (e.g. `packages/opencode/src/kilocode/`, `packages/opencode/test/kilocode/`) — these are entirely Kilo Code additions and won't conflict with upstream.
-
-For decision rules on when to keep changes inline vs. extract Kilo logic, marker placement guidance, and verification commands, load `.kilo/skills/kilocode-merge-minimizer/SKILL.md`.
-
-本仓库当前目标是把 `/Users/archer/Work/opencode` 中 ChipMate VS Code 插件的 C/C++ hybrid retrieval 能力迁入 Kilo Code，但迁移必须分阶段、小步、可测试。
-
-## ChipMate Hybrid Retrieval Migration Rules
-
-Hard constraints:
-
-1. Do not implement or modify inline completion unless explicitly requested.
-2. Do not change UI unless explicitly requested.
-3. Do not replace the existing `semantic_search` tool.
-4. Add deep C/C++ code understanding through a separate `codebase_analysis` tool.
-5. Treat `/Users/archer/Work/opencode` as read-only reference material.
-6. Prefer Kilo-owned paths:
-
-   * `packages/kilo-indexing`
-   * `packages/opencode/src/kilocode`
-   * `packages/opencode/test/kilocode`
-7. Avoid changing shared upstream opencode files. If this is unavoidable, explain why and run `bun run script/check-opencode-annotations.ts`.
-8. Every phase must be small, reviewable, and testable.
-9. Every codebase analysis result must include source-backed evidence with file path and line numbers where possible.
-10. Always enforce evidence budget limits.
-11. Avoid returning oversized evidence packs.
-12. `graph-only` mode must not call embedding or vector search.
-13. Do not add rerank provider or rerank settings in v1.
-14. Do not automatically inject evidence into every prompt.
-15. If modifying worker protocols or public exported types, add tests.
-16. Every completed phase must report:
-
-    * changed files
-    * design summary
-    * commands run
-    * test results
-    * known limitations
-    * next recommended phase
-
-Preferred phase order:
-
-1. Public types and stub `queryEvidence`.
-2. Worker protocol and `codebase_analysis` tool.
-3. Graph sidecar lifecycle.
-4. Parser/code graph migration.
-5. Exact symbol and BM25 retrieval.
-6. Graph expansion.
-7. State-machine extraction.
-8. Tool prompt tuning and conservative answer policy.
-9. Optional rerank in a later phase.
-
-Do not do multiple phases in one pass unless explicitly requested.
+- Commit 和 PR 标题使用 `type(scope): summary`，类型限 `feat`、`fix`、`docs`、`chore`、`refactor`、`test`；scope 使用受影响 package 或功能域。
+- 面向用户的功能、修复或破坏性变更需要一个简洁 changeset；描述使用面向用户的祈使句，相关改动优先合并为一个 changeset。
+- 提交或推送前检查 staged/unstaged 文件，只包含本次任务相关源码、测试、文档和 changeset。
+- 不提交 VSIX、归档、日志、截图、缓存、QA 目录、source map 或其他本地产物，除非用户明确要求且仓库本来就跟踪该类文件。
+- PR 描述说明改了什么、为什么改，以及 reviewer 无法从 diff 推断的约束；不写逐文件清单或重复显而易见的测试日志。
+- 创建或管理 VS Code/JetBrains GitHub issue 时，读取 `.kilo/skills/gh-issues/SKILL.md`。

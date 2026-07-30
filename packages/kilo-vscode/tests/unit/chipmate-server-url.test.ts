@@ -37,6 +37,7 @@ describe("ChipMate Server URL", () => {
       plantuml: "http://server.test:6001/render/plantuml",
       health: "http://server.test:6001/health",
       updates: "http://server.test:6001/packages/manifest.json",
+      reviewRules: "http://server.test:6001/api/v1/review-rule-packs/latest",
     })
   })
 

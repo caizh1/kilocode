@@ -70,6 +70,7 @@ describe("indexing dialog state", () => {
       provider: "openai-compatible",
       model: "global-model",
       dimension: 1024,
+      dimensionMode: "fixed",
       "openai-compatible": { baseUrl: "https://global.test", apiKey: "global-secret" },
     }
     const project: IndexingConfig = {
@@ -80,6 +81,7 @@ describe("indexing dialog state", () => {
     expect(indexingInheritance("project", global, project, [["provider"]])).toBe("inherited")
     expect(indexingInheritance("project", global, project, [["model"]])).toBe("none")
     expect(indexingInheritance("project", global, project, [["dimension"]])).toBe("inherited")
+    expect(indexingInheritance("project", global, project, [["dimensionMode"]])).toBe("inherited")
     expect(
       indexingInheritance("project", global, project, [
         ["openai-compatible", "baseUrl"],

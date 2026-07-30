@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { CacheManager } from "../../../src/indexing/cache-manager"
+import { parseCodeGraphFile } from "../../../src/indexing/codegraph/parser"
 import { CodeIndexConfigManager } from "../../../src/indexing/config-manager"
 import { CodeIndexManager } from "../../../src/indexing/manager"
 import { CodeIndexOrchestrator } from "../../../src/indexing/orchestrator"
@@ -200,7 +201,7 @@ describe("CodeIndexManager", () => {
     }
   })
 
-  test("blocks Document RAG when the preceding RAG generation fails", async () => {
+  test("starts Document RAG after the preceding RAG generation fails", async () => {
     const root = await mkdtemp(join(tmpdir(), "kilo-manager-doc-gate-"))
     const mgr = new CodeIndexManager(root, join(root, "cache"))
     const data = mgr as unknown as {
@@ -212,6 +213,7 @@ describe("CodeIndexManager", () => {
         opts: {
           after: Promise<{ state: "failed"; pipeline: "rag" }>
           generation: number
+          wait: boolean
         },
       ): Promise<void>
     }
@@ -224,13 +226,14 @@ describe("CodeIndexManager", () => {
     await data.configureDocuments("background", {
       after: Promise.resolve({ state: "failed", pipeline: "rag" }),
       generation: 1,
+      wait: true,
     })
-    await Bun.sleep(0)
 
     expect(mgr.getDocumentStatus()).toMatchObject({
-      state: "Standby",
-      message: "Document RAG blocked because Code RAG failed.",
+      state: "Complete",
+      message: "Document RAG up-to-date.",
     })
+    expect(mgr.getDocumentStatus().lastFullScanAt).toBeDefined()
     await mgr.dispose()
     await rm(root, { recursive: true, force: true })
   })
@@ -427,6 +430,104 @@ describe("CodeIndexManager", () => {
     } finally {
       stamp.mockRestore()
       initialize.mockRestore()
+    }
+  })
+
+  test("promotes an exact graph definition ahead of vector-only declarations", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "index-manager-exact-"))
+    const cache = join(workspace, ".cache")
+    const file = join(workspace, "ftl_config.c")
+    const source = [
+      "void InitFTL(void)",
+      "{",
+      "  const int ready = 1;",
+      "  (void)ready;",
+      "}",
+      "",
+    ].join("\n")
+    await Bun.write(file, source)
+
+    const mgr = new CodeIndexManager(workspace, cache)
+    const data = createData(mgr) as Data & {
+      _configManager: Data["_configManager"] & { currentSearchMaxResults: number }
+      _orchestrator: {
+        state: string
+        stopWatcher(): void
+        startIndexing(): Promise<void>
+      }
+      _searchService: {
+        searchIndex(): Promise<
+          Array<{
+            id: string
+            score: number
+            payload: {
+              filePath: string
+              codeChunk: string
+              startLine: number
+              endLine: number
+            }
+          }>
+        >
+      }
+      _postingsStorage: {
+        beginFullScan(): Promise<void>
+        upsertFilePostings(
+          filePath: string,
+          fileHash: string,
+          graph: ReturnType<typeof parseCodeGraphFile>,
+          input: { content: string },
+        ): Promise<void>
+        markFullScanComplete(): Promise<void>
+      }
+    }
+    Object.defineProperty(data._configManager, "currentSearchMaxResults", { value: 10 })
+    data._orchestrator = {
+      state: "Indexed",
+      stopWatcher() {},
+      async startIndexing() {},
+    }
+    data._searchService = {
+      async searchIndex() {
+        return [
+          {
+            id: "vector-header",
+            score: 0.92,
+            payload: {
+              filePath: "ftl_config.h",
+              codeChunk: "void InitFTL(void);",
+              startLine: 22,
+              endLine: 22,
+            },
+          },
+        ]
+      },
+    }
+    const graph = parseCodeGraphFile({
+      workspacePath: workspace,
+      filePath: "ftl_config.c",
+      content: source,
+      fileHash: "ftl-config-hash",
+      updatedAt: "2026-07-29T00:00:00.000Z",
+    })
+    await data._postingsStorage.beginFullScan()
+    await data._postingsStorage.upsertFilePostings(file, graph.fileHash, graph, { content: source })
+    await data._postingsStorage.markFullScanComplete()
+
+    try {
+      const results = await mgr.searchIndex("InitFTL")
+      expect(results[0]).toMatchObject({
+        payload: {
+          filePath: "ftl_config.c",
+          startLine: 1,
+          endLine: 5,
+          source: "codegraph",
+        },
+      })
+      expect(results[0]?.payload?.codeChunk).toContain("const int ready = 1")
+      expect(results[1]?.payload?.filePath).toBe("ftl_config.h")
+    } finally {
+      await mgr.dispose()
+      await rm(workspace, { recursive: true, force: true })
     }
   })
 
@@ -700,6 +801,15 @@ describe("CodeIndexManager", () => {
           if (!mgr.getRecentErrors().rag?.[0]?.message.includes("Authentication failed")) {
             throw new Error("Initial RAG diagnostic did not preserve the authentication failure")
           }
+          if (
+            !mgr
+              .getRecentErrors()
+              .rag?.[0]?.message.includes(
+                "Embedder validation failed (provider=openai-compatible, model=fixture-model, dimensions=3)",
+              )
+          ) {
+            throw new Error("Initial RAG diagnostic did not preserve the embedder configuration context")
+          }
 
           await mgr.handleSettingsChange(input("wrong-key"))
           await wait(
@@ -739,6 +849,7 @@ describe("CodeIndexManager", () => {
         } finally {
           await mgr.dispose()
         }
+        process.exit(0)
       `
       const child = Bun.spawn([process.execPath, "-e", script], {
         cwd: join(import.meta.dir, "../../.."),
@@ -1037,6 +1148,230 @@ describe("CodeIndexManager", () => {
     expect(restarts).toBe(0)
   })
 
+  test("does not rescan or recreate services for repeated and runtime-only configuration events", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _orchestrator?: {
+        state: string
+        startIndexing(trigger: IndexingTelemetryTrigger): Promise<void>
+      }
+      _searchService?: {}
+      _recreateServices(): Promise<void>
+    }
+    let recreates = 0
+    let scans = 0
+
+    data._cacheManager = {}
+    data._recreateServices = async () => {
+      recreates += 1
+      data._orchestrator = {
+        state: "Standby",
+        async startIndexing() {
+          scans += 1
+          this.state = "Indexed"
+        },
+      }
+      data._searchService = {}
+    }
+
+    const input = createInput({ openAiKey: "sk-test", searchMinScore: 0.4 })
+    await mgr.initialize(input)
+    recreates = 0
+    scans = 0
+
+    await mgr.handleSettingsChange(structuredClone(input))
+    await mgr.handleSettingsChange(structuredClone(input))
+    await mgr.handleSettingsChange(
+      createInput({
+        openAiKey: "sk-test",
+        searchMinScore: 0.7,
+        searchMaxResults: 40,
+        embeddingBatchSize: 8,
+        scannerMaxBatchRetries: 5,
+      }),
+    )
+    await mgr.handleSettingsChange(structuredClone(input))
+
+    expect(recreates).toBe(0)
+    expect(scans).toBe(0)
+  })
+
+  test("does not rescan Code Graph for repeated configuration events while RAG is disabled", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _orchestrator?: {
+        state: string
+        startIndexing(trigger: IndexingTelemetryTrigger): Promise<void>
+      }
+      _recreateGraphServices(reason: string, generation: number): Promise<void>
+    }
+    let recreates = 0
+    let scans = 0
+
+    data._cacheManager = {}
+    data._recreateGraphServices = async () => {
+      recreates += 1
+      data._orchestrator = {
+        state: "Indexed",
+        async startIndexing() {
+          scans += 1
+        },
+      }
+    }
+
+    const input = createInput({ enabled: false, searchMinScore: 0.4 })
+    await mgr.initialize(input)
+    recreates = 0
+    scans = 0
+
+    await mgr.handleSettingsChange(structuredClone(input))
+    await mgr.handleSettingsChange(createInput({ enabled: false, searchMinScore: 0.7 }))
+    await mgr.handleSettingsChange(structuredClone(input))
+
+    expect(recreates).toBe(0)
+    expect(scans).toBe(0)
+  })
+
+  test("rebuilds only Document RAG for document-only configuration changes", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _orchestrator?: {
+        state: string
+        startIndexing(trigger: IndexingTelemetryTrigger): Promise<void>
+      }
+      _searchService?: {}
+      _recreateServices(): Promise<void>
+      _generation: number
+      configureDocuments(
+        trigger: IndexingTelemetryTrigger,
+        opts: { force?: boolean; generation: number },
+      ): Promise<void>
+    }
+    let recreates = 0
+    let scans = 0
+    let documents = 0
+
+    data._cacheManager = {}
+    data._recreateServices = async () => {
+      recreates += 1
+      data._orchestrator = {
+        state: "Indexed",
+        async startIndexing() {
+          scans += 1
+        },
+      }
+      data._searchService = {}
+    }
+    const original = data.configureDocuments.bind(mgr)
+    data.configureDocuments = async (_trigger, opts) => {
+      if (documents > 0) expect(opts.force).toBe(true)
+      documents += 1
+    }
+
+    const base = createInput({
+      openAiKey: "sk-test",
+      documents: { enabled: true, paths: ["docs"], include: ["**/*.md"] },
+    })
+    await mgr.initialize(base)
+    recreates = 0
+    scans = 0
+    documents = 1
+    const storage = mgr as unknown as {
+      _graphStorage: { getScanState(): string }
+      _postingsStorage: { getScanState(): string }
+    }
+    storage._graphStorage.getScanState = () => "complete"
+    storage._postingsStorage.getScanState = () => "complete"
+    ;(mgr as unknown as { _stateManager: { setSystemState(state: "Indexed"): void } })._stateManager.setSystemState(
+      "Indexed",
+    )
+
+    try {
+      await mgr.handleSettingsChange(
+        createInput({
+          openAiKey: "sk-test",
+          documents: { enabled: true, paths: ["docs", "specs"], include: ["**/*.md", "**/*.txt"] },
+        }),
+      )
+
+      expect(recreates).toBe(0)
+      expect(scans).toBe(0)
+      expect(documents).toBe(2)
+    } finally {
+      data.configureDocuments = original
+    }
+  })
+
+  test("preserves Code Graph for document-only changes while Code RAG is disabled", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _orchestrator?: {
+        state: string
+        startIndexing(trigger: IndexingTelemetryTrigger): Promise<void>
+      }
+      _recreateGraphServices(reason: string, generation: number): Promise<void>
+      configureDocuments(
+        trigger: IndexingTelemetryTrigger,
+        opts: { force?: boolean; generation: number },
+      ): Promise<void>
+    }
+    let recreates = 0
+    let scans = 0
+    let documents = 0
+
+    data._cacheManager = {}
+    data._recreateGraphServices = async () => {
+      recreates += 1
+      data._orchestrator = {
+        state: "Indexed",
+        async startIndexing() {
+          scans += 1
+        },
+      }
+    }
+    const original = data.configureDocuments.bind(mgr)
+    data.configureDocuments = async (_trigger, opts) => {
+      if (documents > 0) expect(opts.force).toBe(true)
+      documents += 1
+    }
+
+    const base = createInput({
+      enabled: false,
+      documents: { enabled: false, paths: ["docs"], include: ["**/*.md"] },
+    })
+    await mgr.initialize(base)
+    recreates = 0
+    scans = 0
+    documents = 1
+    const storage = mgr as unknown as {
+      _graphStorage: { getScanState(): string }
+      _postingsStorage: { getScanState(): string }
+      _stateManager: { setSystemState(state: "Indexed"): void }
+    }
+    storage._graphStorage.getScanState = () => "complete"
+    storage._postingsStorage.getScanState = () => "complete"
+    storage._stateManager.setSystemState("Indexed")
+
+    try {
+      await mgr.handleSettingsChange(
+        createInput({
+          enabled: false,
+          documents: { enabled: true, paths: ["docs", "specs"], include: ["**/*.md", "**/*.txt"] },
+        }),
+      )
+
+      expect(recreates).toBe(0)
+      expect(scans).toBe(0)
+      expect(documents).toBe(2)
+    } finally {
+      data.configureDocuments = original
+    }
+  })
+
   test("schedules auto-recovery for orchestrator start failures", async () => {
     const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
     const data = createData(mgr)
@@ -1203,12 +1538,57 @@ describe("CodeIndexManager", () => {
     expect(mgr.getCurrentStatus().systemStatus).toBe("Indexed")
   })
 
+  test("keeps last-known-good vector search available when desired settings remain unapplied", async () => {
+    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const data = mgr as unknown as {
+      _serviceFactory: {
+        prepareLastKnownGoodRuntime(): Promise<object>
+      }
+      _orchestrator: {
+        startIndexing(): Promise<void>
+      }
+      _codeGraph: {
+        start(reason: string): void
+        dispose(reason: string): void
+      }
+      _recreateGraphServices(reason: string, generation: number): Promise<void>
+      restoreLastKnownGood(runtime: object, generation: number): Promise<boolean>
+      graphFallback(err: unknown, trigger: IndexingTelemetryTrigger, reason: string): Promise<void>
+    }
+    data._serviceFactory = {
+      async prepareLastKnownGoodRuntime() {
+        return {}
+      },
+    }
+    data._orchestrator = {
+      async startIndexing() {},
+    }
+    data._codeGraph = {
+      start() {},
+      dispose() {},
+    }
+    data._recreateGraphServices = async () => {}
+    data.restoreLastKnownGood = async () => true
+
+    await data.graphFallback(new Error("fixed dimension rejected"), "background", "test")
+
+    const status = mgr.getCurrentStatus()
+    expect(status.systemStatus).toBe("Indexed")
+    expect(status.activePipeline).toBeUndefined()
+    expect(status.notices?.[0]?.message).toContain("上一版向量索引")
+    await mgr.dispose()
+  })
+
   test("dispose waits for orchestrator shutdown", async () => {
     const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
     let shutdown = 0
+    let closed = 0
     const data = mgr as unknown as {
       _orchestrator?: {
         shutdown(): Promise<void>
+      }
+      _fallbackStore?: {
+        close(): Promise<void>
       }
     }
 
@@ -1217,10 +1597,16 @@ describe("CodeIndexManager", () => {
         shutdown += 1
       },
     }
+    data._fallbackStore = {
+      async close() {
+        closed += 1
+      },
+    }
 
     await mgr.dispose()
 
     expect(shutdown).toBe(1)
+    expect(closed).toBe(1)
   })
 
   test("dispose during service recreation cancels the recreated orchestrator", async () => {

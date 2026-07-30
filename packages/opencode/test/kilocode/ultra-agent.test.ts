@@ -11,6 +11,9 @@ const schema = z.object({
   code: z.object({
     mode: z.string(),
     native: z.boolean(),
+    model: z.unknown().optional(),
+    variant: z.string().optional(),
+    prompt: z.string().optional(),
   }),
   ultra: z
     .object({
@@ -21,6 +24,32 @@ const schema = z.object({
       id: z.string().optional(),
       appends: z.boolean(),
       prompt: z.string().optional(),
+    })
+    .nullable(),
+  baseline: z
+    .object({
+      mode: z.string(),
+      native: z.boolean(),
+      hidden: z.boolean(),
+      id: z.string().optional(),
+      model: z.unknown().optional(),
+      variant: z.string().optional(),
+      prompt: z.string().optional(),
+      ordinary: z.string(),
+      internal: z.string(),
+      edit: z.string(),
+      bash: z.string(),
+      task: z.string(),
+    })
+    .nullable(),
+  synthesis: z
+    .object({
+      mode: z.string(),
+      native: z.boolean(),
+      hidden: z.boolean(),
+      id: z.string().optional(),
+      ordinary: z.string(),
+      internal: z.string(),
     })
     .nullable(),
   permissions: z.record(
@@ -44,6 +73,7 @@ const script = [
   'import { Agent } from "./src/agent/agent.ts"',
   'import { KilocodeSystemPrompt } from "./src/kilocode/system-prompt.ts"',
   'import { KiloToolRegistry } from "./src/kilocode/tool/registry.ts"',
+  'import { KiloTask } from "./src/kilocode/tool/task.ts"',
   'import { Permission } from "./src/permission/index.ts"',
   'import { disposeAllInstances, disposeTestRuntime, provideInstance, testInstanceStoreLayer, tmpdir } from "./test/fixture/fixture.ts"',
   "await using dir = await tmpdir({})",
@@ -51,12 +81,16 @@ const script = [
   "const list = yield* svc.list()",
   'const code = yield* svc.get("code")',
   'const ultra = yield* svc.get("ultra")',
+  'const baseline = yield* svc.get("ultra-code-baseline")',
+  'const synthesis = yield* svc.get("ultra-synthesizer")',
   "const selected = yield* svc.defaultAgent()",
   'const checks = [["edit", "src/main.ts"], ["bash", "pwd"], ["task", "explore"], ["skill", "using-superpowers"], ["interactive_terminal", "*"], ["codebase_analysis", "*"], ["semantic_search", "*"]]',
   "const permissions = Object.fromEntries(checks.map(([tool, pattern]) => [tool, { code: Permission.evaluate(tool, pattern, code.permission).action, ultra: ultra ? Permission.evaluate(tool, pattern, ultra.permission).action : null }]))",
-  'const ids = ["ultra_council_explore", "ultra_council_adjudicate", "ultra_council_revise", "ultra_submit_arbitration"]',
+  'const ids = ["ultra_verify", "ultra_code_baseline", "ultra_council_explore", "ultra_council_adjudicate", "ultra_council_revise", "ultra_submit_arbitration"]',
   "const council = Object.fromEntries(ids.map((id) => [id, { code: KiloToolRegistry.available({ id }, code), ultra: ultra ? KiloToolRegistry.available({ id }, ultra) : null }]))",
-  'return { names: list.map((item) => item.name), selected, code: { mode: code.mode, native: code.native === true }, ultra: ultra ? { mode: ultra.mode, native: ultra.native === true, hidden: ultra.hidden === true, name: ultra.name, id: typeof ultra.options.id === "string" ? ultra.options.id : undefined, appends: KilocodeSystemPrompt.appends(ultra), prompt: ultra.prompt } : null, permissions, council }',
+  'const baselineInfo = baseline ? { mode: baseline.mode, native: baseline.native === true, hidden: baseline.hidden === true, id: typeof baseline.options.id === "string" ? baseline.options.id : undefined, model: baseline.model, variant: baseline.variant, prompt: baseline.prompt, ordinary: (() => { try { KiloTask.validate(baseline, baseline.name); return "allowed" } catch (error) { return error instanceof Error ? error.message : String(error) } })(), internal: (() => { try { KiloTask.validate(baseline, baseline.name, true); return "allowed" } catch (error) { return error instanceof Error ? error.message : String(error) } })(), edit: Permission.evaluate("edit", "*", baseline.permission).action, bash: Permission.evaluate("bash", "*", baseline.permission).action, task: Permission.evaluate("task", "explore", baseline.permission).action } : null',
+  'const synthesisInfo = synthesis ? { mode: synthesis.mode, native: synthesis.native === true, hidden: synthesis.hidden === true, id: typeof synthesis.options.id === "string" ? synthesis.options.id : undefined, ordinary: (() => { try { KiloTask.validate(synthesis, synthesis.name); return "allowed" } catch (error) { return error instanceof Error ? error.message : String(error) } })(), internal: (() => { try { KiloTask.validate(synthesis, synthesis.name, true); return "allowed" } catch (error) { return error instanceof Error ? error.message : String(error) } })() } : null',
+  'return { names: list.map((item) => item.name), selected, code: { mode: code.mode, native: code.native === true, model: code.model, variant: code.variant, prompt: code.prompt }, ultra: ultra ? { mode: ultra.mode, native: ultra.native === true, hidden: ultra.hidden === true, name: ultra.name, id: typeof ultra.options.id === "string" ? ultra.options.id : undefined, appends: KilocodeSystemPrompt.appends(ultra), prompt: ultra.prompt } : null, baseline: baselineInfo, synthesis: synthesisInfo, permissions, council }',
   "}))).pipe(Effect.provide(Agent.defaultLayer), Effect.provide(testInstanceStoreLayer)))",
   "await disposeAllInstances()",
   "await disposeTestRuntime()",
@@ -107,18 +141,37 @@ describe("ChipMate Ultra agent", () => {
       id: "ultra",
       appends: true,
     })
-    expect(output.ultra?.prompt).toContain("## Mandatory Ultra Council")
-    expect(output.ultra?.prompt).toContain("ultra_council_explore")
-    expect(output.ultra?.prompt).toContain("ultra_council_adjudicate")
-    expect(output.ultra?.prompt).toContain("ultra_council_revise")
-    expect(output.ultra?.prompt).toContain("ultra_submit_arbitration")
-    expect(output.ultra?.prompt).toContain("Network and Document RAG are optional evidence sources")
-    for (const access of Object.values(output.council)) {
-      expect(access).toEqual({ code: false, ultra: true })
+    expect(output.ultra?.prompt).toContain("## Mandatory Ultra three-way verification")
+    expect(output.ultra?.prompt).toContain("`ultra_verify` exactly once")
+    expect(output.council.ultra_verify).toEqual({ code: false, ultra: true })
+    for (const [id, access] of Object.entries(output.council)) {
+      if (id === "ultra_verify") continue
+      expect(access).toEqual({ code: false, ultra: false })
     }
     for (const actions of Object.values(output.permissions)) {
       expect(actions.ultra).toBe(actions.code)
     }
+    expect(output.baseline).toMatchObject({
+      mode: "subagent",
+      native: true,
+      hidden: true,
+      id: "ultra-code-baseline",
+      internal: "allowed",
+      edit: "deny",
+      bash: "deny",
+    })
+    expect(output.baseline?.ordinary).toContain("reserved for the native ChipMate Ultra runtime")
+    expect(output.baseline?.model).toEqual(output.code.model)
+    expect(output.baseline?.variant).toBe(output.code.variant)
+    expect(output.baseline?.prompt).toBe(output.code.prompt)
+    expect(output.synthesis).toMatchObject({
+      mode: "subagent",
+      native: true,
+      hidden: true,
+      id: "ultra-synthesizer",
+      internal: "allowed",
+    })
+    expect(output.synthesis?.ordinary).toContain("reserved for the native ChipMate Ultra runtime")
   })
 
   test("honors global denies and independent Ultra configuration", async () => {
@@ -149,9 +202,14 @@ describe("ChipMate Ultra agent", () => {
       id: "ultra",
       appends: true,
     })
-    for (const access of Object.values(output.council)) {
-      expect(access).toEqual({ code: false, ultra: true })
-    }
+    expect(output.baseline).toMatchObject({
+      mode: "subagent",
+      hidden: true,
+      edit: "deny",
+      bash: "deny",
+      task: "deny",
+    })
+    expect(output.council.ultra_verify).toEqual({ code: false, ultra: true })
   })
 
   test("does not register Ultra outside ChipMate", async () => {
@@ -161,6 +219,8 @@ describe("ChipMate Ultra agent", () => {
     const output = parse(result.stdout)
     expect(output.names).not.toContain("ultra")
     expect(output.ultra).toBeNull()
+    expect(output.baseline).toBeNull()
+    expect(output.synthesis).toBeNull()
     expect(output.selected).toBe("code")
     for (const access of Object.values(output.council)) {
       expect(access).toEqual({ code: false, ultra: null })

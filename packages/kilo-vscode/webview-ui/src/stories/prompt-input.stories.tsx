@@ -251,6 +251,22 @@ const OpenVariant: ParentComponent = (props) => {
   return props.children
 }
 
+const Prefill: ParentComponent<{ value: string }> = (props) => {
+  onMount(() => {
+    requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLTextAreaElement>("textarea.prompt-input")
+      if (!input) return
+      input.value = props.value
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, data: props.value, inputType: "insertText" }))
+    })
+  })
+  return props.children
+}
+
+const Frame: ParentComponent<{ width: number }> = (props) => (
+  <div style={{ width: `min(${props.width}px, 100%)` }}>{props.children}</div>
+)
+
 // ---------------------------------------------------------------------------
 // Meta — fullscreen so the screenshot is exactly the component width
 // ---------------------------------------------------------------------------
@@ -281,6 +297,32 @@ export const Default200: Story = {
     <PromptProviders>
       <PromptInput />
     </PromptProviders>
+  ),
+}
+
+export const EmbeddedReviewBoundary420: Story = {
+  name: "Embedded review boundary — 420px",
+  render: () => (
+    <Frame width={420}>
+      <PromptProviders locale="zh">
+        <Prefill value="/embedded-review uncommitted">
+          <PromptInput />
+        </Prefill>
+      </PromptProviders>
+    </Frame>
+  ),
+}
+
+export const EmbeddedReviewBoundary240: Story = {
+  name: "Embedded review boundary — 240px",
+  render: () => (
+    <Frame width={240}>
+      <PromptProviders locale="zh">
+        <Prefill value="/embedded-review uncommitted">
+          <PromptInput />
+        </Prefill>
+      </PromptProviders>
+    </Frame>
   ),
 }
 

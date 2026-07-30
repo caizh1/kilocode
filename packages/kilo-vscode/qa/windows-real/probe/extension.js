@@ -2,6 +2,10 @@ const fs = require("node:fs")
 const path = require("node:path")
 const vscode = require("vscode")
 
+let controlTimer
+let controlBusy = false
+let controlId = ""
+
 const required = [
   "chipmate.v2.plusButtonClicked",
   "chipmate.v2.agentManagerOpen",
@@ -22,7 +26,9 @@ const required = [
 
 async function activate() {
   const out = process.env.CHIPMATE_QA_PROBE_OUT
-  if (!out) return
+  const control = process.env.CHIPMATE_QA_CONTROL_FILE
+  const reply = process.env.CHIPMATE_QA_CONTROL_OUT
+  if (!out && (!control || !reply)) return
   const result = {
     at: new Date().toISOString(),
     status: "FAIL",
@@ -74,13 +80,41 @@ async function activate() {
   } catch (err) {
     result.errors.push(err instanceof Error ? (err.stack ?? err.message) : String(err))
   }
-  fs.mkdirSync(path.dirname(out), { recursive: true })
-  fs.writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`)
+  if (out) {
+    fs.mkdirSync(path.dirname(out), { recursive: true })
+    fs.writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`)
+  }
+  if (control && reply && result.status === "PASS") {
+    fs.mkdirSync(path.dirname(reply), { recursive: true })
+    controlTimer = setInterval(async () => {
+      if (controlBusy || !fs.existsSync(control)) return
+      controlBusy = true
+      try {
+        const request = JSON.parse(fs.readFileSync(control, "utf8"))
+        if (!request.id || request.id === controlId || !request.command) return
+        controlId = request.id
+        const response = { id: request.id, command: request.command, status: "FAIL", error: "" }
+        try {
+          await vscode.commands.executeCommand(request.command, ...(request.args ?? []))
+          response.status = "PASS"
+        } catch (err) {
+          response.error = err instanceof Error ? (err.stack ?? err.message) : String(err)
+        }
+        fs.writeFileSync(reply, `${JSON.stringify(response, null, 2)}\n`)
+      } catch (err) {
+        console.error("ChipMate QA control failed", err)
+      } finally {
+        controlBusy = false
+      }
+    }, 100)
+  }
   if (process.env.CHIPMATE_QA_PROBE_QUIT === "1") {
     setTimeout(() => vscode.commands.executeCommand("workbench.action.quit"), 300)
   }
 }
 
-function deactivate() {}
+function deactivate() {
+  if (controlTimer) clearInterval(controlTimer)
+}
 
 module.exports = { activate, deactivate }

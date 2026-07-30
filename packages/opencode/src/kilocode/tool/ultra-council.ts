@@ -1,5 +1,6 @@
 // kilocode_change - new file
 import { Agent } from "@/agent/agent"
+import { ULTRA_BASELINE } from "@/kilocode/agent"
 import { UltraCouncil } from "@/kilocode/agent/ultra-council"
 import { Instance } from "@/kilocode/instance"
 import { Parameters as TaskParameters } from "@/tool/task"
@@ -15,6 +16,13 @@ type ExploreMeta = {
   started?: number
   valid?: number
   sessions?: string[]
+  ultraCouncil?: UltraCouncil.Snapshot
+}
+type BaselineMeta = {
+  rejected: boolean
+  session?: string
+  baselineHash?: string
+  packetHash?: string
   ultraCouncil?: UltraCouncil.Snapshot
 }
 type ArbitrationMeta = {
@@ -46,6 +54,10 @@ const ExploreParams = Schema.Struct({
   obligations: Schema.optional(Schema.Array(Obligation).check(Schema.isMinLength(1), Schema.isMaxLength(20))),
   investigations: Schema.Array(Investigation).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
 })
+const BaselineParams = Schema.Struct({
+  requestKind: Kind,
+  obligations: Schema.Array(Obligation).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+})
 const Ref = Schema.Struct({
   id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
   hash: Schema.String.check(Schema.isMinLength(64), Schema.isMaxLength(64)),
@@ -54,10 +66,21 @@ const Binding = Schema.Struct({
   obligation: Obligation.fields.id,
   claims: Schema.Array(Ref.fields.id).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
 })
+const Edit = Schema.Struct({
+  kind: Schema.Literals(["replace", "delete", "insert_before", "insert_after"]),
+  anchor: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(12_000)),
+  text: Schema.optional(Schema.String.check(Schema.isMaxLength(20_000))),
+  obligations: Schema.Array(Obligation.fields.id).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+  claims: Schema.Array(Ref).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+  reason: Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(2_000)),
+})
 const AdjudicationParams = Schema.Struct({
-  draft: Schema.String.check(Schema.isMinLength(200), Schema.isMaxLength(60_000)).annotate({
+  baselineHash: Ref.fields.hash.annotate({
+    description: "Exact SHA-256 of the frozen Code baseline.",
+  }),
+  edits: Schema.Array(Edit).check(Schema.isMaxLength(20)).annotate({
     description:
-      "The exact proposed answer or implementation decision to challenge. It must include every material claim, path, line, numeric limit, race, and bug assertion intended for the final response.",
+      "Evidence-backed exact edits against the frozen Code answer. Submit an empty list to preserve Code byte-for-byte.",
   }),
   bindings: Schema.Array(Binding).check(Schema.isMinLength(1), Schema.isMaxLength(20)).annotate({
     description:
@@ -101,6 +124,13 @@ const Decision = Schema.Struct({
   corrections: Schema.Array(Schema.String.check(Schema.isMaxLength(2_000))).check(Schema.isMaxLength(10)),
   uncertainties: Schema.Array(Schema.String.check(Schema.isMaxLength(2_000))).check(Schema.isMaxLength(10)),
 })
+const EditDecision = Schema.Struct({
+  id: Ref.fields.id,
+  hash: Ref.fields.hash,
+  status: Schema.Literals(["approved", "rejected", "unverified"]),
+  corrections: Schema.Array(Schema.String.check(Schema.isMaxLength(2_000))).check(Schema.isMaxLength(10)),
+  uncertainties: Schema.Array(Schema.String.check(Schema.isMaxLength(2_000))).check(Schema.isMaxLength(10)),
+})
 const Coverage = Schema.Struct({
   id: Obligation.fields.id,
   status: Schema.Literals(["covered", "missing", "conflicted"]),
@@ -120,6 +150,7 @@ const AdjudicationBody = Schema.Struct({
   obligations: Schema.Array(Coverage).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
   missing: Schema.Array(Schema.String.check(Schema.isMaxLength(2_000))).check(Schema.isMaxLength(20)),
   claims: Schema.Array(Decision).check(Schema.isMinLength(1), Schema.isMaxLength(50)),
+  edits: Schema.Array(EditDecision).check(Schema.isMaxLength(20)),
   excluded: Schema.Array(Schema.String.check(Schema.isMaxLength(2_000))).check(Schema.isMaxLength(20)),
 })
 const Claim = Schema.Struct({
@@ -283,6 +314,7 @@ function report(output: string): Parsed<Schema.Schema.Type<typeof ReportBody>> {
 function adjudication(
   output: string,
   expected: ReadonlyMap<string, string>,
+  expectedEdits: ReadonlyMap<string, string>,
 ): Parsed<Schema.Schema.Type<typeof AdjudicationBody>> {
   const parsed = structured(output, "ULTRA_COUNCIL_ADJUDICATION")
   if ("error" in parsed) return { error: parsed.error }
@@ -329,6 +361,21 @@ function adjudication(
         hash: repaired,
         status: ["approved", "rejected", "unverified"].includes(String(item.status)) ? item.status : "unverified",
         evidence: steps(item.evidence, id),
+        corrections: Array.isArray(item.corrections) ? item.corrections : [],
+        uncertainties: Array.isArray(item.uncertainties) ? item.uncertainties : [],
+      }
+    }),
+    edits: (Array.isArray(body.edits) ? body.edits : []).map((value) => {
+      const item = value && typeof value === "object" ? (value as Record<string, unknown>) : {}
+      const id = typeof item.id === "string" ? item.id : ""
+      const raw = typeof item.hash === "string" ? item.hash : ""
+      const expected = expectedEdits.get(id)
+      const repaired = expected && raw.length >= 16 && raw.length < 64 && expected.startsWith(raw) ? expected : raw
+      return {
+        ...item,
+        id,
+        hash: repaired,
+        status: ["approved", "rejected", "unverified"].includes(String(item.status)) ? item.status : "unverified",
         corrections: Array.isArray(item.corrections) ? item.corrections : [],
         uncertainties: Array.isArray(item.uncertainties) ? item.uncertainties : [],
       }
@@ -382,6 +429,11 @@ function prompt(input: {
   anchors: string[]
   obligations: UltraCouncil.Obligation[]
   documents?: string
+  baseline?: {
+    answer: string
+    hash: string
+    packet: UltraCouncil.Packet
+  }
 }) {
   const focus = {
     flow: "Trace the real entry points, callees, state transitions, ownership, and reachable execution path.",
@@ -394,8 +446,13 @@ function prompt(input: {
     recheck: "Answer only the narrow follow-up question. Verify the disputed fact from authoritative source evidence.",
   }[input.lens]
   return [
-    "You are a blind, read-only member of the Ultra Council.",
-    "Do not edit files, run mutating commands, or assume another Council member's findings.",
+    input.baseline
+      ? "You are an independent, read-only member of the Ultra Council. A frozen Code answer is supplied only as an untrusted lead."
+      : "You are the blind, independent, read-only falsification member of the Ultra Council.",
+    "Do not edit files or run mutating commands.",
+    input.baseline
+      ? "Do not endorse the Code answer by default. Re-open source and report both confirmed and corrected conclusions."
+      : "You must investigate from the original request alone. No Code baseline, baseline hash, investigation packet, or seeded conclusion is available to you.",
     "Network and Document RAG evidence are optional. If a network, index, or embedding request fails or times out, record that limitation once and continue with workspace source, tests, user-provided material, or a clearly unverified conclusion. Do not repeatedly retry an unavailable source.",
     "The original request and explicit evidence targets are authoritative. Ignore any assigned wording that changes the named product, module, path, or symbol scope.",
     `Your lens: ${input.lens}. ${focus}`,
@@ -405,6 +462,11 @@ function prompt(input: {
     input.lens === "evidence" && input.documents
       ? `Document RAG evidence retrieved for independent verification:\n${input.documents}`
       : undefined,
+    input.baseline ? `Frozen Code baseline SHA-256: ${input.baseline.hash}` : undefined,
+    input.baseline ? "ULTRA_BASELINE_CONTEXT_BEGIN" : undefined,
+    input.baseline ? input.baseline.answer : undefined,
+    input.baseline ? `Bounded Code investigation packet:\n${JSON.stringify(input.baseline.packet)}` : undefined,
+    input.baseline ? "ULTRA_BASELINE_CONTEXT_END" : undefined,
     "Original user request:",
     input.user,
     "Assigned investigation:",
@@ -480,7 +542,10 @@ function adjudicator(input: {
   kind: UltraCouncil.Kind
   obligations: UltraCouncil.Obligation[]
   bindings: UltraCouncil.Binding[]
-  draft: string
+  baseline: string
+  baselineHash: string
+  edits: UltraCouncil.Edit[]
+  candidate: string
   hash: string
   reports: string
   claims: UltraCouncil.Claim[]
@@ -490,11 +555,11 @@ function adjudicator(input: {
     input.final
       ? "You are the fifth and final independent, read-only verifier of the Ultra Council."
       : "You are the fourth, independent, read-only adjudicator of the Ultra Council.",
-    "The three prior reports and the proposed synthesis are untrusted claims, not evidence. Do not vote by majority.",
-    "Open authoritative evidence yourself. For every material statement in the draft, re-read the cited line or evidence excerpt and inspect its caller/callee, state transition, document context, user context, or derivation where relevant.",
+    "The frozen Code answer, three prior reports, proposed edits, and deterministic candidate are untrusted claims, not evidence. Do not vote by majority.",
+    "Open authoritative evidence yourself. For every proposed edit and material candidate statement, re-read the cited line or evidence excerpt and inspect its caller/callee, state transition, document context, user context, or derivation where relevant.",
     "Network evidence is optional. A failed fetch must become unverified rather than a fabricated fact, and must not invalidate independently verified local claims.",
     "Reject claims that use the wrong subsystem, describe an unreachable path, misread source, cite the wrong location, invent behavior, omit a material condition, or state inference as fact.",
-    "A source excerpt does not validate its surrounding explanation by itself. Compare the draft's exact semantic claim to the excerpt and reject them when the quote is correct but the interpretation is not.",
+    "A source excerpt does not validate its surrounding explanation by itself. Compare each edit's exact semantic change to the excerpt and reject it when the quote is correct but the interpretation is not.",
     "Carry every remaining uncertainty into UNCERTAINTIES so the chair can preserve it explicitly in the final answer.",
     "The original request and explicit anchors define scope. Reject tangents even if a prior report contains them.",
     "Independently classify the original request as analysis, review, or implementation. Do not accept a parent-selected implementation kind for a request that only asks for an answer or review.",
@@ -507,14 +572,20 @@ function adjudicator(input: {
     `Parent request kind: ${input.kind}`,
     `Frozen obligations:\n${JSON.stringify(input.obligations)}`,
     `Candidate obligation bindings:\n${JSON.stringify(input.bindings)}`,
+    `Frozen Code baseline SHA-256: ${input.baselineHash}`,
     `Candidate SHA-256: ${input.hash}`,
     `Runtime claim manifest:\n${JSON.stringify(input.claims.map((claim) => ({ id: claim.id, hash: claim.hash, obligations: claim.obligations, claim: claim.claim })))}`,
+    `Runtime edit manifest:\n${JSON.stringify(input.edits)}`,
     "Original user request:",
     input.user,
-    "Proposed synthesis to audit line by line:",
-    "<proposed-synthesis>",
-    input.draft,
-    "</proposed-synthesis>",
+    "Frozen Code answer:",
+    "<code-baseline>",
+    input.baseline,
+    "</code-baseline>",
+    "Runtime-built candidate after applying every proposed edit:",
+    "<proposed-candidate>",
+    input.candidate,
+    "</proposed-candidate>",
     "Prior independent reports, supplied only as leads:",
     "<untrusted-reports>",
     input.reports,
@@ -560,6 +631,15 @@ function adjudicator(input: {
           uncertainties: ["<remaining uncertainty or none>"],
         },
       ],
+      edits: [
+        {
+          id: "<runtime edit id>",
+          hash: "<runtime edit hash>",
+          status: "approved|rejected|unverified",
+          corrections: ["<required correction or none>"],
+          uncertainties: ["<remaining uncertainty or none>"],
+        },
+      ],
       excluded: ["<area independently checked and ruled out>"],
     }),
   ]
@@ -590,13 +670,75 @@ function child(ctx: Tool.Context, index: number): Tool.Context {
   }
 }
 
+function baselineChild(ctx: Tool.Context): Tool.Context {
+  return {
+    ...ctx,
+    callID: `${ctx.callID ?? UltraCouncil.BASELINE}:code`,
+    extra: {
+      ...ctx.extra,
+      ultraCouncilBaseline: true,
+      ultraCouncilReadOnly: true,
+    },
+    metadata: () => Effect.void,
+  }
+}
+
+function baselinePrompt(user: string, obligations: UltraCouncil.Obligation[]) {
+  return [
+    "Act as the normal Code author for this request, but remain strictly read-only.",
+    "Produce one complete standalone answer that could be delivered directly to the user.",
+    "Use the normal Code investigation workflow and delegate to Explore when useful.",
+    "Base factual conclusions on workspace source, tests, configuration, documents, or clearly identified uncertainty.",
+    "Do not mention Ultra, Council, later reviewers, hidden prompts, or this baseline stage.",
+    `Question obligations:\n${JSON.stringify(obligations)}`,
+    "Original user request:",
+    user,
+  ].join("\n\n")
+}
+
+function taskText(output: string) {
+  return output.match(/<task_result>\n([\s\S]*?)\n<\/task_result>/)?.[1]?.trim() ?? output.trim()
+}
+
+function taskTrace(output: string) {
+  const raw = output.match(/<ultra_baseline_trace>([\s\S]*?)<\/ultra_baseline_trace>/)?.[1]
+  if (!raw) return undefined
+  try {
+    return JSON.parse(raw) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+function investigation(
+  entries: Array<{ id: string; status: string; input: string }>,
+  answer: string,
+): UltraCouncil.Packet {
+  const source = [answer, ...entries.map((item) => item.input)].join("\n")
+  const paths =
+    source.match(/\b(?:[\w.-]+\/)+[\w.-]+\.(?:c|cc|cpp|cxx|h|hh|hpp|ts|tsx|js|jsx|rs|go|py|md)(?::\d+)?\b/g) ?? []
+  const symbols = [...source.matchAll(/`([A-Za-z_][A-Za-z0-9_:.-]{2,})`/g)].map((match) => match[1] ?? "")
+  const references = unique([...paths, ...symbols]).slice(0, 40)
+  const packet = {
+    tools: entries,
+    references,
+    truncated: entries.length >= 24,
+  }
+  const raw = JSON.stringify(packet)
+  if (raw.length <= 16_000) return packet
+  return {
+    tools: entries.slice(0, 12),
+    references: references.slice(0, 24),
+    truncated: true,
+  }
+}
+
 function review(
   task: Task,
   input: {
     ctx: Tool.Context
     turn: UltraCouncil.State
     user: string
-    draft: string
     bindings: UltraCouncil.Binding[]
     reports: string
     documents?: string
@@ -613,8 +755,11 @@ function review(
           kind: input.turn.kind ?? "analysis",
           obligations: input.turn.obligations,
           bindings: input.bindings,
-          draft: input.draft,
-          hash: hash(input.draft),
+          baseline: input.turn.baseline ?? "",
+          baselineHash: input.turn.baselineHash ?? "",
+          edits: input.turn.edits,
+          candidate: input.turn.candidate ?? input.turn.baseline ?? "",
+          hash: input.turn.proposalHash ?? "",
           reports: input.reports,
           claims: input.turn.claims,
           final: input.final === true,
@@ -628,12 +773,14 @@ function review(
       Effect.flatMap((value) =>
         Effect.gen(function* () {
           const expected = new Map(input.turn.claims.map((claim) => [claim.id, claim.hash]))
-          const parsed = adjudication(value.output, expected)
+          const expectedEdits = new Map(input.turn.edits.map((edit) => [edit.id, edit.hash]))
+          const parsed = adjudication(value.output, expected, expectedEdits)
           if ("error" in parsed) {
             return {
               output: value.output,
               reason: parsed.error,
               decisions: [] as UltraCouncil.Decision[],
+              edits: [] as UltraCouncil.EditDecision[],
               review: undefined,
               session:
                 "sessionId" in value.metadata && typeof value.metadata.sessionId === "string"
@@ -645,6 +792,9 @@ function review(
           const actual = new Map(parsed.data.claims.map((claim) => [claim.id, claim.hash]))
           const missing = [...expected].filter(([id, hash]) => actual.get(id) !== hash).map(([id]) => id)
           const extra = [...actual].filter(([id, hash]) => expected.get(id) !== hash).map(([id]) => id)
+          const actualEdits = new Map(parsed.data.edits.map((edit) => [edit.id, edit.hash]))
+          const missingEdits = [...expectedEdits].filter(([id, hash]) => actualEdits.get(id) !== hash).map(([id]) => id)
+          const extraEdits = [...actualEdits].filter(([id, hash]) => expectedEdits.get(id) !== hash).map(([id]) => id)
           const decisions = yield* Effect.forEach(
             parsed.data.claims,
             (claim) =>
@@ -683,6 +833,8 @@ function review(
           const errors = [
             ...(missing.length > 0 ? [`Adjudication omitted or changed claims: ${missing.join(", ")}`] : []),
             ...(extra.length > 0 ? [`Adjudication added unknown claims: ${extra.join(", ")}`] : []),
+            ...(missingEdits.length > 0 ? [`Adjudication omitted or changed edits: ${missingEdits.join(", ")}`] : []),
+            ...(extraEdits.length > 0 ? [`Adjudication added unknown edits: ${extraEdits.join(", ")}`] : []),
           ]
           const expectedObligations = new Set(input.turn.obligations.map((item) => item.id))
           const actualObligations = new Set(parsed.data.obligations.map((item) => item.id))
@@ -745,6 +897,13 @@ function review(
               corrections: [...claim.corrections],
               uncertainties: [...claim.uncertainties],
             })),
+            edits: parsed.data.edits.map((edit) => ({
+              id: edit.id,
+              hash: edit.hash,
+              status: edit.status,
+              corrections: [...edit.corrections],
+              uncertainties: [...edit.uncertainties],
+            })),
             review: {
               kind: parsed.data.requestKind,
               candidateHash: parsed.data.candidate.hash,
@@ -772,6 +931,7 @@ function review(
           output: "",
           reason: Cause.pretty(cause),
           decisions: [] as UltraCouncil.Decision[],
+          edits: [] as UltraCouncil.EditDecision[],
           review: undefined,
           session: undefined,
         }),
@@ -999,6 +1159,124 @@ function covered(state: UltraCouncil.State, input: Schema.Schema.Type<typeof Arb
 export function UltraCouncilTools(task: Task, document?: Tool.Def) {
   return Effect.gen(function* () {
     const agents = yield* Agent.Service
+    const baseline = yield* Tool.define(
+      UltraCouncil.BASELINE,
+      Effect.succeed({
+        description:
+          "Freeze the mandatory read-only Code author answer before Ultra exploration. This baseline can be retried only for infrastructure or empty-output failure, never for answer quality.",
+        parameters: BaselineParams,
+        execute: (
+          params: Schema.Schema.Type<typeof BaselineParams>,
+          ctx: Tool.Context,
+        ): Effect.Effect<Tool.ExecuteResult<BaselineMeta>> =>
+          Effect.gen(function* () {
+            const agent = yield* agents.get(ctx.agent)
+            if (!agent || !UltraCouncil.active(agent)) {
+              return {
+                title: "Ultra Code baseline unavailable",
+                metadata: { rejected: true },
+                output: "This tool is available only to the native ChipMate Ultra agent.",
+              }
+            }
+            const turn = UltraCouncil.load({
+              sessionID: ctx.sessionID,
+              messageID: message(ctx),
+              messages: ctx.messages,
+            })
+            const configured = UltraCouncil.configure(turn, params.requestKind, [...params.obligations])
+            if (configured) {
+              return {
+                title: "Ultra Code baseline rejected",
+                metadata: { rejected: true, ultraCouncil: UltraCouncil.snapshot(turn) },
+                output: configured,
+              }
+            }
+            const denied = UltraCouncil.reserveBaseline(turn)
+            if (denied) {
+              return {
+                title: "Ultra Code baseline rejected",
+                metadata: { rejected: true, ultraCouncil: UltraCouncil.snapshot(turn) },
+                output: denied,
+              }
+            }
+            yield* ctx.metadata({
+              title: "Ultra Code baseline",
+              metadata: {
+                rejected: false,
+                ultraCouncil: UltraCouncil.snapshot(turn),
+              },
+            })
+            const original = user(ctx, turn.messageID)
+            const run = yield* task
+              .execute(
+                {
+                  description: "Ultra Code baseline",
+                  prompt: baselinePrompt(original, turn.obligations),
+                  subagent_type: ULTRA_BASELINE,
+                  background: false,
+                },
+                baselineChild(ctx),
+              )
+              .pipe(
+                Effect.map((value) => ({ value })),
+                Effect.catchCause((cause) => Effect.succeed({ error: Cause.pretty(cause) })),
+              )
+            if ("error" in run) {
+              UltraCouncil.failBaseline(turn, `The read-only Code baseline failed: ${run.error}`)
+              return {
+                title: "Ultra Code baseline failed",
+                metadata: { rejected: true, ultraCouncil: UltraCouncil.snapshot(turn) },
+                output: UltraCouncil.reminder(turn),
+              }
+            }
+            const answer = taskText(run.value.output)
+            const id = typeof run.value.metadata.sessionId === "string" ? run.value.metadata.sessionId : undefined
+            const parsed = taskTrace(run.value.output)
+            const trace = Array.isArray(parsed)
+              ? parsed
+                  .filter(
+                    (item): item is { id: string; status: string; input: string } =>
+                      Boolean(item) &&
+                      typeof item === "object" &&
+                      typeof item.id === "string" &&
+                      typeof item.status === "string" &&
+                      typeof item.input === "string",
+                  )
+                  .slice(0, 24)
+              : []
+            const packet = investigation(trace, answer)
+            const valid = UltraCouncil.recordBaseline(turn, {
+              answer,
+              packet,
+              sessionID: id,
+            })
+            if (!valid) {
+              return {
+                title: "Ultra Code baseline empty",
+                metadata: { rejected: true, ultraCouncil: UltraCouncil.snapshot(turn) },
+                output: UltraCouncil.reminder(turn),
+              }
+            }
+            return {
+              title: "Ultra Code baseline frozen",
+              metadata: {
+                rejected: false,
+                session: id,
+                baselineHash: turn.baselineHash,
+                packetHash: turn.packetHash,
+                ultraCouncil: UltraCouncil.snapshot(turn),
+              },
+              output: [
+                "ULTRA_CODE_BASELINE",
+                JSON.stringify({
+                  answer: turn.baseline,
+                  packet: turn.packet,
+                }),
+              ].join("\n"),
+            }
+          }),
+      }),
+    )
     const explore = yield* Tool.define(
       UltraCouncil.EXPLORE,
       Effect.succeed({
@@ -1024,19 +1302,14 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
               messages: ctx.messages,
             })
             if (params.phase === "initial") {
-              if (!params.requestKind || !params.obligations) {
+              const kind = params.requestKind ?? turn.kind
+              const obligations = params.obligations ? [...params.obligations] : turn.obligations
+              if (kind !== turn.kind || JSON.stringify(obligations) !== JSON.stringify(turn.obligations)) {
                 return {
                   title: "Ultra Council request rejected",
                   metadata: { rejected: true, ultraCouncil: UltraCouncil.snapshot(turn) },
-                  output: "The initial Council wave requires requestKind and a complete obligation list.",
-                }
-              }
-              const configured = UltraCouncil.configure(turn, params.requestKind, [...params.obligations])
-              if (configured) {
-                return {
-                  title: "Ultra Council request rejected",
-                  metadata: { rejected: true, ultraCouncil: UltraCouncil.snapshot(turn) },
-                  output: configured,
+                  output:
+                    "The initial Council wave cannot change the request kind or obligations frozen by Code baseline.",
                 }
               }
             }
@@ -1102,6 +1375,14 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
                         anchors: turn.anchors,
                         obligations: turn.obligations,
                         documents,
+                        baseline:
+                          item.lens === "falsify" || !turn.baseline || !turn.baselineHash || !turn.packet
+                            ? undefined
+                            : {
+                                answer: turn.baseline,
+                                hash: turn.baselineHash,
+                                packet: turn.packet,
+                              },
                       }),
                       subagent_type: "explore",
                       background: false,
@@ -1201,7 +1482,7 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
       UltraCouncil.ADJUDICATE,
       Effect.succeed({
         description:
-          "Run the mandatory fourth independent Explore adjudicator against the exact proposed synthesis. It re-opens source, challenges every material claim, and identifies required corrections before chair arbitration.",
+          "Submit exact evidence-backed edits against the frozen Code answer. The fourth independent Explore adjudicator re-opens source and approves or rejects each edit before runtime applies it.",
         parameters: AdjudicationParams,
         execute: (
           params: Schema.Schema.Type<typeof AdjudicationParams>,
@@ -1245,7 +1526,15 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
               obligation: item.obligation,
               claims: [...item.claims],
             }))
-            const denied = UltraCouncil.reserveAdjudication(turn, params.draft, bindings)
+            const edits = params.edits.map((edit) => ({
+              kind: edit.kind,
+              anchor: edit.anchor,
+              text: edit.text,
+              obligations: [...edit.obligations],
+              claims: edit.claims.map((claim) => ({ id: claim.id, hash: claim.hash })),
+              reason: edit.reason,
+            }))
+            const denied = UltraCouncil.reserveAdjudication(turn, params.baselineHash, edits, bindings)
             if (denied) {
               return {
                 title: "Ultra adjudication rejected",
@@ -1265,7 +1554,6 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
               ctx,
               turn,
               user: original,
-              draft: params.draft,
               bindings,
               reports: prior(ctx, turn.messageID),
               documents: turn.documents,
@@ -1273,6 +1561,7 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
             UltraCouncil.recordAdjudication(turn, {
               valid: result.reason === undefined,
               decisions: result.decisions,
+              edits: result.edits,
               review: result.review,
             })
             return {
@@ -1293,7 +1582,7 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
       UltraCouncil.REVISE,
       Effect.succeed({
         description:
-          "Submit one complete corrected Ultra analysis or review answer for the fifth independent verifier. Approval seals this exact text; rejection produces a deterministic evidence-limited result.",
+          "Submit one corrected complete edit set against the same frozen Code answer. The fifth independent verifier reviews the runtime-built exact candidate; failure falls back to previously approved edits.",
         parameters: AdjudicationParams,
         execute: (
           params: Schema.Schema.Type<typeof AdjudicationParams>,
@@ -1332,7 +1621,15 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
               obligation: item.obligation,
               claims: [...item.claims],
             }))
-            const denied = UltraCouncil.reserveRevision(turn, params.draft, bindings)
+            const edits = params.edits.map((edit) => ({
+              kind: edit.kind,
+              anchor: edit.anchor,
+              text: edit.text,
+              obligations: [...edit.obligations],
+              claims: edit.claims.map((claim) => ({ id: claim.id, hash: claim.hash })),
+              reason: edit.reason,
+            }))
+            const denied = UltraCouncil.reserveRevision(turn, params.baselineHash, edits, bindings)
             if (denied) {
               return {
                 title: "Ultra revision rejected",
@@ -1352,7 +1649,6 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
               ctx,
               turn,
               user: original,
-              draft: params.draft,
               bindings,
               reports: prior(ctx, turn.messageID),
               documents: turn.documents,
@@ -1361,6 +1657,7 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
             UltraCouncil.recordRevision(turn, {
               valid: result.reason === undefined,
               decisions: result.decisions,
+              edits: result.edits,
               review: result.review,
             })
             return {
@@ -1516,6 +1813,6 @@ export function UltraCouncilTools(task: Task, document?: Tool.Def) {
       }),
     )
 
-    return { explore, adjudicate, revise, arbitrate }
+    return { baseline, explore, adjudicate, revise, arbitrate }
   })
 }

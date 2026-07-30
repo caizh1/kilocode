@@ -872,6 +872,68 @@
   border-radius: 10px;
 }
 
+.settings-shell .chipmate-update-error {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0 0 28px;
+}
+
+.settings-shell .chipmate-update-error .chipmate-update-status {
+  min-height: 116px;
+  padding-bottom: 18px;
+}
+
+.settings-shell .chipmate-update-error-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 8px;
+  padding: 16px 18px;
+  color: var(--vscode-foreground, var(--text-base));
+  background: color-mix(in srgb, var(--settings-glass-fill-strong) 90%, var(--vscode-errorForeground) 10%);
+  border: 1px solid color-mix(in srgb, var(--vscode-errorForeground) 28%, var(--settings-glass-border) 72%);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 11%, transparent),
+    0 10px 24px color-mix(in srgb, var(--vscode-widget-shadow, #000) 16%, transparent);
+  backdrop-filter: blur(18px) saturate(1.06);
+}
+
+.settings-shell .chipmate-update-error-detail > span {
+  color: var(--vscode-errorForeground, var(--text-critical-base, #f14c4c));
+  font-size: var(--kilo-font-size-13);
+  font-weight: 600;
+}
+
+.settings-shell .chipmate-update-error-detail pre {
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  color: var(--vscode-foreground, var(--text-base));
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--kilo-font-size-13);
+  line-height: 1.5;
+  user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.settings-shell .chipmate-update-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.settings-shell .chipmate-update-actions [data-component="button"] {
+  flex: 0 1 auto;
+  min-height: 42px;
+  gap: 8px;
+  border-radius: 10px;
+}
+
 .settings-shell .chipmate-update-card .chipmate-server-reload {
   margin-inline: -32px;
   padding: 22px 32px 24px;
@@ -1214,6 +1276,11 @@ body.vscode-high-contrast-light .settings-shell .chipmate-server-input [data-slo
   .settings-shell .chipmate-update-install[data-component="button"] {
     grid-column: 1 / -1;
     width: 100%;
+    justify-content: center;
+  }
+
+  .settings-shell .chipmate-update-actions [data-component="button"] {
+    flex: 1 1 100%;
     justify-content: center;
   }
 

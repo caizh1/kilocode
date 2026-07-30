@@ -10,6 +10,7 @@ export type Message = {
     type: string
     text?: string
     ignored?: boolean
+    auto?: boolean
     tool?: string
     state?: {
       status?: string
@@ -37,7 +38,7 @@ const active = new Map<string, State>()
 
 export function needs(session: string, messages: Message[]) {
   if (active.has(session)) return false
-  const user = messages.findLast((item) => item.info.role === "user")
+  const user = messages.findLast(actual)
   return Boolean(user && continuation(user))
 }
 
@@ -47,7 +48,7 @@ export function recover(session: string, history: Message[], messages: Message[]
 }
 
 export function sync(session: string, messages: Message[]) {
-  const user = messages.findLast((item) => item.info.role === "user")
+  const user = messages.findLast(actual)
   if (!user || !continuation(user)) {
     active.delete(session)
     return
@@ -59,7 +60,7 @@ export function sync(session: string, messages: Message[]) {
   }
   const tail = messages
     .slice(found.index + 1)
-    .filter((item) => item.info.role === "user")
+    .filter(actual)
   if (!tail.length || tail.some((item) => !continuation(item))) {
     active.delete(session)
     return
@@ -69,7 +70,7 @@ export function sync(session: string, messages: Message[]) {
 
 export function activate(session: string, skill: string, messages: Message[]) {
   if (skill !== NAME) return
-  const user = messages.findLast((item) => item.info.role === "user")
+  const user = messages.findLast(actual)
   if (!user) return
   const prior = current(session, messages)
   const root = prior?.root ?? (continuation(user) ? declared(messages) : undefined)
@@ -121,6 +122,20 @@ export function mutation(session: string, messages: Message[], workspace: string
   return `The active source-backed-detail-design workflow may mutate files only inside its declared artifact root: ${state.root}`
 }
 
+export function artifact(session: string, messages: Message[], workspace: string, file: string) {
+  const state = current(session, messages)
+  if (!state?.root) return
+  const root = path.resolve(workspace, state.root)
+  const base = path.dirname(root)
+  if (path.basename(base) !== "artifacts") return
+  const target = path.resolve(file)
+  const within = path.relative(base, target)
+  if (within.startsWith("..") || path.isAbsolute(within)) return
+  const owned = path.relative(root, target)
+  if (owned === "" || (!owned.startsWith("..") && !path.isAbsolute(owned))) return
+  return `The active source-backed-detail-design workflow must resume from its canonical artifact root: ${state.root}. Do not inspect or reuse a sibling artifact from another run.`
+}
+
 export async function stage(session: string, messages: Message[], workspace: string, file: string) {
   const state = current(session, messages)
   if (!state?.root) return
@@ -132,8 +147,12 @@ export async function stage(session: string, messages: Message[], workspace: str
     return "Diagram authoring is blocked in the initial source-backed turn. Persist the prose checkpoint, end this turn, and resume figures only after the user's uninterrupted continuation."
   }
   const ready = await Readiness.prose(workspace, state.root)
-  if (!ready.issues.length) return
-  return `Diagram authoring is blocked until every frozen DesignUnit has fourteen separate prose topics with explanatory paragraphs. ${ready.issues.slice(0, 20).join("; ")}`
+  if (ready.issues.length) {
+    return `Diagram authoring is blocked until every frozen DesignUnit has fourteen separate prose topics and an owner-complete business-flow census. ${ready.issues.slice(0, 20).join("; ")}`
+  }
+  const missing = await Readiness.checkpoints(ready.root)
+  if (!missing.length) return
+  return `Diagram authoring is blocked until the prose checkpoint is durable. ${missing.join("; ")}`
 }
 
 export async function checkpoint(
@@ -162,23 +181,17 @@ export async function checkpoint(
 }
 
 function current(session: string, messages: Message[]) {
-  const state = active.get(session) ?? restore(session, messages)
-  if (!state) return
-  const users = messages.filter((item) => item.info.role === "user")
+  const state = active.get(session)
+  if (!state) return restore(session, messages)
+  const users = messages.filter(actual)
   const index = users.findIndex((item) => item.info.id === state.anchor)
-  if (index < 0) {
-    const latest = users.at(-1)
-    if (state.root && latest && continuation(latest)) return state
-    active.delete(session)
-    return
-  }
-  const tail = users.slice(index + 1)
-  if (tail.every(continuation)) return state
+  if (index < 0) return state
+  if (users.slice(index + 1).every(continuation)) return state
   active.delete(session)
 }
 
 function restore(session: string, messages: Message[]) {
-  const user = messages.findLast((item) => item.info.role === "user")
+  const user = messages.findLast(actual)
   if (!user || !continuation(user) || !loaded(messages)) return
   const root = declared(messages)
   if (!root) return
@@ -199,6 +212,11 @@ function continuation(message: Message) {
     .trim()
     .toLowerCase()
   return text === "继续" || text === "continue"
+}
+
+function actual(message: Message) {
+  if (message.info.role !== "user") return false
+  return message.parts.some((part) => part.type !== "compaction")
 }
 
 function loaded(messages: Message[]) {

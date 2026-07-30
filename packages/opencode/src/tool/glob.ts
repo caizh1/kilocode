@@ -6,6 +6,7 @@ import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./glob.txt"
 import * as Tool from "./tool"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
 
 // kilocode_change start — support absolute glob patterns (e.g. ~/.config/kilo/command/*.md)
 function normalize(p: string) {
@@ -22,6 +23,13 @@ function split(pattern: string) {
   const dir = cut > 0 ? slice.slice(0, cut) : "/"
   const next = normalized.slice(cut + 1)
   return { dir, pattern: next || "*" }
+}
+
+function prefix(pattern: string) {
+  const normalized = normalize(pattern)
+  const index = normalized.search(/[*?{[]/)
+  const value = index === -1 ? normalized : normalized.slice(0, index)
+  return value.endsWith("/") ? value.slice(0, -1) : value
 }
 // kilocode_change end
 
@@ -57,6 +65,9 @@ export const GlobTool = Tool.define(
           // kilocode_change start
           const base = absolute?.dir ?? params.path ?? ins.directory
           const search = path.isAbsolute(base) ? base : path.resolve(ins.directory, base)
+          const probe = path.resolve(search, prefix(absolute?.pattern ?? params.pattern))
+          const artifact = WorkflowGuard.artifact(ctx.sessionID, ctx.messages, ins.directory, probe)
+          if (artifact) return yield* Effect.fail(new Error(artifact))
           // kilocode_change end
           const info = yield* fs.stat(search).pipe(Effect.catch(() => Effect.succeed(undefined)))
           if (info?.type === "File") {

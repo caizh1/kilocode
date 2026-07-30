@@ -20,6 +20,8 @@ export function createMockProvider(opts = {}) {
       method: req.method,
       path: url.pathname,
       stream: body?.stream === true,
+      model: typeof body?.model === "string" ? body.model : undefined,
+      dimensions: Number.isSafeInteger(body?.dimensions) ? body.dimensions : undefined,
       hasAuthorization: typeof req.headers.authorization === "string",
     })
 
@@ -70,10 +72,15 @@ export function createMockProvider(opts = {}) {
     }
     if (url.pathname === "/v1/embeddings" || url.pathname === "/embeddings") {
       const input = Array.isArray(body?.input) ? body.input : [body?.input ?? ""]
+      const dimensions = Number.isSafeInteger(body?.dimensions) && body.dimensions > 0 ? body.dimensions : 2048
       return json(res, 200, {
         object: "list",
         model: body?.model ?? embedding,
-        data: input.map((value, index) => ({ object: "embedding", index, embedding: vector(String(value)) })),
+        data: input.map((value, index) => ({
+          object: "embedding",
+          index,
+          embedding: vector(String(value), dimensions),
+        })),
         usage: { prompt_tokens: input.length, total_tokens: input.length },
       })
     }
@@ -222,8 +229,8 @@ function scenarioFor(body, fallback) {
   return done ? "success" : scenario
 }
 
-function vector(value) {
-  const out = Array.from({ length: 2048 }, () => 0)
+function vector(value, dimensions = 2048) {
+  const out = Array.from({ length: dimensions }, () => 0)
   const bytes = Buffer.from(value || "qa")
   for (let index = 0; index < bytes.length; index += 1) {
     const slot = (bytes[index] * 31 + index * 17) % out.length

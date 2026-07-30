@@ -28,9 +28,10 @@ import { InstanceState } from "@/effect/instance-state"
 import { KiloMemory } from "@kilocode/kilo-memory/effect"
 import { MemoryPaths } from "@kilocode/kilo-memory/effect/paths"
 import type { Parameters as TaskParameters } from "@/tool/task"
-import { UltraCouncilTools } from "./ultra-council"
-import { UltraCouncil } from "../agent/ultra-council"
+import { UltraVerifyTool } from "./ultra-verify"
+import { UltraVerify } from "../agent/ultra-verify"
 import { ProductProfile } from "../product-profile"
+import { EmbeddedReviewSubmitTool } from "./embedded-review-submit"
 
 const log = Log.create({ service: "kilocode-tool-registry" })
 type ConfigSource = Pick<Config.Interface, "get" | "getGlobal">
@@ -57,14 +58,14 @@ type Loaders = {
 
 export namespace KiloToolRegistry {
   const hint = [
-    "- For configured workspace PDF, DOCX, XLSX, ODS, Markdown, CSV, TSV, RST, or text documents, use the `document_search` tool before answering document-grounded questions.",
+    "- For configured PDF, DOCX, XLSX, ODS, Markdown, CSV, TSV, RST, or text documents in the workspace or an approved external directory, use the `document_search` tool before answering document-grounded questions. If the user explicitly asks to consult indexed or external documents, call it before answering; omit `path` to search every configured document root.",
     "- When you are doing an open-ended conceptual search where you do not know the exact symbol name, use the `semantic_search` tool first to narrow down the search scope, then follow up with `Grep` and/or `Read`.",
   ].join("\n")
 
   const route = (ids: Set<string>) =>
     [
       ids.has("document_search")
-        ? "- For questions grounded in workspace documents, use `document_search` first."
+        ? "- For questions grounded in indexed documents, including approved external documents, use `document_search` first. If the user explicitly asks to consult indexed or external documents, call it before answering; omit `path` to search every configured document root."
         : undefined,
       ids.has("semantic_search")
         ? "- For unfamiliar code concepts without an exact identifier, use `semantic_search` first."
@@ -134,6 +135,7 @@ export namespace KiloToolRegistry {
       const image = yield* GenerateImageTool
       const terminal = yield* InteractiveTerminalTool
       const consoleShell = yield* AgentConsoleShellTool
+      const review = yield* EmbeddedReviewSubmitTool
       const sessions = yield* KiloSessions.Service
       const notify = yield* NotifyUserTool.pipe(Effect.provideService(KiloSessions.Service, sessions))
       const markets = yield* SkillMarketTools.pipe(
@@ -151,6 +153,7 @@ export namespace KiloToolRegistry {
           image,
           terminal,
           consoleShell,
+          review,
           notify,
           markets,
         }
@@ -170,6 +173,7 @@ export namespace KiloToolRegistry {
         image,
         terminal,
         consoleShell,
+        review,
         notify,
         markets,
         ...tools,
@@ -191,6 +195,7 @@ export namespace KiloToolRegistry {
       image: Tool.Info
       terminal?: Tool.Info
       consoleShell?: Tool.Info
+      review?: Tool.Info
       notify: Tool.Info
       notebookRead?: Tool.Info
       notebookEdit?: Tool.Info
@@ -217,6 +222,7 @@ export namespace KiloToolRegistry {
         process: Tool.init(tools.process),
         image: Tool.init(tools.image),
         notify: Tool.init(tools.notify),
+        ...(tools.review ? { review: Tool.init(tools.review) } : {}),
         ...(tools.consoleShell ? { consoleShell: Tool.init(tools.consoleShell) } : {}),
       })
       const terminal = tools.terminal ? yield* Tool.init(tools.terminal) : undefined
@@ -252,16 +258,11 @@ export namespace KiloToolRegistry {
       const ultra =
         deps.task && ProductProfile.chipmate
           ? yield* Effect.gen(function* () {
-              const infos = yield* UltraCouncilTools(deps.task!, document).pipe(
+              const info = yield* UltraVerifyTool(deps.task!).pipe(
                 Effect.provideService(Agent.Service, deps.agent),
                 Effect.provideService(Truncate.Service, deps.truncate),
               )
-              return yield* Effect.all([
-                Tool.init(infos.explore),
-                Tool.init(infos.adjudicate),
-                Tool.init(infos.revise),
-                Tool.init(infos.arbitrate),
-              ])
+              return [yield* Tool.init(info)]
             })
           : []
       return {
@@ -511,13 +512,17 @@ export namespace KiloToolRegistry {
     if (agent.name === "agent-console") return tool.id === "agent_console_shell"
     if (tool.id === "agent_console_shell") return false
     if (
-      tool.id === "ultra_council_explore" ||
-      tool.id === "ultra_council_adjudicate" ||
-      tool.id === "ultra_council_revise" ||
-      tool.id === "ultra_submit_arbitration"
+      [
+        "ultra_code_baseline",
+        "ultra_council_explore",
+        "ultra_council_adjudicate",
+        "ultra_council_revise",
+        "ultra_submit_arbitration",
+      ].includes(tool.id)
     ) {
-      return UltraCouncil.active(agent)
+      return false
     }
+    if (tool.id === UltraVerify.TOOL) return UltraVerify.active(agent)
     if (tool.id === "render_plantuml_diagram") return ["ask", "code", "plan"].includes(agent.name)
     if (tool.id === "extract_plantuml_source") return ["ask", "code", "ultra"].includes(agent.name)
     if (tool.id !== "interactive_terminal") return true
@@ -545,6 +550,7 @@ export namespace KiloToolRegistry {
       image: Tool.Def
       terminal?: Tool.Def
       consoleShell?: Tool.Def
+      review?: Tool.Def
       notify: Tool.Def
       notebookRead?: Tool.Def
       notebookEdit?: Tool.Def
@@ -571,6 +577,7 @@ export namespace KiloToolRegistry {
       ...(tools.mermaid ?? []),
       ...(tools.plantuml ?? []),
       ...(tools.ultra ?? []),
+      ...(tools.review ? [tools.review] : []),
       tools.memory,
       tools.save,
       tools.recall,

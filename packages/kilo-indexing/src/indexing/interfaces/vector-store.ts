@@ -21,6 +21,7 @@ export interface IVectorStore {
    */
   openExisting?(): Promise<void>
   close?(): Promise<void>
+  abortCandidate?(): Promise<void>
 
   /**
    * Initializes the vector store

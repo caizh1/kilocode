@@ -3,14 +3,15 @@ import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import { createHash, randomUUID } from "node:crypto"
 import { createReadStream } from "node:fs"
-import type { ExecFileOptionsWithStringEncoding } from "node:child_process"
 import { exec as run } from "../../util/process"
 import { chipmateServerEndpoints } from "../chipmate-server"
 import {
   CHIPMATE_UPDATE_TARGETS,
+  sanitize,
   type ChipmateUpdateResult,
   type ChipmateUpdateTarget,
 } from "../../shared/update-check"
+import { installDetail, resolveInstall, type Exec } from "./install"
 import { readVsixManifest } from "./vsix"
 
 export const LAST_AUTO_KEY = "chipmate.v2.updateCheck.lastAutoCheckMs"
@@ -77,18 +78,17 @@ type Identity = {
   version: string
 }
 
-type Exec = (
-  cmd: string,
-  args: string[],
-  opts?: Omit<ExecFileOptionsWithStringEncoding, "encoding">,
-) => Promise<{ stdout: string; stderr: string }>
+type Log = Pick<Console, "log" | "warn" | "error"> & {
+  show?: () => void
+  dispose?: () => void
+}
 
 type Deps = {
   fetch: typeof fetch
   exec: Exec
   now: () => number
   updates: () => string
-  log: Pick<Console, "log" | "warn" | "error">
+  log: Log
 }
 
 class UpdateError extends Error {
@@ -127,17 +127,19 @@ export class UpdateCheckService implements vscode.Disposable {
   private readonly transactions = new Map<string, Transaction>()
   private readonly candidates = new Map<string, Candidate>()
   private readonly deps: Deps
+  private readonly owns: boolean
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     deps: Partial<Deps> = {},
   ) {
+    this.owns = !deps.log
     this.deps = {
       fetch: deps.fetch ?? fetch,
       exec: deps.exec ?? run,
       now: deps.now ?? Date.now,
       updates: deps.updates ?? updateManifestUrl,
-      log: deps.log ?? console,
+      log: deps.log ?? updateLog(),
     }
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((event) => {
@@ -164,13 +166,16 @@ export class UpdateCheckService implements vscode.Disposable {
   async checkAuto(): Promise<void> {
     const cfg = this.config()
     if (!cfg.enabled) {
+      this.info("自动检查已跳过：更新检查已禁用。")
       this.schedule(cfg)
       return
     }
     if (!this.autoDue(cfg)) {
+      this.info("自动检查已跳过：尚未到达检查间隔。")
       this.schedule(cfg)
       return
     }
+    this.info("开始自动检查更新。")
     await this.context.globalState.update(LAST_AUTO_KEY, this.deps.now())
     try {
       const result = await this.probe(cfg)
@@ -214,6 +219,7 @@ export class UpdateCheckService implements vscode.Disposable {
   async probeManual(): Promise<ChipmateUpdateResult> {
     const cfg = this.config()
     if (!cfg.enabled) return this.error(new UpdateError("server", "ChipMate update checks are disabled."))
+    this.info("开始手动检查更新。")
     try {
       await this.context.globalState.update(LAST_MANUAL_KEY, this.deps.now())
       const result = await this.probe(cfg)
@@ -239,7 +245,7 @@ export class UpdateCheckService implements vscode.Disposable {
       }
     } catch (err) {
       const result = this.error(err)
-      this.deps.log.warn(`[Kilo New] Manual update probe failed (${result.code}): ${result.message}`)
+      this.warn(`手动检查失败（${result.code}）：${result.message}`)
       return result
     }
   }
@@ -263,10 +269,11 @@ export class UpdateCheckService implements vscode.Disposable {
         throw new UpdateError("identity", "This ChipMate installation changed. Check for updates again.")
       }
       await this.perform(this.config(), current.item, current.url, true)
+      this.info(`版本 ${current.item.version} 已安装，等待用户重载窗口后激活。`)
       return { status: "installed", version: current.item.version }
     } catch (err) {
       const result = this.error(err)
-      this.deps.log.warn(`[Kilo New] Manual update install failed (${result.code}): ${result.message}`)
+      this.warn(`手动安装失败（${result.code}）：${result.message}`)
       return result
     }
   }
@@ -277,6 +284,11 @@ export class UpdateCheckService implements vscode.Disposable {
     this.controllers.clear()
     this.candidates.clear()
     for (const item of this.disposables) item.dispose()
+    if (this.owns) this.deps.log.dispose?.()
+  }
+
+  showLog(): void {
+    this.deps.log.show?.()
   }
 
   private async probe(cfg: Config): Promise<Probe> {
@@ -286,9 +298,11 @@ export class UpdateCheckService implements vscode.Disposable {
       throw new UpdateError("target", "This ChipMate installation does not have a supported internal update target.")
     }
     const url = this.manifestUrl()
+    this.info(`检查环境：当前版本 ${id.version}，目标平台 ${target}，清单地址 ${safeUrl(url)}。`)
     const manifest = await this.fetchManifest(cfg, url)
     const item = manifest.latestByTarget[target]
     if (!item) {
+      this.info(`清单检查完成：目标平台 ${target} 没有候选版本。`)
       return { status: "latest", currentVersion: id.version, checkedAt: this.deps.now(), target }
     }
     if (item.publisher !== id.publisher || item.name !== id.name) {
@@ -304,8 +318,10 @@ export class UpdateCheckService implements vscode.Disposable {
       throw new UpdateError("download-size", `VSIX download is larger than ${cfg.maxDownloadBytes} bytes.`)
     }
     if (compareVersions(item.version, id.version) <= 0) {
+      this.info(`清单检查完成：候选版本 ${item.version} 不高于当前版本 ${id.version}。`)
       return { status: "latest", currentVersion: id.version, checkedAt: this.deps.now(), target }
     }
+    this.info(`发现候选版本：${item.version}，目标平台 ${item.target}，大小 ${item.sizeBytes} 字节。`)
     return { status: "available", currentVersion: id.version, target, item, url: resolvePackageUrl(url, item.url) }
   }
 
@@ -318,6 +334,7 @@ export class UpdateCheckService implements vscode.Disposable {
       if (choice !== INSTALL) return
     }
     await this.perform(cfg, result.item, result.url, mode === "manual" || !cfg.autoInstall)
+    this.info(`版本 ${result.item.version} 已安装，等待用户重载窗口后激活。`)
     const reload = await vscode.window.showInformationMessage(
       "ChipMate update installed. Reload Window to finish.",
       RELOAD,
@@ -329,17 +346,23 @@ export class UpdateCheckService implements vscode.Disposable {
     const key = `${item.target}/${item.version}/${item.sha256.toLowerCase()}`
     const current = this.transactions.get(key)
     if (current?.state === "running") {
+      this.info(`更新事务已在运行：复用版本 ${item.version} 的安装结果。`)
       await current.promise
       return
     }
-    if (current?.state === "installed") return
+    if (current?.state === "installed") {
+      this.info(`更新事务已完成：版本 ${item.version} 已等待重载。`)
+      return
+    }
     if (current?.state === "manual") {
       if (!explicit) throw new UpdateError("install", current.warning, current.warning, current.file)
+      this.info(`重试安装已校验的缓存 VSIX：${path.basename(current.file)}。`)
     }
 
-    const task = current?.state === "manual"
-      ? this.install(cfg, current.file)
-      : this.download(cfg, item, url).then((file) => this.install(cfg, file))
+    const task =
+      current?.state === "manual"
+        ? this.verify(current.file, item).then(() => this.install(cfg, current.file))
+        : this.download(cfg, item, url).then((file) => this.install(cfg, file))
     this.transactions.set(key, { state: "running", promise: task })
     try {
       await task
@@ -377,7 +400,9 @@ export class UpdateCheckService implements vscode.Disposable {
       const raw = await res.json().catch((err) => {
         throw new UpdateError("manifest", `Failed to parse update manifest: ${message(err)}`)
       })
-      return parseManifest(raw)
+      const manifest = parseManifest(raw)
+      this.info(`清单请求成功：${safeUrl(url)}。`)
+      return manifest
     } finally {
       clearTimeout(timer)
       this.controllers.delete(ctrl)
@@ -389,9 +414,13 @@ export class UpdateCheckService implements vscode.Disposable {
     const dir = path.dirname(file)
     const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
     await fs.mkdir(dir, { recursive: true })
-    if (await this.valid(file, item)) return file
+    if (await this.valid(file, item)) {
+      this.info(`命中已校验的 VSIX 缓存：${path.basename(file)}。`)
+      return file
+    }
     await fs.rm(file, { force: true })
 
+    this.info(`开始下载 VSIX：版本 ${item.version}，地址 ${safeUrl(url)}。`)
     const ctrl = this.controller()
     const header = setTimeout(() => ctrl.abort(), cfg.timeoutMs)
     const total = setTimeout(() => ctrl.abort(), cfg.downloadTimeoutMs)
@@ -408,9 +437,11 @@ export class UpdateCheckService implements vscode.Disposable {
         Math.max(cfg.timeoutMs, DEFAULT_IDLE),
         ctrl,
       )
+      this.info(`VSIX 下载完成：实际 ${result.size} 字节。`)
       if (result.digest.toLowerCase() !== item.sha256.toLowerCase()) {
         throw new UpdateError("sha256", "VSIX sha256 verification failed.")
       }
+      this.info(`SHA-256 校验通过：${result.digest.toLowerCase()}。`)
       await this.verify(tmp, item)
       await fs.rm(file, { force: true })
       await fs.rename(tmp, file)
@@ -468,6 +499,9 @@ export class UpdateCheckService implements vscode.Disposable {
     if (manifest.chipmatePackageTarget !== item.target) {
       throw new UpdateError("target", "VSIX package target does not match the update manifest.")
     }
+    this.info(
+      `VSIX 身份校验通过：${manifest.publisher}.${manifest.name} ${manifest.version}，目标 ${manifest.chipmatePackageTarget}。`,
+    )
   }
 
   private packagePath(item: Package): string {
@@ -489,14 +523,28 @@ export class UpdateCheckService implements vscode.Disposable {
   }
 
   private async install(cfg: Config, file: string): Promise<void> {
-    const cmd = `${quote(cfg.codeCliPath)} --install-extension ${quote(file)} --force`
+    const start = this.deps.now()
     try {
-      await this.deps.exec(cfg.codeCliPath, ["--install-extension", file, "--force"], { timeout: INSTALL_TIMEOUT })
+      const call = resolveInstall(cfg.codeCliPath, file)
+      this.info(`开始安装：安装器 ${call.label}，命令 ${call.display}。`)
+      const result = await this.deps.exec(call.cmd, call.args, {
+        ...call.opts,
+        timeout: INSTALL_TIMEOUT,
+        windowsHide: true,
+      })
+      const elapsed = this.deps.now() - start
+      const stdout = result.stdout.trim()
+      const stderr = result.stderr.trim()
+      this.info(`安装器成功退出：退出码 0，耗时 ${elapsed} 毫秒。`)
+      if (stderr) this.warn(`安装器 stderr：${clip(stderr)}。`)
+      if (stdout) this.info(`安装器 stdout：${clip(stdout)}。`)
     } catch (err) {
+      const detail = installDetail(err)
+      this.errorLog(`安装阶段失败：${detail}`)
       throw new UpdateError(
         "install",
-        `Failed to install VSIX: ${message(err)}`,
-        `ChipMate update install failed. You can run this command manually:\n${cmd}\n\n${message(err)}`,
+        `Failed to install VSIX: ${detail}`,
+        `ChipMate update install failed. The verified VSIX was kept for retry.\n${detail}`,
         file,
       )
     }
@@ -504,7 +552,7 @@ export class UpdateCheckService implements vscode.Disposable {
 
   private async fail(err: unknown, cfg: Config, mode: Mode): Promise<void> {
     const item = err instanceof UpdateError ? err : new UpdateError("manifest", message(err))
-    this.deps.log.warn(`[Kilo New] Update check failed (${item.kind}): ${item.message}`)
+    this.warn(`更新检查失败（${item.kind}）：${item.message}`)
     if (mode === "auto" && item.kind === "availability") return
     if (mode === "manual" || this.shouldWarn(item.kind, cfg)) {
       await this.warning(item.warning)
@@ -516,8 +564,20 @@ export class UpdateCheckService implements vscode.Disposable {
     try {
       await vscode.window.showWarningMessage(text)
     } catch (err) {
-      this.deps.log.warn(`[Kilo New] Update check warning notification failed: ${message(err)}`)
+      this.warn(`更新警告通知显示失败：${message(err)}`)
     }
+  }
+
+  private info(text: string): void {
+    this.deps.log.log(`[Kilo New] ${text}`)
+  }
+
+  private warn(text: string): void {
+    this.deps.log.warn(`[Kilo New] ${text}`)
+  }
+
+  private errorLog(text: string): void {
+    this.deps.log.error(`[Kilo New] ${text}`)
   }
 
   private error(err: unknown): Extract<ChipmateUpdateResult, { status: "error" }> {
@@ -606,6 +666,7 @@ export function registerUpdateCheck(context: vscode.ExtensionContext): UpdateChe
   })
   context.subscriptions.push(
     vscode.commands.registerCommand("chipmate.v2.checkForUpdates", () => service.checkManual()),
+    vscode.commands.registerCommand("chipmate.v2.showUpdateLog", () => service.showLog()),
   )
   return service
 }
@@ -660,6 +721,31 @@ function updateManifestUrl(): string {
   if (!result.endpoints)
     throw new UpdateError("server", result.state.error ?? result.state.warning ?? "ChipMate Server is unavailable.")
   return result.endpoints.updates
+}
+
+function updateLog(): Log {
+  const channel = vscode.window.createOutputChannel("ChipMate 更新", { log: true })
+  const emit = (level: "info" | "warn" | "error", value: unknown) => {
+    const raw = sanitize(String(value).replace(/^\[Kilo New\]\s*/, ""))
+    for (const line of raw.split(/\r?\n/)) {
+      channel[level](`[Kilo New] [${new Date().toISOString()}] ${line}`)
+    }
+  }
+  return {
+    log: (value) => emit("info", value),
+    warn: (value) => emit("warn", value),
+    error: (value) => emit("error", value),
+    show: () => channel.show(true),
+    dispose: () => channel.dispose(),
+  }
+}
+
+function safeUrl(url: URL): string {
+  return `${url.origin}${url.pathname}`
+}
+
+function clip(value: string): string {
+  return value.length > 4_096 ? `${value.slice(0, 4_096)}…` : value
 }
 
 function transient(status: number): boolean {
@@ -844,8 +930,4 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function message(value: unknown): string {
   return value instanceof Error ? value.message : String(value)
-}
-
-function quote(value: string): string {
-  return process.platform === "win32" ? `"${value.replace(/"/g, '\\"')}"` : `'${value.replace(/'/g, "'\\''")}'`
 }

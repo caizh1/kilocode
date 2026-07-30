@@ -15,7 +15,7 @@ const { generatePackageManifest } = require("../../../server.js") as {
   ) => Promise<{
     schemaVersion: number
     packages: Array<{ filename: string; target: string; version: string; sha256: string }>
-    latestByTarget: Record<string, { filename: string; version: string }>
+    latestByTarget: Record<string, { filename: string; version: string; releaseNotes?: string; publishedAt?: string }>
   }>
 }
 
@@ -29,7 +29,7 @@ test("package manifest exposes only validated internal targets and selects the l
     await vsix(root, "chipmate-0.0.10-win32-x64-baseline.vsix", {
       version: "0.0.10",
       chipmatePackageTarget: "win32-x64-baseline",
-    })
+    }, "# ChipMate 0.0.10\n\n- 展示直接投放包的更新说明")
     await vsix(root, "chipmate-0.0.11-linux-x64-baseline.vsix", {
       version: "0.0.11",
       chipmatePackageTarget: "linux-x64-baseline",
@@ -63,6 +63,15 @@ test("package manifest exposes only validated internal targets and selects the l
     assert.equal(manifest.latestByTarget["win32-x64-baseline"]?.version, "0.0.10")
     assert.equal(manifest.latestByTarget["linux-x64-baseline"]?.version, "0.0.11")
     assert.match(manifest.latestByTarget["win32-x64-baseline"]?.filename ?? "", /0\.0\.10/)
+    assert.equal(
+      manifest.latestByTarget["win32-x64-baseline"]?.releaseNotes,
+      "# ChipMate 0.0.10\n\n- 展示直接投放包的更新说明",
+    )
+    assert.match(manifest.latestByTarget["win32-x64-baseline"]?.publishedAt ?? "", /^20\d\d-/)
+    const wire = JSON.parse(JSON.stringify(manifest)) as {
+      packages: Array<{ releaseNotes?: string }>
+    }
+    assert.equal(wire.packages[1]?.releaseNotes, undefined)
     assert.match(manifest.packages[0]?.sha256 ?? "", /^[a-f0-9]{64}$/)
     const linux = await readFile(join(root, "chipmate-0.0.11-linux-x64-baseline.vsix"))
     assert.equal(manifest.packages[0]?.sha256, createHash("sha256").update(linux).digest("hex"))
@@ -131,11 +140,12 @@ test("package manifest logs an invalid unchanged VSIX only once", async () => {
   }
 })
 
-async function vsix(root: string, name: string, input: Record<string, string>) {
+async function vsix(root: string, name: string, input: Record<string, string>, releaseNotes?: string) {
   const zip = new JSZip()
   zip.file(
     "extension/package.json",
     JSON.stringify({ publisher: "chipmate", name: "chipmate", version: "0.0.1", ...input }),
   )
+  if (releaseNotes) zip.file("extension/RELEASE_NOTES.md", releaseNotes)
   await writeFile(join(root, name), await zip.generateAsync({ type: "nodebuffer" }))
 }

@@ -8,12 +8,13 @@
  */
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
-import type { AssistantMessage } from "@kilocode/sdk/v2"
+import type { AssistantMessage, Part as SDKPart } from "@kilocode/sdk/v2"
 import { createSignal, onCleanup, onMount, type Component } from "solid-js"
 import { MemoryContract } from "@kilocode/kilo-memory/effect/httpapi"
 import { MemorySchema } from "@kilocode/kilo-memory/schema"
 import { StoryProviders, defaultMockData, mockSessionValue } from "./StoryProviders"
 import { ChatView } from "../components/chat/ChatView"
+import { AssistantMessage as AssistantMessageView } from "../components/chat/AssistantMessage"
 import { ErrorDisplay } from "../components/chat/ErrorDisplay"
 import { TaskHeader } from "../components/chat/TaskHeader"
 import { TaskUsage } from "../components/chat/TaskUsage"
@@ -1386,7 +1387,7 @@ const headerParts: Record<string, Part[]> = {
       tool: "read",
       state: {
         status: "completed",
-        input: { filePath: "packages/opencode/src/cli/index.ts" },
+        input: { filePath: "README.md" },
         output: "export async function main() { /* existing CLI bootstrap */ }",
         title: "Read CLI entrypoint",
       },
@@ -1514,6 +1515,19 @@ const headerParts: Record<string, Part[]> = {
         title: "Run CLI tests",
       },
     },
+    {
+      id: "part-header-websearch-001",
+      sessionID: SESSION_ID,
+      messageID: headerAssistantID,
+      type: "tool",
+      tool: "websearch",
+      state: {
+        status: "completed",
+        input: { query: "Kilo Code CLI documentation" },
+        output: "https://kilocode.ai/docs",
+        title: "Search CLI documentation",
+      },
+    },
   ],
 }
 
@@ -1549,6 +1563,66 @@ const headerData = {
   ...defaultMockData,
   message: { [SESSION_ID]: headerMessages },
   part: headerParts,
+}
+
+const toolCallParts = [
+  headerParts[headerAssistantID]![1]!,
+  headerParts[headerAssistantID]![6]!,
+  headerParts[headerAssistantID]![5]!,
+  headerParts[headerAssistantID]![10]!,
+  headerParts[headerAssistantID]![11]!,
+]
+const readToolParts = [headerParts[headerAssistantID]![1]!]
+
+function QAToolCallStory(props: { parts?: Part[] }) {
+  return (
+    <StoryProviders data={headerData} sessionID={SESSION_ID} status="busy" noPadding locale="zh">
+      <div class="chat-view" data-ui="qa-shell" style={{ width: "100%", height: "720px" }}>
+        <div data-ui="qa-conversation" style={{ height: "100%" }}>
+          <div class="message-list" style={{ height: "100%" }}>
+            <div class="vscode-session-turn" data-row="assistant">
+              <div class="vscode-session-turn-assistant">
+                <AssistantMessageView
+                  message={headerMessages[1] as unknown as AssistantMessage}
+                  parts={(props.parts ?? toolCallParts) as unknown as SDKPart[]}
+                  forceOpenPartID="part-header-edit-001"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </StoryProviders>
+  )
+}
+
+export const QAToolCallDesignMatch: Story = {
+  name: "QA 工具调用框 — 设计对照",
+  render: () => <QAToolCallStory parts={readToolParts} />,
+}
+
+export const QAToolCallsDark: Story = {
+  name: "QA 工具调用框 — 深色",
+  render: () => <QAToolCallStory />,
+}
+
+export const QAToolCallsLight: Story = {
+  name: "QA 工具调用框 — 浅色",
+  render: () => <QAToolCallStory />,
+}
+
+export const QAToolCallsContrast: Story = {
+  name: "QA 工具调用框 — 高对比",
+  render: () => <QAToolCallStory />,
+}
+
+export const QAToolCallsNarrow200: Story = {
+  name: "QA 工具调用框 — 200px 窄宽",
+  render: () => (
+    <div style={{ width: "200px" }}>
+      <QAToolCallStory />
+    </div>
+  ),
 }
 
 function IntegratedTaskHudStory() {

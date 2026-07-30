@@ -16,6 +16,7 @@ import { InstanceRef } from "@/effect/instance-ref"
 import { Format } from "@/format"
 import { LSP } from "@/lsp/lsp"
 import * as ToolNetwork from "@/kilocode/sandbox/network"
+import { EmbeddedReviewThinRuntime } from "@/kilocode/embedded-review/thin-runtime"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
 import { ProjectV2 } from "@opencode-ai/core/project"
@@ -145,7 +146,9 @@ const registry = Layer.effect(
   Effect.gen(function* () {
     const write = yield* WriteTool.pipe(Effect.flatMap(Tool.init))
     const shell = yield* ShellTool.pipe(Effect.flatMap(Tool.init))
-    const list = [ToolNetwork.builtin(write), ToolNetwork.builtin(shell)]
+    const base = ToolNetwork.builtin(write)
+    const safe = ["read", "grep", "glob", "embedded_review_submit"].map((id) => ({ ...base, id }))
+    const list = [base, ToolNetwork.builtin(shell), ...safe]
     return ToolRegistry.Service.of({
       ids: () => Effect.succeed(list.map((item) => item.id)),
       all: () => Effect.succeed(list),
@@ -227,6 +230,77 @@ function fixture() {
     return { root, main, local, a, b, approved, ctx: context(a, main, [a, b]) }
   })
 }
+
+it.live("活动中的薄嵌入式审查只暴露 Read、Grep、Glob 和最终提交工具", () =>
+  Effect.gen(function* () {
+    const dirs = yield* fixture()
+    EmbeddedReviewThinRuntime.remember(sessionID, {
+      schemaVersion: 1,
+      changes: {
+        schemaVersion: 1,
+        scope: { kind: "uncommitted" },
+        root: dirs.a,
+        files: [],
+        skipped: [],
+        generatedAt: new Date(0).toISOString(),
+        limits: {
+          maxFiles: 40,
+          maxHunks: 80,
+          maxFileBytes: 1024 * 1024,
+          maxEvidenceBytes: 5 * 1024 * 1024,
+        },
+      },
+      standard: {
+        mechanicalStatus: "NOT_EVALUATED",
+        findings: [],
+        evaluatedRuleIds: [],
+        unsupportedRuleIds: [],
+        semanticRuleIds: [],
+      },
+      warnings: [],
+    })
+    const tools = yield* resolve(dirs.ctx).pipe(
+      Effect.ensuring(Effect.sync(() => EmbeddedReviewThinRuntime.seal(sessionID, "{}"))),
+    )
+    expect(Object.keys(tools)).toEqual(["read", "grep", "glob", "embedded_review_submit"])
+  }),
+)
+
+it.live("薄嵌入式审查最终提交后不再暴露工具", () =>
+  Effect.gen(function* () {
+    const dirs = yield* fixture()
+    EmbeddedReviewThinRuntime.remember(sessionID, {
+      schemaVersion: 1,
+      changes: {
+        schemaVersion: 1,
+        scope: { kind: "uncommitted" },
+        root: dirs.a,
+        files: [],
+        skipped: [],
+        generatedAt: new Date(0).toISOString(),
+        limits: {
+          maxFiles: 40,
+          maxHunks: 80,
+          maxFileBytes: 1024 * 1024,
+          maxEvidenceBytes: 5 * 1024 * 1024,
+        },
+      },
+      standard: {
+        mechanicalStatus: "NOT_EVALUATED",
+        findings: [],
+        evaluatedRuleIds: [],
+        unsupportedRuleIds: [],
+        semanticRuleIds: [],
+      },
+      warnings: [],
+    })
+    EmbeddedReviewThinRuntime.submit(sessionID, { findings: [] })
+    const tools = yield* resolve(dirs.ctx).pipe(
+      Effect.ensuring(Effect.sync(() => EmbeddedReviewThinRuntime.seal(sessionID, "{}"))),
+    )
+    expect(Object.keys(tools)).toEqual([])
+  }),
+)
 
 mac("confines model-originated file mutations to the active worktree", () =>
   Effect.gen(function* () {

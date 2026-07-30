@@ -17,6 +17,12 @@ export type RagCheckpointMeta = {
   embedderProvider: string
   embedderModel: string
   embeddingDimension: number
+  dimensionMode?: "auto" | "fixed"
+  requestedDimension?: number
+  endpointDigest?: string
+  fingerprintDigest?: string
+  qualityVersion?: string
+  instructionVersion?: string
   vectorStoreProvider: string
   collectionName: string
   ignoreFingerprint: string

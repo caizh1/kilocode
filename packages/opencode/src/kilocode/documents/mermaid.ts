@@ -157,6 +157,7 @@ export type SourceBackedMermaidBatchItemResult = {
   rendered: boolean
   semanticStatus: MermaidSemanticStatus
   sourceHash?: string
+  semanticEvidenceHash?: string
   pngPath?: string
   diagnosticsPath?: string
   semanticDiagnosticsPath?: string
@@ -170,6 +171,7 @@ export type SourceBackedMermaidBatchItemResult = {
 }
 
 export type RenderedSourceBackedMermaidBatch = {
+  generatedAt: number
   manifestPath: string
   basePath?: string
   resultPath: string
@@ -180,6 +182,7 @@ export type RenderedSourceBackedMermaidBatch = {
   invalidCount: number
   splitRequiredCount: number
   complete: boolean
+  resolvedSplitDiagramIds: string[]
   pendingSplitDiagramIds: string[]
   pendingSplitDetails: Array<{
     diagramId: string
@@ -403,7 +406,13 @@ export async function validateMermaidDiagramRequest(
       sourceHash,
       claimCount: 0,
       validatedClaimCount: 0,
-      issues: [{ code: "semantic-evidence-missing", severity: "error", message: "semanticEvidencePath is required for source-backed validation." }],
+      issues: [
+        {
+          code: "semantic-evidence-missing",
+          severity: "error",
+          message: "semanticEvidencePath is required for source-backed validation.",
+        },
+      ],
     }
   }
   const semantic = await validateSourceBackedMermaid({
@@ -412,9 +421,10 @@ export async function validateMermaidDiagramRequest(
     query: input.semanticQuery,
     allowSourceHashPlaceholder: input.allowSourceHashPlaceholder,
   })
-  const pending = input.semanticSessionId
-    ? SemanticGuard.advance(input.semanticSessionId, semantic.semanticFingerprint)
-    : undefined
+  const pending =
+    input.semanticSessionId && semantic.semanticStatus !== "invalid"
+      ? SemanticGuard.advance(input.semanticSessionId, semantic.semanticFingerprint)
+      : undefined
   if (pending) {
     return {
       ...syntax,
@@ -499,10 +509,25 @@ export async function renderMermaidDiagram(input: RenderMermaidDiagramInput): Pr
   if (!validation.valid) {
     const diagnostics = [
       ...validation.diagnostics,
-      ...validation.issues.map((item) => ({ code: "mermaid-semantic-invalid" as const, severity: item.severity, message: `${item.code}: ${item.message}` })),
+      ...validation.issues.map((item) => ({
+        code: "mermaid-semantic-invalid" as const,
+        severity: item.severity,
+        message: `${item.code}: ${item.message}`,
+      })),
     ]
     const saved = await saveMermaidArtifact({ ...input, diagnostics })
-    return { ...saved, rendered: false, issues: [], semanticStatus: validation.semanticStatus, sourceHash: validation.sourceHash, claimCount: validation.claimCount, validatedClaimCount: validation.validatedClaimCount, semanticIssues: validation.issues, semanticDiagnosticsPath: validation.diagnosticsPath, semanticFingerprint: validation.semanticFingerprint }
+    return {
+      ...saved,
+      rendered: false,
+      issues: [],
+      semanticStatus: validation.semanticStatus,
+      sourceHash: validation.sourceHash,
+      claimCount: validation.claimCount,
+      validatedClaimCount: validation.validatedClaimCount,
+      semanticIssues: validation.issues,
+      semanticDiagnosticsPath: validation.diagnosticsPath,
+      semanticFingerprint: validation.semanticFingerprint,
+    }
   }
   const regression = input.semanticSessionId
     ? SemanticGuard.coverage(input.semanticSessionId, validation.semanticFingerprint)
@@ -510,7 +535,11 @@ export async function renderMermaidDiagram(input: RenderMermaidDiagramInput): Pr
   if (regression) {
     const diagnostics = [
       ...validation.diagnostics,
-      { code: "mermaid-semantic-invalid" as const, severity: regression.severity, message: `${regression.code}: ${regression.message}` },
+      {
+        code: "mermaid-semantic-invalid" as const,
+        severity: regression.severity,
+        message: `${regression.code}: ${regression.message}`,
+      },
     ]
     const saved = await saveMermaidArtifact({ ...input, diagnostics })
     return {
@@ -652,14 +681,37 @@ export async function renderSourceBackedMermaidBatch(
       resolveBatchPath(base, item.semanticEvidencePath, "batch semanticEvidencePath"),
     ]),
   ])
-  if (reserved.has(resultPath)) throw new Error("batch resultPath must not overwrite the manifest, Mermaid source, or semantic evidence")
+  if (reserved.has(resultPath))
+    throw new Error("batch resultPath must not overwrite the manifest, Mermaid source, or semantic evidence")
 
+  const before = new Set(SemanticGuard.pending(input.semanticSessionId))
+  if (before.size) {
+    const repair = SemanticGuard.pendingDetails(input.semanticSessionId)[0]
+    const expected = new Set(repair?.suggestedChildren.map((child) => child.suggestedDiagramId) ?? [])
+    const actual = new Set(manifest.items.map((item) => item.diagramId))
+    const missing = [...expected].filter((id) => !actual.has(id))
+    const extra = [...actual].filter((id) => !expected.has(id))
+    if (missing.length || extra.length) {
+      throw new Error(
+        [
+          `Split-required parent ${repair?.diagramId ?? "(unknown)"} is pending. The next batch must be repair-only and contain exactly these suggested Diagram IDs: ${[...expected].join(", ")}.`,
+          ...(missing.length ? [`Missing repair IDs: ${missing.join(", ")}.`] : []),
+          ...(extra.length ? [`Unrelated or stale IDs: ${extra.join(", ")}.`] : []),
+          "This preflight rejection does not consume semantic validation or render attempts.",
+        ].join(" "),
+      )
+    }
+  }
   const results: SourceBackedMermaidBatchItemResult[] = []
   const pending: MermaidSemanticFingerprint[] = []
   for (const [index, item] of manifest.items.entries()) {
     const result = await (async (): Promise<SourceBackedMermaidBatchItemResult> => {
       const sourceFile = await secureBatchFile(base, item.sourcePath, `Mermaid source for ${item.diagramId}`)
-      const evidenceFile = await secureBatchFile(base, item.semanticEvidencePath, `semantic evidence for ${item.diagramId}`)
+      const evidenceFile = await secureBatchFile(
+        base,
+        item.semanticEvidencePath,
+        `semantic evidence for ${item.diagramId}`,
+      )
       const source = await limitedText(sourceFile, 256 * 1024, `Mermaid source for ${item.diagramId}`)
       const parsedEvidence = JSON.parse(
         await limitedText(evidenceFile, 2 * 1024 * 1024, `semantic evidence for ${item.diagramId}`),
@@ -691,6 +743,9 @@ export async function renderSourceBackedMermaidBatch(
       if (normalized) {
         await fs.writeFile(evidenceFile, `${JSON.stringify(evidence, null, 2)}\n`, "utf8")
       }
+      const evidenceHash = createHash("sha256")
+        .update(await fs.readFile(evidenceFile))
+        .digest("hex")
       const validation = SemanticGuard.validate(input.semanticSessionId, portableWorkspacePath(evidenceFile))
       if (validation) {
         return {
@@ -729,6 +784,7 @@ export async function renderSourceBackedMermaidBatch(
           rendered.sourceHash,
           rendered.pngPath!,
           rendered.semanticFingerprint,
+          source,
         )
       }
       if (rendered.rendered && semantic && !ready && rendered.semanticFingerprint) {
@@ -742,6 +798,7 @@ export async function renderSourceBackedMermaidBatch(
         rendered: rendered.rendered,
         semanticStatus: rendered.semanticStatus,
         sourceHash: rendered.sourceHash,
+        semanticEvidenceHash: evidenceHash,
         pngPath: rendered.pngPath,
         diagnosticsPath: rendered.diagnosticsPath,
         semanticDiagnosticsPath: rendered.semanticDiagnosticsPath,
@@ -782,8 +839,11 @@ export async function renderSourceBackedMermaidBatch(
   const invalidCount = results.filter((item) => item.semanticStatus === "invalid").length
   const splitRequiredCount = results.filter((item) => item.wordFitStatus === "split-required").length
   const pendingSplitDiagramIds = SemanticGuard.pending(input.semanticSessionId)
+  const pendingSplitSet = new Set(pendingSplitDiagramIds)
+  const resolvedSplitDiagramIds = [...before].filter((id) => !pendingSplitSet.has(id))
   const pendingSplitDetails = SemanticGuard.pendingDetails(input.semanticSessionId)
   const value: RenderedSourceBackedMermaidBatch = {
+    generatedAt: Date.now(),
     manifestPath: portableWorkspacePath(file),
     basePath: manifest.basePath ? portableWorkspacePath(base) : undefined,
     resultPath: portableWorkspacePath(resultPath),
@@ -794,11 +854,12 @@ export async function renderSourceBackedMermaidBatch(
     invalidCount,
     splitRequiredCount,
     complete: readyCount === manifest.items.length && pendingSplitDiagramIds.length === 0,
+    resolvedSplitDiagramIds,
     pendingSplitDiagramIds,
     pendingSplitDetails,
     items: results,
   }
-  await fs.mkdir(path.dirname(resultPath), { recursive: true })
+  await archiveBatchResult(resultPath)
   await fs.writeFile(resultPath, `${JSON.stringify(value, null, 2)}\n`, "utf8")
   return value
 }
@@ -823,10 +884,14 @@ export function mermaidWordFit(input: {
   const aspect = Math.max(input.width / input.height, input.height / input.width)
   const reasons = [
     ...(scale < WORD_MIN_SCALE
-      ? [`Word-fit scale ${scale.toFixed(3)} is below ${WORD_MIN_SCALE}; split into a readable overview and focused figures.`]
+      ? [
+          `Word-fit scale ${scale.toFixed(3)} is below ${WORD_MIN_SCALE}; split into a readable overview and focused figures.`,
+        ]
       : []),
     ...(density > WORD_MAX_DENSITY
-      ? [`Semantic density ${density.toFixed(1)} claims per 100k CSS px is above ${WORD_MAX_DENSITY}; split the layout.`]
+      ? [
+          `Semantic density ${density.toFixed(1)} claims per 100k CSS px is above ${WORD_MAX_DENSITY}; split the layout.`,
+        ]
       : []),
     ...(aspect > WORD_MAX_ASPECT
       ? [`Aspect ratio ${aspect.toFixed(2)} is above ${WORD_MAX_ASPECT}; regroup or split disconnected flow families.`]
@@ -836,7 +901,7 @@ export function mermaidWordFit(input: {
     wordFitScale: scale,
     wordFitDensity: density,
     wordFitAspectRatio: aspect,
-    wordFitStatus: reasons.length ? "split-required" as const : "readable" as const,
+    wordFitStatus: reasons.length ? ("split-required" as const) : ("readable" as const),
     wordFitReasons: reasons,
     documentReady: reasons.length === 0,
   }
@@ -963,7 +1028,8 @@ async function renderWithMmdc(
   scale: number,
   timeoutMs: number,
 ): Promise<LocalMermaidRender> {
-  const command = process.env["KILO_MERMAID_MMDC"]?.trim() || "mmdc"
+  const requested = process.env["KILO_MERMAID_MMDC"]?.trim() || "mmdc"
+  const command = path.isAbsolute(requested) ? requested : (Bun.which(requested) ?? requested)
   const tmp = path.join(
     Instance.directory,
     ProductProfile.label(),
@@ -1388,6 +1454,18 @@ async function secureBatchOutput(base: string, file: string) {
   )
   if (stat?.isSymbolicLink()) throw new Error("batch resultPath must not be a symbolic link")
   return output
+}
+
+async function archiveBatchResult(file: string) {
+  const raw = await fs.readFile(file, "utf8").catch(() => "")
+  if (!raw) return
+  const dir = path.join(path.dirname(file), ".history")
+  const name = path.basename(file).replace(/(?:\.results)?\.json$/, "")
+  const hash = createHash("sha256").update(raw).digest("hex").slice(0, 12)
+  const target = path.join(dir, `${name}.${hash}.results.json`)
+  if (await exists(target)) return
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(target, raw, "utf8")
 }
 
 async function normalizeBatchEvidence(input: Record<string, unknown>, base: string, source: string) {

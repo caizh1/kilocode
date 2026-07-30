@@ -12,6 +12,7 @@ export type ChipmateServerEndpoints = {
   plantuml: string
   health: string
   updates: string
+  reviewRules: string
 }
 
 export type ChipmateServerSource = "saved" | "migrated" | "legacy" | "default" | "conflict" | "invalid"
@@ -70,6 +71,7 @@ export function deriveChipmateServerEndpoints(value: string): ChipmateServerEndp
     plantuml: `${base}/render/plantuml`,
     health: `${base}/health`,
     updates: `${base}/packages/manifest.json`,
+    reviewRules: `${base}/api/v1/review-rule-packs/latest`,
   }
 }
 

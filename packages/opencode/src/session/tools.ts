@@ -27,6 +27,7 @@ import { SkillMarketIntent } from "@/kilocode/skill-market/intent" // kilocode_c
 // kilocode_change start
 import { SwePruner } from "@/kilocode/swe-pruner"
 import { Config } from "@/config/config"
+import { EmbeddedReviewThinRuntime } from "@/kilocode/embedded-review/thin-runtime" // kilocode_change
 // kilocode_change end
 
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
@@ -96,7 +97,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     family: input.model.family,
     agent: input.agent,
   })
-  const visible = SkillMarketIntent.filter(registered, input.messages)
+  // kilocode_change start - keep thin Embedded Review read-only while allowing model-led evidence retrieval
+  const embedded = EmbeddedReviewThinRuntime.active(input.session.id)
+  const review = new Set(["read", "grep", "glob", "embedded_review_submit"])
+  const visible = SkillMarketIntent.filter(registered, input.messages).filter((item) =>
+    embedded
+      ? !EmbeddedReviewThinRuntime.submitted(input.session.id) && review.has(item.id)
+      : !["embedded_review_packet", "embedded_review_submit"].includes(item.id),
+  )
+  // kilocode_change end
   for (const item of visible) {
     // kilocode_change end
     // kilocode_change start - SWE-Pruner (experimental): advertise the focus parameter on prunable tools
@@ -149,8 +158,11 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
-  const mcpTools = (yield* SandboxPolicy.networkRestricted(input.session.id)) ? {} : yield* mcp.tools() // kilocode_change
-  for (const [key, item] of Object.entries(mcpTools)) { // kilocode_change
+  // kilocode_change start - Embedded Review cannot expose external or mutating MCP tools
+  const mcpTools = embedded || (yield* SandboxPolicy.networkRestricted(input.session.id)) ? {} : yield* mcp.tools()
+  // kilocode_change end
+  for (const [key, item] of Object.entries(mcpTools)) {
+    // kilocode_change
     const execute = item.execute
     if (!execute) continue
 

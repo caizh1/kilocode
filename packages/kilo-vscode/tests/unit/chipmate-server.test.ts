@@ -98,9 +98,11 @@ describe("ChipMate Server configuration", () => {
     const word = process.env.KILO_WORD_RENDER_ENDPOINT
     const mermaid = process.env.KILO_MERMAID_RENDER_ENDPOINT
     const plantuml = process.env.KILO_PLANTUML_RENDER_ENDPOINT
+    const review = process.env.KILO_REVIEW_RULES_ENDPOINT
     delete process.env.KILO_WORD_RENDER_ENDPOINT
     delete process.env.KILO_MERMAID_RENDER_ENDPOINT
     delete process.env.KILO_PLANTUML_RENDER_ENDPOINT
+    delete process.env.KILO_REVIEW_RULES_ENDPOINT
     set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "https://runtime.test:7443")
     try {
       expect(marketplaceApiOptions()).toMatchObject({ baseUrl: "https://runtime.test:7443/marketplace" })
@@ -111,6 +113,7 @@ describe("ChipMate Server configuration", () => {
         KILO_WORD_RENDER_ENDPOINT: "https://runtime.test:7443/render/word",
         KILO_MERMAID_RENDER_ENDPOINT: "https://runtime.test:7443/render/mermaid",
         KILO_PLANTUML_RENDER_ENDPOINT: "https://runtime.test:7443/render/plantuml",
+        KILO_REVIEW_RULES_ENDPOINT: "https://runtime.test:7443/api/v1/review-rule-packs/latest",
       })
     } finally {
       if (word === undefined) delete process.env.KILO_WORD_RENDER_ENDPOINT
@@ -119,6 +122,8 @@ describe("ChipMate Server configuration", () => {
       else process.env.KILO_MERMAID_RENDER_ENDPOINT = mermaid
       if (plantuml === undefined) delete process.env.KILO_PLANTUML_RENDER_ENDPOINT
       else process.env.KILO_PLANTUML_RENDER_ENDPOINT = plantuml
+      if (review === undefined) delete process.env.KILO_REVIEW_RULES_ENDPOINT
+      else process.env.KILO_REVIEW_RULES_ENDPOINT = review
     }
   })
 
@@ -126,9 +131,11 @@ describe("ChipMate Server configuration", () => {
     const word = process.env.KILO_WORD_RENDER_ENDPOINT
     const mermaid = process.env.KILO_MERMAID_RENDER_ENDPOINT
     const plantuml = process.env.KILO_PLANTUML_RENDER_ENDPOINT
+    const review = process.env.KILO_REVIEW_RULES_ENDPOINT
     process.env.KILO_WORD_RENDER_ENDPOINT = "https://override.test:7443/word"
     process.env.KILO_MERMAID_RENDER_ENDPOINT = "https://override.test:7443/mermaid"
     process.env.KILO_PLANTUML_RENDER_ENDPOINT = "https://override.test:7443/plantuml"
+    process.env.KILO_REVIEW_RULES_ENDPOINT = "https://override.test:7443/rules"
     set(state, "chipmate.v2.chipmateServer", "baseUrl", "globalValue", "https://runtime.test:7443")
     try {
       expect(renderEnv()).toEqual({})
@@ -139,6 +146,8 @@ describe("ChipMate Server configuration", () => {
       else process.env.KILO_MERMAID_RENDER_ENDPOINT = mermaid
       if (plantuml === undefined) delete process.env.KILO_PLANTUML_RENDER_ENDPOINT
       else process.env.KILO_PLANTUML_RENDER_ENDPOINT = plantuml
+      if (review === undefined) delete process.env.KILO_REVIEW_RULES_ENDPOINT
+      else process.env.KILO_REVIEW_RULES_ENDPOINT = review
     }
   })
 
@@ -170,7 +179,13 @@ describe("ChipMate Server configuration", () => {
 
   it("ignores legacy per-service settings", () => {
     set(state, "kilo.marketplace", "baseUrl", "globalValue", "http://market.test:6001/marketplace")
-    set(state, "chipmate.v2.documents", "wordRender.remoteEndpoint", "globalValue", "http://render.test:6001/render/word")
+    set(
+      state,
+      "chipmate.v2.documents",
+      "wordRender.remoteEndpoint",
+      "globalValue",
+      "http://render.test:6001/render/word",
+    )
     set(
       state,
       "chipmate.v2.documents",

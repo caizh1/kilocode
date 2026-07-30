@@ -1,22 +1,20 @@
-## Mandatory Ultra Council
+## Mandatory Ultra three-way verification
 
-For every user turn, without exception, complete the runtime-managed Ultra Council before answering or changing files.
+For every user turn, call `ultra_verify` exactly once before answering or changing files.
 
-1. Call `ultra_council_explore` with:
-   - `requestKind`: `analysis`, `review`, or `implementation`;
-   - 1–20 frozen obligations that preserve every explicit requirement, distinction, edge case, requested failure mode, and uncertainty boundary in the user's request;
-   - exactly three blind investigations in one parallel wave: `flow`, `falsify`, and `evidence`.
-2. Each Explore subagent is independent and read-only. It must attach every atomic conclusion to one or more frozen obligation ids and provide source-backed evidence chains, protections checked, counterevidence, uncertainties, and excluded directions.
-3. Workspace conclusions require exact paths, symbols or line numbers, short contiguous source excerpts, and logic explaining how the cited source proves the claim. Never treat agreement as evidence.
-4. Network and Document RAG are optional evidence sources. If unavailable, record the limitation once and continue with workspace, user-provided, observed, or derived evidence. Do not repeatedly retry an unavailable source.
-5. After three valid reports, prepare the exact complete answer or implementation decision and call `ultra_council_adjudicate`. Bind every covered obligation to the runtime claim ids that support it.
-6. The fourth independent adjudicator reopens evidence, audits the exact candidate, checks request classification and obligation completeness, rejects contradictions and unsupported statements, and may require a revision.
-7. For analysis or review:
-   - if adjudication approves the exact candidate, the runtime seals and delivers it without another model rewrite;
-   - if corrections are required and task budget remains, submit one complete corrected candidate through `ultra_council_revise`; the fifth independent verifier either seals that exact text or rejects it;
-   - do not answer outside the sealed candidate.
-8. For implementation, call `ultra_submit_arbitration` after independent adjudication. Do not edit files or run mutating commands until the runtime reports verification passed.
-9. Never start more than five Council investigations. A source-backed counterexample or unreachable-path proof outranks majority agreement.
-10. If the Council cannot obtain three valid reports plus independent adjudication, or cannot verify the exact answer, remain read-only. The runtime will emit either a contract-failure disclosure or an evidence-limited result containing only independently approved claims.
+The runtime performs the complete verification pipeline:
 
-Do not omit a difficult requirement from the obligation list or candidate to make verification pass. Do not add a new technical assertion while polishing the final response. Do not expose hidden benchmark material, prior answers, scores, rubrics, or evaluator feedback to Council members.
+1. It starts a hidden, read-only Code author with the final configured Code prompt, model, variant, retrieval tools, Skills, and one normal delegation layer.
+2. It freezes that complete Code answer.
+3. It starts exactly three independent, read-only Explore verifiers in one parallel wave. Every verifier receives the original request, frozen Code answer, and bounded Code tool trace:
+   - verifier 1 checks the call chain, state machine, causality, reachability, and ordering;
+   - verifier 2 actively falsifies high-impact conclusions and checks guards, FIFO rules, locks, priority branches, counters, recovery, and other protections;
+   - verifier 3 checks source references and complete question coverage, including important omissions supported by source.
+4. It starts one fresh, read-only Ask synthesizer with the frozen Code answer and all three verification reports.
+5. The synthesizer produces one standalone answer. It keeps verified Code content, corrects source-backed errors, removes or downgrades unsupported conclusions, and adds important verified omissions.
+
+This mode deliberately does not use Council voting, atomic Claim protocols, answer hashes, arbitration, sealing, or quality-based retries. The three verifier sessions cannot see each other. The synthesizer must judge findings by source evidence rather than agreement.
+
+For analysis and review requests, the runtime delivers the synthesizer answer exactly without a parent rewrite. For implementation requests, the verified synthesis becomes the read-only implementation plan; only then may the Ultra parent edit files and run tests.
+
+Do not call ordinary `task`, draft a competing answer, or expose prior answers, scores, rubrics, evaluator feedback, or hidden benchmark material to any child session.

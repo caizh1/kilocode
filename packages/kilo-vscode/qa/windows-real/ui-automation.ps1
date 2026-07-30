@@ -42,10 +42,28 @@ public static class ChipMateQaInput
     public static extern bool SetForegroundWindow(IntPtr handle);
 
     [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr handle, int command);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool MoveWindow(IntPtr handle, int x, int y, int width, int height, bool repaint);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr handle, out RECT rect);
+
+    [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr handle, IntPtr process);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetKeyboardLayout(uint thread);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int left;
+        public int top;
+        public int right;
+        public int bottom;
+    }
 
     private static INPUT Key(ushort value, uint flags)
     {
@@ -73,6 +91,21 @@ public static class ChipMateQaInput
     {
         uint thread = GetWindowThreadProcessId(handle, IntPtr.Zero);
         return GetKeyboardLayout(thread).ToInt32() & 0xffff;
+    }
+
+    public static void Maximize(IntPtr handle)
+    {
+        ShowWindow(handle, 3);
+    }
+
+    public static void Resize(IntPtr handle, int width, int height)
+    {
+        RECT rect;
+        if (!GetWindowRect(handle, out rect))
+            throw new InvalidOperationException("GetWindowRect could not read the VS Code window.");
+        ShowWindow(handle, 9);
+        if (!MoveWindow(handle, rect.left, rect.top, width, height, true))
+            throw new InvalidOperationException("MoveWindow could not resize the VS Code window. Win32=" + Marshal.GetLastWin32Error());
     }
 
     public static void TypeText(string text)
@@ -170,6 +203,24 @@ function Set-ChipMateForeground {
     Start-Sleep -Milliseconds 250
   }
   throw "Unable to foreground VS Code window after 10 attempts."
+}
+
+function Set-ChipMateWindowMaximized {
+  param([Parameter(Mandatory = $true)] $Process)
+  [ChipMateQaInput]::Maximize($Process.MainWindowHandle)
+  Start-Sleep -Milliseconds 750
+  Set-ChipMateForeground -Process $Process
+}
+
+function Set-ChipMateWindowSize {
+  param(
+    [Parameter(Mandatory = $true)] $Process,
+    [Parameter(Mandatory = $true)] [int] $Width,
+    [Parameter(Mandatory = $true)] [int] $Height
+  )
+  [ChipMateQaInput]::Resize($Process.MainWindowHandle, $Width, $Height)
+  Start-Sleep -Milliseconds 750
+  Set-ChipMateForeground -Process $Process
 }
 
 function Save-ChipMateScreenshot {

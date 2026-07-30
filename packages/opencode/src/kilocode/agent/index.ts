@@ -192,10 +192,7 @@ function editRestrictions(rules: Permission.Ruleset) {
 }
 
 function restrictions(user: Permission.Ruleset) {
-  return [
-    ...user.filter((rule) => rule.action === "deny" && rule.permission !== "edit"),
-    ...editRestrictions(user),
-  ]
+  return [...user.filter((rule) => rule.action === "deny" && rule.permission !== "edit"), ...editRestrictions(user)]
 }
 
 function askEditGuard() {
@@ -349,6 +346,8 @@ export function processConfigItem(item: {
 }
 
 const locked = new Set(["compaction", "title", "summary"])
+export const ULTRA_BASELINE = "ultra-code-baseline"
+export const ULTRA_SYNTH = "ultra-synthesizer"
 
 function hardRules() {
   return Permission.fromConfig({
@@ -387,6 +386,50 @@ export function hardenSystemAgents(agents: Record<string, AgentInfo>) {
     harden(item)
   }
   agents["agent-console"] = agentConsole()
+  delete agents[ULTRA_BASELINE]
+  delete agents[ULTRA_SYNTH]
+  if (!ProductProfile.chipmate || !agents.ultra || !agents.code || !agents.ask) {
+    if (!agents.code) delete agents.ultra
+    return
+  }
+  agents[ULTRA_BASELINE] = {
+    ...agents.code,
+    name: ULTRA_BASELINE,
+    description: "Hidden read-only Code author used only by the native ChipMate Ultra evidence pipeline.",
+    permission: Permission.merge(
+      agents.code.permission,
+      Permission.fromConfig({
+        edit: "deny",
+        bash: "deny",
+        notebook_edit: "deny",
+        notebook_execute: "deny",
+        question: "deny",
+        interactive_terminal: "deny",
+        suggest: "deny",
+        plan_enter: "deny",
+        plan_exit: "deny",
+      }),
+    ),
+    options: {
+      ...agents.code.options,
+      id: ULTRA_BASELINE,
+    },
+    mode: "subagent",
+    native: true,
+    hidden: true,
+  }
+  agents[ULTRA_SYNTH] = {
+    ...agents.ask,
+    name: ULTRA_SYNTH,
+    description: "Hidden read-only Ask author used only to synthesize native ChipMate Ultra verification results.",
+    options: {
+      ...agents.ask.options,
+      id: ULTRA_SYNTH,
+    },
+    mode: "subagent",
+    native: true,
+    hidden: true,
+  }
 }
 
 // Returns experimental_telemetry config for generate calls.
@@ -473,7 +516,7 @@ export function patchAgents(
         ? "- Use semantic_search first for unfamiliar concepts when you do not know the exact identifier."
         : undefined,
       indexing?.documents?.enabled === true
-        ? "- Use document_search first for questions grounded in indexed workspace documents."
+        ? "- Use document_search first for questions grounded in indexed documents, including approved external documents. If the user explicitly asks to consult indexed or external documents, call it before answering; omit path to search every configured document root."
         : undefined,
       "- Use Grep for exact identifiers or text, Glob for filenames, and Read to verify evidence.",
       "- If an index is not ready, fall back to Grep, Glob, and Read for this request; do not repeatedly retry the retrieval tool.",

@@ -102,6 +102,55 @@ class RecordStore extends RetryStore {
 }
 
 describe("FileWatcher", () => {
+  test("bounds watcher startup so a missing ready event cannot hang indexing", async () => {
+    const old = process.env.KILO_INDEXING_WATCHER_READY_TIMEOUT_MS
+    const root = await mkdtemp(path.join(tmpdir(), "file-watcher-ready-timeout-"))
+    const cache = new CacheManager(path.join(root, ".cache"), root)
+    await cache.initialize()
+    const watcher = new FileWatcher(root, cache)
+    process.env.KILO_INDEXING_WATCHER_READY_TIMEOUT_MS = "0"
+
+    try {
+      await expect(watcher.initialize()).rejects.toThrow("File watcher did not become ready within 0ms.")
+    } finally {
+      watcher.dispose()
+      await rm(root, { recursive: true, force: true })
+      if (old === undefined) delete process.env.KILO_INDEXING_WATCHER_READY_TIMEOUT_MS
+      else process.env.KILO_INDEXING_WATCHER_READY_TIMEOUT_MS = old
+    }
+  })
+
+  test("keeps runtime watcher errors handled after the ready event", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "file-watcher-runtime-error-"))
+    const cache = new CacheManager(path.join(root, ".cache"), root)
+    await cache.initialize()
+    const watcher = new FileWatcher(root, cache)
+
+    try {
+      await watcher.initialize()
+      const errors: Error[] = []
+      watcher.onDidFinishBatchProcessing.on((summary) => {
+        if (summary.batchError) errors.push(summary.batchError)
+      })
+      const native = (
+        watcher as unknown as {
+          watcher?: {
+            emit: (event: string, err: Error) => boolean
+            listenerCount: (event: string) => number
+          }
+        }
+      ).watcher
+      expect(native?.listenerCount("error")).toBeGreaterThan(0)
+      expect(() => native?.emit("error", new Error("runtime watcher failure"))).not.toThrow()
+      expect(native?.listenerCount("error")).toBeGreaterThan(0)
+      expect(errors.map((err) => err.message)).toEqual(["runtime watcher failure"])
+      expect(watcher.takeReconciliationRequest()).toBe(true)
+    } finally {
+      watcher.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("waits for the workspace lock before processing a watcher batch", async () => {
     const oldRetry = process.env.KILO_INDEXING_LOCK_RETRY_MS
     process.env.KILO_INDEXING_LOCK_RETRY_MS = "10"
@@ -645,6 +694,54 @@ describe("FileWatcher", () => {
     expect(cache.getHash(file)).toBe("manual-rag-hash")
     expect((await graph.getFileGraph(file))?.functions[0]?.name).toBe("main")
     expect((await postings.search("main"))[0]?.filePath).toBe("main.c")
+  })
+
+  test("restores Code Graph evidence when a worktree file reverts to its baseline", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "file-watcher-worktree-revert-"))
+    const cacheDir = path.join(root, ".cache")
+    const file = path.join(root, "main.c")
+    const source = "int QA_BASELINE_RESTORED(void) { return 1; }\n"
+    const hash = createHash("sha256").update(source).digest("hex")
+    let embeddings = 0
+
+    await mkdir(cacheDir, { recursive: true })
+    await writeFile(file, source)
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    cache.seedHashes({ [file]: hash })
+    const graph = new CodeGraphJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const postings = new CodePostingsJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const tracked = {
+      ...createEmbedder(),
+      createEmbeddings: async (texts: string[]) => {
+        embeddings += texts.length
+        return { embeddings: texts.map(() => [0.1]) }
+      },
+    } satisfies IEmbedder
+    const watcher = new FileWatcher(root, cache, tracked, new RecordStore(), undefined, 1, 1, undefined, undefined, graph, postings)
+    const overlay = new WorktreeOverlay(root, path.join(root, "baseline"), new Map([["main.c", hash]]))
+    const data = watcher as unknown as {
+      processBatch(events: Map<string, { path: string; type: "create" | "change" | "delete" }>): Promise<void>
+    }
+    watcher.setOverlay(overlay)
+
+    await rm(file)
+    overlay.block(file)
+    await data.processBatch(new Map([[file, { path: file, type: "delete" }]]))
+    expect(await graph.getFileGraph(file)).toBeUndefined()
+
+    await writeFile(file, source)
+    overlay.block(file)
+    await data.processBatch(new Map([[file, { path: file, type: "create" }]]))
+
+    expect((await graph.getFileGraph(file))?.functions[0]?.name).toBe("QA_BASELINE_RESTORED")
+    expect((await postings.search("QA_BASELINE_RESTORED"))[0]?.filePath).toBe("main.c")
+    expect(overlay.shadows.has("main.c")).toBe(false)
+    expect(overlay.blocked.has("main.c")).toBe(false)
+    expect(cache.getHash(file)).toBe(hash)
+    expect(embeddings).toBe(0)
+    watcher.dispose()
+    await rm(root, { recursive: true, force: true })
   })
 
   test("processFile uses the configured extension allowlist", async () => {

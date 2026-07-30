@@ -6,7 +6,8 @@ param(
   [string] $KiloVsix,
   [string] $FixtureRoot,
   [string] $Output,
-  [ValidateSet("full", "core", "smoke", "agent-console", "package")] [string] $Lane = "smoke",
+  [string] $ExpectedVersion,
+  [ValidateSet("full", "core", "smoke", "settings", "agent-console", "package", "update")] [string] $Lane = "smoke",
   [Parameter(Mandatory = $true)] [ValidateSet("arm64-vm", "native-x64")] [string] $Gate,
   [ValidateSet("default", "disabled")] [string] $Gpu = "default",
   [switch] $NoGui,
@@ -15,8 +16,6 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-$ExpectedVersion = "1.0.9"
-
 $QaRoot = $PSScriptRoot
 . (Join-Path $QaRoot "ui-automation.ps1")
 $RepoRoot = [IO.Path]::GetFullPath((Join-Path $QaRoot "..\..\..\.."))
@@ -53,8 +52,8 @@ $script:ReloadPass = $false
 $script:HostPass = $false
 $script:CdpTarget = ""
 $script:CdpExcluded = New-Object Collections.Generic.List[string]
-$ExtDir = Join-Path $Runtime "extensions"
-$UserDir = Join-Path $Runtime "user"
+$ExtDir = Join-Path $Runtime $(if ($Lane -eq "update") { "extensions-中文 path" } else { "extensions" })
+$UserDir = Join-Path $Runtime $(if ($Lane -eq "update") { "user-中文 path" } else { "user" })
 New-Item -ItemType Directory -Force -Path $ExtDir, $UserDir | Out-Null
 
 function Write-Utf8NoBom {
@@ -203,7 +202,12 @@ function Initialize-MockProviderConfig {
   $storage = Join-Path $UserDir "User\globalStorage\chipmate.chipmate"
   $provider = [ordered]@{
     model = "qa-local/qa-chat-model"
+    plugin = @("@kilocode/kilo-indexing")
     enabled_providers = @("qa-local")
+    indexing = [ordered]@{
+      provider = "openai-compatible"
+      "openai-compatible" = [ordered]@{ baseUrl = "$script:MockOrigin/v1/embeddings" }
+    }
     provider = [ordered]@{
       "qa-local" = [ordered]@{
         name = "ChipMate QA"
@@ -261,6 +265,27 @@ int qa_entry(int value) { return qa_leaf(value); }
   Write-Utf8NoBom -Path $settings -Value ($settingsJson | ConvertTo-Json)
 }
 
+function Set-MockIndexingEndpoint {
+  $settings = Join-Path $Workspace ".vscode\settings.json"
+  $config = Get-Content -Raw -Encoding UTF8 -LiteralPath $settings | ConvertFrom-Json
+  $config | Add-Member -NotePropertyName "chipmate.v2.indexing.openaiCompatible.baseUrl" -NotePropertyValue "$script:MockOrigin/v1/embeddings" -Force
+  Write-Utf8NoBom -Path $settings -Value ($config | ConvertTo-Json)
+
+  $project = Join-Path $Workspace ".kilo\kilo.jsonc"
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $project) | Out-Null
+  $root = if (Test-Path -LiteralPath $project -PathType Leaf) {
+    Get-Content -Raw -Encoding UTF8 -LiteralPath $project | ConvertFrom-Json
+  } else {
+    [pscustomobject]@{}
+  }
+  $indexing = [ordered]@{
+    provider = "openai-compatible"
+    "openai-compatible" = [ordered]@{ baseUrl = "$script:MockOrigin/v1/embeddings" }
+  }
+  $root | Add-Member -NotePropertyName "indexing" -NotePropertyValue $indexing -Force
+  Write-Utf8NoBom -Path $project -Value ($root | ConvertTo-Json -Depth 12)
+}
+
 function Test-FrozenVsix {
   $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Vsix).Hash.ToLowerInvariant()
   $zip = Join-Path $Runtime "subject.zip"
@@ -289,6 +314,7 @@ function Test-FrozenVsix {
   if ($forbidden.Count) { throw "VSIX contains forbidden files: $($forbidden.FullName -join ', ')" }
   $manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $unpack "extension\package.json") | ConvertFrom-Json
   if ($manifest.publisher -ne "chipmate" -or $manifest.name -ne "chipmate") { throw "Unexpected extension identity in VSIX." }
+  if ([string]::IsNullOrWhiteSpace($ExpectedVersion)) { $script:ExpectedVersion = [string] $manifest.version }
   if ($manifest.version -ne $ExpectedVersion) { throw "Expected VSIX version $ExpectedVersion, got $($manifest.version)." }
   if ($manifest.chipmatePackageTarget -ne "win32-x64-baseline") { throw "Unexpected chipmatePackageTarget: $($manifest.chipmatePackageTarget)" }
   return @{ vsix = $Vsix; sha256 = $hash; version = $manifest.version; target = $manifest.chipmatePackageTarget }
@@ -398,6 +424,223 @@ function Start-MockProvider {
   throw "Mock Provider did not become healthy."
 }
 
+function Start-UpdateServer {
+  $runtime = Resolve-Node
+  $stdout = Join-Path $Evidence "update-server.log"
+  $stderr = Join-Path $Evidence "update-server-error.log"
+  $requests = Join-Path $Evidence "update-server-requests.json"
+  $args = @(
+    (Join-Path $QaRoot "update-server.mjs"),
+    "--port=$script:MockPort",
+    "--vsix=$Vsix",
+    "--version=$ExpectedVersion",
+    "--target=win32-x64-baseline",
+    "--log=$requests"
+  )
+  $previous = [Environment]::GetEnvironmentVariable("ELECTRON_RUN_AS_NODE", "Process")
+  try {
+    if ($runtime.electron) { $env:ELECTRON_RUN_AS_NODE = "1" }
+    $process = Start-Process `
+      -FilePath $runtime.path `
+      -ArgumentList ($args | ForEach-Object { Quote-ProcessArgument $_ }) `
+      -RedirectStandardOutput $stdout `
+      -RedirectStandardError $stderr `
+      -PassThru `
+      -WindowStyle Hidden
+  } finally {
+    if ($null -eq $previous) {
+      Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+    } else {
+      $env:ELECTRON_RUN_AS_NODE = $previous
+    }
+  }
+  $limit = (Get-Date).AddSeconds(20)
+  do {
+    try {
+      $health = Invoke-RestMethod -Uri "$script:MockOrigin/__qa/health" -TimeoutSec 1
+      if ($health.status -eq "ok") { return $process }
+    } catch {
+      Start-Sleep -Milliseconds 250
+    }
+  } while ((Get-Date) -lt $limit)
+  throw "离线更新服务未能启动。"
+}
+
+function Get-UpdateVsixMeta {
+  param([Parameter(Mandatory = $true)] [string] $Path)
+  $id = [Guid]::NewGuid().ToString("N")
+  $zip = Join-Path $Runtime "update-source-$id.zip"
+  $dir = Join-Path $Runtime "update-source-$id"
+  Copy-Item -LiteralPath $Path -Destination $zip -Force
+  try {
+    Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
+    $manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $dir "extension\package.json") | ConvertFrom-Json
+    return @{
+      version = [string] $manifest.version
+      publisher = [string] $manifest.publisher
+      name = [string] $manifest.name
+      target = [string] $manifest.chipmatePackageTarget
+      sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+    }
+  } finally {
+    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Initialize-UpdateProfile {
+  $settings = Join-Path $UserDir "User\settings.json"
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $settings) | Out-Null
+  Write-Utf8NoBom -Path $settings -Value (@{
+    "chipmate.v2.language" = "zh-cn"
+    "chipmate.v2.chipmateServer.baseUrl" = $script:MockOrigin
+    "chipmate.v2.updateCheck.enabled" = $true
+    "chipmate.v2.updateCheck.autoInstall" = $true
+    "chipmate.v2.updateCheck.checkOnStartup" = $true
+    "chipmate.v2.updateCheck.codeCliPath" = "code"
+  } | ConvertTo-Json)
+}
+
+function Install-UpdateSource {
+  if ([string]::IsNullOrWhiteSpace($PreviousVsix)) { throw "update lane 必须传入 -PreviousVsix。" }
+  $previous = [IO.Path]::GetFullPath($PreviousVsix)
+  if (-not (Test-Path -LiteralPath $previous -PathType Leaf)) { throw "Previous VSIX not found: $previous" }
+  $meta = Get-UpdateVsixMeta -Path $previous
+  if ($meta.publisher -ne "chipmate" -or $meta.name -ne "chipmate") {
+    throw "旧版 VSIX 身份不是 chipmate.chipmate。"
+  }
+  if ($meta.target -ne "win32-x64-baseline") { throw "旧版 VSIX target 不是 win32-x64-baseline。" }
+  if ([Version]$meta.version -ge [Version]$ExpectedVersion) {
+    throw "旧版 VSIX 版本 $($meta.version) 必须低于候选版本 $ExpectedVersion。"
+  }
+  $exit = Invoke-CodeCli `
+    -Arguments @("--install-extension", $previous, "--force", "--extensions-dir", $ExtDir, "--user-data-dir", $UserDir) `
+    -Log (Join-Path $Evidence "update-install-old.log")
+  if ($exit -ne 0) { throw "旧版 VSIX 安装失败，退出码 $exit。" }
+  $meta | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $Evidence "update-old-vsix.json") -Encoding UTF8
+  return $meta
+}
+
+function Save-UpdateExtensionList {
+  param([Parameter(Mandatory = $true)] [string] $Name)
+  $path = Join-Path $Evidence $Name
+  $exit = Invoke-CodeCli `
+    -Arguments @("--list-extensions", "--show-versions", "--extensions-dir", $ExtDir, "--user-data-dir", $UserDir) `
+    -Log $path
+  if ($exit -ne 0) { throw "扩展列表读取失败，退出码 $exit。" }
+  return $path
+}
+
+function Wait-UpdateLog {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Pattern,
+    [int] $Seconds = 180
+  )
+  $limit = (Get-Date).AddSeconds($Seconds)
+  do {
+    $logs = @(Get-ChildItem -LiteralPath (Join-Path $UserDir "logs") -Recurse -File -ErrorAction SilentlyContinue)
+    foreach ($log in $logs) {
+      if (Select-String -LiteralPath $log.FullName -Pattern $Pattern -SimpleMatch -Quiet -ErrorAction SilentlyContinue) {
+        return $log.FullName
+      }
+    }
+    Start-Sleep -Milliseconds 500
+  } while ((Get-Date) -lt $limit)
+  throw "更新日志在 $Seconds 秒内未出现：$Pattern"
+}
+
+function Invoke-UpdateRegression {
+  $root = Join-Path $Evidence "WIN-UPDATE"
+  New-Item -ItemType Directory -Force -Path $root | Out-Null
+  Initialize-UpdateProfile
+  $old = Install-UpdateSource
+  $before = Save-UpdateExtensionList -Name "update-extensions-before.txt"
+  if (-not (Select-String -LiteralPath $before -Pattern "^chipmate\.chipmate@$([Regex]::Escape($old.version))$" -Quiet)) {
+    throw "自动更新前扩展列表未发现旧版本 $($old.version)。"
+  }
+
+  $saved = $env:Path
+  $parts = @($env:Path -split ";" | Where-Object {
+    $_ -and
+    -not (Test-Path -LiteralPath (Join-Path $_ "code.cmd") -PathType Leaf) -and
+    -not (Test-Path -LiteralPath (Join-Path $_ "code.exe") -PathType Leaf)
+  })
+  $env:Path = $parts -join ";"
+  try {
+    $command = Get-Command code -CommandType Application -ErrorAction SilentlyContinue
+    if ($command) { throw "PATH 清理后仍能解析 code：$($command.Source)" }
+    "未找到 code 命令；自动更新必须使用当前 VS Code 内置 CLI。" |
+      Set-Content -LiteralPath (Join-Path $root "get-command-code.txt") -Encoding UTF8
+
+    $env:CHIPMATE_QA_PROBE_OUT = Join-Path $root "old-version-probe.json"
+    $env:CHIPMATE_QA_PROBE_QUIT = "0"
+    $env:CHIPMATE_QA_EXPECTED_VERSION = $old.version
+    $process = $null
+    try {
+      $process = Start-GuiSubject -Probe
+      $log = Wait-UpdateLog -Pattern "等待用户重载窗口后激活"
+      Copy-Item -LiteralPath $log -Destination (Join-Path $root "chipmate-update.log") -Force
+      $shot = Join-Path $root "reload-prompt.png"
+      Save-ChipMateScreenshot -Path $shot
+      Save-ChipMateUiaTree -Process $process -Path (Join-Path $root "reload-prompt-uia.json")
+
+      $clicked = $false
+      foreach ($attempt in 1..20) {
+        if (Invoke-ChipMateNamedControl -Process $process -Names @("Reload Window", "重载窗口")) {
+          $clicked = $true
+          break
+        }
+        Start-Sleep -Milliseconds 500
+      }
+      if (-not $clicked) { throw "更新成功后未找到 Reload Window 提示按钮。" }
+      Start-Sleep -Seconds 5
+    } finally {
+      if ($null -ne $process) { Stop-GuiSubject -Process $process }
+      Remove-Item Env:CHIPMATE_QA_PROBE_OUT -ErrorAction SilentlyContinue
+      Remove-Item Env:CHIPMATE_QA_PROBE_QUIT -ErrorAction SilentlyContinue
+      Remove-Item Env:CHIPMATE_QA_EXPECTED_VERSION -ErrorAction SilentlyContinue
+    }
+
+    $afterInstall = Save-UpdateExtensionList -Name "update-extensions-after-install.txt"
+    if (-not (Select-String -LiteralPath $afterInstall -Pattern "^chipmate\.chipmate@$([Regex]::Escape($ExpectedVersion))$" -Quiet)) {
+      throw "自动安装后扩展列表未发现新版本 $ExpectedVersion。"
+    }
+    Invoke-InstalledProbe
+
+    $requests = Invoke-RestMethod -Uri "$script:MockOrigin/__qa/requests" -TimeoutSec 2
+    $requests | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $root "requests.json") -Encoding UTF8
+    $manifestRequests = @($requests.requests | Where-Object { $_.path -eq "/packages/manifest.json" })
+    $vsixRequests = @($requests.requests | Where-Object { $_.path -like "/packages/*.vsix" })
+    $cache = @(Get-ChildItem -LiteralPath $UserDir -Recurse -File -Filter "*.vsix" -ErrorAction SilentlyContinue |
+      ForEach-Object {
+        @{
+          path = $_.FullName.Substring($UserDir.Length).TrimStart("\")
+          bytes = $_.Length
+          sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+        }
+      })
+    $cache | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root "cache-inventory.json") -Encoding UTF8
+    $logText = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $root "chipmate-update.log")
+    $assertions = @(
+      @{ id = "path-code-missing"; status = "PASS"; detail = "Get-Command code 无结果" },
+      @{ id = "manifest-request"; status = if ($manifestRequests.Count -ge 1) { "PASS" } else { "FAIL" }; detail = "manifest requests=$($manifestRequests.Count)" },
+      @{ id = "single-download"; status = if ($vsixRequests.Count -eq 1) { "PASS" } else { "FAIL" }; detail = "VSIX requests=$($vsixRequests.Count)" },
+      @{ id = "builtin-cli"; status = if ($logText -match "当前 VS Code 内置 CLI") { "PASS" } else { "FAIL" }; detail = "专用日志记录内置 CLI" },
+      @{ id = "cache-sha"; status = if (@($cache | Where-Object { $_.sha256 -eq $Artifact.sha256 }).Count -ge 1) { "PASS" } else { "FAIL" }; detail = "缓存包含候选 VSIX SHA-256" },
+      @{ id = "reload-activation"; status = "PASS"; detail = "点击 Reload Window 后 installed-host probe 激活 $ExpectedVersion" }
+    )
+    $pass = @($assertions | Where-Object { $_.status -ne "PASS" }).Count -eq 0
+    Add-Result `
+      -CaseId "WIN-UPDATE" `
+      -Status $(if ($pass) { "PASS" } else { "FAIL" }) `
+      -Summary "PATH 无 code 的隔离中文空格目录完成旧版发现、下载、校验、内置 CLI 覆盖安装、Reload 与新版本激活。" `
+      -Screenshots @((Relative-EvidencePath $shot)) `
+      -Assertions $assertions
+  } finally {
+    $env:Path = $saved
+  }
+}
+
 function Install-Subject {
   $log = Join-Path $Evidence "install.log"
   if ($PreviousVsix) {
@@ -460,7 +703,9 @@ function Invoke-InstalledProbe {
 }
 
 function Start-GuiSubject {
+  param([switch] $Probe)
   $args = @($Workspace, "--new-window", "--skip-welcome", "--skip-release-notes", "--disable-workspace-trust", "--disable-updates", "--force-renderer-accessibility", "--extensions-dir=$ExtDir", "--user-data-dir=$UserDir", "--remote-debugging-port=$script:CdpPort")
+  if ($Probe) { $args += "--extensionDevelopmentPath=$(Join-Path $QaRoot 'probe')" }
   if ($Gpu -eq "disabled") { $args += "--disable-gpu" }
   $before = @(Get-Process -Name "Code" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
   $launch = Start-Process -FilePath $Code -ArgumentList ($args | ForEach-Object { Quote-ProcessArgument $_ }) -PassThru
@@ -644,6 +889,151 @@ function Invoke-SettingsKeyboardRegression {
     Add-Result -CaseId "WIN-SETTINGS-PROVIDER" -Status "PASS" -Summary "逐字符输入和 blur 后模型/维度保持。" -Screenshots @($before, $after)
   } finally {
     Stop-GuiSubject -Process $process
+  }
+}
+
+function Invoke-SettingsCdpRegression {
+  $root = Join-Path $Evidence "WIN-SETTINGS-PROVIDER"
+  New-Item -ItemType Directory -Force -Path $root | Out-Null
+  $control = Join-Path $root "control.json"
+  $reply = Join-Path $root "control-result.json"
+  $env:CHIPMATE_QA_PROBE_OUT = Join-Path $root "control-probe.json"
+  $env:CHIPMATE_QA_PROBE_QUIT = "0"
+  $env:CHIPMATE_QA_EXPECTED_VERSION = $ExpectedVersion
+  $env:CHIPMATE_QA_CONTROL_FILE = $control
+  $env:CHIPMATE_QA_CONTROL_OUT = $reply
+  $process = Start-GuiSubject -Probe
+  try {
+    $server = "http://127.0.0.1:$script:MockPort"
+    $embedding = "$script:MockOrigin/v1/embeddings"
+    $model = "qa-embedding-model-1019"
+    $dimension = "3072"
+    $desktop = Join-Path $root "desktop.png"
+    $narrow = Join-Path $root "narrow-220-420.png"
+    $final = Join-Path $root "persisted.png"
+
+    function Invoke-ControlCommand {
+      param(
+        [Parameter(Mandatory = $true)] [string] $Name,
+        [Parameter(Mandatory = $true)] [string] $Command
+      )
+      $id = [Guid]::NewGuid().ToString("N")
+      Write-Utf8NoBom -Path $control -Value (@{
+        id = $id
+        command = $Command
+        args = @()
+      } | ConvertTo-Json)
+      $limit = (Get-Date).AddSeconds(30)
+      $response = $null
+      do {
+        if (Test-Path -LiteralPath $reply -PathType Leaf) {
+          $response = Get-Content -Raw -Encoding UTF8 -LiteralPath $reply | ConvertFrom-Json
+          if ($response.id -eq $id) { break }
+        }
+        Start-Sleep -Milliseconds 100
+      } while ((Get-Date) -lt $limit)
+      if ($null -eq $response -or $response.id -ne $id) {
+        throw "Installed probe did not execute $Name."
+      }
+      if ($response.status -ne "PASS") {
+        throw "Installed probe failed to execute $Name`: $($response.error)"
+      }
+    }
+
+    function Open-Settings {
+      param([Parameter(Mandatory = $true)] [string] $Name)
+      Invoke-ControlCommand -Name "Settings for $Name" -Command "chipmate.v2.settingsButtonClicked"
+      Start-Sleep -Seconds 2
+    }
+
+    Set-ChipMateWindowMaximized -Process $process
+    Invoke-ControlCommand -Name "close the primary sidebar" -Command "workbench.action.closeSidebar"
+    Open-Settings -Name "audit"
+    $audit = Join-Path $root "audit-server.json"
+    Invoke-Node -Arguments @(
+      (Join-Path $QaRoot "cdp-settings.mjs"),
+      "--port=$script:CdpPort",
+      "--mode=audit-server",
+      "--server=$server",
+      "--desktop=$desktop",
+      "--narrow=$narrow",
+      "--output=$audit"
+    ) *> "$audit.log"
+    if ($LASTEXITCODE -ne 0) { throw "Settings desktop/responsive/server audit failed. See $audit.log." }
+
+    Set-ChipMateWindowSize -Process $process -Width 680 -Height 900
+    Open-Settings -Name "narrow"
+    $responsive = Join-Path $root "audit-narrow.json"
+    Invoke-Node -Arguments @(
+      (Join-Path $QaRoot "cdp-settings.mjs"),
+      "--port=$script:CdpPort",
+      "--mode=audit-narrow",
+      "--narrow=$narrow",
+      "--output=$responsive"
+    ) *> "$responsive.log"
+    if ($LASTEXITCODE -ne 0) { throw "Settings narrow responsive audit failed. See $responsive.log." }
+
+    Set-ChipMateWindowMaximized -Process $process
+    Open-Settings -Name "indexing"
+    $indexing = Join-Path $root "verify-indexing.json"
+    Invoke-Node -Arguments @(
+      (Join-Path $QaRoot "cdp-settings.mjs"),
+      "--port=$script:CdpPort",
+      "--mode=verify-indexing",
+      "--server=$server",
+      "--embedding=$embedding",
+      "--model=$model",
+      "--dimension=$dimension",
+      "--output=$indexing"
+    ) *> "$indexing.log"
+    if ($LASTEXITCODE -ne 0) { throw "Settings persisted server/indexing edit failed. See $indexing.log." }
+
+    Open-Settings -Name "verify"
+    $verify = Join-Path $root "verify.json"
+    Invoke-Node -Arguments @(
+      (Join-Path $QaRoot "cdp-settings.mjs"),
+      "--port=$script:CdpPort",
+      "--mode=verify",
+      "--server=$server",
+      "--embedding=$embedding",
+      "--model=$model",
+      "--dimension=$dimension",
+      "--desktop=$final",
+      "--output=$verify"
+    ) *> "$verify.log"
+    if ($LASTEXITCODE -ne 0) { throw "Settings reopen persistence verification failed. See $verify.log." }
+
+    $requests = Invoke-RestMethod -Uri "$script:MockOrigin/__qa/requests" -TimeoutSec 2
+    $embeddingRequests = @($requests.requests | Where-Object { $_.path -eq "/v1/embeddings" })
+    $used = @($embeddingRequests | Where-Object {
+      $requestModel = if ($_.PSObject.Properties["model"]) { $_.model } else { $null }
+      $requestDimensions = if ($_.PSObject.Properties["dimensions"]) { $_.dimensions } else { $null }
+      $requestModel -eq $model -and [int]$requestDimensions -eq [int]$dimension
+    })
+    $requests | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $root "embedding-requests.json") -Encoding UTF8
+    if ($used.Count -lt 1) {
+      throw "Saved indexing model/dimension were not observed by the embedding service."
+    }
+
+    Save-ChipMateScreenshot -Path (Join-Path $root "installed-window.png")
+    Save-ChipMateUiaTree -Process $process -Path (Join-Path $root "installed-window-uia.json")
+    Add-Result `
+      -CaseId "WIN-SETTINGS-PROVIDER" `
+      -Status "PASS" `
+      -Summary "真实安装态的全部可见设置页、搜索、220-420px 窄态选择器、Server 校验、保存和重开持久化、索引字段保存和重开持久化均通过；保存后的模型和维度已被 embedding 请求实际使用。" `
+      -Screenshots @(
+        (Relative-EvidencePath $desktop),
+        (Relative-EvidencePath $narrow),
+        (Relative-EvidencePath $final),
+        (Relative-EvidencePath (Join-Path $root "installed-window.png"))
+      )
+  } finally {
+    Stop-GuiSubject -Process $process
+    Remove-Item Env:CHIPMATE_QA_CONTROL_FILE -ErrorAction SilentlyContinue
+    Remove-Item Env:CHIPMATE_QA_CONTROL_OUT -ErrorAction SilentlyContinue
+    Remove-Item Env:CHIPMATE_QA_PROBE_OUT -ErrorAction SilentlyContinue
+    Remove-Item Env:CHIPMATE_QA_PROBE_QUIT -ErrorAction SilentlyContinue
+    Remove-Item Env:CHIPMATE_QA_EXPECTED_VERSION -ErrorAction SilentlyContinue
   }
 }
 
@@ -1094,10 +1484,22 @@ function Add-AtomicResult {
 }
 
 function Complete-AtomicResults {
-  $focused = $Lane -eq "agent-console"
+  $focused = $Lane -in @("agent-console", "settings", "package", "update")
   foreach ($problem in $Atomic.problems) {
     foreach ($check in $problem.assertions) {
       if (@($AtomicResults | ForEach-Object { $_.id }) -contains $check.id) { continue }
+      if ($Lane -eq "package") {
+        Add-AtomicResult -AssertionId $check.id -Status "SKIP" -Summary "包审计通道仅裁决冻结 VSIX 的身份、目标与内容，不裁决运行态功能矩阵。"
+        continue
+      }
+      if ($Lane -eq "settings") {
+        Add-AtomicResult -AssertionId $check.id -Status "SKIP" -Summary "设置页重构聚焦通道仅裁决安装态设置导航、响应式布局和字段交互；历史功能矩阵不据此判定。"
+        continue
+      }
+      if ($Lane -eq "update") {
+        Add-AtomicResult -AssertionId $check.id -Status "SKIP" -Summary "自动更新聚焦通道仅裁决 WIN-UPDATE，不从该结果推断其他功能矩阵。"
+        continue
+      }
       if ($focused -and $problem.parent -ne "WIN-AGENT-CONSOLE") {
         Add-AtomicResult -AssertionId $check.id -Status "SKIP" -Summary "Agent Console 聚焦通道不裁决其他功能矩阵。"
         continue
@@ -1218,12 +1620,28 @@ function Complete-Run {
 try {
   Initialize-Fixture
   $Artifact = Test-FrozenVsix
-  if ($Lane -eq "agent-console") {
+  if ($Lane -in @("agent-console", "settings", "package", "update")) {
     [ordered]@{
       status = "SCOPED"
       lane = $Lane
-      case = "WIN-AGENT-CONSOLE"
-      note = "全仓 coverage ledger 不属于 Agent Console 聚焦通道；其他功能不据此判定。"
+      case = if ($Lane -eq "settings") {
+        "WIN-SETTINGS-PROVIDER"
+      } elseif ($Lane -eq "package") {
+        "WIN-PACKAGE-INSTALL"
+      } elseif ($Lane -eq "update") {
+        "WIN-UPDATE"
+      } else {
+        "WIN-AGENT-CONSOLE"
+      }
+      note = if ($Lane -eq "settings") {
+        "全仓 coverage ledger 不属于设置页重构聚焦通道；QA、Agent Console 与其他功能不据此判定。"
+      } elseif ($Lane -eq "package") {
+        "全仓 coverage ledger 不属于冻结 VSIX 包审计通道；运行态功能不据此判定。"
+      } elseif ($Lane -eq "update") {
+        "全仓 coverage ledger 不属于自动更新聚焦通道；仅裁决离线 Windows 更新真实链路。"
+      } else {
+        "全仓 coverage ledger 不属于 Agent Console 聚焦通道；其他功能不据此判定。"
+      }
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Evidence "coverage-ledger.json") -Encoding UTF8
   } else {
     Invoke-Coverage
@@ -1238,12 +1656,23 @@ try {
   $script:CdpPort = Get-FreeTcpPort
   $script:MockPort = Get-FreeTcpPort
   $script:MockOrigin = "http://127.0.0.1:$script:MockPort"
-  $env:KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL = "$script:MockOrigin/v1"
+  if ($Lane -eq "update") {
+    $Mock = Start-UpdateServer
+    Invoke-UpdateRegression
+    foreach ($case in $Matrix.cases) {
+      if (@($Results | ForEach-Object { $_.id }) -contains $case.id) { continue }
+      Add-Result -CaseId $case.id -Status "SKIP" -Summary "自动更新聚焦通道不裁决其他 Windows 功能矩阵。"
+    }
+    Complete-Run
+    exit $script:ExitCode
+  }
+  $env:KILO_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL = "$script:MockOrigin/v1/embeddings"
+  Set-MockIndexingEndpoint
   $Mock = Start-MockProvider
   Initialize-MockProviderConfig
   Install-Subject
   Invoke-InstalledProbe
-  if ($Lane -in @("smoke", "agent-console")) {
+  if ($Lane -in @("smoke", "settings", "agent-console")) {
     Add-Result -CaseId "WIN-SMOKE-INSTALL" -Status "PASS" -Summary "正式安装、版本列表与 installed-host 激活 probe 通过。"
   } elseif ($PreviousVsix -and $KiloVsix) {
     Add-Result -CaseId "WIN-IDENTITY-UPGRADE" -Status "PASS" -Summary "正式安装的 ChipMate 已激活，覆盖升级与 Kilo 同 Profile 前置条件均已执行。"
@@ -1252,33 +1681,40 @@ try {
   }
 
   if (-not $NoGui) {
-    if ($Lane -ne "agent-console") {
-      Invoke-SettingsKeyboardRegression
+    if ($Lane -eq "settings") {
+      Invoke-SettingsCdpRegression
+    } else {
+      if ($Lane -ne "agent-console") {
+        Invoke-SettingsKeyboardRegression
+      }
+      if ($Lane -eq "smoke") {
+        Invoke-IndexingSmoke
+      } elseif ($Lane -ne "agent-console") {
+        Invoke-VisualCapture
+      }
+      Invoke-AgentConsoleSmoke
+      Invoke-CliLifecycleAudit
     }
-    if ($Lane -eq "smoke") {
-      Invoke-IndexingSmoke
-    } elseif ($Lane -ne "agent-console") {
-      Invoke-VisualCapture
-    }
-    Invoke-AgentConsoleSmoke
-    Invoke-CliLifecycleAudit
   } else {
-    if ($Lane -ne "agent-console") {
+    if ($Lane -in @("settings", "smoke", "core", "full")) {
       Add-Result -CaseId "WIN-SETTINGS-PROVIDER" -Status "BLOCKED" -Summary "NoGui 禁止逐字符 GUI 输入验证。"
     }
-    if ($Lane -eq "smoke") {
-      Add-Result -CaseId "WIN-SMOKE-INDEXING" -Status "BLOCKED" -Summary "NoGui 禁止索引运行态采证。"
-    } else {
-      Add-Result -CaseId "WIN-BRANDING-FIRST-RUN" -Status "BLOCKED" -Summary "NoGui 禁止首次启动视觉采证。"
+    if ($Lane -ne "settings") {
+      if ($Lane -eq "smoke") {
+        Add-Result -CaseId "WIN-SMOKE-INDEXING" -Status "BLOCKED" -Summary "NoGui 禁止索引运行态采证。"
+      } else {
+        Add-Result -CaseId "WIN-BRANDING-FIRST-RUN" -Status "BLOCKED" -Summary "NoGui 禁止首次启动视觉采证。"
+      }
+      Add-Result -CaseId "WIN-AGENT-CONSOLE" -Status "BLOCKED" -Summary "NoGui 禁止 Agent Console 交互采证。"
+      Add-Result -CaseId "WIN-CLI-LIFECYCLE" -Status "BLOCKED" -Summary "NoGui 禁止 Reload、Extension Host 和孤儿进程交互审计。"
     }
-    Add-Result -CaseId "WIN-AGENT-CONSOLE" -Status "BLOCKED" -Summary "NoGui 禁止 Agent Console 交互采证。"
-    Add-Result -CaseId "WIN-CLI-LIFECYCLE" -Status "BLOCKED" -Summary "NoGui 禁止 Reload、Extension Host 和孤儿进程交互审计。"
   }
 
   foreach ($case in $Matrix.cases) {
     if (@($Results | ForEach-Object { $_.id }) -contains $case.id) { continue }
-    if ($Lane -eq "agent-console") {
-      Add-Result -CaseId $case.id -Status "SKIP" -Summary "Agent Console 聚焦通道不裁决此功能。"
+    if ($Lane -in @("agent-console", "settings")) {
+      $focus = if ($Lane -eq "settings") { "设置页重构" } else { "Agent Console" }
+      Add-Result -CaseId $case.id -Status "SKIP" -Summary "$focus 聚焦通道不裁决此功能。"
       continue
     }
     if ($Lane -eq "smoke") {

@@ -31,6 +31,7 @@ export interface CodeIndexConfig {
   lancedbVectorStoreDirectoryPlaceholder?: string
   modelId?: string
   modelDimension?: number
+  dimensionMode?: "auto" | "fixed"
   kiloOptions?: { apiKey: string; baseUrl?: string; organizationId?: string }
   openAiOptions?: { apiKey: string }
   ollamaOptions?: { baseUrl: string; modelId?: string }
@@ -59,6 +60,7 @@ export type PreviousConfigSnapshot = {
   lancedbVectorStoreDirectory?: string
   modelId?: string
   modelDimension?: number
+  dimensionMode?: "auto" | "fixed"
   kiloApiKey?: string
   kiloBaseUrl?: string
   kiloOrganizationId?: string

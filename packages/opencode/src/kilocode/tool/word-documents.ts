@@ -343,6 +343,29 @@ function runWordOperation<T>(
   )
 }
 
+function audit(ctx: Tool.Context, file: string) {
+  if (!WorkflowGuard.sourceBacked(ctx.sessionID, ctx.messages)) return Effect.succeed<string | undefined>(undefined)
+  const root = WorkflowGuard.root(ctx.sessionID, ctx.messages)
+  if (!root) return Effect.succeed<string | undefined>("Canonical source-backed artifact root is unavailable.")
+  return Effect.tryPromise({
+    try: async () => {
+      const inspection = await inspectWordDocument({ path: file, maxParagraphs: 1_000, maxTables: 200 })
+      const result = await Readiness.document(Instance.directory, root, inspection)
+      if (!result.issues.length) return
+      return [
+        `Source-backed Word body audit failed with ${result.issues.length} issue(s).`,
+        result.issues.slice(0, 40).join("; "),
+      ].join(" ")
+    },
+    catch: (err) => formatError(err),
+  }).pipe(
+    Effect.match({
+      onFailure: (err) => formatError(err),
+      onSuccess: (value) => value,
+    }),
+  )
+}
+
 function formatError(err: unknown): string {
   if (err instanceof Error) return err.message
   if (typeof err === "string") return err
@@ -382,7 +405,15 @@ export const CreateWordDocumentTool = Tool.define(
           if (ready.issues.length) {
             return wordFailure(
               "Word Document Creation Blocked",
-              `The source-backed prose and five-view figure matrix are not ready. ${ready.issues.slice(0, 30).join("; ")}`,
+              [
+                "The source-backed prose and five-view figure matrix are not ready.",
+                ready.progress
+                  ? `Completed ${ready.progress.completedSlotCount}/${ready.progress.requiredSlotCount} slots; remaining DesignUnits: ${ready.progress.remainingDesignUnitIds.join(", ") || "(none)"}; next missing slots: ${ready.progress.nextMissingSlots.join(", ") || "(none)"}.`
+                  : "",
+                ready.issues.slice(0, 30).join("; "),
+              ]
+                .filter(Boolean)
+                .join(" "),
             )
           }
         }
@@ -488,6 +519,10 @@ export const ValidateWordDocumentTool = Tool.define(
       ctx: Tool.Context,
     ): Effect.Effect<Tool.ExecuteResult<WordMeta>> =>
       Effect.gen(function* () {
+        if (params.repairMode !== "safe") {
+          const issue = yield* audit(ctx, params.path)
+          if (issue) return wordFailure("Word Document Validation Blocked", issue, { path: params.path })
+        }
         yield* ctx.ask({
           permission: "validate_word_document",
           patterns: [params.path],
@@ -614,6 +649,8 @@ export const MaterializeWordFieldsTool = Tool.define(
       ctx: Tool.Context,
     ): Effect.Effect<Tool.ExecuteResult<WordMeta>> =>
       Effect.gen(function* () {
+        const issue = yield* audit(ctx, params.sourcePath)
+        if (issue) return wordFailure("Word Field Materialization Blocked", issue, { path: params.sourcePath })
         yield* ctx.ask({
           permission: "materialize_word_fields",
           patterns: [params.sourcePath],
@@ -768,6 +805,8 @@ export const RenderWordDocumentTool = Tool.define(
       ctx: Tool.Context,
     ): Effect.Effect<Tool.ExecuteResult<WordMeta>> =>
       Effect.gen(function* () {
+        const issue = yield* audit(ctx, params.sourcePath)
+        if (issue) return wordFailure("Word Document Render Blocked", issue, { path: params.sourcePath })
         yield* ctx.ask({
           permission: "render_word_document",
           patterns: [params.sourcePath],

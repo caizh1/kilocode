@@ -623,6 +623,11 @@ describe("server indexing stderr filter", () => {
     )
     expect(isIndexingDiagnosticLine("tree-sitter worker failed to load parser")).toBe(true)
     expect(isIndexingDiagnosticLine("ripgrep executable missing: rg.exe")).toBe(true)
+    expect(
+      isIndexingDiagnosticLine(
+        '{"level":"ERROR","service":"embedder-openai-compatible","message":"validation error: HTTP 400"}',
+      ),
+    ).toBe(true)
   })
 
   it("ignores unrelated stderr noise", () => {

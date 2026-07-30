@@ -1,7 +1,6 @@
 import { type Component, For } from "solid-js"
 import { AlertDialog } from "@kobalte/core/alert-dialog"
 import { Button } from "@kilocode/kilo-ui/button"
-import { Icon, type IconProps } from "@kilocode/kilo-ui/icon"
 import { useLanguage } from "../../context/language"
 
 interface Props {
@@ -9,11 +8,7 @@ interface Props {
   onConfirm: () => void
 }
 
-const benefits = [
-  { icon: "dot-grid", key: "prompt.ultra.confirm.benefit.explore" },
-  { icon: "shield", key: "prompt.ultra.confirm.benefit.verify" },
-  { icon: "history", key: "prompt.ultra.confirm.benefit.cost" },
-] as const satisfies ReadonlyArray<{ icon: IconProps["name"]; key: string }>
+const explorers = ["①", "②", "③"] as const
 
 export const UltraModeDialog: Component<Props> = (props) => {
   const language = useLanguage()
@@ -47,15 +42,48 @@ export const UltraModeDialog: Component<Props> = (props) => {
               </AlertDialog.Description>
               <div data-slot="dialog-body">
                 <div class="ultra-mode-dialog-body">
-                  <div class="ultra-mode-dialog-benefits">
-                    <For each={benefits}>
-                      {(benefit) => (
-                        <div class="ultra-mode-dialog-benefit">
-                          <Icon name={benefit.icon} size="medium" />
-                          <span>{language.t(benefit.key)}</span>
-                        </div>
-                      )}
-                    </For>
+                  <div
+                    class="ultra-mode-dialog-flow"
+                    role="img"
+                    aria-label={language.t("prompt.ultra.confirm.flow.label")}
+                  >
+                    <div class="ultra-mode-dialog-node" data-node="question">
+                      {language.t("prompt.ultra.confirm.flow.question")}
+                    </div>
+                    <div class="ultra-mode-dialog-line" data-line="solid" aria-hidden="true" />
+                    <div class="ultra-mode-dialog-node" data-node="code">
+                      {language.t("prompt.ultra.confirm.flow.code")}
+                    </div>
+                    <div class="ultra-mode-dialog-line" data-line="solid" aria-hidden="true" />
+                    <div class="ultra-mode-dialog-node" data-node="frozen">
+                      {language.t("prompt.ultra.confirm.flow.frozen")}
+                    </div>
+                    <div class="ultra-mode-dialog-line" data-line="solid" aria-hidden="true" />
+                    <div class="ultra-mode-dialog-line" data-line="split" aria-hidden="true" />
+                    <div class="ultra-mode-dialog-explorers" data-stage="verification">
+                      <For each={explorers}>
+                        {(index) => (
+                          <div class="ultra-mode-dialog-explorer">
+                            <div class="ultra-mode-dialog-line" data-line="solid" aria-hidden="true" />
+                            <div class="ultra-mode-dialog-node" data-node="explore">
+                              <span>Explore {index}</span>
+                              <small>{language.t("prompt.ultra.confirm.flow.verify")}</small>
+                            </div>
+                            <div class="ultra-mode-dialog-line" data-line="solid" aria-hidden="true" />
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                    <div class="ultra-mode-dialog-line" data-line="merge" aria-hidden="true" />
+                    <div class="ultra-mode-dialog-line" data-line="solid" aria-hidden="true" />
+                    <div class="ultra-mode-dialog-node" data-node="ask">
+                      {language.t("prompt.ultra.confirm.flow.ask")}
+                    </div>
+                    <div class="ultra-mode-dialog-line" data-line="solid" aria-hidden="true" />
+                    <div class="ultra-mode-dialog-node" data-node="final">
+                      <span>{language.t("prompt.ultra.confirm.flow.final")}</span>
+                      <small>{language.t("prompt.ultra.confirm.flow.finalNote")}</small>
+                    </div>
                   </div>
                   <p class="ultra-mode-dialog-note">{language.t("prompt.ultra.confirm.note")}</p>
                   <Button

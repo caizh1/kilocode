@@ -1557,6 +1557,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       await vscode.commands.executeCommand("workbench.action.reloadWindow")
       return
     }
+    if (message.type === "showChipmateUpdateLog") {
+      getUpdateCheckService()?.showLog()
+      return
+    }
     if (message.type !== "checkChipmateUpdate" && message.type !== "installChipmateUpdate") return
     if (typeof message.requestId !== "string") return
     const service = getUpdateCheckService()

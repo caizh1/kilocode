@@ -1,5 +1,21 @@
 /* Prevent tool-trigger content from pushing the collapsible arrow off-screen */
 [data-component="tool-trigger"] {
+  [data-slot="basic-tool-trigger-layout"],
+  [data-slot="basic-tool-trigger-original"],
+  [data-slot="basic-tool-actions"] {
+    display: contents;
+  }
+
+  [data-slot="basic-tool-completed"] {
+    display: none;
+  }
+
+  [data-slot="basic-tool-qa-read-icon"],
+  [data-slot="basic-tool-qa-read-info"],
+  [data-slot="basic-tool-qa-read-title"] {
+    display: none;
+  }
+
   [data-slot="basic-tool-tool-trigger-content"] {
     flex: 1 1 auto;
     min-width: 0;

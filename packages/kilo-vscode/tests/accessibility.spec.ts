@@ -16,6 +16,7 @@ const STORIES = [
   { id: "marketplace--aligned-skills-home", name: "Marketplace / aligned Skill home" },
   { id: "marketplace--aligned-skill-detail", name: "Marketplace / aligned Skill detail" },
   { id: "chat--chat-view-idle", name: "QA / aligned empty state" },
+  { id: "chat--qa-tool-calls-dark", name: "QA / tool call status strip" },
   { id: "chat--qa-welcome-recent-light", name: "QA / light welcome with recent sessions" },
   { id: "chat--qa-titanium-full-conversation", name: "QA / Titanium full conversation" },
   { id: "prompt-input--qa-all-controls-send", name: "QA / all controls send state" },
@@ -79,6 +80,57 @@ test.describe("webview accessibility ratchet", () => {
 
     await page.keyboard.press("Enter")
     await expect(page.locator("textarea.prompt-input")).toBeFocused()
+  })
+
+  test("QA tool call status stays semantic and preserves disclosure behavior", async ({ page }) => {
+    await open(page, "chat--qa-tool-calls-dark")
+
+    const completed = page.locator('[data-slot="basic-tool-completed"]')
+    await expect(completed).toHaveCount(4)
+    await expect(completed.first().locator('[data-slot="basic-tool-completed-label"]')).toHaveText("完成")
+    await expect(completed.first()).not.toHaveAttribute("role", "status")
+    await expect(completed.first()).not.toHaveAttribute("aria-live")
+
+    const order = await page.locator('.chat-view[data-ui="qa-shell"]').evaluate((root) =>
+      Array.from(root.querySelectorAll<HTMLElement>('[data-component="tool-trigger"]')).map((trigger) => {
+        const content = trigger.querySelector<HTMLElement>('[data-slot="basic-tool-tool-trigger-content"]')!
+        const base = trigger.querySelector<HTMLElement>('[data-slot="basic-tool-icon"]')
+        const custom = trigger.querySelector<HTMLElement>('[data-slot="basic-tool-qa-read-icon"]')
+        const icon = custom && getComputedStyle(custom).display !== "none" ? custom : base!
+        const title = trigger.querySelector<HTMLElement>(
+          '[data-slot="basic-tool-qa-read-title"], [data-slot="basic-tool-tool-title"], [data-slot="message-part-title-text"]',
+        )!
+        const line = getComputedStyle(content, "::before")
+        const start = content.getBoundingClientRect().left + Number.parseFloat(line.marginInlineStart)
+        const end = start + Number.parseFloat(line.width)
+        const iconBox = icon.getBoundingClientRect()
+        const titleBox = title.getBoundingClientRect()
+        const layout = trigger.querySelector<HTMLElement>('[data-slot="basic-tool-trigger-layout"]')
+        return {
+          lineGap: iconBox.left - end,
+          titleGap: titleBox.left - iconBox.right,
+          layoutLine: layout ? getComputedStyle(layout, "::before").content : "none",
+        }
+      }),
+    )
+    expect(order).toHaveLength(5)
+    for (const row of order) {
+      expect(row.lineGap).toBeCloseTo(6, 0)
+      expect(row.titleGap).toBeCloseTo(2, 0)
+      expect(row.layoutLine).toBe("none")
+    }
+
+    const read = page.locator('[data-component="tool-part-wrapper"][data-tool="read"]')
+    await expect(read.locator('[data-slot="collapsible-arrow"]')).toHaveCount(0)
+
+    const bash = page.locator('[data-part-id="part-header-bash-001"]')
+    const trigger = bash.locator('[data-slot="collapsible-trigger"]')
+    const before = await trigger.getAttribute("aria-expanded")
+    await trigger.focus()
+    await expect(trigger).toBeFocused()
+    await page.keyboard.press("Enter")
+    await expect(trigger).toHaveAttribute("aria-expanded", before === "true" ? "false" : "true")
+    await scan(page)
   })
 
   test("Agent Manager keeps virtualized transcript fragments laid out", async ({ page }) => {

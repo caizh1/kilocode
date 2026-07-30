@@ -2424,7 +2424,9 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-list,
   border: 1px solid var(--titanium-line);
   border-radius: 11px;
   background: var(--titanium-glass);
-  box-shadow: 0 6px 18px rgba(31, 50, 72, 0.05), inset 0 1px 0 var(--titanium-highlight);
+  box-shadow:
+    0 6px 18px rgba(31, 50, 72, 0.05),
+    inset 0 1px 0 var(--titanium-highlight);
   backdrop-filter: var(--titanium-blur);
   -webkit-backdrop-filter: var(--titanium-blur);
 }
@@ -2504,7 +2506,9 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui
 .vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"]:focus-within {
   border-color: rgba(0, 122, 255, 0.38);
   background: var(--titanium-raised);
-  box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.08), var(--titanium-card-shadow);
+  box-shadow:
+    0 0 0 1px rgba(0, 122, 255, 0.08),
+    var(--titanium-card-shadow);
 }
 
 body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"][data-state="collapsed"],
@@ -2546,8 +2550,14 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [d
   min-height: 38px;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions :is([data-component="button"], [data-component="icon-button"]),
-.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-actions :is([data-component="button"], [data-component="icon-button"]) {
+body.vscode-light
+  .chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-actions
+  :is([data-component="button"], [data-component="icon-button"]),
+.vscode-light
+  .chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-actions
+  :is([data-component="button"], [data-component="icon-button"]) {
   height: 38px !important;
   min-height: 38px;
 }
@@ -2557,7 +2567,9 @@ body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-action-submit"]:no
   color: #ffffff;
   border-color: color-mix(in srgb, var(--titanium-accent) 76%, white);
   background: var(--titanium-accent);
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  box-shadow:
+    0 4px 12px rgba(0, 122, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
 }
 
 body.vscode-light .settings-shell,
@@ -2567,7 +2579,9 @@ body.vscode-light .settings-shell,
 
 body.vscode-light .settings-shell .settings-brand-icon,
 .vscode-light .settings-shell .settings-brand-icon {
-  box-shadow: 0 6px 16px rgba(31, 50, 72, 0.08), inset 0 1px 0 var(--titanium-highlight);
+  box-shadow:
+    0 6px 16px rgba(31, 50, 72, 0.08),
+    inset 0 1px 0 var(--titanium-highlight);
 }
 
 body.vscode-light .settings-shell .settings-header-actions [data-component="button"],
@@ -2596,7 +2610,9 @@ body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-
   min-width: 216px;
   padding: 8px 7px;
   background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 6px 20px rgba(31, 50, 72, 0.05), inset 0 1px 0 var(--titanium-highlight);
+  box-shadow:
+    0 6px 20px rgba(31, 50, 72, 0.05),
+    inset 0 1px 0 var(--titanium-highlight);
 }
 
 body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"],
@@ -2618,13 +2634,25 @@ body.vscode-light .settings-shell .settings-nav-icon,
   font-size: var(--kilo-font-size-18);
 }
 
-body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:hover:not(:disabled),
-.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:hover:not(:disabled) {
+body.vscode-light
+  .settings-shell
+  .settings-tabs[data-variant="settings"]
+  [data-slot="tabs-trigger-wrapper"]:hover:not(:disabled),
+.vscode-light
+  .settings-shell
+  .settings-tabs[data-variant="settings"]
+  [data-slot="tabs-trigger-wrapper"]:hover:not(:disabled) {
   background: rgba(0, 122, 255, 0.05);
 }
 
-body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:has([data-selected]),
-.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"]:has([data-selected]) {
+body.vscode-light
+  .settings-shell
+  .settings-tabs[data-variant="settings"]
+  [data-slot="tabs-trigger-wrapper"]:has([data-selected]),
+.vscode-light
+  .settings-shell
+  .settings-tabs[data-variant="settings"]
+  [data-slot="tabs-trigger-wrapper"]:has([data-selected]) {
   border-color: transparent;
   background: var(--titanium-active);
   box-shadow: inset 3px 0 0 var(--titanium-accent);
@@ -2640,7 +2668,9 @@ body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-
 .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
   padding: 24px 28px;
   background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 6px 20px rgba(31, 50, 72, 0.045), inset 0 1px 0 var(--titanium-highlight);
+  box-shadow:
+    0 6px 20px rgba(31, 50, 72, 0.045),
+    inset 0 1px 0 var(--titanium-highlight);
 }
 
 body.vscode-light .settings-shell .settings-page-header,
@@ -2670,7 +2700,9 @@ body.vscode-light .settings-shell .settings-page-groups [data-component="card"],
   border-color: var(--titanium-line);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.74);
-  box-shadow: 0 4px 16px rgba(31, 50, 72, 0.04), inset 0 1px 0 var(--titanium-highlight);
+  box-shadow:
+    0 4px 16px rgba(31, 50, 72, 0.04),
+    inset 0 1px 0 var(--titanium-highlight);
 }
 
 body.vscode-light .settings-shell .settings-section-title,
@@ -2721,7 +2753,9 @@ body.vscode-light .settings-shell [data-slot="settings-row-input"],
   max-width: 280px;
 }
 
-body.vscode-light .settings-shell :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]),
+body.vscode-light
+  .settings-shell
+  :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]),
 .vscode-light .settings-shell :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]) {
   min-height: 38px;
   color: var(--titanium-text);
@@ -2731,10 +2765,18 @@ body.vscode-light .settings-shell :is(input, textarea, [data-component="text-fie
   font-size: var(--kilo-font-size-13);
 }
 
-body.vscode-light .settings-shell :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]):disabled,
-body.vscode-light .settings-shell :is([data-component="text-field"], [data-slot="select-select-trigger"])[aria-disabled="true"],
-.vscode-light .settings-shell :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]):disabled,
-.vscode-light .settings-shell :is([data-component="text-field"], [data-slot="select-select-trigger"])[aria-disabled="true"] {
+body.vscode-light
+  .settings-shell
+  :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]):disabled,
+body.vscode-light
+  .settings-shell
+  :is([data-component="text-field"], [data-slot="select-select-trigger"])[aria-disabled="true"],
+.vscode-light
+  .settings-shell
+  :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]):disabled,
+.vscode-light
+  .settings-shell
+  :is([data-component="text-field"], [data-slot="select-select-trigger"])[aria-disabled="true"] {
   color: var(--titanium-faint);
   border-color: var(--titanium-line);
   background: #f3f6f9;
@@ -2746,7 +2788,9 @@ body.vscode-light .settings-shell .settings-save-bar-wrap,
   border-color: var(--titanium-line);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 4px 16px rgba(31, 50, 72, 0.05), inset 0 1px 0 var(--titanium-highlight);
+  box-shadow:
+    0 4px 16px rgba(31, 50, 72, 0.05),
+    inset 0 1px 0 var(--titanium-highlight);
 }
 
 body.vscode-light .settings-shell .settings-save-bar,
@@ -2793,7 +2837,9 @@ body.vscode-light .settings-shell .settings-save-button[data-component="button"]
   border-color: color-mix(in srgb, var(--titanium-accent) 76%, white);
   border-radius: 8px;
   background: var(--titanium-accent);
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 4px 12px rgba(0, 122, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
   font-weight: 600;
 }
 
@@ -2957,4 +3003,400 @@ body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"])
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+/* ---------------------- Simplified Settings navigation ---------------------- */
+
+.settings-shell .settings-navigation {
+  display: flex;
+  flex: 0 0 232px;
+  flex-direction: column;
+  width: 232px;
+  min-width: 232px;
+  min-height: 0;
+  padding: 10px 8px 8px;
+  overflow: hidden;
+  color: var(--titanium-muted);
+  border: 1px solid var(--titanium-line);
+  border-radius: var(--titanium-radius-shell);
+  background: var(--titanium-glass);
+  box-shadow: var(--titanium-card-shadow);
+  backdrop-filter: var(--titanium-blur);
+  -webkit-backdrop-filter: var(--titanium-blur);
+}
+
+.settings-shell .settings-nav-search {
+  flex: 0 0 auto;
+  margin: 0 2px 8px;
+}
+
+.settings-shell .settings-nav-search [data-slot="input-wrapper"],
+.settings-mobile-search [data-slot="input-wrapper"] {
+  border-color: var(--titanium-input-border);
+  border-radius: var(--titanium-radius-control);
+  background: var(--titanium-inset);
+  box-shadow: inset 0 1px 0 var(--titanium-highlight);
+}
+
+.settings-shell .settings-search-results,
+.settings-mobile-results {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 2px 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.settings-shell .settings-search-count,
+.settings-mobile-results .settings-search-count {
+  flex: 0 0 auto;
+  padding: 4px 8px 2px;
+  color: var(--titanium-faint);
+  font-size: var(--kilo-font-size-12);
+  line-height: 1.35;
+}
+
+.settings-shell .settings-search-option,
+.settings-mobile-results .settings-search-option {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  color: var(--titanium-muted);
+  font-family: var(--font-family-sans, var(--vscode-font-family));
+  line-height: 1.35;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.settings-shell .settings-search-option:hover,
+.settings-shell .settings-search-option:focus-visible,
+.settings-mobile-results .settings-search-option:hover,
+.settings-mobile-results .settings-search-option:focus-visible {
+  color: var(--titanium-text);
+  border-color: var(--titanium-line);
+  outline: none;
+  background: var(--titanium-active);
+}
+
+.settings-shell .settings-search-option.selected,
+.settings-mobile-results .settings-search-option.selected {
+  color: var(--titanium-text);
+  border-color: color-mix(in srgb, var(--titanium-focus) 72%, var(--titanium-line));
+  background: color-mix(in srgb, var(--titanium-active) 86%, var(--titanium-focus) 14%);
+  box-shadow:
+    inset 2px 0 0 var(--titanium-focus),
+    inset 0 1px 0 var(--titanium-highlight);
+}
+
+.settings-shell .settings-search-option-title,
+.settings-mobile-results .settings-search-option-title {
+  overflow: hidden;
+  color: currentColor;
+  font-size: var(--kilo-font-size-14);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-shell .settings-search-option-path,
+.settings-mobile-results .settings-search-option-path {
+  overflow: hidden;
+  color: var(--titanium-faint);
+  font-size: var(--kilo-font-size-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-shell .settings-search-option-description,
+.settings-mobile-results .settings-search-option-description {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--titanium-muted);
+  font-size: var(--kilo-font-size-12);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.settings-shell [data-setting-search-title] {
+  scroll-margin-block: 72px;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.settings-shell [data-setting-search-title][data-search-target="true"] {
+  padding-inline: 12px;
+  color: var(--titanium-text);
+  border-color: color-mix(in srgb, var(--titanium-focus) 76%, var(--titanium-line-strong)) !important;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--titanium-active) 82%, var(--titanium-focus) 18%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--titanium-focus) 24%, transparent),
+    inset 0 1px 0 var(--titanium-highlight);
+}
+
+.settings-shell .settings-search-status {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.settings-shell .settings-tabs[data-variant="settings"] .settings-nav-list[data-slot="tabs-list"] {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 2px 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: inherit;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.settings-shell .settings-nav-group {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-shell .settings-nav-group + .settings-nav-group {
+  margin-top: 9px;
+}
+
+.settings-shell .settings-nav-heading,
+.settings-mobile-heading {
+  padding: 5px 10px 4px;
+  overflow: hidden;
+  color: var(--titanium-faint);
+  font-family: var(--font-family-sans, var(--vscode-font-family));
+  font-size: var(--kilo-font-size-11);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.055em;
+  text-align: left;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.settings-shell .settings-tabs[data-variant="settings"] .settings-nav-list [data-slot="tabs-trigger-wrapper"] {
+  flex: 0 0 34px;
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  border-radius: 8px;
+}
+
+.settings-shell .settings-tabs[data-variant="settings"] .settings-nav-list [data-slot="tabs-trigger"] {
+  justify-content: flex-start;
+  gap: 0;
+  padding-inline: 10px;
+  font-size: var(--kilo-font-size-14);
+}
+
+.settings-shell .settings-nav-empty {
+  padding: 16px 10px;
+  color: var(--titanium-faint);
+  font-size: var(--kilo-font-size-13);
+  line-height: 1.45;
+  text-align: center;
+}
+
+.settings-shell .settings-mobile-navigation {
+  display: none;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.settings-shell .settings-mobile-navigation [data-slot="popover-trigger"] {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-shell .settings-mobile-trigger[data-component="button"] {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding-inline: 12px;
+  color: var(--titanium-text);
+  border: 1px solid var(--titanium-line-strong);
+  border-radius: var(--titanium-radius-control);
+  background: var(--titanium-raised);
+  box-shadow: var(--titanium-control-shadow);
+}
+
+.settings-shell .settings-mobile-trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:has(.settings-shell) .settings-nav-popup[data-component="popover-content"] {
+  color: var(--titanium-text);
+  border: 1px solid var(--titanium-line-strong);
+  border-radius: var(--titanium-radius-shell);
+  background: var(--titanium-raised);
+  box-shadow: var(--titanium-card-shadow);
+  backdrop-filter: var(--titanium-blur);
+  -webkit-backdrop-filter: var(--titanium-blur);
+}
+
+body:has(.settings-shell) .settings-nav-popup [data-slot="popover-body"] {
+  padding: 8px;
+}
+
+.settings-mobile-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-mobile-search {
+  flex: 0 0 auto;
+  margin-bottom: 6px;
+}
+
+.settings-mobile-options {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.settings-mobile-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.settings-mobile-group + .settings-mobile-group {
+  margin-top: 7px;
+}
+
+.settings-mobile-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 10px;
+  color: var(--titanium-muted);
+  font-family: var(--font-family-sans, var(--vscode-font-family));
+  font-size: var(--kilo-font-size-14);
+  line-height: 1.35;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.settings-mobile-option:hover,
+.settings-mobile-option:focus-visible {
+  color: var(--titanium-text);
+  border-color: var(--titanium-line);
+  outline: none;
+  background: var(--titanium-active);
+}
+
+.settings-mobile-option.selected {
+  color: var(--titanium-text);
+  border-color: var(--titanium-line-strong);
+  background: var(--titanium-active);
+  box-shadow: inset 2px 0 0 var(--titanium-focus);
+}
+
+.settings-mobile-option .codicon {
+  flex: 0 0 16px;
+  color: currentColor;
+  font-size: var(--kilo-font-size-16);
+}
+
+@container settings (max-width: 1199px) {
+  .settings-shell .settings-navigation {
+    flex-basis: 216px;
+    width: 216px;
+    min-width: 216px;
+  }
+}
+
+@container settings (max-width: 719px) {
+  .settings-shell .settings-tabs[data-component="tabs"] {
+    flex-direction: column;
+  }
+
+  .settings-shell .settings-navigation {
+    display: none;
+  }
+
+  .settings-shell .settings-mobile-navigation {
+    display: flex;
+  }
+
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    padding: 22px 18px;
+  }
+}
+
+@container settings (max-width: 559px) {
+  .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+    padding: 18px 12px;
+  }
+}
+
+body.vscode-high-contrast:has(.settings-shell) .settings-navigation,
+body.vscode-high-contrast-light:has(.settings-shell) .settings-navigation,
+body.vscode-high-contrast:has(.settings-shell) .settings-nav-popup[data-component="popover-content"],
+body.vscode-high-contrast-light:has(.settings-shell) .settings-nav-popup[data-component="popover-content"] {
+  border-color: var(--vscode-contrastBorder, var(--vscode-foreground));
+  background: var(--vscode-editor-background);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+body.vscode-high-contrast:has(.settings-shell) .settings-search-option.selected,
+body.vscode-high-contrast-light:has(.settings-shell) .settings-search-option.selected,
+body.vscode-high-contrast:has(.settings-shell) [data-setting-search-title][data-search-target="true"],
+body.vscode-high-contrast-light:has(.settings-shell) [data-setting-search-title][data-search-target="true"] {
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)) !important;
+  background: var(--vscode-list-activeSelectionBackground);
+  box-shadow: none;
 }

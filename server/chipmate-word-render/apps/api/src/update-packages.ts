@@ -25,6 +25,7 @@ interface Entry {
   sha256: string
   sizeBytes: number
   mtimeMs: number
+  releaseNotes?: string
 }
 
 interface Manifest {
@@ -37,6 +38,10 @@ export function registerUpdatePackages(app: FastifyInstance, db: MarketDb, runti
     const old = await legacy.generatePackageManifest(root, ID)
     const artifacts = await db.extensionUpdateArtifacts(ID)
     const notes = new Map<string, string>()
+    for (const item of old.packages) {
+      const value = item.releaseNotes?.trim()
+      if (value && !notes.has(item.version)) notes.set(item.version, value)
+    }
     for (const item of artifacts) {
       const value = item.manifest.releaseNotes?.trim()
       if (value && !notes.has(item.version)) notes.set(item.version, value)

@@ -19,30 +19,32 @@ const editor = await Bun.file(new URL("../../src/SettingsEditorProvider.ts", imp
 const zh = await Bun.file(new URL("../../webview-ui/src/i18n/zh.ts", import.meta.url)).text()
 
 describe("Settings UI alignment", () => {
-  it("keeps the locked navigation order and Codicon mapping", () => {
-    const actual = Array.from(settings.matchAll(/\{ id: "([^"]+)", key: "[^"]+", icon: "([^"]+)"/g), (item) => [
-      item[1],
-      item[2],
-    ])
+  it("keeps all settings pages in the locked grouped navigation", () => {
+    const actual = Array.from(settings.matchAll(/\{ id: "([^"]+)", key: "settings\.[^"]+"/g), (item) => item[1])
     expect(actual).toEqual([
-      ["models", "package"],
-      ["providers", "plug"],
-      ["chipmateServer", "server"],
-      ["agentBehaviour", "hubot"],
-      ["autoApprove", "shield"],
-      ["browser", "globe"],
-      ["checkpoints", "bookmark"],
-      ["display", "device-desktop"],
-      ["autocomplete", "code"],
-      ["notifications", "bell"],
-      ["context", "notebook"],
-      ["commitMessage", "comment"],
-      ["indexing", "database"],
-      ["experimental", "beaker"],
-      ["sandboxing", "shield"],
-      ["language", "symbol-text"],
-      ["aboutKiloCode", "info"],
+      "models",
+      "providers",
+      "chipmateServer",
+      "autocomplete",
+      "context",
+      "indexing",
+      "checkpoints",
+      "agentBehaviour",
+      "autoApprove",
+      "browser",
+      "sandboxing",
+      "commitMessage",
+      "experimental",
+      "display",
+      "notifications",
+      "language",
+      "aboutKiloCode",
     ])
+    expect(settings).toContain('id: "connection"')
+    expect(settings).toContain('id: "knowledge"')
+    expect(settings).toContain('id: "automation"')
+    expect(settings).toContain('id: "experience"')
+    expect(settings).not.toContain("settings-nav-icon")
     expect(settings).not.toContain("@kilocode/kilo-ui/icon")
   })
 
@@ -58,7 +60,11 @@ describe("Settings UI alignment", () => {
       "settings-main",
       "settings-layout",
       "settings-navigation",
+      "settings-search",
       "settings-nav-item",
+      "settings-mobile-navigation",
+      "settings-mobile-search",
+      "settings-mobile-option",
       "settings-content",
       "settings-page-title",
       "settings-groups",
@@ -66,6 +72,7 @@ describe("Settings UI alignment", () => {
     ]) {
       expect(settings).toContain(`data-ui="${id}"`)
     }
+    expect(settings).toContain('"data-ui": "settings-mobile-trigger"')
   })
 
   it("keeps close, project config, global config and tab actions wired", () => {
@@ -118,12 +125,15 @@ describe("Settings UI alignment", () => {
     expect(selectors.every((line) => line.startsWith(".settings-shell"))).toBeTrue()
   })
 
-  it("uses the Titanium navigation density from the visual truth", () => {
+  it("uses static group headings and a single narrow page picker", () => {
+    expect(titanium).toContain(".settings-shell .settings-nav-heading")
+    expect(titanium).toContain(".settings-shell .settings-mobile-navigation")
+    expect(titanium).toContain("body:has(.settings-shell) .settings-nav-popup")
     expect(titanium).toMatch(
-      /body\.vscode-light \.settings-shell \.settings-tabs\[data-variant="settings"\] \[data-slot="tabs-trigger"\],[\s\S]*?font-size: var\(--kilo-font-size-15\)/,
+      /@container settings \(max-width: 719px\)[\s\S]*?\.settings-shell \.settings-navigation \{[\s\S]*?display: none/,
     )
     expect(titanium).toMatch(
-      /body\.vscode-light \.settings-shell \.settings-nav-icon,[\s\S]*?flex-basis: 20px;[\s\S]*?font-size: var\(--kilo-font-size-18\)/,
+      /@container settings \(max-width: 719px\)[\s\S]*?\.settings-shell \.settings-mobile-navigation \{[\s\S]*?display: flex/,
     )
   })
 

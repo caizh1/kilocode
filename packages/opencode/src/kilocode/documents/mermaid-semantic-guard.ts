@@ -9,6 +9,7 @@ const sessions = new Map<
   {
     seen: number
     rendered: Map<string, Set<string>>
+    sources: Map<string, string>
     coverage: Map<string, MermaidSemanticFingerprint>
     drafts: Map<string, MermaidSemanticFingerprint>
     pending: Map<
@@ -37,12 +38,19 @@ export type Issue = {
   message: string
 }
 
+export type PendingSplit = {
+  diagramId: string
+  missingNodes: Array<{ id: string; symbol?: string; designUnitId?: string }>
+  missingEdges: MermaidSemanticFingerprint["edges"]
+}
+
 export function mark(session: string) {
   prune()
   const found = sessions.get(session)
   sessions.set(session, {
     seen: Date.now(),
     rendered: found?.rendered ?? new Map(),
+    sources: found?.sources ?? new Map(),
     coverage: found?.coverage ?? new Map(),
     drafts: found?.drafts ?? new Map(),
     pending: found?.pending ?? new Map(),
@@ -74,18 +82,32 @@ export function allow(
   hash: string,
   png: string,
   fingerprint?: MermaidSemanticFingerprint,
+  source?: string,
 ) {
   mark(session)
   const state = sessions.get(session)!
   const found = state.rendered.get(hash) ?? new Set<string>()
   found.add(png)
   state.rendered.set(hash, found)
+  if (source) state.sources.set(hash, source)
   if (fingerprint) state.coverage.set(fingerprint.diagramId, fingerprint)
   if (fingerprint) settle(state, fingerprint)
   while ([...state.rendered.values()].reduce((count, items) => count + items.size, 0) > paths) {
     const first = state.rendered.keys().next().value
     if (!first) return
     state.rendered.delete(first)
+    state.sources.delete(first)
+  }
+}
+
+export function source(session: string, png: string): string | undefined {
+  prune()
+  const state = sessions.get(session)
+  if (!state) return
+  state.seen = Date.now()
+  for (const [hash, items] of state.rendered) {
+    if (!items.has(png)) continue
+    return state.sources.get(hash)
   }
 }
 
@@ -111,6 +133,44 @@ export function advance(session: string, fingerprint?: MermaidSemanticFingerprin
   if (!fingerprint) return
   mark(session)
   const state = sessions.get(session)!
+  if (fingerprint.splitFromDiagramId) {
+    const parent = state.pending.get(fingerprint.splitFromDiagramId)?.fingerprint
+    if (parent) {
+      const nodes = new Map(entries(parent).map((node) => [node.id, node]))
+      const conflicts: string[] = []
+      for (const node of entries(fingerprint)) {
+        const expected = nodes.get(node.id)
+        if (!expected) continue
+        if (node.symbol && expected.symbol && node.symbol !== expected.symbol) {
+          conflicts.push(`node ${node.id} symbol ${node.symbol} != ${expected.symbol}`)
+        }
+        if (node.designUnitId && expected.designUnitId && node.designUnitId !== expected.designUnitId) {
+          conflicts.push(`node ${node.id} DesignUnit ${node.designUnitId} != ${expected.designUnitId}`)
+        }
+      }
+      for (const link of fingerprint.edges) {
+        const matches = parent.edges.filter((item) => visible(item) === visible(link))
+        if (!matches.length) continue
+        for (const field of ["fromSymbol", "toSymbol"] as const) {
+          const value = link[field]
+          if (!value) continue
+          const known = matches.map((item) => item[field]).filter((item): item is string => Boolean(item))
+          if (known.length && !known.includes(value)) {
+            conflicts.push(`${link.from}->${link.to} ${field} ${value} != ${known.join("/")}`)
+          }
+        }
+      }
+      if (conflicts.length) {
+        return {
+          code: "mermaid-semantic-coverage-regression-blocked",
+          severity: "error",
+          message:
+            `Readable split child ${fingerprint.diagramId} contradicts its validated parent bindings (${conflicts.slice(0, 10).join("; ")}). ` +
+            "Omitting duplicate binding metadata is allowed, but remapping a visible node or edge to another source symbol or DesignUnit is not.",
+        }
+      }
+    }
+  }
   const draft = state.drafts.get(fingerprint.diagramId)
   if (!draft) state.drafts.set(fingerprint.diagramId, fingerprint)
   if (draft) {
@@ -121,14 +181,19 @@ export function advance(session: string, fingerprint?: MermaidSemanticFingerprin
       const details = [
         ...(missingNodes.length ? [`nodes: ${missingNodes.slice(0, 10).join(", ")}`] : []),
         ...(missingEdges.length
-          ? [`edges: ${missingEdges.slice(0, 10).map((item) => `${item.from}->${item.to}`).join(", ")}`]
+          ? [
+              `edges: ${missingEdges
+                .slice(0, 10)
+                .map((item) => `${item.from}->${item.to}`)
+                .join(", ")}`,
+            ]
           : []),
       ].join("; ")
       return {
         code: "mermaid-semantic-repair-regression-blocked",
         severity: "error",
         message:
-          `Diagram ID ${fingerprint.diagramId} removes visible semantics from its first source-backed validation attempt (${details}). ` +
+          `Diagram ID ${fingerprint.diagramId} removes visible semantics from its first semantically valid source-backed validation (${details}). ` +
           "Repair missing claims with compact nodeGroups/edgeGroups and keep the detailed MMD. Do not pass validation by collapsing branches, errors, handoffs, states, or lifecycle steps; checkpoint and restart the figure if the original semantics were disproven.",
       }
     }
@@ -152,24 +217,29 @@ export function pending(session: string) {
   return [...(sessions.get(session)?.pending.keys() ?? [])]
 }
 
+export function restore(session: string, split: PendingSplit) {
+  mark(session)
+  const state = sessions.get(session)!
+  if (state.pending.has(split.diagramId)) return
+  state.pending.set(split.diagramId, {
+    fingerprint: {
+      diagramId: split.diagramId,
+      nodeIds: split.missingNodes.map((node) => node.id),
+      nodes: split.missingNodes.map((node) => ({ ...node })),
+      edges: split.missingEdges.map((edge) => ({ ...edge })),
+    },
+    nodes: new Set(),
+    edges: new Set(),
+  })
+}
+
 export function pendingDetails(session: string) {
   prune()
   const state = sessions.get(session)
   if (!state) return []
   return [...state.pending.entries()].map(([diagramId, entry]) => {
-    const nodes = bindings(entry.fingerprint)
-      .filter((node) => !entry.nodes.has(node))
-      .map((node) => {
-        const [id, symbol, designUnitId] = node.split("\u0000")
-        return {
-          id,
-          ...(symbol ? { symbol } : {}),
-          ...(designUnitId ? { designUnitId } : {}),
-        }
-      })
-    const edges = entry.fingerprint.edges
-      .filter((link) => !entry.edges.has(edge(link)))
-      .map((link) => ({ ...link }))
+    const nodes = entries(entry.fingerprint).filter((node) => !entry.nodes.has(node.id))
+    const edges = entry.fingerprint.edges.filter((link) => !entry.edges.has(visible(link))).map((link) => ({ ...link }))
     return {
       diagramId,
       missingNodes: nodes,
@@ -251,14 +321,13 @@ function prune() {
 }
 
 function edge(input: MermaidSemanticFingerprint["edges"][number]) {
-  return [
-    input.from,
-    input.to,
-    input.relation,
-    input.fromSymbol ?? "",
-    input.toSymbol ?? "",
-    input.event ?? "",
-  ].join("\u0000")
+  return [input.from, input.to, input.relation, input.fromSymbol ?? "", input.toSymbol ?? "", input.event ?? ""].join(
+    "\u0000",
+  )
+}
+
+function visible(input: MermaidSemanticFingerprint["edges"][number]) {
+  return [input.from, input.to, input.relation, input.event ?? ""].join("\u0000")
 }
 
 function sourceEdge(input: NonNullable<MermaidSemanticFingerprint["sourceEdges"]>[number]) {
@@ -283,10 +352,7 @@ function missing(
   })
 }
 
-function merge(
-  previous: MermaidSemanticFingerprint,
-  current: MermaidSemanticFingerprint,
-): MermaidSemanticFingerprint {
+function merge(previous: MermaidSemanticFingerprint, current: MermaidSemanticFingerprint): MermaidSemanticFingerprint {
   const nodes = new Set([...(previous.sourceNodeIds ?? []), ...(current.sourceNodeIds ?? [])])
   const edges = [...(previous.sourceEdges ?? [])]
   const counts = new Map<string, number>()
@@ -308,21 +374,26 @@ function bindings(input: MermaidSemanticFingerprint) {
     : input.nodeIds.map((id) => [id, "", ""].join("\u0000"))
 }
 
+function entries(input: MermaidSemanticFingerprint): Array<{ id: string; symbol?: string; designUnitId?: string }> {
+  return input.nodes?.length
+    ? input.nodes.map((item) => ({
+        id: item.id,
+        ...(item.symbol ? { symbol: item.symbol } : {}),
+        ...(item.designUnitId ? { designUnitId: item.designUnitId } : {}),
+      }))
+    : input.nodeIds.map((id) => ({ id }))
+}
+
 function suggestions(
   parent: string,
   fingerprint: MermaidSemanticFingerprint,
   missingNodes: Array<{ id: string; symbol?: string; designUnitId?: string }>,
   missingEdges: MermaidSemanticFingerprint["edges"],
 ) {
-  const all = bindings(fingerprint).map((value) => {
-    const [id, symbol, designUnitId] = value.split("\u0000")
-    return {
-      id,
-      ...(symbol ? { symbol } : {}),
-      ...(designUnitId ? { designUnitId } : {}),
-    }
-  })
+  const all = entries(fingerprint)
   const index = new Map(all.map((node) => [node.id, node]))
+  const maxNodes = 12
+  const maxEdges = 16
   const groups: Array<{
     nodes: Map<string, (typeof all)[number]>
     edges: MermaidSemanticFingerprint["edges"]
@@ -336,7 +407,7 @@ function suggestions(
   for (const link of missingEdges) {
     const ids = [...new Set([link.from, link.to])]
     const size = new Set([...nodes.keys(), ...ids]).size
-    if (edges.length && size > 8) {
+    if (edges.length && (size > maxNodes || edges.length >= maxEdges)) {
       flush(new Map(nodes), [...edges])
       nodes.clear()
       edges.length = 0
@@ -349,7 +420,7 @@ function suggestions(
   const assigned = new Set(groups.flatMap((group) => [...group.nodes.keys()]))
   for (const node of missingNodes) {
     if (assigned.has(node.id)) continue
-    const group = groups.find((item) => item.nodes.size < 8)
+    const group = groups.find((item) => item.nodes.size < maxNodes)
     if (group) {
       group.nodes.set(node.id, node)
       assigned.add(node.id)
@@ -394,18 +465,16 @@ function settle(
     const item = queue.shift()!
     const ids = [
       ...(state.pending.has(item.diagramId) ? [item.diagramId] : []),
-      ...(item.splitFromDiagramId && state.pending.has(item.splitFromDiagramId)
-        ? [item.splitFromDiagramId]
-        : []),
+      ...(item.splitFromDiagramId && state.pending.has(item.splitFromDiagramId) ? [item.splitFromDiagramId] : []),
     ]
     for (const id of ids) {
       const entry = state.pending.get(id)
       if (!entry) continue
-      for (const node of bindings(item)) entry.nodes.add(node)
-      for (const link of item.edges) entry.edges.add(edge(link))
+      for (const node of item.nodeIds) entry.nodes.add(node)
+      for (const link of item.edges) entry.edges.add(visible(link))
       const complete =
-        bindings(entry.fingerprint).every((node) => entry.nodes.has(node)) &&
-        entry.fingerprint.edges.every((link) => entry.edges.has(edge(link)))
+        entry.fingerprint.nodeIds.every((node) => entry.nodes.has(node)) &&
+        entry.fingerprint.edges.every((link) => entry.edges.has(visible(link)))
       if (!complete) continue
       state.pending.delete(id)
       queue.push(entry.fingerprint)
@@ -413,13 +482,7 @@ function settle(
   }
 }
 
-function attempt(
-  session: string,
-  file: string,
-  key: "validations" | "renders",
-  max: number,
-  issue: Issue,
-) {
+function attempt(session: string, file: string, key: "validations" | "renders", max: number, issue: Issue) {
   mark(session)
   const state = sessions.get(session)!
   const count = state[key].get(file) ?? 0

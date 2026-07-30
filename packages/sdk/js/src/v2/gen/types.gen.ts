@@ -1433,6 +1433,7 @@ export type IndexingConfig = {
     | "voyage"
   model?: string | null
   dimension?: number | null
+  dimensionMode?: "auto" | "fixed"
   vectorStore?: "lancedb" | "qdrant"
   kilo?: {
     apiKey?: string

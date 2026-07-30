@@ -10,6 +10,16 @@ const obligations = [
   { id: "O1", text: "Trace the reachable execution path." },
   { id: "O2", text: "Explain the completion and ownership boundary." },
 ]
+const baseline = [
+  "The Code baseline states target_symbol is defined in src/target.c.",
+  "The completion boundary remains with the caller.",
+  "The final paragraph is a unique insertion anchor.",
+].join("\n")
+const packet: UltraCouncil.Packet = {
+  tools: [{ id: "read", status: "completed", input: '{"filePath":"src/target.c"}' }],
+  references: ["src/target.c", "target_symbol"],
+  truncated: false,
+}
 
 function messages(text = "Inspect `target_symbol` in src/target.c and prove the reachable path.") {
   return [
@@ -75,6 +85,8 @@ function report(lens: UltraCouncil.Lens, valid = true): UltraCouncil.Report {
 function start(kind: UltraCouncil.Kind = "analysis") {
   const state = UltraCouncil.load({ sessionID, messageID, messages: messages() })
   expect(UltraCouncil.configure(state, kind, obligations)).toBeUndefined()
+  expect(UltraCouncil.reserveBaseline(state)).toBeUndefined()
+  expect(UltraCouncil.recordBaseline(state, { answer: baseline, packet, sessionID: "ses_code_baseline" })).toBeTrue()
   expect(UltraCouncil.reserve(state, "initial", ["flow", "falsify", "evidence"])).toBeUndefined()
   UltraCouncil.record(state, [report("flow"), report("falsify"), report("evidence")])
   return state
@@ -97,10 +109,33 @@ function decisions(): UltraCouncil.Decision[] {
   ]
 }
 
+function edits(text = "The completion boundary transfers after target_symbol returns."): UltraCouncil.EditInput[] {
+  return [
+    {
+      kind: "replace",
+      anchor: "The completion boundary remains with the caller.",
+      text,
+      obligations: ["O2"],
+      claims: [{ id: "flow-1-1", hash: "flow".padEnd(64, "0") }],
+      reason: "The source-backed flow corrects the ownership boundary.",
+    },
+  ]
+}
+
+function editDecisions(state: UltraCouncil.State, status: UltraCouncil.EditDecision["status"] = "approved") {
+  return state.edits.map((item) => ({
+    id: item.id,
+    hash: item.hash,
+    status,
+    corrections: status === "approved" ? [] : ["The edit needs stronger evidence."],
+    uncertainties: status === "approved" ? [] : ["The corrected boundary remains uncertain."],
+  }))
+}
+
 function review(state: UltraCouncil.State, status: "approved" | "revision" = "approved"): UltraCouncil.Review {
   return {
     kind: state.kind ?? "analysis",
-    candidateHash: state.candidateHash ?? "",
+    candidateHash: state.proposalHash ?? "",
     status,
     obligations: obligations.map((item) => ({
       id: item.id,
@@ -120,24 +155,26 @@ beforeEach(() => {
 })
 
 describe("Ultra Council runtime contract", () => {
-  test("wires exact delivery and terminal gating only through the Ultra Council branch", async () => {
+  test("wires exact delivery and terminal gating through the native Ultra verification branch", async () => {
     const source = await Bun.file(new URL("../../src/session/prompt.ts", import.meta.url)).text()
     const task = await Bun.file(new URL("../../src/tool/task.ts", import.meta.url)).text()
 
-    expect(source).toContain("UltraCouncil.delivery(council)")
+    expect(source).toContain("UltraVerify.delivery(council)")
     expect(source).toContain("sessions.removePart")
-    expect(source).toContain("text: UltraCouncil.result(council)")
-    expect(source).toMatch(/UltraCouncil\.gate\([\s\S]*?handle\.message\.finish,[\s\S]*?\)/)
-    expect(task.match(/KiloTask\.permissions\(rules, ctx\.extra\?\.ultraCouncilReadOnly === true\)/g)).toHaveLength(2)
+    expect(source).toContain("text: UltraVerify.result(council)")
+    expect(source).toMatch(/UltraVerify\.gate\([\s\S]*?handle\.message\.finish,[\s\S]*?\)/)
+    expect(task).toContain("KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true, canTask)")
   })
 
-  test("freezes a complete request contract before exactly three blind investigations", () => {
+  test("freezes a Code baseline before two inherited and one blind investigation", () => {
     const state = UltraCouncil.load({ sessionID, messageID, messages: messages() })
 
-    expect(UltraCouncil.reserve(state, "initial", ["flow", "falsify", "evidence"])).toContain("Freeze")
+    expect(UltraCouncil.reserve(state, "initial", ["flow", "falsify", "evidence"])).toContain("already started")
     expect(UltraCouncil.configure(state, "analysis", obligations)).toBeUndefined()
     expect(UltraCouncil.configure(state, "analysis", obligations)).toBeUndefined()
     expect(UltraCouncil.configure(state, "review", obligations)).toContain("already frozen")
+    expect(UltraCouncil.reserveBaseline(state)).toBeUndefined()
+    expect(UltraCouncil.recordBaseline(state, { answer: baseline, packet, sessionID: "ses_code_baseline" })).toBeTrue()
     expect(UltraCouncil.reserve(state, "initial", ["flow", "falsify"])).toContain("exactly 3")
     expect(UltraCouncil.reserve(state, "initial", ["flow", "falsify", "evidence"])).toBeUndefined()
     UltraCouncil.record(state, [report("flow"), report("falsify"), report("evidence")])
@@ -148,87 +185,150 @@ describe("Ultra Council runtime contract", () => {
       obligations,
       started: 3,
       valid: 3,
+      baseline,
     })
   })
 
-  test("seals the exact approved analysis candidate without chair prose regeneration", () => {
-    const state = start()
-    const draft = "A".repeat(220)
+  test("retries the Code baseline only once after infrastructure failure", () => {
+    const state = UltraCouncil.load({ sessionID, messageID, messages: messages() })
+    expect(UltraCouncil.configure(state, "analysis", obligations)).toBeUndefined()
+    expect(UltraCouncil.reserveBaseline(state)).toBeUndefined()
+    UltraCouncil.failBaseline(state, "connection reset")
+    expect(state).toMatchObject({ phase: "baselining", baselineAttempts: 1 })
+    expect(UltraCouncil.reserveBaseline(state)).toBeUndefined()
+    UltraCouncil.failBaseline(state, "connection reset again")
+    expect(state).toMatchObject({ phase: "degraded", baselineAttempts: 2 })
+  })
 
-    expect(UltraCouncil.reserveAdjudication(state, draft, binding())).toBeUndefined()
+  test("delivers the frozen Code answer byte-for-byte when no edit is approved", () => {
+    const state = start()
+
+    expect(UltraCouncil.reserveAdjudication(state, state.baselineHash!, [], binding())).toBeUndefined()
     const result = review(state)
-    UltraCouncil.recordAdjudication(state, { valid: true, decisions: decisions(), review: result })
+    UltraCouncil.recordAdjudication(state, { valid: true, decisions: decisions(), edits: [], review: result })
 
     expect(state).toMatchObject({ phase: "sealed", started: 4, adjudicated: true })
-    expect(UltraCouncil.delivery(state)).toMatchObject({ text: draft, hash: state.candidateHash })
+    expect(UltraCouncil.delivery(state)).toMatchObject({ text: baseline, hash: state.baselineHash })
     expect(UltraCouncil.required(state)).toBeFalse()
   })
 
-  test("uses the fifth task to verify one complete revision and seals only the approved text", () => {
+  test("uses the fifth task to verify a corrected evidence-backed edit set", () => {
     const state = start("review")
-    const first = "B".repeat(220)
 
-    expect(UltraCouncil.reserveAdjudication(state, first, binding())).toBeUndefined()
+    expect(UltraCouncil.reserveAdjudication(state, state.baselineHash!, edits(), binding())).toBeUndefined()
     UltraCouncil.recordAdjudication(state, {
       valid: true,
       decisions: decisions(),
+      edits: editDecisions(state, "rejected"),
       review: review(state, "revision"),
     })
     expect(state).toMatchObject({ phase: "revising", started: 4 })
 
-    const final = "C".repeat(240)
-    expect(UltraCouncil.reserveRevision(state, final, binding())).toBeUndefined()
-    UltraCouncil.recordRevision(state, { valid: true, decisions: decisions(), review: review(state) })
+    const final = "The completion boundary transfers only after target_symbol returns successfully."
+    expect(UltraCouncil.reserveRevision(state, state.baselineHash!, edits(final), binding())).toBeUndefined()
+    UltraCouncil.recordRevision(state, {
+      valid: true,
+      decisions: decisions(),
+      edits: editDecisions(state),
+      review: review(state),
+    })
 
     expect(state).toMatchObject({ phase: "sealed", started: 5 })
-    expect(UltraCouncil.delivery(state)?.text).toBe(final)
+    expect(UltraCouncil.delivery(state)?.text).toContain(final)
+    expect(UltraCouncil.delivery(state)?.text).not.toContain("remains with the caller")
+  })
+
+  test("persists the previously approved edit set when the fifth verifier fails", () => {
+    const state = start("analysis")
+    const approved = "The completion boundary transfers after target_symbol returns."
+
+    expect(UltraCouncil.reserveAdjudication(state, state.baselineHash!, edits(approved), binding())).toBeUndefined()
+    UltraCouncil.recordAdjudication(state, {
+      valid: true,
+      decisions: decisions(),
+      edits: editDecisions(state),
+      review: review(state, "revision"),
+    })
+    expect(state).toMatchObject({ phase: "revising", appliedEdits: [{ id: "edit-1" }] })
+
+    expect(
+      UltraCouncil.reserveRevision(
+        state,
+        state.baselineHash!,
+        edits("The completion boundary transfers after an unverified condition."),
+        binding(),
+      ),
+    ).toBeUndefined()
+    UltraCouncil.recordRevision(state, { valid: false })
+
+    expect(state.phase).toBe("limited")
+    expect(state.candidate).toContain(approved)
+    expect(state.candidate).not.toContain("unverified condition")
+    expect(UltraCouncil.snapshot(state).appliedEdits).toEqual(state.appliedEdits)
+    expect(UltraCouncil.result(state)).toStartWith(state.candidate!)
   })
 
   test("rejects a parent request-kind bypass and falls back after the task budget is exhausted", () => {
     const state = start("analysis")
-    const draft = "D".repeat(220)
-    expect(UltraCouncil.reserveAdjudication(state, draft, binding())).toBeUndefined()
+    expect(UltraCouncil.reserveAdjudication(state, state.baselineHash!, edits(), binding())).toBeUndefined()
     const result = { ...review(state), kind: "implementation" as const }
 
-    UltraCouncil.recordAdjudication(state, { valid: true, decisions: decisions(), review: result })
+    UltraCouncil.recordAdjudication(state, {
+      valid: true,
+      decisions: decisions(),
+      edits: editDecisions(state),
+      review: result,
+    })
     expect(state.phase).toBe("revising")
-    expect(UltraCouncil.reserveRevision(state, "E".repeat(220), binding())).toBeUndefined()
-    UltraCouncil.recordRevision(state, { valid: true, decisions: decisions(), review: result })
+    expect(UltraCouncil.reserveRevision(state, state.baselineHash!, edits(), binding())).toBeUndefined()
+    UltraCouncil.recordRevision(state, {
+      valid: true,
+      decisions: decisions(),
+      edits: editDecisions(state),
+      review: result,
+    })
 
     expect(state.phase).toBe("limited")
-    expect(UltraCouncil.fallback(state)).toContain("ULTRA_COUNCIL_EVIDENCE_LIMITED")
+    expect(UltraCouncil.result(state)).toContain("The completion boundary transfers after target_symbol returns.")
   })
 
   test("degrades early when the remaining task budget cannot reach three valid reports plus adjudication", () => {
     const state = UltraCouncil.load({ sessionID, messageID, messages: messages("Check a failure.") })
     expect(UltraCouncil.configure(state, "analysis", obligations)).toBeUndefined()
+    expect(UltraCouncil.reserveBaseline(state)).toBeUndefined()
+    expect(UltraCouncil.recordBaseline(state, { answer: baseline, packet })).toBeTrue()
     expect(UltraCouncil.reserve(state, "initial", ["flow", "falsify", "evidence"])).toBeUndefined()
     UltraCouncil.record(state, [report("flow"), report("falsify", false), report("evidence", false)])
 
     expect(state).toMatchObject({ phase: "degraded", started: 3, valid: 1 })
     expect(state.reason).toContain("cannot reach three valid reports")
-    expect(UltraCouncil.result(state)).toContain("No unadjudicated technical answer was emitted")
+    expect(UltraCouncil.result(state)).toStartWith(baseline)
   })
 
-  test("returns the best investigated candidate when only final arbitration validation fails", () => {
+  test("retains only the Code baseline when independent adjudication fails twice", () => {
     const state = start("analysis")
-    const candidate = "G".repeat(220)
 
-    expect(UltraCouncil.reserveAdjudication(state, candidate, binding())).toBeUndefined()
+    expect(UltraCouncil.reserveAdjudication(state, state.baselineHash!, edits(), binding())).toBeUndefined()
     UltraCouncil.recordAdjudication(state, { valid: false })
-    expect(UltraCouncil.reserveAdjudication(state, candidate, binding())).toBeUndefined()
+    expect(UltraCouncil.reserveAdjudication(state, state.baselineHash!, edits(), binding())).toBeUndefined()
     UltraCouncil.recordAdjudication(state, { valid: false })
 
     expect(state).toMatchObject({ phase: "degraded", started: 5, valid: 3 })
-    expect(UltraCouncil.result(state)).toStartWith(candidate)
-    expect(UltraCouncil.result(state)).toContain("最终仲裁未完全通过")
+    expect(UltraCouncil.result(state)).toStartWith(baseline)
+    expect(UltraCouncil.result(state)).toContain(
+      "The independent adjudicator did not return a valid source-backed review",
+    )
   })
 
   test("preserves the existing verified mutation unlock for implementation turns", () => {
     const state = start("implementation")
-    const draft = "F".repeat(220)
-    expect(UltraCouncil.reserveAdjudication(state, draft, binding())).toBeUndefined()
-    UltraCouncil.recordAdjudication(state, { valid: true, decisions: decisions(), review: review(state) })
+    expect(UltraCouncil.reserveAdjudication(state, state.baselineHash!, [], binding())).toBeUndefined()
+    UltraCouncil.recordAdjudication(state, {
+      valid: true,
+      decisions: decisions(),
+      edits: [],
+      review: review(state),
+    })
     expect(state.phase).toBe("arbitrating")
 
     expect(UltraCouncil.reserveArbitration(state)).toBeUndefined()
@@ -248,9 +348,13 @@ describe("Ultra Council runtime contract", () => {
 
   test("restores sealed text from persisted tool input without copying it into the snapshot", () => {
     const state = start()
-    const draft = "G".repeat(220)
-    expect(UltraCouncil.reserveAdjudication(state, draft, binding())).toBeUndefined()
-    UltraCouncil.recordAdjudication(state, { valid: true, decisions: decisions(), review: review(state) })
+    expect(UltraCouncil.reserveAdjudication(state, state.baselineHash!, [], binding())).toBeUndefined()
+    UltraCouncil.recordAdjudication(state, {
+      valid: true,
+      decisions: decisions(),
+      edits: [],
+      review: review(state),
+    })
     const saved = UltraCouncil.snapshot(state)
     expect(saved).not.toHaveProperty("candidate")
 
@@ -265,6 +369,22 @@ describe("Ultra Council runtime contract", () => {
         },
         parts: [
           {
+            id: PartID.make("prt_ultra_baseline"),
+            messageID: MessageID.make("msg_ultra_sealed"),
+            sessionID,
+            type: "tool",
+            callID: "call_ultra_baseline",
+            tool: UltraCouncil.BASELINE,
+            state: {
+              status: "completed",
+              input: { requestKind: "analysis", obligations },
+              output: `ULTRA_CODE_BASELINE\n${JSON.stringify({ answer: baseline, packet })}`,
+              title: "baseline",
+              metadata: { ultraCouncil: saved },
+              time: { start: 1, end: 2 },
+            },
+          },
+          {
             id: PartID.make("prt_ultra_sealed"),
             messageID: MessageID.make("msg_ultra_sealed"),
             sessionID,
@@ -273,11 +393,11 @@ describe("Ultra Council runtime contract", () => {
             tool: UltraCouncil.ADJUDICATE,
             state: {
               status: "completed",
-              input: { draft, bindings: binding() },
+              input: { baselineHash: state.baselineHash, edits: [], bindings: binding() },
               output: "sealed",
               title: "sealed",
               metadata: { ultraCouncil: saved },
-              time: { start: 1, end: 2 },
+              time: { start: 2, end: 3 },
             },
           },
         ],
@@ -286,7 +406,43 @@ describe("Ultra Council runtime contract", () => {
 
     UltraCouncil.reset()
     const restored = UltraCouncil.load({ sessionID, messageID, messages: history })
-    expect(UltraCouncil.delivery(restored)?.text).toBe(draft)
+    expect(UltraCouncil.delivery(restored)?.text).toBe(baseline)
+  })
+
+  test("degrades an in-progress v4 snapshot whose baseline integrity cannot be proven", () => {
+    const history = [
+      ...messages(),
+      {
+        info: {
+          id: MessageID.make("msg_ultra_legacy"),
+          parentID: messageID,
+          role: "assistant",
+          sessionID,
+        },
+        parts: [
+          {
+            id: PartID.make("prt_ultra_legacy"),
+            messageID: MessageID.make("msg_ultra_legacy"),
+            sessionID,
+            type: "tool",
+            callID: "call_ultra_legacy",
+            tool: UltraCouncil.EXPLORE,
+            state: {
+              status: "completed",
+              input: {},
+              output: "legacy",
+              title: "legacy",
+              metadata: { ultraCouncil: { version: 4 } },
+              time: { start: 1, end: 2 },
+            },
+          },
+        ],
+      },
+    ] as unknown as SessionV1.WithParts[]
+
+    const restored = UltraCouncil.load({ sessionID, messageID, messages: history })
+    expect(restored.phase).toBe("degraded")
+    expect(restored.reason).toContain("legacy Ultra Council snapshot")
   })
 
   test("exposes only the phase-specific Ultra tools and never the ordinary task tool", () => {
@@ -296,13 +452,16 @@ describe("Ultra Council runtime contract", () => {
       edit: 2,
       task: 3,
       StructuredOutput: 6,
+      [UltraCouncil.BASELINE]: 9,
       [UltraCouncil.EXPLORE]: 4,
       [UltraCouncil.ADJUDICATE]: 7,
       [UltraCouncil.REVISE]: 8,
       [UltraCouncil.ARBITRATE]: 5,
     }
-    expect(UltraCouncil.filter(state, tools)).toEqual({ [UltraCouncil.EXPLORE]: 4 })
+    expect(UltraCouncil.filter(state, tools)).toEqual({ [UltraCouncil.BASELINE]: 9 })
 
+    state.phase = "collecting"
+    expect(UltraCouncil.filter(state, tools)).toEqual({ [UltraCouncil.EXPLORE]: 4 })
     state.phase = "arbitrating"
     expect(UltraCouncil.filter(state, tools)).toEqual({ [UltraCouncil.ADJUDICATE]: 7 })
     state.phase = "revising"
@@ -316,6 +475,7 @@ describe("Ultra Council runtime contract", () => {
   test("hardens Council task children against mutation and human-driven tools", () => {
     const normal = KiloTask.permissions([])
     const council = KiloTask.permissions([], true)
+    const nested = KiloTask.permissions([], true, true)
 
     expect(normal.some((item) => item.permission === "edit" || item.permission === "bash")).toBeFalse()
     expect(council).toContainEqual({ permission: "edit", pattern: "*", action: "deny" })
@@ -323,6 +483,41 @@ describe("Ultra Council runtime contract", () => {
     expect(council).toContainEqual({ permission: "suggest", pattern: "*", action: "deny" })
     expect(council).toContainEqual({ permission: "plan_enter", pattern: "*", action: "deny" })
     expect(council).toContainEqual({ permission: "plan_exit", pattern: "*", action: "deny" })
+    expect(council).toContainEqual({ permission: "task", pattern: "*", action: "deny" })
+    expect(nested).not.toContainEqual({ permission: "task", pattern: "*", action: "deny" })
+  })
+
+  test("rejects stale hashes, forged claims, non-unique anchors, and overlapping edits", () => {
+    const state = start()
+    expect(UltraCouncil.propose(state, "0".repeat(64), edits())).toEqual({
+      error: "The Ultra Code baseline hash is stale.",
+    })
+    expect(
+      UltraCouncil.propose(state, state.baselineHash!, [
+        {
+          ...edits()[0]!,
+          claims: [{ id: "flow-1-1", hash: "0".repeat(64) }],
+        },
+      ]),
+    ).toEqual({ error: "Edit 1 references an unknown or changed claim hash." })
+    expect(
+      UltraCouncil.propose(state, state.baselineHash!, [
+        {
+          ...edits()[0]!,
+          anchor: "The",
+        },
+      ]),
+    ).toEqual({ error: "Edit 1 anchor must occur exactly once in the frozen Code answer." })
+    expect(
+      UltraCouncil.propose(state, state.baselineHash!, [
+        edits()[0]!,
+        {
+          ...edits()[0]!,
+          kind: "insert_before",
+          text: "Evidence-backed prefix.",
+        },
+      ]),
+    ).toEqual({ error: "Edits edit-1 and edit-2 overlap." })
   })
 
   test("blocks premature provider stops without swallowing errors or interruptions", () => {

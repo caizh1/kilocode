@@ -193,10 +193,12 @@ export const LanguageProvider: ParentComponent<LanguageProviderProps> = (props) 
     document.documentElement.dir = RTL_LOCALES.has(loc) ? "rtl" : "ltr"
   })
 
-  const t = (key: UiI18nKey, params?: UiI18nParams) => {
-    const text = (dict() as Record<string, string>)[key] ?? (dicts.en as Record<string, string>)[key] ?? String(key)
-    return resolveTemplate(text, params)
+  const text = (loc: Locale, key: string, params?: UiI18nParams) => {
+    const value = dicts[loc]?.[key] ?? dicts.en[key] ?? key
+    return resolveTemplate(value, params)
   }
+
+  const t = (key: UiI18nKey, params?: UiI18nParams) => text(locale(), key, params)
 
   const setLocale = (next: Locale | "") => {
     setUserOverride(next)
@@ -205,7 +207,7 @@ export const LanguageProvider: ParentComponent<LanguageProviderProps> = (props) 
 
   return (
     <LanguageContext.Provider
-      value={{ locale, setLocale, userOverride, t: t as (key: string, params?: UiI18nParams) => string }}
+      value={{ locale, setLocale, userOverride, t: t as (key: string, params?: UiI18nParams) => string, text }}
     >
       <I18nProvider value={{ locale: () => locale(), t }}>{props.children}</I18nProvider>
     </LanguageContext.Provider>
@@ -220,6 +222,7 @@ export interface LanguageContextValue {
   setLocale: (locale: Locale | "") => void
   userOverride: Accessor<Locale | "">
   t: (key: string, params?: UiI18nParams) => string
+  text: (locale: Locale, key: string, params?: UiI18nParams) => string
 }
 
 export const LanguageContext = createContext<LanguageContextValue>()

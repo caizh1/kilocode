@@ -42,6 +42,12 @@ import { SuggestBar } from "./SuggestBar"
 import { DocumentArtifactCard } from "./DocumentArtifactCard"
 
 const EDIT_TOOLS = new Set(["edit", "write", "apply_patch"])
+const EXCLUDED = new Set(["question", "task", "todowrite"])
+
+function standard(part: SDKPart) {
+  if (part.type !== "tool") return false
+  return !EXCLUDED.has((part as unknown as ToolPart).tool)
+}
 
 function editOpen(part: SDKPart, open: boolean) {
   if (part.type !== "tool") return undefined
@@ -317,6 +323,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                 data-ui="qa-part-shell"
                 data-part-type={part.type}
                 data-part-id={part.id}
+                data-qa-tool-call={standard(part) ? "" : undefined}
                 data-timeline-highlight={highlighted() ? "" : undefined}
                 style={
                   highlighted() ? { "--timeline-color": timelineColor(part as unknown as TimelinePart) } : undefined

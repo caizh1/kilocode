@@ -24,12 +24,63 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
     })
   })
 
-  it("keeps explicit internal dimension and model", () => {
+  it("migrates the previous qwen3 internal dimension to auto mode", () => {
+    expect(
+      applyInternalIndexingDefaults(
+        {
+          provider: "openai-compatible",
+          model: "qwen3-embedding-8b",
+          dimension: 2048,
+        },
+        true,
+      ),
+    ).toMatchObject({
+      model: "qwen3-embedding-8b",
+      dimensionMode: "auto",
+    })
+    expect(
+      applyInternalIndexingDefaults(
+        { provider: "openai-compatible", model: "qwen3-embedding-8b", dimension: 2048 },
+        true,
+      ),
+    ).not.toHaveProperty("dimension")
+  })
+
+  it("preserves 2048 for a custom OpenAI-compatible model", () => {
+    expect(
+      applyInternalIndexingDefaults(
+        {
+          provider: "openai-compatible",
+          model: "custom-embedding",
+          dimension: 2048,
+        },
+        true,
+      ),
+    ).toMatchObject({
+      model: "custom-embedding",
+      dimension: 2048,
+      dimensionMode: "fixed",
+    })
+  })
+
+  it("does not apply the qwen dimension to a custom OpenAI-compatible model", () => {
+    expect(
+      applyInternalIndexingDefaults(
+        {
+          provider: "openai-compatible",
+          model: "bge-m3",
+        },
+        true,
+      ),
+    ).not.toHaveProperty("dimension")
+  })
+
+  it("migrates an unmarked old internal 4096 dimension to auto mode", () => {
     expect(
       applyInternalIndexingDefaults(
         {
@@ -45,8 +96,25 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
-      dimension: 4096,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
+    })
+  })
+
+  it("preserves an explicitly fixed qwen3 dimension", () => {
+    expect(
+      applyInternalIndexingDefaults(
+        {
+          provider: "openai-compatible",
+          model: "qwen3-embedding-8b",
+          dimension: 1024,
+          dimensionMode: "fixed",
+        },
+        true,
+      ),
+    ).toMatchObject({
+      dimension: 1024,
+      dimensionMode: "fixed",
     })
   })
 
@@ -66,7 +134,7 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: false, paths: [".", "manuals"] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
     })
   })
@@ -77,7 +145,7 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
     })
   })
@@ -90,7 +158,7 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
       "openai-compatible": {
         baseUrl: "https://example.test/v1/embeddings",
@@ -115,7 +183,7 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
       "openai-compatible": {
         baseUrl: "https://example.test/v1/embeddings",

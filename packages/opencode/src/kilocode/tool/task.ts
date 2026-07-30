@@ -12,8 +12,45 @@ import type { Agent } from "../../agent/agent"
 import type { Config } from "../../config/config"
 import { Provider } from "../../provider/provider"
 import z from "zod"
+import { ULTRA_BASELINE, ULTRA_SYNTH } from "@/kilocode/agent"
+import type { SessionV1 } from "@opencode-ai/core/v1/session"
 
 const log = Log.create({ service: "kilocode-task-model" })
+const mutations = [
+  "agent_console_shell",
+  "agent_manager",
+  "apply_patch",
+  "background_process",
+  "bash",
+  "create_word_document",
+  "declare_artifact",
+  "edit",
+  "embedded_review_submit",
+  "export_artifact_diagnostics",
+  "generate_image",
+  "insert_mermaid_into_word",
+  "interactive_terminal",
+  "kilo_memory_save",
+  "materialize_word_fields",
+  "merge_word_documents",
+  "notebook_edit",
+  "notebook_execute",
+  "notify_user",
+  "plan_enter",
+  "plan_exit",
+  "render_mermaid_diagram",
+  "render_plantuml_diagram",
+  "render_word_document",
+  "repo_clone",
+  "save_mermaid_artifact",
+  "skill_create",
+  "skill_market_install",
+  "skill_market_publish",
+  "skill_transaction",
+  "suggest",
+  "todowrite",
+  "write",
+] as const
 
 // RATIONALE: Mirror narrow state slice Task tool consumes and ignore unrelated TUI fields.
 const ModelState = z
@@ -33,13 +70,16 @@ const ModelState = z
 
 export namespace KiloTask {
   /** Reject primary agents used as subagents */
-  export function validate(info: Agent.Info, name: string) {
+  export function validate(info: Agent.Info, name: string, internal = false) {
     if (info.mode === "primary") throw new Error(`Agent "${name}" is a primary agent and cannot be used as a subagent`)
+    if ([ULTRA_BASELINE, ULTRA_SYNTH].includes(String(info.options?.id)) && !internal) {
+      throw new Error(`Agent "${name}" is reserved for the native ChipMate Ultra runtime`)
+    }
   }
 
-  /** Kilo keeps delegation one level deep to avoid recursive subagent chains. */
-  export function nestedTask(): false {
-    return false
+  /** Kilo keeps delegation one level deep, except for the internal Code baseline author. */
+  export function nestedTask(info: Agent.Info) {
+    return info.native === true && info.options?.id === ULTRA_BASELINE
   }
 
   /**
@@ -76,22 +116,45 @@ export namespace KiloTask {
   }
 
   /** Extra permission rules appended to subagent sessions */
-  export function permissions(rules: Permission.Ruleset, readonly = false): Permission.Ruleset {
+  export function permissions(
+    rules: Permission.Ruleset,
+    readonly = false,
+    nested = false,
+    mcp?: Config.Info["mcp"],
+  ): Permission.Ruleset {
     return [
-      { permission: "task", pattern: "*", action: "deny" },
+      ...(nested ? [] : [{ permission: "task", pattern: "*", action: "deny" as const }]),
       { permission: "question", pattern: "*", action: "deny" },
       { permission: "interactive_terminal", pattern: "*", action: "deny" },
       ...rules,
       ...(readonly
         ? [
-            { permission: "edit", pattern: "*", action: "deny" } as const,
-            { permission: "bash", pattern: "*", action: "deny" } as const,
-            { permission: "suggest", pattern: "*", action: "deny" } as const,
-            { permission: "plan_enter", pattern: "*", action: "deny" } as const,
-            { permission: "plan_exit", pattern: "*", action: "deny" } as const,
+            ...mutations.map((permission) => ({ permission, pattern: "*", action: "deny" as const })),
+            ...Object.keys(mcp ?? {}).map((name) => ({
+              permission: `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_*`,
+              pattern: "*",
+              action: "deny" as const,
+            })),
           ]
         : []),
     ]
+  }
+
+  /** Hide mutating tools from runtime-managed read-only Ultra descendants. */
+  export function disabled() {
+    return Object.fromEntries(mutations.map((id) => [id, false]))
+  }
+
+  export function trace(messages: SessionV1.WithParts[]) {
+    return messages
+      .flatMap((message) => message.parts)
+      .filter((part): part is SessionV1.ToolPart => part.type === "tool")
+      .slice(0, 24)
+      .map((part) => ({
+        id: part.tool,
+        status: part.state.status,
+        input: ("input" in part.state ? JSON.stringify(part.state.input) : "").slice(0, 600),
+      }))
   }
 
   export function merge(...rulesets: Permission.Ruleset[]): Permission.Rule[] {

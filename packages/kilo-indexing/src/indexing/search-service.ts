@@ -14,6 +14,30 @@ interface BaselineSearch {
 
 const log = Log.create({ service: "indexing-search" })
 
+function symbol(query: string): string | undefined {
+  const token = query.trim()
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(token) ? token : undefined
+}
+
+function rank(query: string, results: VectorStoreSearchResult[]): VectorStoreSearchResult[] {
+  const token = symbol(query)
+  if (!token) return results
+  const pattern = new RegExp(`\\b${token}\\b`)
+  const body = new RegExp(`\\b${token}\\s*\\([^;{}]*\\)\\s*\\{`, "s")
+  return results
+    .map((item, index) => ({
+      item,
+      index,
+      exact: pattern.test(item.payload?.codeChunk ?? ""),
+      body: body.test(item.payload?.codeChunk ?? ""),
+    }))
+    .sort(
+      (left, right) =>
+        Number(right.body) - Number(left.body) || Number(right.exact) - Number(left.exact) || left.index - right.index,
+    )
+    .map((entry) => entry.item)
+}
+
 export class CodeIndexSearchService {
   constructor(
     private readonly configManager: CodeIndexConfigManager,
@@ -44,14 +68,17 @@ export class CodeIndexSearchService {
 
     const minScore = this.configManager.currentSearchMinScore
     const maxResults = options.maxResults ?? this.configManager.currentSearchMaxResults
+    const ceiling = Math.max(maxResults, Math.min(maxResults * 16, 1000))
+    const limit = symbol(query) ? ceiling : maxResults
 
     const currentState = this.stateManager.getCurrentStatus().systemStatus
-    if (currentState !== "Indexed" && currentState !== "Indexing") {
+    const fallback = currentState === "Error" ? await this.vectorStore.hasIndexedData() : false
+    if (currentState !== "Indexed" && currentState !== "Indexing" && !fallback) {
       throw new Error(`Code index is not ready for search. Current state: ${currentState}`)
     }
 
     try {
-      const embeddingResponse = await this.embedder.createEmbeddings([query])
+      const embeddingResponse = await this.embedder.createEmbeddings([query], undefined, "code-query")
       const vector = embeddingResponse?.embeddings[0]
       if (!vector) {
         throw new Error("Failed to generate embedding for query.")
@@ -60,12 +87,14 @@ export class CodeIndexSearchService {
       const normalizedPrefix = directoryPrefix ? path.normalize(directoryPrefix) : undefined
       const extensions = new Set(this.configManager.getConfig().fileExtensions)
       if (!this.baseline) {
-        const results = await this.vectorStore.search(vector, normalizedPrefix, minScore, maxResults)
-        return results.filter((result) => this.allowed(result, extensions))
+        const results = await this.vectorStore.search(vector, normalizedPrefix, minScore, limit)
+        return rank(
+          query,
+          results.filter((result) => this.allowed(result, extensions)),
+        ).slice(0, maxResults)
       }
       if (!this.baseline.overlay.ready) throw new Error("Worktree index reconciliation is not complete.")
 
-      const ceiling = Math.max(maxResults, Math.min(maxResults * 16, 1000))
       const delta = (async () => {
         const search = async (limit: number): Promise<VectorStoreSearchResult[]> => {
           const results = await this.vectorStore.search(vector, normalizedPrefix, minScore, limit)
@@ -73,7 +102,7 @@ export class CodeIndexSearchService {
           if (filtered.length >= maxResults || results.length < limit || limit >= ceiling) return filtered
           return search(Math.min(limit * 2, ceiling))
         }
-        return search(maxResults)
+        return search(limit)
       })()
       const base = (async () => {
         const checks = new Map<string, Promise<boolean>>()
@@ -86,7 +115,7 @@ export class CodeIndexSearchService {
           if (filtered.length >= maxResults || results.length < limit || limit >= ceiling) return filtered
           return search(Math.min(limit * 2, ceiling))
         }
-        return search(maxResults)
+        return search(limit)
       })()
       const [baseline, current] = await Promise.all([base, delta])
       const merged = new Map<string, VectorStoreSearchResult>()
@@ -102,7 +131,10 @@ export class CodeIndexSearchService {
         if (this.allowed(result, extensions) && this.baseline.overlay.deltaResult(result))
           merged.set(key(result), result)
       }
-      return [...merged.values()].sort((left, right) => right.score - left.score).slice(0, maxResults)
+      return rank(
+        query,
+        [...merged.values()].sort((left, right) => right.score - left.score),
+      ).slice(0, maxResults)
     } catch (err) {
       log.error("search failed", { err })
       throw err

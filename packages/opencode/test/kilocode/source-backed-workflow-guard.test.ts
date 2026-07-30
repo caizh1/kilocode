@@ -35,6 +35,11 @@ const loaded = (id: string) => ({
   ],
 })
 
+const compacted = (id: string) => ({
+  info: { id, role: "user" },
+  parts: [{ type: "compaction", auto: true }],
+})
+
 describe("source-backed workflow guard", () => {
   afterEach(() => Guard.reset())
 
@@ -98,6 +103,11 @@ describe("source-backed workflow guard", () => {
     expect(Guard.mutation("s1", compacted, "/workspace", "/workspace/.kilo/artifacts/task-2/next.md")).toContain(
       ".kilo/artifacts/task-1",
     )
+    expect(Guard.artifact("s1", compacted, "/workspace", "/workspace/.kilo/artifacts/task-1/review.md")).toBeUndefined()
+    expect(Guard.artifact("s1", compacted, "/workspace", "/workspace/src/module.c")).toBeUndefined()
+    expect(Guard.artifact("s1", compacted, "/workspace", "/workspace/.kilo/artifacts/task-2/review.md")).toContain(
+      ".kilo/artifacts/task-1",
+    )
   })
 
   test("synchronizes a continuation from full history before compacted tool messages are used", () => {
@@ -111,6 +121,44 @@ describe("source-backed workflow guard", () => {
     const compacted = [user("u2", "继续")]
     expect(Guard.shell("s1", compacted)).toBe(true)
     expect(Guard.mutation("s1", compacted, "/workspace", "/workspace/.kilo/artifacts/task-1/next.md")).toBeUndefined()
+  })
+
+  test("ignores automatic compaction user records when synchronizing and evaluating an active continuation", () => {
+    const first = user("u1", "生成完整详细设计")
+    const history = [
+      first,
+      loaded("a1"),
+      declared("a2", ".kilo/artifacts/task-1"),
+      user("u2", "继续"),
+      compacted("c1"),
+      user("u3", "继续"),
+    ]
+    Guard.sync("s1", history)
+    expect(Guard.sourceBacked("s1", [user("u3", "继续"), compacted("c2")])).toBe(true)
+    expect(Guard.root("s1", [user("u3", "继续"), compacted("c2")])).toBe(".kilo/artifacts/task-1")
+    expect(
+      Guard.mutation(
+        "s1",
+        [user("u3", "继续"), compacted("c2")],
+        "/workspace",
+        "/workspace/.kilo/artifacts/task-2/file.md",
+      ),
+    ).toContain(".kilo/artifacts/task-1")
+  })
+
+  test("keeps the synchronized workflow when compacted tool context retains only stale non-continuation history", () => {
+    const first = user("u1", "生成完整详细设计")
+    const history = [
+      first,
+      loaded("a1"),
+      declared("a2", ".kilo/artifacts/task-1"),
+      user("u2", "继续"),
+      user("u3", "继续"),
+    ]
+    Guard.sync("s1", history)
+    expect(Guard.sourceBacked("s1", [first])).toBe(true)
+    expect(Guard.root("s1", [first])).toBe(".kilo/artifacts/task-1")
+    expect(Guard.shell("s1", [first])).toBe(true)
   })
 
   test("does not synchronize after an intervening ordinary user turn", () => {
@@ -179,4 +227,102 @@ describe("source-backed workflow guard", () => {
     expect(await Guard.stage("s1", first, workspace, path.join(root, "resume-state.md"))).toBeUndefined()
     await fs.rm(workspace, { recursive: true, force: true })
   })
+
+  test("requires an owner-complete flow census and all durable checkpoints before diagrams", async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "sbdd-stage-ready-"))
+    const root = path.join(workspace, ".kilo/artifacts/task-1")
+    await fs.mkdir(path.join(root, "02-source-evidence"), { recursive: true })
+    await fs.mkdir(path.join(root, "03-control-flow-evidence"), { recursive: true })
+    await fs.mkdir(path.join(root, "05-enhanced-detail-design/units"), { recursive: true })
+    await fs.writeFile(
+      path.join(root, "02-source-evidence/design-unit-census.json"),
+      JSON.stringify({
+        version: 1,
+        targetDesignUnitId: "target",
+        targetSourceRoot: "src",
+        designUnits: [
+          { id: "target", name: "Target", kind: "target" },
+          { id: "child", name: "Child", kind: "confirmed-submodule", parentId: "target" },
+        ],
+        implementationUnits: [
+          { path: "src/target.c", disposition: "target", designUnitId: "target" },
+          { path: "src/child.c", disposition: "confirmed-submodule", designUnitId: "child" },
+        ],
+      }),
+    )
+    await Promise.all(
+      ["target", "child"].map((name) =>
+        fs.writeFile(path.join(root, `05-enhanced-detail-design/units/${name}.md`), prose(name)),
+      ),
+    )
+    const header =
+      "flow_family_id,owning_design_unit,entry_trigger,input_business_object,entry_step_ids,participating_units,decision_edge_ids,async_handoff_edge_ids,wait_retry_timeout_cancel_edge_ids,failure_recovery_cleanup_edge_ids,terminal_step_ids,state_data_resource_effects,evidence_ids,diagram_ids,status"
+    await fs.writeFile(
+      path.join(root, "03-control-flow-evidence/14-business-flow-family-census.csv"),
+      [
+        header,
+        "FLOW-1,target,TRIGGER-1,OBJECT-1,STEP-1,target,N/A,N/A,N/A,N/A,TERM-1,EFFECT-1,SRC-1,,covered",
+      ].join("\n"),
+    )
+
+    const first = [user("u1", "生成完整详细设计")]
+    Guard.activate("s1", "source-backed-detail-design", first)
+    Guard.declare("s1", first, ".kilo/artifacts/task-1")
+    const history = [
+      ...first,
+      loaded("a1"),
+      declared("a2", ".kilo/artifacts/task-1"),
+      user("u2", "继续"),
+    ]
+    Guard.sync("s1", history)
+    const target = path.join(root, "04-diagrams/target-architecture.mmd")
+    const missing = await Guard.stage("s1", [user("u2", "继续")], workspace, target)
+    expect(missing).toContain("no covered local flow owned by DesignUnit child")
+    const rejected = await Guard.checkpoint(
+      "s1",
+      [user("u2", "继续")],
+      workspace,
+      path.join(root, "resume-state.md"),
+      "flowCensusStatus: PASS",
+    )
+    expect(rejected).toContain("claims prose readiness")
+
+    await fs.appendFile(
+      path.join(root, "03-control-flow-evidence/14-business-flow-family-census.csv"),
+      "\nFLOW-2,child,TRIGGER-2,OBJECT-2,STEP-2,child,N/A,N/A,N/A,N/A,TERM-2,EFFECT-2,SRC-2,,covered",
+    )
+    const durable = await Guard.stage("s1", [user("u2", "继续")], workspace, target)
+    expect(durable).toContain("missing required checkpoint file resume-state.md")
+    await Promise.all(
+      ["resume-state.md", "review-notes.md", "continue-prompt.md"].map((name) =>
+        fs.writeFile(path.join(root, name), checkpoint()),
+      ),
+    )
+    expect(await Guard.stage("s1", [user("u2", "继续")], workspace, target)).toBeUndefined()
+    await fs.rm(workspace, { recursive: true, force: true })
+  })
 })
+
+function prose(name: string) {
+  return [
+    `### ${name}`,
+    ...Array.from({ length: 14 }, (_, index) => {
+      const topic = index + 1
+      const status = topic === 8 ? "N/A" : "PASS"
+      return [
+        `#### ${topic}. 主题 ${topic}`,
+        `SBDD-TOPIC-STATUS: ${String(topic).padStart(2, "0")} | ${status} | E${topic}`,
+        `主题 ${topic} 的设计结论、机制、异常处理与源码依据说明。`,
+      ].join("\n")
+    }),
+  ].join("\n")
+}
+
+function checkpoint() {
+  return [
+    "SBDD_RULESET_REVISION=2026-07-source-semantic-v122",
+    "flowCensusStatus: PASS",
+    "flowCensusParseStatus: PASS",
+    "missingTopicCount: 0",
+  ].join("\n")
+}

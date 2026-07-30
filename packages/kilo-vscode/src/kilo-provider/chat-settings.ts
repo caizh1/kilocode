@@ -2,8 +2,10 @@ import * as vscode from "vscode"
 
 type Post = (msg: unknown) => void
 
+const CONFIG = "chipmate.v2.chat"
+
 export function buildChatSettingsMessage() {
-  const config = vscode.workspace.getConfiguration("kilo-code.new.chat")
+  const config = vscode.workspace.getConfiguration(CONFIG)
   return {
     type: "chatSettingsLoaded" as const,
     settings: {
@@ -14,7 +16,7 @@ export function buildChatSettingsMessage() {
 
 export function watchChatConfig(post: Post): vscode.Disposable {
   return vscode.workspace.onDidChangeConfiguration((event) => {
-    if (event.affectsConfiguration("kilo-code.new.chat")) {
+    if (event.affectsConfiguration(CONFIG)) {
       post(buildChatSettingsMessage())
     }
   })

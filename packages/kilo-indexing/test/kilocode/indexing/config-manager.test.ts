@@ -18,6 +18,65 @@ function createInput(input: Partial<IndexingConfigInput> = {}): IndexingConfigIn
 }
 
 describe("CodeIndexConfigManager", () => {
+  test("parses explicit embedding dimension modes in the public config schema", () => {
+    expect(IndexingConfig.parse({ dimensionMode: "auto", dimension: null })).toMatchObject({
+      dimensionMode: "auto",
+      dimension: null,
+    })
+    expect(IndexingConfig.parse({ dimensionMode: "fixed", dimension: 1024 })).toMatchObject({
+      dimensionMode: "fixed",
+      dimension: 1024,
+    })
+    expect(() => IndexingConfig.parse({ dimensionMode: "adaptive" })).toThrow()
+  })
+
+  test("uses auto mode without adopting an unverified registry dimension", () => {
+    const manager = new CodeIndexConfigManager(createInput({
+      embedderProvider: "openai-compatible",
+      openAiCompatibleBaseUrl: "https://example.test/v1",
+      modelId: "qwen3-embedding-8b",
+      modelDimension: 4096,
+      dimensionMode: "auto",
+    }))
+
+    expect(manager.currentDimensionMode).toBe("auto")
+    expect(manager.currentModelDimension).toBeUndefined()
+    expect(manager.getConfig().modelDimension).toBeUndefined()
+  })
+
+  test("does not restart for numeric dimension changes that explicit auto mode ignores", () => {
+    const manager = new CodeIndexConfigManager(createInput({
+      embedderProvider: "openai-compatible",
+      openAiCompatibleBaseUrl: "https://example.test/v1",
+      modelId: "qwen3-embedding-8b",
+      modelDimension: 1024,
+      dimensionMode: "auto",
+    }))
+
+    expect(
+      manager.loadConfiguration(createInput({
+        embedderProvider: "openai-compatible",
+        openAiCompatibleBaseUrl: "https://example.test/v1",
+        modelId: "qwen3-embedding-8b",
+        modelDimension: 4096,
+        dimensionMode: "auto",
+      })).requiresRestart,
+    ).toBe(false)
+  })
+
+  test("keeps an explicit fixed dimension as the requested runtime dimension", () => {
+    const manager = new CodeIndexConfigManager(createInput({
+      embedderProvider: "openai-compatible",
+      openAiCompatibleBaseUrl: "https://example.test/v1",
+      modelId: "qwen3-embedding-8b",
+      modelDimension: 1024,
+      dimensionMode: "fixed",
+    }))
+
+    expect(manager.currentDimensionMode).toBe("fixed")
+    expect(manager.currentModelDimension).toBe(1024)
+  })
+
   test("keeps public RAG disabled while defaulting document discovery bounds", () => {
     const input = toIndexingConfigInput(undefined)
     const cfg = new CodeIndexConfigManager(input)
@@ -197,12 +256,142 @@ describe("CodeIndexConfigManager", () => {
   })
 
   describe("loadConfiguration restart checks", () => {
+    test("does not restart for an identical normalized indexing configuration", () => {
+      const input = createInput({
+        embedderProvider: "openai-compatible",
+        openAiKey: undefined,
+        openAiCompatibleBaseUrl: "http://127.0.0.1:1234/v1/embeddings",
+        modelId: "fixture-model",
+        modelDimension: 1024,
+        searchMinScore: 0.4,
+        searchMaxResults: 12,
+        embeddingBatchSize: 16,
+        scannerMaxBatchRetries: 2,
+        documents: { enabled: true, paths: [".", "docs"] },
+      })
+      const cfg = new CodeIndexConfigManager(input)
+
+      expect(cfg.loadConfiguration(structuredClone(input)).requiresRestart).toBe(false)
+    })
+
+    test("does not restart Code Graph or RAG services for search and batching tuning", () => {
+      const cfg = new CodeIndexConfigManager(
+        createInput({
+          searchMinScore: 0.4,
+          searchMaxResults: 10,
+          embeddingBatchSize: 8,
+          scannerMaxBatchRetries: 1,
+        }),
+      )
+
+      const result = cfg.loadConfiguration(
+        createInput({
+          searchMinScore: 0.6,
+          searchMaxResults: 30,
+          embeddingBatchSize: 32,
+          scannerMaxBatchRetries: 5,
+        }),
+      )
+
+      expect(result.requiresRestart).toBe(false)
+      expect(cfg.currentSearchMinScore).toBe(0.6)
+      expect(cfg.currentSearchMaxResults).toBe(30)
+      expect(cfg.currentEmbeddingBatchSize).toBe(32)
+      expect(cfg.currentScannerMaxBatchRetries).toBe(5)
+    })
+
+    test("does not restart Code Graph or RAG services for Document RAG-only changes", () => {
+      const cfg = new CodeIndexConfigManager(
+        createInput({
+          documents: {
+            enabled: true,
+            paths: ["docs"],
+            include: ["**/*.md"],
+            maxFiles: 100,
+          },
+        }),
+      )
+
+      const result = cfg.loadConfiguration(
+        createInput({
+          documents: {
+            enabled: true,
+            paths: ["docs", "specs"],
+            include: ["**/*.md", "**/*.txt"],
+            exclude: ["**/archive/**"],
+            maxFiles: 200,
+          },
+        }),
+      )
+
+      expect(result.requiresRestart).toBe(false)
+      expect(cfg.currentDocuments).toMatchObject({
+        paths: [".", "docs", "specs"],
+        include: ["**/*.md", "**/*.txt"],
+        exclude: ["**/archive/**"],
+        maxFiles: 200,
+      })
+    })
+
     test("requires restart when model changes with same dimension", () => {
       const cfg = new CodeIndexConfigManager(createInput({ modelId: "text-embedding-3-small" }))
 
       const result = cfg.loadConfiguration(createInput({ modelId: "text-embedding-ada-002" }))
 
       expect(result.requiresRestart).toBe(true)
+    })
+
+    test("requires a RAG service restart when the OpenAI-compatible endpoint changes", () => {
+      const cfg = new CodeIndexConfigManager(
+        createInput({
+          embedderProvider: "openai-compatible",
+          openAiKey: undefined,
+          openAiCompatibleBaseUrl: "http://127.0.0.1:1234/v1/embeddings",
+          modelId: "fixture-model",
+          modelDimension: 1024,
+        }),
+      )
+
+      const result = cfg.loadConfiguration(
+        createInput({
+          embedderProvider: "openai-compatible",
+          openAiKey: undefined,
+          openAiCompatibleBaseUrl: "http://127.0.0.1:1235/v1/embeddings",
+          modelId: "fixture-model",
+          modelDimension: 1024,
+        }),
+      )
+
+      expect(result.requiresRestart).toBe(true)
+    })
+
+    test("requires a RAG service restart when vector schema compatibility changes", () => {
+      const cfg = new CodeIndexConfigManager(
+        createInput({
+          modelId: "text-embedding-3-small",
+          modelDimension: 1024,
+          lancedbVectorStoreDirectory: "/tmp/vector-a",
+        }),
+      )
+
+      expect(
+        cfg.loadConfiguration(
+          createInput({
+            modelId: "text-embedding-3-small",
+            modelDimension: 2048,
+            lancedbVectorStoreDirectory: "/tmp/vector-a",
+          }),
+        ).requiresRestart,
+      ).toBe(true)
+      expect(
+        cfg.loadConfiguration(
+          createInput({
+            modelId: "text-embedding-3-small",
+            modelDimension: 2048,
+            lancedbVectorStoreDirectory: "/tmp/vector-b",
+          }),
+        ).requiresRestart,
+      ).toBe(true)
     })
 
     test("does not restart when default model is made explicit", () => {

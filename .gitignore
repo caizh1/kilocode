@@ -47,6 +47,7 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 *.vsix
+public-packages/
 
 # Telemetry ID
 telemetry-id

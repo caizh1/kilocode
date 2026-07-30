@@ -14,6 +14,17 @@ export function sanitizeErrorMessage(errorMessage: string): string {
 
   let sanitized = errorMessage
 
+  // Redact credentials before retaining provider response details in diagnostics.
+  sanitized = sanitized.replace(
+    /(authorization["']?\s*[:=]\s*["']?bearer\s+)[^"',}\s]+/gi,
+    "$1[REDACTED_CREDENTIAL]",
+  )
+  sanitized = sanitized.replace(
+    /((?:api[_-]?key|access[_-]?token|token|secret)["']?\s*[:=]\s*)(["']?)[^"',}\s]+\2/gi,
+    "$1$2[REDACTED_CREDENTIAL]$2",
+  )
+  sanitized = sanitized.replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[REDACTED_CREDENTIAL]")
+
   // Replace URLs first (http, https, ftp, file protocols)
   // This needs to be done before file paths to avoid partial replacements
   sanitized = sanitized.replace(
@@ -73,17 +84,12 @@ export function getErrorMessageForStatus(status: number | undefined, embedderTyp
     case 403:
       return "Authentication failed. Please check your API key."
     case 404:
-      return embedderType === "openai"
-        ? "The specified embedding model is not available."
-        : "Invalid endpoint URL. Please verify the endpoint."
+      return embedderType === "openai" ? "The specified embedding model is not available." : undefined
     case 429:
       return "Service is temporarily unavailable due to rate limiting. Please try again later."
     case 402:
       return "Add credits to continue, or switch to a free embedding model."
     default:
-      if (status && status >= 400 && status < 600) {
-        return "Configuration error. Please verify your embedder settings."
-      }
       return undefined
   }
 }
@@ -158,6 +164,16 @@ export function handleValidationError(
     return { valid: false, error: statusError }
   }
 
+  if (statusCode && statusCode >= 400 && statusCode < 600) {
+    const detail = sanitizeErrorMessage(errorMessage.replace(new RegExp(`^HTTP ${statusCode}:\\s*`), "")).trim()
+    const summary =
+      statusCode >= 500 ? "Embedding service returned a server error" : "Embedding service rejected the request"
+    if (detail && detail !== "Unknown error" && detail !== "[object Object]") {
+      return { valid: false, error: `${summary} (HTTP ${statusCode}): ${detail}` }
+    }
+    return { valid: false, error: `${summary} (HTTP ${statusCode}) without an error message.` }
+  }
+
   // Check for connection errors
   if (errorMessage) {
     if (
@@ -178,11 +194,11 @@ export function handleValidationError(
 
   // For generic errors, preserve the original error message if it's not a standard one
   if (errorMessage && errorMessage !== "Unknown error") {
-    return { valid: false, error: errorMessage }
+    return { valid: false, error: sanitizeErrorMessage(errorMessage) }
   }
 
   // Fallback to generic error
-  return { valid: false, error: "Configuration error. Please verify your embedder settings." }
+  return { valid: false, error: "Embedder configuration validation failed without an error message." }
 }
 
 /**
@@ -204,7 +220,7 @@ export async function withValidationErrorHandling<T extends { valid: boolean; er
  * Formats an embedding error message based on the error type and context
  */
 export function formatEmbeddingError(error: any, maxRetries: number): Error {
-  const errorMessage = extractErrorMessage(error)
+  const errorMessage = sanitizeErrorMessage(extractErrorMessage(error))
   const statusCode = extractStatusCode(error)
 
   if (statusCode === 401) {

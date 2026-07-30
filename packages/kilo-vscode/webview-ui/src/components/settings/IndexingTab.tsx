@@ -310,10 +310,11 @@ const IndexingTab: Component = () => {
         provider: next,
         model,
         dimension: null,
+        dimensionMode: "auto",
       })
       return
     }
-    updateIndexing({ provider: next, model: null, dimension: null })
+    updateIndexing({ provider: next, model: null, dimension: null, dimensionMode: "auto" })
   }
 
   const saveEnabled = (enabled: boolean) => {
@@ -323,6 +324,7 @@ const IndexingTab: Component = () => {
         provider: "kilo",
         model: knownKiloModel(cfg().model) ?? (kiloDefault() || null),
         dimension: null,
+        dimensionMode: "auto",
       })
       return
     }
@@ -343,7 +345,7 @@ const IndexingTab: Component = () => {
   const saveModel = (value: string) => {
     if (selectedProvider() === "kilo") return
     const trimmed = value.trim()
-    updateIndexing({ model: trimmed || null })
+    updateIndexing({ model: trimmed || null, dimension: null, dimensionMode: "auto" })
     clearField("model")
   }
 
@@ -384,7 +386,9 @@ const IndexingTab: Component = () => {
   ) => {
     const trimmed = value.trim()
     if (!trimmed) {
-      updateIndexing({ [key]: key === "dimension" ? null : undefined })
+      updateIndexing(
+        key === "dimension" ? { dimension: null, dimensionMode: "auto" } : { [key]: undefined },
+      )
       if (key === "dimension") {
         clearField(key)
       } else {
@@ -399,7 +403,7 @@ const IndexingTab: Component = () => {
     if (options?.integer && !Number.isInteger(num)) return
     if (options?.min !== undefined && num < options.min) return
     if (options?.max !== undefined && num > options.max) return
-    updateIndexing({ [key]: num })
+    updateIndexing(key === "dimension" ? { dimension: num, dimensionMode: "fixed" } : { [key]: num })
     if (key === "dimension") {
       clearField(key)
     } else {
@@ -627,7 +631,13 @@ const IndexingTab: Component = () => {
                 current={kiloModels().find((item) => item.value === kiloValue())}
                 value={(item) => item.value}
                 label={(item) => item.label}
-                onSelect={(item) => updateIndexing({ model: item?.value ?? kiloDefault(), dimension: null })}
+                onSelect={(item) =>
+                  updateIndexing({
+                    model: item?.value ?? kiloDefault(),
+                    dimension: null,
+                    dimensionMode: "auto",
+                  })
+                }
                 variant="secondary"
                 size="small"
                 triggerVariant="settings"
@@ -680,9 +690,7 @@ const IndexingTab: Component = () => {
             placeholder={
               selectedProvider() === "kilo"
                 ? language.t("settings.indexing.model.provided")
-                : isInternalOfflineBuild() && selectedProvider() === INTERNAL_OFFLINE_INDEXING_DEFAULTS.provider
-                  ? String(INTERNAL_OFFLINE_INDEXING_DEFAULTS.dimension)
-                  : language.t("settings.indexing.dimension.placeholder")
+                : language.t("settings.indexing.dimension.placeholder")
             }
             disabled={selectedProvider() === "kilo"}
             onInput={(event: InputEvent) => {
@@ -691,7 +699,21 @@ const IndexingTab: Component = () => {
             }}
             onBlur={(event: FocusEvent) => {
               const input = event.currentTarget as HTMLInputElement
-              saveNumber("dimension", input.value, { integer: true, min: 1 })
+              saveNumber("dimension", input.value, {
+                integer: true,
+                min:
+                  isInternalOfflineBuild() &&
+                  selectedProvider() === INTERNAL_OFFLINE_INDEXING_DEFAULTS.provider &&
+                  (cfg().model ?? INTERNAL_OFFLINE_INDEXING_DEFAULTS.model) === INTERNAL_OFFLINE_INDEXING_DEFAULTS.model
+                    ? 32
+                    : 1,
+                max:
+                  isInternalOfflineBuild() &&
+                  selectedProvider() === INTERNAL_OFFLINE_INDEXING_DEFAULTS.provider &&
+                  (cfg().model ?? INTERNAL_OFFLINE_INDEXING_DEFAULTS.model) === INTERNAL_OFFLINE_INDEXING_DEFAULTS.model
+                    ? 4096
+                    : undefined,
+              })
             }}
           />
         </SettingsRow>

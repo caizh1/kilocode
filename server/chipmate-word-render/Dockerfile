@@ -75,6 +75,7 @@ ENV PORT=6001 \
     SKILL_MARKET_ROOT=/data/skill-market/.legacy-latest \
     EXTENSION_MARKET_ENABLED=0 \
     EXTENSION_MARKET_ROOT=/data/skill-market/extensions \
+    REVIEW_RULE_ROOT=/data/review-rules \
     EXTENSION_DROP_SCAN_MS=5000 \
     MARKET_WEB_ROOT=/app/apps/web/dist \
     MAX_DOCX_BYTES=52428800 \
@@ -95,7 +96,7 @@ ENV PORT=6001 \
     MAX_RENDER_PAGE_TOTAL_BYTES=268435456 \
     MAX_RENDER_RESPONSE_BYTES=402653184
 
-RUN mkdir -p /packages /data/skill-market/extensions/drop /data/skill-market/extensions/artifacts /data/skill-market/extensions/.tmp
+RUN mkdir -p /packages /data/skill-market/extensions/drop /data/skill-market/extensions/artifacts /data/skill-market/extensions/.tmp /data/review-rules
 
 EXPOSE 6001
 

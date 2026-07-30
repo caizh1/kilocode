@@ -9,7 +9,7 @@ const CHANNEL = "ChipMate Indexing"
 const OPEN_INDEXING_OUTPUT = "Open Indexing Output"
 const UNKNOWN = "Unknown indexing error"
 const INDEXING_STDERR_PATTERN =
-  /\b(indexing|code\s*graph|codegraph|rag|document|documents|pdf|docx|xlsx|ods|lancedb|tree-sitter|treesitter|ripgrep|rg(?:\.exe)?|file\s*watcher|watcher|indexing-worker|worker)\b/i
+  /\b(indexing|embedder|embedding|code\s*graph|codegraph|rag|document|documents|pdf|docx|xlsx|ods|lancedb|tree-sitter|treesitter|ripgrep|rg(?:\.exe)?|file\s*watcher|watcher|indexing-worker|worker)\b/i
 
 let channel: vscode.OutputChannel | undefined
 let wired = false

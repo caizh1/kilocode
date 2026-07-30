@@ -1,5 +1,5 @@
 import { createHash } from "crypto"
-import { mkdir, mkdtemp, rm } from "fs/promises"
+import { mkdir, mkdtemp, rm, symlink } from "fs/promises"
 import ignore from "ignore"
 import { tmpdir } from "os"
 import { join } from "path"
@@ -638,6 +638,56 @@ describe("DirectoryScanner", () => {
     const ragResult = await scan.scanDirectory(root, undefined, undefined, undefined, "full", undefined, "rag")
     expect(ragResult.stats.processed).toBe(2)
     expect(store.points).toBe(2)
+  })
+
+  test.skipIf(process.platform === "win32")("rejects a tracked source symlink that escapes the workspace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+    const outside = await mkdtemp(join(tmpdir(), "scanner-outside-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const local = join(root, "main.c")
+    const external = join(outside, "secret.c")
+    const link = join(root, "escape.c")
+    await Bun.write(local, "int main(void) { return 0; }\n")
+    await Bun.write(external, "int QA_OUTSIDE_SECRET(void) { return 1; }\n")
+    await symlink(external, link)
+    Bun.spawnSync(["git", "init", "-q"], { cwd: root })
+    Bun.spawnSync(["git", "add", "."], { cwd: root })
+
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const graph = new CodeGraphJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const postings = new CodePostingsJsonStorage({ workspacePath: root, cacheDirectory: cacheDir })
+    const scan = new DirectoryScanner(
+      undefined,
+      undefined,
+      new Parser(),
+      cache,
+      ignore(),
+      1,
+      1,
+      undefined,
+      undefined,
+      graph,
+      postings,
+      { writeCache: false },
+    )
+
+    try {
+      const result = await scan.scanDirectory(root, undefined, undefined, undefined, "full", undefined, "codeGraph")
+
+      expect(result.candidateFiles).toContain(link)
+      expect(result.stats.skipped).toBeGreaterThanOrEqual(1)
+      expect(await graph.getFileGraph(local)).toBeDefined()
+      expect(await graph.getFileGraph(link)).toBeUndefined()
+      expect((await postings.search("QA_OUTSIDE_SECRET")).length).toBe(0)
+    } finally {
+      scan.disposeGraphWorkers()
+      await Promise.all([
+        rm(root, { recursive: true, force: true }),
+        rm(outside, { recursive: true, force: true }),
+        rm(cacheDir, { recursive: true, force: true }),
+      ])
+    }
   })
 
   test("RAG-only target does not update code graph or postings", async () => {

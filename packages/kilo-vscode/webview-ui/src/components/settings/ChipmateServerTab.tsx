@@ -15,7 +15,7 @@ import {
   type ChipmateServerState,
   type ChipmateServerTestResult,
 } from "../../../../src/shared/chipmate-server"
-import type { ChipmateUpdateResult } from "../../../../src/shared/update-check"
+import { sanitize, type ChipmateUpdateResult } from "../../../../src/shared/update-check"
 
 const UPDATE_AUTO_INSTALL_KEY = "updateCheck.autoInstall"
 
@@ -56,7 +56,8 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
   const [expanded, setExpanded] = createSignal(Boolean(props.preview?.notesExpanded))
 
   const value = () => String(props.preview?.value ?? settings()[CHIPMATE_SERVER_KEY] ?? state()?.baseUrl ?? "")
-  const ready = () => props.preview?.value !== undefined || settings()[CHIPMATE_SERVER_KEY] !== undefined || Boolean(state())
+  const ready = () =>
+    props.preview?.value !== undefined || settings()[CHIPMATE_SERVER_KEY] !== undefined || Boolean(state())
   const error = createMemo(() => {
     if (!ready()) return undefined
     try {
@@ -147,7 +148,11 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
 
   return (
     <div class="chipmate-server-page" data-ui="chipmate-server-page">
-      <Card class="chipmate-server-card" data-ui="chipmate-server-form">
+      <Card
+        class="chipmate-server-card"
+        data-ui="chipmate-server-form"
+        data-setting-search-title={language.t("settings.chipmateServer.address.title")}
+      >
         <div class="chipmate-server-label-row">
           <div class="chipmate-server-label-copy">
             <label for="chipmate-server-base-url">{language.t("settings.chipmateServer.address.title")}</label>
@@ -192,10 +197,7 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
                   role={item().kind === "error" ? "alert" : "status"}
                   aria-live="polite"
                 >
-                  <Codicon
-                    name={statusIcon(item().kind)}
-                    spin={item().kind === "testing"}
-                  />
+                  <Codicon name={statusIcon(item().kind)} spin={item().kind === "testing"} />
                   <span>{item().text}</span>
                 </div>
               )}
@@ -207,6 +209,7 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
       <UpdateCard
         phase={phase}
         update={update}
+        candidate={candidate}
         expanded={expanded}
         toggle={() => setExpanded((value) => !value)}
         check={check}
@@ -220,6 +223,7 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
 const UpdateCard: Component<{
   phase: () => Phase
   update: () => ChipmateUpdateResult | undefined
+  candidate: () => Extract<ChipmateUpdateResult, { status: "available" }> | undefined
   expanded: () => boolean
   toggle: () => void
   check: () => void
@@ -229,182 +233,228 @@ const UpdateCard: Component<{
   const language = useLanguage()
   const vscode = useVSCode()
   const { settings, updateSetting } = useConfig()
+  const [copied, setCopied] = createSignal(false)
   const autoInstall = () => settings()[UPDATE_AUTO_INSTALL_KEY] !== false
+  const copy = (result: Extract<ChipmateUpdateResult, { status: "error" }>) => {
+    const version = props.candidate()?.version
+    const lines = [
+      `时间：${new Date().toISOString()}`,
+      `错误码：${result.code}`,
+      ...(version ? [`候选版本：${version}`] : []),
+      `错误信息：${safeError(result.message)}`,
+    ]
+    void navigator.clipboard.writeText(lines.join("\n")).then(
+      () => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2_000)
+      },
+      () => setCopied(false),
+    )
+  }
   return (
     <Card class="chipmate-server-card chipmate-update-card" data-ui="chipmate-server-update">
-        <div class="chipmate-update-heading">
-          <div>
-            <h3>{language.t("settings.chipmateServer.update.title")}</h3>
-            <p>{language.t("settings.chipmateServer.update.description")}</p>
-          </div>
-          <Button
-            class="chipmate-update-check"
-            variant="secondary"
-            onClick={props.check}
-            disabled={props.phase() !== "idle"}
-            data-ui="chipmate-update-check"
-          >
-            <Codicon name="sync" spin={props.phase() === "checking"} />
-            <span>
-              {props.phase() === "checking"
-                ? language.t("settings.chipmateServer.update.checking")
-                : language.t("settings.chipmateServer.update.check")}
-            </span>
+      <div class="chipmate-update-heading">
+        <div>
+          <h3>{language.t("settings.chipmateServer.update.title")}</h3>
+          <p>{language.t("settings.chipmateServer.update.description")}</p>
+        </div>
+        <Button
+          class="chipmate-update-check"
+          variant="secondary"
+          onClick={props.check}
+          disabled={props.phase() !== "idle"}
+          data-ui="chipmate-update-check"
+        >
+          <Codicon name="sync" spin={props.phase() === "checking"} />
+          <span>
+            {props.phase() === "checking"
+              ? language.t("settings.chipmateServer.update.checking")
+              : language.t("settings.chipmateServer.update.check")}
+          </span>
+        </Button>
+      </div>
+
+      <div
+        class="chipmate-update-auto"
+        data-setting-search-title={language.t("settings.chipmateServer.autoUpdate.title")}
+      >
+        <div>
+          <strong>{language.t("settings.chipmateServer.autoUpdate.title")}</strong>
+          <span>{language.t("settings.chipmateServer.autoUpdate.description")}</span>
+        </div>
+        <Switch
+          checked={autoInstall()}
+          onChange={(checked: boolean) => updateSetting(UPDATE_AUTO_INSTALL_KEY, checked)}
+          disabled={props.phase() === "installing"}
+          hideLabel
+        >
+          {language.t("settings.chipmateServer.autoUpdate.title")}
+        </Switch>
+      </div>
+
+      <Show when={props.phase() === "checking"}>
+        <UpdateStatus
+          icon="sync"
+          spin
+          kind="progress"
+          title={language.t("settings.chipmateServer.update.checking")}
+          detail={language.t("settings.chipmateServer.update.checkingDetail")}
+        />
+      </Show>
+      <Show when={props.phase() === "installing"}>
+        <UpdateStatus
+          icon="loading"
+          spin
+          kind="progress"
+          title={language.t("settings.chipmateServer.update.installing")}
+          detail={language.t("settings.chipmateServer.update.installingDetail")}
+        />
+      </Show>
+      <Show when={props.phase() === "idle" && props.update()?.status === "latest"}>
+        <UpdateStatus
+          icon="pass-filled"
+          kind="latest"
+          title={language.t("settings.chipmateServer.update.latest")}
+          detail={`${language.t("settings.chipmateServer.update.currentVersion", {
+            version: (props.update() as Extract<ChipmateUpdateResult, { status: "latest" }>).currentVersion,
+          })} · ${checkedLabel(
+            (props.update() as Extract<ChipmateUpdateResult, { status: "latest" }>).checkedAt,
+            language.t,
+          )}`}
+        />
+      </Show>
+      <Show
+        when={
+          props.phase() === "idle" && props.update()?.status === "available"
+            ? (props.update() as Extract<ChipmateUpdateResult, { status: "available" }>)
+            : undefined
+        }
+      >
+        {(value) => {
+          const item = value
+          return (
+            <div class="chipmate-update-available" aria-live="polite" data-ui="chipmate-update-available">
+              <div class="chipmate-update-icon chipmate-update-icon-available">
+                <Codicon name="cloud-download" />
+              </div>
+              <div class="chipmate-update-copy">
+                <strong>{language.t("settings.chipmateServer.update.available", { version: item().version })}</strong>
+                <span>
+                  {language.t("settings.chipmateServer.update.versionTransition", {
+                    current: item().currentVersion,
+                    latest: item().version,
+                  })}
+                </span>
+                <span>{language.t("settings.chipmateServer.update.installDetail")}</span>
+                <button
+                  type="button"
+                  class="chipmate-update-notes-toggle"
+                  aria-expanded={props.expanded()}
+                  onClick={props.toggle}
+                >
+                  <span>
+                    {props.expanded()
+                      ? language.t("settings.chipmateServer.update.notesHide")
+                      : language.t("settings.chipmateServer.update.notesShow")}
+                  </span>
+                  <Codicon name={props.expanded() ? "chevron-up" : "chevron-down"} />
+                </button>
+                <Show when={props.expanded()}>
+                  <div class="chipmate-update-notes" data-ui="chipmate-update-notes">
+                    <div class="chipmate-update-notes-title">
+                      <Codicon name="file" />
+                      <strong>
+                        {language.t("settings.chipmateServer.update.notesTitle", { version: item().version })}
+                      </strong>
+                    </div>
+                    <Show
+                      when={item().releaseNotes}
+                      fallback={<p>{language.t("settings.chipmateServer.update.notesEmpty")}</p>}
+                    >
+                      {(notes) => <Markdown text={safeNotes(notes())} />}
+                    </Show>
+                    <p class="chipmate-update-notes-meta">
+                      {publishedLabel(item().publishedAt, language.t)}
+                      {" · "}
+                      {language.t("settings.chipmateServer.update.currentPlatform")}
+                    </p>
+                  </div>
+                </Show>
+              </div>
+              <Button class="chipmate-update-install" variant="primary" onClick={props.install}>
+                <Codicon name="cloud-download" />
+                <span>{language.t("settings.chipmateServer.update.install")}</span>
+              </Button>
+            </div>
+          )
+        }}
+      </Show>
+      <Show when={props.phase() === "idle" && props.update()?.status === "installed"}>
+        <div class="chipmate-update-result-row" aria-live="polite">
+          <UpdateStatus
+            icon="check-all"
+            kind="latest"
+            title={language.t("settings.chipmateServer.update.installed")}
+            detail={language.t("settings.chipmateServer.update.installedDetail", {
+              version: (props.update() as Extract<ChipmateUpdateResult, { status: "installed" }>).version,
+            })}
+          />
+          <Button variant="primary" onClick={() => vscode.postMessage({ type: "reloadChipmateWindow" })}>
+            <Codicon name="window" />
+            <span>{language.t("settings.chipmateServer.update.reload")}</span>
           </Button>
         </div>
-
-        <div class="chipmate-update-auto">
-          <div>
-            <strong>{language.t("settings.chipmateServer.autoUpdate.title")}</strong>
-            <span>{language.t("settings.chipmateServer.autoUpdate.description")}</span>
-          </div>
-          <Switch
-            checked={autoInstall()}
-            onChange={(checked: boolean) => updateSetting(UPDATE_AUTO_INSTALL_KEY, checked)}
-            disabled={props.phase() === "installing"}
-            hideLabel
-          >
-            {language.t("settings.chipmateServer.autoUpdate.title")}
-          </Switch>
-        </div>
-
-        <Show when={props.phase() === "checking"}>
-          <UpdateStatus
-            icon="sync"
-            spin
-            kind="progress"
-            title={language.t("settings.chipmateServer.update.checking")}
-            detail={language.t("settings.chipmateServer.update.checkingDetail")}
-          />
-        </Show>
-        <Show when={props.phase() === "installing"}>
-          <UpdateStatus
-            icon="loading"
-            spin
-            kind="progress"
-            title={language.t("settings.chipmateServer.update.installing")}
-            detail={language.t("settings.chipmateServer.update.installingDetail")}
-          />
-        </Show>
-        <Show when={props.phase() === "idle" && props.update()?.status === "latest"}>
-          <UpdateStatus
-            icon="pass-filled"
-            kind="latest"
-            title={language.t("settings.chipmateServer.update.latest")}
-            detail={`${language.t("settings.chipmateServer.update.currentVersion", {
-              version: (props.update() as Extract<ChipmateUpdateResult, { status: "latest" }>).currentVersion,
-            })} · ${checkedLabel(
-              (props.update() as Extract<ChipmateUpdateResult, { status: "latest" }>).checkedAt,
-              language.t,
-            )}`}
-          />
-        </Show>
-        <Show
-          when={
-            props.phase() === "idle" && props.update()?.status === "available"
-              ? (props.update() as Extract<ChipmateUpdateResult, { status: "available" }>)
-              : undefined
-          }
-        >
-          {(value) => {
-            const item = value
+      </Show>
+      <Show when={props.phase() === "idle" && props.update()?.status === "error"}>
+        <div class="chipmate-update-error" aria-live="assertive" data-ui="chipmate-update-error">
+          {(() => {
+            const result = props.update() as Extract<ChipmateUpdateResult, { status: "error" }>
             return (
-              <div class="chipmate-update-available" aria-live="polite" data-ui="chipmate-update-available">
-                <div class="chipmate-update-icon chipmate-update-icon-available">
-                  <Codicon name="cloud-download" />
-                </div>
-                <div class="chipmate-update-copy">
-                  <strong>
-                    {language.t("settings.chipmateServer.update.available", { version: item().version })}
-                  </strong>
+              <>
+                <UpdateStatus
+                  icon="error"
+                  kind="error"
+                  title={updateErrorTitle(result, language.t)}
+                  detail={updateError(result, language.t)}
+                />
+                <div class="chipmate-update-error-detail">
                   <span>
-                    {language.t("settings.chipmateServer.update.versionTransition", {
-                      current: item().currentVersion,
-                      latest: item().version,
-                    })}
+                    {language.t("settings.chipmateServer.update.errorCode", { code: result.code })}
                   </span>
-                  <span>{language.t("settings.chipmateServer.update.installDetail")}</span>
-                  <button
-                    type="button"
-                    class="chipmate-update-notes-toggle"
-                    aria-expanded={props.expanded()}
-                    onClick={props.toggle}
-                  >
-                    <span>
-                      {props.expanded()
-                        ? language.t("settings.chipmateServer.update.notesHide")
-                        : language.t("settings.chipmateServer.update.notesShow")}
-                    </span>
-                    <Codicon name={props.expanded() ? "chevron-up" : "chevron-down"} />
-                  </button>
-                  <Show when={props.expanded()}>
-                    <div class="chipmate-update-notes" data-ui="chipmate-update-notes">
-                      <div class="chipmate-update-notes-title">
-                        <Codicon name="file" />
-                        <strong>
-                          {language.t("settings.chipmateServer.update.notesTitle", { version: item().version })}
-                        </strong>
-                      </div>
-                      <Show
-                        when={item().releaseNotes}
-                        fallback={<p>{language.t("settings.chipmateServer.update.notesEmpty")}</p>}
-                      >
-                        {(notes) => <Markdown text={safeNotes(notes())} />}
-                      </Show>
-                      <p class="chipmate-update-notes-meta">
-                        {publishedLabel(item().publishedAt, language.t)}
-                        {" · "}
-                        {language.t("settings.chipmateServer.update.currentPlatform")}
-                      </p>
-                    </div>
-                  </Show>
+                  <pre data-ui="chipmate-update-error-message">{safeError(result.message)}</pre>
                 </div>
-                <Button class="chipmate-update-install" variant="primary" onClick={props.install}>
-                  <Codicon name="cloud-download" />
-                  <span>{language.t("settings.chipmateServer.update.install")}</span>
-                </Button>
-              </div>
+                <div class="chipmate-update-actions">
+                  <Button variant="secondary" onClick={props.retry} data-ui="chipmate-update-retry">
+                    <Codicon name="refresh" />
+                    <span>{language.t("settings.chipmateServer.update.retry")}</span>
+                  </Button>
+                  <Button variant="secondary" onClick={() => copy(result)} data-ui="chipmate-update-copy-error">
+                    <Codicon name={copied() ? "check" : "copy"} />
+                    <span>
+                      {copied()
+                        ? language.t("settings.chipmateServer.update.copied")
+                        : language.t("settings.chipmateServer.update.copyError")}
+                    </span>
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => vscode.postMessage({ type: "showChipmateUpdateLog" })}
+                    data-ui="chipmate-update-show-log"
+                  >
+                    <Codicon name="output" />
+                    <span>{language.t("settings.chipmateServer.update.showLog")}</span>
+                  </Button>
+                </div>
+              </>
             )
-          }}
-        </Show>
-        <Show when={props.phase() === "idle" && props.update()?.status === "installed"}>
-          <div class="chipmate-update-result-row" aria-live="polite">
-            <UpdateStatus
-              icon="check-all"
-              kind="latest"
-              title={language.t("settings.chipmateServer.update.installed")}
-              detail={language.t("settings.chipmateServer.update.installedDetail", {
-                version: (props.update() as Extract<ChipmateUpdateResult, { status: "installed" }>).version,
-              })}
-            />
-            <Button variant="primary" onClick={() => vscode.postMessage({ type: "reloadChipmateWindow" })}>
-              <Codicon name="window" />
-              <span>{language.t("settings.chipmateServer.update.reload")}</span>
-            </Button>
-          </div>
-        </Show>
-        <Show when={props.phase() === "idle" && props.update()?.status === "error"}>
-          <div class="chipmate-update-result-row" aria-live="assertive">
-            <UpdateStatus
-              icon="error"
-              kind="error"
-              title={language.t("settings.chipmateServer.update.failed")}
-              detail={updateError(
-                props.update() as Extract<ChipmateUpdateResult, { status: "error" }>,
-                language.t,
-              )}
-            />
-            <Button variant="secondary" onClick={props.retry}>
-              <Codicon name="refresh" />
-              <span>{language.t("settings.chipmateServer.update.retry")}</span>
-            </Button>
-          </div>
-        </Show>
-
-        <div id="chipmate-server-reload" class="chipmate-server-reload" data-ui="chipmate-server-hint">
-          <Codicon name="window" />
-          <span>{language.t("settings.chipmateServer.update.reloadHint")}</span>
+          })()}
         </div>
+      </Show>
+
+      <div id="chipmate-server-reload" class="chipmate-server-reload" data-ui="chipmate-server-hint">
+        <Codicon name="window" />
+        <span>{language.t("settings.chipmateServer.update.reloadHint")}</span>
+      </div>
     </Card>
   )
 }
@@ -416,7 +466,10 @@ const UpdateStatus: Component<{
   title: string
   detail: string
 }> = (props) => (
-  <div class={`chipmate-update-status chipmate-update-status-${props.kind}`} role={props.kind === "error" ? "alert" : "status"}>
+  <div
+    class={`chipmate-update-status chipmate-update-status-${props.kind}`}
+    role={props.kind === "error" ? "alert" : "status"}
+  >
     <div class="chipmate-update-icon">
       <Codicon name={props.icon} spin={props.spin} />
     </div>
@@ -448,10 +501,33 @@ function updateError(result: Extract<ChipmateUpdateResult, { status: "error" }>,
   if (result.code === "download" || result.code === "install") {
     return t("settings.chipmateServer.update.error.action")
   }
-  if (result.code === "download-size" || result.code === "download-hash") {
+  if (result.code === "download-size" || result.code === "download-hash" || result.code === "sha256") {
     return t("settings.chipmateServer.update.error.package")
   }
   return t("settings.chipmateServer.update.error.validation")
+}
+
+function updateErrorTitle(
+  result: Extract<ChipmateUpdateResult, { status: "error" }>,
+  t: LanguageContextValue["t"],
+) {
+  if (result.code === "install") return t("settings.chipmateServer.update.errorTitle.install")
+  if (
+    result.code === "download" ||
+    result.code === "download-size" ||
+    result.code === "download-hash" ||
+    result.code === "sha256"
+  ) {
+    return t("settings.chipmateServer.update.errorTitle.download")
+  }
+  if (result.code === "availability" || result.code === "server") {
+    return t("settings.chipmateServer.update.errorTitle.check")
+  }
+  return t("settings.chipmateServer.update.errorTitle.validation")
+}
+
+function safeError(value: string): string {
+  return sanitize(value)
 }
 
 function serverStatus(

@@ -176,7 +176,7 @@ describe("indexing status pipelines", () => {
     })
   })
 
-  test("marks RAG as waiting during active Code Graph phase", () => {
+  test("marks RAG as waiting during active Code Graph phase without masking Document RAG", () => {
     const result = status({
       systemStatus: "Indexing",
       activePipeline: "codeGraph",
@@ -188,6 +188,16 @@ describe("indexing status pipelines", () => {
         processedFiles: 2,
         totalFiles: 5,
         percent: 40,
+      },
+      document: {
+        state: "In Progress",
+        message: "Document RAG indexing...",
+        processedFiles: 1,
+        totalFiles: 2,
+        percent: 50,
+        errorCount: 0,
+        staleCount: 0,
+        skippedCount: 0,
       },
     })
 
@@ -203,30 +213,57 @@ describe("indexing status pipelines", () => {
       detail: "Waiting for Code Graph indexing to finish.",
     })
     expect(result.pipelines?.documents).toMatchObject({
-      state: "Standby",
-      message: "Document RAG waiting for Code Graph.",
+      state: "In Progress",
+      message: "Document RAG indexing...",
+      percent: 50,
     })
   })
 
-  test("blocks downstream pipelines when Code Graph fails", () => {
-    const result = status({ systemStatus: "Error", activePipeline: "codeGraph" })
+  test("keeps Document RAG independent when Code Graph fails", () => {
+    const result = status({
+      systemStatus: "Error",
+      activePipeline: "codeGraph",
+      document: {
+        state: "Complete",
+        message: "Document RAG up-to-date.",
+        processedFiles: 2,
+        totalFiles: 2,
+        percent: 100,
+        errorCount: 0,
+        staleCount: 0,
+        skippedCount: 0,
+      },
+    })
 
     expect(result.pipelines?.codeGraph).toMatchObject({ state: "Error", message: "Code Graph indexing failed." })
     expect(result.pipelines?.rag).toMatchObject({ state: "Standby", message: "RAG indexing blocked by Code Graph." })
     expect(result.pipelines?.documents).toMatchObject({
-      state: "Standby",
-      message: "Document RAG blocked by Code Graph.",
+      state: "Complete",
+      message: "Document RAG up-to-date.",
     })
   })
 
-  test("keeps Code Graph complete and blocks documents when Code RAG fails", () => {
-    const result = status({ systemStatus: "Error", activePipeline: "rag" })
+  test("keeps Code Graph and Document RAG independent when Code RAG fails", () => {
+    const result = status({
+      systemStatus: "Error",
+      activePipeline: "rag",
+      document: {
+        state: "Complete",
+        message: "Document RAG up-to-date.",
+        processedFiles: 2,
+        totalFiles: 2,
+        percent: 100,
+        errorCount: 0,
+        staleCount: 0,
+        skippedCount: 0,
+      },
+    })
 
     expect(result.pipelines?.codeGraph.state).toBe("Complete")
     expect(result.pipelines?.rag.state).toBe("Error")
     expect(result.pipelines?.documents).toMatchObject({
-      state: "Standby",
-      message: "Document RAG blocked by Code RAG.",
+      state: "Complete",
+      message: "Document RAG up-to-date.",
     })
   })
 

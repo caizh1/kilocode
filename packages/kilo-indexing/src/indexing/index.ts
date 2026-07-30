@@ -107,7 +107,16 @@ export type {
   QueryEvidenceTraceStage,
 } from "./analysis"
 
-export type { IEmbedder, EmbeddingResponse, EmbedderInfo, AvailableEmbedders } from "./interfaces/embedder"
+export type {
+  IEmbedder,
+  EmbeddingPurpose,
+  EmbeddingQualityResult,
+  EmbeddingResponse,
+  EmbeddingRuntimeProfile,
+  EmbeddingValidationResult,
+  EmbedderInfo,
+  AvailableEmbedders,
+} from "./interfaces/embedder"
 
 export type { IVectorStore, VectorStoreSearchResult, PointStruct, Payload } from "./interfaces/vector-store"
 

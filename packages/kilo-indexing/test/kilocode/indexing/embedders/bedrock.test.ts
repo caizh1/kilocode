@@ -573,7 +573,8 @@ describe("BedrockEmbedder", () => {
       const result = await embedder.validateConfiguration()
 
       expect(result.valid).toBe(false)
-      expect(result.error).toContain("Configuration error")
+      expect(result.error).toBe("Embedder configuration validation failed without an error message.")
+      expect(result.error).not.toContain("Unknown error")
     })
   })
 })

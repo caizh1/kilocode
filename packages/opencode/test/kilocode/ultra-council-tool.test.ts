@@ -8,7 +8,17 @@ const root = path.resolve(import.meta.dir, "../..")
 const schema = z.object({
   max: z.number(),
   searches: z.number(),
-  calls: z.array(z.object({ lens: z.string(), type: z.string(), background: z.boolean(), final: z.boolean() })),
+  calls: z.array(
+    z.object({
+      lens: z.string(),
+      type: z.string(),
+      background: z.boolean(),
+      final: z.boolean(),
+      seeded: z.boolean(),
+      leaked: z.boolean(),
+    }),
+  ),
+  baseline: z.object({ phase: z.string(), hash: z.string(), session: z.string().optional() }),
   initial: z.object({ started: z.number(), valid: z.number(), phase: z.string(), sessions: z.number() }),
   review: z.object({ started: z.number(), phase: z.string(), rejected: z.boolean() }),
   final: z.object({ phase: z.string(), started: z.number(), text: z.string().optional() }),
@@ -53,14 +63,39 @@ const task = {
         type: params.subagent_type,
         background: params.background === true,
         final,
+        seeded: params.prompt.includes("ULTRA_BASELINE_CONTEXT_BEGIN"),
+        leaked: [
+          "The Code baseline confirms target_symbol",
+          "Frozen Code baseline SHA-256",
+          "Bounded Code investigation packet",
+          "ses_code_baseline",
+        ].some((sentinel) => params.prompt.includes(sentinel)),
       })
       yield* Effect.sleep("40 millis")
       active--
+      if (params.subagent_type === "ultra-code-baseline") {
+        return {
+          title: "baseline",
+          metadata: { sessionId: "ses_code_baseline" },
+          output: [
+            "<task_result>",
+            "The Code baseline confirms target_symbol is defined in src/target.c.",
+            "The Code baseline leaves the ownership boundary unresolved.",
+            "The final baseline paragraph is intentionally unique.",
+            "</task_result>",
+            '<ultra_baseline_trace>[{"id":"read","status":"completed","input":"{\\"filePath\\":\\"src/target.c\\"}"}]</ultra_baseline_trace>',
+          ].join("\\n"),
+        }
+      }
       if (params.description === "Council adjudicate") {
         const marker = "Runtime claim manifest:\\n"
         const start = params.prompt.indexOf(marker) + marker.length
         const end = params.prompt.indexOf("\\n\\n", start)
         const manifest = JSON.parse(params.prompt.slice(start, end))
+        const editMarker = "Runtime edit manifest:\\n"
+        const editStart = params.prompt.indexOf(editMarker) + editMarker.length
+        const editEnd = params.prompt.indexOf("\\n\\n", editStart)
+        const edits = JSON.parse(params.prompt.slice(editStart, editEnd))
         const obligationMarker = "Frozen obligations:\\n"
         const obligationStart = params.prompt.indexOf(obligationMarker) + obligationMarker.length
         const obligationEnd = params.prompt.indexOf("\\n\\n", obligationStart)
@@ -110,6 +145,13 @@ const task = {
                   excerpt: "void target_symbol(void) {}",
                 }],
                 corrections: [],
+                uncertainties: [],
+              })),
+              edits: edits.map((edit) => ({
+                id: edit.id,
+                hash: edit.hash,
+                status: revise ? "rejected" : "approved",
+                corrections: revise ? ["Revise the exact ownership correction."] : [],
                 uncertainties: [],
               })),
               excluded: ["unrelated files"],
@@ -201,9 +243,14 @@ const output = await Effect.runPromise(
   provideInstance(dir.path)(
     Effect.gen(function* () {
       const infos = yield* UltraCouncilTools(task, document)
+      const code = yield* Tool.init(infos.baseline)
       const explore = yield* Tool.init(infos.explore)
       const adjudicate = yield* Tool.init(infos.adjudicate)
       const revise = yield* Tool.init(infos.revise)
+      const frozen = yield* code.execute({
+        requestKind: "analysis",
+        obligations: [{ id: "O1", text: "Explain the definition and ownership boundary." }],
+      }, ctx)
       const initial = yield* explore.execute({
         phase: "initial",
         requestKind: "analysis",
@@ -236,25 +283,37 @@ const output = await Effect.runPromise(
             phase: initial.metadata.ultraCouncil?.phase,
             started: initial.metadata.ultraCouncil?.started,
           },
+          baseline: {
+            phase: frozen.metadata.ultraCouncil?.phase,
+            hash: frozen.metadata.baselineHash,
+            session: frozen.metadata.session,
+          },
         }
       }
-      const first = [
-        "EXACT_DRAFT_SENTINEL",
-        "The final proposed answer states that target_symbol is defined at src/target.c:1.",
-        "The answer explains the ownership boundary using only runtime-validated evidence.",
-        "This exact draft is intentionally longer than two hundred characters so the independent adjudicator receives the complete proposed synthesis rather than a generic request.",
-      ].join(" ")
+      const first = [{
+        kind: "replace",
+        anchor: "The Code baseline leaves the ownership boundary unresolved.",
+        text: "The ownership boundary remains with the caller until target_symbol returns.",
+        obligations: ["O1"],
+        claims: [refs[0]],
+        reason: "The source-backed report closes the unresolved ownership boundary.",
+      }]
       const reviewed = yield* adjudicate.execute({
-        draft: first,
+        baselineHash: frozen.metadata.baselineHash,
+        edits: first,
         bindings: [{ obligation: "O1", claims: refs.length > 0 ? [refs[0].id] : ["missing"] }],
         claims: refs,
       }, ctx)
       const turn = reviewed.metadata.ultraCouncil
       let final = reviewed
       if (turn?.phase === "revising") {
-        const revised = first + " The corrected candidate explicitly preserves the requested ownership condition."
+        const revised = [{
+          ...first[0],
+          text: "The corrected ownership boundary remains with the caller until target_symbol returns successfully.",
+        }]
         final = yield* revise.execute({
-          draft: revised,
+          baselineHash: frozen.metadata.baselineHash,
+          edits: revised,
           bindings: [{ obligation: "O1", claims: [refs[0].id] }],
           claims: refs,
         }, ctx)
@@ -264,6 +323,11 @@ const output = await Effect.runPromise(
         max,
         searches,
         calls,
+        baseline: {
+          phase: frozen.metadata.ultraCouncil?.phase,
+          hash: frozen.metadata.baselineHash,
+          session: frozen.metadata.session,
+        },
         initial: {
           started: initial.metadata.started,
           valid: initial.metadata.valid,
@@ -320,36 +384,47 @@ describe("Ultra Council tools", () => {
     return schema.parse(JSON.parse(stdout.slice(start)))
   }
 
-  test("runs three blind Explore sessions concurrently and seals the exact Task 4 candidate", async () => {
+  test("freezes Code, seeds two concurrent investigations, keeps falsify blind, and seals approved edits", async () => {
     const output = await run()
     expect(output.max).toBe(3)
     expect(output.searches).toBe(1)
     expect(output.calls).toEqual([
-      { lens: "flow", type: "explore", background: false, final: false },
-      { lens: "falsify", type: "explore", background: false, final: false },
-      { lens: "evidence", type: "explore", background: false, final: false },
-      { lens: "adjudicate", type: "explore", background: false, final: false },
+      {
+        lens: "Ultra Code baseline",
+        type: "ultra-code-baseline",
+        background: false,
+        final: false,
+        seeded: false,
+        leaked: false,
+      },
+      { lens: "flow", type: "explore", background: false, final: false, seeded: true, leaked: true },
+      { lens: "falsify", type: "explore", background: false, final: false, seeded: false, leaked: false },
+      { lens: "evidence", type: "explore", background: false, final: false, seeded: true, leaked: true },
+      { lens: "adjudicate", type: "explore", background: false, final: false, seeded: false, leaked: true },
     ])
+    expect(output.baseline).toMatchObject({ phase: "collecting", session: "ses_code_baseline" })
+    expect(output.baseline.hash).toHaveLength(64)
     expect(output.initial).toEqual({ started: 3, valid: 3, phase: "arbitrating", sessions: 3 })
     expect(output.review).toEqual({ started: 4, phase: "sealed", rejected: false })
     expect(output.final.phase).toBe("sealed")
-    expect(output.final.text).toContain("EXACT_DRAFT_SENTINEL")
+    expect(output.final.text).toContain("ownership boundary remains with the caller")
+    expect(output.final.text).not.toContain("leaves the ownership boundary unresolved")
   })
 
   test("uses Task 5 only when Task 4 requires a complete revision", async () => {
     const output = await run({ REVISION: "1" })
-    expect(output.calls).toHaveLength(5)
+    expect(output.calls).toHaveLength(6)
     expect(output.calls.at(-1)).toMatchObject({ lens: "adjudicate", final: true })
     expect(output.review).toEqual({ started: 4, phase: "revising", rejected: false })
     expect(output.final).toMatchObject({ phase: "sealed", started: 5 })
-    expect(output.final.text).toContain("corrected candidate")
+    expect(output.final.text).toContain("corrected ownership boundary")
   })
 
-  test("seals a corrected Task 5 candidate from fresh obligation evidence", async () => {
+  test("falls back safely when Task 5 rejects supporting claims", async () => {
     const output = await run({ REVISION: "1", FINAL_REJECT_CLAIMS: "1" })
-    expect(output.calls).toHaveLength(5)
-    expect(output.final).toMatchObject({ phase: "sealed", started: 5 })
-    expect(output.final.text).toContain("corrected candidate")
+    expect(output.calls).toHaveLength(6)
+    expect(output.final).toMatchObject({ phase: "limited", started: 5 })
+    expect(output.final.text).toBeUndefined()
   })
 
   test("keeps local Council evidence usable when Document RAG is offline", async () => {
@@ -360,14 +435,14 @@ describe("Ultra Council tools", () => {
 
   test("rejects a changed runtime claim manifest before spending Task 4", async () => {
     const output = await run({ TAMPER_MANIFEST: "1" })
-    expect(output.calls).toHaveLength(3)
+    expect(output.calls).toHaveLength(4)
     expect(output.review).toMatchObject({ started: 3, rejected: true })
     expect(output.final.phase).toBe("arbitrating")
   })
 
   test("does not seal a request-kind mismatch even after the fifth verifier", async () => {
     const output = await run({ KIND_MISMATCH: "1" })
-    expect(output.calls).toHaveLength(5)
+    expect(output.calls).toHaveLength(6)
     expect(output.final).toMatchObject({ phase: "limited", started: 5 })
     expect(output.final.text).toBeUndefined()
   })
@@ -376,20 +451,20 @@ describe("Ultra Council tools", () => {
     const output = await run({ BAD_CHAIN: "1" })
     expect(output.initial.valid).toBe(0)
     expect(output.initial.phase).toBe("degraded")
-    expect(output.calls).toHaveLength(3)
+    expect(output.calls).toHaveLength(4)
   })
 
   test("preserves a surviving source chain as inferred for independent adjudication", async () => {
     const output = await run({ PARTIAL_BAD_CHAIN: "1" })
     expect(output.initial.valid).toBe(3)
-    expect(output.calls).toHaveLength(4)
+    expect(output.calls).toHaveLength(5)
     expect(output.final.phase).toBe("sealed")
   })
 
   test("attaches an exact workspace line when a valid location omits its excerpt", async () => {
     const output = await run({ MISSING_EXCERPT: "1" })
     expect(output.initial.valid).toBe(3)
-    expect(output.calls).toHaveLength(4)
+    expect(output.calls).toHaveLength(5)
     expect(output.final.phase).toBe("sealed")
   })
 })

@@ -84,6 +84,8 @@ import {
   scrollDrafts,
 } from "../../utils/draft-store"
 import { ReviewComments } from "./ReviewComments"
+import { EmbeddedReviewBoundary } from "./EmbeddedReviewBoundary"
+import { isEmbeddedReviewPrompt } from "./embedded-review-boundary"
 import { partReview, reviewBody } from "../../../../src/shared/review-comments"
 import { isEnterKeyCommitNotIme } from "../../utils/ime-enter"
 import { parseMemoryCommand } from "../../utils/memory-command"
@@ -416,6 +418,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const [reviewComments, setReviewComments] = createSignal<ReviewComment[]>([])
   const [enhancing, setEnhancing] = createSignal(false)
   const [collapsed, setCollapsed] = createSignal(false)
+  const [reviewBoundaryExpanded, setReviewBoundaryExpanded] = createSignal(true)
   const [autoApprove, setAutoApprove] = createSignal(false)
   const [sandboxes, setSandboxes] = createSignal<Record<string, SandboxState>>({})
   const [sandboxDefault, setSandboxDefault] = createSignal<SandboxDefaultState>()
@@ -483,6 +486,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (isInternalOfflineBuild()) hidden.add("kiloclaw")
       return hidden
     },
+  )
+  const reviewBoundaryVisible = () => isEmbeddedReviewPrompt(text()) && !slash.show()
+  createEffect(
+    on(reviewBoundaryVisible, (visible, previous) => {
+      if (visible && previous === false) setReviewBoundaryExpanded(true)
+    }),
   )
   const clearSandboxRequest = (sessionID: string | undefined, requestID: string) => {
     setSandboxRequests((current) => {
@@ -1472,7 +1481,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     queueMicrotask(restoreInput)
   }
 
-  return (
+  return [
+    <Show when={reviewBoundaryVisible() && !collapsed()}>
+      <EmbeddedReviewBoundary
+        expanded={reviewBoundaryExpanded()}
+        onToggle={() => setReviewBoundaryExpanded((value) => !value)}
+      />
+    </Show>,
     <div
       class="prompt-input-container"
       data-ui="qa-composer"
@@ -1999,6 +2014,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           </div>
         </>
       </Show>
-    </div>
-  )
+    </div>,
+  ]
 }

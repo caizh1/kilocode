@@ -17,6 +17,7 @@ export interface IndexingConfigInput {
   lancedbVectorStoreDirectory?: string
   modelId?: string
   modelDimension?: number
+  dimensionMode?: "auto" | "fixed"
   qdrantUrl?: string
   qdrantApiKey?: string
   searchMinScore?: number
@@ -64,6 +65,7 @@ export class CodeIndexConfigManager {
   private lancedbVectorStoreDirectory?: string
   private modelId?: string
   private modelDimension?: number
+  private dimensionMode: "auto" | "fixed" = "auto"
   private kiloOptions?: { apiKey: string; baseUrl?: string; organizationId?: string }
   private openAiOptions?: { apiKey: string }
   private ollamaOptions?: { baseUrl: string; modelId?: string }
@@ -123,6 +125,7 @@ export class CodeIndexConfigManager {
     this.documents = this.normalizeDocuments(input.documents)
     this.fileExtensions = resolveFileExtensions(input.fileExtensions)
     this.modelId = input.modelId
+    this.dimensionMode = input.dimensionMode ?? (input.modelDimension === undefined ? "auto" : "fixed")
 
     // Validate and set model dimension
     if (input.modelDimension !== undefined && input.modelDimension !== null) {
@@ -162,6 +165,7 @@ export class CodeIndexConfigManager {
       lancedbVectorStoreDirectory: this.lancedbVectorStoreDirectory,
       modelId: this.modelId,
       modelDimension: this.modelDimension,
+      dimensionMode: this.dimensionMode,
       kiloApiKey: this.kiloOptions?.apiKey ?? "",
       kiloBaseUrl: this.kiloOptions?.baseUrl ?? "",
       kiloOrganizationId: this.kiloOptions?.organizationId ?? "",
@@ -260,7 +264,18 @@ export class CodeIndexConfigManager {
 
     if (prev.fileExtensions.join("\0") !== this.fileExtensions.join("\0")) return true
 
-    if (this.hasEmbeddingProfileChanged(prevProvider, prev.modelId, prev.modelDimension)) return true
+    const mode = prev.dimensionMode ?? (prev.modelDimension === undefined ? "auto" : "fixed")
+    if (mode !== this.dimensionMode) return true
+    const dimension = mode === "auto" ? undefined : prev.modelDimension
+    if (
+      this.hasEmbeddingProfileChanged(
+        prevProvider,
+        prev.modelId,
+        dimension,
+        this.dimensionMode === "auto" ? undefined : this.modelDimension,
+      )
+    )
+      return true
 
     return false
   }
@@ -269,9 +284,10 @@ export class CodeIndexConfigManager {
     prevProvider: EmbedderProvider,
     prevModelId?: string,
     prevModelDimension?: number,
+    current = this.modelDimension,
   ): boolean {
     const prev = resolveEmbeddingProfile(prevProvider, prevModelId, prevModelDimension)
-    const cur = resolveEmbeddingProfile(this.embedderProvider, this.modelId, this.modelDimension)
+    const cur = resolveEmbeddingProfile(this.embedderProvider, this.modelId, current)
 
     if (prev && cur) return !isEmbeddingProfileEqual(prev, cur)
 
@@ -289,7 +305,8 @@ export class CodeIndexConfigManager {
       vectorStoreProvider: this.vectorStoreProvider,
       lancedbVectorStoreDirectoryPlaceholder: this.lancedbVectorStoreDirectory,
       modelId: this.modelId,
-      modelDimension: this.modelDimension,
+      modelDimension: this.dimensionMode === "auto" ? undefined : this.modelDimension,
+      dimensionMode: this.dimensionMode,
       kiloOptions: this.kiloOptions,
       openAiOptions: this.openAiOptions,
       ollamaOptions: this.ollamaOptions,
@@ -354,9 +371,14 @@ export class CodeIndexConfigManager {
   }
 
   public get currentModelDimension(): number | undefined {
+    if (this.dimensionMode === "auto") return undefined
     if (this.modelDimension && this.modelDimension > 0) return this.modelDimension
     const id = this.modelId ?? getDefaultModelId(this.embedderProvider)
     return getModelDimension(this.embedderProvider, id)
+  }
+
+  public get currentDimensionMode(): "auto" | "fixed" {
+    return this.dimensionMode
   }
 
   public get currentSearchMinScore(): number {

@@ -148,10 +148,14 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
       }
       // kilocode_change start — reject primary agents; only subagent/all modes allowed
-      KiloTask.validate(next, params.subagent_type)
+      KiloTask.validate(
+        next,
+        params.subagent_type,
+        ctx.extra?.ultraCouncilBaseline === true || ctx.extra?.ultraVerificationInternal === true,
+      )
       // kilocode_change end
 
-      const canTask = KiloTask.nestedTask() // kilocode_change - Kilo disallows subagents spawning subagents
+      const canTask = KiloTask.nestedTask(next) // kilocode_change - only the internal Ultra Code author may delegate one level
       const canTodo = next.permission.some((rule) => rule.permission === "todowrite")
 
       const session = params.task_id
@@ -176,7 +180,7 @@ export const TaskTool = Tool.define(
           pattern: "*",
           action: "deny" as const,
         })) ?? [],
-        KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true),
+        KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true, canTask, cfg.mcp),
       )
       // kilocode_change end
       // kilocode_change start - refresh current parent restrictions when resuming an existing task session
@@ -261,8 +265,8 @@ export const TaskTool = Tool.define(
               question: false, // kilocode_change - subagents cannot prompt the user directly
               interactive_terminal: false, // kilocode_change - subagents cannot take over the user's terminal
               ...(ctx.extra?.ultraCouncilReadOnly === true
-                ? { suggest: false, plan_enter: false, plan_exit: false }
-                : {}), // kilocode_change - Council investigations cannot pause for human-driven mode actions
+                ? KiloTask.disabled()
+                : {}), // kilocode_change - runtime-managed Ultra descendants cannot use mutating or human-driven tools
               ...(canTodo ? {} : { todowrite: false }),
               ...(canTask ? {} : { task: false }),
               ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
@@ -427,10 +431,19 @@ export const TaskTool = Tool.define(
             if (result?.metadata?.background === true) return backgroundResult()
             if (result?.status === "error") return yield* Effect.fail(new Error(result.error ?? "Task failed"))
             if (result?.status === "cancelled") return yield* Effect.fail(new Error("Task cancelled"))
+            // kilocode_change start - expose a bounded tool trace only to the internal Ultra Code baseline
+            const trace =
+              ctx.extra?.ultraCouncilBaseline === true
+                ? KiloTask.trace(yield* sessions.messages({ sessionID: nextSession.id }))
+                : undefined
+            // kilocode_change end
             return {
               title: params.description,
               metadata,
-              output: renderOutput({ sessionID: nextSession.id, state: "completed", text: result?.output ?? "" }),
+              output: [
+                renderOutput({ sessionID: nextSession.id, state: "completed", text: result?.output ?? "" }),
+                ...(trace ? [`<ultra_baseline_trace>${JSON.stringify(trace)}</ultra_baseline_trace>`] : []),
+              ].join("\n"),
             }
           }),
         // kilocode_change start - propagate subagent cost delta to parent on every exit path (#6321)

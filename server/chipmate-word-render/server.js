@@ -19,7 +19,9 @@ const SKILL_MARKET_ROOT = process.env.SKILL_MARKET_ROOT || path.join(PACKAGE_ROO
 const UPDATE_EXTENSION_ID = "chipmate.chipmate"
 const UPDATE_TARGETS = new Set(["win32-x64-baseline", "linux-x64-baseline", "darwin-x64", "darwin-arm64"])
 const MAX_VSIX_MANIFEST_BYTES = 2 * 1024 * 1024
+const MAX_VSIX_RELEASE_NOTES_BYTES = 64 * 1024
 const VSIX_MANIFEST_ENTRY = "extension/package.json"
+const VSIX_RELEASE_NOTES_ENTRY = "extension/RELEASE_NOTES.md"
 const packageEntryCache = new Map()
 const packageEntryInflight = new Map()
 const packageManifestCache = new Map()
@@ -1284,7 +1286,12 @@ async function generatePackageManifest(packageRoot = PACKAGE_ROOT, extensionId =
     })
     const latestByTarget = {}
     for (const item of packages) {
-      if (!latestByTarget[item.target]) latestByTarget[item.target] = item
+      if (latestByTarget[item.target]) continue
+      latestByTarget[item.target] = {
+        ...item,
+        ...(item.releaseNotes ? { releaseNotes: item.releaseNotes } : {}),
+        ...(Number.isFinite(item.mtimeMs) ? { publishedAt: new Date(item.mtimeMs).toISOString() } : {}),
+      }
     }
     const manifest = {
       ok: true,
@@ -1490,12 +1497,16 @@ async function packageEntryFromVsix(absolute, filename, initial) {
 }
 
 async function packageEntryAttempt(absolute, filename, before) {
-  const manifest = await readVsixExtensionManifest(absolute)
+  const pkg = await readVsixPackage(absolute)
+  const manifest = pkg.manifest
   const publisher = requireManifestString(manifest.publisher, "publisher")
   const name = requireManifestString(manifest.name, "name")
   const version = requireManifestString(manifest.version, "version")
   if (!parseExtensionVersion(version))
     throw new Error("extension/package.json version must be a valid semantic version")
+  if (pkg.releaseNotes && pkg.releaseNotes.split(/\r?\n/, 1)[0] !== `# ChipMate ${version}`) {
+    throw new Error(`${VSIX_RELEASE_NOTES_ENTRY} must start with "# ChipMate ${version}"`)
+  }
   const target = requireManifestString(manifest.chipmatePackageTarget, "chipmatePackageTarget")
   const result = {
     extensionId: `${publisher}.${name}`,
@@ -1509,6 +1520,7 @@ async function packageEntryAttempt(absolute, filename, before) {
     sizeBytes: before.size,
     mtimeMs: before.mtimeMs,
   }
+  if (pkg.releaseNotes) Object.defineProperty(result, "releaseNotes", { value: pkg.releaseNotes })
   const after = await fsp.stat(absolute)
   if (packageFingerprint(before) !== packageFingerprint(after)) {
     const error = new Error("VSIX changed while its manifest was being generated")
@@ -1520,6 +1532,10 @@ async function packageEntryAttempt(absolute, filename, before) {
 }
 
 function readVsixExtensionManifest(file) {
+  return readVsixPackage(file).then((pkg) => pkg.manifest)
+}
+
+function readVsixPackage(file) {
   return new Promise((resolve, reject) => {
     yauzl.open(file, { lazyEntries: true, autoClose: true }, (openError, zip) => {
       if (openError || !zip) {
@@ -1528,6 +1544,8 @@ function readVsixExtensionManifest(file) {
       }
       let count = 0
       let raw
+      let notes
+      let noteCount = 0
       let settled = false
       const fail = (error) => {
         if (settled) return
@@ -1541,37 +1559,48 @@ function readVsixExtensionManifest(file) {
           fail(new Error("VSIX contains a backslash entry path"))
           return
         }
-        if (entry.fileName !== VSIX_MANIFEST_ENTRY) {
+        const manifest = entry.fileName === VSIX_MANIFEST_ENTRY
+        const releaseNotes = entry.fileName.toLocaleLowerCase() === VSIX_RELEASE_NOTES_ENTRY.toLocaleLowerCase()
+        if (!manifest && !releaseNotes) {
           zip.readEntry()
           return
         }
-        count += 1
-        if (count !== 1) {
+        if (manifest) count += 1
+        if (releaseNotes) noteCount += 1
+        if (count > 1) {
           fail(new Error(`${VSIX_MANIFEST_ENTRY} must appear exactly once`))
           return
         }
-        if (entry.uncompressedSize > MAX_VSIX_MANIFEST_BYTES) {
-          fail(new Error(`${VSIX_MANIFEST_ENTRY} is too large`))
+        if (noteCount > 1) {
+          fail(new Error(`${VSIX_RELEASE_NOTES_ENTRY} must not appear more than once`))
+          return
+        }
+        const limit = manifest ? MAX_VSIX_MANIFEST_BYTES : MAX_VSIX_RELEASE_NOTES_BYTES
+        const name = manifest ? VSIX_MANIFEST_ENTRY : VSIX_RELEASE_NOTES_ENTRY
+        if (entry.uncompressedSize > limit) {
+          fail(new Error(`${name} is too large`))
           return
         }
         zip.openReadStream(entry, (streamError, stream) => {
           if (streamError || !stream) {
-            fail(streamError || new Error(`could not read ${VSIX_MANIFEST_ENTRY}`))
+            fail(streamError || new Error(`could not read ${name}`))
             return
           }
           const chunks = []
           let size = 0
           stream.on("data", (chunk) => {
             size += chunk.length
-            if (size > MAX_VSIX_MANIFEST_BYTES) {
-              stream.destroy(new Error(`${VSIX_MANIFEST_ENTRY} is too large`))
+            if (size > limit) {
+              stream.destroy(new Error(`${name} is too large`))
               return
             }
             chunks.push(chunk)
           })
           stream.on("error", fail)
           stream.on("end", () => {
-            raw = Buffer.concat(chunks)
+            const value = Buffer.concat(chunks)
+            if (manifest) raw = value
+            if (releaseNotes) notes = value
             zip.readEntry()
           })
         })
@@ -1588,10 +1617,13 @@ function readVsixExtensionManifest(file) {
             fail(new Error(`${VSIX_MANIFEST_ENTRY} must contain a JSON object`))
             return
           }
+          const releaseNotes = notes
+            ? new TextDecoder("utf-8", { fatal: true }).decode(notes).trim()
+            : ""
           settled = true
-          resolve(manifest)
+          resolve({ manifest, releaseNotes })
         } catch (error) {
-          fail(new Error(`${VSIX_MANIFEST_ENTRY} is invalid JSON: ${formatError(error)}`))
+          fail(new Error(`VSIX metadata is invalid: ${formatError(error)}`))
         }
       })
       zip.readEntry()

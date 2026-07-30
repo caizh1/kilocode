@@ -44,7 +44,7 @@ import { indexingWithKiloDefault, resolveKiloIndexingAuth, type KiloIndexingAuth
 import { applyInternalIndexingDefaults } from "./internal-offline" // kilocode_change
 import { MemoryDebug } from "./memory-debug"
 import { memoryExit } from "./indexing-memory"
-import { primaryWorktree } from "./primary-worktree"
+import { worktreeRoots } from "./primary-worktree"
 
 const log = Log.create({ service: "kilocode-indexing" })
 const auth = makeRuntime(Auth.Service, Auth.defaultLayer)
@@ -122,17 +122,46 @@ async function inputFromConfig(cfg: Config.Info): Promise<ReturnType<typeof toIn
   return model(enrichKilo(raw, auth), auth)
 }
 const baselineDirectory = Effect.fn("KiloIndexing.baselineDirectory")(function* (dir: string) {
-  if (Instance.project.vcs !== "git") return undefined
-  const checkout = path.resolve(Instance.worktree)
-  const main = yield* primaryWorktree(checkout)
-  if (!main || checkout === main) return undefined
+  const directory = path.resolve(dir)
+  const roots = yield* worktreeRoots(directory)
+  if (!roots) {
+    return {
+      kind: "standalone" as const,
+      checkout: undefined,
+      primary: undefined,
+      directory: undefined,
+    }
+  }
+  if (roots.checkout === roots.primary) {
+    return {
+      kind: "primary" as const,
+      checkout: roots.checkout,
+      primary: roots.primary,
+      directory: undefined,
+    }
+  }
 
-  const scope = path.relative(checkout, path.resolve(dir))
-  if (scope === ".." || scope.startsWith(`..${path.sep}`) || path.isAbsolute(scope)) return undefined
+  const scope = path.relative(roots.checkout, directory)
+  const outside = scope === ".." || scope.startsWith(`..${path.sep}`) || path.isAbsolute(scope)
+  if (outside) {
+    return {
+      kind: "linked" as const,
+      checkout: roots.checkout,
+      primary: roots.primary,
+      directory: undefined,
+    }
+  }
 
-  const baseline = path.resolve(main, scope)
-  if (baseline === path.resolve(dir)) return undefined
-  return baseline
+  const baseline = path.resolve(roots.primary, scope)
+  if (baseline === directory) {
+    return {
+      kind: "linked" as const,
+      checkout: roots.checkout,
+      primary: roots.primary,
+      directory: undefined,
+    }
+  }
+  return { kind: "linked" as const, checkout: roots.checkout, primary: roots.primary, directory: baseline }
 })
 
 export function failed(
@@ -482,9 +511,23 @@ export namespace KiloIndexing {
         Instance.restore(ctx, () => fn(...args))
     const dir = Instance.directory
     void MemoryDebug.event({ name: "indexing.boot.begin", data: { workspace: MemoryDebug.hash(dir) } })
-    const baseline = emptyWorkspace(dir) ? undefined : await AppRuntime.runPromise(baselineDirectory(dir))
+    const worktree = emptyWorkspace(dir)
+      ? {
+          kind: "standalone" as const,
+          checkout: undefined,
+          primary: undefined,
+          directory: undefined,
+        }
+      : await AppRuntime.runPromise(baselineDirectory(dir))
+    const baseline = worktree.directory
 
-    log.info("initializing project indexing", { workspacePath: dir, baselineDirectory: baseline })
+    log.info("initializing project indexing", {
+      workspacePath: dir,
+      worktreeClassification: worktree.kind,
+      checkoutPath: worktree.checkout,
+      primaryPath: worktree.primary,
+      baselineDirectory: baseline,
+    })
     const root = path.join(Global.Path.state, "indexing")
     const workspaces = new Set<WorkspaceV2.ID | undefined>([WorkspaceContext.workspaceID])
     const box = { status: pending() }
@@ -500,6 +543,7 @@ export namespace KiloIndexing {
     let refreshTask: Promise<void> | undefined
     let revision = 0
     let applied = 0
+    let serial = 0
     let recoveryTimer: ReturnType<typeof setTimeout> | undefined
     let recoveryAttempt = 0
     let forcedLow = false
@@ -526,6 +570,7 @@ export namespace KiloIndexing {
     }
     const status = bind((next: Status) => {
       if (disposed) return
+      serial += 1
       const previous = current()
       box.status = next
       if (next.state === "Complete") recoveryAttempt = 0
@@ -618,7 +663,10 @@ export namespace KiloIndexing {
         const nextInput = await inputFromConfig(nextConfig)
         const nextRag = new CodeIndexConfigManager(nextInput)
         if (needsVectorRuntime(nextRag)) await LanceDBRuntime.ensure(nextRag.getConfig().vectorStoreProvider)
-        if (!base.engine) {
+        const stamp = serial
+        const next = await (async () => {
+          if (base.engine) return base.engine.updateConfig(nextInput)
+
           const engine = IndexingWorker.create(
             dir,
             root,
@@ -626,10 +674,10 @@ export namespace KiloIndexing {
             { forcedLow },
           )
           base.engine = engine
-          box.status = await engine.init(nextInput, baseline)
-        } else {
-          box.status = await base.engine.updateConfig(nextInput)
-        }
+          return engine.init(nextInput, baseline)
+        })()
+        const regressed = serial !== stamp && current().state !== "In Progress" && next.state === "In Progress"
+        if (!regressed) status(next)
         base.initialized = true
         await report()
       } catch (err) {

@@ -15,7 +15,7 @@ const legacy = {
 }
 
 export function isReviewCommand(command: string | undefined): command is ReviewCommand {
-  return command === "review"
+  return command === "review" || command === "embedded-review"
 }
 
 export function reviewCommandName(command: string | undefined): ReviewCommand | undefined {

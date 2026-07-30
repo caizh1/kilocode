@@ -53,6 +53,7 @@ describe("kilocode tool registry indexing", () => {
             expect(ids).not.toContain("codesearch")
             expect(ids).toContain("question")
             expect(ids).toContain("read")
+            expect(ids).toContain("embedded_review_submit")
             expect(ids).toContain("suggest")
             expect(ids).toContain("validate_mermaid_diagram")
             expect(ids).toContain("render_mermaid_diagram")
@@ -768,6 +769,10 @@ describe("kilocode tool registry indexing", () => {
     expect(result.find((tool) => tool.id === "glob")?.description).not.toContain("codebase_analysis")
     expect(result.find((tool) => tool.id === "grep")?.description).not.toContain("codebase_analysis")
     expect(result.find((tool) => tool.id === "glob")?.description).toContain("semantic_search")
+    expect(result.find((tool) => tool.id === "glob")?.description).toContain("approved external directory")
+    expect(result.find((tool) => tool.id === "grep")?.description).toContain(
+      "omit `path` to search every configured document root",
+    )
     expect(result.find((tool) => tool.id === "read")?.description).toBe("read")
   })
 
@@ -822,6 +827,10 @@ describe("kilocode tool registry indexing", () => {
     expect(enabled.find((tool) => tool.id === "grep")?.description).not.toContain("codebase_analysis")
     expect(enabled.find((tool) => tool.id === "glob")?.description).toContain(
       "Use `Grep` for exact identifiers or text",
+    )
+    expect(enabled.find((tool) => tool.id === "glob")?.description).toContain("approved external documents")
+    expect(enabled.find((tool) => tool.id === "grep")?.description).toContain(
+      "omit `path` to search every configured document root",
     )
     expect(enabled.find((tool) => tool.id === "grep")?.description).toContain("do not repeatedly retry")
 

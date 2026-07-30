@@ -21,6 +21,7 @@ const providers = [
   "voyage",
 ] as const satisfies readonly EmbedderProvider[]
 const stores = ["lancedb", "qdrant"] as const
+const dimensionModes = ["auto", "fixed"] as const
 
 const ApprovedExternalRoot = z
   .object({
@@ -69,6 +70,10 @@ export const IndexingConfig = z
       .nullable()
       .optional()
       .describe("Override embedding vector dimension (auto-detected from model if omitted)"),
+    dimensionMode: z
+      .enum(dimensionModes)
+      .optional()
+      .describe("Embedding dimension behavior: auto probes the service, fixed requests and enforces dimension"),
     vectorStore: z.enum(stores).optional().describe("Vector store backend (default: lancedb)"),
     kilo: z
       .object({
@@ -179,6 +184,7 @@ export type IndexingConfig = z.infer<typeof IndexingConfig>
 
 const Provider = Schema.Literals(providers)
 const Store = Schema.Literals(stores)
+const DimensionMode = Schema.Literals(dimensionModes)
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Score = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1))
@@ -239,6 +245,9 @@ export const IndexingSchema = Schema.Struct({
   }),
   dimension: Schema.optional(Schema.NullOr(PositiveInt)).annotate({
     description: "Override embedding vector dimension (auto-detected from model if omitted)",
+  }),
+  dimensionMode: Schema.optional(DimensionMode).annotate({
+    description: "Embedding dimension behavior: auto probes the service, fixed requests and enforces dimension",
   }),
   vectorStore: Schema.optional(Store).annotate({ description: "Vector store backend (default: lancedb)" }),
   kilo: Schema.optional(
@@ -343,6 +352,7 @@ export function toIndexingConfigInput(cfg: IndexingConfig | undefined): Indexing
     vectorStoreProvider: cfg?.vectorStore ?? DEFAULT_VECTOR_STORE,
     modelId: cfg?.model ?? undefined,
     modelDimension: cfg?.dimension ?? undefined,
+    dimensionMode: cfg?.dimensionMode,
     lancedbVectorStoreDirectory: cfg?.lancedb?.directory,
     qdrantUrl: cfg?.qdrant?.url,
     qdrantApiKey: cfg?.qdrant?.apiKey,

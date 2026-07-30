@@ -9,7 +9,12 @@ import {
   REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS,
 } from "../constants"
 import { getDefaultModelId, getModelQueryPrefix } from "../model-registry"
-import { withValidationErrorHandling, type HttpError, formatEmbeddingError } from "../shared/validation-helpers"
+import {
+  withValidationErrorHandling,
+  type HttpError,
+  formatEmbeddingError,
+  sanitizeErrorMessage,
+} from "../shared/validation-helpers"
 import { Mutex } from "async-mutex"
 import { Log } from "../../util/log"
 
@@ -31,6 +36,8 @@ interface OpenAIEmbeddingResponse {
 type OpenAICompatibleOptions = {
   headers?: Record<string, string>
   dimensions?: number
+  expectedDimension?: number
+  sendDimensions?: boolean
 }
 
 /**
@@ -47,6 +54,7 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
   private readonly maxItemTokens: number
   private readonly headers: Record<string, string>
   private readonly dimensions?: number
+  private readonly expectedDimension?: number
 
   // Global rate limiting state shared across all instances
   private static globalRateLimitState = {
@@ -99,7 +107,8 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
     this.isFullUrl = this.isFullEndpointUrl(baseUrl)
     this.maxItemTokens = maxItemTokens || MAX_ITEM_TOKENS
     this.headers = options.headers ?? {}
-    this.dimensions = options.dimensions
+    this.dimensions = options.sendDimensions ? options.dimensions : undefined
+    this.expectedDimension = options.expectedDimension
   }
 
   /**
@@ -294,26 +303,8 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
           })) as OpenAIEmbeddingResponse
         }
 
-        // Convert base64 embeddings to float32 arrays
-        const processedEmbeddings = response.data.map((item: EmbeddingItem) => {
-          if (typeof item.embedding === "string") {
-            const buffer = Buffer.from(item.embedding, "base64")
-
-            // Create Float32Array view over the buffer
-            const float32Array = new Float32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 4)
-
-            return {
-              ...item,
-              embedding: Array.from(float32Array),
-            }
-          }
-          return item
-        })
-
-        // Replace the original data with processed embeddings
-        response.data = processedEmbeddings
-
-        const embeddings = response.data.map((item) => item.embedding as number[])
+        const embeddings = this.decode(response)
+        this.check(embeddings, batchTexts.length)
 
         return {
           embeddings: embeddings,
@@ -324,7 +315,7 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
         }
       } catch (error) {
         log.error("OpenAI Compatible embedder batch error", {
-          err: error instanceof Error ? error.message : String(error),
+          err: sanitizeErrorMessage(error instanceof Error ? error.message : String(error)),
           location: "OpenAICompatibleEmbedder:_embedBatchWithRetries",
           attempt: attempts + 1,
         })
@@ -397,7 +388,7 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
 
         const error = (response as { error?: string | { message?: string } }).error
         const message = typeof error === "string" ? error : error?.message
-        if (message) return { valid: false, error: message }
+        if (message) return { valid: false, error: sanitizeErrorMessage(message) }
 
         // Check if we got a valid response
         if (!response?.data || response.data.length === 0) {
@@ -406,11 +397,12 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
             error: "Invalid response from embedding endpoint",
           }
         }
+        this.check(this.decode(response), testTexts.length)
 
         return { valid: true }
       } catch (error) {
         log.error("OpenAI Compatible embedder validation error", {
-          err: error instanceof Error ? error.message : String(error),
+          err: sanitizeErrorMessage(error instanceof Error ? error.message : String(error)),
           location: "OpenAICompatibleEmbedder:validateConfiguration",
         })
         throw error
@@ -424,6 +416,37 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
   get embedderInfo(): EmbedderInfo {
     return {
       name: "openai-compatible",
+    }
+  }
+
+  private decode(response: OpenAIEmbeddingResponse): number[][] {
+    return response.data.map((item) => {
+      if (typeof item.embedding !== "string") return item.embedding
+      const buffer = Buffer.from(item.embedding, "base64")
+      if (buffer.byteLength % Float32Array.BYTES_PER_ELEMENT !== 0) {
+        throw new Error("Embedding response contains an invalid base64 vector.")
+      }
+      const vector = new Float32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 4)
+      return Array.from(vector)
+    })
+  }
+
+  private check(vectors: number[][], count: number): void {
+    if (vectors.length !== count) {
+      throw new Error(`Embedding count mismatch: expected ${count}, received ${vectors.length}.`)
+    }
+    for (const vector of vectors) {
+      if (this.expectedDimension !== undefined && vector.length !== this.expectedDimension) {
+        throw new Error(
+          `Embedding dimension mismatch: expected ${this.expectedDimension}, received ${vector.length}.`,
+        )
+      }
+      if (vector.length === 0) throw new Error("Embedding response contains an empty vector.")
+      if (vector.some((value) => !Number.isFinite(value))) {
+        throw new Error("Embedding response contains a non-finite value.")
+      }
+      const norm = Math.sqrt(vector.reduce((total, value) => total + value * value, 0))
+      if (norm <= 1e-6) throw new Error("Embedding response contains a zero-norm vector.")
     }
   }
 

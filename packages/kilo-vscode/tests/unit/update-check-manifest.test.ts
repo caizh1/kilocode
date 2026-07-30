@@ -12,6 +12,10 @@ describe("update-check manifest contributions", () => {
       command: "chipmate.v2.checkForUpdates",
       title: "ChipMate: Check for Updates",
     })
+    expect(commands).toContainEqual({
+      command: "chipmate.v2.showUpdateLog",
+      title: "ChipMate: 显示更新日志",
+    })
   })
 
   it("declares internal VSIX update-check settings", () => {

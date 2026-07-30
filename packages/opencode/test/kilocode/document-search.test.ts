@@ -63,10 +63,13 @@ function stub(state: KiloIndexing.Status["state"] = "Complete") {
 }
 
 describe("tool.document_search", () => {
-  test("describes indexed workspace document search", async () => {
+  test("describes indexed workspace and external document search", async () => {
     const tool = await initTool()
 
-    expect(tool.description).toContain("Search indexed workspace and explicitly approved external documents")
+    expect(tool.description).toContain("Search all indexed documents")
+    expect(tool.description).toContain("explicitly approved external directories")
+    expect(tool.description).toContain("Omit `path` to search every configured document root")
+    expect(tool.description).toContain("call this tool before answering")
     expect(tool.description).toContain("PDF")
     expect(tool.description).toContain("XLSX")
   })

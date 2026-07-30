@@ -492,6 +492,10 @@ export interface ReloadChipmateWindowMessage {
   type: "reloadChipmateWindow"
 }
 
+export interface ShowChipmateUpdateLogMessage {
+  type: "showChipmateUpdateLog"
+}
+
 export interface RequestTimelineSettingMessage {
   type: "requestTimelineSetting"
 }
@@ -1501,6 +1505,7 @@ export type WebviewMessage =
   | CheckChipmateUpdateMessage
   | InstallChipmateUpdateMessage
   | ReloadChipmateWindowMessage
+  | ShowChipmateUpdateLogMessage
   | RequestTimelineSettingMessage
   | RequestThroughputSettingMessage
   | RequestWorkStyleMessage

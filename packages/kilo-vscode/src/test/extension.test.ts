@@ -50,6 +50,38 @@ suite("Extension Test Suite", () => {
     assert.ok(config.has("chipmate.v2.autocomplete.qwen.model"))
     assert.ok(config.has("chipmate.v2.autocomplete.qwen.modelTimeout"))
     assert.ok(config.has("chipmate.v2.documents.wordRender.remoteEndpoint"))
+    assert.strictEqual(config.get("chipmate.v2.indexing.showButtonWhenDisabled"), true)
+    assert.strictEqual(config.get("chipmate.v2.chat.shiftTabCyclesVariant"), true)
+    assert.strictEqual(config.get("chipmate.v2.showTokenThroughput"), false)
+    assert.strictEqual(config.get("chipmate.v2.languageCommitMessage"), "sync")
+  })
+
+  test("persists every migrated settings-page preference through the real VS Code configuration API", async () => {
+    const cases = [
+      { section: "chipmate.v2.indexing", key: "showButtonWhenDisabled", value: false },
+      { section: "chipmate.v2.chat", key: "shiftTabCyclesVariant", value: false },
+      { section: "chipmate.v2", key: "showTokenThroughput", value: true },
+      { section: "chipmate.v2", key: "languageCommitMessage", value: "en" },
+    ] as const
+    const previous = cases.map((item) =>
+      vscode.workspace.getConfiguration(item.section).inspect(item.key)?.globalValue,
+    )
+
+    try {
+      for (const item of cases) {
+        const config = vscode.workspace.getConfiguration(item.section)
+        await config.update(item.key, item.value, vscode.ConfigurationTarget.Global)
+        assert.strictEqual(config.get(item.key), item.value, `${item.section}.${item.key} must persist`)
+      }
+    } finally {
+      await Promise.all(
+        cases.map((item, index) =>
+          vscode.workspace
+            .getConfiguration(item.section)
+            .update(item.key, previous[index], vscode.ConfigurationTarget.Global),
+        ),
+      )
+    }
   })
 
   test("keeps native Kilo contributions present while adding the standalone Agent Console command", () => {
@@ -86,6 +118,10 @@ suite("Extension Test Suite", () => {
       "chipmate.v2.autocomplete.enabled",
       "chipmate.v2.autocomplete.provider",
       "chipmate.v2.autocomplete.qwen.model",
+      "chipmate.v2.indexing.showButtonWhenDisabled",
+      "chipmate.v2.chat.shiftTabCyclesVariant",
+      "chipmate.v2.showTokenThroughput",
+      "chipmate.v2.languageCommitMessage",
     ]) {
       assert.ok(Object.prototype.hasOwnProperty.call(properties, key), `${key} must remain contributed`)
     }

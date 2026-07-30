@@ -13,12 +13,7 @@ import {
 import * as SemanticGuard from "../../src/kilocode/documents/mermaid-semantic-guard"
 import { provideTestInstance, tmpdir } from "../fixture/fixture"
 
-const source = [
-  "flowchart TD",
-  '  caller["caller"]',
-  '  callee["callee"]',
-  "  caller --> callee",
-].join("\n")
+const source = ["flowchart TD", '  caller["caller"]', '  callee["callee"]', "  caller --> callee"].join("\n")
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 
 async function within(fn: (dir: string) => Promise<void>) {
@@ -101,13 +96,15 @@ async function scenario(input: {
       ...item,
       evidence: [{ path: "code.c", startLine: 1, endLine: lines }],
     })),
-    edges: [{
-      id: "edge-1",
-      from: input.nodes[0]!.id,
-      to: input.nodes[1]!.id,
-      evidence: [{ path: "code.c", startLine: 1, endLine: lines }],
-      ...input.edge,
-    }],
+    edges: [
+      {
+        id: "edge-1",
+        from: input.nodes[0]!.id,
+        to: input.nodes[1]!.id,
+        evidence: [{ path: "code.c", startLine: 1, endLine: lines }],
+        ...input.edge,
+      },
+    ],
   }
   await fs.writeFile(path.join(input.dir, "diagram-claims.json"), `${JSON.stringify(value, null, 2)}\n`, "utf8")
   return "diagram-claims.json"
@@ -125,8 +122,9 @@ describe("source-backed Mermaid semantics", () => {
     expect(SemanticGuard.check(session)?.code).toBe("mermaid-semantic-downgrade-blocked")
     expect(SemanticGuard.insert(session, hash)?.code).toBe("mermaid-semantic-insert-blocked")
     expect(SemanticGuard.insert(session, hash, png)?.code).toBe("mermaid-semantic-insert-blocked")
-    SemanticGuard.allow(session, hash, png)
+    SemanticGuard.allow(session, hash, png, undefined, "flowchart TD\n  A --> B")
     expect(SemanticGuard.insert(session, hash, png)).toBeUndefined()
+    expect(SemanticGuard.source(session, png)).toBe("flowchart TD\n  A --> B")
     expect(SemanticGuard.insert(session, hash, png, true)?.code).toBe("mermaid-semantic-insert-blocked")
     expect(SemanticGuard.insert(session, "b".repeat(64), png)?.code).toBe("mermaid-semantic-insert-blocked")
     expect(SemanticGuard.check(ordinary)).toBeUndefined()
@@ -152,10 +150,7 @@ describe("source-backed Mermaid semantics", () => {
       SemanticGuard.coverage(session, {
         ...baseline,
         nodeIds: [...baseline.nodeIds, "recovery"],
-        edges: [
-          ...baseline.edges,
-          { from: "recovery", to: "dispatch", relation: "dependency" },
-        ],
+        edges: [...baseline.edges, { from: "recovery", to: "dispatch", relation: "dependency" }],
       }),
     ).toBeUndefined()
     expect(
@@ -224,7 +219,7 @@ describe("source-backed Mermaid semantics", () => {
     ).toBe("mermaid-semantic-coverage-regression-blocked")
   })
 
-  test("blocks deleting visible nodes or branches after the first source-backed validation attempt", () => {
+  test("blocks deleting visible nodes or branches after the first semantically valid source-backed validation", () => {
     const session = randomUUID()
     const detailed = {
       diagramId: "business-flow",
@@ -293,6 +288,39 @@ describe("source-backed Mermaid semantics", () => {
     ).toBe("mermaid-semantic-repair-regression-blocked")
   })
 
+  test("does not freeze an invalid draft as the semantic repair baseline", async () => {
+    await within(async (dir) => {
+      const session = randomUUID()
+      const file = await claims(dir)
+      const draft = [source, '  guessed["unproven branch"]', "  caller --> guessed"].join("\n")
+      const value = JSON.parse(await fs.readFile(path.join(dir, file), "utf8")) as Record<string, unknown>
+      value.sourceHash = createHash("sha256").update(draft).digest("hex")
+      await fs.writeFile(path.join(dir, file), `${JSON.stringify(value, null, 2)}\n`, "utf8")
+
+      const invalid = await validateMermaidDiagramRequest({
+        source: draft,
+        semanticMode: "source-backed",
+        semanticEvidencePath: file,
+        semanticSessionId: session,
+        semanticQuery: async () => result(),
+      })
+      expect(invalid.semanticStatus).toBe("invalid")
+      expect(invalid.issues.some((item) => item.code === "semantic-node-unclaimed")).toBe(true)
+
+      value.sourceHash = createHash("sha256").update(source).digest("hex")
+      await fs.writeFile(path.join(dir, file), `${JSON.stringify(value, null, 2)}\n`, "utf8")
+      const repaired = await validateMermaidDiagramRequest({
+        source,
+        semanticMode: "source-backed",
+        semanticEvidencePath: file,
+        semanticSessionId: session,
+        semanticQuery: async () => result(),
+      })
+      expect(repaired.semanticStatus).toBe("valid")
+      expect(repaired.issues.some((item) => item.code === "mermaid-semantic-repair-regression-blocked")).toBe(false)
+    })
+  })
+
   test("blocks advancing views until readable split children cover the pending semantics", () => {
     const session = randomUUID()
     const parent = {
@@ -310,12 +338,7 @@ describe("source-backed Mermaid semantics", () => {
     expect(initial).toMatchObject([
       {
         diagramId: "code-flow",
-        missingNodes: [
-          { id: "entry" },
-          { id: "dispatch" },
-          { id: "wait" },
-          { id: "done" },
-        ],
+        missingNodes: [{ id: "entry" }, { id: "dispatch" }, { id: "wait" }, { id: "done" }],
         missingEdges: parent.edges,
       },
     ])
@@ -327,6 +350,9 @@ describe("source-backed Mermaid semantics", () => {
     })
     expect(initial[0].suggestedChildren[0].suggestedDiagramId).toMatch(/^code-flow-FOCUS-[0-9a-f]{8}$/)
     expect(SemanticGuard.pendingDetails(session)[0].suggestedChildren).toEqual(initial[0].suggestedChildren)
+    const restored = randomUUID()
+    SemanticGuard.restore(restored, initial[0])
+    expect(SemanticGuard.pendingDetails(restored)[0].suggestedChildren).toEqual(initial[0].suggestedChildren)
     expect(
       SemanticGuard.advance(session, {
         diagramId: "state-machine",
@@ -401,17 +427,61 @@ describe("source-backed Mermaid semantics", () => {
     })
     const detail = SemanticGuard.pendingDetails(session)[0]
     expect(detail.suggestedChildren.length).toBeGreaterThan(1)
-    expect(detail.suggestedChildren.every((child) => child.nodes.length <= 8)).toBe(true)
+    expect(detail.suggestedChildren.every((child) => child.nodes.length <= 12)).toBe(true)
     expect(new Set(detail.suggestedChildren.map((child) => child.suggestedDiagramId)).size).toBe(
       detail.suggestedChildren.length,
     )
-    expect(
-      new Set(detail.suggestedChildren.flatMap((child) => child.nodes.map((node) => node.id))),
-    ).toEqual(new Set(nodeIds))
-    expect(
-      detail.suggestedChildren.flatMap((child) => child.edges.map((link) => `${link.from}->${link.to}`)),
-    ).toEqual(edges.map((link) => `${link.from}->${link.to}`))
+    expect(new Set(detail.suggestedChildren.flatMap((child) => child.nodes.map((node) => node.id)))).toEqual(
+      new Set(nodeIds),
+    )
+    expect(detail.suggestedChildren.flatMap((child) => child.edges.map((link) => `${link.from}->${link.to}`))).toEqual(
+      edges.map((link) => `${link.from}->${link.to}`),
+    )
     expect(SemanticGuard.pendingDetails(session)[0].suggestedChildren).toEqual(detail.suggestedChildren)
+  })
+
+  test("resolves split coverage by visible semantics without duplicating source binding metadata", () => {
+    const session = randomUUID()
+    const parent = {
+      diagramId: "bound-parent",
+      nodeIds: ["caller", "callee"],
+      nodes: [
+        { id: "caller", symbol: "caller", designUnitId: "target" },
+        { id: "callee", symbol: "callee", designUnitId: "child" },
+      ],
+      edges: [
+        {
+          from: "caller",
+          to: "callee",
+          relation: "direct-call" as const,
+          fromSymbol: "caller",
+          toSymbol: "callee",
+        },
+      ],
+    }
+    SemanticGuard.hold(session, parent)
+    SemanticGuard.allow(session, "a".repeat(64), "/workspace/focus.png", {
+      diagramId: "bound-child",
+      splitFromDiagramId: "bound-parent",
+      nodeIds: ["caller", "callee"],
+      edges: [{ from: "caller", to: "callee", relation: "direct-call" }],
+    })
+    expect(SemanticGuard.pending(session)).toEqual([])
+
+    const conflict = randomUUID()
+    SemanticGuard.hold(conflict, parent)
+    expect(
+      SemanticGuard.advance(conflict, {
+        diagramId: "remapped-child",
+        splitFromDiagramId: "bound-parent",
+        nodeIds: ["caller", "callee"],
+        nodes: [
+          { id: "caller", symbol: "other", designUnitId: "target" },
+          { id: "callee", symbol: "callee", designUnitId: "child" },
+        ],
+        edges: [{ from: "caller", to: "callee", relation: "direct-call" }],
+      })?.code,
+    ).toBe("mermaid-semantic-coverage-regression-blocked")
   })
 
   test("enforces source-backed validation and render budgets without affecting ordinary sessions", () => {
@@ -421,29 +491,22 @@ describe("source-backed Mermaid semantics", () => {
     for (const _ of Array.from({ length: 10 })) {
       expect(SemanticGuard.validate(session, file)).toBeUndefined()
     }
-    expect(SemanticGuard.validate(session, file)?.code).toBe(
-      "mermaid-semantic-validation-budget-exhausted",
-    )
+    expect(SemanticGuard.validate(session, file)?.code).toBe("mermaid-semantic-validation-budget-exhausted")
     expect(SemanticGuard.validate(session, "claims/other.json")).toBeUndefined()
     expect(SemanticGuard.render(session, file)).toBeUndefined()
     expect(SemanticGuard.render(session, file)).toBeUndefined()
     expect(SemanticGuard.render(session, file)).toBeUndefined()
     expect(SemanticGuard.render(session, file)).toBeUndefined()
-    expect(SemanticGuard.render(session, file)?.code).toBe(
-      "mermaid-semantic-render-budget-exhausted",
-    )
+    expect(SemanticGuard.render(session, file)?.code).toBe("mermaid-semantic-render-budget-exhausted")
     expect(SemanticGuard.check(ordinary)).toBeUndefined()
     expect(SemanticGuard.insert(ordinary, "a".repeat(64), "/workspace/ordinary.png")).toBeUndefined()
   })
 
   test("does not consume render budget until source-backed validation passes", async () => {
     await within(async (dir) => {
-      const diagram = [
-        "flowchart TD",
-        '  caller["caller"]',
-        '  callee["callee"]',
-        "  caller -->|待确认| callee",
-      ].join("\n")
+      const diagram = ["flowchart TD", '  caller["caller"]', '  callee["callee"]', "  caller -->|待确认| callee"].join(
+        "\n",
+      )
       await fs.writeFile(path.join(dir, "code.c"), "void callee(void) {}\nvoid caller(void) { callee(); }\n", "utf8")
       const file = path.join(dir, "claims.json")
       const manifest = {
@@ -511,9 +574,9 @@ describe("source-backed Mermaid semantics", () => {
         }
         const exhausted = await renderMermaidDiagram(input)
         expect(exhausted.rendered).toBe(false)
-        expect(
-          exhausted.semanticIssues.some((item) => item.code === "mermaid-semantic-render-budget-exhausted"),
-        ).toBe(true)
+        expect(exhausted.semanticIssues.some((item) => item.code === "mermaid-semantic-render-budget-exhausted")).toBe(
+          true,
+        )
         expect(requests).toBe(4)
       } finally {
         await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())))
@@ -556,14 +619,12 @@ describe("source-backed Mermaid semantics", () => {
         "utf8",
       )
       const standalone = await validateMermaidDiagramRequest({
-        source: ['flowchart TD', '  caller["caller"]', '  callee["callee"]', "  caller -->|待确认| callee"].join("\n"),
+        source: ["flowchart TD", '  caller["caller"]', '  callee["callee"]', "  caller -->|待确认| callee"].join("\n"),
         semanticMode: "source-backed",
         semanticEvidencePath: file,
       })
       expect(standalone.semanticStatus).toBe("invalid")
-      expect(standalone.issues.some((item) => item.code === "semantic-source-hash-placeholder-not-allowed")).toBe(
-        true,
-      )
+      expect(standalone.issues.some((item) => item.code === "semantic-source-hash-placeholder-not-allowed")).toBe(true)
     })
   })
 
@@ -647,32 +708,49 @@ describe("source-backed Mermaid semantics", () => {
 
   test("parses compact arrows and infers strong-relation symbols from active endpoint claims", async () => {
     await within(async (dir) => {
-      const diagram = [
-        "flowchart TD",
-        '  caller["caller"]-->|调用|callee["callee"]',
-      ].join("\n")
+      const diagram = ["flowchart TD", '  caller["caller"]-->|调用|callee["callee"]'].join("\n")
       await fs.writeFile(path.join(dir, "code.c"), "void callee(void) {}\nvoid caller(void) { callee(); }\n", "utf8")
-      await fs.writeFile(path.join(dir, "diagram-claims.json"), `${JSON.stringify({
-        version: 1,
-        diagramId: "compact-call",
-        diagramType: "code-flow",
-        scopePath: ".",
-        sourceHash: createHash("sha256").update(diagram).digest("hex"),
-        language: "c",
-        nodes: [
-          { id: "caller", symbol: "caller", status: "active", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
-          { id: "callee", symbol: "callee", status: "active", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
-        ],
-        edges: [{
-          id: "call-1",
-          from: "caller",
-          to: "callee",
-          relation: "direct-call",
-          event: "调用",
-          status: "active",
-          evidence: [{ path: "code.c", startLine: 1, endLine: 2 }],
-        }],
-      }, null, 2)}\n`, "utf8")
+      await fs.writeFile(
+        path.join(dir, "diagram-claims.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            diagramId: "compact-call",
+            diagramType: "code-flow",
+            scopePath: ".",
+            sourceHash: createHash("sha256").update(diagram).digest("hex"),
+            language: "c",
+            nodes: [
+              {
+                id: "caller",
+                symbol: "caller",
+                status: "active",
+                evidence: [{ path: "code.c", startLine: 2, endLine: 2 }],
+              },
+              {
+                id: "callee",
+                symbol: "callee",
+                status: "active",
+                evidence: [{ path: "code.c", startLine: 1, endLine: 1 }],
+              },
+            ],
+            edges: [
+              {
+                id: "call-1",
+                from: "caller",
+                to: "callee",
+                relation: "direct-call",
+                event: "调用",
+                status: "active",
+                evidence: [{ path: "code.c", startLine: 1, endLine: 2 }],
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      )
       const valid = await validateMermaidDiagramRequest({
         source: diagram,
         semanticMode: "source-backed",
@@ -697,46 +775,52 @@ describe("source-backed Mermaid semantics", () => {
       ].join("\n")
       await fs.writeFile(
         path.join(dir, "code.c"),
-        [
-          "void run(void) {",
-          "  if (ready) retry();",
-          "  else fail();",
-          "  done();",
-          "}",
-        ].join("\n"),
+        ["void run(void) {", "  if (ready) retry();", "  else fail();", "  done();", "}"].join("\n"),
         "utf8",
       )
-      await fs.writeFile(path.join(dir, "diagram-claims.json"), `${JSON.stringify({
-        version: 1,
-        diagramId: "compact-groups",
-        diagramType: "business-flow",
-        scopePath: ".",
-        sourceHash: createHash("sha256").update(diagram).digest("hex"),
-        language: "c",
-        evidenceCatalog: {
-          S1: { path: "code.c", startLine: 1, endLine: 5 },
-        },
-        nodes: [],
-        edges: [],
-        nodeGroups: [{
-          items: [["entry"], ["dispatch"], ["retry"], ["failure"], ["done"]],
-          status: "confirmed",
-          evidenceIds: ["S1"],
-        }],
-        edgeGroups: [{
-          id: "flow",
-          pairs: [
-            ["entry", "dispatch"],
-            ["dispatch", "retry"],
-            ["dispatch", "failure"],
-            ["retry", "done"],
-            ["failure", "done"],
-          ],
-          relation: "dependency",
-          status: "confirmed",
-          evidenceIds: ["S1"],
-        }],
-      }, null, 2)}\n`, "utf8")
+      await fs.writeFile(
+        path.join(dir, "diagram-claims.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            diagramId: "compact-groups",
+            diagramType: "business-flow",
+            scopePath: ".",
+            sourceHash: createHash("sha256").update(diagram).digest("hex"),
+            language: "c",
+            evidenceCatalog: {
+              S1: { path: "code.c", startLine: 1, endLine: 5 },
+            },
+            nodes: [],
+            edges: [],
+            nodeGroups: [
+              {
+                items: [["entry"], ["dispatch"], ["retry"], ["failure"], ["done"]],
+                status: "confirmed",
+                evidenceIds: ["S1"],
+              },
+            ],
+            edgeGroups: [
+              {
+                id: "flow",
+                pairs: [
+                  ["entry", "dispatch"],
+                  ["dispatch", "retry"],
+                  ["dispatch", "failure"],
+                  ["retry", "done"],
+                  ["failure", "done"],
+                ],
+                relation: "dependency",
+                status: "confirmed",
+                evidenceIds: ["S1"],
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      )
       const valid = await validateMermaidDiagramRequest({
         source: diagram,
         semanticMode: "source-backed",
@@ -755,31 +839,43 @@ describe("source-backed Mermaid semantics", () => {
   test("rejects compact strong-relation groups without exact endpoint symbols", async () => {
     await within(async (dir) => {
       await fs.writeFile(path.join(dir, "code.c"), "void callee(void) {}\nvoid caller(void) { callee(); }\n", "utf8")
-      await fs.writeFile(path.join(dir, "diagram-claims.json"), `${JSON.stringify({
-        version: 1,
-        diagramId: "compact-strong-invalid",
-        diagramType: "code-flow",
-        scopePath: ".",
-        sourceHash: createHash("sha256").update(source).digest("hex"),
-        language: "c",
-        evidenceCatalog: {
-          S1: { path: "code.c", startLine: 1, endLine: 2 },
-        },
-        nodes: [],
-        edges: [],
-        nodeGroups: [{
-          items: [["caller"], ["callee"]],
-          status: "confirmed",
-          evidenceIds: ["S1"],
-        }],
-        edgeGroups: [{
-          id: "calls",
-          pairs: [["caller", "callee"]],
-          relation: "direct-call",
-          status: "confirmed",
-          evidenceIds: ["S1"],
-        }],
-      }, null, 2)}\n`, "utf8")
+      await fs.writeFile(
+        path.join(dir, "diagram-claims.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            diagramId: "compact-strong-invalid",
+            diagramType: "code-flow",
+            scopePath: ".",
+            sourceHash: createHash("sha256").update(source).digest("hex"),
+            language: "c",
+            evidenceCatalog: {
+              S1: { path: "code.c", startLine: 1, endLine: 2 },
+            },
+            nodes: [],
+            edges: [],
+            nodeGroups: [
+              {
+                items: [["caller"], ["callee"]],
+                status: "confirmed",
+                evidenceIds: ["S1"],
+              },
+            ],
+            edgeGroups: [
+              {
+                id: "calls",
+                pairs: [["caller", "callee"]],
+                relation: "direct-call",
+                status: "confirmed",
+                evidenceIds: ["S1"],
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      )
       const invalid = await validateMermaidDiagramRequest({
         source,
         semanticMode: "source-backed",
@@ -800,9 +896,13 @@ describe("source-backed Mermaid semantics", () => {
         '  callee["更新 states[]"]',
         "  caller --> callee",
       ].join("\n")
-      const file = await claims(dir, {}, {
-        sourceHash: createHash("sha256").update(diagram).digest("hex"),
-      })
+      const file = await claims(
+        dir,
+        {},
+        {
+          sourceHash: createHash("sha256").update(diagram).digest("hex"),
+        },
+      )
       const valid = await validateMermaidDiagramRequest({
         source: diagram,
         semanticMode: "source-backed",
@@ -816,10 +916,7 @@ describe("source-backed Mermaid semantics", () => {
 
   test("rejects dependency claims that downgrade real state-diagram transitions", async () => {
     await within(async (dir) => {
-      const diagram = [
-        "stateDiagram-v2",
-        "  FREE --> QUEUED: submit",
-      ].join("\n")
+      const diagram = ["stateDiagram-v2", "  FREE --> QUEUED: submit"].join("\n")
       await fs.writeFile(
         path.join(dir, "code.c"),
         "enum State { FREE, QUEUED };\nvoid submit(void) { if (state == FREE) state = QUEUED; }\n",
@@ -836,21 +933,19 @@ describe("source-backed Mermaid semantics", () => {
           { id: "FREE", symbol: "FREE", evidence: [{ path: "code.c", startLine: 1, endLine: 2 }] },
           { id: "QUEUED", symbol: "QUEUED", evidence: [{ path: "code.c", startLine: 1, endLine: 2 }] },
         ],
-        edges: [{
-          id: "transition-1",
-          from: "FREE",
-          to: "QUEUED",
-          relation: "dependency",
-          fromSymbol: "FREE",
-          toSymbol: "QUEUED",
-          evidence: [{ path: "code.c", startLine: 2, endLine: 2 }],
-        }],
+        edges: [
+          {
+            id: "transition-1",
+            from: "FREE",
+            to: "QUEUED",
+            relation: "dependency",
+            fromSymbol: "FREE",
+            toSymbol: "QUEUED",
+            evidence: [{ path: "code.c", startLine: 2, endLine: 2 }],
+          },
+        ],
       }
-      await fs.writeFile(
-        path.join(dir, "diagram-claims.json"),
-        `${JSON.stringify(value, null, 2)}\n`,
-        "utf8",
-      )
+      await fs.writeFile(path.join(dir, "diagram-claims.json"), `${JSON.stringify(value, null, 2)}\n`, "utf8")
       const invalid = await validateMermaidDiagramRequest({
         source: diagram,
         semanticMode: "source-backed",
@@ -875,26 +970,32 @@ describe("source-backed Mermaid semantics", () => {
       )
       await fs.writeFile(
         path.join(dir, "diagram-claims.json"),
-        `${JSON.stringify({
-          version: 1,
-          diagramId: "state-labels",
-          diagramType: "state-machine",
-          scopePath: ".",
-          sourceHash: createHash("sha256").update(diagram).digest("hex"),
-          language: "c",
-          nodes: [
-            { id: "FREE", symbol: "FREE", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
-            { id: "WAIT_HOST", symbol: "WAIT_HOST", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
-          ],
-          edges: [{
-            id: "wait",
-            from: "FREE",
-            to: "WAIT_HOST",
-            relation: "unknown",
-            status: "unknown",
-            evidence: [{ path: "code.c", startLine: 1, endLine: 2 }],
-          }],
-        }, null, 2)}\n`,
+        `${JSON.stringify(
+          {
+            version: 1,
+            diagramId: "state-labels",
+            diagramType: "state-machine",
+            scopePath: ".",
+            sourceHash: createHash("sha256").update(diagram).digest("hex"),
+            language: "c",
+            nodes: [
+              { id: "FREE", symbol: "FREE", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
+              { id: "WAIT_HOST", symbol: "WAIT_HOST", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
+            ],
+            edges: [
+              {
+                id: "wait",
+                from: "FREE",
+                to: "WAIT_HOST",
+                relation: "unknown",
+                status: "unknown",
+                evidence: [{ path: "code.c", startLine: 1, endLine: 2 }],
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
         "utf8",
       )
       const valid = await validateMermaidDiagramRequest({
@@ -910,13 +1011,17 @@ describe("source-backed Mermaid semantics", () => {
 
   test("rejects fictitious symbols, duplicate claims, unclaimed edges, and stale ranges", async () => {
     await within(async (dir) => {
-      const file = await claims(dir, { evidence: [{ path: "code.c", startLine: 99, endLine: 100 }] }, {
-        nodes: [
-          { id: "caller", symbol: "missing_symbol", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
-          { id: "caller", symbol: "caller", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
-        ],
-        edges: [],
-      })
+      const file = await claims(
+        dir,
+        { evidence: [{ path: "code.c", startLine: 99, endLine: 100 }] },
+        {
+          nodes: [
+            { id: "caller", symbol: "missing_symbol", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
+            { id: "caller", symbol: "caller", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
+          ],
+          edges: [],
+        },
+      )
       const invalid = await validateMermaidDiagramRequest({
         source,
         semanticMode: "source-backed",
@@ -925,7 +1030,11 @@ describe("source-backed Mermaid semantics", () => {
       })
       expect(invalid.semanticStatus).toBe("invalid")
       expect(invalid.issues.map((item) => item.code)).toEqual(
-        expect.arrayContaining(["semantic-node-claim-duplicate", "semantic-edge-unclaimed", "semantic-evidence-invalid"]),
+        expect.arrayContaining([
+          "semantic-node-claim-duplicate",
+          "semantic-edge-unclaimed",
+          "semantic-evidence-invalid",
+        ]),
       )
     })
   })
@@ -980,12 +1089,16 @@ describe("source-backed Mermaid semantics", () => {
       expect(fields.issues[0]?.message).toContain("edges[0].evidence[0].startLine must be a number")
       expect(fields.issues[0]?.message).toContain("edges[0].evidence[0].endLine must be a number")
 
-      await claims(dir, { fromSymbol: undefined, toSymbol: undefined }, {
-        nodes: [
-          { id: "caller", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
-          { id: "callee", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
-        ],
-      })
+      await claims(
+        dir,
+        { fromSymbol: undefined, toSymbol: undefined },
+        {
+          nodes: [
+            { id: "caller", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
+            { id: "callee", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
+          ],
+        },
+      )
       const symbols = await validateMermaidDiagramRequest({
         source,
         semanticMode: "source-backed",
@@ -1039,7 +1152,7 @@ describe("source-backed Mermaid semantics", () => {
         "flowchart TD",
         '  owner["Module\\n目标对象"]',
         '  role["helper_file\\n辅助职责"]',
-        '  owner -->|成员依赖| role',
+        "  owner -->|成员依赖| role",
       ].join("\n")
       await fs.writeFile(path.join(dir, "code.c"), "typedef struct Module { int helper; } Module;\n", "utf8")
       const value = {
@@ -1058,22 +1171,26 @@ describe("source-backed Mermaid semantics", () => {
           { id: "owner", symbol: "Module", designUnitId: "target", evidenceIds: ["S1"] },
           { id: "role", designUnitId: "child", evidenceIds: ["S1"] },
         ],
-        edges: [
-          { id: "dependency-1", from: "owner", to: "role", relation: "dependency", evidenceIds: ["S1"] },
-        ],
+        edges: [{ id: "dependency-1", from: "owner", to: "role", relation: "dependency", evidenceIds: ["S1"] }],
       }
-      await fs.writeFile(path.join(dir, "design-unit-census.json"), `${JSON.stringify({
-        version: 1,
-        targetDesignUnitId: "target",
-        targetSourceRoot: ".",
-        designUnits: [
-          { id: "target", name: "Module", kind: "target" },
-          { id: "child", name: "helper_file", kind: "confirmed-submodule", parentId: "target" },
-        ],
-        implementationUnits: [
-          { path: "code.c", disposition: "target", designUnitId: "target" },
-        ],
-      }, null, 2)}\n`, "utf8")
+      await fs.writeFile(
+        path.join(dir, "design-unit-census.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            targetDesignUnitId: "target",
+            targetSourceRoot: ".",
+            designUnits: [
+              { id: "target", name: "Module", kind: "target" },
+              { id: "child", name: "helper_file", kind: "confirmed-submodule", parentId: "target" },
+            ],
+            implementationUnits: [{ path: "code.c", disposition: "target", designUnitId: "target" }],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      )
       const file = path.join(dir, "diagram-claims.json")
       await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8")
       const valid = await validateMermaidDiagramRequest({
@@ -1116,9 +1233,7 @@ describe("source-backed Mermaid semantics", () => {
           { id: "child", name: "helper_file", kind: "confirmed-submodule", parentId: "target" },
           { id: "missing", name: "required_worker", kind: "confirmed-submodule", parentId: "target" },
         ],
-        implementationUnits: [
-          { path: "code.c", disposition: "target", designUnitId: "target" },
-        ],
+        implementationUnits: [{ path: "code.c", disposition: "target", designUnitId: "target" }],
       }
       await fs.writeFile(path.join(dir, "design-unit-census.json"), `${JSON.stringify(census, null, 2)}\n`, "utf8")
       const value = {
@@ -1186,17 +1301,12 @@ describe("source-backed Mermaid semantics", () => {
 
   test("rejects a target implementation file omitted or excluded only because it is a utility", async () => {
     await within(async (dir) => {
-      const diagram = [
-        "flowchart TD",
-        '  owner["Target"]',
-        '  helper["Endian helper"]',
-        "  owner --> helper",
-      ].join("\n")
+      const diagram = ["flowchart TD", '  owner["Target"]', '  helper["Endian helper"]', "  owner --> helper"].join(
+        "\n",
+      )
       await fs.writeFile(path.join(dir, "core.c"), "void core_init(void) { helper_swap(); }\n", "utf8")
       await fs.writeFile(path.join(dir, "helper.c"), "unsigned helper_swap(void) { return 1; }\n", "utf8")
-      const units: Array<Record<string, unknown>> = [
-        { path: "core.c", disposition: "target", designUnitId: "target" },
-      ]
+      const units: Array<Record<string, unknown>> = [{ path: "core.c", disposition: "target", designUnitId: "target" }]
       const census = {
         version: 1,
         targetDesignUnitId: "target",
@@ -1221,7 +1331,13 @@ describe("source-backed Mermaid semantics", () => {
           { id: "helper", designUnitId: "helper", evidence: [{ path: "helper.c", startLine: 1, endLine: 1 }] },
         ],
         edges: [
-          { id: "dependency-1", from: "owner", to: "helper", relation: "dependency", evidence: [{ path: "core.c", startLine: 1, endLine: 1 }] },
+          {
+            id: "dependency-1",
+            from: "owner",
+            to: "helper",
+            relation: "dependency",
+            evidence: [{ path: "core.c", startLine: 1, endLine: 1 }],
+          },
         ],
       }
       await fs.writeFile(path.join(dir, "diagram-claims.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8")
@@ -1234,7 +1350,11 @@ describe("source-backed Mermaid semantics", () => {
         semanticQuery: async () => result(),
       })
       expect(missing.semanticStatus).toBe("invalid")
-      expect(missing.issues.some((item) => item.code === "semantic-implementation-unit-unmapped" && item.path === "helper.c")).toBe(true)
+      expect(
+        missing.issues.some(
+          (item) => item.code === "semantic-implementation-unit-unmapped" && item.path === "helper.c",
+        ),
+      ).toBe(true)
 
       units.push({
         path: "helper.c",
@@ -1275,14 +1395,28 @@ describe("source-backed Mermaid semantics", () => {
         { id: "helper", designUnitId: "helper", evidence: [{ path: "meson.build", startLine: 1, endLine: 1 }] },
       ]
       manifest.edges = [
-        { id: "dependency-1", from: "owner", to: "helper", relation: "dependency", evidence: [{ path: "meson.build", startLine: 1, endLine: 1 }] },
+        {
+          id: "dependency-1",
+          from: "owner",
+          to: "helper",
+          relation: "dependency",
+          evidence: [{ path: "meson.build", startLine: 1, endLine: 1 }],
+        },
       ]
       await fs.writeFile(path.join(dir, "diagram-claims.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8")
-      await fs.writeFile(path.join(dir, "design-unit-census.json"), `${JSON.stringify({
-        version: 1,
-        targetDesignUnitId: "target",
-        designUnits: census.designUnits,
-      }, null, 2)}\n`, "utf8")
+      await fs.writeFile(
+        path.join(dir, "design-unit-census.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            targetDesignUnitId: "target",
+            designUnits: census.designUnits,
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      )
       const bypass = await validateMermaidDiagramRequest({
         source: diagram,
         semanticMode: "source-backed",
@@ -1318,7 +1452,13 @@ describe("source-backed Mermaid semantics", () => {
           { id: "role", evidence: [{ path: "target.c", startLine: 1, endLine: 1 }] },
         ],
         edges: [
-          { id: "dependency-1", from: "owner", to: "role", relation: "dependency", evidence: [{ path: "target.c", startLine: 1, endLine: 1 }] },
+          {
+            id: "dependency-1",
+            from: "owner",
+            to: "role",
+            relation: "dependency",
+            evidence: [{ path: "target.c", startLine: 1, endLine: 1 }],
+          },
         ],
       }
       const census = {
@@ -1351,7 +1491,11 @@ describe("source-backed Mermaid semantics", () => {
         semanticQuery: async () => result(),
       })
       expect(module.semanticStatus).toBe("invalid")
-      expect(module.issues.some((item) => item.code === "semantic-implementation-unit-unmapped" && item.path === "sibling.c")).toBe(true)
+      expect(
+        module.issues.some(
+          (item) => item.code === "semantic-implementation-unit-unmapped" && item.path === "sibling.c",
+        ),
+      ).toBe(true)
     })
   })
 
@@ -1388,19 +1532,28 @@ describe("source-backed Mermaid semantics", () => {
         {
           source,
           code: "void callee(void) {}\nvoid caller(void) { register_handler(callee); }\n",
-          nodes: [{ id: "caller", symbol: "caller" }, { id: "callee", symbol: "callee" }],
+          nodes: [
+            { id: "caller", symbol: "caller" },
+            { id: "callee", symbol: "callee" },
+          ],
           edge: { relation: "callback", fromSymbol: "caller", toSymbol: "callee" },
         },
         {
           source,
           code: "struct caller { void (*callee)(void); };\n",
-          nodes: [{ id: "caller", symbol: "caller" }, { id: "callee", symbol: "callee" }],
+          nodes: [
+            { id: "caller", symbol: "caller" },
+            { id: "callee", symbol: "callee" },
+          ],
           edge: { relation: "ownership", fromSymbol: "caller", toSymbol: "callee" },
         },
         {
           source,
           code: "int caller;\nint callee;\nvoid transfer(void) { callee = caller; }\n",
-          nodes: [{ id: "caller", symbol: "caller" }, { id: "callee", symbol: "callee" }],
+          nodes: [
+            { id: "caller", symbol: "caller" },
+            { id: "callee", symbol: "callee" },
+          ],
           edge: { relation: "data-flow", fromSymbol: "caller", toSymbol: "callee" },
         },
       ]
@@ -1420,7 +1573,10 @@ describe("source-backed Mermaid semantics", () => {
         dir,
         source: stateSource,
         code: "enum state { idle, busy };\nvoid start(void) { if (state == idle) state = busy; }\n",
-        nodes: [{ id: "idle", symbol: "idle" }, { id: "busy", symbol: "busy" }],
+        nodes: [
+          { id: "idle", symbol: "idle" },
+          { id: "busy", symbol: "busy" },
+        ],
         edge: { relation: "state-transition", fromSymbol: "idle", toSymbol: "busy", event: "start" },
       })
       const base = result()
@@ -1437,7 +1593,10 @@ describe("source-backed Mermaid semantics", () => {
         dir,
         source: stateSource,
         code: "enum state { idle, busy };\nvoid start(void) { log_state(idle); state = busy; }\n",
-        nodes: [{ id: "idle", symbol: "idle" }, { id: "busy", symbol: "busy" }],
+        nodes: [
+          { id: "idle", symbol: "idle" },
+          { id: "busy", symbol: "busy" },
+        ],
         edge: { relation: "state-transition", fromSymbol: "idle", toSymbol: "busy", event: "start" },
       })
       const mentioned = await validateMermaidDiagramRequest({
@@ -1476,19 +1635,21 @@ describe("source-backed Mermaid semantics", () => {
           { id: "waiting", symbol: "waiting", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
           { id: "runnable", symbol: "runnable", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
         ],
-        edges: [{
-          id: "wake",
-          from: "waiting",
-          to: "runnable",
-          relation: "state-transition",
-          fromSymbol: "waiting",
-          toSymbol: "runnable",
-          event: "wake",
-          evidence: [
-            { path: "code.c", startLine: 2, endLine: 4 },
-            { path: "code.c", startLine: 5, endLine: 8 },
-          ],
-        }],
+        edges: [
+          {
+            id: "wake",
+            from: "waiting",
+            to: "runnable",
+            relation: "state-transition",
+            fromSymbol: "waiting",
+            toSymbol: "runnable",
+            event: "wake",
+            evidence: [
+              { path: "code.c", startLine: 2, endLine: 4 },
+              { path: "code.c", startLine: 5, endLine: 8 },
+            ],
+          },
+        ],
       }
       const file = path.join(dir, "diagram-claims.json")
       await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8")
@@ -1560,13 +1721,17 @@ describe("source-backed Mermaid semantics", () => {
   test("allows an unproven relation only when visibly marked pending confirmation", async () => {
     await within(async (dir) => {
       const pending = source.replace("caller --> callee", "caller -->|待确认| callee")
-      const file = await claims(dir, { relation: "unknown", status: "unknown" }, {
-        sourceHash: createHash("sha256").update(pending).digest("hex"),
-        nodes: [
-          { id: "caller", symbol: "caller", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
-          { id: "callee", symbol: "callee", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
-        ],
-      })
+      const file = await claims(
+        dir,
+        { relation: "unknown", status: "unknown" },
+        {
+          sourceHash: createHash("sha256").update(pending).digest("hex"),
+          nodes: [
+            { id: "caller", symbol: "caller", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
+            { id: "callee", symbol: "callee", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
+          ],
+        },
+      )
       const valid = await validateMermaidDiagramRequest({
         source: pending,
         semanticMode: "source-backed",
@@ -1605,12 +1770,9 @@ describe("source-backed Mermaid semantics", () => {
 
   test("renders a source-backed batch from workspace paths and persists compact resumable results", async () => {
     await within(async (dir) => {
-      const diagram = [
-        "flowchart TD",
-        '  caller["caller"]',
-        '  callee["callee"]',
-        "  caller -->|待确认| callee",
-      ].join("\n")
+      const diagram = ["flowchart TD", '  caller["caller"]', '  callee["callee"]', "  caller -->|待确认| callee"].join(
+        "\n",
+      )
       await fs.writeFile(path.join(dir, "code.c"), "void callee(void) {}\nvoid caller(void) { callee(); }\n", "utf8")
       const items = await Promise.all(
         ["architecture", "business"].map(async (name) => {
@@ -1625,7 +1787,8 @@ describe("source-backed Mermaid semantics", () => {
                 diagramId: name,
                 diagramType: "focused",
                 scopePath: ".",
-                sourceHash: name === "architecture" ? "$MMD_SHA256" : createHash("sha256").update(diagram).digest("hex"),
+                sourceHash:
+                  name === "architecture" ? "$MMD_SHA256" : createHash("sha256").update(diagram).digest("hex"),
                 language: "c",
                 nodes: [
                   { id: "caller", symbol: "caller", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
@@ -1659,7 +1822,9 @@ describe("source-backed Mermaid semantics", () => {
       const server = createServer((_request, response) => {
         requests += 1
         response.writeHead(200, { "content-type": "application/json" })
-        response.end(JSON.stringify({ pngBase64: png, width: 480, height: 280, pixelWidth: 1440, pixelHeight: 840, scale: 3 }))
+        response.end(
+          JSON.stringify({ pngBase64: png, width: 480, height: 280, pixelWidth: 1440, pixelHeight: 840, scale: 3 }),
+        )
       })
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
       const address = server.address()
@@ -1679,20 +1844,166 @@ describe("source-backed Mermaid semantics", () => {
           invalidCount: 0,
           splitRequiredCount: 0,
           complete: true,
+          resolvedSplitDiagramIds: [],
           resultPath: "batch/results.json",
         })
-        expect(batch.items.map((item) => item.semanticStatus)).toEqual([
-          "valid-with-unknowns",
-          "valid-with-unknowns",
-        ])
+        expect(batch.items.map((item) => item.semanticStatus)).toEqual(["valid-with-unknowns", "valid-with-unknowns"])
         expect(batch.items.every((item) => item.pngPath && item.documentReady)).toBe(true)
         expect(JSON.parse(await fs.readFile(path.join(dir, batch.resultPath), "utf8")).complete).toBe(true)
         expect(JSON.parse(await fs.readFile(path.join(dir, "architecture-claims.json"), "utf8")).sourceHash).toBe(
           "$MMD_SHA256",
         )
+        await renderSourceBackedMermaidBatch({
+          manifestPath: "batch.json",
+          remoteEndpoint: `http://127.0.0.1:${address.port}`,
+          semanticSessionId: randomUUID(),
+        })
+        const history = await fs.readdir(path.join(dir, "batch/.history"))
+        expect(history).toHaveLength(1)
+        expect(history[0]).toMatch(/^results\.[0-9a-f]{12}\.results\.json$/)
       } finally {
         await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())))
       }
+    })
+  })
+
+  test("records a pending split parent resolved by a readable replacement batch", async () => {
+    await within(async (dir) => {
+      const session = randomUUID()
+      const diagram = ["flowchart TD", '  caller["caller"]', '  callee["callee"]', "  caller -->|待确认| callee"].join(
+        "\n",
+      )
+      const fingerprint = {
+        diagramId: "parent",
+        nodeIds: ["caller", "callee"],
+        nodes: [
+          { id: "caller", symbol: "caller" },
+          { id: "callee", symbol: "callee" },
+        ],
+        edges: [
+          {
+            from: "caller",
+            to: "callee",
+            relation: "unknown" as const,
+            fromSymbol: "caller",
+            toSymbol: "callee",
+          },
+        ],
+      }
+      SemanticGuard.hold(session, fingerprint)
+      const child = SemanticGuard.pendingDetails(session)[0].suggestedChildren[0].suggestedDiagramId
+      await fs.writeFile(path.join(dir, "code.c"), "void callee(void) {}\nvoid caller(void) { callee(); }\n", "utf8")
+      await fs.writeFile(path.join(dir, `${child}.mmd`), diagram, "utf8")
+      await fs.writeFile(
+        path.join(dir, `${child}-claims.json`),
+        `${JSON.stringify(
+          {
+            version: 1,
+            diagramId: child,
+            splitFromDiagramId: "parent",
+            diagramType: "focused",
+            scopePath: ".",
+            sourceHash: createHash("sha256").update(diagram).digest("hex"),
+            language: "c",
+            nodes: [
+              { id: "caller", symbol: "caller", evidence: [{ path: "code.c", startLine: 2, endLine: 2 }] },
+              { id: "callee", symbol: "callee", evidence: [{ path: "code.c", startLine: 1, endLine: 1 }] },
+            ],
+            edges: [
+              {
+                id: "edge",
+                from: "caller",
+                to: "callee",
+                relation: "unknown",
+                status: "unknown",
+                evidence: [{ path: "code.c", startLine: 1, endLine: 2 }],
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      )
+      await fs.writeFile(
+        path.join(dir, "repair.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            items: [
+              {
+                diagramId: child,
+                sourcePath: `${child}.mmd`,
+                semanticEvidencePath: `${child}-claims.json`,
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      )
+      const server = createServer((_request, response) => {
+        response.writeHead(200, { "content-type": "application/json" })
+        response.end(
+          JSON.stringify({
+            pngBase64: png,
+            width: 480,
+            height: 280,
+            pixelWidth: 1440,
+            pixelHeight: 840,
+            scale: 3,
+          }),
+        )
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const address = server.address()
+      if (!address || typeof address === "string") throw new Error("server did not bind")
+      try {
+        const batch = await renderSourceBackedMermaidBatch({
+          manifestPath: "repair.json",
+          remoteEndpoint: `http://127.0.0.1:${address.port}`,
+          semanticSessionId: session,
+        })
+        expect(batch.complete).toBe(true)
+        expect(batch.resolvedSplitDiagramIds).toEqual(["parent"])
+        expect(batch.pendingSplitDiagramIds).toEqual([])
+      } finally {
+        await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())))
+      }
+    })
+  })
+
+  test("rejects a stale full batch before consuming attempts while a split repair is pending", async () => {
+    await within(async (dir) => {
+      const session = randomUUID()
+      SemanticGuard.hold(session, {
+        diagramId: "parent",
+        nodeIds: ["entry", "done"],
+        edges: [{ from: "entry", to: "done", relation: "dependency" }],
+      })
+      await fs.writeFile(
+        path.join(dir, "stale.json"),
+        `${JSON.stringify({
+          version: 1,
+          items: [
+            {
+              diagramId: "unrelated",
+              sourcePath: "unrelated.mmd",
+              semanticEvidencePath: "unrelated-claims.json",
+            },
+          ],
+        })}\n`,
+        "utf8",
+      )
+      await expect(
+        renderSourceBackedMermaidBatch({
+          manifestPath: "stale.json",
+          semanticSessionId: session,
+        }),
+      ).rejects.toThrow("The next batch must be repair-only")
+      expect(SemanticGuard.validate(session, "unrelated-claims.json")).toBeUndefined()
+      expect(SemanticGuard.render(session, "unrelated-claims.json")).toBeUndefined()
     })
   })
 
@@ -1709,7 +2020,11 @@ describe("source-backed Mermaid semantics", () => {
       await fs.mkdir(path.join(dir, "src"), { recursive: true })
       await fs.mkdir(path.join(dir, "work/02-source-evidence"), { recursive: true })
       await fs.mkdir(path.join(dir, "work/04-diagrams"), { recursive: true })
-      await fs.writeFile(path.join(dir, "src/code.c"), "void callee(void) {}\nvoid caller(void) { callee(); }\n", "utf8")
+      await fs.writeFile(
+        path.join(dir, "src/code.c"),
+        "void callee(void) {}\nvoid caller(void) { callee(); }\n",
+        "utf8",
+      )
       await fs.writeFile(
         path.join(dir, "work/02-source-evidence/design-unit-census.json"),
         `${JSON.stringify({ version: 1, targetDesignUnitId: "target", designUnits: [{ id: "target", name: "Target", kind: "target" }] })}\n`,
@@ -1769,7 +2084,9 @@ describe("source-backed Mermaid semantics", () => {
       )
       const server = createServer((_request, response) => {
         response.writeHead(200, { "content-type": "application/json" })
-        response.end(JSON.stringify({ pngBase64: png, width: 480, height: 280, pixelWidth: 1440, pixelHeight: 840, scale: 3 }))
+        response.end(
+          JSON.stringify({ pngBase64: png, width: 480, height: 280, pixelWidth: 1440, pixelHeight: 840, scale: 3 }),
+        )
       })
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
       const address = server.address()
@@ -1870,12 +2187,9 @@ describe("source-backed Mermaid semantics", () => {
 
   test("records an invalid batch item and continues with later diagrams", async () => {
     await within(async (dir) => {
-      const diagram = [
-        "flowchart TD",
-        '  caller["caller"]',
-        '  callee["callee"]',
-        "  caller -->|待确认| callee",
-      ].join("\n")
+      const diagram = ["flowchart TD", '  caller["caller"]', '  callee["callee"]', "  caller -->|待确认| callee"].join(
+        "\n",
+      )
       await fs.writeFile(path.join(dir, "bad.mmd"), source, "utf8")
       await fs.writeFile(path.join(dir, "bad-claims.json"), "{invalid", "utf8")
       await fs.writeFile(path.join(dir, "good.mmd"), diagram, "utf8")

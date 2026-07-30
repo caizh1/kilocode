@@ -12,7 +12,7 @@ const original = vscode.workspace.getConfiguration
 
 function stubConfig(state: Map<string, unknown>) {
   ;(vscode.workspace as unknown as Stub).getConfiguration = (section?: string) => {
-    if (section !== "kilo-code.new.chat") {
+    if (section !== "chipmate.v2.chat") {
       return { get: <T>(_key: string, fallback?: T) => fallback }
     }
     return {

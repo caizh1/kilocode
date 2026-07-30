@@ -49,6 +49,8 @@ describe("standalone Agent Console architecture", () => {
     )
     const windows = fs.readFileSync(path.join(import.meta.dir, "../../qa/windows-real/run.ps1"), "utf8")
     const cdp = fs.readFileSync(path.join(import.meta.dir, "../../qa/windows-real/cdp-agent-console.mjs"), "utf8")
+    const settings = fs.readFileSync(path.join(import.meta.dir, "../../qa/windows-real/cdp-settings.mjs"), "utf8")
+    const probe = fs.readFileSync(path.join(import.meta.dir, "../../qa/windows-real/probe/extension.js"), "utf8")
 
     expect(provider).toContain('viewType = "chipmate.v2.AgentConsolePanel"')
     expect(provider).toContain('"dist", "agent-console.js"')
@@ -77,6 +79,18 @@ describe("standalone Agent Console architecture", () => {
     expect(dialog).toContain("props.allowPR === false")
     expect(windows).toContain('[ValidateSet("arm64-vm", "native-x64")]')
     expect(windows).toContain('[ValidateSet("default", "disabled")]')
+    expect(windows).toContain(
+      '[ValidateSet("full", "core", "smoke", "settings", "agent-console", "package", "update")]',
+    )
+    expect(windows).toContain("if ([string]::IsNullOrWhiteSpace($ExpectedVersion))")
+    expect(windows).toContain("Invoke-SettingsCdpRegression")
+    expect(settings).toContain('[data-ui="settings-shell"]')
+    expect(windows).toContain("Set-ChipMateWindowSize -Process $process -Width 680 -Height 900")
+    expect(settings).toContain("payload.narrow.width < 220")
+    expect(settings).toContain("payload.narrow.width > 420")
+    expect(settings).toContain("Settings did not persist after reopen")
+    expect(probe).toContain("CHIPMATE_QA_CONTROL_FILE")
+    expect(probe).toContain("vscode.commands.executeCommand(request.command")
     expect(windows).toContain("REG-AGENT-CONSOLE-SINGLE-SHELL-01")
     expect(windows).toContain("Wait-AgentConsoleInputReady")
     expect(windows).toContain('Invoke-AgentConsoleCdp -Action "wait"')

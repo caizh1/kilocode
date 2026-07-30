@@ -45,6 +45,7 @@ const schema = 1
 const extractor = 1
 const chunker = 1
 const patterns = [...DOCUMENT_EXTENSIONS, ...UNSUPPORTED_DOCUMENT_EXTENSIONS].map((ext) => `**/*${ext}`)
+const office = new Set([".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"])
 type Telemetry = IndexingTelemetryEvent extends infer Event
   ? Event extends unknown
     ? Omit<Event, "provider" | "vectorStore" | "modelId">
@@ -119,7 +120,8 @@ export class DocumentIndexService {
       this.setStatus(error("Document RAG requires a configured embedding vector store."))
       return
     }
-    await this.store.deleteCollection()
+    if (this.store.abortCandidate) await this.store.clearCollection()
+    else await this.store.deleteCollection()
     if (this.disposed) return
     await this.cache.clear()
     if (this.disposed) return
@@ -143,12 +145,24 @@ export class DocumentIndexService {
     if (!this.config.currentDocuments.enabled) return []
     const resolved = await this.resolveRoots()
     const prefix = await this.searchPrefix(options.directoryPrefix, resolved.roots)
-    const embedding = await this.embedder.createEmbeddings([query])
+    const embedding = await this.embedder.createEmbeddings([query], undefined, "document-query")
     const vector = embedding.embeddings[0]
     if (!vector) throw new Error("Failed to generate embedding for document query.")
     const max = options.maxResults ?? this.config.currentDocuments.searchMaxResults
-    const raw = await this.store.search(vector, prefix, this.config.currentSearchMinScore, max)
-    return raw.flatMap((item) => convert(item, resolved.roots))
+    const text = query.trim().toLocaleLowerCase()
+    const candidates = text ? Math.max(max, Math.min(100, max * 4)) : max
+    const threshold = this.config.currentSearchMinScore
+    const raw = await this.store.search(vector, prefix, threshold, candidates)
+    const found = raw.flatMap((item) => convert(item, resolved.roots))
+    if (!text) return found.slice(0, max)
+    return found
+      .sort((left, right) => {
+        const a = left.content.toLocaleLowerCase().includes(text)
+        const b = right.content.toLocaleLowerCase().includes(text)
+        if (a !== b) return b ? 1 : -1
+        return right.score - left.score
+      })
+      .slice(0, max)
   }
 
   private initialStatus(): DocumentIndexStatus {
@@ -226,6 +240,10 @@ export class DocumentIndexService {
       }
       const created = await this.store.initialize()
       if (this.disposed) return
+      if (force && !created && this.store.abortCandidate) {
+        await this.store.clearCollection()
+        if (this.disposed) return
+      }
       if (created || force) {
         await this.cache.clear()
         if (this.disposed) return
@@ -306,6 +324,11 @@ export class DocumentIndexService {
 
       await this.cache.flush()
       if (this.disposed) return
+      if (errors > 0 && this.store.abortCandidate) {
+        await this.store.abortCandidate()
+        await this.cache.clear()
+        throw new Error(`Document candidate indexing failed with ${errors} file error(s).`)
+      }
       await this.store.markIndexingComplete()
       if (this.disposed) return
       this.setStatus({
@@ -343,13 +366,27 @@ export class DocumentIndexService {
       })
     } catch (err) {
       if (this.disposed) return
+      const candidate = this.store?.getLastCompatibilityDecision?.()?.action === "rebuild"
+      await this.store?.abortCandidate?.()
+      const restored = candidate && Boolean(await this.store?.hasIndexedData().catch(() => false))
       this.record("documents:run", err)
-      this.setStatus(error(err instanceof Error ? err.message : String(err), this.status.recentErrors))
+      const message = err instanceof Error ? err.message : String(err)
+      this.setStatus(
+        restored
+          ? {
+              ...this.status,
+              state: "Complete",
+              message: "Document Embedding 候选索引未应用，正在使用上一版有效索引。",
+              detail: message,
+              recentErrors: this.status.recentErrors,
+            }
+          : error(message, this.status.recentErrors),
+      )
       this.emit({
         type: "error",
         source: "scan",
         location: "documents:run",
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
         trigger,
         pipeline: "documents",
       })
@@ -363,6 +400,8 @@ export class DocumentIndexService {
     let skipped = 0
 
     const add = async (root: Root, file: string) => {
+      const name = path.basename(file)
+      if (name.startsWith("~$") && office.has(path.extname(name).toLowerCase())) return false
       const canonical = await realpath(file).catch(() => undefined)
       if (!canonical) {
         skipped += 1
@@ -444,7 +483,7 @@ export class DocumentIndexService {
     for (let index = 0; index < texts.length; index += batch) {
       if (this.disposed) return
       const slice = texts.slice(index, index + batch)
-      const { embeddings } = await this.embedder.createEmbeddings(slice)
+      const { embeddings } = await this.embedder.createEmbeddings(slice, undefined, "document")
       if (this.disposed) return
       const points = embeddings.flatMap<PointStruct>((vector, offset) => {
         const chunk = chunks[index + offset]

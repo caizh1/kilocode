@@ -4,6 +4,7 @@ const GLOBALS = "colorScheme:dark;theme:kilo-vscode;vscodeTheme:dark-modern"
 const NAMES = [
   "Models",
   "Providers",
+  "ChipMate Server",
   "Agent Behaviour",
   "Auto-Approve",
   "Browser",
@@ -25,33 +26,44 @@ function story(page: Page) {
 }
 
 test.describe("settings tab accessibility", () => {
-  test("exposes named tabs and selected state in the compact sidebar", async ({ page }) => {
+  test("exposes every page through one keyboard-accessible narrow picker", async ({ page }) => {
     await page.setViewportSize({ width: 420, height: 720 })
     await story(page)
 
-    const tabs = page.getByRole("tab")
-    await expect(tabs).toHaveCount(NAMES.length)
-    await expect(page.getByRole("tab", { name: "Sandboxing" })).toHaveCount(0)
+    await expect(page.getByRole("tab")).toHaveCount(0)
+    const trigger = page.getByRole("button", { name: "Current settings page: Models" })
+    await expect(trigger).toBeVisible()
+    await trigger.click()
+
+    const options = page.getByRole("option")
+    await expect(options).toHaveCount(NAMES.length)
+    await expect(page.getByRole("option", { name: "Sandboxing" })).toHaveCount(0)
     for (const name of NAMES) {
-      await expect(page.getByRole("tab", { name, exact: true })).toBeVisible()
+      await expect(page.getByRole("option", { name, exact: true })).toBeVisible()
     }
 
-    const models = page.getByRole("tab", { name: "Models" })
-    const providers = page.getByRole("tab", { name: "Providers" })
+    const models = page.getByRole("option", { name: "Models" })
+    const providers = page.getByRole("option", { name: "Providers" })
     await expect(models).toHaveAttribute("aria-selected", "true")
     await expect(providers).toHaveAttribute("aria-selected", "false")
     await expect(page.getByRole("tabpanel", { name: "Models" })).toBeVisible()
 
-    await models.focus()
+    await page.getByRole("combobox", { name: "Search settings" }).focus()
     await page.keyboard.press("ArrowDown")
     await expect(providers).toBeFocused()
-    await expect(providers).toHaveAttribute("aria-selected", "true")
+    await page.keyboard.press("Enter")
+    await expect(page.getByRole("button", { name: "Current settings page: Providers" })).toBeVisible()
     await expect(page.getByRole("tabpanel", { name: "Providers" })).toBeVisible()
 
-    await page.keyboard.press("ArrowUp")
-    await expect(models).toBeFocused()
-    await expect(models).toHaveAttribute("aria-selected", "true")
-    await expect(page.getByRole("tabpanel", { name: "Models" })).toBeVisible()
+    await page.getByRole("button", { name: "Current settings page: Providers" }).click()
+    const search = page.getByRole("combobox", { name: "Search settings" })
+    await search.fill("commit")
+    await expect(
+      page
+        .locator("[data-ui='settings-mobile-search-option'][data-kind='page']")
+        .getByText("Commit Message", { exact: true }),
+    ).toBeVisible()
+    expect(await page.getByRole("option").count()).toBeGreaterThan(1)
   })
 
   test("shows sandboxing controls when the platform supports them", async ({ page }) => {
@@ -60,12 +72,11 @@ test.describe("settings tab accessibility", () => {
       waitUntil: "load",
     })
 
-    const tab = page.getByRole("tab", { name: "Sandboxing" })
-    await expect(tab).toBeVisible()
-    await expect(tab).toHaveAttribute("aria-selected", "true")
+    await expect(page.getByRole("tab")).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Current settings page: Sandboxing" })).toBeVisible()
     await expect(page.getByRole("tabpanel", { name: "Sandboxing" })).toBeVisible()
     const sandbox = page.getByRole("switch", { name: "Sandbox", exact: true })
-    await expect(sandbox).toHaveAccessibleDescription(/restricts writes to the project and Kilo state directories/)
+    await expect(sandbox).toHaveAccessibleDescription(/restricts writes to the project and ChipMate state directories/)
     await expect(sandbox).not.toBeChecked()
     const network = page.getByRole("switch", { name: "Restrict Network Access" })
     await expect(network).toHaveAccessibleDescription(/MCP tools are unavailable while restricted/)

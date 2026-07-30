@@ -32,7 +32,7 @@ import { File } from "@kilocode/kilo-ui/file"
 import { SessionContext } from "../context/session"
 import { AgentRequirementsContext, type AgentRequirementsContextValue } from "../context/agent-requirements"
 import { NotificationsContext } from "../context/notifications"
-import { LanguageContext } from "../context/language"
+import { LanguageContext, type Locale } from "../context/language"
 import { IndexingProvider } from "../context/indexing"
 import { KiloEmbeddingModelsProvider } from "../context/kilo-embedding-models"
 import { ImageModelsProvider } from "../context/image-models"
@@ -68,8 +68,8 @@ import type {
 type PluginSpec = string | [string, Record<string, unknown>]
 
 // Merged English dictionary (same merge order as the real LanguageProvider)
-type Locale = "en" | "zh" | "zht"
-const dicts: Record<Locale, Record<string, string>> = {
+type StoryLocale = "en" | "zh" | "zht"
+const dicts: Record<StoryLocale, Record<string, string>> = {
   en: { ...appEn, ...amEn, ...uiEn, ...kiloEn },
   zh: { ...appZh, ...amZh, ...uiZh, ...kiloZh },
   zht: { ...appZht, ...amZht, ...uiZht, ...kiloZht },
@@ -318,7 +318,7 @@ interface StoryProvidersProps {
   globalConfig?: Config
   projectConfig?: Config
   settings?: Record<string, unknown>
-  locale?: Locale
+  locale?: StoryLocale
   dirty?: boolean
   saving?: boolean
   canSave?: boolean
@@ -449,8 +449,9 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
   }
   const notifications = mockNotificationsValue(props.notifications)
   const locale = () => props.locale ?? "en"
-  const t = (key: string, params?: Record<string, string | number | boolean | undefined>) =>
-    resolveTemplate(dicts[locale()][key] ?? dicts.en[key] ?? key, params)
+  const text = (loc: Locale, key: string, params?: Record<string, string | number | boolean | undefined>) =>
+    resolveTemplate(dicts[loc as StoryLocale]?.[key] ?? dicts.en[key] ?? key, params)
+  const t = (key: string, params?: Record<string, string | number | boolean | undefined>) => text(locale(), key, params)
   const result = () => props.agentRequirements
   const visible = () => {
     const value = result()
@@ -495,6 +496,7 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
                       setLocale: noop,
                       userOverride: () => "" as any,
                       t,
+                      text,
                     }}
                   >
                     <I18nProvider value={{ locale, t }}>

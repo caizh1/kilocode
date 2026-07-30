@@ -178,18 +178,7 @@ export function normalizeIndexingStatus(manager: StatusSource): IndexingStatus {
               ragErrors,
             )
           : ragPipeline(status, ragErrors),
-      documents:
-        cfg.activePipeline === "codeGraph" || cfg.activePipeline === "rag"
-          ? standbyPipeline(
-              cfg.systemStatus === "Error"
-                ? `Document RAG blocked by ${cfg.activePipeline === "codeGraph" ? "Code Graph" : "Code RAG"}.`
-                : `Document RAG waiting for ${cfg.activePipeline === "codeGraph" ? "Code Graph" : "Code RAG"}.`,
-              cfg.systemStatus === "Error"
-                ? "The preceding indexing stage must recover before Document RAG can start."
-                : "Document RAG starts only after Code Graph and Code RAG complete.",
-              docErrors,
-            )
-          : documentPipeline(docStatus, docErrors),
+      documents: documentPipeline(docStatus, docErrors),
     },
   })
 

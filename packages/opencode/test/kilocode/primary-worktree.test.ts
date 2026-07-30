@@ -2,9 +2,10 @@ import { $ } from "bun"
 import { describe, expect } from "bun:test"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Effect, Layer } from "effect"
+import { mkdir } from "node:fs/promises"
 import path from "path"
 import { Git } from "../../src/git"
-import { primaryPaths, primaryWorktree } from "../../src/kilocode/primary-worktree"
+import { primaryPaths, primaryWorktree, worktreeRoots } from "../../src/kilocode/primary-worktree"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -16,6 +17,17 @@ describe("primaryWorktree", () => {
       const repo = yield* tmpdirScoped({ git: true })
 
       expect(yield* primaryWorktree(repo)).toBe(repo)
+      expect(yield* worktreeRoots(repo)).toEqual({ checkout: repo, primary: repo })
+    }),
+  )
+
+  it.live("returns the repository root for a directory inside the primary checkout", () =>
+    Effect.gen(function* () {
+      const repo = yield* tmpdirScoped({ git: true })
+      const dir = path.join(repo, "packages", "app")
+      yield* Effect.promise(() => mkdir(dir, { recursive: true }))
+
+      expect(yield* worktreeRoots(dir)).toEqual({ checkout: repo, primary: repo })
     }),
   )
 
@@ -31,6 +43,24 @@ describe("primaryWorktree", () => {
       yield* Effect.promise(() => $`git worktree add -b primary-worktree-test ${worktree}`.cwd(repo).quiet())
 
       expect(yield* primaryWorktree(worktree)).toBe(repo)
+      expect(yield* worktreeRoots(worktree)).toEqual({ checkout: worktree, primary: repo })
+    }),
+  )
+
+  it.live("returns both checkout roots for a directory inside a linked worktree", () =>
+    Effect.gen(function* () {
+      const repo = yield* tmpdirScoped({ git: true })
+      const worktree = path.join(path.dirname(repo), `${path.basename(repo)}-nested-feature`)
+      const dir = path.join(worktree, "packages", "app")
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() => $`git worktree remove --force ${worktree}`.cwd(repo).quiet().nothrow()).pipe(
+          Effect.asVoid,
+        ),
+      )
+      yield* Effect.promise(() => $`git worktree add -b primary-nested-worktree-test ${worktree}`.cwd(repo).quiet())
+      yield* Effect.promise(() => mkdir(dir, { recursive: true }))
+
+      expect(yield* worktreeRoots(dir)).toEqual({ checkout: worktree, primary: repo })
     }),
   )
 

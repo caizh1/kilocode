@@ -45,7 +45,7 @@ export async function discoverScanFiles(input: {
 }): Promise<DiscoveryResult> {
   const started = Date.now()
   const patterns = input.target === "codeGraph" ? graphPatterns() : ["**/*"]
-  const raw = input.target === "codeGraph" ? await graph(input, patterns) : await wide(input.directoryPath)
+  const raw = input.target === "codeGraph" ? await graph(input, patterns) : await wide(input, patterns)
   const paths = filter({
     paths: raw.paths,
     directoryPath: input.directoryPath,
@@ -120,17 +120,40 @@ export async function runGit(input: { cwd: string; patterns: string[]; timeoutMs
   throw new Error(result.stderr.trim() || `git ls-files failed with code ${result.code}`)
 }
 
-async function wide(root: string): Promise<Raw> {
-  return {
-    paths: await glob("**/*", {
-      cwd: root,
-      absolute: true,
-      nodir: true,
-      dot: false,
-      ignore: FileIgnore.PATTERNS,
-      maxDepth: Infinity,
-    }),
-    engine: "glob",
+async function wide(
+  input: {
+    directoryPath: string
+    runRg?: RgRunner
+    timeoutMs?: number
+  },
+  patterns: string[],
+): Promise<Raw> {
+  const run = input.runRg ?? runRg
+  try {
+    return {
+      paths: absolutize(
+        input.directoryPath,
+        await run({
+          cwd: input.directoryPath,
+          patterns,
+          timeoutMs: input.timeoutMs ?? timeout,
+        }),
+      ),
+      engine: "rg",
+    }
+  } catch (err) {
+    return {
+      paths: await glob("**/*", {
+        cwd: input.directoryPath,
+        absolute: true,
+        nodir: true,
+        dot: false,
+        ignore: FileIgnore.PATTERNS,
+        maxDepth: Infinity,
+      }),
+      engine: "glob",
+      fallbackReason: `rg: ${message(err)}`,
+    }
   }
 }
 

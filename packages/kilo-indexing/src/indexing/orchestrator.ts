@@ -31,6 +31,7 @@ const LOCKED_MESSAGE = "Another indexing run is already active for this workspac
 const SYNTHETIC_EVENT_LIMIT = 1000
 const LANCEDB_SCHEMA_MISMATCH_NOTICE =
   "检测到当前工作区的本地 RAG 索引格式来自旧版本，ChipMate 正在自动重建；CodeGraph 数据会保留。"
+const WATCHER_UNAVAILABLE_NOTICE = "文件监控不可用；本次全量索引会继续，后续文件变更需手动重新构建索引。"
 type ScanTarget = "all" | "codeGraph" | "rag"
 export type IndexingRunOutcome = {
   state: "completed" | "failed" | "cancelled"
@@ -130,11 +131,12 @@ export class CodeIndexOrchestrator {
           workspacePath: this.workspacePath,
           filesInBatch: paths.length,
         })
-        if (this.stateManager.state !== "Indexing") {
+        if (this.stateManager.state !== "Indexing" && this.stateManager.state !== "Error") {
           this.stateManager.setSystemState("Indexing", "Processing file changes...")
         }
       }),
       this.fileWatcher.onBatchProgressUpdate.on(({ processedInBatch, totalInBatch, currentFile }) => {
+        if (this.stateManager.state === "Error") return
         this.stateManager.reportFileQueueProgress(
           processedInBatch,
           totalInBatch,
@@ -145,7 +147,6 @@ export class CodeIndexOrchestrator {
             workspacePath: this.workspacePath,
             totalInBatch,
           })
-          if (this.stateManager.state === "Error") return
           if (totalInBatch > 0) {
             this.stateManager.setSystemState("Indexed", "File changes processed. Index up-to-date.")
           } else if (this.stateManager.state === "Indexing") {
@@ -175,19 +176,17 @@ export class CodeIndexOrchestrator {
       visible: true,
       workspacePath: this.workspacePath,
       reason,
+      trigger,
       blocking: false,
       pendingWatcherEvents: this.fileWatcher.getPendingEventCount?.() ?? 0,
     })
-    this._watcherStart = this.startWatcher(token, reason, trigger)
+    this._watcherStart = this.startWatcher(token, reason)
   }
 
-  private async prepareWatcher(reason: string, trigger: IndexingTelemetryTrigger): Promise<void> {
+  private prepareWatcher(reason: string, trigger: IndexingTelemetryTrigger): void {
     if (!this._watcherStart && !this._watcherReady && !this._watcherFailed) {
       this.startWatcherInBackground(reason, trigger)
     }
-    await this._watcherStart
-    if (this._watcherReady) return
-    throw new Error("File watcher did not become ready before indexing started.")
   }
 
   private setWatcherTarget(target: ScanTarget): void {
@@ -195,7 +194,7 @@ export class CodeIndexOrchestrator {
     watcher.setTarget?.(target)
   }
 
-  private async startWatcher(token: number, reason: string, trigger: IndexingTelemetryTrigger): Promise<void> {
+  private async startWatcher(token: number, reason: string): Promise<void> {
     if (this.vectorStore && !this.configManager.isFeatureConfigured) {
       log.warn("file watcher skipped: service not configured", {
         visible: true,
@@ -233,6 +232,7 @@ export class CodeIndexOrchestrator {
       }
     } catch (err) {
       if (token !== this._watcherToken) return
+      if (err instanceof Error && err.name === "AbortError") return
 
       this._watcherFailed = true
       log.warn("file watcher initialization failed; indexing will continue without incremental watcher", {
@@ -241,7 +241,13 @@ export class CodeIndexOrchestrator {
         reason,
         error: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
       })
-      this.emitError("orchestrator:startWatcher", err, "watcher", trigger)
+      const hash = createHash("sha256").update(this.workspacePath).digest("hex").slice(0, 16)
+      this.stateManager.upsertNotice({
+        id: `indexing-watcher-unavailable-${hash}`,
+        level: "warning",
+        message: WATCHER_UNAVAILABLE_NOTICE,
+        action: "openIndexingOutput",
+      })
     }
   }
 
@@ -378,7 +384,7 @@ export class CodeIndexOrchestrator {
       await this.ensureCompatible("startup")
       this.overlay?.prepare()
       this.setWatcherTarget(this.vectorStore ? "all" : "codeGraph")
-      await this.prepareWatcher("scan-start", trigger)
+      this.prepareWatcher("scan-start", trigger)
 
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
@@ -434,6 +440,7 @@ export class CodeIndexOrchestrator {
 
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
+        await this.vectorStore.abortCandidate?.()
         await this.releaseLock()
         return { state: "cancelled", pipeline: "rag" }
       }
@@ -493,6 +500,11 @@ export class CodeIndexOrchestrator {
       return { state: complete ? "completed" : "cancelled", pipeline: "rag" }
     } catch (err) {
       log.error("error during indexing", { err })
+      const candidate = this.vectorStore?.getLastCompatibilityDecision?.()?.action === "rebuild"
+      await this.vectorStore?.abortCandidate?.()
+      if (this.vectorStore?.abortCandidate) await this.cacheManager.clearCacheFile()
+      const restored =
+        pipeline === "rag" && candidate && Boolean(await this.vectorStore?.hasIndexedData().catch(() => false))
       this.emitError("orchestrator:startIndexing", err, source, trigger, mode, pipeline)
 
       if (started) {
@@ -502,8 +514,23 @@ export class CodeIndexOrchestrator {
       }
 
       const msg = err instanceof Error ? err.message : "Unknown error"
-      this.stateManager.setSystemState("Error", `Failed during initial scan: ${msg}`)
-      this.stateManager.setActivePipeline(pipeline ?? "codeGraph")
+      if (pipeline === "rag") {
+        this.stateManager.upsertNotice({
+          id: "embedding-config-unapplied",
+          level: "warning",
+          message: `Embedding 候选索引未应用：${sanitizeErrorMessage(msg)}。${
+            restored ? "已继续使用上一版有效索引。" : "现有有效索引未被修改。"
+          }`,
+          action: "openIndexingOutput",
+        })
+      }
+      this.stateManager.setSystemState(
+        restored ? "Indexed" : "Error",
+        restored
+          ? `Embedding candidate was rejected; using the previous validated index: ${msg}`
+          : `Failed during initial scan: ${msg}`,
+      )
+      this.stateManager.setActivePipeline(restored ? undefined : (pipeline ?? "codeGraph"))
       if (pipeline === "rag" && graph) {
         this.setWatcherTarget("codeGraph")
         await this.sweepGap(graph)
@@ -571,7 +598,7 @@ export class CodeIndexOrchestrator {
       this.scanner.setRunContext(lock.runId, this.ragMeta)
       this.fileWatcher.setRunContext?.(lock.runId, this.ragMeta)
       this.setWatcherTarget("all")
-      await this.prepareWatcher("rag-only-scan-start", trigger)
+      this.prepareWatcher("rag-only-scan-start", trigger)
       this.deferWatcherCollection("rag-only-scan-start")
 
       if (this.beforeRag) {
@@ -593,6 +620,7 @@ export class CodeIndexOrchestrator {
 
       if (this._cancelRequested) {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
+        await this.vectorStore.abortCandidate?.()
         await this.releaseLock()
         return { state: "cancelled", pipeline: "rag" }
       }
@@ -625,8 +653,16 @@ export class CodeIndexOrchestrator {
       return { state: complete ? "completed" : "cancelled", pipeline: "rag" }
     } catch (err) {
       log.error("error during rag-only indexing", { err })
+      await this.vectorStore.abortCandidate?.()
+      if (this.vectorStore.abortCandidate) await this.cacheManager.clearCacheFile()
       this.emitError("orchestrator:startRagIndexing", err, "scan", trigger, mode, "rag")
       const msg = err instanceof Error ? err.message : "Unknown error"
+      this.stateManager.upsertNotice({
+        id: "embedding-config-unapplied",
+        level: "warning",
+        message: `Embedding 候选索引未应用：${sanitizeErrorMessage(msg)}。现有有效索引未被修改。`,
+        action: "openIndexingOutput",
+      })
       this.stateManager.setSystemState("Error", `Failed during RAG scan: ${msg}`)
       this.stateManager.setActivePipeline("rag")
       this.stopWatcher()
@@ -651,6 +687,7 @@ export class CodeIndexOrchestrator {
     if (this._cancelRequested) {
       log.info("scan skipped: cancellation was requested", { workspacePath: this.workspacePath, mode, target })
       if (mode === "incremental") await this.vectorStore?.markIndexingComplete()
+      if (mode === "full") await this.vectorStore?.abortCandidate?.()
       this.stateManager.setSystemState("Standby", "Indexing cancelled.")
       return
     }
@@ -747,6 +784,7 @@ export class CodeIndexOrchestrator {
         await this.vectorStore?.markIndexingComplete()
         log.info("preserved unchanged index after cancelled scan", { workspacePath: this.workspacePath })
       }
+      if (mode === "full") await this.vectorStore?.abortCandidate?.()
       this._isProcessing = false
       if (this.stateManager.state !== "Error") {
         this.stateManager.setSystemState("Standby", "Indexing cancelled.")
@@ -762,13 +800,25 @@ export class CodeIndexOrchestrator {
 
     if (this.vectorStore && target === "rag" && mode === "full") {
       // Validate full scan results
-      if (cumulativeFilesIndexed === 0 && cumulativeFilesFound > 0) {
-        const first = batchErrors.at(0)
-        const msg = first ? first.message : "No blocks were indexed"
-        throw new Error(`Indexing failed: ${msg}`)
+      if (cumulativeFilesIndexed === 0 && cumulativeFilesFound > 0 && batchErrors.length === 0) {
+        log.warn("workspace contains no indexable code blocks", {
+          visible: true,
+          workspacePath: this.workspacePath,
+          filesDiscovered: cumulativeFilesFound,
+          scanProcessed: result.stats.processed,
+          scanSkipped: result.stats.skipped,
+        })
       }
 
       if (batchErrors.length > 0) {
+        if (this.vectorStore.abortCandidate) {
+          const first = batchErrors.at(0)
+          throw new Error(
+            `Candidate indexing failed with ${batchErrors.length} batch error(s): ${
+              first?.message ?? "Unknown batch error"
+            }`,
+          )
+        }
         const failureRate = (cumulativeFilesFound - cumulativeFilesIndexed) / cumulativeFilesFound
         if (failureRate > 0.1) {
           const first = batchErrors.at(0)
@@ -1019,7 +1069,10 @@ export class CodeIndexOrchestrator {
         this._gapOverflows += 1
       }
     }
-    if (stable) await this.vectorStore?.markIndexingComplete()
+    if (stable) {
+      await this.vectorStore?.markIndexingComplete()
+      this.stateManager.removeNotice("embedding-config-unapplied")
+    }
     await this.releaseLock()
     if (!stable) {
       this.stateManager.setSystemState("Standby", "Workspace changed too quickly; reconciling again shortly.")
@@ -1054,13 +1107,17 @@ export class CodeIndexOrchestrator {
 
   public async shutdown(): Promise<void> {
     this._cancelRequested = true
+    this._watcherToken += 1
     this.scanner.cancel()
     this.fileWatcher.setCollecting(false)
     await this._active
+    const start = this._watcherStart
     for (const sub of this._fileWatcherSubscriptions) sub.dispose()
     this._fileWatcherSubscriptions = []
     if (this.fileWatcher.shutdown) await this.fileWatcher.shutdown()
     else this.fileWatcher.dispose()
+    await start
+    this._watcherStart = undefined
     await this.vectorStore?.close?.()
     this._isProcessing = false
   }

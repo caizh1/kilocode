@@ -118,6 +118,13 @@ export class CodeIndexStateManager {
     this._progressEmitter.fire(this.getCurrentStatus())
   }
 
+  public removeNotice(id: string): void {
+    const notices = this._notices.filter((notice) => notice.id !== id)
+    if (notices.length === this._notices.length) return
+    this._notices = notices
+    this._progressEmitter.fire(this.getCurrentStatus())
+  }
+
   public reportFileProgress(processedFiles: number, totalFiles: number, currentFileBasename?: string): void {
     const percent = totalFiles > 0 ? Math.min(100, Math.round((processedFiles / totalFiles) * 100)) : 0
     const progressChanged =

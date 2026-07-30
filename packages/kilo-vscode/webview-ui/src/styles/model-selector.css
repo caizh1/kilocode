@@ -759,11 +759,7 @@ body.vscode-high-contrast-light {
   max-height: calc(100vh - 16px);
   border: 1px solid color-mix(in srgb, var(--vscode-widget-border, var(--vscode-foreground)) 76%, transparent);
   border-radius: 14px;
-  background-color: color-mix(
-    in srgb,
-    var(--vscode-editorWidget-background, var(--background-base)) 90%,
-    transparent
-  );
+  background-color: color-mix(in srgb, var(--vscode-editorWidget-background, var(--background-base)) 90%, transparent);
   box-shadow:
     0 22px 48px rgba(0, 0, 0, 0.38),
     inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
@@ -777,8 +773,8 @@ body.vscode-high-contrast-light {
 
 .ultra-mode-dialog .ultra-mode-dialog-header {
   justify-content: flex-start;
-  gap: 14px;
-  padding: 24px 28px 0;
+  gap: 12px;
+  padding: 20px 22px 0;
 }
 
 .ultra-mode-dialog .ultra-mode-dialog-sparkle {
@@ -798,42 +794,128 @@ body.vscode-high-contrast-light {
 }
 
 .ultra-mode-dialog [data-slot="dialog-description"] {
-  padding: 20px 28px 0;
+  padding: 14px 22px 0;
   color: var(--vscode-foreground);
   font-size: var(--kilo-font-size-13);
   line-height: 1.65;
 }
 
 .ultra-mode-dialog [data-slot="dialog-body"] {
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .ultra-mode-dialog-body {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 20px 28px 24px;
+  gap: 12px;
+  padding: 14px 22px 20px;
 }
 
-.ultra-mode-dialog-benefits {
+.ultra-mode-dialog-flow {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  padding: 12px 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border, var(--vscode-foreground)) 48%, transparent);
+  border-radius: 10px;
+  background-color: color-mix(in srgb, var(--vscode-editorWidget-background, var(--background-base)) 72%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
 }
 
-.ultra-mode-dialog-benefit {
+.ultra-mode-dialog-node {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
   min-width: 0;
+  min-height: 25px;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 36%, transparent);
+  border-radius: 6px;
+  background-color: color-mix(in srgb, var(--vscode-editorWidget-background, var(--background-base)) 86%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 10%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.12);
   color: var(--vscode-foreground);
-  font-size: var(--kilo-font-size-13);
-  line-height: 1.45;
+  font-size: var(--kilo-font-size-10);
+  line-height: 1.25;
+  text-align: center;
 }
 
-.ultra-mode-dialog-benefit [data-component="icon"] {
-  flex: 0 0 20px;
+.ultra-mode-dialog-node[data-node="question"] {
+  width: 44%;
+}
+
+.ultra-mode-dialog-node[data-node="code"] {
+  width: 68%;
+}
+
+.ultra-mode-dialog-node[data-node="frozen"] {
+  width: 58%;
+  font-weight: 600;
+}
+
+.ultra-mode-dialog-node[data-node="explore"],
+.ultra-mode-dialog-node[data-node="final"] {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ultra-mode-dialog-node[data-node="explore"] small,
+.ultra-mode-dialog-node[data-node="final"] small {
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--kilo-font-size-10);
+}
+
+.ultra-mode-dialog-node[data-node="ask"],
+.ultra-mode-dialog-node[data-node="final"] {
+  border-color: var(--chipmate-agent-ultra-foreground);
+  background-color: color-mix(in srgb, var(--chipmate-agent-ultra-foreground) 11%, transparent);
   color: var(--chipmate-agent-ultra-foreground);
+  font-weight: 600;
+}
+
+.ultra-mode-dialog-node[data-node="ask"] {
+  width: 72%;
+}
+
+.ultra-mode-dialog-node[data-node="final"] {
+  width: 62%;
+}
+
+.ultra-mode-dialog-line[data-line="solid"] {
+  width: 1px;
+  height: 9px;
+  flex: 0 0 9px;
+  background-color: color-mix(in srgb, var(--vscode-foreground) 58%, transparent);
+}
+
+.ultra-mode-dialog-line[data-line="split"],
+.ultra-mode-dialog-line[data-line="merge"] {
+  width: 70%;
+  height: 1px;
+  flex: 0 0 1px;
+  border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 52%, transparent);
+}
+
+.ultra-mode-dialog-explorers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.ultra-mode-dialog-explorer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+.ultra-mode-dialog-explorer .ultra-mode-dialog-node {
+  width: 100%;
 }
 
 .ultra-mode-dialog-note {
@@ -844,9 +926,13 @@ body.vscode-high-contrast-light {
 }
 
 .ultra-mode-dialog [data-component="button"][data-variant="primary"] {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   min-height: 38px;
   border-radius: 7px;
   font-weight: 500;
+  box-shadow: 0 -10px 20px color-mix(in srgb, var(--vscode-editorWidget-background) 82%, transparent);
 }
 
 body.vscode-light .ultra-mode-dialog-overlay {
@@ -898,14 +984,26 @@ body.vscode-high-contrast-light .ultra-mode-dialog [data-slot="dialog-content"] 
     padding: 14px 18px 18px;
   }
 
-  .ultra-mode-dialog-benefits {
-    gap: 10px;
+  .ultra-mode-dialog-flow {
+    padding: 12px 10px;
   }
 
-  .ultra-mode-dialog-benefit {
-    align-items: flex-start;
-    gap: 8px;
-    font-size: var(--kilo-font-size-12);
+  .ultra-mode-dialog-node[data-node] {
+    width: 100%;
+  }
+
+  .ultra-mode-dialog-line[data-line="split"],
+  .ultra-mode-dialog-line[data-line="merge"] {
+    width: 1px;
+    height: 1px;
+    flex-basis: 1px;
+    border: 0;
+    background-color: transparent;
+  }
+
+  .ultra-mode-dialog-explorers {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
   }
 }
 

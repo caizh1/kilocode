@@ -53,7 +53,15 @@ describe("UpdateCheckService", () => {
 
     await expect(env.service.checkOnStartup()).resolves.toBeUndefined()
     expect(env.warnings).toEqual([])
-    expect(env.logs.warn[0]).toContain("[Kilo New] Update check failed (availability):")
+    expect(env.logs.warn[0]).toContain("[Kilo New] 更新检查失败（availability）：")
+  })
+
+  it("opens the dedicated update log through the service", async () => {
+    const env = await setup()
+
+    env.service.showLog()
+
+    expect(env.logs.shown).toBe(1)
   })
 
   it("keeps repeated automatic availability failures silent", async () => {
@@ -78,7 +86,7 @@ describe("UpdateCheckService", () => {
     await env.service.checkAuto()
 
     expect(env.warnings).toEqual([])
-    expect(env.logs.warn[0]).toContain("(availability):")
+    expect(env.logs.warn[0]).toContain("（availability）：")
   })
 
   it("warns during automatic checks when the manifest is malformed", async () => {
@@ -133,10 +141,19 @@ describe("UpdateCheckService", () => {
     expect(env.exec.mock.calls[0]).toEqual([
       "code",
       ["--install-extension", env.final("0.0.17"), "--force"],
-      { timeout: 300000 },
+      { timeout: 300000, windowsHide: true },
     ])
     expect(env.info).toEqual([{ message: "ChipMate update installed. Reload Window to finish.", items: [RELOAD] }])
     expect(env.commands).toEqual(["workbench.action.reloadWindow"])
+    const log = env.logs.log.join("\n")
+    expect(log).toContain("开始自动检查更新")
+    expect(log).toContain("清单请求成功")
+    expect(log).toContain("VSIX 下载完成")
+    expect(log).toContain("SHA-256 校验通过")
+    expect(log).toContain("VSIX 身份校验通过")
+    expect(log).toContain("安装器成功退出")
+    expect(log).toContain("等待用户重载窗口后激活")
+    expect(log).not.toContain("VSCODE_IPC_HOOK_CLI")
   })
 
   it("offers manual installation when automatic installation is disabled", async () => {
@@ -262,9 +279,9 @@ describe("UpdateCheckService", () => {
     expect(env.exec).not.toHaveBeenCalled()
   })
 
-  it("retains a verified VSIX and provides a command when installation fails", async () => {
+  it("retains a verified VSIX and returns the original reason when installation fails", async () => {
     const body = await vsix({ version: "0.0.20" })
-    const cli = "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+    const cli = "custom-code"
     const env = await setup({ config: { codeCliPath: cli } })
     env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.20", sha256: sha(body), sizeBytes: body.length })))
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
@@ -277,6 +294,7 @@ describe("UpdateCheckService", () => {
 
     expect(env.exec.mock.calls[0]?.[0]).toBe(cli)
     expect(result).toMatchObject({ status: "error", code: "install" })
+    expect(result.status === "error" ? result.message : "").toContain("code not found")
     expect(await exists(env.final("0.0.20"))).toBe(true)
   })
 
@@ -381,6 +399,32 @@ describe("UpdateCheckService", () => {
     expect(await exists(env.final("0.0.21"))).toBe(true)
   })
 
+  it("revalidates a retained VSIX before retrying installation", async () => {
+    const body = await vsix({ version: "0.0.25" })
+    const env = await setup()
+    env.fetch.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("manifest.json")) {
+        return json(manifest({ version: "0.0.25", sha256: sha(body), sizeBytes: body.length }))
+      }
+      return new Response(body, { status: 200 })
+    })
+    env.exec.mockRejectedValueOnce(new Error("code not found"))
+
+    const available = await env.service.probeManual()
+    expect(available.status).toBe("available")
+    if (available.status !== "available") throw new Error("expected update candidate")
+    expect(await env.service.installManual(available.candidateId)).toMatchObject({ status: "error", code: "install" })
+    await fs.writeFile(env.final("0.0.25"), "已被修改")
+
+    expect(await env.service.installManual(available.candidateId)).toMatchObject({
+      status: "error",
+      code: "download-size",
+    })
+    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
+  })
+
   it("keeps a manual probe two-step even when automatic installation is enabled", async () => {
     const env = await setup()
     env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.22" })))
@@ -447,7 +491,7 @@ async function setup(opts: { config?: Config; info?: unknown[]; target?: string;
   const warnings: string[] = []
   const info: Array<{ message: string; items: unknown[] }> = []
   const commands: string[] = []
-  const logs = { log: [] as string[], warn: [] as string[], error: [] as string[] }
+  const logs = { log: [] as string[], warn: [] as string[], error: [] as string[], shown: 0 }
   const fetcher = mock(async () => new Response("", { status: 404 }))
   const exec = mock(async () => ({ stdout: "", stderr: "" }))
   const context = {
@@ -489,6 +533,9 @@ async function setup(opts: { config?: Config; info?: unknown[]; target?: string;
       log: (...parts: unknown[]) => logs.log.push(parts.join(" ")),
       warn: (...parts: unknown[]) => logs.warn.push(parts.join(" ")),
       error: (...parts: unknown[]) => logs.error.push(parts.join(" ")),
+      show: () => {
+        logs.shown += 1
+      },
     },
   })
   services.push(service)

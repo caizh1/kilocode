@@ -23,6 +23,12 @@ test("serves deterministic OpenAI-compatible chat, completion, embedding and rer
     const embeddings = await post(`${root}/v1/embeddings`, { model: "qa-embedding-model", input: ["alpha", "beta"] })
     assert.equal(embeddings.data.length, 2)
     assert.equal(embeddings.data[0].embedding.length, 2048)
+    const resized = await post(`${root}/v1/embeddings`, {
+      model: "qa-embedding-model",
+      input: ["alpha"],
+      dimensions: 3072,
+    })
+    assert.equal(resized.data[0].embedding.length, 3072)
 
     const rerank = await post(`${root}/v1/rerank`, { query: "alpha", documents: ["alpha", "beta"] })
     assert.deepEqual(

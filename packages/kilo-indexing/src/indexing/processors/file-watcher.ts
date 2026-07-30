@@ -39,6 +39,7 @@ import type { IgnoreMatcher } from "../shared/load-ignore"
 import { isBinary } from "../shared/is-binary"
 
 const log = Log.create({ service: "file-watcher" })
+const WATCHER_READY_TIMEOUT_MS = 30_000
 
 /**
  * Implementation of the file watcher interface.
@@ -63,6 +64,7 @@ export class FileWatcher implements IFileWatcher {
   private batchStartedAt: number | undefined
   private drainTask?: Promise<void>
   private ready?: Promise<void>
+  private cancelReady?: (err: Error) => void
   private runId: string = globalThis.crypto.randomUUID()
   private ragMeta: RagCheckpointMeta | undefined
   private readonly writeCache: boolean
@@ -172,7 +174,7 @@ export class FileWatcher implements IFileWatcher {
       pendingBeforeReady: pending,
     })
 
-    this.watcher = chokidarWatch(this.workspacePath, {
+    const watcher = chokidarWatch(this.workspacePath, {
       ignored: (filePath: string) => {
         const relativeFilePath = generateRelativeIgnorePath(filePath, this.workspacePath)
         if (!relativeFilePath) return false
@@ -182,15 +184,81 @@ export class FileWatcher implements IFileWatcher {
       persistent: true,
       ignoreInitial: true,
     })
+    this.watcher = watcher
 
-    this.watcher.on("add", (filePath) => this.handleFileEvent(filePath, "create"))
-    this.watcher.on("change", (filePath) => this.handleFileEvent(filePath, "change"))
-    this.watcher.on("unlink", (filePath) => this.handleFileEvent(filePath, "delete"))
+    watcher.on("add", (filePath) => this.handleFileEvent(filePath, "create"))
+    watcher.on("change", (filePath) => this.handleFileEvent(filePath, "change"))
+    watcher.on("unlink", (filePath) => this.handleFileEvent(filePath, "delete"))
+    const value = Number(process.env.KILO_INDEXING_WATCHER_READY_TIMEOUT_MS)
+    const timeout = Number.isFinite(value) && value >= 0 ? value : WATCHER_READY_TIMEOUT_MS
+    if (timeout === 0) {
+      this.watcher = undefined
+      void watcher.close().catch((err) => {
+        log.warn("failed to close unavailable file watcher", {
+          workspacePath: this.workspacePath,
+          err,
+        })
+      })
+      throw new Error("File watcher did not become ready within 0ms.")
+    }
     this.ready = new Promise((resolve, reject) => {
-      this.watcher?.once("ready", resolve)
-      this.watcher?.once("error", reject)
+      let pending = true
+      const clean = () => {
+        clearTimeout(timer)
+        watcher.off("ready", pass)
+        watcher.off("error", fail)
+        this.cancelReady = undefined
+      }
+      const pass = () => {
+        pending = false
+        clearTimeout(timer)
+        watcher.off("ready", pass)
+        this.cancelReady = undefined
+        resolve()
+      }
+      const fail = (err: unknown) => {
+        if (!pending) {
+          const error = err instanceof Error ? err : new Error(String(err))
+          log.warn("file watcher runtime error; requesting index recovery", {
+            visible: true,
+            workspacePath: this.workspacePath,
+            err: error,
+          })
+          this.batchError = error
+          this.reconcile = true
+          this.onDidFinishBatchProcessing.fire({
+            processedFiles: [],
+            batchError: error,
+          })
+          return
+        }
+        pending = false
+        clean()
+        reject(err)
+      }
+      const timer = setTimeout(
+        () => fail(new Error(`File watcher did not become ready within ${timeout}ms.`)),
+        timeout,
+      )
+      this.cancelReady = (err) => fail(err)
+      watcher.once("ready", pass)
+      watcher.on("error", fail)
     })
-    await this.ready
+    const ready = this.ready
+    await ready.catch((err) => {
+      if (this.ready === ready) {
+        this.ready = undefined
+        this.watcher = undefined
+      }
+      void watcher.close().catch((close) => {
+        log.warn("failed to close unavailable file watcher", {
+          workspacePath: this.workspacePath,
+          err: close,
+        })
+      })
+      throw err
+    })
+    if (this.ready === ready) this.ready = undefined
     log.info("file watcher ready", {
       visible: true,
       workspacePath: this.workspacePath,
@@ -312,6 +380,9 @@ export class FileWatcher implements IFileWatcher {
 
   dispose(): void {
     this.collecting = false
+    const err = new Error("File watcher disposed before becoming ready.")
+    err.name = "AbortError"
+    this.cancelReady?.(err)
     void this.watcher?.close()
     if (this.batchProcessDebounceTimer) clearTimeout(this.batchProcessDebounceTimer)
     this.batchProcessDebounceTimer = undefined
@@ -791,6 +862,12 @@ export class FileWatcher implements IFileWatcher {
       if (hash && hash === this.overlay?.baselineHash(event.path)) {
         pathsToExplicitlyDelete.push(event.path)
         reverts.set(event.path, hash)
+        if (this.graph) {
+          filesToUpsertDetails.push({
+            path: event.path,
+            originalType: event.type,
+          })
+        }
         continue
       }
 
@@ -827,7 +904,9 @@ export class FileWatcher implements IFileWatcher {
       ? await this._processGraphUpdates(filesToUpsertDetails, batchResults, processedCountInBatch, totalFilesInBatch)
       : { failed: new Set<string>(), processedCount: processedCountInBatch }
     processedCountInBatch = graph.processedCount
-    const ragFiles = split ? filesToUpsertDetails.filter((item) => !graph.failed.has(item.path)) : filesToUpsertDetails
+    const ragFiles = split
+      ? filesToUpsertDetails.filter((item) => !graph.failed.has(item.path) && !reverts.has(item.path))
+      : filesToUpsertDetails
 
     const rag = await this._processFilesAndPrepareUpserts(
       ragFiles,
@@ -1025,7 +1104,11 @@ export class FileWatcher implements IFileWatcher {
       if (this.embedder && blocks.length > 0) {
         for (let index = 0; index < blocks.length; index += this.segmentThreshold()) {
           const slice = blocks.slice(index, index + this.segmentThreshold())
-          const { embeddings } = await this.embedder.createEmbeddings(slice.map((block) => block.content))
+          const { embeddings } = await this.embedder.createEmbeddings(
+            slice.map((block) => block.content),
+            undefined,
+            "document",
+          )
           if (embeddings.length !== slice.length) {
             return {
               path: filePath,

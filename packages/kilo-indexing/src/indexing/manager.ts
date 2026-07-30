@@ -1,4 +1,5 @@
 import path from "path"
+import { readFile } from "node:fs/promises"
 import type { IVectorStore, VectorStoreSearchResult } from "./interfaces"
 import type { IndexingState } from "./interfaces/manager"
 import type {
@@ -28,6 +29,7 @@ import { sanitizeErrorMessage } from "./shared/validation-helpers"
 import type { IndexingDiagnostic, IndexingPipelineRecentErrors } from "../status"
 import type { IndexingPressure } from "./memory"
 import { WorktreeOverlay } from "./worktree-overlay"
+import type { PreparedEmbeddingRuntime } from "./embedding-quality"
 
 const log = Log.create({ service: "indexing-manager" })
 const MAX_RECENT_ERRORS = 5
@@ -57,6 +59,7 @@ export class CodeIndexManager {
   private readonly _stateManager: CodeIndexStateManager
   private readonly _telemetry = new Emitter<IndexingTelemetryEvent>()
   private _serviceFactory: CodeIndexServiceFactory | undefined
+  private _runtime: PreparedEmbeddingRuntime | undefined
   private _orchestrator: CodeIndexOrchestrator | undefined
   private _searchService: CodeIndexSearchService | undefined
   private _documentService: DocumentIndexService | undefined
@@ -70,6 +73,7 @@ export class CodeIndexManager {
   private readonly _codeGraph: CodeGraphSidecarLifecycle
   private _cacheManager: CacheManager | undefined
   private _baselineStore: IVectorStore | undefined
+  private _fallbackStore: IVectorStore | undefined
   private _baselineSignature: string | undefined
   private _baselineStamp: string | undefined
   private _baselineChecked = 0
@@ -249,6 +253,126 @@ export class CodeIndexManager {
     void scan?.finally(() => {
       if (this.current(generation) && !this._baselineStore) this.waiting()
     })
+  }
+
+  private async graphFallback(
+    err: unknown,
+    trigger: IndexingTelemetryTrigger,
+    reason: string,
+  ): Promise<void> {
+    const message = sanitizeErrorMessage(err instanceof Error ? err.message : String(err))
+    const generation = await this.nextGeneration()
+    if (!this.current(generation)) return
+    await this._recreateGraphServices(reason, generation)
+    if (!this.current(generation)) return
+    const fallback = await this._serviceFactory
+      ?.prepareLastKnownGoodRuntime()
+      .catch((cause) => {
+        log.warn("last-known-good embedding runtime validation failed", {
+          workspacePath: this.workspacePath,
+          err: cause,
+        })
+        return undefined
+      })
+    const restored = fallback ? await this.restoreLastKnownGood(fallback, generation) : false
+    if (!this.current(generation)) return
+    this._codeGraph.start(reason)
+    await this._orchestrator?.startIndexing(trigger)
+    if (!this.current(generation)) return
+    const hint =
+      this._configManager?.currentDimensionMode === "fixed"
+        ? " 清空 embedding 维度可恢复自动探测。"
+        : ""
+    this._stateManager.upsertNotice({
+      id: "embedding-config-unapplied",
+      level: "warning",
+      message: `Embedding 配置未应用：${message}.${hint}${
+        restored ? " 已继续使用已验证的上一版向量索引。" : ""
+      }`.replace("..", "."),
+      action: "openIndexingOutput",
+    })
+    this._stateManager.setSystemState(
+      restored ? "Indexed" : "Error",
+      `Embedding 配置未应用：${message}.${hint}${
+        restored ? " 正在使用已验证的上一版向量索引。" : ""
+      }`.replace("..", "."),
+    )
+    this._stateManager.setActivePipeline(restored ? undefined : "rag")
+  }
+
+  private async restoreLastKnownGood(runtime: PreparedEmbeddingRuntime, generation: number): Promise<boolean> {
+    if (!this.current(generation) || !this._serviceFactory || !this._configManager) return false
+    if (this.baselinePath) {
+      log.info("last-known-good vector fallback skipped for a worktree overlay", {
+        workspacePath: this.workspacePath,
+        baselinePath: this.baselinePath,
+      })
+      return false
+    }
+
+    const store = this._serviceFactory.createVectorStore(this.workspacePath, runtime.profile)
+    try {
+      if (!store.openExisting) return false
+      await store.openExisting()
+      if (!(await store.hasIndexedData())) {
+        await store.close?.()
+        return false
+      }
+    } catch (cause) {
+      await store.close?.()
+      log.info("last-known-good code index is unavailable", {
+        workspacePath: this.workspacePath,
+        err: cause,
+      })
+      return false
+    }
+    if (!this.current(generation)) {
+      await store.close?.()
+      return false
+    }
+
+    this._fallbackStore = store
+    this._runtime = runtime
+    this._searchService = new CodeIndexSearchService(
+      this._configManager,
+      this._stateManager,
+      runtime.embedder,
+      store,
+    )
+
+    if (!this._configManager.currentDocuments.enabled) return true
+    await (async () => {
+      const loaded = await loadIgnoreWithFingerprint(this.workspacePath)
+      const documents = this._serviceFactory!.createDocumentVectorStore(runtime.profile)
+      try {
+        if (!documents.openExisting) return
+        await documents.openExisting()
+        if (!(await documents.hasIndexedData())) {
+          await documents.close?.()
+          return
+        }
+        if (!this.current(generation)) {
+          await documents.close?.()
+          return
+        }
+        this._documentService = this._serviceFactory!.createDocumentService(
+          loaded.ignore,
+          () => this._stateManager.notify(),
+          runtime,
+          documents,
+        )
+        this._documentService.setMemoryPressure(this._pressure)
+      } catch (cause) {
+        await documents.close?.()
+        throw cause
+      }
+    })().catch((cause) => {
+      log.info("last-known-good document index is unavailable", {
+        workspacePath: this.workspacePath,
+        err: cause,
+      })
+    })
+    return true
   }
 
   private scheduleBaselineRetry(): void {
@@ -531,7 +655,7 @@ export class CodeIndexManager {
       return { requiresRestart }
     }
 
-    const needsServiceRecreation = !this._serviceFactory || requiresRestart
+    const needsServiceRecreation = !this._serviceFactory || requiresRestart || Boolean(this._fallbackStore)
     log.info("evaluated indexing service lifecycle", {
       needsServiceRecreation,
       requiresRestart,
@@ -561,11 +685,8 @@ export class CodeIndexManager {
       } catch (err) {
         log.error("failed to recreate services", { err })
         this.emitError("manager:initialize", err, "background")
-        this._stateManager.setSystemState(
-          "Error",
-          `Failed to initialize: ${err instanceof Error ? err.message : String(err)}`,
-        )
-        throw err
+        await this.graphFallback(err, "background", "rag-validation-failed")
+        return { requiresRestart }
       }
     }
 
@@ -689,7 +810,12 @@ export class CodeIndexManager {
     this.clearRetryTimer()
     this.clearBaselineRetry()
     this._retryTask = undefined
-    await Promise.all([this._orchestrator?.shutdown?.(), this._baselineStore?.close?.(), this.stopDocuments()])
+    await Promise.all([
+      this._orchestrator?.shutdown?.(),
+      this._baselineStore?.close?.(),
+      this._fallbackStore?.close?.(),
+      this.stopDocuments(),
+    ])
     this._codeGraph.dispose("manager-disposed")
     this._stateManager.dispose()
     this._telemetry.dispose()
@@ -757,7 +883,64 @@ export class CodeIndexManager {
     await this.refreshBaseline()
     if (this.waiting()) return []
     this.assertInitialized()
-    return this._searchService!.searchIndex(query, directoryPrefix)
+    const results = await this._searchService!.searchIndex(query, directoryPrefix)
+    const token = query.trim()
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(token)) return results
+
+    try {
+      const max = this._configManager!.currentSearchMaxResults
+      const hits = await this._postingsStorage.search(token, {
+        directoryPrefix,
+        maxResults: Math.max(max, Math.min(max * 16, 1000)),
+      })
+      const exact = hits
+        .filter(
+          (item) =>
+            item.displayName === token &&
+            item.fields.some((field) => field === "symbol" || field === "macro" || field === "type"),
+        )
+        .sort((left, right) => {
+          const body = (item: (typeof hits)[number]) => Number(item.shortSnippet?.includes("{ ... }") ?? false)
+          return body(right) - body(left) || right.score - left.score
+        })
+      if (!exact.length) return results
+
+      const points = await Promise.all(
+        exact.map(async (item) => {
+          const file = path.join(this.workspacePath, item.filePath)
+          const text = await readFile(file, "utf8").catch((err) => {
+            log.warn("failed to read exact symbol source", { workspacePath: this.workspacePath, file, err })
+            return item.shortSnippet ?? item.displayName
+          })
+          const lines = text.split(/\r?\n/)
+          const chunk = lines.slice(Math.max(0, item.startLine - 1), item.endLine).join("\n")
+          return {
+            id: `codegraph:${item.filePath}:${item.startLine}:${item.endLine}:${item.displayName}`,
+            score: Math.max(results[0]?.score ?? 0, 1),
+            payload: {
+              filePath: item.filePath,
+              codeChunk: chunk || item.shortSnippet || item.displayName,
+              startLine: item.startLine,
+              endLine: item.endLine,
+              source: "codegraph",
+            },
+          } satisfies VectorStoreSearchResult
+        }),
+      )
+      const merged = new Map<string, VectorStoreSearchResult>()
+      const key = (item: VectorStoreSearchResult) =>
+        [item.payload?.filePath, item.payload?.startLine, item.payload?.endLine].join("\0")
+      for (const item of points) merged.set(key(item), item)
+      for (const item of results) if (!merged.has(key(item))) merged.set(key(item), item)
+      return [...merged.values()].slice(0, max)
+    } catch (err) {
+      log.warn("failed to merge exact symbol evidence into semantic search", {
+        workspacePath: this.workspacePath,
+        query: token,
+        err,
+      })
+      return results
+    }
   }
 
   public async searchDocuments(query: string, options: DocumentSearchOptions = {}): Promise<DocumentSearchResult[]> {
@@ -804,6 +987,7 @@ export class CodeIndexManager {
     log.info("starting code graph service recreation", { workspacePath: this.workspacePath, reason })
     const previous = this._orchestrator
     const store = this._baselineStore
+    const fallback = this._fallbackStore
     previous?.stopWatcher()
     this._codeGraph.stop("code-graph-services-recreating")
 
@@ -837,6 +1021,7 @@ export class CodeIndexManager {
     try {
       await previous?.shutdown?.()
       await store?.close?.()
+      await fallback?.close?.()
     } catch (err) {
       await orchestrator.shutdown()
       throw err
@@ -847,13 +1032,16 @@ export class CodeIndexManager {
       this._serviceFactory = undefined
       this._searchService = undefined
       if (this._baselineStore === store) this._baselineStore = undefined
+      if (this._fallbackStore === fallback) this._fallbackStore = undefined
       return
     }
 
     this._serviceFactory = factory
+    this._runtime = undefined
     this._orchestrator = orchestrator
     this._searchService = undefined
     this._baselineStore = undefined
+    this._fallbackStore = undefined
     this._baselineSignature = undefined
     this._baselineStamp = undefined
     this._overlay = undefined
@@ -885,7 +1073,7 @@ export class CodeIndexManager {
       this._baselineSigned = now
       if (signature === this._baselineSignature && this._baselineStore) return
 
-      const baseline = await this.createBaseline(this._serviceFactory!)
+      const baseline = await this.createBaseline(this._serviceFactory!, this._runtime)
       this._baselineStamp = baseline?.stamp ?? stamp
       this._baselineSigned = now
       if (!baseline?.store) {
@@ -914,7 +1102,10 @@ export class CodeIndexManager {
     return task
   }
 
-  private async createBaseline(factory: CodeIndexServiceFactory): Promise<Baseline | undefined> {
+  private async createBaseline(
+    factory: CodeIndexServiceFactory,
+    runtime?: PreparedEmbeddingRuntime,
+  ): Promise<Baseline | undefined> {
     if (!this.baselinePath) return
 
     const cache = new CacheManager(this.cacheDirectory, this.baselinePath)
@@ -928,7 +1119,7 @@ export class CodeIndexManager {
       hashes.set(rel.replaceAll("\\", "/"), hash)
     }
 
-    const store = factory.createVectorStore(this.baselinePath)
+    const store = factory.createVectorStore(this.baselinePath, runtime?.profile)
     try {
       if (!store.openExisting) throw new Error("The configured vector store cannot open a shared baseline")
       // Validate compatibility without keeping every worktree baseline connection open.
@@ -955,6 +1146,7 @@ export class CodeIndexManager {
     log.info("starting indexing service recreation", { workspacePath: this.workspacePath })
     const previous = this._orchestrator
     const store = this._baselineStore
+    const fallback = this._fallbackStore
     previous?.stopWatcher()
     this._codeGraph.stop("indexing-services-recreating")
 
@@ -971,10 +1163,12 @@ export class CodeIndexManager {
       this._postingsStorage,
     )
     const config = this._configManager!.getConfig()
-    const baseline = prepared ?? (await this.createBaseline(factory))
+    const runtime = factory.usesAdaptiveEmbedding() ? await factory.prepareEmbeddingRuntime() : undefined
+    const baseline = prepared ?? (await this.createBaseline(factory, runtime))
     const { embedder, vectorStore, scanner, fileWatcher, ragMeta } = factory.createServices(
       this._cacheManager!,
       ignoreInstance,
+      runtime,
     )
     fileWatcher.setOverlay?.(baseline?.overlay)
     log.info("created indexing services", {
@@ -1002,7 +1196,15 @@ export class CodeIndexManager {
           provider: embedder.embedderInfo.name,
         })
         const result = await factory.validateEmbedder(embedder)
-        if (!result.valid) throw new Error(result.error || "Embedder configuration validation failed")
+        if (!result.valid) {
+          const model = config.modelId ?? "default"
+          const dimension = config.modelDimension ?? "default"
+          throw new Error(
+            `Embedder validation failed (provider=${embedder.embedderInfo.name}, model=${model}, dimensions=${dimension}): ${
+              result.error || "configuration validation returned no error message"
+            }`,
+          )
+        }
         this.clearErrors("rag")
       },
     )
@@ -1018,6 +1220,7 @@ export class CodeIndexManager {
     try {
       await previous?.shutdown?.()
       await store?.close?.()
+      await fallback?.close?.()
     } catch (err) {
       await orchestrator.shutdown()
       await baseline?.store?.close?.()
@@ -1030,13 +1233,16 @@ export class CodeIndexManager {
       this._serviceFactory = undefined
       this._searchService = undefined
       if (this._baselineStore === store) this._baselineStore = undefined
+      if (this._fallbackStore === fallback) this._fallbackStore = undefined
       return
     }
 
     this._serviceFactory = factory
+    this._runtime = runtime
     this._orchestrator = orchestrator
     this._searchService = search
     this._baselineStore = baseline?.store
+    this._fallbackStore = undefined
     this._baselineSignature = baseline?.signature
     this._baselineStamp = baseline?.stamp
     this._baselineSigned = Date.now()
@@ -1099,7 +1305,9 @@ export class CodeIndexManager {
       this._graphStorage,
       this._postingsStorage,
     )
-    const next = factory.createDocumentService(loaded.ignore, () => this._stateManager.notify())
+    const runtime =
+      this._runtime ?? (factory.usesAdaptiveEmbedding() ? await factory.prepareEmbeddingRuntime() : undefined)
+    const next = factory.createDocumentService(loaded.ignore, () => this._stateManager.notify(), runtime)
     next.setMemoryPressure(this._pressure)
     await this.stopDocuments()
     if (!this.current(generation)) {
@@ -1107,6 +1315,7 @@ export class CodeIndexManager {
       return
     }
     if (!this._serviceFactory) this._serviceFactory = factory
+    if (!this._runtime) this._runtime = runtime
     this._documentService = next
     this._documentGate = opts.after
       ? documentStandby("Document RAG waiting for Code Graph and Code RAG to finish.")
@@ -1115,21 +1324,13 @@ export class CodeIndexManager {
 
     if (opts.start === false) return
     const start = async () => {
-      const outcome = await opts.after
+      await opts.after?.catch((err) => {
+        log.warn("preceding code indexing failed; continuing Document RAG independently", {
+          workspacePath: this.workspacePath,
+          err,
+        })
+      })
       if (!this.current(generation)) return
-      if (outcome && outcome.state !== "completed") {
-        const reason = outcome.state === "failed" ? "failed" : "was cancelled"
-        this._documentGate = documentStandby(
-          `Document RAG blocked because ${outcome.pipeline === "codeGraph" ? "Code Graph" : "Code RAG"} ${reason}.`,
-        )
-        this._stateManager.notify()
-        return
-      }
-      if (outcome?.pipeline === "codeGraph") {
-        this._documentGate = documentStandby("Document RAG blocked because Code RAG did not run.")
-        this._stateManager.notify()
-        return
-      }
       this._documentGate = undefined
       this._stateManager.setActivePipeline("documents")
       await next.start(trigger, opts.force === true)
@@ -1165,7 +1366,36 @@ export class CodeIndexManager {
       featureEnabled: this.isFeatureEnabled,
       featureConfigured: this.isFeatureConfigured,
       requiresRestart,
+      documentsChanged,
     })
+
+    if (!requiresRestart && !documentsChanged) {
+      log.info("indexing settings change does not require a lifecycle update", {
+        workspacePath: this.workspacePath,
+      })
+      return
+    }
+
+    if (!requiresRestart && documentsChanged) {
+      if (this._fallbackStore) {
+        log.info("document settings remain unapplied while the desired embedding profile is invalid", {
+          workspacePath: this.workspacePath,
+        })
+        return
+      }
+      const generation = await this.nextGeneration()
+      if (!this.current(generation)) return
+      const ready = this.graphScanState() === "complete" && this.getCurrentStatus().systemStatus === "Indexed"
+      if (ready) {
+        await this.configureDocuments("background", { force: true, generation })
+        return
+      }
+
+      this._codeGraph.start("document-settings-waiting-for-index")
+      const scan = this._orchestrator?.startIndexing("background")
+      await this.configureDocuments("background", { force: true, after: scan, generation })
+      return
+    }
 
     if (!this.isFeatureEnabled || !this.isFeatureConfigured) {
       const generation = await this.nextGeneration()
@@ -1213,24 +1443,11 @@ export class CodeIndexManager {
         await this.configureDocuments("background", { force: true, after: scan, generation })
       } catch (err) {
         log.error("failed to recreate services on settings change", { err })
-        throw err
+        this.emitError("manager:settings", err, "background", "rag")
+        await this.graphFallback(err, "background", "rag-settings-unapplied")
       }
       return
     }
-
-    if (!documentsChanged) return
-
-    const generation = await this.nextGeneration()
-    if (!this.current(generation)) return
-    const ready = this.graphScanState() === "complete" && this.getCurrentStatus().systemStatus === "Indexed"
-    if (ready) {
-      await this.configureDocuments("background", { force: true, generation })
-      return
-    }
-
-    this._codeGraph.start("document-settings-waiting-for-index")
-    const scan = this._orchestrator?.startIndexing("background")
-    await this.configureDocuments("background", { force: true, after: scan, generation })
   }
 }
 

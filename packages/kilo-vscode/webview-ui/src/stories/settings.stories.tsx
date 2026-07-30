@@ -100,9 +100,9 @@ export const SettingsPanel: Story = {
   ),
 }
 
-function ChipmateServerStory(props: ChipmateServerTabProps & { width?: string }) {
+function ChipmateServerStory(props: ChipmateServerTabProps & { width?: string; locale?: "en" | "zh" }) {
   return (
-    <StoryProviders config={{} as Config}>
+    <StoryProviders config={{} as Config} locale={props.locale}>
       <div style={{ width: props.width ?? "760px", "max-width": "100%", padding: "20px" }}>
         <h3 style={{ margin: "0 0 14px" }}>ChipMate Server</h3>
         <ChipmateServerTab preview={props.preview} />
@@ -223,17 +223,20 @@ export const ChipmateUpdateInstalled: Story = {
   render: () => <ChipmateServerStory preview={{ update: { status: "installed", version: "1.0.10" } }} />,
 }
 
+const failedUpdate = {
+  status: "error" as const,
+  code: "availability",
+  message: "暂时无法连接 ChipMate Server，请检查网络后重试。Bearer sk-provider-secret token=private",
+  retryable: true,
+}
+
 export const ChipmateUpdateError: Story = {
   name: "ChipMate 更新 — 检查失败",
   render: () => (
     <ChipmateServerStory
+      locale="zh"
       preview={{
-        update: {
-          status: "error",
-          code: "availability",
-          message: "暂时无法连接 ChipMate Server，请检查网络后重试。",
-          retryable: true,
-        },
+        update: failedUpdate,
       }}
     />
   ),
@@ -390,6 +393,16 @@ export const SettingsChipmateUpdateContrast: Story = {
       height="1024px"
       server="https://chipmate.internal:7443"
       preview={{ result: { status: "success", code: "ok", skillsCount: 12 }, update: availableUpdate }}
+    />
+  ),
+}
+
+export const SettingsChipmateUpdateError: Story = {
+  name: "设置更新 — 失败详情响应式基准",
+  render: () => (
+    <AlignedSettings
+      server="https://chipmate.internal:7443"
+      preview={{ update: failedUpdate }}
     />
   ),
 }
@@ -1056,7 +1069,7 @@ export const IndexingProviderBlurRace: Story = {
       indexing: {
         provider: "openai-compatible",
         model: "qwen3-embedding-8b",
-        dimension: 2048,
+        dimension: 4096,
         "openai-compatible": { apiKey: "" },
         gemini: { apiKey: "" },
       },
@@ -1085,7 +1098,7 @@ export const IndexingSimplifiedChinese: Story = {
         enabled: true,
         provider: "openai-compatible",
         model: "qwen3-embedding-8b",
-        dimension: 2048,
+        dimension: 4096,
         vectorStore: "lancedb",
         documents: {
           enabled: true,

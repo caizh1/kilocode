@@ -75,6 +75,18 @@ class Store {
   }
 }
 
+class RecoverableStore extends Store {
+  public abortCount = 0
+
+  getLastCompatibilityDecision() {
+    return { action: "rebuild" as const, reason: "profile changed", created: true }
+  }
+
+  async abortCandidate(): Promise<void> {
+    this.abortCount += 1
+  }
+}
+
 class Scanner {
   public readonly isCancelled = false
   public readonly targets: IndexingScanTarget[] = []
@@ -88,6 +100,7 @@ class Scanner {
     private readonly indexed: number,
     private readonly blocks: number,
     private readonly graph = 0,
+    private readonly batch?: IndexingScanTarget,
   ) {}
 
   async scanDirectory(
@@ -107,6 +120,7 @@ class Scanner {
   }> {
     const started = Date.now()
     this.targets.push(target)
+    if (target === this.batch) _onError?.(new Error("candidate batch failed"))
     onProgress?.({ type: "target", totalFiles: this.discovered, graphTotalFiles: this.graph })
     const files = this.candidateFiles ?? Array.from({ length: this.discovered }, (_, i) => `/tmp/ws/file-${i}.ts`)
     for (let i = 0; i < this.discovered; i += 1) {
@@ -319,6 +333,7 @@ describe("CodeIndexOrchestrator telemetry", () => {
     const ctx = await env()
     const scanner = new Scanner(1, 1, 1)
     const state = new CodeIndexStateManager()
+    const watcher = new Watcher()
     const orchestrator = new CodeIndexOrchestrator(
       createConfig(),
       state,
@@ -326,7 +341,7 @@ describe("CodeIndexOrchestrator telemetry", () => {
       { async clearCacheFile() {} } as unknown as CacheManager,
       new Store(false) as unknown as IVectorStore,
       scanner as unknown as DirectoryScanner,
-      new Watcher() as unknown as IFileWatcher,
+      watcher as unknown as IFileWatcher,
       ctx.cacheDirectory,
       ctx.meta,
       undefined,
@@ -343,6 +358,53 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(state.state).toBe("Error")
     expect(state.getCurrentStatus().message).toContain("embedding unavailable")
     expect(state.getCurrentStatus().activePipeline).toBe("rag")
+    expect(state.getCurrentStatus().notices).toEqual([
+      expect.objectContaining({
+        id: "embedding-config-unapplied",
+        message: expect.stringContaining("现有有效索引未被修改"),
+      }),
+    ])
+
+    watcher.onDidStartBatchProcessing.fire([join(ctx.root, "changed.c")])
+    watcher.onBatchProgressUpdate.fire({
+      processedInBatch: 1,
+      totalInBatch: 1,
+      currentFile: join(ctx.root, "changed.c"),
+    })
+
+    expect(state.state).toBe("Error")
+    expect(state.getCurrentStatus().message).toContain("embedding unavailable")
+    expect(state.getCurrentStatus().activePipeline).toBe("rag")
+  })
+
+  test("keeps a compatible last-known-good index available when a candidate scan fails", async () => {
+    const ctx = await env()
+    const state = new CodeIndexStateManager()
+    const store = new RecoverableStore(true, true)
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      state,
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      store as unknown as IVectorStore,
+      new Scanner(1, 1, 1, 1, "rag") as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    const outcome = await orchestrator.startIndexing("manual")
+
+    expect(outcome).toEqual({ state: "failed", pipeline: "rag" })
+    expect(store.abortCount).toBe(1)
+    expect(state.state).toBe("Indexed")
+    expect(state.getCurrentStatus().activePipeline).toBeUndefined()
+    expect(state.getCurrentStatus().notices).toEqual([
+      expect.objectContaining({
+        id: "embedding-config-unapplied",
+        message: expect.stringContaining("已继续使用上一版有效索引"),
+      }),
+    ])
   })
 
   test("emits full completion telemetry", async () => {
@@ -374,6 +436,29 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(completed?.filesDiscovered).toBe(3)
     expect(completed?.filesIndexed).toBe(3)
     expect(completed?.totalBlocks).toBe(6)
+  })
+
+  test("completes a full scan when supported files contain no indexable blocks", async () => {
+    const ctx = await env()
+    const store = new Store(false)
+    const state = new CodeIndexStateManager()
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      state,
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      store as unknown as IVectorStore,
+      new Scanner(1, 0, 0, 1) as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    const outcome = await orchestrator.startIndexing("manual")
+
+    expect(outcome).toEqual({ state: "completed", pipeline: "rag" })
+    expect(state.state).toBe("Indexed")
+    expect(store.completeCount).toBe(1)
   })
 
   test("releases the workspace lock after a successful scan", async () => {
@@ -545,7 +630,7 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(scanner.targets).toEqual(["codeGraph", "rag"])
   })
 
-  test("waits for watcher readiness before Code Graph and RAG scans", async () => {
+  test("does not wait for watcher readiness before Code Graph and RAG scans", async () => {
     const ctx = await env()
     const state = new CodeIndexStateManager()
     const scanner = new Scanner(1, 1, 1, 1)
@@ -580,13 +665,16 @@ describe("CodeIndexOrchestrator telemetry", () => {
     const task = orchestrator.startIndexing("manual")
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(scanner.targets).toEqual([])
-    expect(order).toEqual(["watcher:init"])
+    expect(scanner.targets).toEqual(["codeGraph", "rag"])
+    expect(order).toEqual(["watcher:init", "scan:codeGraph", "scan:rag"])
     expect(watcher.initialized).toBe(1)
     expect(watcher.collecting).toEqual([false])
+    await task
+    expect(orchestrator.state).toBe("Indexed")
+    expect(state.getCurrentStatus().message).toBe("Index up-to-date. File watcher starting.")
 
     ready()
-    await task
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(scanner.targets).toEqual(["codeGraph", "rag"])
     expect(order).toEqual(["watcher:init", "scan:codeGraph", "scan:rag"])
@@ -596,15 +684,16 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(state.getCurrentStatus().message).toBe("File watcher started. Index up-to-date.")
   })
 
-  test("fails closed when watcher initialization fails", async () => {
+  test("continues full scans when watcher initialization fails", async () => {
     const events: IndexingTelemetryEvent[] = []
     const ctx = await env()
     const watcher = new Watcher()
     watcher.fail = new Error("watcher unavailable")
     const scanner = new Scanner(1, 1, 1, 1)
+    const state = new CodeIndexStateManager()
     const orchestrator = new CodeIndexOrchestrator(
       createConfig(),
-      new CodeIndexStateManager(),
+      state,
       ctx.root,
       { async clearCacheFile() {} } as unknown as CacheManager,
       new Store(false) as unknown as IVectorStore,
@@ -617,15 +706,22 @@ describe("CodeIndexOrchestrator telemetry", () => {
 
     const outcome = await orchestrator.startIndexing("manual")
 
-    const error = events.find(
-      (event): event is Extract<IndexingTelemetryEvent, { type: "error" }> =>
-        event.type === "error" && event.location === "orchestrator:startWatcher",
-    )
-    expect(outcome).toEqual({ state: "failed", pipeline: "codeGraph" })
-    expect(scanner.targets).toEqual([])
-    expect(orchestrator.state).toBe("Error")
-    expect(error?.source).toBe("watcher")
-    expect(error?.error).toContain("watcher unavailable")
+    expect(outcome).toEqual({ state: "completed", pipeline: "rag" })
+    expect(scanner.targets).toEqual(["codeGraph", "rag"])
+    expect(orchestrator.state).toBe("Indexed")
+    expect(events.some((event) => event.type === "error")).toBe(false)
+    expect(state.getCurrentStatus().message).toContain("File watcher unavailable")
+    expect(state.getCurrentStatus().notices).toEqual([
+      expect.objectContaining({
+        level: "warning",
+        message: expect.stringContaining("手动重新构建索引"),
+      }),
+    ])
+
+    const repeated = await orchestrator.startIndexing("manual")
+
+    expect(repeated).toEqual({ state: "completed", pipeline: "rag" })
+    expect(scanner.targets).toEqual(["codeGraph", "rag", "codeGraph", "rag"])
   })
 
   test("queues synthetic watcher events for files changed during scan", async () => {

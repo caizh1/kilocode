@@ -31,6 +31,12 @@ const KEY = {
   provider: "embedding_provider",
   model: "embedding_model_id",
   dimension: "embedding_dimension",
+  dimensionMode: "embedding_dimension_mode",
+  requestedDimension: "embedding_requested_dimension",
+  endpointDigest: "embedding_endpoint_digest",
+  fingerprintDigest: "embedding_fingerprint_digest",
+  qualityVersion: "embedding_quality_version",
+  instructionVersion: "embedding_instruction_version",
 }
 
 const VECTOR_SCHEMA_FIELDS = [
@@ -196,6 +202,30 @@ export class LanceDBVectorStore implements IVectorStore {
         value: String(this.profile.dimension),
       },
       {
+        key: KEY.dimensionMode,
+        value: this.profile.dimensionMode ?? "",
+      },
+      {
+        key: KEY.requestedDimension,
+        value: this.profile.requestedDimension === undefined ? "" : String(this.profile.requestedDimension),
+      },
+      {
+        key: KEY.endpointDigest,
+        value: this.profile.endpointDigest ?? "",
+      },
+      {
+        key: KEY.fingerprintDigest,
+        value: this.profile.fingerprintDigest ?? "",
+      },
+      {
+        key: KEY.qualityVersion,
+        value: this.profile.qualityVersion ?? "",
+      },
+      {
+        key: KEY.instructionVersion,
+        value: this.profile.instructionVersion ?? "",
+      },
+      {
         key: KEY.complete,
         value: "false",
       },
@@ -283,10 +313,23 @@ export class LanceDBVectorStore implements IVectorStore {
     if (typeof provider !== "string" || typeof modelId !== "string") return undefined
     const dim = this._parseNumber(dimension)
     if (!dim) return undefined
+    const dimensionMode = await this._getMetadataValue(db, KEY.dimensionMode)
+    const requestedDimension = await this._getMetadataValue(db, KEY.requestedDimension)
+    const endpointDigest = await this._getMetadataValue(db, KEY.endpointDigest)
+    const fingerprintDigest = await this._getMetadataValue(db, KEY.fingerprintDigest)
+    const qualityVersion = await this._getMetadataValue(db, KEY.qualityVersion)
+    const instructionVersion = await this._getMetadataValue(db, KEY.instructionVersion)
+    const requested = this._parseNumber(requestedDimension)
     return {
       provider: provider as EmbeddingProfile["provider"],
       modelId,
       dimension: dim,
+      ...(dimensionMode === "auto" || dimensionMode === "fixed" ? { dimensionMode } : {}),
+      ...(requested ? { requestedDimension: requested } : {}),
+      ...(typeof endpointDigest === "string" && endpointDigest ? { endpointDigest } : {}),
+      ...(typeof fingerprintDigest === "string" && fingerprintDigest ? { fingerprintDigest } : {}),
+      ...(typeof qualityVersion === "string" && qualityVersion ? { qualityVersion } : {}),
+      ...(typeof instructionVersion === "string" && instructionVersion ? { instructionVersion } : {}),
     }
   }
 
@@ -294,7 +337,13 @@ export class LanceDBVectorStore implements IVectorStore {
     return (
       profile.provider === this.profile.provider &&
       profile.modelId === this.profile.modelId &&
-      profile.dimension === this.profile.dimension
+      profile.dimension === this.profile.dimension &&
+      profile.dimensionMode === this.profile.dimensionMode &&
+      profile.requestedDimension === this.profile.requestedDimension &&
+      profile.endpointDigest === this.profile.endpointDigest &&
+      profile.fingerprintDigest === this.profile.fingerprintDigest &&
+      profile.qualityVersion === this.profile.qualityVersion &&
+      profile.instructionVersion === this.profile.instructionVersion
     )
   }
 
@@ -539,7 +588,7 @@ export class LanceDBVectorStore implements IVectorStore {
       searchQuery = searchQuery.where(filter)
       searchQuery = searchQuery
         .distanceType("cosine")
-        .distanceRange(0, 1 - actualMinScore)
+        .distanceRange(-1e-6, 1 - actualMinScore)
         .limit(actualMaxResults)
 
       const list = await searchQuery.toArray()

@@ -21,6 +21,8 @@ import { Suggestion } from "@/kilocode/suggestion" // kilocode_change
 import { Question } from "@/question" // kilocode_change
 import { BUILTIN_COMMANDS } from "@/kilocode/session/builtin-commands" // kilocode_change
 import { legacyReviewMessage } from "@/kilocode/review/command" // kilocode_change
+import { isEmbeddedReviewCommand } from "@/kilocode/embedded-review/command" // kilocode_change
+import { EmbeddedReviewThinRuntime } from "@/kilocode/embedded-review/thin-runtime" // kilocode_change
 import { zod } from "@opencode-ai/core/effect-zod" // kilocode_change
 import { withStatics } from "@opencode-ai/core/schema" // kilocode_change
 import { SessionID, MessageID, PartID } from "./schema"
@@ -85,7 +87,7 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
-import { UltraCouncil } from "@/kilocode/agent/ultra-council" // kilocode_change
+import { UltraVerify } from "@/kilocode/agent/ultra-verify" // kilocode_change
 import { RepositoryCache } from "@opencode-ai/core/repository-cache" // kilocode_change
 
 // @ts-ignore
@@ -1467,9 +1469,9 @@ export const layer = Layer.effect(
     )(function* (input: LoopInput) {
       const sessionID = input.sessionID
       // kilocode_change end
-      // kilocode_change start - deliver independently approved Ultra analysis text without a provider rewrite
-      const deliver = Effect.fnUntraced(function* (council: UltraCouncil.State, message: MessageV2.Assistant) {
-        const result = UltraCouncil.delivery(council)
+      // kilocode_change start - deliver the independent Ultra synthesis without a provider rewrite
+      const deliver = Effect.fnUntraced(function* (council: UltraVerify.State, message: MessageV2.Assistant) {
+        const result = UltraVerify.delivery(council)
         if (!result) return false
         const current = yield* sessions.findMessage(sessionID, (item) => item.info.id === message.id)
         if (Option.isSome(current)) {
@@ -1655,9 +1657,9 @@ export const layer = Layer.effect(
           yield* events.publish(Session.Event.Error, { sessionID, error: error.toObject() })
           throw error
         }
-        const council = UltraCouncil.active(agent)
-          ? UltraCouncil.load({ sessionID, messageID: lastUser.id, messages: msgs })
-          : undefined // kilocode_change - isolate Council runtime policy to native ChipMate Ultra
+        const council = UltraVerify.active(agent)
+          ? UltraVerify.load({ sessionID, messageID: lastUser.id, messages: msgs })
+          : undefined // kilocode_change - isolate verification runtime policy to native ChipMate Ultra
         if (
           council &&
           (lastUser.format ?? { type: "text" as const }).type === "text" &&
@@ -1746,7 +1748,7 @@ export const layer = Layer.effect(
               },
             })
           }
-          const enabled = council ? UltraCouncil.filter(council, tools) : tools // kilocode_change
+          const enabled = council ? UltraVerify.filter(council, tools) : tools // kilocode_change
 
           if (step === 1)
             yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
@@ -1813,10 +1815,10 @@ export const layer = Layer.effect(
           // kilocode_change end
           const system = KiloSessionPrompt.system({ agent, env, mem, instructions, skills }) // kilocode_change
           const format = lastUser.format ?? { type: "text" as const }
-          if (format.type === "json_schema" && (!council || !UltraCouncil.required(council))) {
+          if (format.type === "json_schema" && (!council || !UltraVerify.required(council))) {
             system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
           }
-          if (council) system.push(UltraCouncil.reminder(council)) // kilocode_change
+          if (council) system.push(UltraVerify.reminder(council)) // kilocode_change
           const result = yield* handle.process({
             // kilocode_change start - keep Ask/Plan tool filtering hardened against session allows
             user: lastUser,
@@ -1830,7 +1832,7 @@ export const layer = Layer.effect(
             tools: enabled, // kilocode_change
             model,
             toolChoice:
-              format.type === "json_schema" && (!council || !UltraCouncil.required(council)) ? "required" : undefined, // kilocode_change - DeepSeek thinking mode rejects required during the Ultra Council phase
+              format.type === "json_schema" && (!council || !UltraVerify.required(council)) ? "required" : undefined, // kilocode_change - DeepSeek thinking mode rejects required during Ultra verification
             // kilocode_change start - feed the provider-reported context size from the last finished
             // turn into the output-token cap, so image/vision input is measured by the provider
             // rather than by encoded payload bytes (see KiloLLM.capOutputTokens). Summary messages
@@ -1944,7 +1946,7 @@ export const layer = Layer.effect(
           Effect.onInterrupt(() => finalize),
         )
         const gated = council
-          ? UltraCouncil.gate(
+          ? UltraVerify.gate(
               council,
               outcome,
               Boolean(handle.message.error) || closeReasons.get(sessionID) === "interrupted",
@@ -1959,15 +1961,15 @@ export const layer = Layer.effect(
         ) {
           break
         }
-        if (council && UltraCouncil.stopping(outcome, handle.message.finish) && gated === "continue") {
+        if (council && UltraVerify.stopping(outcome, handle.message.finish) && gated === "continue") {
           handle.message.finish = "tool-calls"
           yield* sessions.updateMessage(handle.message)
         }
-        // kilocode_change start - runtime-enforce deterministic Ultra degraded output instead of trusting model prose
+        // kilocode_change start - runtime-enforce deterministic Ultra verification failure output
         if (
           council &&
           gated === "break" &&
-          (council.phase === "degraded" || council.phase === "limited") &&
+          council.phase === "failed" &&
           !handle.message.error &&
           closeReasons.get(sessionID) !== "interrupted"
         ) {
@@ -1979,17 +1981,58 @@ export const layer = Layer.effect(
             }
           }
           yield* sessions.updatePart({
-            id: PartID.make(UltraCouncil.outputID(council, council.phase)),
+            id: PartID.make(UltraVerify.outputID(council)),
             messageID: handle.message.id,
             sessionID,
             type: "text",
-            text: UltraCouncil.result(council),
+            text: UltraVerify.result(council),
           })
         }
         // kilocode_change end
         if (gated === "break") break
         continue
       }
+
+      // kilocode_change start - seal Embedded Review after the loop observes the terminal assistant
+      // The final tool-free model step normally returns "continue"; the following loop iteration
+      // detects its stored finish reason and exits before the old in-step seal path could run.
+      if (EmbeddedReviewThinRuntime.active(sessionID)) {
+        if (closeReasons.get(sessionID) === "interrupted" || closeReasons.get(sessionID) === "error") {
+          EmbeddedReviewThinRuntime.discard(sessionID)
+        } else {
+          const current = yield* lastAssistant(sessionID)
+          if (current.info.role === "assistant" && !current.info.error) {
+            const parts = current.parts.filter((part): part is MessageV2.TextPart => part.type === "text")
+            const sealed = EmbeddedReviewThinRuntime.seal(sessionID, parts.map((part) => part.text).join("\n"))
+            if (sealed) {
+              const first = parts[0]
+              if (first) {
+                yield* sessions.updatePart({ ...first, text: sealed.text })
+                for (const part of parts.slice(1)) {
+                  yield* sessions.removePart({
+                    sessionID,
+                    messageID: current.info.id,
+                    partID: part.id,
+                  })
+                }
+              } else {
+                yield* sessions.updatePart({
+                  id: PartID.ascending(),
+                  messageID: current.info.id,
+                  sessionID,
+                  type: "text",
+                  text: sealed.text,
+                })
+              }
+            } else {
+              EmbeddedReviewThinRuntime.discard(sessionID)
+            }
+          } else {
+            EmbeddedReviewThinRuntime.discard(sessionID)
+          }
+        }
+      }
+      // kilocode_change end
 
       yield* compaction.prune({ sessionID, reason: "normal" }).pipe(Effect.ignore, Effect.forkIn(scope))
       return yield* lastAssistant(sessionID)
@@ -2141,9 +2184,16 @@ export const layer = Layer.effect(
       const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
       let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
 
-      if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
+      // kilocode_change start - embedded review arguments are consumed only by its deterministic runtime
+      if (
+        placeholders.length === 0 &&
+        !usesArgumentsPlaceholder &&
+        !isEmbeddedReviewCommand(input.command) &&
+        input.arguments.trim()
+      ) {
         template = template + "\n\n" + input.arguments
       }
+      // kilocode_change end
 
       const shellMatches = ConfigMarkdown.shell(template)
       if (shellMatches.length > 0) {
@@ -2158,6 +2208,19 @@ export const layer = Layer.effect(
         let index = 0
         template = template.replace(bashRegex, () => results[index++])
       }
+      // kilocode_change start - inject untrusted embedded review evidence only after command substitutions are complete
+      if (isEmbeddedReviewCommand(input.command)) {
+        const ctx = yield* InstanceState.context
+        const prepared = yield* Effect.promise(() =>
+          EmbeddedReviewThinRuntime.prepare({
+            root: ctx.worktree,
+            arguments: input.arguments,
+          }),
+        )
+        EmbeddedReviewThinRuntime.remember(input.sessionID, prepared)
+        template = template.replace("$PREPARATION", JSON.stringify(EmbeddedReviewThinRuntime.prompt(prepared)))
+      }
+      // kilocode_change end
       template = template.trim()
 
       const taskModel = yield* Effect.gen(function* () {

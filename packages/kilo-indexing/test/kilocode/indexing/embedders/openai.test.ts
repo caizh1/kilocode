@@ -460,7 +460,7 @@ describe("OpenAiEmbedder", () => {
       const result = await embedder.validateConfiguration()
 
       expect(result.valid).toBe(false)
-      expect(result.error).toBe("Configuration error. Please verify your embedder settings.")
+      expect(result.error).toBe("Embedding service returned a server error (HTTP 500) without an error message.")
     })
   })
 })

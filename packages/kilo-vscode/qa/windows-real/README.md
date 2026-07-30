@@ -36,7 +36,7 @@ Coverage `PASS` means every changeset and runtime path has a structurally valid 
 - Windows 11 with an interactive desktop;
 - Visual Studio Code Stable, or pass `-CodePath`;
 - Node.js 20 or newer available as `node.exe`, or VS Code Stable's Electron Node runtime;
-- the frozen `chipmate-1.0.9-win32-x64-baseline.vsix`;
+- a frozen `chipmate-<version>-win32-x64-baseline.vsix`;
 - optional `1.0.8` and Kilo VSIX files for upgrade and coexistence lanes.
 
 For the recurring Mac-hosted lane, install the official [Windows 11 ARM64 ISO](https://learn.microsoft.com/en-us/windows/arm/iso) in a Parallels release that explicitly supports the host Mac and macOS version. Run x64 VS Code so the same x64 baseline artifact is exercised through Windows Prism; Microsoft documents the [x64 compatibility layer on Windows ARM](https://learn.microsoft.com/en-us/windows/arm/apps-on-arm-program-compat-troubleshooter). The artifact contains both baseline x64 and native ARM64 CLI sidecars: Windows ARM selects the native sidecar, while native Windows x64 selects the baseline sidecar. Parallels and Windows licenses are separate prerequisites.
@@ -62,6 +62,7 @@ cd packages\kilo-vscode\qa\windows-real
   -CodePath "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe" `
   -FixtureRoot C:\qa\fixtures\chipmate-regression `
   -Output C:\qa\runs\chipmate-1.0.9-arm64-smoke `
+  -ExpectedVersion 1.0.9 `
   -Gate arm64-vm `
   -Gpu default `
   -Lane agent-console
@@ -95,6 +96,25 @@ After extracting the ZIP on Windows, run `RUN-WINDOWS.ps1`. Add `--kilo <path>` 
 
 Use `-Lane agent-console` for the installed Agent Console, real PowerShell/IME, CLI lifecycle, CDP, scroll, stress, and visual evidence gate without inheriting unrelated unfinished matrix work. Use `-Lane package` for archive inspection only, or `-Lane core` for package, installed-host, typing, visual, update, and failure-path preparation. `-NoGui` intentionally blocks GUI cases rather than pretending they passed.
 
+Use `-Lane settings` for a focused installed-VSIX settings regression. It validates package identity, isolated installation and activation, every visible Settings page, navigation search, the 420px page picker, invalid Server URL handling, Server save/reopen persistence, and indexing model/dimension save/reopen persistence without running QA or Agent Console cases. Omit `-ExpectedVersion` to read the frozen artifact version from its manifest.
+
+### 离线自动更新聚焦通道
+
+`-Lane update` 只裁决 `WIN-UPDATE`，不会把普通安装或 smoke 结果当成自动更新通过。`-PreviousVsix` 必须是已包含修复安装器的旧版本，`-Vsix` 必须是版本更高的候选包：
+
+```powershell
+.\run.ps1 `
+  -PreviousVsix C:\qa\chipmate-1.0.10-win32-x64-baseline.vsix `
+  -Vsix C:\qa\chipmate-1.0.11-win32-x64-baseline.vsix `
+  -CodePath "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe" `
+  -Output "C:\qa\runs\自动更新 中文路径" `
+  -ExpectedVersion 1.0.11 `
+  -Gate native-x64 `
+  -Lane update
+```
+
+通道会使用隔离的中文、空格 `user-data-dir` 与 `extensions-dir`，只通过 VS Code 自带 CLI 预装旧版；启动扩展前从 PATH 移除所有可发现的 `code`。本地离线服务动态提供 schema v2 manifest 和候选 VSIX。验收证据包含更新前后扩展列表、manifest/VSIX 请求、专用更新日志、缓存 SHA-256、Reload 提示截图与 UIA 树，以及重载后的新版 installed-host 激活结果。该通道必须在 `native-x64` Windows 上通过后才能作为发布门槛；`arm64-vm` 结果仅作补充。
+
 The runner prints the paths to:
 
 - `results.json`;
@@ -121,6 +141,7 @@ The global scenario can also be changed with `POST /__qa/scenario`. Request evid
 cd packages/kilo-vscode
 bun run qa:windows:coverage
 bun run qa:windows:mock
+bun run qa:windows:update-server
 ```
 
-These checks validate the ledger and mock protocol only. They are not Windows execution evidence.
+这些本地检查只验证 ledger 与本地服务协议，不构成 Windows installed-VSIX 运行证据。

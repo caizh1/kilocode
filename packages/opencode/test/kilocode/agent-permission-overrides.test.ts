@@ -187,6 +187,8 @@ test.serial("internal explore prompt routes retrieval without changing the publi
         const agent = await load(internalDir.path, (svc) => svc.get("explore"))
         expect(agent!.prompt).toContain("Use the retrieval route that best matches the question")
         expect(agent!.prompt).not.toContain("codebase_analysis")
+        expect(agent?.prompt).toContain("approved external documents")
+        expect(agent?.prompt).toContain("omit path to search every configured document root")
         expect(agent!.prompt).toContain("Use Grep for exact identifiers or text")
         expect(agent!.prompt).toContain("do not repeatedly retry the retrieval tool")
       },

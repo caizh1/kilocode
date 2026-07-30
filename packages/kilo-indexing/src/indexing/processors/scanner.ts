@@ -1,4 +1,4 @@
-import { stat, readFile } from "fs/promises"
+import { stat, readFile, realpath } from "fs/promises"
 import path from "path"
 import { generateNormalizedAbsolutePath, generateRelativeFilePath } from "../shared/get-relative-path"
 import type {
@@ -317,6 +317,7 @@ export class DirectoryScanner implements IDirectoryScanner {
     const directoryPath = directory
     // Use the directory path directly as the workspace root
     const scanWorkspace = directoryPath
+    const boundary = await realpath(scanWorkspace).catch(() => path.resolve(scanWorkspace))
     log.info("starting directory scan", { workspacePath: scanWorkspace, target })
     if (graphEnabled) {
       const health = await this.graphPool.health(this.graphWorkers())
@@ -556,6 +557,16 @@ export class DirectoryScanner implements IDirectoryScanner {
 
         try {
           const readStarted = graphSupported ? Date.now() : 0
+          const canonical = await realpath(filePath)
+          const relative = path.relative(boundary, canonical)
+          if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+            skippedCount++
+            log.warn("skipping indexing candidate outside workspace boundary", {
+              workspacePath: scanWorkspace,
+              filePath,
+            })
+            return
+          }
           // Check file size
           const stats = await stat(filePath)
           if (this._cancelled) {
@@ -1083,7 +1094,7 @@ export class DirectoryScanner implements IDirectoryScanner {
 
         log.debug(`Creating embeddings for ${batchTexts.length} texts`)
 
-        const { embeddings } = await this.embedder.createEmbeddings(batchTexts)
+        const { embeddings } = await this.embedder.createEmbeddings(batchTexts, undefined, "document")
         log.debug(`Successfully created ${embeddings.length} embeddings`)
 
         // Prepare points for Qdrant

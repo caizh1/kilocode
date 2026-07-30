@@ -112,6 +112,9 @@ describe("OpenAICompatibleEmbedder", () => {
     })
 
     test("should create embeddings for single text", async () => {
+      embedder = new OpenAICompatibleEmbedder(testBaseUrl, testApiKey, testModelId, undefined, {
+        dimensions: 1024,
+      })
       const testTexts = ["Hello world"]
       const mockResponse = {
         data: [{ embedding: [0.1, 0.2, 0.3] }],
@@ -130,6 +133,53 @@ describe("OpenAICompatibleEmbedder", () => {
         embeddings: [[0.1, 0.2, 0.3]],
         usage: { promptTokens: 10, totalTokens: 15 },
       })
+    })
+
+    test("should not send dimensions to a full endpoint", async () => {
+      const fullUrl = "https://api.example.com/v1/embeddings"
+      embedder = new OpenAICompatibleEmbedder(fullUrl, testApiKey, testModelId, undefined, {
+        dimensions: 1024,
+      })
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [{ embedding: [0.1, 0.2, 0.3] }],
+          usage: { prompt_tokens: 2, total_tokens: 2 },
+        }),
+        text: async () => "",
+      } as any)
+
+      await embedder.createEmbeddings(["test"])
+
+      const body = JSON.parse(String((mockFetch.mock.calls[0]?.[1] as RequestInit | undefined)?.body))
+      expect(body).toEqual({
+        input: ["test"],
+        model: testModelId,
+        encoding_format: "base64",
+      })
+    })
+
+    test("should send fixed dimensions to a full endpoint", async () => {
+      const fullUrl = "https://api.example.com/v1/embeddings"
+      embedder = new OpenAICompatibleEmbedder(fullUrl, testApiKey, testModelId, undefined, {
+        dimensions: 1024,
+        sendDimensions: true,
+      })
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [{ embedding: [0.1, 0.2, 0.3] }],
+          usage: { prompt_tokens: 2, total_tokens: 2 },
+        }),
+        text: async () => "",
+      } as any)
+
+      await embedder.createEmbeddings(["test"])
+
+      const body = JSON.parse(String((mockFetch.mock.calls[0]?.[1] as RequestInit | undefined)?.body))
+      expect(body.dimensions).toBe(1024)
     })
 
     test("should create embeddings for multiple texts", async () => {
@@ -849,7 +899,9 @@ describe("OpenAICompatibleEmbedder", () => {
     })
 
     test("should validate successfully with valid configuration and base URL", async () => {
-      embedder = new OpenAICompatibleEmbedder(testBaseUrl, testApiKey, testModelId)
+      embedder = new OpenAICompatibleEmbedder(testBaseUrl, testApiKey, testModelId, undefined, {
+        dimensions: 1024,
+      })
 
       const mockResponse = {
         data: [{ embedding: [0.1, 0.2, 0.3] }],
@@ -871,6 +923,23 @@ describe("OpenAICompatibleEmbedder", () => {
           timeout: REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS,
           maxRetries: REMOTE_EMBEDDER_VALIDATION_MAX_RETRIES,
         },
+      )
+    })
+
+    test("should send fixed dimensions during configuration validation", async () => {
+      embedder = new OpenAICompatibleEmbedder(testBaseUrl, testApiKey, testModelId, undefined, {
+        dimensions: 1024,
+        sendDimensions: true,
+      })
+      mockEmbeddingsCreate.mockResolvedValue({
+        data: [{ embedding: [0.1, 0.2, 0.3] }],
+        usage: { prompt_tokens: 2, total_tokens: 2 },
+      })
+
+      expect((await embedder.validateConfiguration()).valid).toBe(true)
+      expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ dimensions: 1024 }),
+        expect.any(Object),
       )
     })
 
@@ -942,8 +1011,7 @@ describe("OpenAICompatibleEmbedder", () => {
       const result = await embedder.validateConfiguration()
 
       expect(result.valid).toBe(false)
-      // 404 for non-openai embedder returns "Invalid endpoint URL. Please verify the endpoint."
-      expect(result.error).toBe("Invalid endpoint URL. Please verify the endpoint.")
+      expect(result.error).toBe("Embedding service rejected the request (HTTP 404): Not found")
     })
 
     test("should fail validation with rate limit error", async () => {
@@ -959,6 +1027,25 @@ describe("OpenAICompatibleEmbedder", () => {
       expect(result.error).toBe("Service is temporarily unavailable due to rate limiting. Please try again later.")
     })
 
+    test("should preserve HTTP 400 provider details", async () => {
+      embedder = new OpenAICompatibleEmbedder(testBaseUrl, testApiKey, testModelId, undefined, {
+        dimensions: 1024,
+        sendDimensions: true,
+      })
+
+      const configError = new Error("dimensions must match the loaded model output (1024)")
+      ;(configError as any).status = 400
+      mockEmbeddingsCreate.mockRejectedValue(configError)
+
+      const result = await embedder.validateConfiguration()
+
+      expect(result).toEqual({
+        valid: false,
+        error:
+          "Embedding service rejected the request (HTTP 400): dimensions must match the loaded model output (1024)",
+      })
+    })
+
     test("should fail validation with generic error", async () => {
       embedder = new OpenAICompatibleEmbedder(testBaseUrl, testApiKey, testModelId)
 
@@ -969,7 +1056,7 @@ describe("OpenAICompatibleEmbedder", () => {
       const result = await embedder.validateConfiguration()
 
       expect(result.valid).toBe(false)
-      expect(result.error).toBe("Configuration error. Please verify your embedder settings.")
+      expect(result.error).toBe("Embedding service returned a server error (HTTP 500) without an error message.")
     })
   })
 })

@@ -111,9 +111,30 @@ describe("discoverScanFiles", () => {
     expect(rel(dir, result.paths)).toEqual(["include/driver.H", "main.c"])
   })
 
-  test("keeps RAG discovery on the existing broad glob path", async () => {
+  test("uses rg for broad RAG discovery", async () => {
     const dir = await root()
     let called = false
+
+    const result = await discoverScanFiles({
+      directoryPath: dir,
+      workspacePath: dir,
+      target: "rag",
+      ignoreInstance: ignore(),
+      runRg: async (input) => {
+        called = true
+        expect(input.patterns).toEqual(["**/*"])
+        return ["main.c", "app.ts", "test/fixture.c"]
+      },
+    })
+
+    expect(called).toBe(true)
+    expect(result.engine).toBe("rg")
+    expect(result.patterns).toEqual(["**/*"])
+    expect(rel(dir, result.paths)).toEqual(["app.ts", "main.c", "test/fixture.c"])
+  })
+
+  test("falls back to broad glob when RAG rg discovery fails", async () => {
+    const dir = await root()
     await mkdir(path.join(dir, "test"), { recursive: true })
     await Bun.write(path.join(dir, "main.c"), "int main(void) { return 0; }\n")
     await Bun.write(path.join(dir, "app.ts"), "export const app = 1\n")
@@ -125,14 +146,12 @@ describe("discoverScanFiles", () => {
       target: "rag",
       ignoreInstance: ignore(),
       runRg: async () => {
-        called = true
-        return []
+        throw new Error("rg missing")
       },
     })
 
-    expect(called).toBe(false)
     expect(result.engine).toBe("glob")
-    expect(result.patterns).toEqual(["**/*"])
+    expect(result.fallbackReason).toContain("rg missing")
     expect(rel(dir, result.paths)).toEqual(["app.ts", "main.c", "test/fixture.c"])
   })
 })

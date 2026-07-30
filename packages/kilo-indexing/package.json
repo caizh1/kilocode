@@ -17,6 +17,7 @@
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
     "./detect": "./src/detect.ts",
+    "./codegraph-parser": "./src/codegraph-parser.ts",
     "./embedding-models": "./src/kilo-embedding-models.ts",
     "./engine": "./src/indexing/index.ts",
     "./file-extensions": "./src/file-extensions.ts",

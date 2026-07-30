@@ -116,7 +116,7 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(Buffer.byteLength(skill)).toBeLessThanOrEqual(36_000)
     expect(Buffer.byteLength(loaded)).toBeLessThan(50 * 1024)
     for (const marker of [
-      "SBDD_RULESET_REVISION=2026-07-source-semantic-v117",
+      "SBDD_RULESET_REVISION=2026-07-source-semantic-v122",
       "root only",
       "task/agent_manager STOP",
       "target=deepest evidenced",
@@ -185,7 +185,7 @@ describe("source-backed detail design skill migration boundary", () => {
     expect([skill, mermaid, review, revision].join("\n")).not.toContain(
       "SBDD_RULESET_REVISION=2026-07-source-semantic-v116",
     )
-    expect(revision).toContain("SBDD_RULESET_REVISION=2026-07-source-semantic-v117")
+    expect(revision).toContain("SBDD_RULESET_REVISION=2026-07-source-semantic-v122")
     expect(mermaid).toContain("validated node and edge coverage is monotonic")
     expect(skill).toContain("Keep the full multi-unit workflow in the root session")
     expect(skill).toContain("do not use `task`, `agent_manager`")
@@ -1122,7 +1122,7 @@ describe("source-backed detail design skill migration boundary", () => {
     const combined = [skill, word, review].join("\n")
     expect(combined).toContain("[[SBDD-CONTENT:<designUnitId>:<topicId>]]")
     expect(combined).toContain("replace_paragraph_with_blocks")
-    expect(skill).toContain("Word starts only after all prose files and figure result manifests pass")
+    expect(skill).toContain("Word starts only after every prose and figure manifest passes")
     expect(combined).toContain("bodyless heading range")
     expect(combined).toContain("working DOCX")
     expect(combined).toContain("no DOCX path")
@@ -1166,7 +1166,8 @@ describe("source-backed detail design skill migration boundary", () => {
     expect(combined).toContain("inspect_word_document.imageCount")
     expect(combined).toContain("lateInsertedRelationshipIds")
     expect(combined).toContain("removedRelationshipIds")
-    expect(combined).toContain("pass the exact Mermaid text in `source`")
+    expect(combined).toContain("Pass the exact persisted PNG path")
+    expect(combined).toContain("recovers the authoritative Mermaid source")
     expect(combined).toContain("[DU-<designUnitId>/<viewType>/<diagramId>]")
 
     for (const forbidden of [
@@ -1315,7 +1316,7 @@ describe("source-backed detail design skill migration boundary", () => {
       expect(text).not.toContain('"title": "[DU-')
       expect(text).not.toContain('"altText": "[DU-')
     }
-    expect(skill).toContain("caption/alt text/cropped dimensions")
+    expect(skill).toContain("unique-ID captions, independent alt text, cropped dimensions")
 
     expect(skill).toContain("text-complete Word fragments")
     expect(word).toContain("text-only")

@@ -47,6 +47,27 @@ const config = (fileExtensions?: string[]) =>
   })
 
 describe("CodeIndexSearchService worktree search", () => {
+  test("serves a compatible last-known-good store while a candidate configuration is in Error", async () => {
+    const limits: number[] = []
+    const state = new CodeIndexStateManager()
+    state.setSystemState("Error", "candidate rejected")
+    const active = store([result("src/good.c", 0.9)], limits)
+    active.hasIndexedData = async () => true
+    const service = new CodeIndexSearchService(config([".c"]), state, embedder([]), active)
+
+    expect((await service.searchIndex("recovery path"))[0]?.payload?.filePath).toBe("src/good.c")
+  })
+
+  test("does not query vectors from Error when no compatible active store exists", async () => {
+    const state = new CodeIndexStateManager()
+    state.setSystemState("Error", "candidate rejected")
+    const inactive = store([], [])
+    inactive.hasIndexedData = async () => false
+    const service = new CodeIndexSearchService(config([".c"]), state, embedder([]), inactive)
+
+    await expect(service.searchIndex("recovery path")).rejects.toThrow("Current state: Error")
+  })
+
   test("filters stale results using one vector query", async () => {
     const limits: number[] = []
     const state = new CodeIndexStateManager()
@@ -58,10 +79,36 @@ describe("CodeIndexSearchService worktree search", () => {
       store([result("src/old.ts", 0.99), result("src/first.php", 0.9), result("src/second.php", 0.8)], limits),
     )
 
-    const results = await service.searchIndex("query")
+    const results = await service.searchIndex("semantic query")
 
     expect(limits).toEqual([2])
     expect(results.map((item) => item.payload?.filePath)).toEqual(["src/first.php"])
+  })
+
+  test("promotes an exact identifier match without changing semantic query order", async () => {
+    const limits: number[] = []
+    const state = new CodeIndexStateManager()
+    state.setSystemState("Indexed")
+    const service = new CodeIndexSearchService(
+      config([".c"]),
+      state,
+      embedder([]),
+      store(
+        [
+          result("src/related.c", 0.99, "void InitRelated(void) {}"),
+          result("include/target.c", 0.8, "void InitFTL(void);"),
+          result("src/target.c", 0.61, "void InitFTL(void) {}"),
+        ],
+        limits,
+      ),
+    )
+
+    const exact = await service.searchIndex("InitFTL")
+    const semantic = await service.searchIndex("initialize flash translation layer")
+
+    expect(exact.map((item) => item.payload?.filePath)).toEqual(["src/target.c", "include/target.c"])
+    expect(semantic.map((item) => item.payload?.filePath)).toEqual(["src/related.c", "include/target.c"])
+    expect(limits).toEqual([32, 2])
   })
 
   test("embeds once, hides baseline paths, and merges the current delta", async () => {
@@ -102,9 +149,9 @@ describe("CodeIndexSearchService worktree search", () => {
       },
     )
 
-    const results = await service.searchIndex("query")
+    const results = await service.searchIndex("semantic query")
 
-    expect(calls).toEqual([["query"]])
+    expect(calls).toEqual([["semantic query"]])
     expect(results.map((item) => item.payload?.codeChunk)).toEqual(["worktree", "src/base.ts"])
     expect(baseLimits).toEqual([2, 4])
     expect(deltaLimits).toEqual([2])
@@ -137,7 +184,7 @@ describe("CodeIndexSearchService worktree search", () => {
       overlay,
     })
 
-    expect(await service.searchIndex("query")).toEqual([])
+    expect(await service.searchIndex("semantic query")).toEqual([])
   })
 
   test("over-fetches when shadowed baseline results consume the first page", async () => {
@@ -185,7 +232,7 @@ describe("CodeIndexSearchService worktree search", () => {
       overlay,
     })
 
-    const results = await service.searchIndex("query")
+    const results = await service.searchIndex("semantic query")
 
     expect(limits).toEqual([2, 4])
     expect(results.map((item) => item.payload?.filePath)).toEqual(["src/c.ts", "src/d.ts"])

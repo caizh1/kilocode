@@ -427,6 +427,23 @@ describe("kilocode Mermaid documents", () => {
               expect(args).toContain("white")
               expect(args.slice(args.indexOf("-s"), args.indexOf("-s") + 2)).toEqual(["-s", "3"])
 
+              const previousPath = process.env["PATH"]
+              process.env["KILO_MERMAID_MMDC"] = "fake-mmdc"
+              process.env["PATH"] = `${dir}${path.delimiter}${previousPath ?? ""}`
+              try {
+                const resolved = await renderMermaidDiagram({
+                  source: SIMPLE_MERMAID,
+                  sourceFile: "resolved-local.mmd",
+                  pngFile: "resolved-local.png",
+                })
+                expect(resolved.rendered).toBe(true)
+                expect(resolved.renderer?.kind).toBe("local-mmdc")
+              } finally {
+                if (previousPath === undefined) delete process.env["PATH"]
+                else process.env["PATH"] = previousPath
+                process.env["KILO_MERMAID_MMDC"] = fake
+              }
+
               const remote = Bun.serve({
                 hostname: "127.0.0.1",
                 port: 0,

@@ -510,10 +510,10 @@ describe("LocalVectorStore", () => {
       expect(first).toBeDefined()
       expect(first!.id).toBe("2")
       expect(first!.score).toBeCloseTo(1 - 0.2)
-      // Verify distanceRange was called with correct parameters (0 to 1 - minScore)
+      // Keep numerically perfect cosine matches whose distance can be a tiny negative value.
       const calls = distanceRangeSpy.mock.calls[0]
       expect(calls).toBeDefined()
-      expect(calls![0]).toBe(0)
+      expect(calls![0]).toBe(-1e-6)
       expect(calls![1]).toBeCloseTo(0.3) // Handle floating point precision: 1 - 0.7
     })
 
@@ -533,8 +533,8 @@ describe("LocalVectorStore", () => {
       const first = results[0]
       expect(first).toBeDefined()
       expect(first!.id).toBe("2")
-      // Verify distanceRange was called with 0 to 0.9 (1 - 0.1)
-      expect(distanceRangeSpy).toHaveBeenCalledWith(0, 0.9)
+      // Verify distanceRange preserves the score ceiling and the floating-point tolerance.
+      expect(distanceRangeSpy).toHaveBeenCalledWith(-1e-6, 0.9)
     })
 
     test("should throw error on search failure", async () => {

@@ -90,6 +90,7 @@ const SKIP = new Set<string>([
 const LIGHT = new Set<string>([
   "chat--qa-aligned-idle-light",
   "chat--qa-task-hud-integrated-light-1280",
+  "chat--qa-tool-calls-light",
   "chat--qa-welcome-recent-light",
   "settings--settings-aligned-light",
   "settings--titanium-studio-light-review",
@@ -98,6 +99,7 @@ const LIGHT = new Set<string>([
 const CONTRAST = new Set<string>([
   "chat--qa-aligned-idle-contrast",
   "chat--qa-task-hud-integrated-contrast",
+  "chat--qa-tool-calls-contrast",
   "settings--settings-aligned-contrast",
 ])
 

@@ -28,6 +28,8 @@ export const dict = {
   // Reasoning block label
   "ui.permission.run": "运行",
   "ui.reasoning.label": "推理",
+  "ui.basicTool.completed": "完成",
+  "ui.basicTool.readFile": "读取文件",
 
   // Marketplace
   "marketplace.tab.skills": "技能",
@@ -303,6 +305,18 @@ export const dict = {
   "ui.message.feedback.notHelpful": "这没有帮助",
   "ui.message.feedback.clearRating": "清除评分",
 
+  // 设置导航
+  "settings.navigation.search": "搜索设置",
+  "settings.navigation.searchPages": "搜索设置页面",
+  "settings.navigation.currentPage": "当前设置页面：{{page}}",
+  "settings.navigation.noResults": "没有匹配的设置",
+  "settings.navigation.results": "搜索结果（{{count}}）",
+  "settings.navigation.located": "已定位到{{setting}}",
+  "settings.navigation.groups.connection": "连接与模型",
+  "settings.navigation.groups.knowledge": "知识库与索引",
+  "settings.navigation.groups.automation": "自动化与安全",
+  "settings.navigation.groups.experience": "体验与系统",
+
   // ChipMate Server 设置
   "settings.chipmateServer.title": "ChipMate 服务器",
   "settings.chipmateServer.description": "配置内部服务地址、连接状态与插件更新。",
@@ -312,8 +326,7 @@ export const dict = {
   "settings.chipmateServer.test.action": "测试连接",
   "settings.chipmateServer.test.testing": "测试中…",
   "settings.chipmateServer.autoUpdate.title": "自动安装更新",
-  "settings.chipmateServer.autoUpdate.description":
-    "发现兼容的新版本后自动下载并安装",
+  "settings.chipmateServer.autoUpdate.description": "发现兼容的新版本后自动下载并安装",
   "settings.chipmateServer.update.title": "插件更新",
   "settings.chipmateServer.update.description": "检查并安装适用于当前平台的 ChipMate 版本。",
   "settings.chipmateServer.update.check": "检查更新",
@@ -340,6 +353,14 @@ export const dict = {
   "settings.chipmateServer.update.reload": "重载窗口",
   "settings.chipmateServer.update.failed": "更新失败",
   "settings.chipmateServer.update.retry": "重试",
+  "settings.chipmateServer.update.copyError": "复制错误详情",
+  "settings.chipmateServer.update.copied": "已复制",
+  "settings.chipmateServer.update.showLog": "查看更新日志",
+  "settings.chipmateServer.update.errorCode": "错误码：{{code}}",
+  "settings.chipmateServer.update.errorTitle.check": "检查阶段失败",
+  "settings.chipmateServer.update.errorTitle.download": "下载阶段失败",
+  "settings.chipmateServer.update.errorTitle.install": "安装阶段失败",
+  "settings.chipmateServer.update.errorTitle.validation": "校验阶段失败",
   "settings.chipmateServer.update.error.server": "无法连接更新服务，请检查 ChipMate Server 地址后重试。",
   "settings.chipmateServer.update.error.action": "更新下载或安装失败，请重试。",
   "settings.chipmateServer.update.error.package": "更新包未通过安全校验，请重新检查更新。",

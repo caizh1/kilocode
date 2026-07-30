@@ -2,4 +2,4 @@
 "@kilocode/cli": patch
 ---
 
-Require ChipMate Ultra to cover frozen question obligations with source-backed investigations and independently seal exact analysis answers before delivery, while keeping unavailable network and document evidence non-blocking.
+Make ChipMate Ultra freeze a read-only Code answer, verify it through three parallel Explore sessions, and synthesize one final answer in an independent Ask session.

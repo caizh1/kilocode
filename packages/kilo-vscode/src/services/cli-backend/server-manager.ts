@@ -500,10 +500,12 @@ export function renderEnv(): Record<string, string> {
   const word = unified.endpoints?.word ?? ""
   const mermaid = unified.endpoints?.mermaid ?? ""
   const plantuml = unified.endpoints?.plantuml ?? ""
+  const review = unified.endpoints?.reviewRules ?? ""
   return {
     ...(word && !process.env.KILO_WORD_RENDER_ENDPOINT ? { KILO_WORD_RENDER_ENDPOINT: word } : {}),
     ...(mermaid && !process.env.KILO_MERMAID_RENDER_ENDPOINT ? { KILO_MERMAID_RENDER_ENDPOINT: mermaid } : {}),
     ...(plantuml && !process.env.KILO_PLANTUML_RENDER_ENDPOINT ? { KILO_PLANTUML_RENDER_ENDPOINT: plantuml } : {}),
+    ...(review && !process.env.KILO_REVIEW_RULES_ENDPOINT ? { KILO_REVIEW_RULES_ENDPOINT: review } : {}),
   }
 }
 

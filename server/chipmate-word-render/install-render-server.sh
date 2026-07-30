@@ -6,6 +6,7 @@ PORT="${PORT:-6001}"
 PACKAGE_ROOT_ON_HOST="${PACKAGE_ROOT_ON_HOST:-/home/share/chipmate/packages}"
 DATA_ROOT_ON_HOST="${DATA_ROOT_ON_HOST:-/home/share/chipmate/data}"
 SKILL_MARKET_ROOT_ON_HOST="${SKILL_MARKET_ROOT_ON_HOST:-$DATA_ROOT_ON_HOST/skill-market}"
+REVIEW_RULE_ROOT_ON_HOST="${REVIEW_RULE_ROOT_ON_HOST:-$DATA_ROOT_ON_HOST/review-rules}"
 BACKUP_ROOT_ON_HOST="${BACKUP_ROOT_ON_HOST:-$DATA_ROOT_ON_HOST/backups}"
 EXTENSION_MARKET_ENABLED="${EXTENSION_MARKET_ENABLED:-0}"
 ENV_FILE="${ENV_FILE:-}"
@@ -78,6 +79,7 @@ mkdir -p \
   "$SKILL_MARKET_ROOT_ON_HOST/extensions/drop" \
   "$SKILL_MARKET_ROOT_ON_HOST/extensions/artifacts" \
   "$SKILL_MARKET_ROOT_ON_HOST/extensions/.tmp" \
+  "$REVIEW_RULE_ROOT_ON_HOST" \
   "$BACKUP_ROOT_ON_HOST"
 
 if [[ "$market_exists" == "1" ]]; then
@@ -109,7 +111,7 @@ runtime_env_file="$ENV_FILE"
 if [[ -z "$runtime_env_file" ]] && docker inspect "$SERVICE_NAME" >/dev/null 2>&1; then
   preserved_env="$workdir/preserved.env"
   docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$SERVICE_NAME" \
-    | awk '/^NEW_API_[A-Z0-9_]+=/ || /^EXTENSION_MARKET_ROOT=/ || /^EXTENSION_OWNER_BINDINGS_JSON=/ || /^EXTENSION_DROP_[A-Z0-9_]+=/ || /^EXTENSION_UPLOAD_[A-Z0-9_]+=/ { print }' > "$preserved_env"
+    | awk '/^NEW_API_[A-Z0-9_]+=/ || /^EXTENSION_MARKET_ROOT=/ || /^EXTENSION_OWNER_BINDINGS_JSON=/ || /^EXTENSION_DROP_[A-Z0-9_]+=/ || /^EXTENSION_UPLOAD_[A-Z0-9_]+=/ || /^REVIEW_RULE_[A-Z0-9_]+=/ { print }' > "$preserved_env"
   if [[ -s "$preserved_env" ]]; then
     chmod 600 "$preserved_env"
     runtime_env_file="$preserved_env"
@@ -127,6 +129,7 @@ docker_args=(
   -p "$PORT:6001"
   -v "$PACKAGE_ROOT_ON_HOST:/packages:ro"
   -v "$SKILL_MARKET_ROOT_ON_HOST:/data/skill-market:rw"
+  -v "$REVIEW_RULE_ROOT_ON_HOST:/data/review-rules:rw"
 )
 if [[ -n "$runtime_env_file" ]]; then
   docker_args+=(--env-file "$runtime_env_file")

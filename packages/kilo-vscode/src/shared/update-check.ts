@@ -33,3 +33,14 @@ export type ChipmateUpdateResult =
       message: string
       retryable: boolean
     }
+
+export function sanitize(value: string): string {
+  return value
+    .replace(/(https?:\/\/[^\s?#]+)[?#][^\s]*/gi, "$1")
+    .replace(/(\bBearer\s+)\S+/gi, "$1[已隐藏]")
+    .replace(/\bsk-[A-Za-z0-9._~+/=-]{6,}\b/gi, "[已隐藏]")
+    .replace(
+      /((?:api[_-]?key|token|secret|authorization)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      "$1[已隐藏]",
+    )
+}

@@ -71,7 +71,7 @@
 | DOCX | `ufs-query-module-interface-edited.docx` | `bbd6493242a68af7ab3aafec08bc16b8f08257b6beeb0562ddcd058caaf933e8` | 多页 Word 黑盒渲染 |
 | DOCX | `ufs-query-module-interface.docx` | `ac47f5ceb5cdade7b7ffa34e25a171b952b14ccb7c6211ca42f0742a26c2ff6d` | Word 基线对比 |
 | DOCX | `ufs-task-module-interface.docx` | `5b17dee9267c237ee5abc6cbfbd27969a48cfe3f02595bd36af661c79cb0dad3` | 小文件 Word smoke |
-| Mermaid | `flowchart TD\nA[开始] --> B{校验}\nB -->|通过| C[发布]\nB -->|失败| D[修复]` | 内联确定性源 | Mermaid PNG smoke 和并发隔离 |
+| Mermaid | `flowchart TD\nA[开始] --> B{校验}\nB --> | 通过 | C[发布]\nB --> | 失败 | D[修复]` | 内联确定性源 | Mermaid PNG smoke 和并发隔离 |
 | VSIX | `packages/kilo-vscode/out/kilo-vscode-linux-x64-baseline.vsix` | `927b8575a392a87775d69fc4cbdbf9989a23b6f7ac3b5effaaf8eb4846f049b7` | legacy package manifest 与下载 |
 | VSIX | `packages/kilo-vscode/out/kilo-vscode-win32-x64-baseline.vsix` | `59235913884c50167fb64b619e1769aa8e0c1314d1a3a869b481a038d4e3c2f5` | legacy package manifest 与下载 |
 | Skill archive | `source-backed-detail-design.tar.gz` | `46074240d4ef0a299557d8f05564df13b7b6843d4610de0a8e56c2c3b88ec36c` | 真实 catalog、下载、安装、发布和安全测试 |

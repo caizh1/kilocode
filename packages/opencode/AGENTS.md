@@ -2,7 +2,7 @@
 
 ## Build/Test
 
-- **Run**: `bun run --conditions=browser ./src/index.ts`
+- **Run**: `bun run dev`（当前脚本使用 `--conditions=node`）
 - **Test**: `bun test` (all tests) or `bun test test/tool/tool.test.ts` (single test)
 - **Typecheck**: `bun run typecheck` (runs `tsgo --noEmit`)
 

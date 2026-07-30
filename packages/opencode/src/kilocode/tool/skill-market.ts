@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect"
 import { SkillMarket } from "@/kilocode/skill-market/service"
 import { SkillMarketIntent } from "@/kilocode/skill-market/intent"
 import { TransactionID } from "@/kilocode/skill-market/protocol"
+import { ToolJsonSchema } from "@/tool/json-schema"
 import { Tool } from "@/tool/tool"
 
 const Scope = Schema.Literals(["global", "project"])
@@ -101,6 +102,8 @@ const ListParams = Schema.Struct({
   action: Schema.Literal("list"),
   limit: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 20 }))),
 })
+const TransactionParams = Schema.Union([BeginParams, ActionParams, ListParams])
+const TransactionSchema = { ...ToolJsonSchema.fromSchema(TransactionParams), type: "object" as const }
 
 export const SkillMarketSearchTool = Tool.define(
   "skill_market_search",
@@ -270,14 +273,9 @@ export const SkillTransactionTool = Tool.define(
     return {
       description:
         "Manage an explicit Skill operation transaction. Use begin for multi-step create/publish work and undo only when the user explicitly requests rollback.",
-      parameters: Schema.Union([BeginParams, ActionParams, ListParams]),
-      execute: (
-        args:
-          | Schema.Schema.Type<typeof BeginParams>
-          | Schema.Schema.Type<typeof ActionParams>
-          | Schema.Schema.Type<typeof ListParams>,
-        ctx: Tool.Context,
-      ) => {
+      parameters: TransactionParams,
+      jsonSchema: TransactionSchema,
+      execute: (args: Schema.Schema.Type<typeof TransactionParams>, ctx: Tool.Context) => {
         if (!SkillMarketIntent.allows("skill_transaction", ctx.messages)) return Effect.succeed(denied("skill_transaction"))
         return Effect.gen(function* () {
           const base = { sessionID: ctx.sessionID, key: key("skill_transaction", args, ctx) }

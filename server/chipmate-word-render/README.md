@@ -6,7 +6,7 @@
 
 ## 作用与边界
 
-服务默认监听 `6001`，包含六类能力：
+服务默认监听 `6001`，包含七类能力：
 
 | 能力 | 用途 | 关键依赖 |
 |---|---|---|
@@ -16,6 +16,7 @@
 | 内部 Skill Market | 读取、分发或写入 skill 压缩包和目录清单；可选地通过 New API key 识别上传者。 | Node、本地卷、可选 New API |
 | Skill Market Web | 提供首页、目录、详情、发布、个人状态、聚合分析与服务诊断的同源 React 应用。 | Vite 构建产物、Fastify 静态路由 |
 | VS Code 插件市场 | 结构校验、目录导入、Web 上传、手动 VSIX 下载、评价与聚合分析；不执行扩展代码。 | SQLite、Yauzl、本地可写卷、可选 New API |
+| Embedded Review 规则包 | 确定性解析团队编码规范 DOCX，保存不可变 RulePack 并发布当前版本。 | JSZip、本地可写卷、New API 身份 |
 
 它不是 Kilo Code 的主服务，也不会替代 `kilo serve`。它是扩展配置的远端渲染端点和内网文件服务。
 
@@ -64,10 +65,15 @@ server/chipmate-word-render/
 | `POST /api/v1/extension-publications` | 使用 Web Session、CSRF 和幂等键流式上传单个 VSIX；单包上限 512 MiB，使用实例级并发、磁盘预留和超时保护，不设用户小时限额。 |
 | `GET /api/v1/extensions/:id/artifacts/:artifactId/download` | 手动下载指定构建；拒绝 Range，仅在完整响应结束后计数。 |
 | `GET /api/v1/analytics/extensions/overview` | 返回公开、匿名的插件市场聚合分析。 |
+| `POST /api/v1/review-rule-packs` | 上传 DOCX 草稿；必须提供 `x-rulepack-version`，且登录名必须在 `REVIEW_RULE_PUBLISHERS` 中。 |
+| `POST /api/v1/review-rule-packs/:hash/publish` | 原子切换当前已发布 RulePack；历史包保持不可变。 |
+| `GET /api/v1/review-rule-packs/latest` | 返回 Review 启动时应固定的最新已发布 RulePack；服务不可用时客户端将规范轨标为 `NOT_EVALUATED`。 |
 | `GET /`、`/skills`、`/publish`、`/me`、`/analytics`、`/status` | 同源 Web 应用与安全响应头。 |
 | `GET /extensions`、`/extensions/:id`、`/extensions/publish`、`/extensions/me`、`/extensions/analytics` | VS Code 插件市场 Web 路由。 |
 
 默认限制包括 50 MiB DOCX、512 KiB Mermaid 源码、最多 500 页 Word、128 MiB PDF、256 MiB 页面 PNG、384 MiB JSON 响应、50 MiB 总 skill 上传量和 120 秒渲染超时。不要仅靠客户端限制来放宽这些边界；如有必要，应审查 `server.js` 中的对应环境变量和资源风险后再改。
+
+Review 规则包上传上限为 20 MiB，持久化目录默认为 `/data/review-rules`。部署时必须在受限环境文件中用逗号分隔配置 `REVIEW_RULE_PUBLISHERS`；未配置时读接口仍可用，但所有上传和发布操作都会拒绝。插件只读取已发布包，规则内容不随 VSIX 打包。
 
 Word 字段刷新以 `MacroExecutionMode=NEVER_EXECUTE` 和 `UpdateDocMode=NO_UPDATE` 隐藏打开文档，不更新外部链接，并跳过 DDE、数据库和脚本字段。Docker 镜像通过 fontconfig 将 `Microsoft YaHei` 映射到 `Noto Sans CJK SC`；`GET /health` 的 `microsoftYaHeiMatch` 必须显示该实际匹配字体。
 
@@ -172,18 +178,19 @@ chmod +x install-render-server.sh
 curl -fsS http://127.0.0.1:6001/health
 ```
 
-安装脚本会先校验同目录 `.sha256`（如存在），再导入镜像并以 `--restart unless-stopped` 启动容器。默认把宿主机 `/home/share/chipmate/packages` 只读挂载为 `/packages`，把 `/home/share/chipmate/data/skill-market` 单独可写挂载为 `/data/skill-market`，避免只读父挂载与可写子挂载互相遮蔽。升级前会把现有 `skills.json`、归档、SQLite、legacy-latest 和整个 `extensions/` 复制到带 UTC 时间戳的备份目录。预置 `source-backed-detail-design` 与 `documents` 只替换其受管归档和元数据，同时保留用户自建 skill、现有下载数与收藏数。可按部署环境覆盖服务名、端口和宿主机目录：
+安装脚本会先校验同目录 `.sha256`（如存在），再导入镜像并以 `--restart unless-stopped` 启动容器。默认把宿主机 `/home/share/chipmate/packages` 只读挂载为 `/packages`，把 `/home/share/chipmate/data/skill-market` 和 `/home/share/chipmate/data/review-rules` 分别可写挂载为 `/data/skill-market` 与 `/data/review-rules`，避免升级丢失市场和规则发布状态。升级前会把现有 `skills.json`、归档、SQLite、legacy-latest 和整个 `extensions/` 复制到带 UTC 时间戳的备份目录。预置 `source-backed-detail-design` 与 `documents` 只替换其受管归档和元数据，同时保留用户自建 skill、现有下载数与收藏数。可按部署环境覆盖服务名、端口和宿主机目录：
 
 ```bash
 PORT=6001 \
 SERVICE_NAME=chipmate-word-render \
 PACKAGE_ROOT_ON_HOST=/srv/kilo/packages \
 SKILL_MARKET_ROOT_ON_HOST=/srv/kilo/skill-market \
+REVIEW_RULE_ROOT_ON_HOST=/srv/kilo/review-rules \
 BACKUP_ROOT_ON_HOST=/srv/kilo/backups \
 ./install-render-server.sh ./chipmate-word-render-<version>-linux-amd64.docker.tar.gz
 ```
 
-如需启用 New API 身份解析，将配置放入目标机受限权限的环境文件并用 `ENV_FILE=/path/to/render.env` 传入。至少需要 `NEW_API_BASE_URL`；服务优先使用当前用户 key 调用 New API 只读 token usage 接口。旧 New API 不支持该接口时，才使用 `NEW_API_ADMIN_ACCESS_TOKEN` 和 `NEW_API_USER_ID` 进入管理接口兼容回退。安装脚本不会把环境文件复制进镜像或交付包；覆盖升级未显式传 `ENV_FILE` 时，会从旧容器继承 `NEW_API_*`、`EXTENSION_MARKET_*`、`EXTENSION_OWNER_BINDINGS_JSON` 和 `EXTENSION_DROP_*`，不会输出这些值。
+如需启用 New API 身份解析，将配置放入目标机受限权限的环境文件并用 `ENV_FILE=/path/to/render.env` 传入。至少需要 `NEW_API_BASE_URL`；服务优先使用当前用户 key 调用 New API 只读 token usage 接口。旧 New API 不支持该接口时，才使用 `NEW_API_ADMIN_ACCESS_TOKEN` 和 `NEW_API_USER_ID` 进入管理接口兼容回退。安装脚本不会把环境文件复制进镜像或交付包；覆盖升级未显式传 `ENV_FILE` 时，会从旧容器继承 `NEW_API_*`、`EXTENSION_MARKET_*`、`EXTENSION_OWNER_BINDINGS_JSON`、`EXTENSION_DROP_*` 和 `REVIEW_RULE_*`，不会输出这些值。
 
 插件市场在镜像和安装脚本中默认关闭。首次升级保持 `EXTENSION_MARKET_ENABLED=0`，完成 `/health`、`/api/v1/status` 和既有 Skill/渲染回归后，再以 `EXTENSION_MARKET_ENABLED=1 ./install-render-server.sh <同一归档>` 重启启用；默认扫描周期为 `EXTENSION_DROP_SCAN_MS=5000`。上传资源保护默认值为 `EXTENSION_UPLOAD_MAX_ACTIVE=20`、`EXTENSION_UPLOAD_MIN_FREE_BYTES=2147483648`、`EXTENSION_UPLOAD_IDLE_MS=60000`、`EXTENSION_UPLOAD_MAX_MS=7200000`，可在受限权限的 `ENV_FILE` 中调整。安装脚本不会从旧容器继承已启用状态，因此升级不会意外提前开放插件路由。默认宿主机目录如下：
 

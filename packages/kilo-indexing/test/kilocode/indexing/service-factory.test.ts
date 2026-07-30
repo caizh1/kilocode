@@ -5,7 +5,11 @@ import {
   OLLAMA_EMBEDDER_REQUEST_TIMEOUT_MS,
   REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS,
 } from "../../../src/indexing/constants"
-import type { AvailableEmbedders, IEmbedder } from "../../../src/indexing/interfaces/embedder"
+import type {
+  AvailableEmbedders,
+  EmbeddingRuntimeProfile,
+  IEmbedder,
+} from "../../../src/indexing/interfaces/embedder"
 
 mock.module("openai", openAIMockFactory)
 import { CodeIndexServiceFactory } from "../../../src/indexing/service-factory"
@@ -56,6 +60,164 @@ describe("CodeIndexServiceFactory", () => {
     })
 
     expect(factory.createEmbedder().embedderInfo).toEqual({ name: "openai-compatible" })
+  })
+
+  test("keeps dimensions out of OpenAI-compatible requests in auto mode", async () => {
+    const factory = createFactory({
+      embedderProvider: "openai-compatible",
+      openAiKey: undefined,
+      openAiCompatibleBaseUrl: "http://localhost:1234/v1",
+      modelId: "qa-embedding-model",
+      modelDimension: 3072,
+      dimensionMode: "auto",
+    })
+    const vector = new Float32Array([0.25, 0.5])
+    mockEmbeddingsCreate.mockResolvedValue({
+      data: [{ embedding: Buffer.from(vector.buffer).toString("base64") }],
+      usage: { prompt_tokens: 1, total_tokens: 1 },
+    })
+
+    await factory.createEmbedder().createEmbeddings(["hello"])
+
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
+      input: ["hello"],
+      model: "qa-embedding-model",
+      encoding_format: "base64",
+    })
+  })
+
+  test("keeps legacy bge-m3 dimensions out of requests while enforcing the returned length", async () => {
+    const factory = createFactory({
+      embedderProvider: "openai-compatible",
+      openAiKey: undefined,
+      openAiCompatibleBaseUrl: "http://localhost:1234/v1",
+      modelId: "bge-m3",
+      modelDimension: 3,
+      dimensionMode: "fixed",
+    })
+    const vector = new Float32Array([0.25, 0.5, 0.75])
+    mockEmbeddingsCreate.mockResolvedValue({
+      data: [{ embedding: Buffer.from(vector.buffer).toString("base64") }],
+      usage: { prompt_tokens: 1, total_tokens: 1 },
+    })
+
+    await factory.createEmbedder().createEmbeddings(["hello"])
+
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
+      input: ["hello"],
+      model: "bge-m3",
+      encoding_format: "base64",
+    })
+  })
+
+  test("rejects a bge-m3 response that does not match the legacy schema dimension", async () => {
+    const factory = createFactory({
+      embedderProvider: "openai-compatible",
+      openAiKey: undefined,
+      openAiCompatibleBaseUrl: "http://localhost:1234/v1",
+      modelId: "bge-m3",
+      modelDimension: 3,
+      dimensionMode: "fixed",
+    })
+    const vector = new Float32Array([0.25, 0.5])
+    mockEmbeddingsCreate.mockResolvedValue({
+      data: [{ embedding: Buffer.from(vector.buffer).toString("base64") }],
+      usage: { prompt_tokens: 1, total_tokens: 1 },
+    })
+
+    await expect(factory.createEmbedder().createEmbeddings(["hello"])).rejects.toThrow(
+      "Embedding dimension mismatch: expected 3, received 2.",
+    )
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
+      input: ["hello"],
+      model: "bge-m3",
+      encoding_format: "base64",
+    })
+  })
+
+  test("validates legacy bge-m3 dimensions without sending a Matryoshka override", async () => {
+    const factory = createFactory({
+      embedderProvider: "openai-compatible",
+      openAiKey: undefined,
+      openAiCompatibleBaseUrl: "http://localhost:1234/v1",
+      modelId: "bge-m3",
+      modelDimension: 3,
+      dimensionMode: "fixed",
+    })
+    mockEmbeddingsCreate.mockResolvedValue({
+      data: [{ embedding: [0.25, 0.5] }],
+      usage: { prompt_tokens: 1, total_tokens: 1 },
+    })
+
+    await expect(factory.createEmbedder().validateConfiguration()).resolves.toEqual({
+      valid: false,
+      error: "Embedding dimension mismatch: expected 3, received 2.",
+    })
+    expect(mockEmbeddingsCreate.mock.calls[0]?.[0]).toEqual({
+      input: ["test"],
+      model: "bge-m3",
+      encoding_format: "base64",
+    })
+  })
+
+  test("sends configured dimensions only for fixed Qwen3 Matryoshka requests", async () => {
+    const factory = createFactory({
+      embedderProvider: "openai-compatible",
+      openAiKey: undefined,
+      openAiCompatibleBaseUrl: "http://localhost:1234/v1",
+      modelId: "qwen3-embedding-8b",
+      modelDimension: 3,
+      dimensionMode: "fixed",
+    })
+    const vector = new Float32Array([0.25, 0.5, 0.75])
+    mockEmbeddingsCreate.mockResolvedValue({
+      data: [{ embedding: Buffer.from(vector.buffer).toString("base64") }],
+      usage: { prompt_tokens: 1, total_tokens: 1 },
+    })
+
+    await factory.createEmbedder().createEmbeddings(["hello"])
+
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
+      input: ["hello"],
+      model: "qwen3-embedding-8b",
+      encoding_format: "base64",
+      dimensions: 3,
+    })
+  })
+
+  test("uses the validated last-known-good request mode instead of an unapplied fixed setting", async () => {
+    const factory = createFactory({
+      embedderProvider: "openai-compatible",
+      openAiKey: undefined,
+      openAiCompatibleBaseUrl: "http://localhost:1234/v1",
+      modelId: "qwen3-embedding-8b",
+      modelDimension: 3072,
+      dimensionMode: "fixed",
+    })
+    const runtime: EmbeddingRuntimeProfile = {
+      provider: "openai-compatible",
+      modelId: "qwen3-embedding-8b",
+      dimensionMode: "auto",
+      dimension: 2,
+      endpointDigest: "endpoint",
+      fingerprint: [[0.25, 0.5]],
+      fingerprintDigest: "space",
+      qualityVersion: "qwen3-dense-v1",
+      instructionVersion: "qwen3-retrieval-v1",
+    }
+    const vector = new Float32Array([0.25, 0.5])
+    mockEmbeddingsCreate.mockResolvedValue({
+      data: [{ embedding: Buffer.from(vector.buffer).toString("base64") }],
+      usage: { prompt_tokens: 1, total_tokens: 1 },
+    })
+
+    await factory.createEmbedder(runtime).createEmbeddings(["hello"])
+
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
+      input: ["hello"],
+      model: "qwen3-embedding-8b",
+      encoding_format: "base64",
+    })
   })
 
   test("lets SDK-backed embedders own validation timeouts", async () => {

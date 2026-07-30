@@ -22,6 +22,8 @@ describe("document tool routing boundary", () => {
     expect(mermaid).toContain("does not decide business flow")
     expect(mermaid).toContain("not a code or document QA tool")
     expect(mermaid).toContain("does not replace Word or document_search QA")
+    expect(mermaid).toContain("Source-backed detailed-design rendering always uses the configured endpoint or local mmdc")
+    expect(mermaid).toContain('remoteEndpoint: params.semanticMode === "source-backed" ? undefined : params.remoteEndpoint')
   })
 
   test("keeps sidecar document tool failures as bounded tool results", async () => {

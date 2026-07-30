@@ -10,7 +10,7 @@ export const INTERNAL_OFFLINE_CONTEXT = "chipmate.v2.internalOffline"
 export const INTERNAL_OFFLINE_INDEXING_DEFAULTS = {
   provider: "openai-compatible",
   model: "qwen3-embedding-8b",
-  dimension: 2048,
+  dimensionMode: "auto",
   vectorStore: "lancedb",
 } as const
 

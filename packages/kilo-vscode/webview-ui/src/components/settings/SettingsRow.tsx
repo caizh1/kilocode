@@ -11,6 +11,7 @@ const SettingsRow: Component<{
 }> = (props) => (
   <div
     data-slot="settings-row"
+    data-setting-search-title={props.title}
     data-last={props.last ? "true" : undefined}
     data-description={props.description === null || props.description === undefined ? undefined : "true"}
   >

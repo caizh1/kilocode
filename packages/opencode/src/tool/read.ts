@@ -19,6 +19,7 @@ import * as KiloConfiguredReference from "@/kilocode/reference"
 import { KiloReadObject } from "@/kilocode/tool/read-object"
 import * as Extract from "../kilocode/tool/read-extract"
 import * as TextStream from "../kilocode/text-stream"
+import * as WorkflowGuard from "@/kilocode/skill/workflow-guard"
 // kilocode_change end
 
 const DEFAULT_READ_LIMIT = 2000
@@ -209,6 +210,10 @@ export const ReadTool = Tool.define<
       }
       const requested = filepath
       const title = path.relative(instance.worktree, requested)
+      // kilocode_change start - keep resumed source-backed work on its canonical artifact
+      const artifact = WorkflowGuard.artifact(ctx.sessionID, ctx.messages, instance.directory, requested)
+      if (artifact) return yield* Effect.fail(new Error(artifact))
+      // kilocode_change end
       // kilocode_change start - resolve V1 configured references without introducing a Core location-layer dependency
       const config = yield* Effect.serviceOption(Config.Service)
       const references =

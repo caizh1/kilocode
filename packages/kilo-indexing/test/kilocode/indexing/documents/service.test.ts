@@ -61,6 +61,70 @@ describe("DocumentIndexService", () => {
     }
   })
 
+  test("starts an isolated candidate when a safe document index is force-rebuilt", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    let clears = 0
+    try {
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const safe = {
+        ...store,
+        abortCandidate: async () => {},
+        clearCollection: async () => {
+          clears += 1
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, safe, ignore())
+
+      await service.start("manual", true)
+
+      expect(clears).toBe(1)
+      expect(service.getStatus().state).toBe("Complete")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("ignores Microsoft Office temporary owner files", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    let embeddings = 0
+    try {
+      await writeFile(path.join(root, "~$L_CP_Module_Detail_xxx.docx"), "not an OOXML ZIP")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const unused = {
+        ...embedder,
+        createEmbeddings: async (texts: string[]) => {
+          embeddings += 1
+          return { embeddings: texts.map(() => [0.1]) }
+        },
+      } satisfies IEmbedder
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, unused, store, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus()).toMatchObject({
+        state: "Complete",
+        processedFiles: 0,
+        totalFiles: 0,
+        errorCount: 0,
+        skippedCount: 0,
+        validFileCount: 0,
+      })
+      expect(embeddings).toBe(0)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("treats an explicit empty path list as the current workspace", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
     let embeddings = 0
@@ -195,6 +259,50 @@ describe("DocumentIndexService", () => {
 
       expect(service.getStatus().state).toBe("Error")
       expect(service.getStatus().message).toContain("embedding service unavailable")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("keeps a compatible document index available when a candidate fails", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    let aborted = 0
+    try {
+      await writeFile(path.join(root, "notes.md"), "document embedding failure")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const failed = {
+        ...embedder,
+        createEmbeddings: async () => {
+          throw new Error("embedding service unavailable")
+        },
+      } satisfies IEmbedder
+      const safe = {
+        ...store,
+        initialize: async () => true,
+        abortCandidate: async () => {
+          aborted += 1
+        },
+        getLastCompatibilityDecision: () => ({
+          action: "rebuild" as const,
+          reason: "profile changed",
+          created: true,
+        }),
+        hasIndexedData: async () => true,
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, failed, safe, ignore())
+
+      await service.start("manual")
+
+      expect(aborted).toBe(1)
+      expect(service.getStatus()).toMatchObject({
+        state: "Complete",
+        message: "Document Embedding 候选索引未应用，正在使用上一版有效索引。",
+      })
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -768,6 +876,58 @@ describe("DocumentIndexService", () => {
 
       expect(service.getStatus()).toMatchObject({ state: "Complete", validFileCount: 0, skippedCount: 1 })
       expect(service.getStatus().recentErrors?.[0]?.message).toContain("not accessible")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("promotes an exact content match ahead of a higher vector score", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const call = { max: 0, min: 0 }
+    try {
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true, paths: ["."] },
+      })
+      const ranked = {
+        ...store,
+        search: async (_vector, _prefix, min, max): Promise<VectorStoreSearchResult[]> => {
+          call.max = max ?? 0
+          call.min = min ?? 0
+          return [
+            {
+              id: "semantic",
+              score: 0.95,
+              payload: {
+                filePath: "semantic.md",
+                codeChunk: "相近但不包含精确标记",
+                startLine: 1,
+                endLine: 1,
+              },
+            },
+            {
+              id: "exact",
+              score: 0.6,
+              payload: {
+                filePath: "exact.txt",
+                codeChunk: "DOC_EXACT_MARKER_9001 文档内容",
+                startLine: 1,
+                endLine: 1,
+              },
+            },
+          ]
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, ranked, ignore())
+
+      const results = await service.search("DOC_EXACT_MARKER_9001", { maxResults: 1 })
+
+      expect(results.map((item) => item.filePath)).toEqual(["exact.txt"])
+      expect(results[0]?.score).toBe(0.6)
+      expect(call.max).toBe(4)
+      expect(call.min).toBeGreaterThanOrEqual(0)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

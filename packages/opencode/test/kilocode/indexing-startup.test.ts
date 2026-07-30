@@ -318,6 +318,61 @@ describe("indexing startup degradation", () => {
     })
   })
 
+  test("does not let stale worker responses overwrite newer status events", async () => {
+    const init = Promise.withResolvers<void>()
+    const update = Promise.withResolvers<void>()
+    const complete: KiloIndexing.Status = {
+      state: "Complete",
+      message: "Initial indexing event is current.",
+      processedFiles: 1,
+      totalFiles: 1,
+      percent: 100,
+    }
+    const refreshed: KiloIndexing.Status = {
+      ...complete,
+      message: "Updated indexing event is current.",
+    }
+    const stale: KiloIndexing.Status = {
+      state: "In Progress",
+      message: "Initializing services...",
+      processedFiles: 0,
+      totalFiles: 0,
+      percent: 0,
+    }
+    IndexingWorker.override((_directory, _root, hooks) => ({
+      async init() {
+        hooks.status(complete)
+        setTimeout(() => init.resolve(), 0)
+        return stale
+      },
+      async updateConfig() {
+        hooks.status(refreshed)
+        setTimeout(() => update.resolve(), 0)
+        return stale
+      },
+      async search() {
+        return []
+      },
+      async dispose() {},
+    }))
+
+    await using tmp = await tmpdir({ git: true, config: cfg })
+    process.env["KILO_CONFIG_DIR"] = tmp.path
+
+    await provideTestInstance({
+      directory: tmp.path,
+      init: Effect.promise(() => KiloIndexing.init()),
+      fn: async () => {
+        await init.promise
+        expect(await KiloIndexing.current()).toEqual(complete)
+
+        await updateIndexing(tmp.path, true)
+        await update.promise
+        expect(await KiloIndexing.current()).toEqual(refreshed)
+      },
+    })
+  })
+
   test("suspends for a runtime emergency disable and resumes after it is cleared", async () => {
     const disposed: number[] = []
     let created = 0

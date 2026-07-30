@@ -246,7 +246,7 @@ async function parseFile(filePath: string, languageParsers: LanguageParser): Pro
 
   const { parser, query } = languageParsers[extLang] || {}
   if (!parser || !query) {
-    return `Unsupported file type: ${filePath}`
+    return null
   }
 
   try {

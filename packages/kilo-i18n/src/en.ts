@@ -30,6 +30,8 @@ export const dict = {
   // Reasoning block label
   "ui.permission.run": "Run",
   "ui.reasoning.label": "Reasoning",
+  "ui.basicTool.completed": "Done",
+  "ui.basicTool.readFile": "Read file",
 
   // Marketplace
   "marketplace.tab.skills": "Skills",
@@ -328,6 +330,18 @@ export const dict = {
   "ui.message.feedback.notHelpful": "This wasn't helpful",
   "ui.message.feedback.clearRating": "Clear rating",
 
+  // Settings navigation
+  "settings.navigation.search": "Search settings",
+  "settings.navigation.searchPages": "Search settings pages",
+  "settings.navigation.currentPage": "Current settings page: {{page}}",
+  "settings.navigation.noResults": "No matching settings",
+  "settings.navigation.results": "{{count}} results",
+  "settings.navigation.located": "Located {{setting}}",
+  "settings.navigation.groups.connection": "Connection & Models",
+  "settings.navigation.groups.knowledge": "Knowledge & Indexing",
+  "settings.navigation.groups.automation": "Automation & Safety",
+  "settings.navigation.groups.experience": "Experience & System",
+
   // ChipMate Server settings
   "settings.chipmateServer.title": "ChipMate Server",
   "settings.chipmateServer.description": "Configure the remote feature server used by the extension.",
@@ -367,6 +381,14 @@ export const dict = {
   "settings.chipmateServer.update.reload": "Reload window",
   "settings.chipmateServer.update.failed": "Update failed",
   "settings.chipmateServer.update.retry": "Retry",
+  "settings.chipmateServer.update.copyError": "Copy error details",
+  "settings.chipmateServer.update.copied": "Copied",
+  "settings.chipmateServer.update.showLog": "View update log",
+  "settings.chipmateServer.update.errorCode": "Error code: {{code}}",
+  "settings.chipmateServer.update.errorTitle.check": "Update check failed",
+  "settings.chipmateServer.update.errorTitle.download": "Update download failed",
+  "settings.chipmateServer.update.errorTitle.install": "Update installation failed",
+  "settings.chipmateServer.update.errorTitle.validation": "Update verification failed",
   "settings.chipmateServer.update.error.server":
     "The update service could not be reached. Check the ChipMate Server address and try again.",
   "settings.chipmateServer.update.error.action": "The update could not be downloaded or installed. Try again.",

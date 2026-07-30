@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { sanitizeErrorMessage } from "../../../../src/indexing/shared/validation-helpers"
+import { handleValidationError, sanitizeErrorMessage } from "../../../../src/indexing/shared/validation-helpers"
 
 describe("sanitizeErrorMessage", () => {
   test("should sanitize Unix-style file paths", () => {
@@ -89,5 +89,55 @@ describe("sanitizeErrorMessage", () => {
     const input = "Copy from /src/file1.js to /dest/file2.js failed"
     const expected = "Copy from [REDACTED_PATH] to [REDACTED_PATH] failed"
     expect(sanitizeErrorMessage(input)).toBe(expected)
+  })
+
+  test("should sanitize credentials retained in provider errors", () => {
+    const input =
+      'Authorization: Bearer secret-token, "authorization":"Bearer json-token", api_key="private-key", token=private-token, fallback sk-sensitive123'
+    const expected =
+      'Authorization: Bearer [REDACTED_CREDENTIAL], "authorization":"Bearer [REDACTED_CREDENTIAL]", api_key="[REDACTED_CREDENTIAL]", token=[REDACTED_CREDENTIAL], fallback [REDACTED_CREDENTIAL]'
+    expect(sanitizeErrorMessage(input)).toBe(expected)
+  })
+})
+
+describe("handleValidationError", () => {
+  test("preserves sanitized HTTP 400 provider details", () => {
+    const error = Object.assign(
+      new Error(
+        '400 {"error":{"message":"dimensions must be 1024; endpoint http://localhost:1234/v1/embeddings; api_key=private-key"}}',
+      ),
+      { status: 400 },
+    )
+
+    expect(handleValidationError(error, "openai-compatible")).toEqual({
+      valid: false,
+      error:
+        'Embedding service rejected the request (HTTP 400): 400 {"error":{"message":"dimensions must be 1024; endpoint [REDACTED_URL]; api_key=[REDACTED_CREDENTIAL]"}}',
+    })
+  })
+
+  test("reports HTTP 500 even when the provider returns no details", () => {
+    expect(handleValidationError({ status: 500 }, "openai-compatible")).toEqual({
+      valid: false,
+      error: "Embedding service returned a server error (HTTP 500) without an error message.",
+    })
+  })
+
+  test("preserves the sanitized provider detail for an invalid endpoint response", () => {
+    const error = Object.assign(new Error("HTTP 404: route /v1/embeddings was not found"), { status: 404 })
+
+    expect(handleValidationError(error, "openai-compatible")).toEqual({
+      valid: false,
+      error: "Embedding service rejected the request (HTTP 404): route [REDACTED_PATH] was not found",
+    })
+  })
+
+  test("sanitizes credentials and endpoints in generic validation failures", () => {
+    const error = new Error("request to https://internal.example/v1 failed with api_key=private-key")
+
+    expect(handleValidationError(error, "openai-compatible")).toEqual({
+      valid: false,
+      error: "request to [REDACTED_URL] failed with api_key=[REDACTED_CREDENTIAL]",
+    })
   })
 })

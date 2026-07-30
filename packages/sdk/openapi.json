@@ -28704,6 +28704,10 @@
               }
             ]
           },
+          "dimensionMode": {
+            "type": "string",
+            "enum": ["auto", "fixed"]
+          },
           "vectorStore": {
             "type": "string",
             "enum": ["lancedb", "qdrant"]

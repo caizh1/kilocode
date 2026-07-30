@@ -2,7 +2,7 @@
   "name": "chipmate",
   "displayName": "ChipMate: AI Coding Agent, Copilot, and Autocomplete",
   "description": "Open Source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
-  "version": "1.0.19",
+  "version": "1.0.9",
   "icon": "assets/icons/logo-outline-black.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -485,6 +485,10 @@
       {
         "command": "chipmate.v2.checkForUpdates",
         "title": "ChipMate: Check for Updates"
+      },
+      {
+        "command": "chipmate.v2.showUpdateLog",
+        "title": "ChipMate: 显示更新日志"
       }
     ],
     "submenus": [
@@ -959,6 +963,57 @@
             "Italiano"
           ]
         },
+        "chipmate.v2.languageCommitMessage": {
+          "type": "string",
+          "default": "sync",
+          "description": "Language used for AI-generated commit messages. Choose 'sync' to follow the ChipMate UI language, or select a specific language.",
+          "enum": [
+            "sync",
+            "en",
+            "zh",
+            "zht",
+            "ko",
+            "de",
+            "es",
+            "fr",
+            "da",
+            "ja",
+            "pl",
+            "ru",
+            "ar",
+            "no",
+            "br",
+            "th",
+            "bs",
+            "tr",
+            "nl",
+            "uk",
+            "it"
+          ],
+          "enumDescriptions": [
+            "跟随界面语言 (Sync with UI language)",
+            "English",
+            "简体中文",
+            "繁體中文",
+            "한국어",
+            "Deutsch",
+            "Español",
+            "Français",
+            "Dansk",
+            "日本語",
+            "Polski",
+            "Русский",
+            "العربية",
+            "Norsk",
+            "Português (Brasil)",
+            "ภาษาไทย",
+            "Bosanski",
+            "Türkçe",
+            "Nederlands",
+            "Українська",
+            "Italiano"
+          ]
+        },
         "chipmate.v2.updateCheck.enabled": {
           "type": "boolean",
           "default": true,
@@ -1007,7 +1062,7 @@
         "chipmate.v2.updateCheck.codeCliPath": {
           "type": "string",
           "default": "code",
-          "description": "Path to the VS Code command-line executable used to install downloaded ChipMate VSIX updates."
+          "description": "VS Code CLI used to install ChipMate updates. On Windows, the default value \"code\" uses the CLI bundled with the current VS Code instance instead of PATH. Absolute .exe, .cmd, and .bat paths remain supported."
         },
         "chipmate.v2.updateCheck.maxDownloadBytes": {
           "type": "number",
@@ -1057,6 +1112,12 @@
           "type": "string",
           "default": "",
           "description": "Optional OpenAI-compatible embeddings endpoint for codebase RAG indexing. Internal/offline packages may set this at packaging time; API keys are never defaulted."
+        },
+        "chipmate.v2.indexing.showButtonWhenDisabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Show the codebase indexing button below the prompt while indexing is disabled."
         },
         "chipmate.v2.model.providerID": {
           "type": "string",
@@ -1411,6 +1472,16 @@
           "default": true,
           "description": "Show the task timeline graph in the chat header"
         },
+        "chipmate.v2.showTokenThroughput": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show text-generation tokens-per-second values on assistant messages."
+        },
+        "chipmate.v2.chat.shiftTabCyclesVariant": {
+          "type": "boolean",
+          "default": true,
+          "description": "Cycle through reasoning effort variants with Shift+Tab in prompt inputs. Disable to keep Shift+Tab for keyboard focus navigation."
+        },
         "chipmate.v2.agentWorkStyle": {
           "type": "string",
           "scope": "application",
@@ -1474,7 +1545,9 @@
     "qa:windows:coverage": "node qa/windows-real/coverage.mjs",
     "qa:windows:freeze": "node qa/windows-real/freeze-kit.mjs",
     "qa:windows:mock": "node --test qa/windows-real/mock-provider.test.mjs",
+    "qa:windows:update-server": "node --test qa/windows-real/update-server.test.mjs",
     "qa:macos:run": "node qa/macos-real/run.mjs",
+    "qa:macos:indexing": "bun qa/macos-indexing/run.mjs",
     "snapshot:build": "bun script/dev-snapshot.ts build",
     "snapshot:install": "bun script/dev-snapshot.ts install",
     "extension": "bun script/launch.ts"

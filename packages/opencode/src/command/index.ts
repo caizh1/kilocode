@@ -8,6 +8,7 @@ import { Config } from "@/config/config"
 import { MCP } from "../mcp"
 import { Skill } from "../skill"
 import { legacyReviewCommand, reviewCommand } from "@/kilocode/review/command" // kilocode_change
+import { embeddedReviewCommand } from "@/kilocode/embedded-review/command" // kilocode_change
 import { EventV2 } from "@opencode-ai/core/event"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 
@@ -108,6 +109,7 @@ export const layer = Layer.effect(
       }
       // kilocode_change start
       commands[Default.REVIEW] = reviewCommand()
+      commands["embedded-review"] = embeddedReviewCommand()
       commands["local-review"] = legacyReviewCommand("local-review")!
       commands["local-review-uncommitted"] = legacyReviewCommand("local-review-uncommitted")!
       // kilocode_change end

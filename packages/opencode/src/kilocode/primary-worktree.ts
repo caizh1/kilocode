@@ -37,7 +37,7 @@ export const primaryPaths = Effect.fn("PrimaryWorktree.paths")(function* (
   return found
 })
 
-export const primaryWorktree = Effect.fn("PrimaryWorktree.find")(function* (dir: string) {
+export const worktreeRoots = Effect.fn("PrimaryWorktree.roots")(function* (dir: string) {
   const cwd = FSUtil.normalizePath(path.resolve(dir))
   const git = yield* Git.Service
   const run = Effect.fnUntraced(function* (args: string[]) {
@@ -54,11 +54,16 @@ export const primaryWorktree = Effect.fn("PrimaryWorktree.find")(function* (dir:
   const gitdir = line(yield* run(["rev-parse", "--path-format=absolute", "--git-dir"]))
   const common = line(yield* run(["rev-parse", "--path-format=absolute", "--git-common-dir"]))
   if (!root || !gitdir || !common) return undefined
-  if (resolve(gitdir) === resolve(common)) return resolve(root)
+  const checkout = resolve(root)
+  if (resolve(gitdir) === resolve(common)) return { checkout, primary: checkout }
 
   const listing = yield* run(["worktree", "list", "--porcelain", "-z"])
   const fields = listing?.split("\0\0", 1)[0]?.split("\0")
   const worktree = fields?.find((field) => field.startsWith("worktree "))
   if (!worktree || fields?.includes("bare")) return undefined
-  return resolve(worktree.slice("worktree ".length))
+  return { checkout, primary: resolve(worktree.slice("worktree ".length)) }
+})
+
+export const primaryWorktree = Effect.fn("PrimaryWorktree.find")(function* (dir: string) {
+  return (yield* worktreeRoots(dir))?.primary
 })

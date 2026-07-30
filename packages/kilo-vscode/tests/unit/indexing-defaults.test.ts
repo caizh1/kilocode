@@ -17,7 +17,7 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
     })
   })
@@ -28,7 +28,7 @@ describe("applyInternalIndexingDefaults", () => {
         {
           provider: "openai-compatible",
           model: "custom-embedding",
-          dimension: 4096,
+          dimension: 3072,
           vectorStore: "qdrant",
         },
         true,
@@ -38,9 +38,78 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "custom-embedding",
-      dimension: 4096,
+      dimension: 3072,
+      dimensionMode: "fixed",
       vectorStore: "qdrant",
     })
+  })
+
+  it("migrates the previous qwen3 internal dimension to auto mode", () => {
+    expect(
+      applyInternalIndexingDefaults(
+        {
+          provider: "openai-compatible",
+          model: "qwen3-embedding-8b",
+          dimension: 2048,
+        },
+        true,
+      ),
+    ).toMatchObject({
+      model: "qwen3-embedding-8b",
+      dimensionMode: "auto",
+    })
+    expect(
+      applyInternalIndexingDefaults(
+        { provider: "openai-compatible", model: "qwen3-embedding-8b", dimension: 2048 },
+        true,
+      ),
+    ).not.toHaveProperty("dimension")
+  })
+
+  it("preserves an explicitly fixed qwen3 dimension", () => {
+    expect(
+      applyInternalIndexingDefaults(
+        {
+          provider: "openai-compatible",
+          model: "qwen3-embedding-8b",
+          dimension: 1024,
+          dimensionMode: "fixed",
+        },
+        true,
+      ),
+    ).toMatchObject({
+      dimension: 1024,
+      dimensionMode: "fixed",
+    })
+  })
+
+  it("preserves 2048 for a custom OpenAI-compatible model", () => {
+    expect(
+      applyInternalIndexingDefaults(
+        {
+          provider: "openai-compatible",
+          model: "custom-embedding",
+          dimension: 2048,
+        },
+        true,
+      ),
+    ).toMatchObject({
+      model: "custom-embedding",
+      dimension: 2048,
+      dimensionMode: "fixed",
+    })
+  })
+
+  it("does not apply the qwen dimension to a custom OpenAI-compatible model", () => {
+    expect(
+      applyInternalIndexingDefaults(
+        {
+          provider: "openai-compatible",
+          model: "bge-m3",
+        },
+        true,
+      ),
+    ).not.toHaveProperty("dimension")
   })
 
   it("does not force qwen defaults onto other explicit providers", () => {
@@ -59,7 +128,7 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: false, paths: [".", "manuals"] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
     })
   })
@@ -70,7 +139,7 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
     })
   })
@@ -90,7 +159,7 @@ describe("applyInternalIndexingDefaults", () => {
       documents: { enabled: true, paths: ["."] },
       provider: "openai-compatible",
       model: "qwen3-embedding-8b",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
       "openai-compatible": {
         apiKey: "user-key",
@@ -102,8 +171,31 @@ describe("applyInternalIndexingDefaults", () => {
     expect(materializeInternalIndexingDefaultsForSave({}, { model: "custom-embedding" }, true)).toEqual({
       provider: "openai-compatible",
       model: "custom-embedding",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
+    })
+  })
+
+  it("persists blank and numeric dimensions with explicit auto and fixed modes", () => {
+    expect(
+      materializeInternalIndexingDefaultsForSave(
+        {},
+        { dimension: null, dimensionMode: "auto" },
+        true,
+      ),
+    ).toMatchObject({
+      dimension: null,
+      dimensionMode: "auto",
+    })
+    expect(
+      materializeInternalIndexingDefaultsForSave(
+        {},
+        { dimension: 1024, dimensionMode: "fixed" },
+        true,
+      ),
+    ).toMatchObject({
+      dimension: 1024,
+      dimensionMode: "fixed",
     })
   })
 
@@ -111,7 +203,7 @@ describe("applyInternalIndexingDefaults", () => {
     expect(materializeInternalIndexingDefaultsForSave({}, { model: null }, true)).toEqual({
       provider: "openai-compatible",
       model: null,
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
     })
   })
@@ -145,6 +237,7 @@ describe("applyInternalIndexingDefaults", () => {
       provider: "openai-compatible",
       model: "custom-embedding",
       dimension: 1024,
+      dimensionMode: "fixed",
       vectorStore: "qdrant",
     })
   })
@@ -164,7 +257,7 @@ describe("applyInternalIndexingDefaults", () => {
     ).toEqual({
       provider: "openai-compatible",
       model: "custom-embedding",
-      dimension: 2048,
+      dimensionMode: "auto",
       vectorStore: "lancedb",
       "openai-compatible": {
         apiKey: "user-key",

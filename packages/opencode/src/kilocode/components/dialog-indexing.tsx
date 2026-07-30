@@ -106,7 +106,7 @@ function defaultIndexing(
   const config = indexingScopeConfig(scope, sync.data.config, sync.data.globalConfig, indexing)
   const auth = resolveKiloIndexingAuth({ config, provider })
   if (!shouldDefaultIndexingToKilo({ ...global, ...indexing }, auth)) return indexing
-  return { ...indexing, provider: "kilo", model: null, dimension: null }
+  return { ...indexing, provider: "kilo", model: null, dimension: null, dimensionMode: "auto" }
 }
 
 async function saveScopedIndexing(
@@ -188,6 +188,7 @@ function ProviderSelect(props: SubDialogProps) {
           provider,
           model: null,
           dimension: null,
+          dimensionMode: "auto",
         }
         const saved = await saveScopedIndexing(sdk, sync, props.scope, props.raw, updated, toast)
         if (!saved) {
@@ -250,7 +251,7 @@ function KiloModelSelect(props: SubDialogProps) {
           sync,
           props.scope,
           props.raw,
-          { ...props.raw, model: option.value, dimension: null },
+          { ...props.raw, model: option.value, dimension: null, dimensionMode: "auto" },
           toast,
         )
         dialog.replace(() => <DialogIndexing useSDK={props.useSDK} scope={props.scope} />)
@@ -676,7 +677,18 @@ export function DialogIndexing(props: DialogIndexingProps) {
                   break
                 }
               }
-              await saveScopedIndexing(sdk, sync, scope(), raw, { ...raw, dimension: dim ?? null }, toast)
+              await saveScopedIndexing(
+                sdk,
+                sync,
+                scope(),
+                raw,
+                {
+                  ...raw,
+                  dimension: dim ?? null,
+                  dimensionMode: dim === undefined ? "auto" : "fixed",
+                },
+                toast,
+              )
             }
             dialog.replace(() => <DialogIndexing useSDK={props.useSDK} scope={scope()} />)
             break

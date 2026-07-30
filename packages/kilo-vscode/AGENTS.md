@@ -1,252 +1,125 @@
-# AGENTS.md
+# packages/kilo-vscode/AGENTS.md
 
-This file provides guidance to agents when working with code in this repository.
+本文件适用于 `packages/kilo-vscode/`，并继承仓库根 `AGENTS.md`。根规则负责仓库级质量、Git 和最终包发布；本文件只保留 VS Code 扩展的架构、UI、打包和平台约束。
 
-## Product Context
+## 产品边界
 
-Kilo Code is an open source AI coding agent platform. It ships as a CLI and editor clients that all build on the same backend. This package (`packages/kilo-vscode/`) is the **VS Code extension**.
+- 本 package 是 Kilo VS Code 扩展；Agent Manager 是扩展内的编辑器面板，不是独立产品。
+- 扩展捆绑 Kilo CLI，通过 HTTP、SSE，以及少量 PTY/WebSocket 通道连接扩展拥有的 `kilo serve`。
+- 最新的跨产品架构以 `packages/kilo-docs/pages/contributing/architecture/vscode-extension.md`、CLI 架构文档和当前源码为准，不在本文件复制完整产品表。
 
-### Products and How They Relate
+## 常用命令
 
-All products are thin clients over the **CLI** (`packages/opencode/`, published as `@kilocode/cli`). The CLI is a fork of upstream [OpenCode](https://github.com/anomalyco/opencode) with Kilo-specific additions (gateway auth, telemetry, migration, code review, branding). It contains the full AI agent runtime, tool execution, session management, provider integrations (500+ models), and an HTTP API server.
+| 目的 | 命令 |
+|---|---|
+| 构建并启动扩展 | `bun run extension` |
+| 编译检查 | `bun run compile` |
+| Watch | `bun run watch` |
+| 类型检查 | `bun run typecheck` |
+| Lint | `bun run lint` |
+| 单元测试 | `bun run test:unit` |
+| VS Code 集成测试 | `bun run test` |
+| 未使用导出检查 | `bun run knip` |
+| Kilo marker 检查 | `bun run check-kilocode-change` |
 
-Every client spawns or connects to a `kilo serve` process and communicates via HTTP REST + SSE using the auto-generated `@kilocode/sdk`.
+- 根目录也可运行 `bun run extension`。启动参数包括 `--insiders`、`--workspace PATH`、`--clean`、`--wait`、`--app-path` 和 `VSCODE_EXEC_PATH`。
+- 单个 Bun 单测直接运行 `bun test tests/unit/<file>.test.ts`；VS Code 集成测试按当前测试 runner 的 grep 参数筛选。
+- 只格式化本次改动涉及的文件，避免用全 package 格式化制造无关 diff。
 
-```
-                        @kilocode/cli  (packages/opencode/)
-                     ┌────────────────────────────────┐
-                     │  AI agents, tools, sessions,    │
-                     │  providers, config, MCP, LSP    │
-                     │  Hono HTTP server + SSE         │
-                     └──┬──────────┬──────────────────┘
-                        │          │
-                ┌───────┴──┐ ┌────┴────┐
-                │ TUI      │ │ VS Code │
-                │ (builtin)│ │Extension│
-                └──────────┘ └─────────┘
-```
+## CLI 与进程
 
-| Product | Package | What it is | How it uses the CLI |
-|---|---|---|---|
-| Kilo CLI (TUI) | `packages/opencode/` | Interactive terminal UI (SolidJS + OpenTUI) | In-process — TUI and server run together |
-| Kilo CLI (`kilo run`) | `packages/opencode/` | Non-interactive headless mode for scripting | In-process — no network socket |
-| **Kilo VS Code Extension** | **`packages/kilo-vscode/`** | VS Code extension with sidebar chat + Agent Manager | Bundles CLI binary, spawns `kilo serve --port 0` as child process |
+- 扩展使用 `bin/kilo` 或目标平台的 `kilo.exe`，不依赖系统安装的 CLI。
+- 本地 CLI 准备脚本是 `bun script/local-bin.ts`；需要强制重建时传 `--force`。
+- 打包必须使用本次全新生成的 `packages/opencode/dist/@kilocode/cli-*`，不得复用当前 `bin/`、历史 VSIX 或从旧包解压的 CLI。
+- 激活时只创建一个共享 `KiloConnectionService`。首次连接时 `ServerManager` 启动 `kilo serve --port 0`，通过随机 `KILO_SERVER_PASSWORD` 认证，并在当前子进程存活时复用它。
+- Sidebar、Open in Tab 面板和 Agent Manager chat 共用该连接；每个 `KiloProvider` 按 session 过滤 SSE。Agent Manager 的终端通道不代表存在独立 `kilo serve`。
+- 后端状态是否隔离取决于状态分配位置：`InstanceState` 按 directory 隔离，service closure 中的状态跨同一扩展宿主请求共享。修改 Snapshot、并发或 worktree 行为时必须验证该边界。
 
-### Kilo-Domain Packages
+## VSIX 打包
 
-| Package | Name | Role |
-|---|---|---|
-| `packages/kilo-vscode/` | `kilo-code` | **This package.** VS Code extension. |
-| `packages/kilo-gateway/` | `@kilocode/kilo-gateway` | Auth (device flow), AI provider routing (OpenRouter), Kilo API integration (profile, balance, teams) |
-| `packages/kilo-ui/` | `@kilocode/kilo-ui` | SolidJS component library (40+ components, built on `@kobalte/core`). Shared by this extension's webview and docs screenshot stories |
-| `packages/kilo-telemetry/` | `@kilocode/kilo-telemetry` | PostHog analytics + OpenTelemetry tracing for the CLI |
-| `packages/kilo-i18n/` | `@kilocode/kilo-i18n` | Translation strings (16 languages) |
-| `packages/kilo-docs/` | `@kilocode/kilo-docs` | Documentation site (Next.js + Markdoc) |
+- 用户未限定平台时，默认交付 `darwin-arm64` 和 `win32-x64-baseline`；用户明确限定版本、平台或包类型时只构建指定范围。Windows 基线包不得用通用 `win32-x64` 目标替代。
+- 内网离线构建使用 `bun script/build.ts --internal-offline`。该命令不传 `--targets` 时只构建 `win32-x64-baseline`；需要默认双平台时显式传 `--targets=win32-x64-baseline,darwin-arm64`。
+- `win32-x64-baseline` 是 VSIX/CLI 目标名，不等于自动排除全部 ARM sidecar。用户明确要求纯 x64 时再使用 `--windows-x64-only`，并审计包内不存在 ARM/AArch64 资源。
+- `RELEASE_NOTES.md` 必须非空，并以 `# ChipMate <version>` 开头；构建脚本会同时验证 VSIX 内副本。
+- 内网 provider、ChipMate Server、render、marketplace 和 indexing 默认值只允许从忽略的本地输入或环境变量注入。源码 manifest 必须在成功或失败退出后恢复，不得留下私有 endpoint、模型或 `chipmatePackageTarget`。
+- 统一服务入口是 `chipmate.v2.chipmateServer.baseUrl`。`chipmate.v2.documents.wordRender.remoteEndpoint` 和 `chipmate.v2.documents.mermaidRender.remoteEndpoint` 仅为兼容配置；不得再使用旧的 `kilo.documents.*` 命名空间。
+- 每个 VSIX 的包内 manifest 必须包含与目标一致的临时 `chipmatePackageTarget`；checked-in `package.json` 不保留该字段。
+- 内网 `models-snapshot.json` 必须是至少包含一个 provider 的对象；不得把“裁剪”实现为空对象。自定义 provider 配置和模型选择必须仍可工作。
+- Windows 内网基线默认仅保留 `en` fallback 和 `zh`，不捆绑 FFmpeg 和 source map；必须包含离线 ripgrep、LanceDB、Tree-sitter、CLI、扩展运行时以及所有当前 webview bundle。
+- `script/build.ts` 的最终 archive 审计是必需/禁止文件的唯一真源。新增 bundle、sidecar 或 runtime 资源时更新脚本和测试，不在 `AGENTS.md` 维护第二份文件清单。
 
-### Upstream OpenCode Packages (not Kilo-specific)
+## Embedding 与索引默认值
 
-| Package | Name | Role |
-|---|---|---|
-| `packages/opencode/` | `@kilocode/cli` | Core CLI — forked from upstream OpenCode. AI agents, tools, sessions, server. |
-| `packages/sdk/js/` | `@kilocode/sdk` | Auto-generated TypeScript SDK client for the server API. Do not edit `src/gen/` by hand. |
-| `packages/ui/` | `@opencode-ai/ui` | Shared UI primitives |
-| `packages/util/` | `@opencode-ai/util` | Shared utilities (error, path, retry, slug) |
-| `packages/plugin/` | `@kilocode/plugin` | Plugin/tool interface definitions |
+- 内网默认配置为 `openai-compatible`、`qwen3-embedding-8b`、`dimensionMode: auto` 和 `lancedb`。
+- 自动模式不发送 OpenAI `dimensions` 字段；先验证服务真实返回向量，再用真实长度创建或校验 LanceDB schema。
+- 当前内网还提供 `bge-m3`，它不支持 `dimensions` 请求字段。不得把 schema 维度、返回长度校验和请求参数绑定为同一开关。
+- 只有用户明确选择固定维度、目标服务确认支持且返回长度一致时，才允许固定模式发送 `dimensions`。
+- 修改这些行为时至少覆盖自动探测、固定模式、返回长度不一致、已有 LanceDB schema 兼容和 `bge-m3` 不发送字段的测试。
 
-## Commands
+## 发布边界
 
-```bash
-bun run extension        # Build + launch VS Code with the extension in dev mode
-bun run compile          # Type-check + lint + build
-bun run watch            # Watch mode (esbuild + tsc)
-bun run test             # Run tests (requires pretest compilation)
-bun run lint             # ESLint on src/
-bun run format           # Run formatter (do this before committing to avoid styling-only changes in commits)
-```
+- 最终包必须按根 `AGENTS.md` 原子写入 `public-packages`，并通过 `/Users/archer/.local/bin/kilo-publish-package` 完成 ECS 私有平台验收。
+- 面向扩展自动更新的内网 VSIX 还必须按现有 render-service 发布流程，以临时文件上传、核对 SHA-256 后原子改名，并验证动态 `/packages/manifest.json`。该更新清单与 ECS 私有平台的 `/manifest.json` 是不同契约。
+- 不创建或传输手写 `latest.json`，也不额外包装 `.tar.gz`。自动更新渠道未配置或验收失败时必须明确报告，不得用 ECS 下载页冒充客户端更新已可用。
 
-The `extension` commands also work from the repo root. Pass `--insiders` to prefer VS Code Insiders, `--workspace PATH` to open a different folder, `--clean` to wipe cached state, or `--wait` to block until VS Code closes. VS Code is auto-detected on macOS, Linux, and Windows; override with `--app-path` or `VSCODE_EXEC_PATH`.
+## 构建结构
 
-Single test: `bun run test -- --grep "test name"`
+- Extension 是 Node/CJS bundle：`src/extension.ts` → `dist/extension.js`。
+- Webview 是 browser bundle，当前包含 Sidebar、Agent Manager、Agent Console 和 diff 相关入口；具体输出列表以 `esbuild.js` 和打包审计为准。
+- Extension 源码位于 `src/`，webview 位于 `webview-ui/`；webview 使用 SolidJS，不是 React。
+- 测试输出到 `out/`，产品 bundle 输出到 `dist/`，两者不能互相替代。
+- CSP 必须使用 nonce 并覆盖实际字体来源；不要用易漂移的源码行号记录 CSP 位置。
+- VS Code 操作顺序使用确定性的事件或状态等待，避免用任意 `setTimeout` 猜测 UI 已就绪。
 
-## CLI Binary
+## Extension 与 Webview 功能链路
 
-The extension bundles its own CLI binary at `bin/kilo` — it does NOT use a system-installed CLI. To build it:
+需要把 CLI 数据展示到 webview 时，通常同时检查：
 
-```bash
-bun script/local-bin.ts
-```
+1. `src/services/cli-backend/` 下的响应类型和 HTTP client；
+2. `src/KiloProvider.ts` 的请求处理、缓存和消息发送；
+3. `webview-ui/src/types/messages/` 下的双向消息类型；
+4. `webview-ui/src/context/` 的订阅、请求和重试；
+5. `webview-ui/src/components/` 的消费与渲染；
+6. 对应单测、浏览器测试或 VS Code 集成测试。
 
-Or use `--force` to rebuild:
-
-```bash
-bun script/local-bin.ts --force
-```
-
-The script checks for a prebuilt binary in `packages/opencode/dist/`, builds the CLI if needed, and copies it to `bin/kilo`.
-
-## Packaging Targets
-
-- For local VSIX packaging requests (`打包`) that do not explicitly narrow the target, produce two artifacts by default: macOS and `win32-x64-baseline`.
-- The Windows VSIX must bundle the baseline x64 CLI binary/target for broader CPU compatibility; do not replace it with the generic `win32-x64` build unless the user explicitly asks for that target.
-- Every packaging run must build fresh target CLI artifacts first and package from those newly built `packages/opencode/dist/@kilocode/cli-*` outputs. Do not reuse CLI binaries, `bin/` directories, or files extracted from older VSIX artifacts; if a target CLI cannot be freshly built, report the blocker instead of producing a recycled package.
-- For the default internal/offline Windows baseline package, run `bun script/build.ts --internal-offline` from this package. This packages only `win32-x64-baseline` with the custom-provider-only UI/runtime, no bundled FFmpeg, no source maps, `en` fallback + `zh` locale content, and an empty `models-snapshot.json`.
-- The Windows baseline VSIX must bundle `extension/bin/rg.exe` and the LanceDB runtime under `extension/bin/lancedb/node_modules/` for offline Windows environments. Verify the final VSIX contains `extension/bin/lancedb/node_modules/@lancedb/lancedb/dist/index.js` and `extension/bin/lancedb/node_modules/@lancedb/lancedb-win32-x64-msvc/lancedb.win32-x64-msvc.node` so the CLI does not need to download ripgrep from GitHub or `@lancedb/lancedb` from npm at runtime.
-- For internal/offline indexing defaults, use `openai-compatible` with model `qwen3-embedding-8b`, dimension `2048`, and `lancedb` unless the user explicitly configures another embedding model or dimension.
-- Each packaged VSIX must contain a package-time `chipmatePackageTarget` field matching the package target. Restore the source manifest once packaging finishes; do not keep the field in the checked-in `package.json`.
-- Publish complete VSIX files directly to the render-service packages host directory via a temporary file, verify its SHA-256 there, then atomically rename it to its final `.vsix` name. The render service dynamically generates `/packages/manifest.json`; do not create or transfer a hand-written `latest.json`.
-
-## Architecture
-
-### Extension ↔ CLI Backend
-
-The extension is a client of the CLI. Activation creates one shared `KiloConnectionService`; on its first connection, which autocomplete may prewarm, `ServerManager` spawns `bin/kilo serve --port 0`, captures the dynamically assigned port from stdout, and communicates over HTTP + SSE. The current child process is reused unless it exits. A random password is generated and passed via `KILO_SERVER_PASSWORD` env var for basic auth.
-
-```
-Extension (Node.js)                          CLI Backend (child process)
-┌──────────────────────────┐                ┌──────────────────────┐
-│ KiloConnectionService    │── HTTP/SSE ──> │ kilo serve --port 0  │
-│   ├── ServerManager      │                │   Hono REST API      │
-│   ├── HttpClient         │                │   SSE event stream   │
-│   └── SSEClient          │                │   Session management │
-│                          │                │   AI agent runtime   │
-│ KiloProvider (sidebar)   │                └──────────────────────┘
-│ KiloProvider (agent mgr) │
-│ KiloProvider (open tabs) │
-└──────────────────────────┘
-```
-
-- **`KiloConnectionService`** (`src/services/cli-backend/connection-service.ts`) is created once during extension activation and shared across the sidebar, Kilo editor tabs, and Agent Manager. It owns the current server process, HTTP client, and SSE connection.
-- **`ServerManager`** (`src/services/cli-backend/server-manager.ts`) lazily spawns the CLI binary, reuses its current process, and can start a replacement if that process exits.
-- The sidebar, every **Open in Tab** Kilo panel, and the Agent Manager chat provider reuse this connection. Multiple **`KiloProvider`** instances subscribe to it, with SSE events filtered per-webview via a `trackedSessionIds` Set. Agent Manager terminals may use additional PTY/WebSocket channels to the same backend, not separate `kilo serve` processes.
-- Backend state follows where it is allocated, not the worktree shown in a panel. Snapshot repository state uses directory-keyed `InstanceState`, while `trackState` is created once in the active Snapshot service closure. For these shared VS Code session paths, its slow-track `asked` guard spans worktree requests; choosing **Continue with snapshots** resets `asked` only when continued tracking returns a snapshot hash.
-
-### Builds
-
-Two separate esbuild builds in [`esbuild.js`](esbuild.js):
-
-- **Extension** (Node/CJS): `src/extension.ts` → `dist/extension.js`
-- **Webview** (browser/IIFE): sidebar → `dist/webview.js`, Agent Manager → `dist/agent-manager.js`, and Agent Console → `dist/agent-console.js`
-
-### Non-Obvious Details
-
-- Webview uses **Solid.js** (not React) — JSX compiles via `esbuild-plugin-solid`
-- Extension code in `src/`, webview code in `webview-ui/src/` with separate tsconfig
-- Tests compile to `out/` via `compile-tests`, not `dist/`
-- CSP requires nonce for scripts and `font-src` for bundled fonts — see [`KiloProvider.ts`](src/KiloProvider.ts:777)
-- HTML root has `data-theme="kilo-vscode"` to activate kilo-ui's VS Code theme bridge
-- Extension and webview have no shared state — communicate via `vscode.Webview.postMessage()`
-- For editor panels, use [`AgentManagerProvider`](src/agent-manager/AgentManagerProvider.ts) pattern with `retainContextWhenHidden: true`
-- esbuild webview build includes [`cssPackageResolvePlugin`](esbuild.js:29) for CSS `@import` resolution and font loaders (`.woff`, `.woff2`, `.ttf`)
-- Avoid `setTimeout` for sequencing VS Code operations — use deterministic event-based waits (e.g. `waitForWebviewPanelToBeActive()`)
-
-## Extension ↔ Webview Feature Pattern
-
-When adding a new feature that requires data from the CLI backend to be displayed in the webview:
-
-1. **Types** (`src/services/cli-backend/types.ts`): Add response types for the backend data
-2. **HTTP Client** (`src/services/cli-backend/http-client.ts`): Add a fetch method to retrieve the data
-3. **KiloProvider** (`src/KiloProvider.ts`): Add a `fetchAndSend*()` method using the cached message pattern, and handle the corresponding `request*` message from the webview in `handleWebviewMessage()`
-4. **Message Types** (`webview-ui/src/types/messages.ts`): Add `*LoadedMessage` (extension→webview) and `Request*Message` (webview→extension) types to the `ExtensionMessage` / `WebviewMessage` unions
-5. **Context** (`webview-ui/src/context/`): Subscribe to the loaded message **outside** `onMount` (to catch early pushes before mount), add retry logic for the request message, expose state via context
-6. **Component** (`webview-ui/src/components/`): Consume context, render UI
-
-Key patterns:
-
-- **Cached messages** (e.g. `cachedProvidersMessage`, `cachedAgentsMessage` in KiloProvider): Ensures webview refreshes get data immediately without waiting for a new HTTP round-trip
-- **Retry timers** (e.g. `agentRetryTimer` in session context): Handles race conditions where the extension's HTTP client isn't ready when the webview first requests data
+- 消息订阅必须能处理 webview mount 前到达的缓存推送。
+- 重试应绑定连接或请求状态并可取消，避免无界 timer、重复请求和 panel dispose 后继续更新。
+- Extension 与 webview 不共享 JavaScript 内存状态，所有跨边界状态都必须通过消息或后端接口传递。
 
 ## Agent Manager
 
-The Agent Manager is a feature within this extension (not a separate product). It opens as an **editor tab** (`Cmd+Shift+M`) and provides multi-session orchestration — running multiple independent AI sessions in parallel, each optionally isolated in its own git worktree.
+- Extension 代码位于 `src/agent-manager/`，webview 位于 `webview-ui/agent-manager/`。
+- Agent Manager 在编辑器 tab 中管理多个 session，可为 session 创建独立 worktree；状态文件是 `.kilo/agent-manager.json`，setup script 是 `.kilo/setup-script`。
+- Worktree session 把 `directory` 传给共享后端，不启动每 worktree 一个 server。终端、Git 子进程、setup script 和另开的 VS Code window 属于独立进程或 extension-host 边界。
+- `src/agent-manager/` 的文件行数上限由 `tests/unit/agent-manager-arch.test.ts` 强制执行；不得提高上限，超限时提取无 VS Code 依赖的 helper。
 
-### How It Differs From the Sidebar
+## Webview UI 与图标
 
-| Aspect | Sidebar | Agent Manager |
-|---|---|---|
-| Location | Activity bar sidebar panel | Editor tab (full panel) |
-| Sessions | Single session at a time | Multiple parallel sessions with tabbed UI |
-| Git isolation | Uses workspace root | Each session can get its own worktree branch |
-| State | No dedicated state file | `.kilo/agent-manager.json` |
-| Terminals | None | Dedicated VS Code terminal per session |
-| Setup scripts | None | Configurable `.kilo/setup-script` runs per worktree |
-| Multi-version | Not supported | Up to 4 parallel worktrees with the same prompt |
+- 自定义 webview 页面、弹窗、卡片、表单和状态反馈默认遵循 iOS 26 Liquid Glass；使用通透分层、细腻边界、柔和高光、轻盈阴影和流畅反馈，避免粗糙网页默认样式。
+- 新功能优先复用 `@kilocode/kilo-ui` 和现有 webview 组合方式；不要用 raw HTML 加 inline style 重新实现已有组件。
+- 复用现有 token、`data-component`、`data-slot` 和共享 CSS。确实缺少通用能力时先补到 `kilo-ui`，再由 webview 使用。
+- VS Code 原生相邻的工具栏动作是特例：优先 Codicons 或现有 `IconButton`，单色继承 `currentColor`，遵循主题 token；不使用自定义彩色图标、无上下文圆形徽标或廉价渐变。
+- 图标、图标按钮和状态图标必须留在正常文档流中，使用 `inline-flex`、flex 或 grid 对齐；禁止用 `position: absolute` 做图标布局。
+- 新图标先检查相邻动作和项目现有资源，匹配尺寸、视觉重量、间距以及 hover、active、focus、disabled 状态。
+- UI 改动必须验证窄宽度、长文本、缩放、键盘焦点和主题切换，不得只验证单一桌面宽度。
 
-### Architecture
+## Diff 与性能
 
-Agent Manager local worktree sessions use the current shared `kilo serve` process owned by `KiloConnectionService`; no session starts its own backend. Their CLI requests pass the worktree path as `directory`, which resolves directory-scoped backend state. Setup scripts, terminal PTYs, git subprocesses, and a separately opened VS Code window are separate process or extension-host boundaries, not per-worktree `kilo serve` instances.
+- Changes/review 链路保留 hunk-bounded patch，并在可用时向渲染器传递 patch 派生的 metadata。
+- 不因 changed-line 数量很小就同步解析巨大完整文件；初次渲染保持 hunk-bounded，并按可见性或激活状态延迟高成本工作。
+- 修改 diff 调度时同时验证快速切换 session 和快速滚动 review，不能把一侧卡顿转移到另一侧。
 
-Extension-side code lives in `src/agent-manager/`, webview code in `webview-ui/agent-manager/`. The webview reuses the sidebar's provider chain and `ChatView` component, adding a `WorktreeModeProvider` and a split layout.
+## Windows 进程
 
-## Webview UI (kilo-ui)
+- 不直接从 `child_process` 导入 `spawn`、`execFile` 或 `exec`。使用 `src/util/process.ts` 的 wrapper，确保 `windowsHide: true`。
+- 必须使用原始 API 时显式设置 `windowsHide: true`；涉及 MCP 第三方 transport 时保留现有 process shim 行为。
 
-New webview features must use **`@kilocode/kilo-ui`** components instead of raw HTML elements with inline styles. This is a Solid.js component library built on `@kobalte/core`.
+## 调试、命名和测试
 
-- Import via deep subpaths: `import { Button } from "@kilocode/kilo-ui/button"`
-- Available components include `Button`, `IconButton`, `Dialog`, `Spinner`, `Card`, `Tabs`, `Tooltip`, `Toast`, `Code`, `Markdown`, and more
-- Provider hierarchy in [`App.tsx`](webview-ui/src/App.tsx:113): `ThemeProvider → I18nProvider → DialogProvider → MarkedProvider → VSCodeProvider → ServerProvider → ProviderProvider → SessionProvider`
-- Global styles imported via `import "@kilocode/kilo-ui/styles"` in [`index.tsx`](webview-ui/src/index.tsx:2)
-- [`chat.css`](webview-ui/src/styles/chat.css) is being progressively migrated — when replacing a component with kilo-ui, remove the corresponding CSS rules from it
-- New CSS for components not yet in kilo-ui goes into `chat.css` grouped by comment-delimited sections (`/* Component Name */`). Once a kilo-ui equivalent exists, remove the section.
-- **Check existing webview usages first**: `webview-ui/src/` and `packages/kilo-ui/src/stories/` show how kilo-ui components are composed. Do not rely only on the component API in isolation.
-- **`data-component` and `data-slot` attributes carry CSS styling** — kilo-ui uses `[data-component]` and `[data-slot]` attribute selectors, not class names. Reuse existing component slots where available so shared styles apply consistently.
-- **Prefer kilo-ui styles**: Always reuse existing kilo-ui CSS variables, tokens, and component styles instead of writing custom CSS. If a style doesn't exist in kilo-ui yet, add it there and reuse it rather than inlining or duplicating styles in the webview.
-- **Icons**: kilo-ui has 75+ custom SVG icons in [`packages/ui/src/components/icon.tsx`](../../packages/ui/src/components/icon.tsx). To list all available icon names: `node -e "const c=require('fs').readFileSync('../../packages/ui/src/components/icon.tsx','utf8');[...c.matchAll(/^\\s{2}[\"']?([\\w-]+)[\"']?:\\s*\x60/gm)].map(m=>m[1]).sort().forEach(n=>console.log(n))"`. Icon names use both hyphenated (`arrow-left`) and bare-word (`brain`, `console`, `providers`) keys.
-
-### Diff Rendering Performance
-
-- Preserve hunk-bounded unified `patch` data through Changes/review detail flows and pass patch-derived `FileDiffMetadata` to Pierre when available. Do not eagerly render Pierre from complete `before`/`after` contents based only on changed-line counts: a tiny patch in a large source file can otherwise parse and render the entire file while the user sees a placeholder.
-- Pierre workers can offload highlighted updates, but they do not make an expensive synchronous initial render safe. Keep initial rendering hunk-bounded, and keep patch parsing behind deferred visibility/activation where session-switch responsiveness depends on it.
-- When changing diff scheduling, verify both rapid session switching and fast scrolling through a review. Improving one by shifting work into the other is a regression, not an optimization.
-
-## Docs Screenshot Stories
-
-When adding or updating Storybook stories for screenshots used by docs, make the story content match the docs page closely before replacing the docs image. Do not replace screenshots from VSCode Legacy docs tabs or sections.
-
-Generated screenshot baselines live under `packages/kilo-docs/public/img/screenshot-tests/` and are referenced from docs as `/docs/img/screenshot-tests/...`. If a generated VS Code visual-regression screenshot is used in docs, add the docs usage to the `DOCS` map in `tests/visual-regression.spec.ts` and keep `tests/visual-regression.spec.mts` in sync while that file exists.
-
-## Debugging
-
-- Extension logs: "Extension Host" output channel (not Debug Console)
-- Webview logs: Command Palette → "Developer: Open Webview Developer Tools"
-- In Chrome/VS Code performance traces, associate CPU `ProfileChunk` events to their `Profile.id` target before attributing work to a thread. `v8:ProfEvntProc` is a profile delivery thread, not evidence that application work ran off the webview main thread.
-- All debug output must be prepended with `[Kilo New]` for easy filtering
-
-## Naming Conventions
-
-- All VSCode commands must use `chipmate.v2.` prefix (not `kilo-code.`)
-- All view IDs must use `chipmate.v2.` prefix, **except** the sidebar view which uses `chipmate.v2.SidebarProvider` to preserve user sidebar position when upgrading from the legacy extension
-
-## Kilocode Change Markers
-
-This package is entirely Kilo-specific — `kilocode_change` markers are NOT needed in any files under `packages/kilo-vscode/`. The markers are only necessary when modifying shared upstream opencode files.
-
-## Process Spawning (Windows)
-
-On Windows, any `spawn`/`execFile`/`exec` call that does not set `windowsHide: true` will flash a cmd.exe console window at the user. To prevent this, **never import `spawn`, `execFile`, or `exec` from `child_process` directly**. Use the wrappers in `src/util/process.ts` instead — they enforce `windowsHide: true` automatically:
-
-```ts
-import { spawn, exec } from "../util/process"
-```
-
-The `spawn` wrapper covers long-lived processes (e.g. `kilo serve`). The `exec` wrapper covers short commands (e.g. `git`, `tar`). If you need the raw callback form of `execFile` for some reason, pass `windowsHide: true` explicitly in the options object.
-
-## Style
-
-Follow monorepo root AGENTS.md style guide:
-
-- Prefer `const` over `let`, early returns over `else`
-- Single-word variable names when possible
-- Avoid `try`/`catch`, avoid `any` type
-- ESLint enforces: curly braces, strict equality, semicolons, camelCase/PascalCase imports
-
-## File Size Caps (maxLines)
-
-Large files in `src/agent-manager/` have `maxLines` caps enforced by `tests/unit/agent-manager-arch.test.ts`. **Do not raise these caps.** If adding a feature would exceed a cap, extract logic into a vscode-free helper module and call it from the provider. See `fork-session.ts` and `format-keybinding.ts` for examples of this pattern.
-
-## Markdown Tables
-
-Do not pad markdown table cells for column alignment. Use `| content |` with single spaces, not `| content       |` with extra padding. Padding creates spurious diffs. Markdown files are excluded from prettier (via `.prettierignore`) to prevent auto-reformatting of tables.
-
-## Committing
-
-- Before committing, always run `bun run format` so commits don't accidentally include formatting/styling-only diffs.
+- 扩展日志查看 Extension Host Output，webview 日志查看 Webview Developer Tools。
+- Chrome/VS Code performance trace 必须按 `Profile.id` 关联 `ProfileChunk`；`v8:ProfEvntProc` 不是应用工作已离开主线程的证据。
+- 新增 debug 输出沿用 `[Kilo New]` 前缀，并避免记录密钥、凭据、完整请求或敏感配置。
+- VS Code command 和 view ID 使用 `chipmate.v2.` 前缀；Sidebar 保留 `chipmate.v2.SidebarProvider` 兼容升级位置。
+- 本 package 和 `packages/kilo-ui/` 不使用 `kilocode_change` marker。
+- 文档截图 story 必须先与对应文档状态对齐；更新视觉基线时同步检查 `tests/visual-regression.spec.ts` 的 docs 映射。
+- 完成实现前运行根质量表中适用于本次改动的最小检查；打包相关修改必须至少执行实际构建或打包审计。

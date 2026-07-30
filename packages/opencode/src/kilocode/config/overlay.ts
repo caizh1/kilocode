@@ -93,6 +93,7 @@ export namespace KilocodeConfigOverlay {
     ["indexing", "provider"],
     ["indexing", "model"],
     ["indexing", "dimension"],
+    ["indexing", "dimensionMode"],
     ["indexing", "vectorStore"],
     ["indexing", "kilo", "apiKey"],
     ["indexing", "kilo", "baseUrl"],

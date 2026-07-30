@@ -15,9 +15,21 @@ import { OpenRouterEmbedder } from "./embedders/openrouter"
 import { VoyageEmbedder } from "./embedders/voyage"
 import { QdrantVectorStore } from "./vector-store/qdrant-client"
 import { LanceDBVectorStore } from "./vector-store/lancedb-vector-store"
+import {
+  loadActiveEmbeddingProfile,
+  SafeLanceDBVectorStore,
+} from "./vector-store/safe-lancedb-vector-store"
 import { codeParser, CodeParser, DirectoryScanner, FileWatcher } from "./processors"
 import { DocumentIndexService } from "./documents"
-import type { AvailableEmbedders, ICodeParser, IEmbedder, IFileWatcher, IVectorStore } from "./interfaces"
+import type {
+  AvailableEmbedders,
+  EmbeddingRuntimeProfile,
+  EmbeddingValidationResult,
+  ICodeParser,
+  IEmbedder,
+  IFileWatcher,
+  IVectorStore,
+} from "./interfaces"
 import type { ICodeGraphStorage, ICodePostingsStorage } from "./codegraph"
 import type { CodeIndexConfigManager } from "./config-manager"
 import type { CacheManager } from "./cache-manager"
@@ -37,11 +49,21 @@ import {
 } from "./constants"
 import { Log } from "../util/log"
 import type { IgnoreMatcher } from "./shared/load-ignore"
+import { endpointDigest, probeEmbedding, type PreparedEmbeddingRuntime } from "./embedding-quality"
+import { EmbeddingRuntimeStore } from "./embedding-runtime-store"
 
 const log = Log.create({ service: "indexing-factory" })
 
 function product(): string | undefined {
   return process.env.KILO_PRODUCT_PROFILE === "chipmate-v2" ? "chipmate-v2" : undefined
+}
+
+function internal(): boolean {
+  return (
+    product() === "chipmate-v2" ||
+    process.env.CHIPMATE_INTERNAL_OFFLINE === "1" ||
+    process.env.KILO_INTERNAL_OFFLINE === "1"
+  )
 }
 
 function isolated(dir: string): string {
@@ -100,7 +122,21 @@ export class CodeIndexServiceFactory {
     }
   }
 
-  public createEmbedder(): IEmbedder {
+  private storage(): string {
+    const config = this.configManager.getConfig()
+    return isolated(config.lancedbVectorStoreDirectoryPlaceholder ?? path.join(this.cacheDirectory, "lancedb"))
+  }
+
+  private async previous(): Promise<EmbeddingRuntimeProfile | undefined> {
+    const config = this.configManager.getConfig()
+    if (config.vectorStoreProvider === "lancedb") {
+      const active = await loadActiveEmbeddingProfile(this.workspacePath, this.storage())
+      if (active) return active
+    }
+    return new EmbeddingRuntimeStore(this.cacheDirectory, this.workspacePath).load()
+  }
+
+  public createEmbedder(runtime?: EmbeddingRuntimeProfile): IEmbedder {
     const config = this.configManager.getConfig()
     const provider = config.embedderProvider
 
@@ -125,10 +161,20 @@ export class CodeIndexServiceFactory {
     }
     if (provider === "openai-compatible") {
       if (!config.openAiCompatibleOptions?.baseUrl) throw new Error("OpenAI-compatible base URL is required.")
+      const model = runtime?.modelId ?? config.modelId
+      const dimension = runtime?.requestedDimension ?? config.modelDimension
+      const fixed = runtime ? runtime.dimensionMode === "fixed" : config.dimensionMode === "fixed"
+      const matryoshka = (model ?? "").toLowerCase() === "qwen3-embedding-8b"
       return new OpenAICompatibleEmbedder(
         config.openAiCompatibleOptions.baseUrl,
         config.openAiCompatibleOptions.apiKey,
         config.modelId,
+        undefined,
+        {
+          dimensions: dimension,
+          expectedDimension: fixed ? dimension : runtime?.dimension,
+          sendDimensions: fixed && matryoshka,
+        },
       )
     }
     if (provider === "gemini") {
@@ -166,14 +212,14 @@ export class CodeIndexServiceFactory {
     throw new Error(`Unsupported embedder provider: ${provider}`)
   }
 
-  public async validateEmbedder(embedder: IEmbedder): Promise<{ valid: boolean; error?: string }> {
+  public async validateEmbedder(embedder: IEmbedder): Promise<EmbeddingValidationResult> {
     const deadline = policy[embedder.embedderInfo.name]
     let timer: ReturnType<typeof setTimeout> | undefined
     const wait = embedder.validateConfiguration()
     const fail =
       deadline === undefined
         ? undefined
-        : new Promise<{ valid: boolean; error?: string }>((resolve) => {
+        : new Promise<EmbeddingValidationResult>((resolve) => {
             timer = setTimeout(
               () =>
                 resolve({
@@ -208,9 +254,77 @@ export class CodeIndexServiceFactory {
     }
   }
 
-  public createVectorStore(workspacePath = this.workspacePath): IVectorStore {
+  public usesAdaptiveEmbedding(): boolean {
     const config = this.configManager.getConfig()
-    const profile = resolveEmbeddingProfile(config.embedderProvider, config.modelId, config.modelDimension)
+    return (
+      internal() &&
+      config.embedderProvider === "openai-compatible" &&
+      (config.modelId ?? "").toLowerCase() === "qwen3-embedding-8b"
+    )
+  }
+
+  public async prepareEmbeddingRuntime(): Promise<PreparedEmbeddingRuntime> {
+    if (!this.usesAdaptiveEmbedding()) {
+      throw new Error("Adaptive embedding runtime is only available for the internal Qwen3 embedding profile.")
+    }
+    const config = this.configManager.getConfig()
+    const endpoint = config.openAiCompatibleOptions?.baseUrl
+    if (!endpoint) throw new Error("OpenAI-compatible base URL is required.")
+    const previous = await this.previous()
+    return probeEmbedding(this.createEmbedder(), {
+      provider: "openai-compatible",
+      modelId: config.modelId ?? "qwen3-embedding-8b",
+      dimensionMode: config.dimensionMode ?? "auto",
+      requestedDimension: config.modelDimension,
+      endpoint,
+      instructions: true,
+      previous,
+    })
+  }
+
+  public async prepareLastKnownGoodRuntime(): Promise<PreparedEmbeddingRuntime | undefined> {
+    if (!this.usesAdaptiveEmbedding()) return
+    const config = this.configManager.getConfig()
+    const endpoint = config.openAiCompatibleOptions?.baseUrl
+    if (!endpoint) return
+    const previous = await this.previous()
+    if (!previous) return
+    if (previous.provider !== "openai-compatible") return
+    if (previous.modelId !== config.modelId) return
+    if (previous.endpointDigest !== endpointDigest(endpoint)) return
+
+    const runtime = await probeEmbedding(this.createEmbedder(previous), {
+      provider: "openai-compatible",
+      modelId: previous.modelId,
+      dimensionMode: previous.dimensionMode,
+      requestedDimension: previous.requestedDimension,
+      endpoint,
+      instructions: previous.instructionVersion !== undefined,
+      previous,
+    })
+    if (runtime.drifted) return
+    if (runtime.profile.fingerprintDigest !== previous.fingerprintDigest) return
+    return runtime
+  }
+
+  public createVectorStore(
+    workspacePath = this.workspacePath,
+    runtime?: EmbeddingRuntimeProfile,
+  ): IVectorStore {
+    const config = this.configManager.getConfig()
+    const profile = runtime
+      ? {
+          provider: runtime.provider,
+          modelId: runtime.modelId,
+          dimension: runtime.dimension,
+          dimensionMode: runtime.dimensionMode,
+          requestedDimension: runtime.requestedDimension,
+          endpointDigest: runtime.endpointDigest,
+          fingerprintDigest: runtime.fingerprintDigest,
+          qualityVersion: runtime.qualityVersion,
+          instructionVersion: runtime.instructionVersion,
+        }
+      : resolveEmbeddingProfile(config.embedderProvider, config.modelId, config.modelDimension)
 
     if (!profile || profile.dimension <= 0) {
       throw new Error(
@@ -222,7 +336,7 @@ export class CodeIndexServiceFactory {
     }
 
     if (config.vectorStoreProvider === "lancedb") {
-      const dbDir = isolated(config.lancedbVectorStoreDirectoryPlaceholder ?? path.join(this.cacheDirectory, "lancedb"))
+      const dbDir = this.storage()
       log.info("creating vector store", {
         provider: config.embedderProvider,
         vectorStore: "lancedb",
@@ -230,6 +344,14 @@ export class CodeIndexServiceFactory {
         vectorSize: profile.dimension,
         dbDir,
       })
+      if (runtime) {
+        return new SafeLanceDBVectorStore(
+          workspacePath,
+          dbDir,
+          runtime,
+          new EmbeddingRuntimeStore(this.cacheDirectory, this.workspacePath),
+        )
+      }
       return new LanceDBVectorStore(workspacePath, profile.dimension, dbDir, profile)
     }
 
@@ -250,9 +372,21 @@ export class CodeIndexServiceFactory {
     )
   }
 
-  public createDocumentVectorStore(): IVectorStore {
+  public createDocumentVectorStore(runtime?: EmbeddingRuntimeProfile): IVectorStore {
     const config = this.configManager.getConfig()
-    const profile = resolveEmbeddingProfile(config.embedderProvider, config.modelId, config.modelDimension)
+    const profile = runtime
+      ? {
+          provider: runtime.provider,
+          modelId: runtime.modelId,
+          dimension: runtime.dimension,
+          dimensionMode: runtime.dimensionMode,
+          requestedDimension: runtime.requestedDimension,
+          endpointDigest: runtime.endpointDigest,
+          fingerprintDigest: runtime.fingerprintDigest,
+          qualityVersion: runtime.qualityVersion,
+          instructionVersion: runtime.instructionVersion,
+        }
+      : resolveEmbeddingProfile(config.embedderProvider, config.modelId, config.modelDimension)
 
     if (!profile || profile.dimension <= 0) {
       throw new Error(
@@ -275,6 +409,14 @@ export class CodeIndexServiceFactory {
         vectorSize: profile.dimension,
         dbDir,
       })
+      if (runtime) {
+        return new SafeLanceDBVectorStore(
+          this.workspacePath,
+          dbDir,
+          runtime,
+          new EmbeddingRuntimeStore(this.cacheDirectory, this.workspacePath),
+        )
+      }
       return new LanceDBVectorStore(this.workspacePath, profile.dimension, dbDir, profile)
     }
 
@@ -295,9 +437,15 @@ export class CodeIndexServiceFactory {
     )
   }
 
-  public createRagCheckpointMeta(vectorStore: IVectorStore): RagCheckpointMeta {
+  public createRagCheckpointMeta(vectorStore: IVectorStore, runtime?: EmbeddingRuntimeProfile): RagCheckpointMeta {
     const config = this.configManager.getConfig()
-    const profile = resolveEmbeddingProfile(config.embedderProvider, config.modelId, config.modelDimension)
+    const profile = runtime
+      ? {
+          provider: runtime.provider,
+          modelId: runtime.modelId,
+          dimension: runtime.dimension,
+        }
+      : resolveEmbeddingProfile(config.embedderProvider, config.modelId, config.modelDimension)
     if (!profile) {
       throw new Error("Cannot determine embedding profile for RAG checkpoint metadata.")
     }
@@ -309,6 +457,16 @@ export class CodeIndexServiceFactory {
       embedderProvider: profile.provider,
       embedderModel: profile.modelId,
       embeddingDimension: profile.dimension,
+      ...(runtime
+        ? {
+            dimensionMode: runtime.dimensionMode,
+            requestedDimension: runtime.requestedDimension,
+            endpointDigest: runtime.endpointDigest,
+            fingerprintDigest: runtime.fingerprintDigest,
+            qualityVersion: runtime.qualityVersion,
+            instructionVersion: runtime.instructionVersion,
+          }
+        : {}),
       vectorStoreProvider: config.vectorStoreProvider ?? "lancedb",
       collectionName:
         vectorStore.getCollectionName?.() ?? `${config.vectorStoreProvider ?? "lancedb"}:${this.workspacePath}`,
@@ -322,10 +480,13 @@ export class CodeIndexServiceFactory {
     parser: ICodeParser,
     ignoreInstance: IgnoreMatcher,
     opts: { writeCache?: boolean } = {},
+    runtime?: EmbeddingRuntimeProfile,
   ): DirectoryScanner {
     const config = this.configManager.getConfig()
     const meta = this.getTelemetryMeta()
-    const rag = vectorStore ? this.createRagCheckpointMeta(vectorStore) : fallbackCheckpointMeta(this.workspacePath)
+    const rag = vectorStore
+      ? this.createRagCheckpointMeta(vectorStore, runtime)
+      : fallbackCheckpointMeta(this.workspacePath)
     const scanner = new DirectoryScanner(
       embedder,
       vectorStore,
@@ -352,10 +513,13 @@ export class CodeIndexServiceFactory {
     ignoreInstance: IgnoreMatcher,
     parser: ICodeParser,
     opts: { writeCache?: boolean } = {},
+    runtime?: EmbeddingRuntimeProfile,
   ): IFileWatcher {
     const config = this.configManager.getConfig()
     const meta = this.getTelemetryMeta()
-    const rag = vectorStore ? this.createRagCheckpointMeta(vectorStore) : fallbackCheckpointMeta(this.workspacePath)
+    const rag = vectorStore
+      ? this.createRagCheckpointMeta(vectorStore, runtime)
+      : fallbackCheckpointMeta(this.workspacePath)
     const watcher = new FileWatcher(
       this.workspacePath,
       cacheManager,
@@ -396,6 +560,7 @@ export class CodeIndexServiceFactory {
   public createServices(
     cacheManager: CacheManager,
     ignoreInstance: IgnoreMatcher,
+    runtime?: PreparedEmbeddingRuntime,
   ): {
     embedder: IEmbedder
     vectorStore: IVectorStore
@@ -417,13 +582,21 @@ export class CodeIndexServiceFactory {
       configured: config.isConfigured,
     })
 
-    const embedder = this.createEmbedder()
-    const vectorStore = this.createVectorStore()
-    const ragMeta = this.createRagCheckpointMeta(vectorStore)
+    const embedder = runtime?.embedder ?? this.createEmbedder()
+    const vectorStore = this.createVectorStore(this.workspacePath, runtime?.profile)
+    const ragMeta = this.createRagCheckpointMeta(vectorStore, runtime?.profile)
     this.cacheManager.setCheckpointMeta(ragMeta)
     const parser = new CodeParser(config.fileExtensions)
-    const scanner = this.createDirectoryScanner(embedder, vectorStore, parser, ignoreInstance)
-    const fileWatcher = this.createFileWatcher(embedder, vectorStore, cacheManager, ignoreInstance, parser)
+    const scanner = this.createDirectoryScanner(embedder, vectorStore, parser, ignoreInstance, {}, runtime?.profile)
+    const fileWatcher = this.createFileWatcher(
+      embedder,
+      vectorStore,
+      cacheManager,
+      ignoreInstance,
+      parser,
+      {},
+      runtime?.profile,
+    )
 
     log.info("indexing services created", {
       workspacePath: this.workspacePath,
@@ -433,13 +606,18 @@ export class CodeIndexServiceFactory {
     return { embedder, vectorStore, parser, scanner, fileWatcher, ragMeta }
   }
 
-  public createDocumentService(ignoreInstance: IgnoreMatcher, onStatus?: () => void): DocumentIndexService {
+  public createDocumentService(
+    ignoreInstance: IgnoreMatcher,
+    onStatus?: () => void,
+    runtime?: PreparedEmbeddingRuntime,
+    store?: IVectorStore,
+  ): DocumentIndexService {
     if (!this.configManager.isFeatureConfigured) {
       throw new Error("Document RAG requires configured embeddings.")
     }
 
-    const embedder = this.createEmbedder()
-    const vectorStore = this.createDocumentVectorStore()
+    const embedder = runtime?.embedder ?? this.createEmbedder()
+    const vectorStore = store ?? this.createDocumentVectorStore(runtime?.profile)
     return new DocumentIndexService(
       this.workspacePath,
       this.cacheDirectory,

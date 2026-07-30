@@ -4,6 +4,7 @@ import type { Agent } from "@/agent/agent"
 import type { SessionV1 } from "@opencode-ai/core/v1/session"
 
 export namespace UltraCouncil {
+  export const BASELINE = "ultra_code_baseline"
   export const EXPLORE = "ultra_council_explore"
   export const ADJUDICATE = "ultra_council_adjudicate"
   export const REVISE = "ultra_council_revise"
@@ -12,6 +13,7 @@ export namespace UltraCouncil {
   const prematureLimit = 6
 
   export type Phase =
+    | "baselining"
     | "collecting"
     | "arbitrating"
     | "followup"
@@ -51,6 +53,41 @@ export namespace UltraCouncil {
   export type Binding = {
     obligation: string
     claims: string[]
+  }
+  export type EditKind = "replace" | "delete" | "insert_before" | "insert_after"
+  export type Edit = {
+    id: string
+    hash: string
+    kind: EditKind
+    anchor: string
+    text?: string
+    obligations: string[]
+    claims: string[]
+    reason: string
+  }
+  export type EditDecision = {
+    id: string
+    hash: string
+    status: "approved" | "rejected" | "unverified"
+    corrections: string[]
+    uncertainties: string[]
+  }
+  export type EditInput = {
+    kind: EditKind
+    anchor: string
+    text?: string
+    obligations: string[]
+    claims: Array<{ id: string; hash: string }>
+    reason: string
+  }
+  export type Packet = {
+    tools: Array<{
+      id: string
+      status: string
+      input: string
+    }>
+    references: string[]
+    truncated: boolean
   }
   export type Claim = {
     id: string
@@ -103,6 +140,12 @@ export namespace UltraCouncil {
     sessionID: string
     messageID: string
     phase: Phase
+    baselineAttempts: number
+    baselineSessionID?: string
+    baseline?: string
+    baselineHash?: string
+    packet?: Packet
+    packetHash?: string
     started: number
     valid: number
     rounds: number
@@ -114,10 +157,15 @@ export namespace UltraCouncil {
     obligations: Obligation[]
     claims: Claim[]
     decisions: Decision[]
+    edits: Edit[]
+    editDecisions: EditDecision[]
+    appliedEdits: Edit[]
     bindings: Binding[]
     review?: Review
     candidate?: string
     candidateHash?: string
+    proposalHash?: string
+    fallback?: string
     sealedHash?: string
     documents?: string
     reason?: string
@@ -127,6 +175,10 @@ export namespace UltraCouncil {
     State,
     | "messageID"
     | "phase"
+    | "baselineAttempts"
+    | "baselineSessionID"
+    | "baselineHash"
+    | "packetHash"
     | "started"
     | "valid"
     | "rounds"
@@ -137,13 +189,17 @@ export namespace UltraCouncil {
     | "obligations"
     | "claims"
     | "decisions"
+    | "edits"
+    | "editDecisions"
+    | "appliedEdits"
     | "bindings"
     | "review"
     | "candidateHash"
+    | "proposalHash"
     | "sealedHash"
     | "documents"
     | "reason"
-  > & { version: 4 }
+  > & { version: 5 }
 
   const states = new Map<string, State>()
   const readonly = new Set([
@@ -200,11 +256,20 @@ export namespace UltraCouncil {
     if (!input || typeof input !== "object") return false
     const data = input as Record<string, unknown>
     return (
-      data.version === 4 &&
+      data.version === 5 &&
       typeof data.messageID === "string" &&
-      ["collecting", "arbitrating", "followup", "revising", "sealed", "verified", "limited", "degraded"].includes(
-        String(data.phase),
-      ) &&
+      [
+        "baselining",
+        "collecting",
+        "arbitrating",
+        "followup",
+        "revising",
+        "sealed",
+        "verified",
+        "limited",
+        "degraded",
+      ].includes(String(data.phase)) &&
+      typeof data.baselineAttempts === "number" &&
       typeof data.started === "number" &&
       typeof data.valid === "number" &&
       typeof data.rounds === "number" &&
@@ -214,20 +279,36 @@ export namespace UltraCouncil {
       Array.isArray(data.obligations) &&
       Array.isArray(data.claims) &&
       Array.isArray(data.decisions) &&
+      Array.isArray(data.edits) &&
+      Array.isArray(data.editDecisions) &&
       Array.isArray(data.bindings)
     )
   }
 
   function legacy(input: unknown) {
     if (!input || typeof input !== "object") return false
-    return (input as Record<string, unknown>).version === 3
+    return [3, 4].includes(Number((input as Record<string, unknown>).version))
   }
 
-  function draft(part: SessionV1.ToolPart) {
-    if (![ADJUDICATE, REVISE].includes(part.tool)) return undefined
-    if (!("input" in part.state) || !part.state.input || typeof part.state.input !== "object") return undefined
-    const input = part.state.input as Record<string, unknown>
-    return typeof input.draft === "string" ? input.draft : undefined
+  function baseline(part: SessionV1.ToolPart) {
+    if (part.tool !== BASELINE || !("output" in part.state) || typeof part.state.output !== "string") return undefined
+    const marker = "ULTRA_CODE_BASELINE\n"
+    const offset = part.state.output.indexOf(marker)
+    if (offset < 0) return undefined
+    try {
+      const data = JSON.parse(part.state.output.slice(offset + marker.length)) as {
+        answer?: unknown
+        packet?: unknown
+      }
+      if (typeof data.answer !== "string" || !data.answer.trim()) return undefined
+      if (!data.packet || typeof data.packet !== "object") return undefined
+      return {
+        answer: data.answer,
+        packet: data.packet as Packet,
+      }
+    } catch {
+      return undefined
+    }
   }
 
   function restore(input: {
@@ -246,7 +327,7 @@ export namespace UltraCouncil {
       .flatMap((message) => message.parts)
       .filter(
         (part): part is SessionV1.ToolPart =>
-          part.type === "tool" && [EXPLORE, ADJUDICATE, REVISE, ARBITRATE].includes(part.tool),
+          part.type === "tool" && [BASELINE, EXPLORE, ADJUDICATE, REVISE, ARBITRATE].includes(part.tool),
       )
     const saved = parts
       .map((part) => ("metadata" in part.state ? part.state.metadata?.ultraCouncil : undefined))
@@ -260,6 +341,7 @@ export namespace UltraCouncil {
         sessionID: input.sessionID,
         messageID: input.messageID,
         phase: "degraded",
+        baselineAttempts: 2,
         started: 5,
         valid: 0,
         rounds: 0,
@@ -270,21 +352,61 @@ export namespace UltraCouncil {
         obligations: [],
         claims: [],
         decisions: [],
+        edits: [],
+        editDecisions: [],
+        appliedEdits: [],
         bindings: [],
         reason: "A legacy Ultra Council snapshot cannot prove the exact final candidate after upgrade.",
       }
     }
-    const candidate = saved?.candidateHash
-      ? parts
-          .map(draft)
-          .filter((item): item is string => item !== undefined)
-          .findLast((item) => digest(item) === saved.candidateHash)
-      : undefined
-    const phase = saved?.phase === "sealed" && !candidate ? "degraded" : (saved?.phase ?? "collecting")
+    const source = parts
+      .map(baseline)
+      .filter((item): item is NonNullable<ReturnType<typeof baseline>> => item !== undefined)
+      .findLast(
+        (item) =>
+          (!saved?.baselineHash || digest(item.answer) === saved.baselineHash) &&
+          (!saved?.packetHash || digest(JSON.stringify(item.packet)) === saved.packetHash),
+      )
+    const approved = new Set(
+      (saved?.editDecisions ?? []).filter((item) => item.status === "approved").map((item) => item.id),
+    )
+    const supported = new Set(
+      (saved?.decisions ?? []).filter((item) => item.status === "approved").map((item) => item.id),
+    )
+    const legacyApplied =
+      saved?.edits.filter((item) => approved.has(item.id) && item.claims.every((claim) => supported.has(claim))) ?? []
+    const terminal = Boolean(
+      saved &&
+        (["sealed", "limited", "degraded"].includes(saved.phase) ||
+          (saved.phase === "arbitrating" && saved.adjudicated)),
+    )
+    const applied = saved?.appliedEdits ?? legacyApplied
+    const proposal = terminal ? applied : (saved?.edits ?? [])
+    const reconstructed = source && saved ? apply(source.answer, proposal) : undefined
+    const candidate =
+      reconstructed && (!saved?.candidateHash || digest(reconstructed) === saved.candidateHash)
+        ? reconstructed
+        : source?.answer
+    const unverifiable =
+      Boolean(saved && terminal && !saved.appliedEdits && saved.edits.length > 0 && saved.editDecisions.length === 0) ||
+      Boolean(
+        saved && terminal && saved.candidateHash && (!reconstructed || digest(reconstructed) !== saved.candidateHash),
+      )
+    const broken =
+      Boolean(saved?.baselineHash && !source) ||
+      Boolean(saved?.phase === "sealed" && (!candidate || saved.sealedHash !== digest(candidate))) ||
+      unverifiable
+    const phase = broken ? "degraded" : (saved?.phase ?? "baselining")
     return {
       sessionID: input.sessionID,
       messageID: input.messageID,
       phase,
+      baselineAttempts: saved?.baselineAttempts ?? 0,
+      baselineSessionID: saved?.baselineSessionID,
+      baseline: source?.answer,
+      baselineHash: saved?.baselineHash,
+      packet: source?.packet,
+      packetHash: saved?.packetHash,
       started: saved?.started ?? 0,
       valid: saved?.valid ?? 0,
       rounds: saved?.rounds ?? 0,
@@ -296,16 +418,19 @@ export namespace UltraCouncil {
       obligations: saved?.obligations ?? [],
       claims: saved?.claims ?? [],
       decisions: saved?.decisions ?? [],
+      edits: saved?.edits ?? [],
+      editDecisions: saved?.editDecisions ?? [],
+      appliedEdits: applied,
       bindings: saved?.bindings ?? [],
       review: saved?.review,
       candidate,
       candidateHash: saved?.candidateHash,
+      proposalHash: saved?.proposalHash,
       sealedHash: saved?.sealedHash,
       documents: saved?.documents,
-      reason:
-        saved?.phase === "sealed" && !candidate
-          ? "The sealed Ultra answer could not be reconstructed from persisted tool input."
-          : saved?.reason,
+      reason: broken
+        ? "The Ultra Code baseline or exact approved candidate could not be reconstructed from persisted tool evidence."
+        : saved?.reason,
     }
   }
 
@@ -332,9 +457,13 @@ export namespace UltraCouncil {
 
   export function snapshot(state: State): Snapshot {
     return {
-      version: 4,
+      version: 5,
       messageID: state.messageID,
       phase: state.phase,
+      baselineAttempts: state.baselineAttempts,
+      baselineSessionID: state.baselineSessionID,
+      baselineHash: state.baselineHash,
+      packetHash: state.packetHash,
       started: state.started,
       valid: state.valid,
       rounds: state.rounds,
@@ -345,9 +474,13 @@ export namespace UltraCouncil {
       obligations: state.obligations,
       claims: state.claims,
       decisions: state.decisions,
+      edits: state.edits,
+      editDecisions: state.editDecisions,
+      appliedEdits: state.appliedEdits,
       bindings: state.bindings,
       review: state.review,
       candidateHash: state.candidateHash,
+      proposalHash: state.proposalHash,
       sealedHash: state.sealedHash,
       documents: state.documents,
       reason: state.reason,
@@ -355,7 +488,7 @@ export namespace UltraCouncil {
   }
 
   export function configure(state: State, kind: Kind, obligations: Obligation[]) {
-    if (state.phase !== "collecting" || state.started > 0) {
+    if (state.phase !== "baselining" || state.started > 0 || state.baseline) {
       return "The Council request contract is already frozen."
     }
     const ids = obligations.map((item) => item.id.trim())
@@ -375,11 +508,145 @@ export namespace UltraCouncil {
     return undefined
   }
 
+  export function reserveBaseline(state: State) {
+    if (state.phase !== "baselining") return "The Ultra Code baseline is not currently required."
+    if (!state.kind || state.obligations.length === 0)
+      return "Freeze request kind and obligations before Code baseline."
+    if (state.baseline) return "The Ultra Code baseline is already frozen."
+    if (state.baselineAttempts >= 2) {
+      state.phase = "degraded"
+      state.reason = "The Ultra Code baseline failed twice and cannot be retried for answer quality."
+      return state.reason
+    }
+    state.baselineAttempts++
+    state.premature = 0
+    state.reason = "The Ultra Code baseline was interrupted before its complete answer could be frozen."
+    return undefined
+  }
+
+  export function recordBaseline(state: State, input: { answer: string; packet: Packet; sessionID?: string }) {
+    const answer = input.answer.trim()
+    if (!answer) {
+      if (state.baselineAttempts >= 2) state.phase = "degraded"
+      state.reason = "The Ultra Code baseline returned an empty answer."
+      return false
+    }
+    state.baseline = answer
+    state.baselineHash = digest(answer)
+    state.packet = input.packet
+    state.packetHash = digest(JSON.stringify(input.packet))
+    state.baselineSessionID = input.sessionID
+    state.phase = "collecting"
+    state.reason = undefined
+    return true
+  }
+
+  export function failBaseline(state: State, reason: string) {
+    state.reason = reason
+    if (state.baselineAttempts < 2) return
+    state.phase = "degraded"
+  }
+
+  function occurrences(text: string, anchor: string) {
+    const found: number[] = []
+    for (let offset = text.indexOf(anchor); offset >= 0; offset = text.indexOf(anchor, offset + anchor.length)) {
+      found.push(offset)
+    }
+    return found
+  }
+
+  function spans(baseline: string, edits: Edit[]) {
+    return edits.map((edit) => {
+      const offset = baseline.indexOf(edit.anchor)
+      if (edit.kind === "insert_before") return { edit, start: offset, end: offset }
+      if (edit.kind === "insert_after") {
+        const point = offset + edit.anchor.length
+        return { edit, start: point, end: point }
+      }
+      return { edit, start: offset, end: offset + edit.anchor.length }
+    })
+  }
+
+  function apply(baseline: string, edits: Edit[]) {
+    return spans(baseline, edits)
+      .sort((a, b) => b.start - a.start)
+      .reduce((text, item) => {
+        if (item.edit.kind === "delete") return text.slice(0, item.start) + text.slice(item.end)
+        if (item.edit.kind === "replace") {
+          return text.slice(0, item.start) + (item.edit.text ?? "") + text.slice(item.end)
+        }
+        return text.slice(0, item.start) + (item.edit.text ?? "") + text.slice(item.start)
+      }, baseline)
+  }
+
+  export function propose(state: State, baselineHash: string, input: EditInput[]) {
+    if (!state.baseline || !state.baselineHash || !state.packetHash) {
+      return { error: "The frozen Ultra Code baseline is unavailable." } as const
+    }
+    if (baselineHash !== state.baselineHash) return { error: "The Ultra Code baseline hash is stale." } as const
+    if (input.length > 20) return { error: "A Council proposal cannot contain more than 20 edits." } as const
+    const obligations = new Set(state.obligations.map((item) => item.id))
+    const claims = new Map(state.claims.map((item) => [item.id, item.hash]))
+    const edits: Edit[] = []
+    for (const [index, item] of input.entries()) {
+      if (!item.anchor) return { error: `Edit ${index + 1} needs a non-empty exact anchor.` } as const
+      if (occurrences(state.baseline, item.anchor).length !== 1) {
+        return { error: `Edit ${index + 1} anchor must occur exactly once in the frozen Code answer.` } as const
+      }
+      if (item.kind !== "delete" && !item.text?.trim()) {
+        return { error: `Edit ${index + 1} needs non-empty replacement or insertion text.` } as const
+      }
+      if (item.obligations.length === 0 || item.obligations.some((id) => !obligations.has(id))) {
+        return { error: `Edit ${index + 1} references an unknown or empty obligation set.` } as const
+      }
+      if (
+        item.claims.length === 0 ||
+        item.claims.some((claim) => !claims.has(claim.id) || claims.get(claim.id) !== claim.hash)
+      ) {
+        return { error: `Edit ${index + 1} references an unknown or changed claim hash.` } as const
+      }
+      const body = {
+        kind: item.kind,
+        anchor: item.anchor,
+        text: item.text,
+        obligations: unique(item.obligations),
+        claims: unique(item.claims.map((claim) => claim.id)),
+        reason: item.reason.trim(),
+      }
+      edits.push({
+        id: `edit-${index + 1}`,
+        hash: digest(JSON.stringify(body)),
+        ...body,
+      })
+    }
+    const targets = new Map<string, string>()
+    for (const edit of edits) {
+      const previous = targets.get(edit.anchor)
+      if (previous) return { error: `Edits ${previous} and ${edit.id} overlap.` } as const
+      targets.set(edit.anchor, edit.id)
+    }
+    const ranges = spans(state.baseline, edits).sort((a, b) => a.start - b.start || a.end - b.end)
+    for (let index = 1; index < ranges.length; index++) {
+      const prev = ranges[index - 1]
+      const next = ranges[index]
+      if (next.start < prev.end || (next.start === prev.start && next.end === prev.end)) {
+        return { error: `Edits ${prev.edit.id} and ${next.edit.id} overlap.` } as const
+      }
+    }
+    return {
+      edits,
+      candidate: apply(state.baseline, edits),
+    } as const
+  }
+
   export function reserve(state: State, phase: "initial" | "followup", lenses: Lens[]) {
     if (phase === "initial") {
       if (state.phase !== "collecting") return "The initial Council wave has already started."
       if (!state.kind || state.obligations.length === 0)
         return "Freeze request kind and obligations before exploration."
+      if (!state.baseline || !state.baselineHash || !state.packet || !state.packetHash) {
+        return "Freeze the complete Ultra Code baseline before exploration."
+      }
       if (lenses.length !== 3) return "The initial Council wave must contain exactly 3 investigations."
       const required = ["flow", "falsify", "evidence"]
       if (!required.every((lens) => lenses.includes(lens as Lens))) {
@@ -443,7 +710,7 @@ export namespace UltraCouncil {
     return unique(errors)
   }
 
-  export function reserveAdjudication(state: State, candidate: string, bindings: Binding[]) {
+  export function reserveAdjudication(state: State, baselineHash: string, input: EditInput[], bindings: Binding[]) {
     if (state.phase !== "arbitrating") return "Council reports are not ready for independent adjudication."
     if (state.adjudicated) return "Independent Council adjudication has already completed."
     if (state.started >= 5) {
@@ -453,22 +720,35 @@ export namespace UltraCouncil {
     }
     const errors = refs(state, bindings)
     if (errors.length > 0) return errors.join("; ")
+    const proposal = propose(state, baselineHash, input)
+    if ("error" in proposal) return proposal.error
     state.premature = 0
     state.started++
     state.rounds++
-    state.candidate = candidate
-    state.candidateHash = digest(candidate)
+    state.edits = proposal.edits
+    state.editDecisions = []
+    state.candidate = proposal.candidate
+    state.candidateHash = digest(proposal.candidate)
+    state.proposalHash = state.candidateHash
+    state.fallback = state.baseline
     state.bindings = bindings.map((item) => ({ obligation: item.obligation, claims: unique(item.claims) }))
     state.reason = "The independent adjudicator was interrupted before its result could be recorded."
     return undefined
   }
 
-  function clean(state: State, review: Review, decisions: Decision[], revised = false) {
+  function clean(state: State, review: Review, decisions: Decision[], edits: EditDecision[], revised = false) {
     if (!state.kind || review.kind !== state.kind) return false
-    if (!state.candidateHash || review.candidateHash !== state.candidateHash) return false
+    if (!state.proposalHash || review.candidateHash !== state.proposalHash) return false
     if (review.status !== "approved" || review.missing.length > 0 || review.corrections.length > 0) return false
+    const approvedEdits = new Set(edits.filter((item) => item.status === "approved").map((item) => item.id))
+    const approvedClaims = new Set(decisions.filter((item) => item.status === "approved").map((item) => item.id))
+    if (
+      state.edits.some((item) => !approvedEdits.has(item.id) || item.claims.some((claim) => !approvedClaims.has(claim)))
+    ) {
+      return false
+    }
     const coverage = new Map(review.obligations.map((item) => [item.id, item]))
-    const approved = new Set(decisions.filter((item) => item.status === "approved").map((item) => item.id))
+    const approved = approvedClaims
     const bound = new Map(state.bindings.map((item) => [item.obligation, item.claims]))
     return state.obligations.every((item) => {
       const result = coverage.get(item.id)
@@ -488,7 +768,7 @@ export namespace UltraCouncil {
 
   export function recordAdjudication(
     state: State,
-    result: { valid: boolean; decisions?: Decision[]; review?: Review },
+    result: { valid: boolean; decisions?: Decision[]; edits?: EditDecision[]; review?: Review },
   ) {
     if (!result.valid || !result.review) {
       if (state.started >= 5) {
@@ -501,11 +781,21 @@ export namespace UltraCouncil {
       return
     }
     const decisions = result.decisions ?? []
+    const edits = result.edits ?? []
     state.valid++
     state.adjudicated = true
     state.decisions = decisions
+    state.editDecisions = edits
     state.review = result.review
-    if (clean(state, result.review, decisions)) {
+    const approved = new Set(edits.filter((item) => item.status === "approved").map((item) => item.id))
+    const supported = new Set(decisions.filter((item) => item.status === "approved").map((item) => item.id))
+    state.appliedEdits = state.edits.filter(
+      (item) => approved.has(item.id) && item.claims.every((claim) => supported.has(claim)),
+    )
+    state.candidate = apply(state.baseline ?? "", state.appliedEdits)
+    state.candidateHash = digest(state.candidate)
+    state.fallback = state.candidate
+    if (clean(state, result.review, decisions, edits)) {
       if (state.kind === "implementation") {
         state.phase = "arbitrating"
         state.reason = undefined
@@ -532,7 +822,7 @@ export namespace UltraCouncil {
     state.reason = reason || "The exact candidate was not fully supported by the adjudicated evidence."
   }
 
-  export function reserveRevision(state: State, candidate: string, bindings: Binding[]) {
+  export function reserveRevision(state: State, baselineHash: string, input: EditInput[], bindings: Binding[]) {
     if (state.phase !== "revising") return "The Council is not waiting for a revised candidate."
     if (state.started >= 5) {
       state.phase = "limited"
@@ -541,26 +831,49 @@ export namespace UltraCouncil {
     }
     const errors = refs(state, bindings)
     if (errors.length > 0) return errors.join("; ")
+    const proposal = propose(state, baselineHash, input)
+    if ("error" in proposal) return proposal.error
     state.premature = 0
     state.started++
     state.rounds++
-    state.candidate = candidate
-    state.candidateHash = digest(candidate)
+    state.fallback = state.candidate ?? state.baseline
+    state.edits = proposal.edits
+    state.editDecisions = []
+    state.candidate = proposal.candidate
+    state.candidateHash = digest(proposal.candidate)
+    state.proposalHash = state.candidateHash
     state.bindings = bindings.map((item) => ({ obligation: item.obligation, claims: unique(item.claims) }))
     state.reason = "The final verifier was interrupted before its result could be recorded."
     return undefined
   }
 
-  export function recordRevision(state: State, result: { valid: boolean; decisions?: Decision[]; review?: Review }) {
-    if (result.valid && result.review && clean(state, result.review, result.decisions ?? state.decisions, true)) {
+  export function recordRevision(
+    state: State,
+    result: { valid: boolean; decisions?: Decision[]; edits?: EditDecision[]; review?: Review },
+  ) {
+    const decisions = result.decisions ?? state.decisions
+    const edits = result.edits ?? []
+    const approved = new Set(edits.filter((item) => item.status === "approved").map((item) => item.id))
+    const supported = new Set(decisions.filter((item) => item.status === "approved").map((item) => item.id))
+    const applied = state.edits.filter(
+      (item) => approved.has(item.id) && item.claims.every((claim) => supported.has(claim)),
+    )
+    const candidate = apply(state.baseline ?? "", applied)
+    if (result.valid && result.review && clean(state, result.review, decisions, edits, true)) {
       state.valid++
-      state.decisions = result.decisions ?? state.decisions
+      state.decisions = decisions
+      state.editDecisions = edits
       state.review = result.review
+      state.appliedEdits = applied
+      state.candidate = candidate
+      state.candidateHash = digest(candidate)
       state.phase = "sealed"
       state.sealedHash = state.candidateHash
       state.reason = undefined
       return
     }
+    state.candidate = apply(state.baseline ?? "", state.appliedEdits)
+    state.candidateHash = state.candidate ? digest(state.candidate) : undefined
     state.phase = "limited"
     state.reason =
       result.review?.corrections.join("; ") ||
@@ -643,6 +956,9 @@ export namespace UltraCouncil {
   }
 
   export function filter<T>(state: State, tools: Record<string, T>) {
+    if (state.phase === "baselining") {
+      return Object.fromEntries(Object.entries(tools).filter(([id]) => id === BASELINE))
+    }
     if (state.phase === "collecting" || state.phase === "followup") {
       return Object.fromEntries(Object.entries(tools).filter(([id]) => id === EXPLORE))
     }
@@ -668,12 +984,12 @@ export namespace UltraCouncil {
       )
     }
     return Object.fromEntries(
-      Object.entries(tools).filter(([id]) => ![EXPLORE, ADJUDICATE, REVISE, ARBITRATE, "task"].includes(id)),
+      Object.entries(tools).filter(([id]) => ![BASELINE, EXPLORE, ADJUDICATE, REVISE, ARBITRATE, "task"].includes(id)),
     )
   }
 
   export function required(state: State) {
-    return ["collecting", "arbitrating", "followup", "revising"].includes(state.phase)
+    return ["baselining", "collecting", "arbitrating", "followup", "revising"].includes(state.phase)
   }
 
   export function reminder(state: State) {
@@ -683,10 +999,19 @@ export namespace UltraCouncil {
       `- frozen obligations=${JSON.stringify(state.obligations)}.`,
       `- required anchor keys=${JSON.stringify(state.anchors)}. Cover these exact keys with verified path, symbol, or source evidence.`,
     ]
+    if (state.phase === "baselining") {
+      return [
+        ...base,
+        `- First call ${BASELINE} with requestKind and a complete 1-20 item obligation list.`,
+        "- The runtime will freeze a complete read-only Code answer and its bounded investigation packet before any Council exploration.",
+        "- Do not answer, explore, or draft corrections before the Code baseline is frozen.",
+      ].join("\n")
+    }
     if (state.phase === "collecting") {
       return [
         ...base,
-        `- Call ${EXPLORE} once with requestKind, a complete 1-20 item obligation list, and exactly three blind investigations: flow, falsify, evidence.`,
+        `- Call ${EXPLORE} once with exactly three investigations: flow, falsify, evidence.`,
+        "- Flow and evidence receive the untrusted frozen Code answer and bounded investigation packet; falsify remains fully blind to both.",
         "- Each obligation must preserve one explicit user requirement; do not merge away requested edge cases, distinctions, or output dimensions.",
       ].join("\n")
     }
@@ -701,9 +1026,9 @@ export namespace UltraCouncil {
       if (!state.adjudicated) {
         return [
           ...base,
-          `- Draft the exact complete answer or implementation decision, bind every obligation to investigated claim ids, then call ${ADJUDICATE}.`,
-          "- The fourth independent adjudicator audits the exact candidate, request classification, every obligation, and every bound claim.",
-          "- Do not omit a difficult requirement from the candidate or obligation bindings.",
+          `- Propose only exact evidence-backed edits against baseline SHA-256 ${state.baselineHash}, bind every obligation to investigated claim ids, then call ${ADJUDICATE}.`,
+          "- The fourth independent adjudicator audits each edit, the deterministic candidate, every obligation, and every bound claim.",
+          "- Do not rewrite the complete answer. With no approved edits, the frozen Code answer is delivered byte-for-byte.",
         ].join("\n")
       }
       return [
@@ -716,9 +1041,9 @@ export namespace UltraCouncil {
     if (state.phase === "revising") {
       return [
         ...base,
-        `- Submit one complete corrected candidate through ${REVISE}.`,
+        `- Submit one complete corrected edit set against the same frozen Code baseline through ${REVISE}.`,
         `- Required corrections: ${state.reason ?? "address every adjudicator finding"}.`,
-        "- The fifth independent verifier must approve this exact text. It cannot rewrite the answer for you.",
+        "- The fifth independent verifier reviews the runtime-built exact candidate. It cannot rewrite the answer for you.",
       ].join("\n")
     }
     if (state.phase === "degraded") {
@@ -786,21 +1111,30 @@ export namespace UltraCouncil {
   }
 
   export function result(state: State) {
-    if (state.candidate && state.valid >= 3) {
+    const candidate = state.baseline ? apply(state.baseline, state.appliedEdits) : undefined
+    if (candidate) {
       return [
-        state.candidate,
+        candidate,
         "",
         "---",
-        `证据状态：已综合 ${state.valid} 份有效独立调查，但最终仲裁未完全通过（${state.reason ?? "仍有未解决证据项"}）。以上为最佳证据支持答案，请保留其中明确标注的不确定项。`,
+        `证据状态：以上保留冻结 Code 基准及已获独立仲裁批准的修正；未批准修改已被运行时丢弃（${state.reason ?? "仍有未解决证据项"}）。`,
       ].join("\n")
     }
     return state.phase === "degraded" ? disclosure(state) : fallback(state)
   }
 
   export function delivery(state: State) {
-    if (state.phase !== "sealed" || !state.candidate || state.sealedHash !== digest(state.candidate)) return undefined
+    const candidate = state.baseline ? apply(state.baseline, state.appliedEdits) : undefined
+    if (
+      state.phase !== "sealed" ||
+      !candidate ||
+      state.candidate !== candidate ||
+      state.sealedHash !== digest(candidate)
+    ) {
+      return undefined
+    }
     return {
-      text: state.candidate,
+      text: candidate,
       hash: state.sealedHash,
       partID: `prt_ultra_${digest(`${state.sessionID}\u0000${state.messageID}\u0000${state.sealedHash}`).slice(0, 32)}`,
     }

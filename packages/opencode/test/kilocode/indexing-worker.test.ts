@@ -61,7 +61,7 @@ test.serial("runs indexing engine requests in its isolated process", async () =>
   expect(failures).toEqual([])
 })
 
-test("routes multiple directories through the shared indexing worker", async () => {
+test.serial("routes multiple directories through the shared indexing worker", async () => {
   await using first = await tmpdir()
   await using second = await tmpdir()
   const failures: unknown[] = []
@@ -83,7 +83,9 @@ test("routes multiple directories through the shared indexing worker", async () 
       left.init({ enabled: false, embedderProvider: "openai" }),
       right.init({ enabled: false, embedderProvider: "openai" }),
     ])
-    expect(statuses.map((status) => status.state)).toEqual(["Disabled", "Disabled"])
+    expect(statuses.every((status) => status.state !== "Error")).toBe(true)
+    expect(statuses.map((status) => status.pipelines?.rag.state)).toEqual(["Disabled", "Disabled"])
+    expect(statuses.every((status) => status.pipelines?.codeGraph.state !== "Disabled")).toBe(true)
   } finally {
     await Promise.all([left.dispose(), right.dispose()])
   }
@@ -91,7 +93,7 @@ test("routes multiple directories through the shared indexing worker", async () 
   expect(failures).toEqual([])
 })
 
-test("waits for the primary index instead of scanning a worktree independently", async () => {
+test.serial("waits for the primary index instead of scanning a worktree independently", async () => {
   await using tmp = await tmpdir()
   const main = path.join(tmp.path, "main")
   const worktree = path.join(tmp.path, "worktree")
@@ -141,7 +143,7 @@ test("waits for the primary index instead of scanning a worktree independently",
 
     expect(status.state).toBe("Standby")
     expect(status.message).toContain("primary worktree index")
-    expect(requests).toEqual(["/v1/embeddings"])
+    expect(requests).toEqual([])
   } finally {
     await engine.dispose()
     server.stop(true)
@@ -150,7 +152,7 @@ test("waits for the primary index instead of scanning a worktree independently",
   expect(failures).toEqual([])
 })
 
-test("allows same-directory recreation while disposal is pending", async () => {
+test.serial("allows same-directory recreation while disposal is pending", async () => {
   await using tmp = await tmpdir()
   const hooks = {
     status() {},
@@ -169,22 +171,24 @@ test("allows same-directory recreation while disposal is pending", async () => {
   await second.dispose()
 
   expect(second).not.toBe(first)
-  expect(status.state).toBe("Disabled")
+  expect(status.state).not.toBe("Error")
+  expect(status.pipelines?.rag.state).toBe("Disabled")
+  expect(status.pipelines?.codeGraph.state).not.toBe("Disabled")
 })
 
-test("releases enabled workers after provider initialization errors", async () => {
+test.serial("releases enabled workers after provider initialization errors", async () => {
   await using tmp = await tmpdir()
   const drivers = new Set<IndexingWorker.Driver>()
 
   for (const _ of Array.from({ length: 3 })) {
     const failures: unknown[] = []
-    const warnings: string[] = []
+    const done = Promise.withResolvers<void>()
     const engine = IndexingWorker.create(tmp.path, tmp.path, {
-      status() {},
-      telemetry() {},
-      warning(item) {
-        warnings.push(item.code)
+      status(status) {
+        if (status.state === "Error") done.resolve()
       },
+      telemetry() {},
+      warning() {},
       log() {},
       failure(err) {
         failures.push(err)
@@ -192,24 +196,24 @@ test("releases enabled workers after provider initialization errors", async () =
     })
     drivers.add(engine)
 
-    const err = await engine
-      .init({
-        enabled: true,
-        embedderProvider: "ollama",
-        ollamaBaseUrl: "http://127.0.0.1:1",
-        modelId: "nomic-embed-text",
-        modelDimension: 768,
-        vectorStoreProvider: "qdrant",
-        qdrantUrl: "http://127.0.0.1:1",
-      })
-      .then(
-        () => undefined,
-        (err) => err,
-      )
+    const status = await engine.init({
+      enabled: true,
+      embedderProvider: "ollama",
+      ollamaBaseUrl: "http://127.0.0.1:1",
+      modelId: "nomic-embed-text",
+      modelDimension: 768,
+      vectorStoreProvider: "qdrant",
+      qdrantUrl: "http://127.0.0.1:1",
+    })
+    await Promise.race([
+      done.promise,
+      Bun.sleep(3_000).then(() => {
+        throw new Error("Timed out waiting for the provider initialization error status.")
+      }),
+    ])
     await engine.dispose()
 
-    expect(err).toBeInstanceOf(Error)
-    expect(warnings).toContain("qdrant.version-unavailable")
+    expect(status.state).not.toBe("Error")
     expect(failures).toEqual([])
   }
 
@@ -223,7 +227,9 @@ test("releases enabled workers after provider initialization errors", async () =
   const status = await engine.init({ enabled: false, embedderProvider: "openai" })
   await engine.dispose()
 
-  expect(status.state).toBe("Disabled")
+  expect(status.state).not.toBe("Error")
+  expect(status.pipelines?.rag.state).toBe("Disabled")
+  expect(status.pipelines?.codeGraph.state).not.toBe("Disabled")
   expect(drivers.has(engine)).toBe(false)
   expect(drivers.size).toBe(3)
 })

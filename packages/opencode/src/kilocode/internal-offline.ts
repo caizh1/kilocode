@@ -3,7 +3,7 @@ import type { IndexingConfig } from "@kilocode/kilo-indexing/config"
 export const INTERNAL_OFFLINE_INDEXING_DEFAULTS = {
   provider: "openai-compatible",
   model: "qwen3-embedding-8b",
-  dimension: 2048,
+  dimensionMode: "auto",
   vectorStore: "lancedb",
 } as const
 
@@ -49,12 +49,23 @@ export function applyInternalIndexingDefaults(
     def["openai-compatible"] || cfg?.["openai-compatible"]
       ? { "openai-compatible": { ...(def["openai-compatible"] ?? {}), ...(cfg?.["openai-compatible"] ?? {}) } }
       : {}
+  const model = cfg?.model === undefined ? def.model : cfg.model
+  const legacy =
+    model === def.model &&
+    cfg?.dimensionMode === undefined &&
+    (cfg?.dimension === 2048 || cfg?.dimension === 4096)
+  const dimensionMode =
+    cfg?.dimensionMode ?? (legacy || cfg?.dimension === undefined || cfg.dimension === null ? "auto" : "fixed")
+  const dimension = dimensionMode === "fixed" ? cfg?.dimension : undefined
+  const normalized = { ...base }
+  if (dimensionMode === "auto") delete normalized.dimension
 
   return {
-    ...base,
+    ...normalized,
     ...providerOptions,
-    model: cfg?.model === undefined ? def.model : cfg.model,
-    dimension: cfg?.dimension === undefined ? def.dimension : cfg.dimension,
+    model,
+    dimensionMode,
+    ...(dimension !== undefined ? { dimension } : {}),
     vectorStore: cfg?.vectorStore ?? def.vectorStore,
   }
 }

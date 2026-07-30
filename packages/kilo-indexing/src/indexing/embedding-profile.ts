@@ -5,6 +5,12 @@ export interface EmbeddingProfile {
   provider: EmbedderProvider
   modelId: string
   dimension: number
+  dimensionMode?: "auto" | "fixed"
+  requestedDimension?: number
+  endpointDigest?: string
+  fingerprintDigest?: string
+  qualityVersion?: string
+  instructionVersion?: string
 }
 
 function parseDimension(value?: number): number | undefined {
@@ -31,5 +37,15 @@ export function resolveEmbeddingProfile(
 
 export function isEmbeddingProfileEqual(a?: EmbeddingProfile, b?: EmbeddingProfile): boolean {
   if (!a || !b) return false
-  return a.provider === b.provider && a.modelId === b.modelId && a.dimension === b.dimension
+  return (
+    a.provider === b.provider &&
+    a.modelId === b.modelId &&
+    a.dimension === b.dimension &&
+    a.dimensionMode === b.dimensionMode &&
+    a.requestedDimension === b.requestedDimension &&
+    a.endpointDigest === b.endpointDigest &&
+    a.fingerprintDigest === b.fingerprintDigest &&
+    a.qualityVersion === b.qualityVersion &&
+    a.instructionVersion === b.instructionVersion
+  )
 }

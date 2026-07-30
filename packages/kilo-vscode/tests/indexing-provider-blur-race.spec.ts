@@ -51,16 +51,16 @@ test("custom embedding settings survive blur and same-provider refreshes", async
   const dimension = field(page, "Vector dimension").first()
 
   await expect(model).toHaveValue("qwen3-embedding-8b")
-  await expect(dimension).toHaveValue("2048")
+  await expect(dimension).toHaveValue("4096")
 
   await model.click()
   await model.press("ControlOrMeta+A")
   await model.pressSequentially("custom-click-model", { delay: 10 })
   await dimension.click()
   await expect(model).toHaveValue("custom-click-model")
-  await expect(dimension).toHaveValue("2048")
+  await expect(dimension).toHaveValue("4096")
   await expect.poll(async () => (await saved(page)).model).toBe("custom-click-model")
-  await expect.poll(async () => (await saved(page)).dimension).toBe(2048)
+  await expect.poll(async () => (await saved(page)).dimension).toBe(4096)
   await expect.poll(async () => (await saved(page)).provider).toBe("openai-compatible")
 
   await model.fill("custom-tab-model")

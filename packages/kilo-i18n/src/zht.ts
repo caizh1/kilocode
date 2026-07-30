@@ -2,6 +2,26 @@ import { dict as fallback } from "./en"
 
 export const dict = {
   ...fallback,
+  // 設定導覽
+  "settings.navigation.search": "搜尋設定",
+  "settings.navigation.searchPages": "搜尋設定頁面",
+  "settings.navigation.currentPage": "目前設定頁面：{{page}}",
+  "settings.navigation.noResults": "沒有相符的設定",
+  "settings.navigation.results": "搜尋結果（{{count}}）",
+  "settings.navigation.located": "已定位到{{setting}}",
+  "settings.navigation.groups.connection": "連線與模型",
+  "settings.navigation.groups.knowledge": "知識庫與索引",
+  "settings.navigation.groups.automation": "自動化與安全",
+  "settings.navigation.groups.experience": "體驗與系統",
+  "settings.chipmateServer.update.copyError": "複製錯誤詳情",
+  "settings.chipmateServer.update.copied": "已複製",
+  "settings.chipmateServer.update.showLog": "查看更新日誌",
+  "settings.chipmateServer.update.errorCode": "錯誤碼：{{code}}",
+  "settings.chipmateServer.update.errorTitle.check": "檢查階段失敗",
+  "settings.chipmateServer.update.errorTitle.download": "下載階段失敗",
+  "settings.chipmateServer.update.errorTitle.install": "安裝階段失敗",
+  "settings.chipmateServer.update.errorTitle.validation": "校驗階段失敗",
+
   // ChipMate Gateway provider translations
   "provider.connect.kiloGateway.line1": "ChipMate Gateway 為您提供一組精選的可靠優化模型，專為編碼代理設計。",
   "provider.connect.kiloGateway.line2": "只需一個 API 金鑰，您就可以使用 Claude、GPT、Gemini、GLM 等模型。",
@@ -27,6 +47,8 @@ export const dict = {
   // Reasoning block label
   "ui.permission.run": "執行",
   "ui.reasoning.label": "推理",
+  "ui.basicTool.completed": "完成",
+  "ui.basicTool.readFile": "讀取檔案",
 
   // Marketplace
   "marketplace.tab.skills": "技能",
@@ -43,18 +65,15 @@ export const dict = {
   "marketplace.install.scope": "作用域",
   "marketplace.install.scope.project": "專案",
   "marketplace.install.scope.global": "全域",
-  "marketplace.install.scope.project.description":
-    "僅限此專案。安裝的檔案可以提交至版本控制並與你的團隊分享。",
+  "marketplace.install.scope.project.description": "僅限此專案。安裝的檔案可以提交至版本控制並與你的團隊分享。",
   "marketplace.install.scope.global.description": "此電腦上的所有專案。儲存在你的使用者設定中。",
   "marketplace.install.destination": "安裝位置",
-  "marketplace.install.about.mcp":
-    "MCP 伺服器為 Kilo 提供用於處理外部服務或本機程式的額外工具。",
+  "marketplace.install.about.mcp": "MCP 伺服器為 Kilo 提供用於處理外部服務或本機程式的額外工具。",
   "marketplace.install.about.agent": "智能體會新增一個具有專屬指示和權限的可重複使用角色。",
   "marketplace.install.about.skill": "技能會新增特定任務的指示和資源，Kilo 可在需要時載入它們。",
   "marketplace.install.mcp.warning":
     "MCP 伺服器可以執行本機命令或連線至外部服務。除非你的權限允許自動使用，否則 Kilo 會在使用其工具前請求許可。",
-  "marketplace.install.project.warning":
-    "專案檔案可能會提交至版本控制。除非設定引用了環境變數，否則請勿在此儲存密鑰。",
+  "marketplace.install.project.warning": "專案檔案可能會提交至版本控制。除非設定引用了環境變數，否則請勿在此儲存密鑰。",
   "marketplace.install.learnMore": "瞭解 Marketplace 安裝的運作方式",
   "marketplace.install.learnMcp": "深入瞭解 MCP",
   "marketplace.install.installedAt": "已安裝至 {{path}}",
