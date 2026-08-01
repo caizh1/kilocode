@@ -88,6 +88,128 @@ test("QA new session action stays available without showing a hover hint", async
   await expect(page.locator("html")).toHaveAttribute("data-new-task-requests", "1")
 })
 
+test("QA 完成态时长与复制、赞、踩同列，并按最终 agent 着色", async ({ page }) => {
+  const story = "chat--qa-completed-elapsed-modes-420"
+  const duration = (agent: "code" | "ultra") =>
+    page.locator(`[data-component="turn-completion-duration"][data-agent="${agent}"]`)
+
+  for (const theme of ["dark-modern", "light-modern", "hc-black"]) {
+    await load(page, story, 420, theme, '[data-component="turn-completion-duration"][data-agent="ultra"]')
+
+    const code = duration("code")
+    const ultra = duration("ultra")
+    await expect(code).toContainText("已完成 · 本轮耗时 18秒")
+    await expect(ultra).toContainText("已完成 · 本轮耗时 2分38秒")
+    await expect(code.locator('[data-component="icon"]')).toHaveAttribute("data-size", "normal")
+    await expect(ultra.locator('[data-component="icon"]')).toHaveAttribute("data-size", "normal")
+    await expect(page.locator('[data-slot="assistant-copy-wrapper"] [data-icon="thumbs-down"]')).toHaveCount(2)
+    await expect(
+      page.locator('.vscode-session-turn-assistant > [data-component="turn-completion-duration"]'),
+    ).toHaveCount(0)
+
+    for (const marker of [code, ultra]) {
+      const actions = marker.locator("xpath=ancestor::*[@data-slot='assistant-copy-wrapper'][1]")
+      await expect(actions).toHaveCount(1)
+      await expect(actions.locator('[data-component="icon-button"][data-icon="copy"]')).toHaveCount(1)
+      await expect(actions.locator('[data-component="icon-button"][data-icon="thumbs-up"]')).toHaveCount(1)
+      await expect(actions.locator('[data-component="icon-button"][data-icon="thumbs-down"]')).toHaveCount(1)
+    }
+
+    const expected = await page.locator("body").evaluate((body) => {
+      const probe = (value: string) => {
+        const element = document.createElement("span")
+        element.style.color = value
+        body.append(element)
+        const color = getComputedStyle(element).color
+        element.remove()
+        return color
+      }
+      return {
+        foreground: probe("var(--vscode-foreground)"),
+        ultra: probe("var(--chipmate-agent-ultra-foreground)"),
+      }
+    })
+    const actual = await Promise.all(
+      [code, ultra].map((marker) =>
+        marker.evaluate((element) => ({
+          text: getComputedStyle(element).color,
+          icon: getComputedStyle(element.querySelector('[data-component="icon"]')!).color,
+        })),
+      ),
+    )
+    expect(actual[0]).toEqual({ text: expected.foreground, icon: expected.foreground })
+    expect(actual[1]).toEqual({ text: expected.ultra, icon: expected.ultra })
+
+    const alignment = await Promise.all(
+      [code, ultra].map((marker) =>
+        marker.evaluate((element) => {
+          const action = element.closest<HTMLElement>('[data-slot="assistant-copy-wrapper"]')!
+          const copy = action.querySelector<HTMLElement>('[data-icon="copy"]')!
+          const markerBox = element.getBoundingClientRect()
+          const copyBox = copy.getBoundingClientRect()
+          return Math.abs(markerBox.top + markerBox.height / 2 - (copyBox.top + copyBox.height / 2))
+        }),
+      ),
+    )
+    expect(
+      alignment.every((offset) => offset <= 1),
+      `完成态在 420px / ${theme} 未与行动作同列`,
+    ).toBe(true)
+  }
+
+  await load(page, story, 200, "dark-modern", '[data-component="turn-completion-duration"][data-agent="ultra"]')
+  const layout = await page.evaluate(() => {
+    const rect = (element: Element) => {
+      const box = element.getBoundingClientRect()
+      return {
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+        width: box.width,
+        height: box.height,
+      }
+    }
+    const items = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-slot="assistant-copy-wrapper"] [data-component="icon-button"], [data-component="turn-completion-duration"]',
+      ),
+    )
+      .map(rect)
+      .filter((box) => box.width > 0 && box.height > 0)
+    const overlaps = items.flatMap((first, index) =>
+      items
+        .slice(index + 1)
+        .filter(
+          (second) =>
+            first.left < second.right &&
+            first.right > second.left &&
+            first.top < second.bottom &&
+            first.bottom > second.top,
+        ),
+    )
+    return {
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      items,
+      overlaps: overlaps.length,
+    }
+  })
+
+  expect(layout.scrollWidth, "完成态时长在 200px 造成横向溢出").toBeLessThanOrEqual(layout.clientWidth)
+  expect(
+    layout.items.every((box) => box.left >= 0 && box.right <= layout.clientWidth + 1),
+    "行动作越过视口边界",
+  ).toBe(true)
+  expect(layout.overlaps, "完成态时长与行动作重叠").toBe(0)
+})
+
+test("QA 未完成消息不留下空的完成态分隔符", async ({ page }) => {
+  await load(page, "chat--chat-view-readable-420", 420, "dark-modern", '[data-slot="assistant-copy-wrapper"]')
+
+  await expect(page.locator('[data-slot="assistant-completion-inline"]')).toHaveCount(0)
+})
+
 test("QA composer keeps every dense control in bounds without overlap", async ({ page }) => {
   for (const width of COMPOSER_WIDTHS) {
     await load(page, "prompt-input--qa-all-controls-send", 1500)
@@ -387,7 +509,9 @@ test("QA composer exposes semantic send, speech, and busy stop actions", async (
   await expect(page.locator(".prompt-send-button")).toHaveCount(0)
 })
 
-test("QA input panel preserves its draft, cursor, scroll, focus, and session-local collapsed state", async ({ page }) => {
+test("QA input panel preserves its draft, cursor, scroll, focus, and session-local collapsed state", async ({
+  page,
+}) => {
   await load(page, "prompt-input--qa-panel-behavior", 420)
 
   const input = page.locator("textarea.prompt-input")
@@ -414,9 +538,7 @@ test("QA input panel preserves its draft, cursor, scroll, focus, and session-loc
   await expand.click()
   await expect(input).toHaveValue(draft)
   await expect(input).toBeFocused()
-  await expect
-    .poll(() => input.evaluate((node) => node.getBoundingClientRect().height))
-    .toBeCloseTo(before.height, 0)
+  await expect.poll(() => input.evaluate((node) => node.getBoundingClientRect().height)).toBeCloseTo(before.height, 0)
   const after = await input.evaluate((node) => ({ cursor: node.selectionStart, scroll: node.scrollTop }))
   expect(after.cursor).toBe(before.cursor)
   expect(after.scroll).toBe(before.scroll)
@@ -645,7 +767,12 @@ test("QA idle controls use refined glass borders while focus and high contrast r
   await load(page, "prompt-input--qa-indexing-standby", 850, "light-modern")
   await page.locator(selector).first().hover()
   await expect
-    .poll(() => page.locator(selector).first().evaluate((item) => getComputedStyle(item).backgroundColor))
+    .poll(() =>
+      page
+        .locator(selector)
+        .first()
+        .evaluate((item) => getComputedStyle(item).backgroundColor),
+    )
     .toBe("rgb(234, 244, 255)")
   const light = await colors(page, selector)
   expect(light.width).toBe("1px")
@@ -876,7 +1003,7 @@ test("QA task HUD reads as an integrated context strip across target widths and 
       const value = hud.querySelector<HTMLElement>('[data-slot="task-header-context-value"]')!
       const unit = hud.querySelector<HTMLElement>('[data-slot="task-header-context-unit"]')!
       const compact = hud.querySelector<HTMLElement>('[data-slot="task-header-context-compact"]')!
-      const content = document.querySelector<HTMLElement>('.message-list-content')!
+      const content = document.querySelector<HTMLElement>(".message-list-content")!
       const sections = Array.from(hud.children).filter((item) => item.getBoundingClientRect().height > 0)
       const style = getComputedStyle(hud)
       const titleBox = rect(title)
@@ -907,16 +1034,16 @@ test("QA task HUD reads as an integrated context strip across target widths and 
     expect(layout.hud.left, `HUD escapes left at ${width}px`).toBeGreaterThanOrEqual(0)
     expect(layout.hud.right, `HUD escapes right at ${width}px`).toBeLessThanOrEqual(layout.viewport)
     expect(Math.abs(layout.hud.left - layout.content.left), `left flow alignment at ${width}px`).toBeLessThanOrEqual(12)
-    expect(Math.abs(layout.hud.right - layout.content.right), `right flow alignment at ${width}px`).toBeLessThanOrEqual(12)
+    expect(Math.abs(layout.hud.right - layout.content.right), `right flow alignment at ${width}px`).toBeLessThanOrEqual(
+      12,
+    )
     expect(layout.shadow, `lightweight inset material at ${width}px`).toContain("inset")
     expect(layout.shadow, `no large HUD shadow at ${width}px`).not.toContain("30px")
     expect(layout.radius).toBe(width <= 300 ? "10px" : "12px")
     expect(layout.titleStatsOverlap, `title/stats overlap at ${width}px`).toBe(false)
     expect(layout.metricsActionsOverlap, `metrics/actions overlap at ${width}px`).toBe(false)
     expect(layout.dividers[0]).toEqual({ top: "0px", bottom: "0px" })
-    expect(layout.dividers.slice(1).every((divider) => divider.top === "1px" && divider.bottom === "0px")).toBe(
-      true,
-    )
+    expect(layout.dividers.slice(1).every((divider) => divider.top === "1px" && divider.bottom === "0px")).toBe(true)
 
     if (width <= 300) {
       expect(layout.value).toBe("none")
@@ -948,7 +1075,7 @@ test("QA task HUD context popover escapes clipping across narrow widths and them
       await load(page, "chat--qa-task-hud-integrated-1280", width, theme, '[data-ui="qa-task-hud"]')
 
       const hud = page.locator('[data-ui="qa-task-hud"]')
-      await hud.locator('.task-header-context-trigger').click()
+      await hud.locator(".task-header-context-trigger").click()
 
       const popover = page.locator('[data-component="popover-content"]')
       const action = popover.locator('[data-slot="task-header-context-action"]').first()
@@ -978,7 +1105,9 @@ test("QA task HUD context popover escapes clipping across narrow widths and them
       expect(layout.left, `popover escapes left at ${width}px in ${theme}`).toBeGreaterThanOrEqual(0)
       expect(layout.top, `popover escapes top at ${width}px in ${theme}`).toBeGreaterThanOrEqual(0)
       expect(layout.right, `popover escapes right at ${width}px in ${theme}`).toBeLessThanOrEqual(layout.viewport.width)
-      expect(layout.bottom, `popover escapes bottom at ${width}px in ${theme}`).toBeLessThanOrEqual(layout.viewport.height)
+      expect(layout.bottom, `popover escapes bottom at ${width}px in ${theme}`).toBeLessThanOrEqual(
+        layout.viewport.height,
+      )
       expect(layout.hit, `compact action is covered at ${width}px in ${theme}`).toBe(true)
       expect(layout.scrollWidth, `popover causes horizontal overflow at ${width}px in ${theme}`).toBeLessThanOrEqual(
         layout.viewport.width,
@@ -989,7 +1118,7 @@ test("QA task HUD context popover escapes clipping across narrow widths and them
   }
 
   await load(page, "chat--qa-titanium-full-conversation", 420, "dark-modern", '[data-ui="qa-task-hud"]')
-  await page.locator('.task-header-context-trigger').click()
+  await page.locator(".task-header-context-trigger").click()
   await expect(
     page.locator('[data-component="popover-content"] [data-slot="task-header-context-action"]').first(),
   ).toBeDisabled()

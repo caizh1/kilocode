@@ -16,6 +16,7 @@ type StatusSource = {
     processedItems: number
     totalItems: number
     currentItemUnit: string
+    percent?: number
     activePipeline?: "codeGraph" | "rag" | "documents"
     notices?: StateIndexingNotice[]
   }
@@ -123,7 +124,13 @@ export function normalizeIndexingStatus(manager: StatusSource): IndexingStatus {
   const files = cfg.currentItemUnit === "files"
   const processedFiles = files ? cfg.processedItems : 0
   const totalFiles = files ? cfg.totalItems : 0
-  const percent = totalFiles > 0 ? Math.min(100, Math.max(0, Math.round((processedFiles / totalFiles) * 100))) : 0
+  const calculated = totalFiles > 0 ? Math.min(100, Math.max(0, Math.round((processedFiles / totalFiles) * 100))) : 0
+  const percent =
+    cfg.systemStatus === "Indexing"
+      ? Math.min(99, calculated)
+      : cfg.systemStatus === "Indexed"
+        ? 100
+        : Math.min(100, Math.max(0, cfg.percent ?? calculated))
   const graphStatus = manager.getCodeGraphStatus?.()
   const graphProgress =
     cfg.systemStatus === "Indexing" && cfg.activePipeline !== "rag" ? manager.getCodeGraphProgress?.() : undefined

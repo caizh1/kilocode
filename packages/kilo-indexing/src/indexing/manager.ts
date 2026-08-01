@@ -255,34 +255,33 @@ export class CodeIndexManager {
     })
   }
 
-  private async graphFallback(
-    err: unknown,
-    trigger: IndexingTelemetryTrigger,
-    reason: string,
-  ): Promise<void> {
+  private async graphFallback(err: unknown, trigger: IndexingTelemetryTrigger, reason: string): Promise<void> {
     const message = sanitizeErrorMessage(err instanceof Error ? err.message : String(err))
+    const graphReady = this.graphScanState() === "complete"
     const generation = await this.nextGeneration()
     if (!this.current(generation)) return
     await this._recreateGraphServices(reason, generation)
     if (!this.current(generation)) return
-    const fallback = await this._serviceFactory
-      ?.prepareLastKnownGoodRuntime()
-      .catch((cause) => {
-        log.warn("last-known-good embedding runtime validation failed", {
-          workspacePath: this.workspacePath,
-          err: cause,
-        })
-        return undefined
+    const fallback = await this._serviceFactory?.prepareLastKnownGoodRuntime().catch((cause) => {
+      log.warn("last-known-good embedding runtime validation failed", {
+        workspacePath: this.workspacePath,
+        err: cause,
       })
+      return undefined
+    })
     const restored = fallback ? await this.restoreLastKnownGood(fallback, generation) : false
     if (!this.current(generation)) return
     this._codeGraph.start(reason)
-    await this._orchestrator?.startIndexing(trigger)
+    if (graphReady) {
+      log.info("preserved completed Code Graph after RAG validation failure", {
+        workspacePath: this.workspacePath,
+        reason,
+      })
+    } else {
+      await this._orchestrator?.startIndexing(trigger)
+    }
     if (!this.current(generation)) return
-    const hint =
-      this._configManager?.currentDimensionMode === "fixed"
-        ? " 清空 embedding 维度可恢复自动探测。"
-        : ""
+    const hint = this._configManager?.currentDimensionMode === "fixed" ? " 清空 embedding 维度可恢复自动探测。" : ""
     this._stateManager.upsertNotice({
       id: "embedding-config-unapplied",
       level: "warning",
@@ -293,10 +292,15 @@ export class CodeIndexManager {
     })
     this._stateManager.setSystemState(
       restored ? "Indexed" : "Error",
-      `Embedding 配置未应用：${message}.${hint}${
-        restored ? " 正在使用已验证的上一版向量索引。" : ""
-      }`.replace("..", "."),
+      `Embedding 配置未应用：${message}.${hint}${restored ? " 正在使用已验证的上一版向量索引。" : ""}`.replace(
+        "..",
+        ".",
+      ),
     )
+    if (this._configManager?.currentDocuments?.enabled) {
+      this._documentGate = documentStandby("Document RAG blocked because Code RAG did not complete.")
+      this._stateManager.notify()
+    }
     this._stateManager.setActivePipeline(restored ? undefined : "rag")
   }
 
@@ -333,12 +337,7 @@ export class CodeIndexManager {
 
     this._fallbackStore = store
     this._runtime = runtime
-    this._searchService = new CodeIndexSearchService(
-      this._configManager,
-      this._stateManager,
-      runtime.embedder,
-      store,
-    )
+    this._searchService = new CodeIndexSearchService(this._configManager, this._stateManager, runtime.embedder, store)
 
     if (!this._configManager.currentDocuments.enabled) return true
     await (async () => {
@@ -431,6 +430,13 @@ export class CodeIndexManager {
     )
       return
     if (!this.isFeatureEnabled || !this.isFeatureConfigured) return
+    if (event.pipeline === "rag" && nonRetryableEmbeddingFailure(event.error)) {
+      log.info("indexing recovery skipped for non-retryable embedding configuration failure", {
+        workspacePath: this.workspacePath,
+        location: event.location,
+      })
+      return
+    }
     if (this._retryTask || this._isRecoveringFromError) return
 
     if (this._retryAttempt >= this._retryMaxAttempts) {
@@ -664,6 +670,7 @@ export class CodeIndexManager {
 
     if (needsServiceRecreation) {
       try {
+        const graphReady = this.graphScanState() === "complete"
         const generation = await this.nextGeneration()
         if (!this.current(generation)) return { requiresRestart }
         log.info("recreating indexing services", { workspacePath: this.workspacePath })
@@ -677,9 +684,13 @@ export class CodeIndexManager {
           await this.waitWithGraph(generation, "background")
           return { requiresRestart }
         }
-        this._codeGraph.start("indexing-services-initialized")
+        this._codeGraph.start(
+          graphReady ? "indexing-services-recreated-code-graph-preserved" : "indexing-services-initialized",
+        )
         this.emitStart("background")
-        const scan = this._orchestrator?.startIndexing("background") ?? Promise.resolve()
+        const scan = graphReady
+          ? (this._orchestrator?.startRagIndexing("background", "service-recreation") ?? Promise.resolve())
+          : (this._orchestrator?.startIndexing("background") ?? Promise.resolve())
         await this.configureDocuments("background", { after: scan, generation })
         return { requiresRestart }
       } catch (err) {
@@ -1324,13 +1335,22 @@ export class CodeIndexManager {
 
     if (opts.start === false) return
     const start = async () => {
-      await opts.after?.catch((err) => {
-        log.warn("preceding code indexing failed; continuing Document RAG independently", {
+      const outcome = await opts.after?.catch((err) => {
+        log.warn("preceding code indexing failed; keeping Document RAG blocked", {
           workspacePath: this.workspacePath,
           err,
         })
+        return { state: "failed", pipeline: "rag" } as const
       })
       if (!this.current(generation)) return
+      if (outcome && outcome.state !== "completed") {
+        this._documentGate = documentStandby(
+          `Document RAG blocked because ${outcome.pipeline === "codeGraph" ? "Code Graph" : "Code RAG"} did not complete.`,
+        )
+        this._stateManager.setActivePipeline(undefined)
+        this._stateManager.notify()
+        return
+      }
       this._documentGate = undefined
       this._stateManager.setActivePipeline("documents")
       await next.start(trigger, opts.force === true)
@@ -1419,6 +1439,7 @@ export class CodeIndexManager {
 
     if (requiresRestart && this.isFeatureEnabled && this.isFeatureConfigured) {
       try {
+        const graphReady = this.graphScanState() === "complete"
         const generation = await this.nextGeneration()
         if (!this.current(generation)) return
         if (!this._cacheManager) {
@@ -1427,9 +1448,9 @@ export class CodeIndexManager {
         }
         log.info("recreating RAG services for indexing settings change", {
           workspacePath: this.workspacePath,
-          ragOnly: false,
+          ragOnly: graphReady,
           codeGraphPreserved: true,
-          reason: "service recreation interrupts watcher continuity",
+          reason: graphReady ? "completed Code Graph can be reused" : "Code Graph is incomplete",
         })
         await this._recreateServices(undefined, generation)
         if (!this.current(generation)) return
@@ -1437,9 +1458,11 @@ export class CodeIndexManager {
           await this.waitWithGraph(generation, "background")
           return
         }
-        this._codeGraph.start("rag-settings-updated")
+        this._codeGraph.start(graphReady ? "rag-settings-updated-code-graph-preserved" : "rag-settings-updated")
         this.emitStart("background")
-        const scan = this._orchestrator?.startIndexing("background")
+        const scan = graphReady
+          ? this._orchestrator?.startRagIndexing("background", "settings-change")
+          : this._orchestrator?.startIndexing("background")
         await this.configureDocuments("background", { force: true, after: scan, generation })
       } catch (err) {
         log.error("failed to recreate services on settings change", { err })
@@ -1455,6 +1478,14 @@ function trimDiagnostic(message: string, max = MAX_DIAGNOSTIC_MESSAGE_LENGTH): s
   const text = message.replace(/\s+/g, " ").trim()
   if (text.length <= max) return text
   return `${text.slice(0, max - 3)}...`
+}
+
+function nonRetryableEmbeddingFailure(message: string): boolean {
+  return (
+    /authentication failed/i.test(message) ||
+    /HTTP 40[134]\b/i.test(message) ||
+    /embedding service rejected the request \(HTTP 40[134]\)/i.test(message)
+  )
 }
 
 function errorPipelines(

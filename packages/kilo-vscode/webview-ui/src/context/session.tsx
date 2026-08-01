@@ -70,7 +70,8 @@ import { resolveModelSelection } from "./model-selection"
 import { resolveMessagePrefs } from "./session-preferences"
 import { errorIDs } from "./session-errors"
 import { PartStash } from "./part-stash"
-import { mergeParts, sameParts } from "./session-parts"
+import { mergeParts } from "./session-parts"
+import { sameReconcileShape } from "./session-reconcile"
 import { state as todoState } from "./todo-revert"
 import { getVariant, sessionVariantKeys, transferVariants, variantKey } from "./session-variant-store"
 import { KILO_PROVIDER_ID, parseModelString } from "../../../src/shared/provider-model"
@@ -1447,19 +1448,6 @@ export const SessionProvider: ParentComponent = (props) => {
     return [...messages, ...orphans]
   }
 
-  // Cheap tail check: same ids in the same order and no visible streamed-part
-  // correction to apply. It skips store churn when SSE already matches the
-  // snapshot, but lets reconcile heal part removals and finalized text.
-  function sameReconcileShape(current: Message[], incoming: Message[]): boolean {
-    if (current.length !== incoming.length) return false
-    for (const [i, n] of incoming.entries()) {
-      const c = current[i]!
-      if (c.id !== n.id) return false
-      if (!sameParts(store.parts[c.id] ?? c.parts, n.parts)) return false
-    }
-    return true
-  }
-
   function setTools(sessionID: string, tools: ToolPart[]) {
     setStore("toolParts", sessionID, reconcileSessionToolParts(tools))
   }
@@ -1508,7 +1496,10 @@ export const SessionProvider: ParentComponent = (props) => {
     // Reconcile fast-path: if the tail matches local state shape-wise, every
     // message+part-count already agrees with the server. Skip the reactive
     // store churn entirely — virtualizer and rendering stay untouched.
-    if (mode === "reconcile" && sameReconcileShape(store.messages[sessionID] ?? [], messages)) {
+    if (
+      mode === "reconcile" &&
+      sameReconcileShape(store.messages[sessionID] ?? [], messages, (message) => store.parts[message.id] ?? message.parts)
+    ) {
       const parts = messageParts(messages)
       for (const msg of messages) {
         if (store.parts[msg.id]) delete parts[msg.id]

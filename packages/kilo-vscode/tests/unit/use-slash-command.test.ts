@@ -131,6 +131,32 @@ describe("useSlashCommand selection", () => {
     })
   }
 
+  it("selects the visually highlighted server command when action results also match", () => {
+    const embeddedReview: SlashCommandEntry = {
+      name: "embedded-review",
+      description: "审查 C/C++ 固件变更 [uncommitted|commit]",
+      source: "command",
+      hints: ["$ARGUMENTS"],
+    }
+    const ctx = setup([embeddedReview])
+    const raw = "/em"
+    const input = field(raw, raw.length)
+    const enter = key("Enter")
+    const state = { text: "" }
+
+    ctx.slash.onInput(raw, raw.length)
+    expect(ctx.slash.grouped()).toBe(false)
+    expect(ctx.slash.results().map((entry) => entry.name)).toEqual(["embedded-review", "memory", "remote"])
+
+    expect(ctx.slash.onKeyDown(enter.event, input.node, (text) => (state.text = text))).toBe(true)
+
+    expect(state.text).toBe("/embedded-review ")
+    expect(input.node.value).toBe("/embedded-review ")
+    expect(input.state.start).toBe("/embedded-review ".length)
+    expect(enter.state.prevented).toBe(1)
+    ctx.cleanup.run?.()
+  })
+
   it("preserves the draft and runs a client action exactly once", () => {
     const ctx = setup()
     const raw = "/new保留这段草稿"

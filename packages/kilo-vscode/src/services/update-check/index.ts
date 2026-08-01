@@ -13,6 +13,11 @@ import {
 } from "../../shared/update-check"
 import { installDetail, resolveInstall, type Exec } from "./install"
 import { readVsixManifest } from "./vsix"
+import {
+  markPendingUpdateReloadRequested,
+  writePendingUpdateActivation,
+  type PendingUpdateActivation,
+} from "./activation"
 
 export const LAST_AUTO_KEY = "chipmate.v2.updateCheck.lastAutoCheckMs"
 export const LAST_MANUAL_KEY = "chipmate.v2.updateCheck.lastManualCheckMs"
@@ -28,6 +33,7 @@ const INSTALL_TIMEOUT = 5 * 60_000
 const CANDIDATE_TIMEOUT = 30 * 60_000
 const INSTALL = "Install Update"
 const RELOAD = "Reload Window"
+const RELEASE_NOTES = "View Release Notes"
 
 type Mode = "auto" | "manual"
 type Target = ChipmateUpdateTarget
@@ -198,22 +204,18 @@ export class UpdateCheckService implements vscode.Disposable {
       return
     }
     if (result.status !== "available") return
-    const choice = await vscode.window.showInformationMessage(
+    const install = await this.promptInstall(
       `ChipMate update ${result.version} is available. Current version: ${result.currentVersion}.`,
-      INSTALL,
+      result,
     )
-    if (choice !== INSTALL) return
+    if (!install) return
     const installed = await this.installManual(result.candidateId)
     if (installed.status === "error") {
       await this.warning(installed.message)
       return
     }
     if (installed.status !== "installed") return
-    const reload = await vscode.window.showInformationMessage(
-      "ChipMate update installed. Reload Window to finish.",
-      RELOAD,
-    )
-    if (reload === RELOAD) await vscode.commands.executeCommand("workbench.action.reloadWindow")
+    await this.promptReload(result)
   }
 
   async probeManual(): Promise<ChipmateUpdateResult> {
@@ -327,19 +329,67 @@ export class UpdateCheckService implements vscode.Disposable {
 
   private async offer(cfg: Config, result: Extract<Probe, { status: "available" }>, mode: Mode): Promise<void> {
     if (!cfg.autoInstall) {
-      const choice = await vscode.window.showInformationMessage(
+      const install = await this.promptInstall(
         `ChipMate update ${result.item.version} is available. Current version: ${result.currentVersion}.`,
-        INSTALL,
+        result.item,
       )
-      if (choice !== INSTALL) return
+      if (!install) return
     }
     await this.perform(cfg, result.item, result.url, mode === "manual" || !cfg.autoInstall)
     this.info(`版本 ${result.item.version} 已安装，等待用户重载窗口后激活。`)
-    const reload = await vscode.window.showInformationMessage(
-      "ChipMate update installed. Reload Window to finish.",
-      RELOAD,
+    await this.promptReload(result.item)
+  }
+
+  private async promptInstall(message: string, release: Pick<Package, "version" | "releaseNotes">): Promise<boolean> {
+    const notice = releaseNotice(message, release.releaseNotes)
+    const choice = release.releaseNotes
+      ? await vscode.window.showInformationMessage(notice, RELEASE_NOTES, INSTALL)
+      : await vscode.window.showInformationMessage(notice, INSTALL)
+    if (choice === INSTALL) return true
+    if (choice !== RELEASE_NOTES || !release.releaseNotes) return false
+    await this.showReleaseNotes(release.version, release.releaseNotes)
+    return (
+      (await vscode.window.showInformationMessage(`ChipMate update ${release.version} is ready to install.`, INSTALL)) ===
+      INSTALL
     )
-    if (reload === RELOAD) await vscode.commands.executeCommand("workbench.action.reloadWindow")
+  }
+
+  private async promptReload(release: Pick<Package, "version" | "releaseNotes">): Promise<void> {
+    const prompt = releaseNotice("ChipMate update installed. Reload Window to finish.", release.releaseNotes)
+    const choice = release.releaseNotes
+      ? await vscode.window.showInformationMessage(prompt, RELEASE_NOTES, RELOAD)
+      : await vscode.window.showInformationMessage(prompt, RELOAD)
+    if (choice === RELEASE_NOTES && release.releaseNotes) {
+      await this.showReleaseNotes(release.version, release.releaseNotes)
+      const reload = await vscode.window.showInformationMessage(prompt, RELOAD)
+      if (reload !== RELOAD) return
+    } else if (choice !== RELOAD) {
+      return
+    }
+    try {
+      const pending = await markPendingUpdateReloadRequested(this.context, this.deps.now())
+      if (!pending) {
+        this.warn("无法记录 Reload 请求：缺少已验证的更新激活收据。")
+        await this.warning("ChipMate update receipt is missing. Check for updates again before reloading.")
+        return
+      }
+      this.info(`已请求重载以激活版本 ${pending.expectedVersion}。`)
+      await vscode.commands.executeCommand("workbench.action.reloadWindow")
+    } catch (err) {
+      this.warn(`无法记录 Reload 请求：${message(err)}`)
+      await this.warning("ChipMate could not record the update activation request. Check the update log before reloading.")
+    }
+  }
+
+  private async showReleaseNotes(version: string, notes: string): Promise<void> {
+    try {
+      const document = await vscode.workspace.openTextDocument({ language: "markdown", content: notes })
+      await vscode.window.showTextDocument(document, { preview: true })
+      this.info(`已打开版本 ${version} 的更新说明。`)
+    } catch (err) {
+      this.warn(`无法打开版本 ${version} 的更新说明：${message(err)}`)
+      await this.warning("Failed to open ChipMate release notes.")
+    }
   }
 
   private async perform(cfg: Config, item: Package, url: URL, explicit: boolean): Promise<void> {
@@ -359,6 +409,7 @@ export class UpdateCheckService implements vscode.Disposable {
       this.info(`重试安装已校验的缓存 VSIX：${path.basename(current.file)}。`)
     }
 
+    const fromVersion = this.identity().version
     const task =
       current?.state === "manual"
         ? this.verify(current.file, item).then(() => this.install(cfg, current.file))
@@ -366,6 +417,7 @@ export class UpdateCheckService implements vscode.Disposable {
     this.transactions.set(key, { state: "running", promise: task })
     try {
       await task
+      await this.rememberPendingActivation(item, fromVersion)
       const file = this.packagePath(item)
       this.transactions.set(key, { state: "installed", file })
     } catch (err) {
@@ -548,6 +600,21 @@ export class UpdateCheckService implements vscode.Disposable {
         file,
       )
     }
+  }
+
+  private async rememberPendingActivation(item: Package, fromVersion: string): Promise<void> {
+    const pending: PendingUpdateActivation = {
+      schemaVersion: 1,
+      transactionId: randomUUID(),
+      extensionId: item.extensionId,
+      fromVersion,
+      expectedVersion: item.version,
+      target: item.target,
+      sha256: item.sha256.toLowerCase(),
+      installedAt: this.deps.now(),
+    }
+    await writePendingUpdateActivation(this.context, pending)
+    this.info(`已记录更新激活收据：目标版本 ${item.version}，目标平台 ${item.target}。`)
   }
 
   private async fail(err: unknown, cfg: Config, mode: Mode): Promise<void> {
@@ -918,6 +985,20 @@ function parsePublishedAt(value: unknown): string {
     throw new UpdateError("manifest", "Update publication date is invalid.")
   }
   return date
+}
+
+function releaseNotice(message: string, notes: string | undefined): string {
+  const summary = notes
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line && !line.startsWith("#") && line !== "---")
+    ?.replace(/^[-*+>]\s*/, "")
+    .replace(/[`*_~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (!summary) return message
+  const clipped = summary.length > 160 ? `${summary.slice(0, 157)}...` : summary
+  return `${message} What's new: ${clipped}`
 }
 
 function number(value: unknown): number {

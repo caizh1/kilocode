@@ -21,6 +21,58 @@ const part = (id: string, messageID: string): Part => ({ id, messageID, type: "t
 const lookup = (values: Record<string, Part[]>) => (id: string) => values[id] ?? []
 
 describe("transcriptRows", () => {
+  it("shows a completed duration only below the final assistant chunk", () => {
+    const u1 = user("u1", { time: { created: 1_000 } })
+    const a1 = assistant("a1", "u1", { finish: "stop", time: { created: 2_000, completed: 159_000 } })
+    const parts = Array.from({ length: 10 }, (_, index) => part(`p${index}`, "a1"))
+    const rows = transcriptRows(messageTurns([u1, a1]), lookup({ a1: parts }), { messages: [u1, a1], size: 3 })
+
+    expect(rows.filter((row) => row.type === "assistant").map((row) => row.completionElapsed)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      158_000,
+    ])
+  })
+
+  it("attaches a completed duration to the copied text row and preserves the final agent", () => {
+    const u1 = user("u1", { time: { created: 1_000 } })
+    const prose = assistant("a1", "u1", { agent: "code", time: { created: 2_000 } })
+    const completed = assistant("a2", "u1", {
+      agent: "Ultra",
+      finish: "stop",
+      time: { created: 3_000, completed: 159_000 },
+    })
+    const rows = transcriptRows(messageTurns([u1, prose, completed]), lookup({ a1: [part("p1", "a1")] }), {
+      messages: [u1, prose, completed],
+    })
+    const assistantRows = rows.filter((row) => row.type === "assistant")
+
+    expect(assistantRows.map((row) => row.message)).toEqual([prose, completed])
+    expect(assistantRows.map((row) => [row.completionElapsed, row.completionAgent])).toEqual([
+      [158_000, "Ultra"],
+      [undefined, undefined],
+    ])
+  })
+
+  it("keeps a resumed compaction reply tied to its original submission time", () => {
+    const original = user("u1", { time: { created: 100 } })
+    const compacted = user("u2", {
+      time: { created: 600 },
+      parts: [{ id: "compact", messageID: "u2", type: "compaction", auto: false }],
+    })
+    const resumed = assistant("a2", "u1", { finish: "stop", time: { created: 800, completed: 2_100 } })
+    const rows = transcriptRows(
+      messageTurns([original, compacted, resumed]),
+      lookup({ u2: compacted.parts ?? [], a2: [part("p1", "a2")] }),
+      { messages: [original, compacted, resumed] },
+    )
+
+    expect(rows.find((row) => row.type === "assistant" && row.message.id === resumed.id)).toMatchObject({
+      completionElapsed: 2_000,
+    })
+  })
+
   it("preserves turn order across user, bounded assistant, diff, and error rows", () => {
     const u1 = user("u1", { summary: { diffs: [{ file: "a.ts" }] } })
     const a1 = assistant("a1", "u1")

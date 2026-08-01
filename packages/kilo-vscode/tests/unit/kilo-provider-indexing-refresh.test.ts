@@ -148,6 +148,7 @@ describe("KiloProvider indexing refresh", () => {
         {} as never,
         conn.service as never,
         {
+          extension: { packageJSON: { version: "0.0.0-test" } },
           globalStorageUri: { fsPath: "/global-storage/v2" },
         } as never,
       )
@@ -432,7 +433,7 @@ describe("KiloProvider indexing refresh", () => {
     }
   })
 
-  it("lets a protected A snapshot win after an A to B to A switch", async () => {
+  it("does not let a project-switch snapshot overwrite a newer SSE status", async () => {
     const original = globalThis.fetch
     const pending: Array<{ dir: string; response: PromiseWithResolvers<Response> }> = []
     globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
@@ -459,7 +460,7 @@ describe("KiloProvider indexing refresh", () => {
       await current!.response.promise
       await Promise.resolve()
 
-      expect(cached(internal)).toBe("fresh a")
+      expect(cached(internal)).toBe("stale a")
       for (const item of pending) {
         if (item === current) continue
         item.response.resolve(status("stale b"))

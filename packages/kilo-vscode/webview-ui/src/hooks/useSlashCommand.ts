@@ -19,6 +19,10 @@ export function sortByScore(matches: SlashCommandEntry[], query: string): SlashC
   return [...matches].sort((a, b) => getMatchScore(b, lower) - getMatchScore(a, lower))
 }
 
+function groupResults(matches: SlashCommandEntry[]): SlashCommandEntry[] {
+  return [...matches.filter((cmd) => cmd.action), ...matches.filter((cmd) => !cmd.action)]
+}
+
 interface VSCodeContext {
   postMessage: (message: WebviewMessage) => void
   onMessage: (handler: (message: ExtensionMessage) => void) => () => void
@@ -34,6 +38,7 @@ export interface SlashCommand {
   results: Accessor<SlashCommandEntry[]>
   index: Accessor<number>
   show: Accessor<boolean>
+  grouped: Accessor<boolean>
   commands: Accessor<SlashCommandEntry[]>
   onInput: (val: string, cursor: number) => void
   onKeyDown: (
@@ -199,6 +204,7 @@ export function useSlashCommand(
   }
 
   const show = () => query() !== null
+  const grouped = () => query() === ""
 
   const request = () => {
     vscode.postMessage({ type: "requestCommands" })
@@ -218,7 +224,7 @@ export function useSlashCommand(
       )
     }
     const root = list.filter((cmd) => !cmd.name.includes(" "))
-    if (!q) return root
+    if (!q) return groupResults(root)
     const lower = q.toLowerCase()
     const matches = root.filter(
       (cmd) =>
@@ -338,6 +344,7 @@ export function useSlashCommand(
     results,
     index,
     show,
+    grouped,
     commands,
     onInput,
     onKeyDown,

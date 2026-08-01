@@ -515,3 +515,110 @@ Focused comparison evidence:
 - Pass 6 responded to the navigation scale follow-up. The first `18px` label/`24px` icon pass remained visibly lighter than the source, so the final pass uses `20px` labels, an optical `26px` Codicon size inside a `28px` normal-flow slot, and `54px` rows. The source and implementation were re-compared in full-view and focused navigation pairs; desktop and narrow views have no horizontal overflow, and no P0/P1/P2 mismatch remains.
 
 final result: passed
+
+---
+
+# ChipMate 完成态耗时 Design QA
+
+Source visual truth path: `/Users/archer/.codex/generated_images/019fb632-1de3-74e0-9fba-fb67d59b397c/exec-263b0948-039d-41d0-a5ef-bde8bf935440.png`
+
+Implementation screenshot path: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-420.png`
+
+Full-view comparison evidence: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-420-comparison.png`
+
+Focused completion-row comparison evidence: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-420-focus-comparison.png`
+
+Viewport and normalization:
+
+- Implementation: Playwright Chromium, dark `dark-modern` theme, `420 × 720` CSS px, `deviceScaleFactor: 1`, output `420 × 720` px.
+- Source: ImageGen raster `932 × 1687` px, without declared CSS viewport or density metadata. The full-view comparison normalizes its width to `420` px (`420 × 760` px); the focused comparison normalizes the lower response/duration region to the same `420` px width. This comparison therefore evaluates the requested completion row, not a claim of whole-screen pixel identity.
+
+State: Simplified Chinese, idle completed session, final assistant message has `finish: "stop"`, one completed tool section, visible copy action, and the designed `已完成 · 本轮耗时 2分38秒` label. The source and implementation are both dark, completed-answer states; their broader shell differs intentionally because the implementation preserves ChipMate's existing VS Code-native chat surface. Playwright additionally checked `200px` dark plus `420px` dark, light, and high-contrast themes for bounds and non-overlap.
+
+**Findings**
+
+- No actionable P0/P1/P2 visual differences remain in the selected completion-duration scope.
+- [P3] The source concept encloses the full answer in a large glass card and shows a custom product header; the implementation retains the existing borderless reading flow, tool presentation, and composer. This is an intentional product constraint from the request to follow the existing interface, not a duration-row mismatch.
+- [P3] The source concept includes feedback actions that are not always enabled in the current fixture. The production duration row correctly follows the existing copy/action row when those controls are present.
+
+**Required Fidelity Surfaces**
+
+- Fonts and typography: Both comparison regions use small muted metadata below the answer. The implementation uses the existing webview sans-serif and `--kilo-font-size-12` token, tabular numerals, normal wrapping, and Chinese copy matching the selected design state. The exact font family remains intentionally the installed VS Code/webview font rather than the ImageGen raster's inferred typeface.
+- Spacing and layout rhythm: The row is in normal flex flow immediately after the assistant content/actions, keeps the shared readable width, and has no extra card, border, or detached overlay. The final `20px` icon and `10px` gap match the source's visual weight and left-to-right rhythm at `420px`.
+- Colors and visual tokens: The label uses the existing muted VS Code description foreground; the check uses `--chipmate-agent-ultra-foreground`, including its existing light/high-contrast fallback. No hard-coded theme color or gradient was introduced.
+- Image quality and asset fidelity: The completion mark uses the repository's existing `circle-check` icon component rather than a handcrafted SVG, CSS drawing, emoji, or generated raster. The comparison source is a concept image only; no logo, illustration, or other image asset was added or substituted in the production UI.
+- Copy and content: The source-selected Chinese content is implemented exactly as `已完成 · 本轮耗时 2分38秒` in the QA state. English fallbacks are localized as `Completed · This turn took 2m 38s`.
+
+**Comparison History**
+
+1. P2 found in the first normalized comparison: the `16px` completion mark read noticeably lighter and tighter than the selected source row. Fix: changed the existing icon component to its normal `20px` size and increased the normal-flow gap from `7px` to `10px`.
+2. Post-fix evidence: the final full-view and focused side-by-side images above show the check, label weight, muted color, and below-answer placement aligned with the selected design while retaining the production chat shell. No P0/P1/P2 issue remains.
+
+**Open Questions**
+
+- The final visual evidence is Storybook/webview rendering. An installed VS Code Extension Host with a live Ultra response was not started in this task, so that deployment surface remains unverified; the data path is covered by unit tests for successful completion, tool phases, errors, partial turns, invalid timestamps, and compaction replay safeguards.
+
+**Implementation Checklist**
+
+- [x] Render one completion-duration row only on the final assistant chunk.
+- [x] Compute elapsed wall time from original user submission through final successful `stop` response.
+- [x] Hide uncertain, interrupted, errored, incomplete, and internal compaction/replay cases.
+- [x] Verify `200px` dark plus `420px` dark/light/high-contrast bounds and action non-overlap with Playwright.
+- [x] Compare source and implementation in the same full-view and focused images.
+
+**Follow-up Polish**
+
+- [P3] If the broader chat shell is later redesigned, re-evaluate the full-card source concept separately; it is intentionally outside this narrowly scoped completion-duration change.
+
+final result: passed
+
+---
+
+# ChipMate 完成态动作列与 Agent 色彩 Design QA（最新）
+
+Source visual truth path: `/Users/archer/.codex/generated_images/019fb632-1de3-74e0-9fba-fb67d59b397c/exec-79abeeab-e246-476d-9db3-1d6c3d965d7e.png`
+
+Implementation screenshot path: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-modes-420.png`
+
+Full-view comparison evidence: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-modes-420-comparison.png`
+
+Focused completion-action-row comparison evidence: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-modes-420-focus-comparison.png`
+
+Viewport, density, and state:
+
+- The approved source is `958 × 1642` px with no declared CSS density; it was proportionally normalized to `420 × 720` px.
+- The implementation is a Chromium `420 × 720` CSS-px capture at `deviceScaleFactor: 1`, outputting `420 × 720` px. The full comparison is equal-density side by side at `840 × 720` px; the focused action-row comparison is `840 × 310` px.
+- Both views are dark completed-answer states. The implementation fixture is Simplified Chinese and enables feedback only for the QA state so copy / thumbs-up / thumbs-down are visible; production consent behavior is unchanged.
+
+**Findings**
+
+- No actionable P0/P1/P2 difference remains in the requested action-row scope.
+- [P3] The approved concept also contains tool cards and agent labels; the implementation deliberately retains the existing denser VS Code transcript surface. This does not affect the requested action order, completion copy, or agent-color behavior.
+
+**Required Fidelity Surfaces**
+
+- Fonts and typography: Existing `--kilo-font-size-12`, sans-serif metadata, tabular numerals, and normal wrapping keep the completion copy compact and readable.
+- Spacing and layout rhythm: The completed state is in the normal-flow copy / feedback rail after a vertical divider. It aligns on one baseline at `420px` and wraps safely without overlap at `200px`.
+- Colors and visual tokens: `ultra` resolves to `--chipmate-agent-ultra-foreground`; every other persisted final agent resolves to `--vscode-foreground`. The check inherits `currentColor`, so icon and label stay synchronized in dark, light, and high-contrast themes.
+- Image quality and asset fidelity: The existing `circle-check` icon is used; no generated production asset, custom SVG, CSS drawing, emoji, or placeholder was introduced.
+- Copy and content: The capture shows the approved `已完成 · 本轮耗时 18秒` and `已完成 · 本轮耗时 2分38秒` states, with existing English localization retained.
+
+**Comparison History**
+
+1. P2: the earlier completion row was detached below the answer and colored every agent as Ultra. Fix: move a semantic completion slot through the existing action-row component chain, add the divider, and derive tone from the persisted final successful assistant agent.
+2. P2 edge case: a textless final `stop` reply had no action row. Fix: assign elapsed metadata to the row that owns the copied text while preserving the terminal reply's agent for color; targeted unit coverage verifies Code text followed by an `Ultra` terminal reply.
+3. Post-fix comparison: full and focused side-by-side evidence confirms `复制 / 赞 / 踩 | 勾选完成态`, foreground Code, purple Ultra, and no duplicate below-answer row. No P0/P1/P2 mismatch remains.
+
+**Implementation Checklist**
+
+- [x] Completion state is a descendant of the existing assistant action rail, not a sibling below the response.
+- [x] Ultra is purple; all other agents use the theme foreground.
+- [x] `77` targeted unit tests (`349` assertions) pass for timing and transcript edge cases.
+- [x] Two action-row Playwright checks pass: dark/light/high-contrast `420px`, dark `200px`, and the no-empty-divider regression; no browser `console.error` or `pageerror` was observed.
+- [x] Source and implementation were reviewed in one full-view image and one focused action-row image.
+
+**Follow-up Polish**
+
+- [P3] Revisit visible Code/Ultra identity labels only if the existing transcript itself later adds agent identity to assistant messages.
+
+final result: passed

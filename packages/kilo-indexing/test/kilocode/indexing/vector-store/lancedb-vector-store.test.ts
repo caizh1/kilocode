@@ -33,9 +33,16 @@ function schema(missing: string[] = []) {
   }
 }
 
+const mockMerge = {
+  whenMatchedUpdateAll: mock().mockReturnThis(),
+  whenNotMatchedInsertAll: mock().mockReturnThis(),
+  execute: mock().mockResolvedValue(undefined),
+}
+
 const mockTable = {
   delete: mock().mockResolvedValue(undefined),
   add: mock().mockResolvedValue(undefined),
+  mergeInsert: mock().mockReturnValue(mockMerge),
   query: mock().mockReturnThis(),
   where: mock().mockReturnThis(),
   toArray: mock().mockResolvedValue([]),
@@ -104,6 +111,10 @@ let store: LanceDBVectorStore
 const allMocks = [
   mockTable.delete,
   mockTable.add,
+  mockTable.mergeInsert,
+  mockMerge.whenMatchedUpdateAll,
+  mockMerge.whenNotMatchedInsertAll,
+  mockMerge.execute,
   mockTable.query,
   mockTable.where,
   mockTable.toArray,
@@ -149,6 +160,10 @@ function resetAllMocks() {
   // Re-apply default resolved values after reset
   mockTable.delete.mockResolvedValue(undefined)
   mockTable.add.mockResolvedValue(undefined)
+  mockTable.mergeInsert.mockReturnValue(mockMerge)
+  mockMerge.whenMatchedUpdateAll.mockReturnThis()
+  mockMerge.whenNotMatchedInsertAll.mockReturnThis()
+  mockMerge.execute.mockResolvedValue(undefined)
   mockTable.query.mockReturnThis()
   mockTable.where.mockReturnThis()
   mockTable.toArray.mockResolvedValue([])
@@ -450,11 +465,33 @@ describe("LocalVectorStore", () => {
           payload: { filePath: "a", fileHash: "hash-a", codeChunk: "b", startLine: 1, endLine: 2 },
         },
       ]
-      mockTable.delete.mockResolvedValue(undefined)
-      mockTable.add.mockResolvedValue(undefined)
       await store.upsertPoints(points)
-      expect(mockTable.delete).toHaveBeenCalled()
-      expect(mockTable.add).toHaveBeenCalled()
+      expect(mockTable.mergeInsert).toHaveBeenCalledWith("id")
+      expect(mockMerge.whenMatchedUpdateAll).toHaveBeenCalled()
+      expect(mockMerge.whenNotMatchedInsertAll).toHaveBeenCalled()
+      expect(mockMerge.execute).toHaveBeenCalledTimes(1)
+      expect(mockMerge.execute.mock.calls[0]?.[1]).toEqual({ timeoutMs: 30_000 })
+    })
+
+    test("uses one merge transaction for a 1000-point batch", async () => {
+      const points = Array.from({ length: 1000 }, (_, index) => ({
+        id: crypto.randomUUID(),
+        vector: [1, 2, 3],
+        payload: {
+          filePath: `src/file-${index}.ts`,
+          fileHash: `hash-${index}`,
+          codeChunk: `export const value${index} = ${index}`,
+          startLine: 1,
+          endLine: 1,
+        },
+      }))
+
+      await store.upsertPoints(points)
+
+      expect(mockMerge.execute).toHaveBeenCalledTimes(1)
+      expect(mockMerge.execute.mock.calls[0]?.[0]).toHaveLength(1000)
+      expect(mockTable.delete).not.toHaveBeenCalled()
+      expect(mockTable.add).not.toHaveBeenCalled()
     })
 
     test("should throw error on add failure", async () => {
@@ -465,10 +502,25 @@ describe("LocalVectorStore", () => {
           payload: { filePath: "a", fileHash: "hash-a", codeChunk: "b", startLine: 1, endLine: 2 },
         },
       ]
-      mockTable.delete.mockResolvedValue(undefined)
-      mockTable.add.mockRejectedValue(new Error("fail"))
+      mockMerge.execute.mockRejectedValue(new Error("fail"))
       await expect(store.upsertPoints(points)).rejects.toThrow()
     })
+  })
+
+  test("finalizes multiple file generations with one update and one delete", async () => {
+    await store.finalizeFileGenerations([
+      { filePath: "目录/O'Reilly one.ts", generation: "gen-1", runId: "run-1" },
+      { filePath: String.raw`src\second.ts`, generation: "gen-2", runId: "run-2" },
+    ])
+
+    expect(mockTable.update).toHaveBeenCalledTimes(1)
+    expect(mockTable.delete).toHaveBeenCalledTimes(1)
+    const update = mockTable.update.mock.calls[0]?.[0] as { where: string; values: { active: boolean } }
+    expect(update.where).toContain("O''Reilly one.ts")
+    expect(update.where).toContain("gen-1")
+    expect(update.where).toContain("gen-2")
+    expect(update.values.active).toBe(true)
+    expect(mockTable.delete.mock.calls[0]?.[0]).toContain("AND NOT (")
   })
 
   test("cleans inactive points without clearing or deleting the collection", async () => {
@@ -495,14 +547,15 @@ describe("LocalVectorStore", () => {
   describe("search", () => {
     test("should return filtered results using distanceRange", async () => {
       const distanceRangeSpy = mock().mockReturnThis()
+      const toArray = mock().mockResolvedValue([
+        { id: "2", _distance: 0.2, filePath: "a", fileHash: "hash-a", codeChunk: "c", startLine: 3, endLine: 4 },
+      ])
       mockTable.search.mockResolvedValue({
         where: mock().mockReturnThis(),
         distanceType: mock().mockReturnThis(),
         distanceRange: distanceRangeSpy,
         limit: mock().mockReturnThis(),
-        toArray: mock().mockResolvedValue([
-          { id: "2", _distance: 0.2, filePath: "a", fileHash: "hash-a", codeChunk: "c", startLine: 3, endLine: 4 },
-        ]),
+        toArray,
       })
       const results = await store.search([1, 2, 3], "a", 0.7, 1)
       expect(results.length).toBe(1)
@@ -515,6 +568,7 @@ describe("LocalVectorStore", () => {
       expect(calls).toBeDefined()
       expect(calls![0]).toBe(-1e-6)
       expect(calls![1]).toBeCloseTo(0.3) // Handle floating point precision: 1 - 0.7
+      expect(toArray).toHaveBeenCalledWith({ timeoutMs: 30_000 })
     })
 
     test("should filter by minScore at database level", async () => {

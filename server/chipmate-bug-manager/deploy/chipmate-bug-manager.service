@@ -1,0 +1,28 @@
+[Unit]
+Description=ChipMate Bug 自动修复管理服务
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chipmate-bugs
+Group=chipmate-bugs
+WorkingDirectory=/opt/chipmate-bug-manager
+EnvironmentFile=/etc/chipmate-bug-manager.env
+ExecStart=/usr/local/bin/node dist/server/start.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+MemoryHigh=150M
+MemoryMax=180M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/chipmate-bug-manager
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

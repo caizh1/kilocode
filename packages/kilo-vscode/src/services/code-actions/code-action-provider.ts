@@ -10,9 +10,16 @@ export class KiloCodeActionProvider implements vscode.CodeActionProvider {
     range: vscode.Range | vscode.Selection,
     context: vscode.CodeActionContext,
   ): vscode.CodeAction[] {
-    if (range.isEmpty) return []
-
     const actions: vscode.CodeAction[] = []
+    if (document.languageId === "c" || document.languageId === "cpp") {
+      const comments = new vscode.CodeAction("为当前函数生成高可信注释", vscode.CodeActionKind.RefactorRewrite)
+      comments.command = {
+        command: "chipmate.v2.generateCommentsForCurrentFunction",
+        title: "为当前函数生成高可信注释",
+      }
+      actions.push(comments)
+    }
+    if (range.isEmpty) return actions
 
     const add = new vscode.CodeAction("Add to ChipMate", vscode.CodeActionKind.RefactorRewrite)
     add.command = { command: "chipmate.v2.addToContext", title: "Add to ChipMate" }

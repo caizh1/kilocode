@@ -3,7 +3,18 @@
  * Text input with send/abort buttons, ghost-text autocomplete, and @ file mention support
  */
 
-import { createSignal, createEffect, on, For, Index, onCleanup, Show, untrack, type Component } from "solid-js"
+import {
+  createSignal,
+  createEffect,
+  on,
+  For,
+  Index,
+  onCleanup,
+  Show,
+  untrack,
+  type Accessor,
+  type Component,
+} from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
@@ -33,7 +44,7 @@ import { useTerminalContext } from "../../hooks/useTerminalContext"
 import { useGitChangesContext } from "../../hooks/useGitChangesContext"
 import { hasTerminalMention } from "../../hooks/terminal-context-utils"
 import { hasGitChangesMention } from "../../hooks/git-changes-context-utils"
-import { useSlashCommand } from "../../hooks/useSlashCommand"
+import { useSlashCommand, type SlashCommandEntry } from "../../hooks/useSlashCommand"
 import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 import { useGhostText } from "../../hooks/useGhostText"
 import { useSpeechToText } from "../speech-to-text/useSpeechToText"
@@ -1070,6 +1081,23 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     textareaRef.style.height = `${Math.min(textareaRef.scrollHeight, 200)}px`
   }
 
+  const renderSlashItem = (cmd: SlashCommandEntry, index: Accessor<number>) => (
+    <div
+      class="slash-command-item"
+      classList={{ "slash-command-item--active": index() === slash.index() }}
+      onMouseDown={(e) => {
+        e.preventDefault()
+        if (textareaRef) slash.select(cmd, textareaRef, setText, adjustHeight)
+      }}
+      onMouseEnter={() => slash.setIndex(index())}
+    >
+      <span class="slash-command-name">/{cmd.name}</span>
+      <Show when={cmd.description}>
+        <span class="slash-command-desc">{cmd.description}</span>
+      </Show>
+    </div>
+  )
+
   const handlePaste = (e: ClipboardEvent) => {
     imageAttach.handlePaste(e)
     // After pasting text, the textarea content changes but the layout may not
@@ -1632,53 +1660,26 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   const server = all.filter((c) => !c.action)
                   const offset = actions.length
                   return (
-                    <>
-                      <Show when={actions.length > 0}>
-                        <div class="slash-command-group-label">Actions</div>
-                        <For each={actions}>
-                          {(cmd, idx) => (
-                            <div
-                              class="slash-command-item"
-                              classList={{ "slash-command-item--active": idx() === slash.index() }}
-                              onMouseDown={(e) => {
-                                e.preventDefault()
-                                if (textareaRef) slash.select(cmd, textareaRef, setText, adjustHeight)
-                              }}
-                              onMouseEnter={() => slash.setIndex(idx())}
-                            >
-                              <span class="slash-command-name">/{cmd.name}</span>
-                              <Show when={cmd.description}>
-                                <span class="slash-command-desc">{cmd.description}</span>
-                              </Show>
-                            </div>
-                          )}
-                        </For>
-                      </Show>
-                      <Show when={server.length > 0}>
+                    <Show
+                      when={slash.grouped()}
+                      fallback={<For each={all}>{renderSlashItem}</For>}
+                    >
+                      <>
                         <Show when={actions.length > 0}>
-                          <div class="slash-command-separator" />
+                          <div class="slash-command-group-label">Actions</div>
+                          <For each={actions}>{renderSlashItem}</For>
                         </Show>
-                        <div class="slash-command-group-label">Commands</div>
-                        <For each={server}>
-                          {(cmd, idx) => (
-                            <div
-                              class="slash-command-item"
-                              classList={{ "slash-command-item--active": idx() + offset === slash.index() }}
-                              onMouseDown={(e) => {
-                                e.preventDefault()
-                                if (textareaRef) slash.select(cmd, textareaRef, setText, adjustHeight)
-                              }}
-                              onMouseEnter={() => slash.setIndex(idx() + offset)}
-                            >
-                              <span class="slash-command-name">/{cmd.name}</span>
-                              <Show when={cmd.description}>
-                                <span class="slash-command-desc">{cmd.description}</span>
-                              </Show>
-                            </div>
-                          )}
-                        </For>
-                      </Show>
-                    </>
+                        <Show when={server.length > 0}>
+                          <Show when={actions.length > 0}>
+                            <div class="slash-command-separator" />
+                          </Show>
+                          <div class="slash-command-group-label">Commands</div>
+                          <For each={server}>
+                            {(cmd, index) => renderSlashItem(cmd, () => index() + offset)}
+                          </For>
+                        </Show>
+                      </>
+                    </Show>
                   )
                 })()}
               </Show>

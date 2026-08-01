@@ -111,6 +111,25 @@ const esbuildProblemMatcherPlugin = {
 }
 
 /**
+ * Keep the WebAssembly runtime paired with the bundled web-tree-sitter JavaScript.
+ * The CLI's bin/tree-sitter runtime may use a different web-tree-sitter version.
+ *
+ * @type {import('esbuild').Plugin}
+ */
+const treeSitterRuntimePlugin = {
+  name: "tree-sitter-runtime",
+  setup(build) {
+    build.onEnd((result) => {
+      if (result.errors.length > 0) return
+      const source = require.resolve("web-tree-sitter/tree-sitter.wasm")
+      const target = path.join(__dirname, "dist", "tree-sitter.wasm")
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.copyFileSync(source, target)
+    })
+  },
+}
+
+/**
  * Route the shared `@opencode-ai/ui/pierre/worker` module (and its relative
  * variants) to the Kilo implementation in `webview-ui/pierre-worker.ts`.
  *
@@ -275,7 +294,7 @@ async function main() {
     external: ["vscode"],
     logLevel: "silent",
     define: node,
-    plugins: [esbuildProblemMatcherPlugin],
+    plugins: [treeSitterRuntimePlugin, esbuildProblemMatcherPlugin],
   })
 
   // Build Agent Manager webview (SolidJS, shares components with sidebar)

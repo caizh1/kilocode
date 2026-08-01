@@ -2968,6 +2968,163 @@
       ]
     },
     {
+      "changeset": "fix-rag-progress-and-finalization",
+      "parent": "WIN-INDEXING-LIFECYCLE",
+      "summary": "修复 Code RAG 文件重复计数、假 100%、Document RAG 永久等待、状态竞态和 LanceDB 批量提交兼容性。",
+      "assertions": [
+        {
+          "id": "REG-FIX-RAG-PROGRESS-AND-FINALIZATION-01",
+          "title": "每个 Code RAG 候选文件只增加一次处理进度",
+          "oracle": "boolean",
+          "evidence": [
+            "pipeline-status",
+            "source-test",
+            "package-ipc-report"
+          ],
+          "source": {
+            "required": true,
+            "executor": "bun run qa:indexing:regression -- --case IDX-REG-001,IDX-REG-002",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": false,
+            "executor": "MAC-INDEXING",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-INDEXING-LIFECYCLE",
+            "state": "planned"
+          }
+        },
+        {
+          "id": "REG-FIX-RAG-PROGRESS-AND-FINALIZATION-02",
+          "title": "运行态不超过 99%，真实终态为 100% 且旋转图标停止",
+          "oracle": "boolean",
+          "evidence": [
+            "pipeline-status",
+            "accessibility-tree",
+            "screenshot"
+          ],
+          "source": {
+            "required": true,
+            "executor": "bun run qa:indexing:regression -- --case IDX-REG-002,IDX-REG-007",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": false,
+            "executor": "MAC-INDEXING",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-INDEXING-LIFECYCLE",
+            "state": "planned"
+          }
+        },
+        {
+          "id": "REG-FIX-RAG-PROGRESS-AND-FINALIZATION-03",
+          "title": "Document RAG 只在两条代码流水线真实完成后启动一次",
+          "oracle": "boolean",
+          "evidence": [
+            "pipeline-status",
+            "retrieval-result",
+            "package-ipc-report"
+          ],
+          "source": {
+            "required": true,
+            "executor": "bun run qa:indexing:regression -- --case IDX-REG-003",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": false,
+            "executor": "MAC-INDEXING",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-INDEXING-LIFECYCLE",
+            "state": "planned"
+          }
+        },
+        {
+          "id": "REG-FIX-RAG-PROGRESS-AND-FINALIZATION-04",
+          "title": "RAG 与 Document 配置变化保留可查询的 CodeGraph",
+          "oracle": "boolean",
+          "evidence": [
+            "pipeline-status",
+            "graph-result",
+            "package-ipc-report"
+          ],
+          "source": {
+            "required": true,
+            "executor": "bun run qa:indexing:regression -- --case IDX-REG-004,IDX-REG-006",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": false,
+            "executor": "MAC-INDEXING",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-INDEXING-LIFECYCLE",
+            "state": "planned"
+          }
+        },
+        {
+          "id": "REG-FIX-RAG-PROGRESS-AND-FINALIZATION-05",
+          "title": "Embedding 401、403、404 快速失败且不写向量库",
+          "oracle": "boolean",
+          "evidence": [
+            "provider-requests",
+            "pipeline-status",
+            "storage-inventory"
+          ],
+          "source": {
+            "required": true,
+            "executor": "bun run qa:indexing:regression -- --case IDX-REG-005",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": false,
+            "executor": "MAC-INDEXING",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-INDEXING-LIFECYCLE",
+            "state": "planned"
+          }
+        },
+        {
+          "id": "REG-FIX-RAG-PROGRESS-AND-FINALIZATION-06",
+          "title": "真实 LanceDB 原生运行库完成批量 generation finalize",
+          "oracle": "boolean",
+          "evidence": [
+            "native-runtime",
+            "vector-readback",
+            "package-ipc-report"
+          ],
+          "source": {
+            "required": true,
+            "executor": "bun run qa:indexing:regression -- --case IDX-REG-008",
+            "state": "implemented"
+          },
+          "macos": {
+            "required": false,
+            "executor": "MAC-INDEXING",
+            "state": "planned"
+          },
+          "windows": {
+            "required": true,
+            "executor": "WIN-INDEXING-LIFECYCLE",
+            "state": "planned"
+          }
+        }
+      ]
+    },
+    {
       "changeset": "fix-local-skill-removal",
       "parent": "WIN-MARKETPLACE",
       "summary": "Remove local Skills immediately without restarting, surface deletion failures, and keep local import records in sync.",

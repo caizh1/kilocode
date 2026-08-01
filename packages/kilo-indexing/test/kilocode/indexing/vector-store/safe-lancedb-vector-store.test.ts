@@ -138,7 +138,76 @@ class MemoryStore implements IVectorStore {
   }
 }
 
+class ReadbackStore extends MemoryStore {
+  activeSearches = 0
+  maximumSearches = 0
+
+  override async search(
+    vector: number[],
+    prefix?: string,
+    score?: number,
+    max?: number,
+  ): Promise<VectorStoreSearchResult[]> {
+    this.activeSearches += 1
+    this.maximumSearches = Math.max(this.maximumSearches, this.activeSearches)
+    await Bun.sleep(5)
+    try {
+      return await super.search(vector, prefix, score, max)
+    } finally {
+      this.activeSearches -= 1
+    }
+  }
+}
+
 describe("SafeLanceDBVectorStore", () => {
+  test("allows duplicate vectors for chunks with distinct source locations", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-duplicates-"))
+    const workspace = path.join(root, "workspace")
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const target = new MemoryStore()
+    const store = new SafeLanceDBVectorStore(workspace, root, profile("space-duplicates"), runtime, () => target)
+    const first = point("src/a.c", 1)
+    const second = { ...point("src/b.c", 2), vector: first.vector.slice() }
+
+    try {
+      await store.initialize()
+      await store.upsertPoints([first, second])
+
+      expect(target.points.size).toBe(2)
+    } finally {
+      await store.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("bounds candidate readback concurrency before promotion", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-readback-"))
+    const workspace = path.join(root, "workspace")
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const target = new ReadbackStore()
+    const store = new SafeLanceDBVectorStore(workspace, root, profile("space-readback"), runtime, () => target)
+    const samples = Array.from({ length: 6 }, (_, index) => point(`src/sample-${index}.c`, index + 1))
+
+    try {
+      await store.initialize()
+      await store.upsertPoints(samples)
+      await store.finalizeFileGenerations(
+        samples.map((item) => ({
+          filePath: item.payload.filePath,
+          generation: item.payload.generation,
+          runId: item.payload.runId,
+        })),
+      )
+      await store.markIndexingComplete()
+
+      expect(target.maximumSearches).toBeLessThanOrEqual(2)
+      expect(await store.hasIndexedData()).toBe(true)
+    } finally {
+      await store.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("promotes a validated candidate atomically and reopens it as active", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-"))
     const workspace = path.join(root, "workspace")

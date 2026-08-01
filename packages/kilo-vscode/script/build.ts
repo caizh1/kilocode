@@ -521,6 +521,7 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     "extension/assets/loading-motion/light/signal-glint.png",
     "extension/assets/loading-motion/light/signal.png",
     "extension/dist/extension.js",
+    "extension/dist/tree-sitter.wasm",
     "extension/dist/webview.js",
     "extension/dist/agent-manager.js",
     "extension/dist/agent-console.js",
@@ -568,11 +569,19 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     }
   }
   const forbidden = files.filter(
-    (file) => file === "extension/bin/ffmpeg" || file === "extension/bin/ffmpeg.exe" || file.endsWith(".map"),
+    (file) =>
+      file === "extension/bin/ffmpeg" ||
+      file === "extension/bin/ffmpeg.exe" ||
+      file.endsWith(".map") ||
+      file.startsWith("extension/qa/"),
   )
   if (x64only) {
     forbidden.push(
-      ...files.filter((file) => file.startsWith("extension/bin/") && file.toLowerCase().includes("arm64")),
+      ...files.filter((file) => {
+        if (!file.startsWith("extension/bin/")) return false
+        const lower = file.toLowerCase()
+        return lower.includes("arm64") || lower.includes("aarch64")
+      }),
     )
   }
   if (forbidden.length > 0) {

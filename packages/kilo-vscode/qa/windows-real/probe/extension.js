@@ -1,5 +1,6 @@
 const fs = require("node:fs")
 const path = require("node:path")
+const crypto = require("node:crypto")
 const vscode = require("vscode")
 
 let controlTimer
@@ -12,6 +13,7 @@ const required = [
   "chipmate.v2.sidebarTitle.agentTerminalOpen",
   "chipmate.v2.settingsButtonClicked",
   "chipmate.v2.openInTab",
+  "chipmate.v2.showMemory",
   "chipmate.v2.documents.openArtifact",
   "chipmate.v2.documents.openArtifactFolder",
   "chipmate.v2.documents.exportDiagnostics",
@@ -24,12 +26,30 @@ const required = [
   "chipmate.v2.terminalFixCommand",
 ]
 
+function writeJsonAtomically(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const temporary = path.join(
+    path.dirname(file),
+    `.${path.basename(file)}.${process.pid}.${crypto.randomUUID()}.tmp`,
+  )
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8")
+    fs.renameSync(temporary, file)
+  } catch (error) {
+    fs.rmSync(temporary, { force: true })
+    throw error
+  }
+}
+
 async function activate() {
   const out = process.env.CHIPMATE_QA_PROBE_OUT
   const control = process.env.CHIPMATE_QA_CONTROL_FILE
   const reply = process.env.CHIPMATE_QA_CONTROL_OUT
   if (!out && (!control || !reply)) return
   const result = {
+    schemaVersion: 1,
+    activationId: crypto.randomUUID(),
+    extensionHostPid: process.pid,
     at: new Date().toISOString(),
     status: "FAIL",
     extension: {},
@@ -45,6 +65,9 @@ async function activate() {
       id: extension.id,
       version: extension.packageJSON.version,
       path: extension.extensionPath,
+      uri: extension.extensionUri.toString(),
+      uriFsPath: extension.extensionUri.fsPath,
+      target: extension.packageJSON.chipmatePackageTarget ?? null,
       active: extension.isActive,
       development: extension.extensionMode === vscode.ExtensionMode.Development,
     }
@@ -81,8 +104,7 @@ async function activate() {
     result.errors.push(err instanceof Error ? (err.stack ?? err.message) : String(err))
   }
   if (out) {
-    fs.mkdirSync(path.dirname(out), { recursive: true })
-    fs.writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`)
+    writeJsonAtomically(out, result)
   }
   if (control && reply && result.status === "PASS") {
     fs.mkdirSync(path.dirname(reply), { recursive: true })
@@ -100,7 +122,7 @@ async function activate() {
         } catch (err) {
           response.error = err instanceof Error ? (err.stack ?? err.message) : String(err)
         }
-        fs.writeFileSync(reply, `${JSON.stringify(response, null, 2)}\n`)
+        writeJsonAtomically(reply, response)
       } catch (err) {
         console.error("ChipMate QA control failed", err)
       } finally {

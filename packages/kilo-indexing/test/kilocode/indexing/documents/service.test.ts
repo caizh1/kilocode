@@ -237,6 +237,122 @@ describe("DocumentIndexService", () => {
     }
   })
 
+  test("reduces only a rejected embedding batch when the service enforces a total token limit", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const requests: number[] = []
+    const points: PointStruct[] = []
+    try {
+      await writeFile(
+        path.join(root, "notes.md"),
+        Array.from({ length: 20 }, (_, index) => `需要保留上下文的文档行 ${index}`).join("\n"),
+      )
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        embeddingBatchSize: 8,
+        documents: { enabled: true, chunkChars: 24, chunkOverlapChars: 0 },
+      })
+      const limited = {
+        ...embedder,
+        createEmbeddings: async (texts: string[]) => {
+          requests.push(texts.length)
+          if (texts.length > 2) {
+            throw new Error("This model's maximum context length is 8192 tokens; the batch input exceeds the limit.")
+          }
+          return { embeddings: texts.map(() => [0.1]) }
+        },
+      } satisfies IEmbedder
+      const memory = {
+        ...store,
+        upsertPoints: async (items: PointStruct[]) => {
+          points.push(...items)
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, limited, memory, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus()).toMatchObject({ state: "Complete", validFileCount: 1 })
+      expect(requests.some((count) => count > 2)).toBe(true)
+      expect(requests.some((count) => count <= 2)).toBe(true)
+      expect(points.length).toBeGreaterThan(2)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("semantically re-splits only the single chunk rejected by the embedding token limit", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const accepted: string[] = []
+    const points: PointStruct[] = []
+    try {
+      await writeFile(path.join(root, "long.md"), `${"甲".repeat(430)}。${"乙".repeat(430)}。结束`)
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true, chunkChars: 1000, chunkOverlapChars: 100 },
+      })
+      const limited = {
+        ...embedder,
+        createEmbeddings: async (texts: string[]) => {
+          if (texts.some((text) => text.length > 300)) {
+            throw new Error("Input length exceeds the maximum sequence length of 8192 tokens")
+          }
+          accepted.push(...texts)
+          return { embeddings: texts.map(() => [0.1]) }
+        },
+      } satisfies IEmbedder
+      const memory = {
+        ...store,
+        upsertPoints: async (items: PointStruct[]) => {
+          points.push(...items)
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, limited, memory, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus()).toMatchObject({ state: "Complete", validFileCount: 1 })
+      expect(accepted.length).toBeGreaterThan(1)
+      expect(accepted.every((text) => text.length <= 300)).toBe(true)
+      expect(points).toHaveLength(accepted.length)
+      expect(points.every((point) => point.payload.sourceRef === "long.md:1-1")).toBe(true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("uses a fresh file generation when a forced rebuild may resolve to a different adaptive layout", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const generations: string[] = []
+    try {
+      await writeFile(path.join(root, "notes.md"), "需要在强制重建之间保持原子切换的文档")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const memory = {
+        ...store,
+        upsertPoints: async (items: PointStruct[]) => {
+          generations.push(...items.map((item) => String(item.payload.generation)))
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, memory, ignore())
+
+      await service.start("manual", true)
+      await service.start("manual", true)
+
+      expect(generations).toHaveLength(2)
+      expect(new Set(generations).size).toBe(2)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("reports embedding failures as a document pipeline error", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
     try {
@@ -751,6 +867,39 @@ describe("DocumentIndexService", () => {
     } finally {
       await rm(root, { recursive: true, force: true })
       await rm(external, { recursive: true, force: true })
+    }
+  })
+
+  test("assigns distinct vector IDs to repeated spreadsheet chunks", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const points: PointStruct[] = []
+    try {
+      const file = path.join(root, "repeated.xlsx")
+      const book = utils.book_new()
+      const rows = Array.from({ length: 180 }, () => ["same", "same"])
+      utils.book_append_sheet(book, utils.aoa_to_sheet(rows), "Data")
+      await writeFile(file, write(book, { type: "buffer", bookType: "xlsx" }))
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true, chunkChars: 20, chunkOverlapChars: 0 },
+      })
+      const memory = {
+        ...store,
+        upsertPoints: async (items: PointStruct[]) => {
+          points.push(...items)
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, memory, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus()).toMatchObject({ state: "Complete", validFileCount: 1 })
+      expect(points.length).toBeGreaterThan(1)
+      expect(new Set(points.map((point) => point.id)).size).toBe(points.length)
+    } finally {
+      await rm(root, { recursive: true, force: true })
     }
   })
 

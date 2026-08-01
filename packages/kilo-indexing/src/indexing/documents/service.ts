@@ -1,4 +1,4 @@
-import { createHash } from "crypto"
+import { createHash, randomUUID } from "crypto"
 import { readFile, realpath, stat } from "fs/promises"
 import path from "path"
 import { globIterate } from "glob"
@@ -20,7 +20,7 @@ import { constrained, type IndexingPressure } from "../memory"
 import { loadIgnoreWithFingerprint, type IgnoreMatcher } from "../shared/load-ignore"
 import { IndexingRunLock } from "../run-lock"
 import { DocumentIndexCache } from "./cache"
-import { chunkDocument } from "./chunker"
+import { chunkDocument, splitDocumentChunk } from "./chunker"
 import { extractDocument } from "./extractors"
 import {
   external as isExternalKey,
@@ -43,7 +43,8 @@ import {
 const log = Log.create({ service: "document-index" })
 const schema = 1
 const extractor = 1
-const chunker = 1
+const chunker = 3
+const embeddingRecoverySplits = 256
 const patterns = [...DOCUMENT_EXTENSIONS, ...UNSUPPORTED_DOCUMENT_EXTENSIONS].map((ext) => `**/*${ext}`)
 const office = new Set([".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"])
 type Telemetry = IndexingTelemetryEvent extends infer Event
@@ -65,6 +66,17 @@ type File = {
   key: string
   source: string
 }
+
+type EmbeddedChunk = {
+  chunk: DocumentChunk
+  vector: number[]
+}
+
+type EmbeddingRecoveryBudget = {
+  remaining: number
+}
+
+class EmbeddingCountError extends Error {}
 
 export class DocumentIndexService {
   private readonly cache: DocumentIndexCache
@@ -301,7 +313,7 @@ export class DocumentIndexService {
           this.report(index + 1, files.length, `Document unchanged: ${path.basename(file.path)}`, skipped, errors)
           continue
         }
-        await this.upsert(file, item.hash, item.items, meta)
+        const written = await this.upsert(file, item.hash, item.items, meta)
         if (this.disposed) return
         this.cache.set(key, item.hash)
         if ((index + 1) % 8 === 0 || Date.now() - checkpoint >= 2_000) {
@@ -310,7 +322,7 @@ export class DocumentIndexService {
           checkpoint = Date.now()
         }
         indexed += 1
-        chunks += item.items.length
+        chunks += written
         this.report(index + 1, files.length, `Indexed document: ${path.basename(file.path)}`, skipped, errors)
       }
 
@@ -468,35 +480,87 @@ export class DocumentIndexService {
     return { files: sorted(out), skipped, limited: false }
   }
 
-  private async upsert(file: File, hash: string, chunks: DocumentChunk[], meta: string): Promise<void> {
-    if (this.disposed || !this.embedder || !this.store) return
-    const generation = digest(`${meta}\0${file.key}\0${hash}`)
-    const texts = chunks.map((item) => item.content)
-    if (texts.length === 0) {
+  private async upsert(file: File, hash: string, chunks: DocumentChunk[], meta: string): Promise<number> {
+    if (this.disposed || !this.embedder || !this.store) return 0
+    const generation = digest(`${meta}\0${file.key}\0${hash}\0${randomUUID()}`)
+    if (chunks.length === 0) {
       await this.store.deletePointsByFilePath(file.key)
-      return
+      return 0
     }
     const batch = Math.max(
       1,
       Math.min(this.config.currentEmbeddingBatchSize ?? 60, constrained(this.pressure) ? 16 : 60),
     )
-    for (let index = 0; index < texts.length; index += batch) {
-      if (this.disposed) return
-      const slice = texts.slice(index, index + batch)
-      const { embeddings } = await this.embedder.createEmbeddings(slice, undefined, "document")
-      if (this.disposed) return
-      const points = embeddings.flatMap<PointStruct>((vector, offset) => {
-        const chunk = chunks[index + offset]
-        if (!chunk) return []
-        return [point(chunk, vector, this.workspace, file.key, meta, generation)]
-      })
+    const recovery = { remaining: embeddingRecoverySplits }
+    let written = 0
+    for (let index = 0; index < chunks.length; index += batch) {
+      if (this.disposed) return written
+      const embedded = await this.embed(chunks.slice(index, index + batch), 0, recovery)
+      if (this.disposed) return written
+      const points = embedded.map<PointStruct>((item, offset) =>
+        point(item.chunk, item.vector, this.workspace, file.key, meta, generation, written + offset),
+      )
       await this.store.upsertPoints(points)
-      if (this.disposed) return
+      if (this.disposed) return written
+      written += points.length
     }
-    if (this.disposed) return
+    if (this.disposed) return written
     await this.store.activateFileGeneration?.(file.key, generation, "documents")
-    if (this.disposed) return
+    if (this.disposed) return written
     await this.store.deleteInactiveFilePoints?.(file.key, generation)
+    return written
+  }
+
+  private async embed(
+    chunks: DocumentChunk[],
+    splitDepth = 0,
+    recovery: EmbeddingRecoveryBudget = { remaining: embeddingRecoverySplits },
+  ): Promise<EmbeddedChunk[]> {
+    if (this.disposed || !this.embedder || chunks.length === 0) return []
+    try {
+      const { embeddings } = await this.embedder.createEmbeddings(
+        chunks.map((item) => item.content),
+        undefined,
+        "document",
+      )
+      if (embeddings.length !== chunks.length) {
+        throw new EmbeddingCountError(
+          `Document embedding count mismatch: expected ${chunks.length}, received ${embeddings.length}.`,
+        )
+      }
+      return chunks.map((chunk, index) => ({ chunk, vector: embeddings[index]! }))
+    } catch (err) {
+      if (this.disposed) return []
+      const recoverable = err instanceof EmbeddingCountError || embeddingInputLimit(err)
+      if (!recoverable || splitDepth >= 8) throw err
+      if (recovery.remaining <= 0) {
+        const message = err instanceof Error ? err.message : String(err)
+        throw new Error(
+          `Document embedding input recovery exhausted after ${embeddingRecoverySplits} adaptive splits: ${message}`,
+          { cause: err },
+        )
+      }
+      recovery.remaining -= 1
+      if (chunks.length > 1) {
+        const middle = Math.ceil(chunks.length / 2)
+        const left = await this.embed(chunks.slice(0, middle), splitDepth, recovery)
+        const right = await this.embed(chunks.slice(middle), splitDepth, recovery)
+        return [...left, ...right]
+      }
+
+      const current = chunks[0]!
+      const size = Math.floor(current.content.length / 2)
+      if (size < 64) throw err
+      const overlap = Math.min(this.config.currentDocuments.chunkOverlapChars, Math.floor(size * 0.2))
+      const parts = splitDocumentChunk(current, size, overlap)
+      if (parts.length < 2 || parts.some((part) => part.content === current.content)) throw err
+      log.warn("retrying oversized document embedding with smaller semantic chunks", {
+        sourceRef: current.sourceRef,
+        chars: current.content.length,
+        chunks: parts.length,
+      })
+      return this.embed(parts, splitDepth + 1, recovery)
+    }
   }
 
   private async workspacePath(): Promise<string> {
@@ -669,10 +733,11 @@ function point(
   key: string,
   meta: string,
   generation: string,
+  chunkIndex: number,
 ): PointStruct {
   const range = `${chunk.startLine}:${chunk.endLine}`
   const id = uuidv5(
-    [workspaceId(workspace), key, chunk.chunkHash, range, generation].join("\0"),
+    [workspaceId(workspace), key, chunk.chunkHash, range, chunkIndex, generation].join("\0"),
     DOCUMENT_CHUNK_NAMESPACE,
   )
   return {
@@ -803,6 +868,18 @@ async function fileHash(filePath: string): Promise<string> {
 
 function digest(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex")
+}
+
+function embeddingInputLimit(err: unknown): boolean {
+  const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+  return [
+    /maximum\s+(?:context|sequence|input)?\s*length.{0,80}(?:token|8192)/i,
+    /input.{0,80}(?:too long|exceed).{0,80}(?:token|length|limit)/i,
+    /(?:token|sequence).{0,80}(?:exceed|longer than).{0,80}(?:limit|maximum|max)/i,
+    /maximum.{0,80}(?:8192|tokens?).{0,80}(?:input|context|sequence|length)?/i,
+    /tokens?.{0,80}(?:maximum|max|limit).{0,40}8192/i,
+    /(?:context|sequence)[_-]?length[_-]?exceeded/i,
+  ].some((pattern) => pattern.test(message))
 }
 
 async function delay(ms: number): Promise<void> {

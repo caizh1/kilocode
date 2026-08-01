@@ -46,11 +46,14 @@ describe("VercelAiGatewayEmbedder", () => {
 
       const result = await embedder.createEmbeddings(texts)
 
-      expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-        input: texts,
-        model: "openai/text-embedding-3-large",
-        encoding_format: "base64",
-      })
+      expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+        {
+          input: texts,
+          model: "openai/text-embedding-3-large",
+          encoding_format: "base64",
+        },
+        { timeout: 120_000, maxRetries: 0 },
+      )
       expect(result.embeddings).toEqual([
         [0.1, 0.2],
         [0.3, 0.4],
@@ -68,11 +71,14 @@ describe("VercelAiGatewayEmbedder", () => {
 
       const result = await embedder.createEmbeddings(texts, customModel)
 
-      expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-        input: texts,
-        model: customModel,
-        encoding_format: "base64",
-      })
+      expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+        {
+          input: texts,
+          model: customModel,
+          encoding_format: "base64",
+        },
+        { timeout: 120_000, maxRetries: 0 },
+      )
       expect(result.embeddings).toEqual([[0.1, 0.2, 0.3]])
     })
 

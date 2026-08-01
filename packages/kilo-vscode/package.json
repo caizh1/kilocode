@@ -419,6 +419,12 @@
         "category": "ChipMate"
       },
       {
+        "command": "chipmate.v2.generateCommentsForCurrentFunction",
+        "title": "为当前函数生成高可信注释",
+        "category": "ChipMate",
+        "icon": "$(comment-discussion)"
+      },
+      {
         "command": "chipmate.v2.addToContext",
         "title": "Add to Context",
         "category": "ChipMate"
@@ -644,6 +650,11 @@
         }
       ],
       "chipmate.v2.editorContextMenu": [
+        {
+          "command": "chipmate.v2.generateCommentsForCurrentFunction",
+          "group": "1_actions@0",
+          "when": "resourceLangId == c || resourceLangId == cpp"
+        },
         {
           "command": "chipmate.v2.explainCode",
           "group": "1_actions@1"
@@ -1504,6 +1515,12 @@
           "type": "boolean",
           "default": false,
           "description": "Render Markdown files in ChipMate diff viewers by default. Toggle this from a Markdown file header in the diff viewer."
+        },
+        "chipmate.v2.comments.model": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "高可信 C/C++ 代码注释使用的模型，格式为 `providerID/modelID`。留空时使用当前 CLI 主模型；不会降级使用小模型。"
         }
       }
     }
@@ -1548,6 +1565,12 @@
     "qa:windows:update-server": "node --test qa/windows-real/update-server.test.mjs",
     "qa:macos:run": "node qa/macos-real/run.mjs",
     "qa:macos:indexing": "bun qa/macos-indexing/run.mjs",
+    "qa:indexing:regression": "bun qa/indexing-regression/run.mjs",
+    "test:indexing:regression:contract": "node --test qa/indexing-regression/contract.test.mjs",
+    "qa:code-comments:list": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts list",
+    "qa:code-comments:ab": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts ab",
+    "qa:code-comments:review": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts review",
+    "qa:code-comments:acceptance": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts acceptance",
     "snapshot:build": "bun script/dev-snapshot.ts build",
     "snapshot:install": "bun script/dev-snapshot.ts install",
     "extension": "bun script/launch.ts"

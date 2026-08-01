@@ -1,5 +1,5 @@
 import type { Message, Part } from "../types/messages"
-import { visibleParts, type MessageTurn, type RevertBoundary } from "./session-queue"
+import { completedTurnElapsed, visibleParts, type MessageTurn, type RevertBoundary } from "./session-queue"
 
 interface TranscriptMeta {
   turn: string
@@ -23,6 +23,9 @@ export interface TranscriptAssistantRow extends TranscriptMeta {
   message: Message
   parts: Part[]
   copy?: string
+  completionElapsed?: number
+  /** Agent that produced the final successful reply for this completed turn. */
+  completionAgent?: string
 }
 
 export interface TranscriptDiffRow extends TranscriptMeta {
@@ -47,6 +50,7 @@ export interface TranscriptOptions {
   live?: ReadonlySet<string>
   hidden?: (id: string) => boolean
   revert?: RevertBoundary
+  messages?: readonly Message[]
 }
 
 export interface TranscriptPartition {
@@ -97,7 +101,13 @@ function equal(a: TranscriptRow, b: TranscriptRow) {
     )
   }
   if (a.type === "assistant" && b.type === "assistant") {
-    return a.message === b.message && same(a.parts, b.parts) && a.copy === b.copy
+    return (
+      a.message === b.message &&
+      same(a.parts, b.parts) &&
+      a.copy === b.copy &&
+      a.completionElapsed === b.completionElapsed &&
+      a.completionAgent === b.completionAgent
+    )
   }
   if (a.type === "diff" && b.type === "diff") {
     return a.message === b.message && same(a.diffs, b.diffs)
@@ -125,6 +135,15 @@ function copy(messages: Message[], getParts: (id: string) => Part[]) {
   return undefined
 }
 
+function rowCompletionElapsed(
+  completionElapsed: number | undefined,
+  copied: string | undefined,
+  parts: readonly Part[],
+) {
+  if (completionElapsed === undefined || !copied || !parts.some((part) => part.id === copied)) return undefined
+  return completionElapsed
+}
+
 export function transcriptRows(
   turns: MessageTurn[],
   getParts: (id: string) => Part[],
@@ -147,6 +166,8 @@ export function transcriptRows(
       live: opts.live?.has(turn.id) === true,
     }
     const copied = copy(assistants, parts)
+    const completionElapsed = completedTurnElapsed(turn, opts.messages, getParts)
+    const completionAgent = completionElapsed === undefined ? undefined : turn.assistant.at(-1)?.agent
 
     if (!turn.partial && !compact) {
       rows.push({
@@ -170,11 +191,13 @@ export function transcriptRows(
           message: msg,
           parts: visible,
           copy: copied,
+          completionElapsed: rowCompletionElapsed(completionElapsed, copied, visible),
         })
         continue
       }
       for (let start = 0; start < visible.length; start += size) {
         const chunk = visible.slice(start, start + size)
+        const elapsed = rowCompletionElapsed(completionElapsed, copied, chunk)
         rows.push({
           ...meta,
           type: "assistant",
@@ -182,6 +205,8 @@ export function transcriptRows(
           message: msg,
           parts: chunk,
           copy: copied,
+          completionElapsed: elapsed,
+          completionAgent: elapsed === undefined ? undefined : completionAgent,
         })
       }
     }

@@ -1,6 +1,7 @@
 import { createHash } from "crypto"
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "fs/promises"
 import path from "path"
+import pLimit from "p-limit"
 import type { EmbeddingRuntimeProfile } from "../interfaces/embedder"
 import type {
   IVectorStore,
@@ -15,6 +16,8 @@ import { Log } from "../../util/log"
 import { LanceDBVectorStore } from "./lancedb-vector-store"
 
 const log = Log.create({ service: "safe-lancedb-store" })
+const READBACK_CONCURRENCY = 2
+const READBACK_TIMEOUT_MS = 60_000
 
 type Manifest = {
   schema: 1
@@ -119,6 +122,7 @@ export class SafeLanceDBVectorStore implements IVectorStore {
         expectedCount: points.length,
         expectedDimension: this.profile.dimension,
         dense: true,
+        collapse: false,
       },
     )
     for (const point of points) {
@@ -161,6 +165,24 @@ export class SafeLanceDBVectorStore implements IVectorStore {
 
   deleteInactiveFilePoints(file: string, generation: string): Promise<void> {
     return this.target().deleteInactiveFilePoints?.(file, generation) ?? Promise.resolve()
+  }
+
+  async finalizeFileGenerations(
+    files: readonly { filePath: string; generation: string; runId: string }[],
+  ): Promise<void> {
+    const target = this.target() as IVectorStore & {
+      finalizeFileGenerations?: (
+        input: readonly { filePath: string; generation: string; runId: string }[],
+      ) => Promise<void>
+    }
+    if (target.finalizeFileGenerations) {
+      await target.finalizeFileGenerations(files)
+      return
+    }
+    for (const file of files) {
+      await target.activateFileGeneration?.(file.filePath, file.generation, file.runId)
+      await target.deleteInactiveFilePoints?.(file.filePath, file.generation)
+    }
   }
 
   cleanupInactivePoints(): Promise<VectorStoreCleanupStats> {
@@ -227,15 +249,35 @@ export class SafeLanceDBVectorStore implements IVectorStore {
     await store.markIndexingComplete()
     if (!this.candidate) return
     if (this.samples.size === 0) throw new Error("Candidate embedding index contains no validated source vectors.")
-    const checks = await Promise.all(
-      [...this.samples.values()].map(async (sample) => {
-        const found = await store.search(sample.vector, sample.payload.filePath, 0, 5)
-        return found.some((item) => item.id === sample.id)
-      }),
+    const started = Date.now()
+    const samples = [...this.samples.values()]
+    log.info("starting candidate embedding index readback", {
+      workspace: this.workspace,
+      samples: samples.length,
+      concurrency: READBACK_CONCURRENCY,
+      timeoutMs: READBACK_TIMEOUT_MS,
+    })
+    const limit = pLimit(READBACK_CONCURRENCY)
+    const checks = await deadline(
+      Promise.all(
+        samples.map((sample) =>
+          limit(async () => {
+            const found = await store.search(sample.vector, sample.payload.filePath, 0, 5)
+            return found.some((item) => item.id === sample.id)
+          }),
+        ),
+      ),
+      READBACK_TIMEOUT_MS,
+      "Candidate embedding index readback timed out.",
     )
     if (!checks.every(Boolean)) {
       throw new Error("Candidate embedding index failed its source-backed readback check.")
     }
+    log.info("candidate embedding index readback complete", {
+      workspace: this.workspace,
+      samples: samples.length,
+      elapsedMs: Date.now() - started,
+    })
     const generation = this.generation
     if (!generation) throw new Error("Candidate embedding generation identity is missing.")
     const manifest: Manifest = {
@@ -320,7 +362,9 @@ export class SafeLanceDBVectorStore implements IVectorStore {
     const dated = await Promise.all(
       dirs.map(async (entry) => ({
         name: entry.name,
-        time: await stat(path.join(this.root, entry.name)).then((item) => item.mtimeMs).catch(() => 0),
+        time: await stat(path.join(this.root, entry.name))
+          .then((item) => item.mtimeMs)
+          .catch(() => 0),
       })),
     )
     const remove = dated.sort((left, right) => right.time - left.time).slice(1)
@@ -398,4 +442,18 @@ async function readManifest(workspace: string, base: string): Promise<Manifest |
     .then(() => JSON.parse(raw) as unknown)
     .then((value) => (valid(value) ? value : undefined))
     .catch(() => undefined)
+}
+
+async function deadline<T>(task: Promise<T>, timeout: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      task,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeout)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }

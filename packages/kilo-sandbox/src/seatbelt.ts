@@ -44,6 +44,11 @@ function policy(profile: Profile, proxy?: ProxyRuntime) {
     return exclude(rule, key)
   })
   const names = profile.filesystem.denyNames.map((name) => `(require-not (regex #"(^|/)${escape(name)}(/|$)"))`)
+  const unreadable = (profile.filesystem.denyRead ?? []).map((rule, index) => {
+    const key = `DENY_READ_${index}`
+    params.push({ key, value: rule.path })
+    return `(deny file-read* ${filter(rule, key)})`
+  })
   const write =
     allow.length === 0
       ? ""
@@ -52,7 +57,11 @@ function policy(profile: Profile, proxy?: ProxyRuntime) {
     value: [
       base,
       networkPolicy(profile, proxy),
+      profile.credentialAccess === "deny"
+        ? '; credential access: deny\n(deny mach-lookup (global-name "com.apple.SecurityServer"))'
+        : "",
       "; reads are not confined by the file-level sandbox\n(allow file-read*)",
+      ...unreadable,
       write,
     ].join("\n"),
     params,

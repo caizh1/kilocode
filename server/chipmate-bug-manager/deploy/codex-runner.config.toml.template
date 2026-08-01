@@ -1,0 +1,29 @@
+default_permissions = "chipmate-repair"
+approval_policy = "never"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "max"
+
+[permissions.chipmate-repair]
+description = "ChipMate 独立工作树自动修复"
+extends = ":workspace"
+
+[permissions.chipmate-repair.filesystem]
+"__CHIPMATE_GIT_DIR__" = "read"
+"~/.codex" = "deny"
+"~/.ssh" = "deny"
+"~/.config/chipmate" = "deny"
+"~/.local/bin" = "deny"
+"~/.local/share" = "deny"
+"~/Library/Keychains" = "deny"
+
+[permissions.chipmate-repair.filesystem.":workspace_roots"]
+"." = "write"
+"**/.env" = "deny"
+"**/.env.local" = "deny"
+"**/.env.development" = "deny"
+"**/.env.production" = "deny"
+"**/.env.test" = "deny"
+"**/.env.*.local" = "deny"
+
+[permissions.chipmate-repair.network]
+enabled = false

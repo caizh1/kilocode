@@ -5,7 +5,7 @@ import { Node } from "web-tree-sitter"
 import { type LanguageParser, loadRequiredLanguageParsers } from "../../tree-sitter/languageParser"
 import { parseMarkdown } from "../../tree-sitter/markdownParser"
 import type { ICodeParser, CodeBlock } from "../interfaces"
-import { scannerExtensions, shouldUseFallbackChunking } from "../shared/supported-extensions"
+import { parserExtensions, shouldUseFallbackChunking } from "../shared/supported-extensions"
 import { MAX_BLOCK_CHARS, MIN_BLOCK_CHARS, MIN_CHUNK_REMAINDER_CHARS, MAX_CHARS_TOLERANCE_FACTOR } from "../constants"
 import { Log } from "../../util/log"
 import { sanitizeErrorMessage } from "../shared/validation-helpers"
@@ -22,7 +22,7 @@ export class CodeParser implements ICodeParser {
   private parserFallbackNotified: Set<string> = new Set()
   private readonly extensions: ReadonlySet<string>
 
-  constructor(extensions: readonly string[] = scannerExtensions) {
+  constructor(extensions: readonly string[] = parserExtensions) {
     this.extensions = new Set(extensions)
   }
   // Markdown files are now supported using the custom markdown parser

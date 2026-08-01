@@ -240,6 +240,20 @@ class RetryStore extends Store {
   }
 }
 
+class BulkStore extends Store {
+  public groups: number[] = []
+
+  public async finalizeFileGenerations(
+    files: readonly { filePath: string; generation: string; runId: string }[],
+  ): Promise<void> {
+    this.groups.push(files.length)
+    for (const file of files) {
+      await this.activateFileGeneration(file.filePath, file.generation, file.runId)
+      await this.deleteInactiveFilePoints(file.filePath, file.generation)
+    }
+  }
+}
+
 class CleanupCrashStore extends Store {
   public failCleanup = false
 
@@ -310,6 +324,38 @@ describe("DirectoryScanner", () => {
     expect(store.points).toBe(1)
     expect(store.multi).toEqual([])
     expect(cache.getHash(file)).toBe(hash)
+  })
+
+  test("finalizes successful files in one bounded group and reports each file once", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-finalize-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const first = join(root, "first.ts")
+    const second = join(root, "second.ts")
+    await Bun.write(first, "export const first = 1\n")
+    await Bun.write(second, "export const second = 2\n")
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const store = new BulkStore()
+    const scan = new DirectoryScanner(new Emb(), store, new Parser(), cache, ignore(), 60, 1)
+    const indexed: number[] = []
+    const progress: string[] = []
+
+    await scan.scanDirectory(
+      root,
+      undefined,
+      (count) => indexed.push(count),
+      undefined,
+      "full",
+      (event) => {
+        if (event.type === "file") progress.push(event.filePath)
+      },
+      "rag",
+    )
+
+    expect(store.groups).toEqual([2])
+    expect(indexed).toEqual([2])
+    expect(new Set(progress)).toEqual(new Set([first, second]))
+    expect(progress).toHaveLength(2)
   })
 
   test("does not mark hash current when a later batch fails for the same file", async () => {
@@ -787,32 +833,32 @@ describe("DirectoryScanner", () => {
   })
 
   test("skips files matched by nested .kilocodeignore during full scans", async () => {
-  const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
-  const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
-  try {
-    const dir = join(root, "pkg")
-    const blocked = join(dir, "blocked.ts")
-    const open = join(dir, "open.ts")
+    const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    try {
+      const dir = join(root, "pkg")
+      const blocked = join(dir, "blocked.ts")
+      const open = join(dir, "open.ts")
 
-    await mkdir(dir, { recursive: true })
-    await Bun.write(join(dir, ".kilocodeignore"), "blocked.ts\n")
-    await Bun.write(blocked, "export const blocked = 1\n")
-    await Bun.write(open, "export const open = 1\n")
+      await mkdir(dir, { recursive: true })
+      await Bun.write(join(dir, ".kilocodeignore"), "blocked.ts\n")
+      await Bun.write(blocked, "export const blocked = 1\n")
+      await Bun.write(open, "export const open = 1\n")
 
-    const cache = new CacheManager(cacheDir, root)
-    await cache.initialize()
+      const cache = new CacheManager(cacheDir, root)
+      await cache.initialize()
 
-    const scan = new DirectoryScanner(new Emb(), new Store(), new Parser(), cache, await loadIgnore(root), 1, 1)
-    const result = await scan.scanDirectory(root)
+      const scan = new DirectoryScanner(new Emb(), new Store(), new Parser(), cache, await loadIgnore(root), 1, 1)
+      const result = await scan.scanDirectory(root)
 
-    expect(result.stats.processed).toBe(1)
-    expect(cache.getHash(blocked)).toBeUndefined()
-    expect(cache.getHash(open)).toBeDefined()
-  } finally {
-    await rm(root, { recursive: true, force: true })
-    await rm(cacheDir, { recursive: true, force: true })
-  }
-})
+      expect(result.stats.processed).toBe(1)
+      expect(cache.getHash(blocked)).toBeUndefined()
+      expect(cache.getHash(open)).toBeDefined()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
 
   test("emits retry telemetry for transient batch failures", async () => {
     const root = await mkdtemp(join(tmpdir(), "scanner-test-"))

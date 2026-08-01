@@ -5,11 +5,7 @@ import {
   OLLAMA_EMBEDDER_REQUEST_TIMEOUT_MS,
   REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS,
 } from "../../../src/indexing/constants"
-import type {
-  AvailableEmbedders,
-  EmbeddingRuntimeProfile,
-  IEmbedder,
-} from "../../../src/indexing/interfaces/embedder"
+import type { AvailableEmbedders, EmbeddingRuntimeProfile, IEmbedder } from "../../../src/indexing/interfaces/embedder"
 
 mock.module("openai", openAIMockFactory)
 import { CodeIndexServiceFactory } from "../../../src/indexing/service-factory"
@@ -79,11 +75,14 @@ describe("CodeIndexServiceFactory", () => {
 
     await factory.createEmbedder().createEmbeddings(["hello"])
 
-    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-      input: ["hello"],
-      model: "qa-embedding-model",
-      encoding_format: "base64",
-    })
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+      {
+        input: ["hello"],
+        model: "qa-embedding-model",
+        encoding_format: "base64",
+      },
+      { timeout: 120_000, maxRetries: 0 },
+    )
   })
 
   test("keeps legacy bge-m3 dimensions out of requests while enforcing the returned length", async () => {
@@ -103,11 +102,14 @@ describe("CodeIndexServiceFactory", () => {
 
     await factory.createEmbedder().createEmbeddings(["hello"])
 
-    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-      input: ["hello"],
-      model: "bge-m3",
-      encoding_format: "base64",
-    })
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+      {
+        input: ["hello"],
+        model: "bge-m3",
+        encoding_format: "base64",
+      },
+      { timeout: 120_000, maxRetries: 0 },
+    )
   })
 
   test("rejects a bge-m3 response that does not match the legacy schema dimension", async () => {
@@ -128,11 +130,14 @@ describe("CodeIndexServiceFactory", () => {
     await expect(factory.createEmbedder().createEmbeddings(["hello"])).rejects.toThrow(
       "Embedding dimension mismatch: expected 3, received 2.",
     )
-    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-      input: ["hello"],
-      model: "bge-m3",
-      encoding_format: "base64",
-    })
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+      {
+        input: ["hello"],
+        model: "bge-m3",
+        encoding_format: "base64",
+      },
+      { timeout: 120_000, maxRetries: 0 },
+    )
   })
 
   test("validates legacy bge-m3 dimensions without sending a Matryoshka override", async () => {
@@ -177,12 +182,15 @@ describe("CodeIndexServiceFactory", () => {
 
     await factory.createEmbedder().createEmbeddings(["hello"])
 
-    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-      input: ["hello"],
-      model: "qwen3-embedding-8b",
-      encoding_format: "base64",
-      dimensions: 3,
-    })
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+      {
+        input: ["hello"],
+        model: "qwen3-embedding-8b",
+        encoding_format: "base64",
+        dimensions: 3,
+      },
+      { timeout: 120_000, maxRetries: 0 },
+    )
   })
 
   test("uses the validated last-known-good request mode instead of an unapplied fixed setting", async () => {
@@ -213,11 +221,14 @@ describe("CodeIndexServiceFactory", () => {
 
     await factory.createEmbedder(runtime).createEmbeddings(["hello"])
 
-    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-      input: ["hello"],
-      model: "qwen3-embedding-8b",
-      encoding_format: "base64",
-    })
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+      {
+        input: ["hello"],
+        model: "qwen3-embedding-8b",
+        encoding_format: "base64",
+      },
+      { timeout: 120_000, maxRetries: 0 },
+    )
   })
 
   test("lets SDK-backed embedders own validation timeouts", async () => {
@@ -483,11 +494,14 @@ describe("CodeIndexServiceFactory", () => {
     await embedder.createEmbeddings(["hello"])
 
     expect(embedder.embedderInfo).toEqual({ name: "kilo" })
-    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-      input: ["hello"],
-      model: "mistralai/mistral-embed-2312",
-      encoding_format: "base64",
-      dimensions: 1024,
-    })
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+      {
+        input: ["hello"],
+        model: "mistralai/mistral-embed-2312",
+        encoding_format: "base64",
+        dimensions: 1024,
+      },
+      { timeout: 120_000, maxRetries: 0 },
+    )
   })
 })

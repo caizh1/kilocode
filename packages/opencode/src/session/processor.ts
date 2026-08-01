@@ -24,6 +24,7 @@ import { Question } from "@/question"
 import { KiloSessionProcessor, type ReviewTelemetry } from "@/kilocode/session/processor"
 import { PermissionProvenance } from "@/kilocode/permission/provenance" // kilocode_change
 import { KiloSessionOverflow } from "@/kilocode/session/overflow"
+import { KiloSessionThinking } from "@/kilocode/session/thinking"
 import { KiloRoutedModel } from "@/kilocode/session/routed-model"
 import { KiloResponseMetadata } from "@/kilocode/session/response-metadata"
 import { Suggestion } from "@/kilocode/suggestion"
@@ -1293,10 +1294,15 @@ export const layer = Layer.effect(
               ctx.reasoningMap = {}
               yield* status.set(ctx.sessionID, { type: "busy" })
               ctx.step = { reasoning: false, text: false, tool: false }
-              const stream = llm.stream({
-                ...streamInput,
-                preflight: !ctx.assistantMessage.summary,
-              })
+              // kilocode_change start - recover DeepSeek V4 think tags emitted as ordinary content
+              const stream = KiloSessionThinking.stream(
+                llm.stream({
+                  ...streamInput,
+                  preflight: !ctx.assistantMessage.summary,
+                }),
+                ctx.model,
+              )
+              // kilocode_change end
 
               yield* stream.pipe(
                 Stream.tap((event) => handleEvent(event)),

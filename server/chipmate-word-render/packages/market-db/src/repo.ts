@@ -177,12 +177,10 @@ export class MarketRepo {
         }
         const bytes = readFileSync(archive)
         const hash = sha(bytes)
-        const current = this.db
-          .prepare(
-            "SELECT s.latest_revision AS revision, r.sha256 FROM skills s LEFT JOIN releases r ON r.skill_id=s.id AND r.revision=s.latest_revision WHERE s.id=?",
-          )
-          .get(key) as unknown as { revision: number; sha256: string | null } | undefined
-        if (current?.sha256 === hash) {
+        const duplicate = this.db
+          .prepare("SELECT revision FROM releases WHERE skill_id=? AND sha256=?")
+          .get(key, hash) as unknown as { revision: number } | undefined
+        if (duplicate) {
           result.unchanged += 1
           continue
         }
@@ -215,7 +213,10 @@ export class MarketRepo {
             JSON.stringify(item),
           )
 
-        const revision = Number(current?.revision ?? 0) + 1
+        const latest = this.db
+          .prepare("SELECT COALESCE(MAX(revision),0) AS revision FROM releases WHERE skill_id=?")
+          .get(key) as unknown as { revision: number }
+        const revision = Number(latest.revision) + 1
         const dir = join(this.dir, "releases", key)
         const target = join(dir, `${revision}.tar.gz`)
         mkdirSync(dir, { recursive: true })

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import {
   activeUserMessageID,
+  completedTurnElapsed,
   messageTurns,
   partitionTurns,
   queuedUserMessageIDs,
@@ -55,6 +56,74 @@ const expectLayout = (
     queued: result.queued.map((turn) => turn.user.id),
   }).toEqual(expected)
 }
+
+describe("completedTurnElapsed", () => {
+  it("measures from the user submission through the final successful response", () => {
+    const prompt = { ...user("message_1"), time: { created: 1_000 } }
+    const toolCall = assistant("message_2", "message_1", {
+      finish: "tool-calls",
+      time: { created: 2_000, completed: 12_000 },
+    })
+    const completed = assistant("message_3", "message_1", {
+      finish: "stop",
+      time: { created: 12_000, completed: 61_000 },
+    })
+
+    expect(completedTurnElapsed({ id: prompt.id, user: prompt, assistant: [toolCall, completed] }, [prompt, toolCall, completed])).toBe(
+      60_000,
+    )
+  })
+
+  it("hides incomplete, failed, partial, and invalid durations", () => {
+    const prompt = { ...user("message_1"), time: { created: 1_000 } }
+    const valid = { time: { created: 2_000, completed: 3_000 } }
+    const incomplete = ["tool-calls", "unknown", "length", "content-filter"]
+
+    for (const finish of incomplete) {
+      const response = assistant(`response-${finish}`, prompt.id, { finish, ...valid })
+      expect(completedTurnElapsed({ id: prompt.id, user: prompt, assistant: [response] }, [prompt, response])).toBeUndefined()
+    }
+
+    const failed = assistant("failed", prompt.id, { finish: "stop", ...valid, error: { name: "ProviderError" } })
+    const missingTime = assistant("missing", prompt.id, { finish: "stop" })
+    const reversed = assistant("reversed", prompt.id, { finish: "stop", time: { created: 2_000, completed: 999 } })
+
+    expect(completedTurnElapsed({ id: prompt.id, user: prompt, assistant: [failed] }, [prompt, failed])).toBeUndefined()
+    expect(completedTurnElapsed({ id: prompt.id, user: prompt, assistant: [missingTime] }, [prompt, missingTime])).toBeUndefined()
+    expect(completedTurnElapsed({ id: prompt.id, user: prompt, assistant: [reversed] }, [prompt, reversed])).toBeUndefined()
+    expect(completedTurnElapsed({ id: prompt.id, user: prompt, assistant: [missingTime], partial: true }, [prompt])).toBeUndefined()
+  })
+
+  it("uses the original user timestamp for a post-compaction resumed response", () => {
+    const original = { ...user("message_1"), time: { created: 100 } }
+    const compaction = { ...compact("message_3"), time: { created: 600 } }
+    const resumed = assistant("message_5", original.id, { finish: "stop", time: { created: 800, completed: 2_100 } })
+    const turns = messageTurns([original, compaction, resumed])
+    const resumedTurn = turns.find((turn) => turn.user.id === compaction.id)!
+
+    expect(completedTurnElapsed(resumedTurn, [original, compaction, resumed])).toBe(2_000)
+  })
+
+  it("hides durations for internal compaction and replay prompts", () => {
+    const compaction = { ...compact("message_1"), time: { created: 100 } }
+    const response = assistant("message_2", compaction.id, { finish: "stop", time: { created: 200, completed: 2_100 } })
+    const replay = { ...user("message_3"), time: { created: 100 } }
+    const replayResponse = assistant("message_4", replay.id, { finish: "stop", time: { created: 200, completed: 2_100 } })
+    const replayPart: Part = {
+      id: "replay",
+      messageID: replay.id,
+      type: "text",
+      text: "continue",
+      synthetic: true,
+      metadata: { compaction_continue: true },
+    }
+
+    expect(completedTurnElapsed({ id: compaction.id, user: compaction, assistant: [response] }, [compaction, response])).toBeUndefined()
+    expect(
+      completedTurnElapsed({ id: replay.id, user: replay, assistant: [replayResponse] }, [replay, replayResponse], () => [replayPart]),
+    ).toBeUndefined()
+  })
+})
 
 describe("queuedUserMessageIDs", () => {
   it("keeps follow-ups queued before the first assistant exists", () => {

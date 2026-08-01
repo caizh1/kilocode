@@ -39,6 +39,12 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
   createEffect(() => session.hydrateParts([props.row.message.id]))
 
   const open = () => vscode.postMessage({ type: "openChanges", turnId: props.row.message.id })
+  const formatCompletionDuration = (elapsed: number) => {
+    const seconds = Math.floor(elapsed / 1_000)
+    const minutes = Math.floor(seconds / 60)
+    if (minutes === 0) return language.t("session.turn.duration.seconds", { seconds })
+    return language.t("session.turn.duration.minutes", { minutes, seconds: seconds % 60 })
+  }
 
   return (
     <div
@@ -90,6 +96,23 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
               message={row().message as unknown as SDKAssistantMessage}
               parts={row().parts as unknown as SDKPart[]}
               showAssistantCopyPartID={row().copy}
+              completion={() => {
+                const elapsed = row().completionElapsed
+                if (elapsed === undefined) return undefined
+                return (
+                  <span
+                    data-component="turn-completion-duration"
+                    data-agent={row().completionAgent?.trim().toLowerCase() || "default"}
+                  >
+                    <Icon name="circle-check" size="normal" />
+                    <span data-slot="turn-completion-duration-label">
+                      {language.t("session.turn.completedDuration", {
+                        duration: formatCompletionDuration(elapsed),
+                      })}
+                    </span>
+                  </span>
+                )
+              }}
               forceOpenPartID={props.activeSearchPartID}
               forceOpenFile={props.activeSearchPartFile}
               highlight={props.highlight}

@@ -21,12 +21,18 @@ import { BrowserAutomationService } from "./services/browser-automation"
 import { TelemetryEventName, TelemetryProxy } from "./services/telemetry"
 import { registerCommitMessageService } from "./services/commit-message"
 import { registerCodeActions, registerTerminalActions, KiloCodeActionProvider } from "./services/code-actions"
+import { registerHighConfidenceCodeComments } from "./services/code-comments"
 import { registerToggleAutoApprove } from "./commands/toggle-auto-approve"
 import { registerHeapSnapshot } from "./commands/heap-snapshot"
 import { registerMemoryDebug } from "./commands/memory-debug"
 import { RemoteStatusService } from "./services/RemoteStatusService"
 import { markWorkspace } from "./util/spotlight"
 import { registerUpdateCheck } from "./services/update-check"
+import {
+  confirmPendingUpdateActivation,
+  markPendingUpdateReloadRequested,
+  shouldRetryFirstReload,
+} from "./services/update-check/activation"
 import { registerDocumentArtifactCommands } from "./services/document-artifacts"
 import { registerAgentTerminal } from "./services/agent-terminal"
 import { createNotebookBridge } from "./services/notebook"
@@ -39,6 +45,7 @@ let agentManager: AgentManagerProvider | undefined
 let shuttingDown = false
 
 const RESTORE_KEY = "chipmate.v2.workbench.restore"
+const RELOAD_WINDOW = "Reload Window"
 
 type RestoreState = {
   agentManager?: boolean
@@ -58,6 +65,54 @@ const panelTitleHandler = (panel: vscode.WebviewPanel) => (title: string) => {
 // it starts lazily when a webview connects or when ensureBackendForAutocomplete() triggers it.
 export function activate(source: vscode.ExtensionContext) {
   const context = isolate(source)
+  void confirmPendingUpdateActivation(context)
+    .then(async (result) => {
+      if (result.status === "none") return
+      if (result.status === "invalid") {
+        console.warn("[Kilo New] 已清除无效的更新激活收据。")
+        return
+      }
+      if (result.status === "host-active") {
+        console.log(
+          `[Kilo New] 更新首次重载已激活：${result.record.extensionId} ${result.record.expectedVersion} ${result.record.target}。`,
+        )
+        return
+      }
+      if (!result.pending.reloadRequestedAt) {
+        console.log(
+          `[Kilo New] 更新已安装但尚未请求重载：${result.pending.expectedVersion}/${result.pending.target}。`,
+        )
+        return
+      }
+      console.warn(
+        `[Kilo New] 更新首次重载未切换目标版本：期望 ${result.pending.expectedVersion}/${result.pending.target}，实际 ${result.actual.version}/${result.actual.target ?? "unknown"}。`,
+      )
+      if (shouldRetryFirstReload(result)) {
+        const retry = await markPendingUpdateReloadRequested(context)
+        if (!retry) {
+          console.warn("[Kilo New] 更新首次重载回执在自动重试前丢失。")
+          return
+        }
+        console.warn(
+          `[Kilo New] 目标扩展仍在注册，自动执行一次受限的第二次重载（尝试 ${retry.reloadAttempts}）。`,
+        )
+        await vscode.commands.executeCommand("workbench.action.reloadWindow")
+        return
+      }
+      const choice = await vscode.window.showWarningMessage(
+        `ChipMate ${result.pending.expectedVersion} was installed, but this window is still running ${result.actual.version || "an unknown version"}. Reload Window again to activate the installed version.`,
+        RELOAD_WINDOW,
+      )
+      if (choice === RELOAD_WINDOW) {
+        try {
+          await markPendingUpdateReloadRequested(context)
+        } catch (err) {
+          console.warn("[Kilo New] 未能记录手动更新重载请求：", err)
+        }
+        await vscode.commands.executeCommand("workbench.action.reloadWindow")
+      }
+    })
+    .catch((err) => console.warn("[Kilo New] 更新激活收据确认失败：", err))
   const internal = isInternalOfflineBuild()
   void vscode.commands.executeCommand("setContext", INTERNAL_OFFLINE_CONTEXT, internal)
   console.log("ChipMate extension is now active")
@@ -627,6 +682,7 @@ export function activate(source: vscode.ExtensionContext) {
 
   // Register code actions (editor context menus, terminal context menus, keyboard shortcuts)
   registerCodeActions(context, provider, agentManagerProvider, activeTabProvider)
+  registerHighConfidenceCodeComments(context, connectionService)
   registerTerminalActions(context, provider, agentManagerProvider)
 
   // Register CodeActionProvider (lightbulb quick fixes)

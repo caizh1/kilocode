@@ -1,4 +1,5 @@
 import { createHash } from "crypto"
+import { Log } from "../util/log"
 import type {
   EmbeddingPurpose,
   EmbeddingQualityResult,
@@ -8,8 +9,12 @@ import type {
   IEmbedder,
 } from "./interfaces/embedder"
 
+const log = Log.create({ service: "embedding-quality" })
+
 export const EMBEDDING_QUALITY_VERSION = "qwen3-dense-v1"
 export const EMBEDDING_INSTRUCTION_VERSION = "qwen3-retrieval-v1"
+const RUNTIME_COLLAPSE_COSINE = 0.999999
+const RUNTIME_COLLAPSE_CLUSTER_SIZE = 3
 export const CODE_QUERY_INSTRUCTION =
   "Instruct: Given a code search query, retrieve relevant source code passages that answer the query\nQuery: "
 export const DOCUMENT_QUERY_INSTRUCTION =
@@ -140,7 +145,7 @@ export function validateEmbeddingBatch(vectors: number[][], opts: BatchOptions):
     throw new Error(`Embedding response has a suspicious shared zero-padded suffix (${tail} values).`)
   }
 
-  const similarities = pairs(vectors).map(([left, right]) => cosine(left, right))
+  const similarities = opts.collapse === false ? [] : pairs(vectors).map(([left, right]) => cosine(left, right))
   const max = similarities.length > 0 ? Math.max(...similarities) : 0
   if (opts.collapse !== false && vectors.length > 1 && max >= 0.9999) {
     throw new Error(`Embedding response appears collapsed (maximum cross-text cosine ${max.toFixed(6)}).`)
@@ -271,6 +276,7 @@ export class QualityCheckedEmbedder implements IEmbedder {
       dense: true,
       collapse: false,
     })
+    validateRuntimeEmbeddingCollapse(input, response.embeddings)
     const sentinel = response.embeddings[0]
     const expected = this.profile.fingerprint[0]
     if (!sentinel || !expected || cosine(normalize(sentinel), expected) < 0.999) {
@@ -293,6 +299,72 @@ export class QualityCheckedEmbedder implements IEmbedder {
   get embedderInfo() {
     return this.raw.embedderInfo
   }
+}
+
+function validateRuntimeEmbeddingCollapse(texts: string[], vectors: number[][]): void {
+  const unique = new Map<string, { vector: number[]; sentinel: boolean }>()
+  for (let index = 0; index < texts.length; index += 1) {
+    const text = texts[index]
+    const vector = vectors[index]
+    if (!text || !vector) continue
+    const identity = digest(text.trim().replace(/\s+/g, " "))
+    if (!unique.has(identity)) unique.set(identity, { vector: normalize(vector), sentinel: index === 0 })
+  }
+
+  const entries = [...unique.values()]
+  const duplicateTexts = texts.length - entries.length
+  if (duplicateTexts > 0) {
+    log.debug("embedding batch contains repeated texts", {
+      inputCount: texts.length,
+      uniqueTextCount: entries.length,
+      duplicateTextCount: duplicateTexts,
+    })
+  }
+  if (entries.length < 2) return
+
+  const parents = entries.map((_, index) => index)
+  const root = (index: number): number => {
+    let current = index
+    while (parents[current] !== current) current = parents[current]!
+    return current
+  }
+  const join = (left: number, right: number) => {
+    const a = root(left)
+    const b = root(right)
+    if (a !== b) parents[b] = a
+  }
+
+  let max = -1
+  for (let left = 0; left < entries.length; left += 1) {
+    for (let right = left + 1; right < entries.length; right += 1) {
+      const similarity = cosine(entries[left].vector, entries[right].vector)
+      max = Math.max(max, similarity)
+      if (similarity >= RUNTIME_COLLAPSE_COSINE) join(left, right)
+    }
+  }
+
+  const clusters = new Map<number, number>()
+  for (let index = 0; index < entries.length; index += 1) {
+    const group = root(index)
+    clusters.set(group, (clusters.get(group) ?? 0) + 1)
+  }
+  const largest = Math.max(...clusters.values())
+  const sentinel = entries.findIndex((entry) => entry.sentinel)
+  const sentinelCluster = sentinel >= 0 ? (clusters.get(root(sentinel)) ?? 1) : 1
+  if (sentinelCluster === 1 && largest < RUNTIME_COLLAPSE_CLUSTER_SIZE) {
+    if (largest === 2) {
+      log.warn("embedding response contains one high-similarity pair across distinct texts", {
+        uniqueTextCount: entries.length,
+        clusterSize: largest,
+        maxCosine: Number(max.toFixed(6)),
+      })
+    }
+    return
+  }
+
+  throw new Error(
+    `Embedding response appears collapsed across distinct texts (largest cluster ${largest}/${entries.length}, maximum cross-text cosine ${max.toFixed(6)}).`,
+  )
 }
 
 export function sameSpace(left: number[][], right: number[][]): boolean {

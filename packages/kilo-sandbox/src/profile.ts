@@ -8,6 +8,7 @@ export interface PathRule {
 export interface FilesystemProfile {
   readonly allowWrite: ReadonlyArray<PathRule>
   readonly denyWrite: ReadonlyArray<PathRule>
+  readonly denyRead?: ReadonlyArray<PathRule>
   readonly denyNames: ReadonlyArray<string>
   readonly temporaryDirectory?: string | undefined
 }
@@ -26,4 +27,5 @@ export interface Profile {
   readonly filesystem: FilesystemProfile
   readonly network: NetworkProfile
   readonly environment: EnvironmentProfile
+  readonly credentialAccess?: "allow" | "deny"
 }

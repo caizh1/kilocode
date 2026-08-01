@@ -160,6 +160,7 @@ export interface MessagePartProps {
   animate?: boolean
   working?: boolean
   feedback?: MessageFeedbackControls
+  completion?: JSX.Element
   throughput?: JSX.Element
 }
 
@@ -1038,6 +1039,7 @@ export function Part(props: MessagePartProps) {
         animate={props.animate}
         working={props.working}
         feedback={props.feedback}
+        completion={props.completion}
         throughput={props.throughput}
       />
     </Show>
@@ -1312,7 +1314,14 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
             }}
           </Match>
           <Match when={true}>
-            <ToolApprovalProvider value={() => resolveToolApproval(meta(), i18n.t as (k: string, p?: Record<string, string | number | boolean>) => string)}>
+            <ToolApprovalProvider
+              value={() =>
+                resolveToolApproval(
+                  meta(),
+                  i18n.t as (k: string, p?: Record<string, string | number | boolean>) => string,
+                )
+              }
+            >
               <Dynamic
                 component={render()}
                 input={input()}
@@ -1506,9 +1515,8 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
                 />
               </Tooltip>
             </Show>
-            <Show when={props.throughput}>
-              {(el) => <span data-slot="assistant-throughput-inline">{el()}</span>}
-            </Show>
+            <Show when={props.completion}>{(el) => <span data-slot="assistant-completion-inline">{el()}</span>}</Show>
+            <Show when={props.throughput}>{(el) => <span data-slot="assistant-throughput-inline">{el()}</span>}</Show>
           </div>
         </Show>
         <Show when={summary()}>

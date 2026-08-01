@@ -100,20 +100,22 @@ Use `-Lane settings` for a focused installed-VSIX settings regression. It valida
 
 ### 离线自动更新聚焦通道
 
-`-Lane update` 只裁决 `WIN-UPDATE`，不会把普通安装或 smoke 结果当成自动更新通过。`-PreviousVsix` 必须是已包含修复安装器的旧版本，`-Vsix` 必须是版本更高的候选包：
+`-Lane update` 只裁决 `WIN-UPDATE`，不会把普通安装或 smoke 结果当成自动更新通过。若要验收“首次 Reload 仍启动旧宿主时自动限一次重试”的协议，`-PreviousVsix` 必须是已包含激活回执协议的桥接版，`-Vsix` 必须是版本更高的候选包：
 
 ```powershell
 .\run.ps1 `
-  -PreviousVsix C:\qa\chipmate-1.0.10-win32-x64-baseline.vsix `
-  -Vsix C:\qa\chipmate-1.0.11-win32-x64-baseline.vsix `
+  -PreviousVsix C:\qa\chipmate-<bridge-version>-win32-x64-baseline.vsix `
+  -Vsix C:\qa\chipmate-<candidate-version>-win32-x64-baseline.vsix `
   -CodePath "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe" `
   -Output "C:\qa\runs\自动更新 中文路径" `
-  -ExpectedVersion 1.0.11 `
+  -ExpectedVersion <candidate-version> `
   -Gate native-x64 `
   -Lane update
 ```
 
-通道会使用隔离的中文、空格 `user-data-dir` 与 `extensions-dir`，只通过 VS Code 自带 CLI 预装旧版；启动扩展前从 PATH 移除所有可发现的 `code`。本地离线服务动态提供 schema v2 manifest 和候选 VSIX。验收证据包含更新前后扩展列表、manifest/VSIX 请求、专用更新日志、缓存 SHA-256、Reload 提示截图与 UIA 树，以及重载后的新版 installed-host 激活结果。该通道必须在 `native-x64` Windows 上通过后才能作为发布门槛；`arm64-vm` 结果仅作补充。
+通道会使用隔离的中文、空格 `user-data-dir` 与 `extensions-dir`，只通过 VS Code 自带 CLI 预装旧版；启动扩展前从 PATH 移除所有可发现的 `code`。本地离线服务动态提供 schema v2 manifest 和候选 VSIX。验收证据包含更新前后扩展列表、manifest/VSIX 请求、专用更新日志、缓存 SHA-256、Reload 提示截图与 UIA 树、同一 Code 窗口内的新 Extension Host 回执、Webview ready 回执，以及在非 reduced-motion 条件下动态 spinner 的资源与三帧像素变化。
+
+已发布但不含该协议的旧包（例如历史 `1.0.10 → 1.0.11`）不能被候选包反向修复：安装和首次 Reload 仍由旧包代码发起。该历史链只可验证首次 Reload 是否直接成功，若失败需人工再 Reload 一次；协议从桥接版升级到下一版开始才可自动补救。该通道必须在 `native-x64` Windows 上通过后才能作为发布门槛；`arm64-vm` 结果仅作补充。
 
 The runner prints the paths to:
 

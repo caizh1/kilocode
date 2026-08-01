@@ -39,8 +39,9 @@
 
 - 用户未限定平台时，默认交付 `darwin-arm64` 和 `win32-x64-baseline`；用户明确限定版本、平台或包类型时只构建指定范围。Windows 基线包不得用通用 `win32-x64` 目标替代。
 - 内网离线构建使用 `bun script/build.ts --internal-offline`。该命令不传 `--targets` 时只构建 `win32-x64-baseline`；需要默认双平台时显式传 `--targets=win32-x64-baseline,darwin-arm64`。
-- `win32-x64-baseline` 是 VSIX/CLI 目标名，不等于自动排除全部 ARM sidecar。用户明确要求纯 x64 时再使用 `--windows-x64-only`，并审计包内不存在 ARM/AArch64 资源。
+- 所有 Windows VSIX 都必须是纯 x64；即使目标名是 `win32-x64-baseline`，也必须传 `--windows-x64-only`。不得构建或打入 Windows ARM64/AArch64 CLI、Indexer、PTY、LanceDB 或其他架构 sidecar，并审计包内不存在任何 ARM/AArch64 资源。
 - `RELEASE_NOTES.md` 必须非空，并以 `# ChipMate <version>` 开头；构建脚本会同时验证 VSIX 内副本。
+- `RELEASE_NOTES.md` 默认是逐版本增量说明：先从受保护发布清单确认目标版本之前紧邻的 ChipMate 已发布版本，再以该版本对应的已发布产物和可追溯源码为基线，只写此后新增、修复或变化的用户可见内容。不得用当前源码 manifest、最近 Git 标签、最后找到的旧包或更早版本代替基线；例如 `1.0.11` 只能默认写“相较 `1.0.10`”，不能写“相较 `1.0.6`”。前序产物或源码无法核验时停止生成并报告；累计说明或跨 minor 汇总必须由用户明确要求。
 - 内网 provider、ChipMate Server、render、marketplace 和 indexing 默认值只允许从忽略的本地输入或环境变量注入。源码 manifest 必须在成功或失败退出后恢复，不得留下私有 endpoint、模型或 `chipmatePackageTarget`。
 - 统一服务入口是 `chipmate.v2.chipmateServer.baseUrl`。`chipmate.v2.documents.wordRender.remoteEndpoint` 和 `chipmate.v2.documents.mermaidRender.remoteEndpoint` 仅为兼容配置；不得再使用旧的 `kilo.documents.*` 命名空间。
 - 每个 VSIX 的包内 manifest 必须包含与目标一致的临时 `chipmatePackageTarget`；checked-in `package.json` 不保留该字段。

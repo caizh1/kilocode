@@ -35,11 +35,14 @@ describe("KiloEmbedder", () => {
         "X-KILOCODE-ORGANIZATIONID": "org_123",
       },
     })
-    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-      input: ["hello"],
-      model: "mistralai/mistral-embed-2312",
-      encoding_format: "base64",
-    })
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+      {
+        input: ["hello"],
+        model: "mistralai/mistral-embed-2312",
+        encoding_format: "base64",
+      },
+      { timeout: 120_000, maxRetries: 0 },
+    )
   })
 
   test("normalizes custom gateway base URLs", () => {

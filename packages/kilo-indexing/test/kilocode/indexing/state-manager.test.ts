@@ -57,4 +57,24 @@ describe("CodeIndexStateManager", () => {
       percent: 100,
     })
   })
+
+  test("clears the prior terminal progress in the first event of a new RAG run", () => {
+    const state = new CodeIndexStateManager()
+    const events: ReturnType<CodeIndexStateManager["getCurrentStatus"]>[] = []
+    state.reportFileQueueProgress(3, 3, "bar.ts")
+    state.setSystemState("Indexed", "Index up-to-date.")
+    state.onProgressUpdate.on((status) => events.push(status))
+
+    state.setSystemState("Indexing", "Validating embedding configuration...")
+    state.setActivePipeline("rag")
+
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({
+      systemStatus: "Indexing",
+      processedItems: 0,
+      totalItems: 0,
+      percent: 0,
+    })
+    expect(events[1]?.activePipeline).toBe("rag")
+  })
 })

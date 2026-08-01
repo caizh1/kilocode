@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { $ } from "bun"
 import { join, relative, dirname, basename } from "node:path"
-import { chmodSync, statSync, rmSync, readdirSync, existsSync } from "node:fs"
+import { chmodSync, statSync, rmSync, readdirSync, existsSync, readFileSync } from "node:fs"
 import {
   copyCodeGraphParserWorker,
   copyIndexingProcess,
@@ -110,6 +110,20 @@ function vscodeTarget(): string {
   return `${os}-${arch}`
 }
 
+function isRunnableOnCurrentPlatform(file: string): boolean {
+  try {
+    const header = readFileSync(file).subarray(0, 4)
+    if (header[0] === 0x23 && header[1] === 0x21) return process.platform !== "win32"
+    if (process.platform === "win32") return header[0] === 0x4d && header[1] === 0x5a
+    if (process.platform === "linux") return header.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
+    if (process.platform !== "darwin") return false
+    const magic = header.readUInt32BE(0)
+    return new Set([0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca]).has(magic)
+  } catch {
+    return false
+  }
+}
+
 async function findKiloBinaryInOpencodeDist(): Promise<string | null> {
   const distDir = join(opencodeDir, "dist")
 
@@ -124,6 +138,7 @@ async function findKiloBinaryInOpencodeDist(): Promise<string | null> {
   const preferred = join(distDir, `@kilocode`, tag, "bin", binName)
   try {
     statSync(preferred)
+    if (!isRunnableOnCurrentPlatform(preferred)) return null
     if (!hasTreeSitterResources(preferred) || !hasKiloSandboxWorker(preferred)) return null
     if (!hasCodeGraphParserWorker(preferred) || !hasIndexingProcess(preferred)) return null
     if (!existsSync(snapshotForBinary(preferred))) return null
@@ -151,7 +166,8 @@ async function findKiloBinaryInOpencodeDist(): Promise<string | null> {
         queue.push(p)
         continue
       }
-      if (e.isFile() && (e.name === "kilo" || e.name === "kilo.exe") && basename(dirname(p)) === "bin") {
+      if (e.isFile() && e.name === binName && basename(dirname(p)) === "bin") {
+        if (!isRunnableOnCurrentPlatform(p)) continue
         if (!hasTreeSitterResources(p) || !hasKiloSandboxWorker(p)) continue
         if (!hasCodeGraphParserWorker(p) || !hasIndexingProcess(p)) continue
         if (!existsSync(snapshotForBinary(p))) continue
@@ -265,6 +281,7 @@ async function main() {
   const processExists = hasIndexingProcess(targetBinPath)
   const ready =
     exists &&
+    isRunnableOnCurrentPlatform(targetBinPath) &&
     snapshotExists &&
     processExists &&
     hasTreeSitterResources(targetBinPath) &&

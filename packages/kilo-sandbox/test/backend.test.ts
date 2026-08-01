@@ -64,6 +64,42 @@ describe("sandbox launch preparation", () => {
     expect(result.args.slice(-3)).toEqual(["--", "/bin/echo", "hello"])
   })
 
+  test("blocks configured credential reads on macOS and Linux backends", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "kilo-sandbox-read-"))
+    const credentials = path.join(root, "credentials")
+    const key = path.join(root, "token.txt")
+    mkdirSync(credentials)
+    writeFileSync(key, "secret")
+    const profile: Profile = {
+      ...makeProfile(),
+      credentialAccess: "deny",
+      filesystem: {
+        ...makeProfile().filesystem,
+        denyRead: [
+          { path: credentials, kind: "subtree" },
+          { path: key, kind: "literal" },
+        ],
+      },
+    }
+
+    try {
+      const darwin = generate(profile, launch)
+      expect(darwin.args[1]).toContain('(deny file-read* (require-any (literal (param "DENY_READ_0"))')
+      expect(darwin.args[1]).toContain('(deny file-read* (literal (param "DENY_READ_1")))')
+      expect(darwin.args).toContain(`-DDENY_READ_0=${credentials}`)
+      expect(darwin.args).toContain(`-DDENY_READ_1=${key}`)
+      expect(darwin.args[1]).toContain('(deny mach-lookup (global-name "com.apple.SecurityServer"))')
+
+      const linux = generateBubblewrap(profile, launch, "/opt/kilo/bwrap")
+      const hiddenDirectory = linux.args.indexOf(credentials)
+      const hiddenFile = linux.args.indexOf(key)
+      expect(linux.args.slice(hiddenDirectory - 1, hiddenDirectory + 1)).toEqual(["--tmpfs", credentials])
+      expect(linux.args.slice(hiddenFile - 2, hiddenFile + 1)).toEqual(["--ro-bind", "/dev/null", key])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("preserves unrestricted networking in allow mode", () => {
     const result = generate(makeProfile("allow"), launch)
     const policy = result.args[1]
@@ -272,9 +308,7 @@ describe("sandbox launch preparation", () => {
 
   test("prepares proxy mode when platform support is available", async () => {
     const input = makeProfile("proxy")
-    const result = await Effect.runPromise(
-      Effect.scoped(run(input, prepare(launch))).pipe(Effect.result),
-    )
+    const result = await Effect.runPromise(Effect.scoped(run(input, prepare(launch))).pipe(Effect.result))
     if (!backendSupport(input.network).available) {
       expect(Result.isFailure(result)).toBe(true)
       return

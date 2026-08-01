@@ -163,7 +163,7 @@ describe("Ultra Council runtime contract", () => {
     expect(source).toContain("sessions.removePart")
     expect(source).toContain("text: UltraVerify.result(council)")
     expect(source).toMatch(/UltraVerify\.gate\([\s\S]*?handle\.message\.finish,[\s\S]*?\)/)
-    expect(task).toContain("KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true, canTask)")
+    expect(task).toContain("KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true, canTask, cfg.mcp)")
   })
 
   test("freezes a Code baseline before two inherited and one blind investigation", () => {

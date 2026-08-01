@@ -178,6 +178,9 @@ export interface SetOrganizationRequest {
 
 export interface WebviewReadyRequest {
   type: "webviewReady"
+  extensionVersion?: string
+  motionBaseUri?: string
+  reducedMotion?: boolean
 }
 
 export interface SelectSourceRequest {

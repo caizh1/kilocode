@@ -39,6 +39,7 @@ export function buildWebviewHtml(
     iconsBaseUri: vscode.Uri
     motionBaseUri: vscode.Uri
     workerUri: vscode.Uri
+    extensionVersion?: string
     title: string
     port?: number
     extraStyles?: string
@@ -83,7 +84,7 @@ export function buildWebviewHtml(
 </head>
 <body>
   <div id="root"></div>
-  <script nonce="${nonce}">window.ICONS_BASE_URI = "${opts.iconsBaseUri}"; window.KILO_LOADING_MOTION_URI = "${opts.motionBaseUri}"; window.KILO_SHIKI_WORKER_URI = "${opts.workerUri}";</script>
+  <script nonce="${nonce}">window.ICONS_BASE_URI = "${opts.iconsBaseUri}"; window.KILO_LOADING_MOTION_URI = "${opts.motionBaseUri}"; window.KILO_SHIKI_WORKER_URI = "${opts.workerUri}"; window.KILO_EXTENSION_VERSION = ${JSON.stringify(opts.extensionVersion ?? "")};</script>
   <script nonce="${nonce}" src="${opts.scriptUri}"></script>
 </body>
 </html>`

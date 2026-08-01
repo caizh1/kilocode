@@ -29,6 +29,7 @@ class Store {
   public completeCount = 0
   public deleteCount = 0
   public incompleteCount = 0
+  public initializeCount = 0
 
   constructor(
     private readonly existing: boolean,
@@ -36,6 +37,7 @@ class Store {
   ) {}
 
   async initialize(): Promise<boolean> {
+    this.initializeCount += 1
     return this.created
   }
 
@@ -127,7 +129,7 @@ class Scanner {
       onFileParsed?.()
     }
     onFilesIndexed?.(this.indexed)
-    for (let i = this.indexed; i < this.discovered; i += 1) {
+    for (let i = 0; i < this.discovered; i += 1) {
       onProgress?.({ type: "file", filePath: `/tmp/ws/file-${i}.ts` })
     }
     for (let i = 0; i < this.graph; i += 1) {
@@ -329,17 +331,55 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(order).toEqual(["scan:codeGraph", "validate", "store", "scan:rag"])
   })
 
-  test("keeps Code Graph complete and blocks RAG when embedding validation fails", async () => {
+  test("counts each production scanner file callback once and reserves 100 percent for the terminal state", async () => {
     const ctx = await env()
-    const scanner = new Scanner(1, 1, 1)
     const state = new CodeIndexStateManager()
-    const watcher = new Watcher()
+    const updates: ReturnType<typeof state.getCurrentStatus>[] = []
+    const subscription = state.onProgressUpdate.on((status) => updates.push(status))
     const orchestrator = new CodeIndexOrchestrator(
       createConfig(),
       state,
       ctx.root,
       { async clearCacheFile() {} } as unknown as CacheManager,
       new Store(false) as unknown as IVectorStore,
+      new Scanner(4, 4, 8, 1) as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+
+    await orchestrator.startIndexing("manual")
+    subscription.dispose()
+
+    const progress = updates.filter(
+      (status) => status.systemStatus === "Indexing" && status.activePipeline === "rag" && status.totalItems === 4,
+    )
+    expect([...new Set(progress.map((status) => status.processedItems))]).toEqual([0, 1, 2, 3, 4])
+    expect(progress.every((status) => status.percent < 100)).toBe(true)
+    expect(progress.at(-1)).toMatchObject({
+      processedItems: 4,
+      totalItems: 4,
+      percent: 99,
+      message: expect.stringContaining("Finalizing vector index"),
+    })
+    expect(state.getCurrentStatus()).toMatchObject({
+      systemStatus: "Indexed",
+      percent: 100,
+    })
+  })
+
+  test("keeps Code Graph complete and blocks RAG when embedding validation fails", async () => {
+    const ctx = await env()
+    const scanner = new Scanner(1, 1, 1)
+    const state = new CodeIndexStateManager()
+    const watcher = new Watcher()
+    const store = new Store(false)
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      state,
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      store as unknown as IVectorStore,
       scanner as unknown as DirectoryScanner,
       watcher as unknown as IFileWatcher,
       ctx.cacheDirectory,
@@ -355,6 +395,9 @@ describe("CodeIndexOrchestrator telemetry", () => {
 
     expect(outcome).toEqual({ state: "failed", pipeline: "rag" })
     expect(scanner.targets).toEqual(["codeGraph"])
+    expect(store.initializeCount).toBe(0)
+    expect(store.incompleteCount).toBe(0)
+    expect(store.completeCount).toBe(0)
     expect(state.state).toBe("Error")
     expect(state.getCurrentStatus().message).toContain("embedding unavailable")
     expect(state.getCurrentStatus().activePipeline).toBe("rag")

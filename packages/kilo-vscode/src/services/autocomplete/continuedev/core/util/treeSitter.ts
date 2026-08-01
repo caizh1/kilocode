@@ -121,16 +121,23 @@ export const IGNORE_PATH_PATTERNS: Partial<Record<LanguageName, RegExp[]>> = {
   [LanguageName.JAVASCRIPT]: [/.*node_modules/],
 }
 
+let parserRuntimePromise: Promise<typeof Parser> | undefined
+
+function getParserRuntime(): Promise<typeof Parser> {
+  parserRuntimePromise ??= import("web-tree-sitter").then((module) => module.default)
+  return parserRuntimePromise
+}
+
 export async function getParserForFile(filepath: string) {
   try {
-    // Dynamically import Parser to avoid issues with WASM loading
-    const { Parser } = require("web-tree-sitter")
-    if (!Parser) {
+    // Keep the initial CJS export reference: web-tree-sitter mutates module.exports during init.
+    const ParserRuntime = await getParserRuntime()
+    if (!ParserRuntime) {
       return undefined
     }
 
-    await Parser.init()
-    const parser = new Parser()
+    await initializeParserRuntime(ParserRuntime)
+    const parser = new ParserRuntime()
 
     const language = await getLanguageForFile(filepath)
     if (!language) {
@@ -154,6 +161,37 @@ function findExistingPath(candidatePaths: string[]): string | undefined {
     }
   }
   return undefined
+}
+
+function getTreeSitterRuntimePaths(filename: string): string[] {
+  return [
+    // Bundled extension: esbuild copies the runtime matching web-tree-sitter beside extension.js.
+    path.join(__dirname, filename),
+    // Source tests: use the runtime shipped by the exact installed web-tree-sitter version.
+    path.resolve(
+      __dirname,
+      "..",
+      "..",
+      "..",
+      "..",
+      "..",
+      "..",
+      "node_modules",
+      "web-tree-sitter",
+      filename,
+    ),
+  ]
+}
+
+async function initializeParserRuntime(ParserRuntime: typeof Parser): Promise<void> {
+  const candidates = getTreeSitterRuntimePaths("tree-sitter.wasm")
+  const runtimePath = findExistingPath(candidates)
+  if (!runtimePath) {
+    throw new Error(`Could not find Tree-sitter runtime WASM. Tried paths: ${candidates.join(", ")}`)
+  }
+  await ParserRuntime.init({
+    locateFile: (filename: string) => (filename === "tree-sitter.wasm" ? runtimePath : filename),
+  })
 }
 
 // Loading the wasm files to create a Language object is an expensive operation and with
@@ -229,8 +267,8 @@ export async function getQueryForFile(filepathOrUri: string, queryPath: string):
 }
 
 async function loadLanguageForFileExt(fileExtension: string): Promise<Language> {
-  // Dynamically import Language to avoid issues with WASM loading
-  const { Language } = require("web-tree-sitter")
+  const ParserRuntime = await getParserRuntime()
+  await initializeParserRuntime(ParserRuntime)
 
   const filename = `tree-sitter-${supportedLanguages[fileExtension]}.wasm`
   const repoRoot = path.resolve(__dirname, "..", "..", "..", "..", "..")
@@ -241,6 +279,12 @@ async function loadLanguageForFileExt(fileExtension: string): Promise<Language> 
   const candidatePaths: string[] = [
     // Production: WASM files are in the same directory as the compiled code
     path.join(__dirname, filename),
+    // Bundled extension: __dirname is packages/kilo-vscode/dist.
+    path.resolve(__dirname, "..", "bin", "tree-sitter", filename),
+    // Source tests: __dirname is src/services/autocomplete/continuedev/core/util.
+    path.resolve(__dirname, "..", "..", "..", "..", "..", "..", "bin", "tree-sitter", filename),
+    // Extension runtime and local development package the grammars beside the CLI.
+    path.join(repoRoot, "..", "bin", "tree-sitter", filename),
     // Development: from src/services/autocomplete/continuedev/core/util -> src/dist
     path.join(repoRoot, "dist", filename),
     // Fallback: repo root
@@ -256,5 +300,5 @@ async function loadLanguageForFileExt(fileExtension: string): Promise<Language> 
     throw new Error(`Could not find language WASM file: ${filename}`)
   }
 
-  return await Language.load(wasmPath)
+  return await ParserRuntime.Language.load(wasmPath)
 }

@@ -11,6 +11,8 @@ import type { EmbeddingProfile } from "../embedding-profile"
 import { loadLanceDB } from "./lancedb-loader"
 
 const log = Log.create({ service: "lancedb-store" })
+const LANCEDB_QUERY_TIMEOUT_MS = 30_000
+const LANCEDB_WRITE_TIMEOUT_MS = 30_000
 let nativeQueue = Promise.resolve()
 
 function native<T>(run: () => Promise<T>): Promise<T> {
@@ -302,7 +304,7 @@ export class LanceDBVectorStore implements IVectorStore {
       throw new Error(`Invalid metadata key: ${key}`)
     }
     const metadataTable = await native(() => db.openTable(this.metadataTableName))
-    const rows = await metadataTable.query().where(`key = '${key}'`).toArray()
+    const rows = await metadataTable.query().where(`key = '${key}'`).toArray({ timeoutMs: LANCEDB_QUERY_TIMEOUT_MS })
     return rows.length > 0 ? rows[0].value : undefined
   }
 
@@ -512,20 +514,19 @@ export class LanceDBVectorStore implements IVectorStore {
         segmentHash: point.payload.segmentHash,
       }))
 
-      // Delete existing points with same IDs first
       const existingIds = lanceData.map((d) => d.id)
       if (existingIds.length > 0) {
         const bad = existingIds.find((id) => !this.isValidId(id))
         if (bad) {
           throw new Error(`Invalid point id format: ${bad}`)
         }
-        const escapedIds = existingIds.map((id) => `'${this.escapeSqlString(id)}'`).join(", ")
-        const idFilter = `id IN (${escapedIds})`
-        await table.delete(idFilter)
       }
 
-      // Insert new data
-      await table.add(lanceData)
+      await table
+        .mergeInsert("id")
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute(lanceData, { timeoutMs: LANCEDB_WRITE_TIMEOUT_MS })
     } catch (error) {
       log.error("Failed to upsert points", { error })
       throw error
@@ -591,7 +592,7 @@ export class LanceDBVectorStore implements IVectorStore {
         .distanceRange(-1e-6, 1 - actualMinScore)
         .limit(actualMaxResults)
 
-      const list = await searchQuery.toArray()
+      const list = await searchQuery.toArray({ timeoutMs: LANCEDB_QUERY_TIMEOUT_MS })
       const results = list.map((result: any) => ({
         id: result.id,
         score: 1 - result._distance, // Convert distance to similarity score
@@ -621,6 +622,36 @@ export class LanceDBVectorStore implements IVectorStore {
 
   async deletePointsByFilePath(filePath: string): Promise<void> {
     return this.deletePointsByMultipleFilePaths([filePath])
+  }
+
+  async finalizeFileGenerations(
+    files: readonly { filePath: string; generation: string; runId: string }[],
+  ): Promise<void> {
+    if (files.length === 0) return
+    const table = await this.getTable()
+    const normalized = new Map<string, { generation: string; runId: string }>()
+    for (const file of files) {
+      normalized.set(this.normalizeFilePath(file.filePath), {
+        generation: file.generation,
+        runId: file.runId,
+      })
+    }
+    const paths = [...normalized.keys()]
+    const fileFilter = paths.map((file) => `'${this.escapeSqlString(file)}'`).join(", ")
+    const activeFilter = [...normalized.entries()]
+      .map(
+        ([file, item]) =>
+          `(\`filePath\` = '${this.escapeSqlString(file)}' AND \`generation\` = '${this.escapeSqlString(
+            item.generation,
+          )}' AND \`runId\` = '${this.escapeSqlString(item.runId)}')`,
+      )
+      .join(" OR ")
+
+    await table.update({
+      where: activeFilter,
+      values: { active: true },
+    })
+    await table.delete(`\`filePath\` IN (${fileFilter}) AND NOT (${activeFilter})`)
   }
 
   async activateFileGeneration(filePath: string, generation: string, runId: string): Promise<void> {
@@ -793,7 +824,10 @@ export class LanceDBVectorStore implements IVectorStore {
         return false
       }
       const metadataTable = await native(() => db.openTable(this.metadataTableName))
-      const metadataResults = await metadataTable.query().where(`key = '${KEY.complete}'`).toArray()
+      const metadataResults = await metadataTable
+        .query()
+        .where(`key = '${KEY.complete}'`)
+        .toArray({ timeoutMs: LANCEDB_QUERY_TIMEOUT_MS })
       const indexed = metadataResults.length > 0 ? String(metadataResults[0].value) === "true" : false
       log.info("LanceDB indexing metadata evaluated", {
         workspacePath: this.workspacePath,

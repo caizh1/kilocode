@@ -9,6 +9,60 @@ export interface MessageTurn {
   partial?: boolean
 }
 
+function finalSuccessfulAssistant(turn: Pick<MessageTurn, "assistant" | "partial">) {
+  if (turn.partial) return undefined
+  const assistant = turn.assistant.at(-1)
+  if (!assistant || assistant.finish !== "stop" || assistant.error || assistant.summary === true) return undefined
+  return assistant
+}
+
+function originUser(
+  turn: Pick<MessageTurn, "user">,
+  assistant: Message,
+  messages: readonly Message[],
+): Message | undefined {
+  if (!assistant.parentID) return undefined
+  if (assistant.parentID === turn.user.id) return turn.user
+  return messages.find((message) => message.id === assistant.parentID && message.role === "user")
+}
+
+function isInternalCompaction(parts: readonly Part[]) {
+  return parts.some(
+    (part) =>
+      part.type === "compaction" ||
+      (part.type === "text" && part.synthetic === true && part.metadata?.compaction_continue === true),
+  )
+}
+
+/**
+ * Returns the wall-clock duration from the original user submission through
+ * the final successful assistant response for a rendered turn.
+ *
+ * A compaction can visually regroup a resumed assistant message under a
+ * synthetic compaction user message. In that case the final assistant keeps
+ * its original parentID, so callers pass the loaded messages to recover the
+ * genuine user submission time. If that parent is unavailable, we hide the
+ * value rather than showing a misleading shortened duration.
+ */
+export function completedTurnElapsed(
+  turn: Pick<MessageTurn, "user" | "assistant" | "partial">,
+  messages: readonly Message[] = [],
+  getParts?: (id: string) => readonly Part[],
+): number | undefined {
+  const final = finalSuccessfulAssistant(turn)
+  if (!final) return undefined
+  const user = originUser(turn, final, messages)
+  if (!user) return undefined
+  const started = user.time?.created
+  const completed = final.time?.completed
+  const userParts = getParts?.(user.id) ?? user.parts ?? []
+  if (isInternalCompaction(userParts)) return undefined
+  if (typeof started !== "number" || typeof completed !== "number") return undefined
+  if (!Number.isFinite(started) || !Number.isFinite(completed) || completed < started) return undefined
+
+  return completed - started
+}
+
 function key(msg: Message) {
   return msg.parentID ?? msg.id
 }

@@ -169,6 +169,7 @@ import type { KiloProviderOptions } from "./kilo-provider/options"
 import { fetchKiloEmbeddingModelCatalog } from "@kilocode/kilo-gateway"
 import { fetchImageModels } from "./image-generation/models"
 import { stopSessionProcesses } from "./kilo-provider/background-process"
+import { recordUpdateWebviewReady } from "./services/update-check/activation"
 import { sandboxDefault, sandboxSessionMetadata } from "./shared/sandbox-session"
 import {
   buildIndexingSettingsMessage,
@@ -318,8 +319,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private connectionGeneration = 0
   private loginAttempt = 0
   private isWebviewReady = false
-  private readonly extensionVersion =
-    vscode.extensions.getExtension("chipmate.chipmate")?.packageJSON?.version ?? "unknown"
+  private readonly extensionVersion: string
   private cachedProvidersMessage: unknown = null
   /**
    * Provider API keys retained extension-side for authenticated model
@@ -456,6 +456,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     private readonly extensionContext?: vscode.ExtensionContext,
     private readonly opts: KiloProviderOptions = {},
   ) {
+    this.extensionVersion =
+      extensionContext?.extension.packageJSON.version ??
+      vscode.extensions.getExtension("chipmate.chipmate")?.packageJSON?.version ??
+      "unknown"
     this.marketplaceRemove = createMarketplaceRemover(
       extensionContext ? path.join(extensionContext.globalStorageUri.fsPath, "config") : undefined,
     )
@@ -1027,6 +1031,17 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       switch (message.type) {
         case "webviewReady":
           console.log("[Kilo New] KiloProvider: ✅ webviewReady received")
+          if (this.extensionContext) {
+            void recordUpdateWebviewReady(this.extensionContext, {
+              version: message.extensionVersion,
+              motionBaseUri: message.motionBaseUri,
+              reducedMotion: message.reducedMotion,
+            })
+              .then((recorded) => {
+                if (recorded) console.log("[Kilo New] 更新激活 Webview 回执已记录。")
+              })
+              .catch((err) => console.warn("[Kilo New] 更新激活 Webview 回执记录失败：", err))
+          }
           this.isWebviewReady = true
           this.visibleTaskStreams.clear()
           this.flushPendingKiloModel()
@@ -1691,7 +1706,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         if (state === "connected") {
           this.flushPendingKiloModel()
           // Indexing recovery must not depend on profile or webview state sync.
-          void this.fetchAndSendIndexingStatus({ snapshot: true })
+          void this.fetchAndSendIndexingStatus()
           // Fire config warnings independently so a failure in the
           // sequential await chain doesn't prevent warnings from being shown
           void this.checkConfigWarnings("state")
@@ -2421,17 +2436,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return
     }
     if (msg.type === "saveCustomProvider" && config)
-      return saveCustomProviderAction(
-        ctx,
-        rid,
-        pid,
-        config,
-        key,
-        keyChanged,
-        this.cachedConfigMessage,
-        set,
-        model,
-      )
+      return saveCustomProviderAction(ctx, rid, pid, config, key, keyChanged, this.cachedConfigMessage, set, model)
   }
 
   private async handleFetchCustomProviderModels(msg: Record<string, unknown>): Promise<void> {
@@ -2708,7 +2713,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
   }
 
-  private fetchAndSendIndexingStatus(options: { snapshot?: boolean } = {}): Promise<void> {
+  private fetchAndSendIndexingStatus(): Promise<void> {
     if (this.indexing.dead) return Promise.resolve()
     const dir = this.getIndexingDirectory()
     if (!dir) {
@@ -2745,7 +2750,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       if (
         this.indexing.dead ||
         target !== this.indexing.target ||
-        (!options.snapshot && revision !== this.indexing.revision) ||
+        revision !== this.indexing.revision ||
         generation !== this.connectionGeneration ||
         client !== this.client ||
         !this.isCurrentIndexingDirectory(dir) ||
@@ -2763,7 +2768,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       if (
         this.indexing.dead ||
         target !== this.indexing.target ||
-        (!options.snapshot && revision !== this.indexing.revision) ||
+        revision !== this.indexing.revision ||
         generation !== this.connectionGeneration ||
         client !== this.client ||
         !this.isCurrentIndexingDirectory(dir) ||
@@ -2818,7 +2823,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.postIndexingStandby(
       current ? "Loading indexing status for the current project." : "Open a file in a workspace to select a project.",
     )
-    if (current && this.connectionState === "connected") void this.fetchAndSendIndexingStatus({ snapshot: true })
+    if (current && this.connectionState === "connected") void this.fetchAndSendIndexingStatus()
   }
 
   private async selectDocumentRagFolder(scope: "global" | "project" = "project"): Promise<void> {
@@ -4998,6 +5003,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       iconsBaseUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "assets", "icons")),
       motionBaseUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "assets", "loading-motion")),
       workerUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "shiki-worker.js")),
+      extensionVersion: this.extensionVersion,
       title: "ChipMate",
       port: this.connectionService.getServerInfo()?.port,
       extraStyles: `.container { height: 100%; display: flex; flex-direction: column; height: 100vh; border-right: 1px solid var(--border-weak-base); }`,

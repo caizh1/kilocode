@@ -247,7 +247,7 @@ describe("FileWatcher", () => {
   test("processFile preserves same-line segments during incremental updates", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "file-watcher-test-"))
     const cacheDir = path.join(root, ".cache")
-    const file = path.join(root, "oversized.md")
+    const file = path.join(root, "oversized.ts")
     const line = "x".repeat(5000)
 
     await mkdir(cacheDir, { recursive: true })
@@ -287,7 +287,7 @@ describe("FileWatcher", () => {
   test("streams watcher embeddings in bounded batches before activating the file", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "file-watcher-stream-"))
     const cacheDir = path.join(root, ".cache")
-    const file = path.join(root, "large.md")
+    const file = path.join(root, "large.ts")
     await mkdir(cacheDir, { recursive: true })
     await writeFile(file, "x".repeat(8_000))
     const cache = new CacheManager(cacheDir, root)
@@ -363,10 +363,42 @@ describe("FileWatcher", () => {
     watcher.dispose()
   })
 
+  test("waits for an in-flight batch before returning a drain timeout", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "file-watcher-drain-timeout-"))
+    const cacheDir = path.join(root, ".cache")
+    const file = path.join(root, "main.ts")
+    await mkdir(cacheDir, { recursive: true })
+    const cache = new CacheManager(cacheDir, root)
+    await cache.initialize()
+    const watcher = new FileWatcher(root, cache)
+    const gate = Promise.withResolvers<void>()
+    const data = watcher as unknown as {
+      accumulatedEvents: Map<string, { path: string; type: "create" | "change" | "delete" }>
+      drainTask?: Promise<void>
+    }
+    data.accumulatedEvents.set(file, { path: file, type: "change" })
+    data.drainTask = gate.promise
+
+    let returned = false
+    const draining = watcher.drainPending(1000, 5, true).then((result) => {
+      returned = true
+      return result
+    })
+    await Bun.sleep(20)
+
+    expect(returned).toBe(false)
+    gate.resolve()
+    expect(await draining).toBe(false)
+    expect(watcher.takeReconciliationRequest()).toBe(true)
+
+    watcher.dispose()
+    await rm(root, { recursive: true, force: true })
+  })
+
   test("emits retry telemetry for watcher upsert retries", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "file-watcher-test-"))
     const cacheDir = path.join(root, ".cache")
-    const file = path.join(root, "oversized.md")
+    const file = path.join(root, "oversized.ts")
     const line = "x".repeat(5000)
 
     await mkdir(cacheDir, { recursive: true })
@@ -419,7 +451,7 @@ describe("FileWatcher", () => {
   test("emits error telemetry when watcher retries are exhausted", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "file-watcher-test-"))
     const cacheDir = path.join(root, ".cache")
-    const file = path.join(root, "oversized.md")
+    const file = path.join(root, "oversized.ts")
     const line = "x".repeat(5000)
 
     await mkdir(cacheDir, { recursive: true })
@@ -718,7 +750,19 @@ describe("FileWatcher", () => {
         return { embeddings: texts.map(() => [0.1]) }
       },
     } satisfies IEmbedder
-    const watcher = new FileWatcher(root, cache, tracked, new RecordStore(), undefined, 1, 1, undefined, undefined, graph, postings)
+    const watcher = new FileWatcher(
+      root,
+      cache,
+      tracked,
+      new RecordStore(),
+      undefined,
+      1,
+      1,
+      undefined,
+      undefined,
+      graph,
+      postings,
+    )
     const overlay = new WorktreeOverlay(root, path.join(root, "baseline"), new Map([["main.c", hash]]))
     const data = watcher as unknown as {
       processBatch(events: Map<string, { path: string; type: "create" | "change" | "delete" }>): Promise<void>

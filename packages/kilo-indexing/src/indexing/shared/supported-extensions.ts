@@ -1,11 +1,17 @@
 import { extensions as allExtensions } from "../../tree-sitter"
 import { normalizeFileExtensions } from "../../file-extensions"
 
-// Include all extensions including markdown for the scanner
-export const scannerExtensions = allExtensions
+const documentOnlyExtensions = new Set([".md", ".markdown"])
+
+// Markdown belongs exclusively to Document RAG. Keep parser support available
+// for non-indexing callers, but never admit it into the Code RAG pipeline.
+export const parserExtensions = allExtensions
+export const scannerExtensions = allExtensions.filter((extension) => !documentOnlyExtensions.has(extension))
 
 export function resolveFileExtensions(input: readonly string[] | undefined): string[] {
-  return normalizeFileExtensions(input) ?? [...scannerExtensions]
+  return (normalizeFileExtensions(input) ?? scannerExtensions).filter(
+    (extension) => !documentOnlyExtensions.has(extension),
+  )
 }
 
 /**

@@ -36,6 +36,13 @@ try {
   const runner = readFileSync(fileURLToPath(new URL("./run.ps1", import.meta.url)), "utf8")
   assert.match(runner, /extensions-中文 path/)
   assert.match(runner, /user-中文 path/)
+  assert.match(runner, /Start-GuiSubject -Probe -AllowMotion/)
+  assert.match(runner, /ProviderMock = Start-MockProvider/)
+  assert.match(runner, /first-reload-spinner-chat-request/)
+  const motion = readFileSync(fileURLToPath(new URL("./cdp-chat-motion.mjs", import.meta.url)), "utf8")
+  assert.match(motion, /prefers-reduced-motion/)
+  assert.match(motion, /spinner-motion-ready/)
+  assert.match(motion, /spinner-pixels-change/)
 } finally {
   child.kill()
   rmSync(root, { recursive: true, force: true })

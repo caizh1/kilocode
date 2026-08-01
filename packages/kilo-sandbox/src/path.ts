@@ -68,6 +68,7 @@ export function normalize(profile: Profile): Effect.Effect<Profile, PlatformErro
   return Effect.gen(function* () {
     const allowWrite = yield* Effect.forEach(profile.filesystem.allowWrite, normalizeRule)
     const denyWrite = yield* Effect.forEach(profile.filesystem.denyWrite, normalizeRule)
+    const denyRead = yield* Effect.forEach(profile.filesystem.denyRead ?? [], normalizeRule)
     const temporaryDirectory = profile.filesystem.temporaryDirectory
       ? yield* canonicalize(profile.filesystem.temporaryDirectory)
       : undefined
@@ -77,6 +78,7 @@ export function normalize(profile: Profile): Effect.Effect<Profile, PlatformErro
       filesystem: {
         allowWrite,
         denyWrite,
+        ...(denyRead.length === 0 ? {} : { denyRead }),
         denyNames: profile.filesystem.denyNames,
         ...(temporaryDirectory === undefined ? {} : { temporaryDirectory }),
       },

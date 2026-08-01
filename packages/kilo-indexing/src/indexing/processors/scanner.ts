@@ -43,6 +43,7 @@ import { scannerExtensions } from "../shared/supported-extensions"
 const log = Log.create({ service: "indexing-scanner" })
 const CODE_GRAPH_WORKER_CONCURRENCY = 2
 const CODE_GRAPH_WORKER_MAX = 16
+const GENERATION_FINALIZE_BATCH_SIZE = 64
 
 type CodeGraphScanMetrics = {
   files: number
@@ -71,16 +72,26 @@ type LocalStorageLifecycle = {
   ensureCompatible?: () => Promise<IndexingCompatibilityDecision>
 }
 
+type FileGeneration = {
+  filePath: string
+  generation: string
+  runId: string
+}
+
+type GenerationFinalizer = {
+  finalizeFileGenerations?: (files: readonly FileGeneration[]) => Promise<void>
+}
+
 export class DirectoryScanner implements IDirectoryScanner {
   private _cancelled = false
   private batchSegmentThreshold: number
   private maxBatchRetries: number
-  private runId: string = globalThis.crypto.randomUUID();
-  private ragMeta: RagCheckpointMeta | undefined;
-  private readonly writeCache: boolean;
-  private readonly graphPool = new CodeGraphParserWorkerPool();
-  private pressure: IndexingPressure = "normal";
-  private readonly limiters = new Set<{ limit: LimitFunction; kind: "parse" | "batch" }>();
+  private runId: string = globalThis.crypto.randomUUID()
+  private ragMeta: RagCheckpointMeta | undefined
+  private readonly writeCache: boolean
+  private readonly graphPool = new CodeGraphParserWorkerPool()
+  private pressure: IndexingPressure = "normal"
+  private readonly limiters = new Set<{ limit: LimitFunction; kind: "parse" | "batch" }>()
   private readonly extensions: ReadonlySet<string>
 
   constructor(
@@ -387,6 +398,7 @@ export class DirectoryScanner implements IDirectoryScanner {
         pending: number
         parsed: boolean
         failed: boolean
+        finalizing: boolean
         completed: boolean
       }
     >()
@@ -431,6 +443,7 @@ export class DirectoryScanner implements IDirectoryScanner {
         pending: 0,
         parsed: false,
         failed: false,
+        finalizing: false,
         completed: false,
       }
       jobs.set(filePath, job)
@@ -439,25 +452,61 @@ export class DirectoryScanner implements IDirectoryScanner {
 
     const readyJobs = () =>
       [...jobs.values()].filter(
-        (job) => job.parsed && job.pending === 0 && !job.failed && !job.completed && !buffered.has(job.filePath),
+        (job) =>
+          job.parsed &&
+          job.pending === 0 &&
+          !job.failed &&
+          !job.finalizing &&
+          !job.completed &&
+          !buffered.has(job.filePath),
       )
 
     const completeReadyJobs = async () => {
-      for (const job of readyJobs()) {
+      const ready = readyJobs()
+      for (const job of ready) job.finalizing = true
+
+      for (let index = 0; index < ready.length; index += GENERATION_FINALIZE_BATCH_SIZE) {
+        const group = ready.slice(index, index + GENERATION_FINALIZE_BATCH_SIZE)
         const store = this.vectorStore
-        if (!store?.activateFileGeneration || !store.deleteInactiveFilePoints) {
-          throw new Error("Vector store does not support active generation checkpoints")
+        if (!store) throw new Error("Vector store is unavailable while finalizing file generations")
+
+        try {
+          const finalizer = store as IVectorStore & GenerationFinalizer
+          if (finalizer.finalizeFileGenerations) {
+            await finalizer.finalizeFileGenerations(
+              group.map((job) => ({
+                filePath: job.filePath,
+                generation: job.generation,
+                runId: this.runId,
+              })),
+            )
+          } else {
+            if (!store.activateFileGeneration || !store.deleteInactiveFilePoints) {
+              throw new Error("Vector store does not support active generation checkpoints")
+            }
+            for (const job of group) {
+              await store.activateFileGeneration(job.filePath, job.generation, this.runId)
+              await store.deleteInactiveFilePoints(job.filePath, job.generation)
+            }
+          }
+
+          if (this.writeCache) {
+            for (const job of group) this.cacheManager.updateHash(job.filePath, job.fileHash)
+            await this.checkpointCache()
+          }
+          for (const job of group) {
+            job.completed = true
+            jobs.delete(job.filePath)
+            onProgress?.({ type: "file", filePath: job.filePath })
+          }
+          onFilesIndexed?.(group.length)
+        } catch (error) {
+          for (const job of group) {
+            job.finalizing = false
+            job.failed = true
+          }
+          throw error
         }
-        await store.activateFileGeneration(job.filePath, job.generation, this.runId)
-        await store.deleteInactiveFilePoints(job.filePath, job.generation)
-        if (this.writeCache) {
-          this.cacheManager.updateHash(job.filePath, job.fileHash)
-          await this.checkpointCache()
-        }
-        job.completed = true
-        jobs.delete(job.filePath)
-        onFilesIndexed?.(1)
-        onProgress?.({ type: "file", filePath: job.filePath })
       }
     }
 

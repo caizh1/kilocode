@@ -176,6 +176,7 @@
         "keep-indexing-project-bound",
         "lancedb-default-vector-store",
         "lancedb-schema-rebuild-notice",
+        "fix-rag-progress-and-finalization",
         "sequential-indexing",
         "stabilize-indexing-pipeline",
         "start-indexing-pipelines"
@@ -184,6 +185,7 @@
       "preconditions": ["固定 C/C++ 与文档夹具可写", "模拟 embeddings 返回 2048 维向量"],
       "steps": [
         "打开项目并记录三条 pipeline 状态顺序",
+        "记录 Code RAG 全部 processedFiles、percent、state 事件并核对按钮 aria-busy 与旋转图标",
         "保存 embedding 设置并比较 CodeGraph 代次",
         "注入 stale lock、中断产物与旧 schema",
         "先注入 401 再切回 success 并重新验证",
@@ -191,6 +193,8 @@
       ],
       "expectedState": [
         "CodeGraph、Code RAG、Document RAG 顺序启动",
+        "每个候选文件只计数一次，运行态不超过 99%，真实 Complete 才为 100% 且旋转停止",
+        "Document RAG 只在 CodeGraph 与 Code RAG 真实 Complete 后启动且每轮一次",
         "保存 embedding 不重建 CodeGraph",
         "stale lock、中断产物和旧 schema 可恢复",
         "成功验证后旧认证诊断被清除",
@@ -392,7 +396,7 @@
     {
       "id": "WIN-UPDATE",
       "suite": "更新",
-      "title": "验证 target-aware manifest、SHA、同源、大小和 Reload",
+      "title": "验证 target-aware manifest、SHA、同源、大小和同一窗口首次 Reload",
       "severity": "P0",
       "profiles": ["upgrade"],
       "changesets": ["internal-vsix-update-check", "render-service-vsix-auto-update"],
@@ -400,12 +404,15 @@
         "^packages/kilo-vscode/src/services/update-check/",
         "^server/chipmate-word-render/apps/api/src/extensions\\.ts$"
       ],
-      "preconditions": ["本地更新服务可返回合法与异常 manifest"],
-      "steps": ["检查同 target 新版本", "依次注入错误 target、SHA、跨源和超大文件", "恢复合法 manifest 并安装 Reload"],
+      "preconditions": ["本地更新服务可返回合法与异常 manifest", "动态 spinner 验收在 editor.accessibilitySupport=off 且不传 --force-renderer-accessibility 的正常渲染条件下执行", "若额外验收 pending activation receipt 的自动二次 Reload，PreviousVsix 必须是已包含该协议的桥接版本；1.0.10 到候选版只裁决首次 Reload 的真实宿主和动态 UI"],
+      "steps": ["检查同 target 新版本", "依次注入错误 target、SHA、跨源和超大文件", "恢复合法 manifest 并安装后在同一 VS Code 窗口点击 Reload", "等待候选版本的新 activation Probe，并通过 control channel 执行 openInTab", "mock provider 保持 [QA:TIMEOUT] 请求，CDP 检查 working spinner 的 reduced-motion、资源就绪和三帧像素变化", "最后执行 showMemory 以确认 webview ready"],
       "expectedState": [
         "仅合法同源同 target 且 SHA 正确的包可安装",
         "错误包不会改变已安装版本",
-        "成功后出现 Reload 提示"
+        "成功后出现 Reload 提示",
+        "首次 Reload 在原窗口内产生候选版本、target、扩展路径和 active 状态均匹配的新 activation Probe",
+        "首次 Reload 的 working spinner 不处于 reduced-motion 降级，动态图层 is-ready、资源 complete/naturalWidth 正常且三帧像素发生变化",
+        "首次 Reload 的 showMemory 命令完成，证明其等待的 webview ready 握手已返回"
       ],
       "visualOracle": "structure",
       "timeoutSeconds": 900,

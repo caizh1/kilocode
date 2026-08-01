@@ -364,8 +364,8 @@ export class CodeIndexOrchestrator {
 
     this._cancelRequested = false
     this._isProcessing = true
-    this.stateManager.setActivePipeline("codeGraph")
     this.stateManager.setSystemState("Indexing", "Initializing services...")
+    this.stateManager.setActivePipeline("codeGraph")
 
     let started = false
     let source: IndexingTelemetrySource = "watcher"
@@ -586,8 +586,8 @@ export class CodeIndexOrchestrator {
     this._cancelRequested = false
     this._isProcessing = true
     this.stateManager.clearCodeGraphProgress()
-    this.stateManager.setActivePipeline("rag")
     this.stateManager.setSystemState("Indexing", "Embedding settings changed. Starting RAG indexing...")
+    this.stateManager.setActivePipeline("rag")
 
     let mode: IndexingTelemetryMode = "full"
 
@@ -723,10 +723,6 @@ export class CodeIndexOrchestrator {
 
     const handleFilesIndexed = (indexedCount: number) => {
       cumulativeFilesIndexed += indexedCount
-      if (target === "codeGraph") return
-      cumulativeFilesProcessed += indexedCount
-      if (totalFiles > 0 && cumulativeFilesProcessed > totalFiles) cumulativeFilesProcessed = totalFiles
-      reportFileProgress()
     }
 
     const handleScanProgress = (event: ScanProgressEvent) => {
@@ -1060,17 +1056,42 @@ export class CodeIndexOrchestrator {
     let stable = await this.sweepGap(summary)
     this.enableWatcherCollection(trigger)
     if (stable) {
+      const started = Date.now()
+      log.info("watcher drain starting", {
+        visible: true,
+        workspacePath: this.workspacePath,
+        pendingWatcherEvents: this.fileWatcher.getPendingEventCount?.() ?? 0,
+      })
       const watcher = this.fileWatcher as IFileWatcher & {
         drainPending?: (limit?: number, timeout?: number, ownsLock?: boolean) => Promise<boolean>
       }
       stable = (await watcher.drainPending?.(SYNTHETIC_EVENT_LIMIT, 30_000, true)) ?? true
+      log.info("watcher drain complete", {
+        visible: true,
+        workspacePath: this.workspacePath,
+        stable,
+        pendingWatcherEvents: this.fileWatcher.getPendingEventCount?.() ?? 0,
+        elapsedMs: Date.now() - started,
+      })
       if (!stable) {
         this._followUpScanRequested = true
         this._gapOverflows += 1
       }
     }
     if (stable) {
+      const started = Date.now()
+      log.info("vector index finalization starting", {
+        visible: true,
+        workspacePath: this.workspacePath,
+        filesIndexed: summary.filesIndexed,
+        filesDiscovered: summary.filesDiscovered,
+      })
       await this.vectorStore?.markIndexingComplete()
+      log.info("vector index finalization complete", {
+        visible: true,
+        workspacePath: this.workspacePath,
+        elapsedMs: Date.now() - started,
+      })
       this.stateManager.removeNotice("embedding-config-unapplied")
     }
     await this.releaseLock()

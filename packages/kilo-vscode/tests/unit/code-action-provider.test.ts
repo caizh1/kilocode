@@ -25,6 +25,17 @@ describe("KiloCodeActionProvider", () => {
       expect(result).toEqual([])
     })
 
+    it("offers high-confidence comments at an empty cursor in C/C++", () => {
+      const result = provider.provideCodeActions(
+        { languageId: "cpp" } as never,
+        makeRange(true) as never,
+        makeContext(0) as never,
+      )
+
+      expect(result).toHaveLength(1)
+      expect(result[0]?.command?.command).toBe("chipmate.v2.generateCommentsForCurrentFunction")
+    })
+
     describe("non-empty range, no diagnostics", () => {
       it("returns Add, Explain, Improve actions", () => {
         const result = provider.provideCodeActions({} as never, makeRange(false) as never, makeContext(0) as never)

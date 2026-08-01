@@ -64,6 +64,7 @@ export class CodeIndexStateManager {
     },
     gitBranch?: string,
   ): void {
+    const previousState = this._systemStatus
     const stateChanged = newState !== this._systemStatus || (message !== undefined && message !== this._statusMessage)
     const graphChanged = newState !== "Indexing" && this._codeGraphProgress !== undefined
 
@@ -74,6 +75,12 @@ export class CodeIndexStateManager {
     if (manifest !== undefined) this._manifest = manifest
     if (gitBranch !== undefined) this._gitBranch = gitBranch
     if (graphChanged) this._codeGraphProgress = undefined
+
+    if (newState === "Indexing" && previousState !== "Indexing") {
+      this._processedFiles = 0
+      this._totalFiles = 0
+      this._percent = 0
+    }
 
     if (newState !== "Indexing") {
       this._activePipeline = undefined
@@ -126,7 +133,8 @@ export class CodeIndexStateManager {
   }
 
   public reportFileProgress(processedFiles: number, totalFiles: number, currentFileBasename?: string): void {
-    const percent = totalFiles > 0 ? Math.min(100, Math.round((processedFiles / totalFiles) * 100)) : 0
+    const complete = totalFiles > 0 && processedFiles >= totalFiles
+    const percent = totalFiles > 0 ? Math.min(99, Math.round((processedFiles / totalFiles) * 100)) : 0
     const progressChanged =
       processedFiles !== this._processedFiles || totalFiles !== this._totalFiles || percent !== this._percent
 
@@ -136,8 +144,9 @@ export class CodeIndexStateManager {
     this._totalFiles = totalFiles
     this._percent = percent
 
-    const message =
-      totalFiles > 0
+    const message = complete
+      ? `Finalizing vector index after processing ${processedFiles} / ${totalFiles} files (99%).`
+      : totalFiles > 0
         ? `Processed ${processedFiles} / ${totalFiles} files (${percent}%).${currentFileBasename ? ` Current: ${currentFileBasename}` : ""}`
         : "Indexing files..."
     const oldStatus = this._systemStatus
@@ -156,7 +165,7 @@ export class CodeIndexStateManager {
   }
 
   public reportCodeGraphProgress(processedFiles: number, totalFiles: number, currentFileBasename?: string): void {
-    const percent = totalFiles > 0 ? Math.min(100, Math.round((processedFiles / totalFiles) * 100)) : 0
+    const percent = totalFiles > 0 ? Math.min(99, Math.round((processedFiles / totalFiles) * 100)) : 0
     const message =
       totalFiles > 0
         ? `Built ${processedFiles} / ${totalFiles} code graph files (${percent}%).${currentFileBasename ? ` Current: ${currentFileBasename}` : ""}`

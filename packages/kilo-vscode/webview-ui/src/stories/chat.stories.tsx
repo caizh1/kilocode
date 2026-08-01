@@ -662,6 +662,114 @@ const readableData = {
   message: { [SESSION_ID]: readableMessages },
   part: spacingParts,
 }
+const completedElapsedMessages = [
+  { ...spacingMessages[0], time: { created: toolNow - 158_000 } },
+  {
+    ...spacingMessages[3],
+    finish: "stop",
+    time: { created: toolNow - 157_000, completed: toolNow },
+  },
+]
+const completedElapsedData = {
+  ...defaultMockData,
+  message: { [SESSION_ID]: completedElapsedMessages },
+  part: spacingParts,
+}
+
+const completionCodeUserID = "user-msg-completion-code-001"
+const completionCodeAssistantID = "asst-msg-completion-code-001"
+const completionUltraUserID = "user-msg-completion-ultra-001"
+const completionUltraAssistantID = "asst-msg-completion-ultra-001"
+const completedElapsedModesMessages = [
+  {
+    id: completionCodeUserID,
+    sessionID: SESSION_ID,
+    role: "user",
+    createdAt: "2026-07-31T09:00:00.000Z",
+    time: { created: toolNow - 18_000 },
+  },
+  {
+    id: completionCodeAssistantID,
+    sessionID: SESSION_ID,
+    role: "assistant",
+    parentID: completionCodeUserID,
+    createdAt: "2026-07-31T09:00:01.000Z",
+    finish: "stop",
+    agent: "code",
+    modelID: "gpt-5.6",
+    providerID: "openai",
+    time: { created: toolNow - 17_000, completed: toolNow },
+  },
+  {
+    id: completionUltraUserID,
+    sessionID: SESSION_ID,
+    role: "user",
+    createdAt: "2026-07-31T09:01:00.000Z",
+    time: { created: toolNow - 158_000 },
+  },
+  {
+    id: completionUltraAssistantID,
+    sessionID: SESSION_ID,
+    role: "assistant",
+    parentID: completionUltraUserID,
+    createdAt: "2026-07-31T09:01:01.000Z",
+    finish: "stop",
+    agent: "ultra",
+    modelID: "gpt-5.6",
+    providerID: "openai",
+    time: { created: toolNow - 157_000, completed: toolNow },
+  },
+]
+const completedElapsedModesParts = {
+  [completionCodeUserID]: [
+    {
+      id: "part-user-completion-code-001",
+      sessionID: SESSION_ID,
+      messageID: completionCodeUserID,
+      type: "text",
+      text: "请确认构建状态。",
+    },
+  ],
+  [completionCodeAssistantID]: [
+    {
+      id: "part-text-completion-code-001",
+      sessionID: SESSION_ID,
+      messageID: completionCodeAssistantID,
+      type: "text",
+      text: "构建已完成，未发现阻塞问题。",
+    },
+  ],
+  [completionUltraUserID]: [
+    {
+      id: "part-user-completion-ultra-001",
+      sessionID: SESSION_ID,
+      messageID: completionUltraUserID,
+      type: "text",
+      text: "请复核关键路径。",
+    },
+  ],
+  [completionUltraAssistantID]: [
+    {
+      id: "part-text-completion-ultra-001",
+      sessionID: SESSION_ID,
+      messageID: completionUltraAssistantID,
+      type: "text",
+      text: "关键路径已复核，结果符合预期。",
+    },
+  ],
+}
+const completedElapsedModesData = {
+  ...defaultMockData,
+  message: { [SESSION_ID]: completedElapsedModesMessages },
+  part: completedElapsedModesParts,
+}
+
+function QATelemetryEnabled() {
+  onMount(() => {
+    window.dispatchEvent(new MessageEvent("message", { data: { type: "telemetryState", enabled: true } }))
+  })
+  return null
+}
 
 function renderReadableChat(status: "idle" | "busy" = "idle") {
   const session = {
@@ -690,6 +798,51 @@ export const ChatViewReadable1280: Story = {
 export const ChatViewReadable420: Story = {
   name: "ChatView - readable busy sidebar",
   render: () => renderReadableChat("busy"),
+}
+
+export const QACompletedElapsed420: Story = {
+  name: "QA — completed elapsed, 420px",
+  render: () => {
+    const session = {
+      ...mockSessionValue({ id: SESSION_ID, status: "idle", closeReason: "completed" }),
+      messages: () => completedElapsedMessages,
+      visibleMessages: () => completedElapsedMessages,
+      userMessages: () => completedElapsedMessages.filter((message) => message.role === "user"),
+      getParts: (id: string) => spacingParts[id as keyof typeof spacingParts] ?? [],
+    }
+    return (
+      <StoryProviders data={completedElapsedData} sessionID={SESSION_ID} status="idle" locale="zh" noPadding>
+        <SessionContext.Provider value={session as any}>
+          <div style={{ height: "720px", display: "flex", "flex-direction": "column" }}>
+            <ChatView />
+          </div>
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
+}
+
+export const QACompletedElapsedModes420: Story = {
+  name: "QA — completed elapsed action rail, 420px",
+  render: () => {
+    const session = {
+      ...mockSessionValue({ id: SESSION_ID, status: "idle", closeReason: "completed" }),
+      messages: () => completedElapsedModesMessages,
+      visibleMessages: () => completedElapsedModesMessages,
+      userMessages: () => completedElapsedModesMessages.filter((message) => message.role === "user"),
+      getParts: (id: string) => completedElapsedModesParts[id as keyof typeof completedElapsedModesParts] ?? [],
+    }
+    return (
+      <StoryProviders data={completedElapsedModesData} sessionID={SESSION_ID} status="idle" locale="zh" noPadding>
+        <SessionContext.Provider value={session as any}>
+          <QATelemetryEnabled />
+          <div style={{ height: "720px", display: "flex", "flex-direction": "column" }}>
+            <ChatView />
+          </div>
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
 }
 
 export const QAAlignedConversationSurface: Story = {
@@ -965,10 +1118,7 @@ function renderPlantUmlChat(status: "idle" | "busy" = "idle", delay = 500, compl
 
 function QAPlantUmlStreamingStory() {
   const [text, setText] = createSignal(plantUmlStreamText)
-  const messages = [
-    plantUmlMessages[0],
-    { ...plantUmlMessages[1], time: { created: plantUmlNow + 1000 } },
-  ]
+  const messages = [plantUmlMessages[0], { ...plantUmlMessages[1], time: { created: plantUmlNow + 1000 } }]
   const session = {
     ...mockSessionValue({ id: SESSION_ID, status: "busy" }),
     messages: () => messages,
@@ -997,13 +1147,15 @@ Controller --> Repository
 @enduml
 \`\`\``)
     target.plantUmlStreamDuplicate = () =>
-      setText((value) => `${value}
+      setText(
+        (value) => `${value}
 
 缓存中的相同类图：
 
 \`\`\`plantuml
 ${plantUmlSource}
-\`\`\``)
+\`\`\``,
+      )
     onCleanup(() => {
       delete target.plantUmlStreamNext
       delete target.plantUmlStreamChange

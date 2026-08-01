@@ -19,6 +19,13 @@ function createInput(input: Partial<IndexingConfigInput> = {}): IndexingConfigIn
   }
 }
 
+let managerSequence = 0
+
+function createManager(): CodeIndexManager {
+  const root = join(tmpdir(), `kilo-manager-unit-${process.pid}-${managerSequence++}`)
+  return new CodeIndexManager(join(root, "workspace"), join(root, "cache"))
+}
+
 type Data = {
   _configManager: {
     isFeatureEnabled: boolean
@@ -82,7 +89,7 @@ function createStartError(location = "orchestrator:startIndexing"): IndexingTele
 
 describe("CodeIndexManager", () => {
   test("waits for an active Document RAG generation before starting a new scan", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const gate = Promise.withResolvers<void>()
     const events: string[] = []
     const data = createData(mgr) as Data & {
@@ -117,7 +124,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("serializes initialization and settings service recreation", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const gate = Promise.withResolvers<void>()
     const events: string[] = []
     const data = mgr as unknown as {
@@ -201,7 +208,7 @@ describe("CodeIndexManager", () => {
     }
   })
 
-  test("starts Document RAG after the preceding RAG generation fails", async () => {
+  test("keeps Document RAG blocked when the preceding RAG generation fails", async () => {
     const root = await mkdtemp(join(tmpdir(), "kilo-manager-doc-gate-"))
     const mgr = new CodeIndexManager(root, join(root, "cache"))
     const data = mgr as unknown as {
@@ -230,10 +237,10 @@ describe("CodeIndexManager", () => {
     })
 
     expect(mgr.getDocumentStatus()).toMatchObject({
-      state: "Complete",
-      message: "Document RAG up-to-date.",
+      state: "Standby",
+      message: "Document RAG blocked because Code RAG did not complete.",
     })
-    expect(mgr.getDocumentStatus().lastFullScanAt).toBeDefined()
+    expect(mgr.getDocumentStatus().lastFullScanAt).toBeUndefined()
     await mgr.dispose()
     await rm(root, { recursive: true, force: true })
   })
@@ -311,10 +318,7 @@ describe("CodeIndexManager", () => {
         startIndexing(trigger: IndexingTelemetryTrigger): Promise<{ state: "completed"; pipeline: "codeGraph" }>
       }
       _recreateGraphServices(reason: string, generation: number): Promise<void>
-      configureDocuments(
-        trigger: IndexingTelemetryTrigger,
-        opts: { start: boolean; generation: number },
-      ): Promise<void>
+      configureDocuments(trigger: IndexingTelemetryTrigger, opts: { start: boolean; generation: number }): Promise<void>
       waiting(): boolean
       waitWithGraph(generation: number, trigger: IndexingTelemetryTrigger): Promise<void>
     }
@@ -437,14 +441,7 @@ describe("CodeIndexManager", () => {
     const workspace = await mkdtemp(join(tmpdir(), "index-manager-exact-"))
     const cache = join(workspace, ".cache")
     const file = join(workspace, "ftl_config.c")
-    const source = [
-      "void InitFTL(void)",
-      "{",
-      "  const int ready = 1;",
-      "  (void)ready;",
-      "}",
-      "",
-    ].join("\n")
+    const source = ["void InitFTL(void)", "{", "  const int ready = 1;", "  (void)ready;", "}", ""].join("\n")
     await Bun.write(file, source)
 
     const mgr = new CodeIndexManager(workspace, cache)
@@ -532,7 +529,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("returns standby state before services are initialized", () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _configManager: {
         isFeatureEnabled: boolean
@@ -548,7 +545,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("does not throw when indexing is enabled but not configured", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
 
     try {
       await mgr.initialize(createInput({ openAiKey: undefined }))
@@ -567,7 +564,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("starts code graph sidecar when RAG indexing is disabled", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
 
     try {
       await mgr.initialize(createInput({ enabled: false, openAiKey: "sk-test" }))
@@ -608,7 +605,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("starts code graph sidecar container after services initialize", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _cacheManager: {}
       _orchestrator?: {
@@ -635,8 +632,8 @@ describe("CodeIndexManager", () => {
       state: "container_ready",
       enabled: true,
       evidenceAvailable: false,
-      workspacePath: "/tmp/ws",
-      cacheDirectory: "/tmp/cache",
+      workspacePath: mgr.workspacePath,
+      cacheDirectory: join(mgr.workspacePath, "..", "cache"),
     })
     expect(status.detail).toContain("graph evidence")
     expect(status.storage).toMatchObject({
@@ -878,7 +875,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("cancels active indexing when configuration is removed", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     let stop = 0
     let cancel = 0
     const data = mgr as unknown as {
@@ -904,7 +901,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("emits manual indexing start telemetry", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const events: IndexingTelemetryEvent[] = []
     const data = mgr as unknown as {
       _configManager: {
@@ -958,7 +955,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("emits background indexing start telemetry", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const events: IndexingTelemetryEvent[] = []
     const data = mgr as unknown as {
       _cacheManager: {
@@ -999,7 +996,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("starts a standby manager when Code Graph has never completed", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _cacheManager: {}
       _serviceFactory: {}
@@ -1027,8 +1024,8 @@ describe("CodeIndexManager", () => {
     expect(starts).toBe(1)
   })
 
-  test("reconciles Code Graph before RAG when embedding settings change", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+  test("preserves a completed Code Graph when embedding settings change", async () => {
+    const mgr = createManager()
     const data = mgr as unknown as {
       _cacheManager: {}
       _orchestrator?: {
@@ -1070,12 +1067,12 @@ describe("CodeIndexManager", () => {
 
     await mgr.handleSettingsChange(createInput({ openAiKey: "sk-test", modelId: "text-embedding-ada-002" }))
 
-    expect(full).toBe(1)
-    expect(rag).toBe(0)
+    expect(full).toBe(0)
+    expect(rag).toBe(1)
   })
 
   test("reruns Code Graph when postings are interrupted before an embedding settings change", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _cacheManager: {}
       _graphStorage: { getScanState(): string }
@@ -1117,7 +1114,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("does not restart indexing when only search tuning changes", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _cacheManager: {}
       _orchestrator?: {
@@ -1149,7 +1146,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("does not rescan or recreate services for repeated and runtime-only configuration events", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _cacheManager: {}
       _orchestrator?: {
@@ -1198,7 +1195,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("does not rescan Code Graph for repeated configuration events while RAG is disabled", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _cacheManager: {}
       _orchestrator?: {
@@ -1235,7 +1232,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("rebuilds only Document RAG for document-only configuration changes", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _cacheManager: {}
       _orchestrator?: {
@@ -1306,7 +1303,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("preserves Code Graph for document-only changes while Code RAG is disabled", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _cacheManager: {}
       _orchestrator?: {
@@ -1373,7 +1370,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("schedules auto-recovery for orchestrator start failures", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = createData(mgr)
     let calls = 0
 
@@ -1397,7 +1394,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("schedules auto-recovery for watcher failures", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = createData(mgr)
     let calls = 0
 
@@ -1420,8 +1417,32 @@ describe("CodeIndexManager", () => {
     expect(calls).toBe(1)
   })
 
+  test.each([401, 403, 404])(
+    "does not auto-recover non-retryable HTTP %d embedding validation failures",
+    async (status) => {
+      const mgr = createManager()
+      const data = createData(mgr)
+      let calls = 0
+
+      data._recreateServices = async () => {
+        calls += 1
+        data._searchService = {}
+      }
+
+      data.handleTelemetry({
+        ...createStartError(),
+        location: "OpenAICompatibleEmbedder:validateConfiguration",
+        error: `HTTP ${status}: rejected`,
+      })
+      await Bun.sleep(0)
+
+      expect(calls).toBe(0)
+      expect(data._retryTask).toBeUndefined()
+    },
+  )
+
   test("ignores non-orchestrator telemetry errors for auto-recovery", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = createData(mgr)
     let calls = 0
 
@@ -1437,7 +1458,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("retains recent RAG telemetry errors for indexing status diagnostics", () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = createData(mgr)
 
     data.handleTelemetry({
@@ -1457,7 +1478,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("routes recent Code Graph telemetry errors to the Code Graph pipeline", () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = createData(mgr)
 
     data.handleTelemetry({
@@ -1477,7 +1498,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("runs only one recovery loop for duplicate error telemetry", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = createData(mgr)
     let calls = 0
     const gate = {} as {
@@ -1514,7 +1535,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("startIndexing restarts from Error state in one call", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = createData(mgr)
     let calls = 0
 
@@ -1539,7 +1560,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("keeps last-known-good vector search available when desired settings remain unapplied", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _serviceFactory: {
         prepareLastKnownGoodRuntime(): Promise<object>
@@ -1580,7 +1601,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("dispose waits for orchestrator shutdown", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     let shutdown = 0
     let closed = 0
     const data = mgr as unknown as {
@@ -1610,7 +1631,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("dispose during service recreation cancels the recreated orchestrator", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = mgr as unknown as {
       _cacheManager: {
         clearCacheFile(): Promise<void>
@@ -1655,7 +1676,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("dispose during recovery prevents restart after service recreation", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = createData(mgr)
     const gate = Promise.withResolvers<void>()
     let start = 0
@@ -1683,7 +1704,7 @@ describe("CodeIndexManager", () => {
   })
 
   test("retry exhaustion keeps Error and stops future retries", async () => {
-    const mgr = new CodeIndexManager("/tmp/ws", "/tmp/cache")
+    const mgr = createManager()
     const data = createData(mgr)
     data._retryMaxAttempts = 2
     let calls = 0

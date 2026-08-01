@@ -85,6 +85,21 @@ describe("CodeIndexSearchService worktree search", () => {
     expect(results.map((item) => item.payload?.filePath)).toEqual(["src/first.php"])
   })
 
+  test("never returns Markdown from Code RAG even when explicitly configured", async () => {
+    const state = new CodeIndexStateManager()
+    state.setSystemState("Indexed")
+    const service = new CodeIndexSearchService(
+      config([".ts", ".md", ".markdown"]),
+      state,
+      embedder([]),
+      store([result("README.md", 0.99), result("src/main.ts", 0.9), result("guide.markdown", 0.88)], []),
+    )
+
+    const results = await service.searchIndex("semantic query")
+
+    expect(results.map((item) => item.payload?.filePath)).toEqual(["src/main.ts"])
+  })
+
   test("promotes an exact identifier match without changing semantic query order", async () => {
     const limits: number[] = []
     const state = new CodeIndexStateManager()

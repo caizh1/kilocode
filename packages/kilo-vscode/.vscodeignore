@@ -6,6 +6,7 @@ benchmark-results/**
 storybook-static/**
 test-results/**
 playwright-report/**
+qa/**
 .runtime/**
 .turbo/**
 node_modules/**

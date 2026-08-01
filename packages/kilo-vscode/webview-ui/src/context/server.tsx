@@ -144,7 +144,17 @@ export const ServerProvider: ParentComponent = (props) => {
     // Let the extension know the webview has mounted and message handlers are registered.
     // Without this handshake, messages posted during a webview refresh can be lost.
     console.log("[Kilo New] Webview ready")
-    vscode.postMessage({ type: "webviewReady" })
+    const runtime = window as typeof window & {
+      KILO_EXTENSION_VERSION?: string
+      KILO_LOADING_MOTION_URI?: string
+    }
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    vscode.postMessage({
+      type: "webviewReady",
+      ...(runtime.KILO_EXTENSION_VERSION ? { extensionVersion: runtime.KILO_EXTENSION_VERSION } : {}),
+      ...(runtime.KILO_LOADING_MOTION_URI ? { motionBaseUri: runtime.KILO_LOADING_MOTION_URI } : {}),
+      ...(typeof reducedMotion === "boolean" ? { reducedMotion } : {}),
+    })
   })
 
   const startLogin = () => {

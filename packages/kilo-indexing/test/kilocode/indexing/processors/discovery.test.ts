@@ -123,7 +123,7 @@ describe("discoverScanFiles", () => {
       runRg: async (input) => {
         called = true
         expect(input.patterns).toEqual(["**/*"])
-        return ["main.c", "app.ts", "test/fixture.c"]
+        return ["main.c", "app.ts", "test/fixture.c", "README.md", "guide.markdown"]
       },
     })
 
@@ -139,6 +139,8 @@ describe("discoverScanFiles", () => {
     await Bun.write(path.join(dir, "main.c"), "int main(void) { return 0; }\n")
     await Bun.write(path.join(dir, "app.ts"), "export const app = 1\n")
     await Bun.write(path.join(dir, "test", "fixture.c"), "int fixture(void) { return 0; }\n")
+    await Bun.write(path.join(dir, "README.md"), "# Documentation\n")
+    await Bun.write(path.join(dir, "guide.markdown"), "# Guide\n")
 
     const result = await discoverScanFiles({
       directoryPath: dir,

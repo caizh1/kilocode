@@ -40,6 +40,7 @@ import { isBinary } from "../shared/is-binary"
 
 const log = Log.create({ service: "file-watcher" })
 const WATCHER_READY_TIMEOUT_MS = 30_000
+const GENERATION_FINALIZE_BATCH_SIZE = 64
 
 /**
  * Implementation of the file watcher interface.
@@ -236,10 +237,7 @@ export class FileWatcher implements IFileWatcher {
         clean()
         reject(err)
       }
-      const timer = setTimeout(
-        () => fail(new Error(`File watcher did not become ready within ${timeout}ms.`)),
-        timeout,
-      )
+      const timer = setTimeout(() => fail(new Error(`File watcher did not become ready within ${timeout}ms.`)), timeout)
       this.cancelReady = (err) => fail(err)
       watcher.once("ready", pass)
       watcher.on("error", fail)
@@ -344,14 +342,39 @@ export class FileWatcher implements IFileWatcher {
     try {
       this.setCollecting(true)
       const started = Date.now()
+      let timedOut = false
       while (this.accumulatedEvents.size > 0 || this.drainTask || this.batchProcessDebounceTimer) {
         if (this.accumulatedEvents.size > limit || Date.now() - started >= timeout) {
-          this.reconcile = true
-          return false
+          timedOut = true
+          break
         }
+        const task = this.drainTask
+        if (task) {
+          const remaining = Math.max(0, timeout - (Date.now() - started))
+          if (!(await settlesWithin(task, remaining))) {
+            timedOut = true
+            break
+          }
+        } else {
+          await delay(10)
+        }
+        this.throwBatchError()
+      }
+      if (timedOut) {
+        this.reconcile = true
+        this.setCollecting(false)
+        log.warn("file watcher drain soft deadline exceeded", {
+          workspacePath: this.workspacePath,
+          timeout,
+          pendingEvents: this.accumulatedEvents.size,
+          inFlight: Boolean(this.drainTask),
+        })
+
+        // Never let the caller release the workspace lock while a timed-out
+        // batch can still mutate the candidate index.
         await this.drainTask
         this.throwBatchError()
-        await delay(10)
+        return false
       }
       this.throwBatchError()
       return !this.reconcile
@@ -634,6 +657,7 @@ export class FileWatcher implements IFileWatcher {
     processedCount: number
   }> {
     const filesToProcessConcurrently = [...filesToUpsertDetails]
+    const prepared: Array<{ path: string; newHash?: string; points: PointStruct[] }> = []
 
     for (let i = 0; i < filesToProcessConcurrently.length; i += this.concurrency()) {
       const chunkToProcess = filesToProcessConcurrently.slice(i, i + this.concurrency())
@@ -669,12 +693,11 @@ export class FileWatcher implements IFileWatcher {
             if (result.status === "skipped" || result.status === "local_error") {
               batchResults.push(result)
             } else if (result.status === "processed_for_batching" && result.pointsToUpsert) {
-              overallBatchError = await this._executeBatchUpsertOperations(
-                result.pointsToUpsert,
-                [{ path: result.path, newHash: result.newHash }],
-                batchResults,
-                overallBatchError,
-              )
+              prepared.push({
+                path: result.path,
+                newHash: result.newHash,
+                points: result.pointsToUpsert,
+              })
             } else {
               batchResults.push({
                 path,
@@ -709,6 +732,16 @@ export class FileWatcher implements IFileWatcher {
           currentFile: resultPath,
         })
       }
+    }
+
+    for (let index = 0; index < prepared.length; index += GENERATION_FINALIZE_BATCH_SIZE) {
+      const group = prepared.slice(index, index + GENERATION_FINALIZE_BATCH_SIZE)
+      overallBatchError = await this._executeBatchUpsertOperations(
+        group.flatMap((item) => item.points),
+        group.map(({ path, newHash }) => ({ path, newHash })),
+        batchResults,
+        overallBatchError,
+      )
     }
 
     return {
@@ -779,21 +812,42 @@ export class FileWatcher implements IFileWatcher {
         }
       }
 
-      for (const { path, newHash } of successfullyProcessedForUpsert) {
-        if (newHash) {
-          if (this.vectorStore) {
-            if (!this.vectorStore.activateFileGeneration || !this.vectorStore.deleteInactiveFilePoints) {
-              throw new Error("Vector store does not support active generation checkpoints")
-            }
-            const generation = this.fileGeneration(path, newHash)
-            await this.vectorStore.activateFileGeneration(path, generation, this.runId)
-            await this.vectorStore.deleteInactiveFilePoints(path, generation)
+      const generations = successfullyProcessedForUpsert.flatMap(({ path, newHash }) =>
+        newHash
+          ? [
+              {
+                filePath: path,
+                generation: this.fileGeneration(path, newHash),
+                runId: this.runId,
+              },
+            ]
+          : [],
+      )
+      if (this.vectorStore && generations.length > 0) {
+        const store = this.vectorStore as IVectorStore & {
+          finalizeFileGenerations?: (
+            files: readonly { filePath: string; generation: string; runId: string }[],
+          ) => Promise<void>
+        }
+        if (store.finalizeFileGenerations) {
+          await store.finalizeFileGenerations(generations)
+        } else {
+          if (!store.activateFileGeneration || !store.deleteInactiveFilePoints) {
+            throw new Error("Vector store does not support active generation checkpoints")
           }
-          if (this.writeCache) {
-            this.cacheManager.updateHash(path, newHash)
-            await this.checkpointCache()
+          for (const file of generations) {
+            await store.activateFileGeneration(file.filePath, file.generation, file.runId)
+            await store.deleteInactiveFilePoints(file.filePath, file.generation)
           }
         }
+      }
+      if (this.writeCache) {
+        for (const { path, newHash } of successfullyProcessedForUpsert) {
+          if (newHash) this.cacheManager.updateHash(path, newHash)
+        }
+        await this.checkpointCache()
+      }
+      for (const { path } of successfullyProcessedForUpsert) {
         batchResults.push({ path, status: "success" })
       }
     } catch (error) {
@@ -1277,4 +1331,20 @@ export class FileWatcher implements IFileWatcher {
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function settlesWithin(task: Promise<void>, timeout: number): Promise<boolean> {
+  if (timeout <= 0) return false
+
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      task.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeout)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }

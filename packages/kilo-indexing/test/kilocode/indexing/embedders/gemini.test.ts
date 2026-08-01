@@ -55,11 +55,14 @@ describe("GeminiEmbedder", () => {
 
       const result = await embedder.createEmbeddings(texts)
 
-      expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-        input: texts,
-        model: "gemini-embedding-001",
-        encoding_format: "base64",
-      })
+      expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+        {
+          input: texts,
+          model: "gemini-embedding-001",
+          encoding_format: "base64",
+        },
+        { timeout: 120_000, maxRetries: 0 },
+      )
       expect(result.embeddings).toEqual([
         [0.1, 0.2],
         [0.3, 0.4],
@@ -77,11 +80,14 @@ describe("GeminiEmbedder", () => {
 
       const result = await embedder.createEmbeddings(texts, "gemini-embedding-001")
 
-      expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-        input: texts,
-        model: "gemini-embedding-001",
-        encoding_format: "base64",
-      })
+      expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+        {
+          input: texts,
+          model: "gemini-embedding-001",
+          encoding_format: "base64",
+        },
+        { timeout: 120_000, maxRetries: 0 },
+      )
       expect(result.embeddings).toEqual([[0.5, 0.6]])
     })
 

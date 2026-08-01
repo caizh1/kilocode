@@ -40,6 +40,7 @@ New-Item -ItemType Directory -Force -Path $Evidence, $Runtime, $Workspace | Out-
 $Results = New-Object System.Collections.ArrayList
 $AtomicResults = New-Object System.Collections.ArrayList
 $Mock = $null
+$ProviderMock = $null
 $Code = $null
 $CodeCli = $null
 $Artifact = $null
@@ -48,6 +49,8 @@ $script:ExitCode = 1
 $script:CdpPort = 0
 $script:MockPort = 0
 $script:MockOrigin = ""
+$script:ProviderMockPort = 0
+$script:ProviderMockOrigin = ""
 $script:ReloadPass = $false
 $script:HostPass = $false
 $script:CdpTarget = ""
@@ -199,6 +202,8 @@ function Invoke-CliLifecycleAudit {
 }
 
 function Initialize-MockProviderConfig {
+  param([string] $Origin = $script:MockOrigin)
+  if ([string]::IsNullOrWhiteSpace($Origin)) { throw "Mock Provider origin is required." }
   $storage = Join-Path $UserDir "User\globalStorage\chipmate.chipmate"
   $provider = [ordered]@{
     model = "qa-local/qa-chat-model"
@@ -206,7 +211,7 @@ function Initialize-MockProviderConfig {
     enabled_providers = @("qa-local")
     indexing = [ordered]@{
       provider = "openai-compatible"
-      "openai-compatible" = [ordered]@{ baseUrl = "$script:MockOrigin/v1/embeddings" }
+      "openai-compatible" = [ordered]@{ baseUrl = "$Origin/v1/embeddings" }
     }
     provider = [ordered]@{
       "qa-local" = [ordered]@{
@@ -220,7 +225,7 @@ function Initialize-MockProviderConfig {
             limit = @{ context = 32768; output = 4096 }
           }
         }
-        options = @{ apiKey = "qa-local-key"; baseURL = "$script:MockOrigin/v1" }
+        options = @{ apiKey = "qa-local-key"; baseURL = "$Origin/v1" }
       }
     }
   }
@@ -400,13 +405,19 @@ function Invoke-Node {
 }
 
 function Start-MockProvider {
+  param(
+    [int] $Port = $script:MockPort,
+    [string] $Origin = $script:MockOrigin,
+    [string] $Name = "mock-provider"
+  )
+  if ($Port -lt 1 -or [string]::IsNullOrWhiteSpace($Origin)) { throw "Mock Provider port and origin are required." }
   $runtime = Resolve-Node
-  $stdout = Join-Path $Evidence "mock-provider.log"
-  $stderr = Join-Path $Evidence "mock-provider-error.log"
+  $stdout = Join-Path $Evidence "$Name.log"
+  $stderr = Join-Path $Evidence "$Name-error.log"
   $previous = [Environment]::GetEnvironmentVariable("ELECTRON_RUN_AS_NODE", "Process")
   try {
     if ($runtime.electron) { $env:ELECTRON_RUN_AS_NODE = "1" }
-    $process = Start-Process -FilePath $runtime.path -ArgumentList @((Join-Path $QaRoot "mock-provider.mjs"), "--port=$script:MockPort") -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
+    $process = Start-Process -FilePath $runtime.path -ArgumentList @((Join-Path $QaRoot "mock-provider.mjs"), "--port=$Port") -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
   } finally {
     if ($null -eq $previous) {
       Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
@@ -417,7 +428,7 @@ function Start-MockProvider {
   $limit = (Get-Date).AddSeconds(20)
   do {
     try {
-      $health = Invoke-RestMethod -Uri "$script:MockOrigin/__qa/health" -TimeoutSec 1
+      $health = Invoke-RestMethod -Uri "$Origin/__qa/health" -TimeoutSec 1
       if ($health.status -eq "ok") { return $process }
     } catch { Start-Sleep -Milliseconds 250 }
   } while ((Get-Date) -lt $limit)
@@ -499,6 +510,13 @@ function Initialize-UpdateProfile {
     "chipmate.v2.updateCheck.checkOnStartup" = $true
     "chipmate.v2.updateCheck.codeCliPath" = "code"
   } | ConvertTo-Json)
+
+  # 其他 Windows lane 以辅助功能回归为目的，会显式开启 reduced motion。
+  # 更新 lane 的目标是动态思考动画，必须在相同 workspace 中明确恢复为正常渲染条件。
+  $workspaceSettings = Join-Path $Workspace ".vscode\settings.json"
+  $workspaceConfig = Get-Content -Raw -Encoding UTF8 -LiteralPath $workspaceSettings | ConvertFrom-Json
+  $workspaceConfig | Add-Member -NotePropertyName "editor.accessibilitySupport" -NotePropertyValue "off" -Force
+  Write-Utf8NoBom -Path $workspaceSettings -Value ($workspaceConfig | ConvertTo-Json)
 }
 
 function Install-UpdateSource {
@@ -549,6 +567,247 @@ function Wait-UpdateLog {
   throw "更新日志在 $Seconds 秒内未出现：$Pattern"
 }
 
+function Read-ChipMateProbe {
+  param([Parameter(Mandatory = $true)] [string] $Path)
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+  try {
+    return Get-Content -Raw -Encoding UTF8 -LiteralPath $Path | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+}
+
+function Get-ChipMateProbeValue {
+  param(
+    $Object,
+    [Parameter(Mandatory = $true)] [string] $Name
+  )
+  if ($null -eq $Object) { return $null }
+  $property = $Object.PSObject.Properties[$Name]
+  if ($null -eq $property) { return $null }
+  return $property.Value
+}
+
+function Test-ChipMatePathWithin {
+  param(
+    [string] $Path = "",
+    [string] $Root = ""
+  )
+  if ([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($Root)) { return $false }
+  try {
+    $trimChars = [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $subject = [IO.Path]::GetFullPath($Path).TrimEnd($trimChars)
+    $parent = [IO.Path]::GetFullPath($Root).TrimEnd($trimChars)
+    $prefix = "$parent$([IO.Path]::DirectorySeparatorChar)"
+    return $subject.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+  } catch {
+    return $false
+  }
+}
+
+function Wait-InitialUpdateProbe {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Path,
+    [int] $Seconds = 90
+  )
+  $limit = (Get-Date).AddSeconds($Seconds)
+  do {
+    $result = Read-ChipMateProbe -Path $Path
+    if ($null -ne $result) { return $result }
+    Start-Sleep -Milliseconds 100
+  } while ((Get-Date) -lt $limit)
+  throw "更新前已安装宿主 Probe 在 $Seconds 秒内未产生回执：$Path"
+}
+
+function Get-FirstReloadProbeEvaluation {
+  param(
+    [Parameter(Mandatory = $true)] $Result,
+    [Parameter(Mandatory = $true)] [string] $InitialActivationId,
+    [Parameter(Mandatory = $true)] [string] $InitialExtensionHostPid,
+    [Parameter(Mandatory = $true)] [datetime] $ReloadRequestedAt,
+    [Parameter(Mandatory = $true)] [string] $ExpectedVersion,
+    [Parameter(Mandatory = $true)] [string] $ExpectedTarget,
+    [Parameter(Mandatory = $true)] [string] $ExpectedExtensionRoot
+  )
+  $extension = Get-ChipMateProbeValue -Object $Result -Name "extension"
+  $activationId = [string](Get-ChipMateProbeValue -Object $Result -Name "activationId")
+  $extensionHostPid = Get-ChipMateProbeValue -Object $Result -Name "extensionHostPid"
+  $probeAtText = [string](Get-ChipMateProbeValue -Object $Result -Name "at")
+  $probeAt = $null
+  try {
+    if (-not [string]::IsNullOrWhiteSpace($probeAtText)) {
+      $probeAt = [DateTimeOffset]::Parse($probeAtText).UtcDateTime
+    }
+  } catch {
+    $probeAt = $null
+  }
+
+  $freshActivation = (
+    -not [string]::IsNullOrWhiteSpace($activationId) -and
+    $activationId -ne $InitialActivationId -and
+    $null -ne $probeAt -and
+    $probeAt -ge $ReloadRequestedAt.ToUniversalTime()
+  )
+  $freshExtensionHost = (
+    -not [string]::IsNullOrWhiteSpace([string]$extensionHostPid) -and
+    [string]$extensionHostPid -ne $InitialExtensionHostPid
+  )
+  $extensionId = [string](Get-ChipMateProbeValue -Object $extension -Name "id")
+  $extensionVersion = [string](Get-ChipMateProbeValue -Object $extension -Name "version")
+  $extensionTarget = [string](Get-ChipMateProbeValue -Object $extension -Name "target")
+  $extensionPath = [string](Get-ChipMateProbeValue -Object $extension -Name "path")
+  $extensionActive = Get-ChipMateProbeValue -Object $extension -Name "active"
+  $extensionDevelopment = Get-ChipMateProbeValue -Object $extension -Name "development"
+  $checks = @(
+    [ordered]@{
+      id = "fresh-activation"
+      status = if ($freshActivation) { "PASS" } else { "FAIL" }
+      detail = "activationId=$activationId previous=$InitialActivationId extensionHostPid=$extensionHostPid at=$probeAtText reloadRequestedAt=$($ReloadRequestedAt.ToUniversalTime().ToString('o'))"
+    },
+    [ordered]@{
+      id = "fresh-extension-host"
+      status = if ($freshExtensionHost) { "PASS" } else { "FAIL" }
+      detail = "extensionHostPid=$extensionHostPid previous=$InitialExtensionHostPid"
+    },
+    [ordered]@{
+      id = "candidate-version"
+      status = if ($extensionId -eq "chipmate.chipmate" -and $extensionVersion -eq $ExpectedVersion) { "PASS" } else { "FAIL" }
+      detail = "id=$extensionId version=$extensionVersion expected=$ExpectedVersion"
+    },
+    [ordered]@{
+      id = "candidate-target"
+      status = if ($extensionTarget -eq $ExpectedTarget) { "PASS" } else { "FAIL" }
+      detail = "target=$extensionTarget expected=$ExpectedTarget"
+    },
+    [ordered]@{
+      id = "candidate-extension-path"
+      status = if (Test-ChipMatePathWithin -Path $extensionPath -Root $ExpectedExtensionRoot) { "PASS" } else { "FAIL" }
+      detail = "path=$extensionPath expectedRoot=$ExpectedExtensionRoot"
+    },
+    [ordered]@{
+      id = "installed-extension-active"
+      status = if ($extensionActive -eq $true -and $extensionDevelopment -eq $false) { "PASS" } else { "FAIL" }
+      detail = "active=$extensionActive development=$extensionDevelopment"
+    },
+    [ordered]@{
+      id = "probe-status"
+      status = if ([string](Get-ChipMateProbeValue -Object $Result -Name "status") -eq "PASS") { "PASS" } else { "FAIL" }
+      detail = "status=$([string](Get-ChipMateProbeValue -Object $Result -Name 'status')) errors=$((Get-ChipMateProbeValue -Object $Result -Name 'errors') -join '; ')"
+    }
+  )
+  return [pscustomobject]@{
+    passed = @($checks | Where-Object { $_.status -ne "PASS" }).Count -eq 0
+    assertions = $checks
+  }
+}
+
+function Wait-FirstReloadProbe {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Path,
+    [Parameter(Mandatory = $true)] [string] $InitialActivationId,
+    [Parameter(Mandatory = $true)] [string] $InitialExtensionHostPid,
+    [Parameter(Mandatory = $true)] [datetime] $ReloadRequestedAt,
+    [Parameter(Mandatory = $true)] [string] $ExpectedVersion,
+    [Parameter(Mandatory = $true)] [string] $ExpectedTarget,
+    [Parameter(Mandatory = $true)] [string] $ExpectedExtensionRoot,
+    [int] $Seconds = 180
+  )
+  $limit = (Get-Date).AddSeconds($Seconds)
+  $lastResult = $null
+  $lastEvaluation = $null
+  do {
+    $candidate = Read-ChipMateProbe -Path $Path
+    if ($null -ne $candidate) {
+      $lastResult = $candidate
+      $lastEvaluation = Get-FirstReloadProbeEvaluation `
+        -Result $candidate `
+        -InitialActivationId $InitialActivationId `
+        -InitialExtensionHostPid $InitialExtensionHostPid `
+        -ReloadRequestedAt $ReloadRequestedAt `
+        -ExpectedVersion $ExpectedVersion `
+        -ExpectedTarget $ExpectedTarget `
+        -ExpectedExtensionRoot $ExpectedExtensionRoot
+      if ($lastEvaluation.passed) {
+        return [pscustomobject]@{
+          passed = $true
+          result = $candidate
+          evaluation = $lastEvaluation
+          reason = ""
+        }
+      }
+    }
+    Start-Sleep -Milliseconds 150
+  } while ((Get-Date) -lt $limit)
+  return [pscustomobject]@{
+    passed = $false
+    result = $lastResult
+    evaluation = $lastEvaluation
+    reason = "点击 Reload Window 后 $Seconds 秒内未得到候选版本的首次激活回执。"
+  }
+}
+
+function Invoke-ProbeControl {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Control,
+    [Parameter(Mandatory = $true)] [string] $Reply,
+    [Parameter(Mandatory = $true)] [string] $Name,
+    [Parameter(Mandatory = $true)] [string] $Command,
+    [object[]] $Arguments = @(),
+    [int] $Seconds = 60
+  )
+  $id = [Guid]::NewGuid().ToString("N")
+  Remove-Item -LiteralPath $Reply -Force -ErrorAction SilentlyContinue
+  Write-Utf8NoBom -Path $Control -Value ([ordered]@{
+    id = $id
+    command = $Command
+    args = $Arguments
+  } | ConvertTo-Json)
+  $limit = (Get-Date).AddSeconds($Seconds)
+  $response = $null
+  do {
+    $candidate = Read-ChipMateProbe -Path $Reply
+    if ($null -ne $candidate -and [string](Get-ChipMateProbeValue -Object $candidate -Name "id") -eq $id) {
+      $response = $candidate
+      break
+    }
+    Start-Sleep -Milliseconds 100
+  } while ((Get-Date) -lt $limit)
+  if ($null -eq $response) {
+    throw "首次 Reload 的 Probe 在 $Seconds 秒内未执行 $Name。"
+  }
+  if ([string](Get-ChipMateProbeValue -Object $response -Name "status") -ne "PASS") {
+    throw "首次 Reload 的 Probe 执行 $Name 失败：$([string](Get-ChipMateProbeValue -Object $response -Name 'error'))"
+  }
+  return $response
+}
+
+function Invoke-ChatMotionCdp {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Path,
+    [Parameter(Mandatory = $true)] [string] $ImageDirectory
+  )
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path), $ImageDirectory | Out-Null
+  $log = "$Path.log"
+  Invoke-Node -Arguments @(
+    (Join-Path $QaRoot "cdp-chat-motion.mjs"),
+    "--port=$script:CdpPort",
+    "--output=$Path",
+    "--image-dir=$ImageDirectory",
+    "--timeout-ms=45000",
+    "--sample-ms=280"
+  ) *> $log
+  $code = $LASTEXITCODE
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    $tail = if (Test-Path -LiteralPath $log) { Get-Content -Tail 80 -LiteralPath $log | Out-String } else { "" }
+    throw "首次 Reload 后动态 spinner CDP 未写出结果（exit=$code）。`n$tail"
+  }
+  $result = Get-Content -Raw -Encoding UTF8 -LiteralPath $Path | ConvertFrom-Json
+  if ($code -ne 0 -and [string]$result.status -eq "PASS") {
+    throw "首次 Reload 后动态 spinner CDP 返回矛盾状态（exit=$code, status=PASS）。"
+  }
+  return $result
+}
+
 function Invoke-UpdateRegression {
   $root = Join-Path $Evidence "WIN-UPDATE"
   New-Item -ItemType Directory -Force -Path $root | Out-Null
@@ -559,6 +818,23 @@ function Invoke-UpdateRegression {
     throw "自动更新前扩展列表未发现旧版本 $($old.version)。"
   }
 
+  $probe = Join-Path $root "first-reload-probe.json"
+  $control = Join-Path $root "first-reload-control.json"
+  $reply = Join-Path $root "first-reload-control-result.json"
+  $promptScreenshot = Join-Path $root "reload-prompt.png"
+  $activatedScreenshot = Join-Path $root "first-reload-activated.png"
+  $motionPath = Join-Path $root "first-reload-spinner-motion.json"
+  $motionFrameDirectory = Join-Path $root "spinner-frames"
+  $process = $null
+  $initialProbe = $null
+  $firstReload = $null
+  $reloadRequestedAt = $null
+  $windowStayedAlive = $false
+  $openInTabReply = $null
+  $showMemoryReply = $null
+  $motion = $null
+  $motionError = ""
+  $reloadError = ""
   $saved = $env:Path
   $parts = @($env:Path -split ";" | Where-Object {
     $_ -and
@@ -572,45 +848,141 @@ function Invoke-UpdateRegression {
     "未找到 code 命令；自动更新必须使用当前 VS Code 内置 CLI。" |
       Set-Content -LiteralPath (Join-Path $root "get-command-code.txt") -Encoding UTF8
 
-    $env:CHIPMATE_QA_PROBE_OUT = Join-Path $root "old-version-probe.json"
+    # 首个宿主故意按候选版本校验失败；Reload 后继承同一环境，只有候选版
+    # 重新激活才能写出 PASS，禁止以第二次启动的 VS Code 代替首次 Reload。
+    $env:CHIPMATE_QA_PROBE_OUT = $probe
     $env:CHIPMATE_QA_PROBE_QUIT = "0"
-    $env:CHIPMATE_QA_EXPECTED_VERSION = $old.version
-    $process = $null
+    $env:CHIPMATE_QA_EXPECTED_VERSION = $ExpectedVersion
+    $env:CHIPMATE_QA_CONTROL_FILE = $control
+    $env:CHIPMATE_QA_CONTROL_OUT = $reply
     try {
-      $process = Start-GuiSubject -Probe
+      $process = Start-GuiSubject -Probe -AllowMotion
+      $initialProbe = Wait-InitialUpdateProbe -Path $probe
+      $initialVersion = [string](Get-ChipMateProbeValue -Object (Get-ChipMateProbeValue -Object $initialProbe -Name "extension") -Name "version")
+      $initialActivationId = [string](Get-ChipMateProbeValue -Object $initialProbe -Name "activationId")
+      $initialExtensionHostPid = [string](Get-ChipMateProbeValue -Object $initialProbe -Name "extensionHostPid")
+      if ($initialVersion -ne $old.version) {
+        throw "更新前首次窗口 Probe 不是旧版本：expected=$($old.version) actual=$initialVersion"
+      }
+      if ([string]::IsNullOrWhiteSpace($initialActivationId)) {
+        throw "更新前首次窗口 Probe 未返回 activationId。"
+      }
+      if ([string]::IsNullOrWhiteSpace($initialExtensionHostPid)) {
+        throw "更新前首次窗口 Probe 未返回 extensionHostPid。"
+      }
+      if ([string](Get-ChipMateProbeValue -Object $initialProbe -Name "status") -eq "PASS") {
+        throw "更新前首次窗口 Probe 意外通过候选版本校验，无法证明 Reload 前后发生了版本切换。"
+      }
+      Copy-Item -LiteralPath $probe -Destination (Join-Path $root "old-version-probe.json") -Force
+
       $log = Wait-UpdateLog -Pattern "等待用户重载窗口后激活"
       Copy-Item -LiteralPath $log -Destination (Join-Path $root "chipmate-update.log") -Force
-      $shot = Join-Path $root "reload-prompt.png"
-      Save-ChipMateScreenshot -Path $shot
+      Save-ChipMateScreenshot -Path $promptScreenshot
       Save-ChipMateUiaTree -Process $process -Path (Join-Path $root "reload-prompt-uia.json")
 
       $clicked = $false
       foreach ($attempt in 1..20) {
+        $reloadRequestedAt = Get-Date
         if (Invoke-ChipMateNamedControl -Process $process -Names @("Reload Window", "重载窗口")) {
           $clicked = $true
           break
         }
+        $reloadRequestedAt = $null
         Start-Sleep -Milliseconds 500
       }
       if (-not $clicked) { throw "更新成功后未找到 Reload Window 提示按钮。" }
-      Start-Sleep -Seconds 5
+      $firstReload = Wait-FirstReloadProbe `
+        -Path $probe `
+        -InitialActivationId $initialActivationId `
+        -InitialExtensionHostPid $initialExtensionHostPid `
+        -ReloadRequestedAt $reloadRequestedAt `
+        -ExpectedVersion $ExpectedVersion `
+        -ExpectedTarget $Artifact.target `
+        -ExpectedExtensionRoot $ExtDir
+      if (Test-Path -LiteralPath $probe -PathType Leaf) {
+        Copy-Item -LiteralPath $probe -Destination (Join-Path $root "candidate-first-reload-probe.json") -Force
+      }
+      if (-not $process.HasExited) { $windowStayedAlive = $true }
+      if (-not $firstReload.passed) {
+        $reloadError = $firstReload.reason
+      } else {
+        $openInTabReply = Invoke-ProbeControl `
+          -Control $control `
+          -Reply $reply `
+          -Name "chipmate.v2.openInTab" `
+          -Command "chipmate.v2.openInTab"
+        Copy-Item -LiteralPath $reply -Destination (Join-Path $root "control-open-in-tab.json") -Force
+
+        # 动态动画只在非辅助功能降级条件下验收：由独立 mock provider 保持
+        # 请求中的 working spinner，CDP 读取实际 webview 并采样该 spinner 的像素帧。
+        try {
+          Invoke-RestMethod `
+            -Method Post `
+            -Uri "$script:ProviderMockOrigin/__qa/scenario" `
+            -ContentType "application/json" `
+            -Body '{"scenario":"timeout","delayMs":30000}' `
+            -TimeoutSec 2 | Out-Null
+          Set-ChipMateForeground -Process $process
+          $motion = Invoke-ChatMotionCdp -Path $motionPath -ImageDirectory $motionFrameDirectory
+          if ([string]$motion.status -ne "PASS") {
+            $motionDetail = if ($motion.PSObject.Properties.Name -contains "error" -and -not [string]::IsNullOrWhiteSpace([string]$motion.error)) {
+              [string]$motion.error
+            } elseif ($motion.PSObject.Properties.Name -contains "assertions") {
+              $motion.assertions | ConvertTo-Json -Compress
+            } else {
+              "CDP 未返回可用诊断。"
+            }
+            $motionError = "首次 Reload 后动态 spinner 验收失败：$motionDetail"
+          }
+        } catch {
+          $motionError = $_ | Out-String
+          $_ | Out-String | Set-Content -LiteralPath (Join-Path $root "first-reload-spinner-motion-error.log") -Encoding UTF8
+        }
+
+        # showMemory 会等待 KiloProvider.waitForReady()；PASS 表示重载后的
+        # webview 已完成就绪握手，不只是命令名称仍可被查到。
+        $showMemoryReply = Invoke-ProbeControl `
+          -Control $control `
+          -Reply $reply `
+          -Name "chipmate.v2.showMemory" `
+          -Command "chipmate.v2.showMemory"
+        Copy-Item -LiteralPath $reply -Destination (Join-Path $root "control-show-memory.json") -Force
+        Save-ChipMateScreenshot -Path $activatedScreenshot
+        Save-ChipMateUiaTree -Process $process -Path (Join-Path $root "first-reload-activated-uia.json")
+      }
+    } catch {
+      $reloadError = $_ | Out-String
     } finally {
       if ($null -ne $process) { Stop-GuiSubject -Process $process }
       Remove-Item Env:CHIPMATE_QA_PROBE_OUT -ErrorAction SilentlyContinue
       Remove-Item Env:CHIPMATE_QA_PROBE_QUIT -ErrorAction SilentlyContinue
       Remove-Item Env:CHIPMATE_QA_EXPECTED_VERSION -ErrorAction SilentlyContinue
+      Remove-Item Env:CHIPMATE_QA_CONTROL_FILE -ErrorAction SilentlyContinue
+      Remove-Item Env:CHIPMATE_QA_CONTROL_OUT -ErrorAction SilentlyContinue
     }
 
     $afterInstall = Save-UpdateExtensionList -Name "update-extensions-after-install.txt"
-    if (-not (Select-String -LiteralPath $afterInstall -Pattern "^chipmate\.chipmate@$([Regex]::Escape($ExpectedVersion))$" -Quiet)) {
-      throw "自动安装后扩展列表未发现新版本 $ExpectedVersion。"
-    }
-    Invoke-InstalledProbe
+    $diskInstalled = Select-String -LiteralPath $afterInstall -Pattern "^chipmate\.chipmate@$([Regex]::Escape($ExpectedVersion))$" -Quiet
 
     $requests = Invoke-RestMethod -Uri "$script:MockOrigin/__qa/requests" -TimeoutSec 2
     $requests | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $root "requests.json") -Encoding UTF8
     $manifestRequests = @($requests.requests | Where-Object { $_.path -eq "/packages/manifest.json" })
     $vsixRequests = @($requests.requests | Where-Object { $_.path -like "/packages/*.vsix" })
+    $motionRequests = $null
+    $motionRequestError = ""
+    try {
+      $motionRequests = Invoke-RestMethod -Uri "$script:ProviderMockOrigin/__qa/requests" -TimeoutSec 2
+      $motionRequests | ConvertTo-Json -Depth 8 |
+        Set-Content -LiteralPath (Join-Path $root "spinner-motion-provider-requests.json") -Encoding UTF8
+    } catch {
+      $motionRequestError = $_ | Out-String
+      $_ | Out-String | Set-Content -LiteralPath (Join-Path $root "spinner-motion-provider-requests-error.log") -Encoding UTF8
+    }
+    $motionChatRequests = if ($null -ne $motionRequests) {
+      @($motionRequests.requests | Where-Object { $_.path -match "/chat/completions$" }).Count
+    } else {
+      0
+    }
     $cache = @(Get-ChildItem -LiteralPath $UserDir -Recurse -File -Filter "*.vsix" -ErrorAction SilentlyContinue |
       ForEach-Object {
         @{
@@ -620,21 +992,68 @@ function Invoke-UpdateRegression {
         }
       })
     $cache | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root "cache-inventory.json") -Encoding UTF8
-    $logText = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $root "chipmate-update.log")
+    $logPath = Join-Path $root "chipmate-update.log"
+    $logText = if (Test-Path -LiteralPath $logPath -PathType Leaf) {
+      Get-Content -Raw -Encoding UTF8 -LiteralPath $logPath
+    } else { "" }
+    $initialVersion = if ($null -ne $initialProbe) {
+      [string](Get-ChipMateProbeValue -Object (Get-ChipMateProbeValue -Object $initialProbe -Name "extension") -Name "version")
+    } else { "" }
+    $initialStatus = if ($null -ne $initialProbe) {
+      [string](Get-ChipMateProbeValue -Object $initialProbe -Name "status")
+    } else { "" }
+    $reloadAssertions = if ($null -ne $firstReload -and $null -ne $firstReload.evaluation) {
+      @($firstReload.evaluation.assertions)
+    } else {
+      @([ordered]@{
+        id = "fresh-activation"
+        status = "FAIL"
+        detail = "首次 Reload 没有产生可评估的 Probe 回执。"
+      })
+    }
+    $motionAssertions = if ($null -ne $motion -and $motion.PSObject.Properties.Name -contains "assertions") {
+      @($motion.assertions | ForEach-Object {
+        [ordered]@{
+          id = "first-reload-$($_.id)"
+          status = [string]$_.status
+          detail = [string]$_.detail
+        }
+      })
+    } else {
+      @([ordered]@{
+        id = "first-reload-spinner-motion"
+        status = "FAIL"
+        detail = if ($motionError) { $motionError.Trim() } else { "首次 Reload 后未生成动态 spinner CDP 结果。" }
+      })
+    }
     $assertions = @(
       @{ id = "path-code-missing"; status = "PASS"; detail = "Get-Command code 无结果" },
       @{ id = "manifest-request"; status = if ($manifestRequests.Count -ge 1) { "PASS" } else { "FAIL" }; detail = "manifest requests=$($manifestRequests.Count)" },
       @{ id = "single-download"; status = if ($vsixRequests.Count -eq 1) { "PASS" } else { "FAIL" }; detail = "VSIX requests=$($vsixRequests.Count)" },
       @{ id = "builtin-cli"; status = if ($logText -match "当前 VS Code 内置 CLI") { "PASS" } else { "FAIL" }; detail = "专用日志记录内置 CLI" },
       @{ id = "cache-sha"; status = if (@($cache | Where-Object { $_.sha256 -eq $Artifact.sha256 }).Count -ge 1) { "PASS" } else { "FAIL" }; detail = "缓存包含候选 VSIX SHA-256" },
-      @{ id = "reload-activation"; status = "PASS"; detail = "点击 Reload Window 后 installed-host probe 激活 $ExpectedVersion" }
+      @{ id = "initial-window-old-version"; status = if ($initialVersion -eq $old.version -and $initialStatus -eq "FAIL") { "PASS" } else { "FAIL" }; detail = "initialVersion=$initialVersion expectedOld=$($old.version) initialStatus=$initialStatus expectedCandidate=$ExpectedVersion" },
+      @{ id = "same-window-process"; status = if ($windowStayedAlive) { "PASS" } else { "FAIL" }; detail = "Reload 后未重新启动 GUI 进程；initialGuiPid=$(if ($null -ne $process) { $process.Id } else { 'unknown' }) stayedAlive=$windowStayedAlive" }
+    )
+    $assertions += $reloadAssertions
+    $assertions += $motionAssertions
+    $assertions += @(
+      @{ id = "disk-installed-candidate"; status = if ($diskInstalled) { "PASS" } else { "FAIL" }; detail = "扩展目录列出候选版本 $ExpectedVersion=$diskInstalled" },
+      @{ id = "webview-open-in-tab"; status = if ($null -ne $openInTabReply) { "PASS" } else { "FAIL" }; detail = "首次 Reload Host 的 control channel 执行 chipmate.v2.openInTab" },
+      @{ id = "first-reload-spinner-chat-request"; status = if ($motionChatRequests -ge 1 -and -not $motionRequestError) { "PASS" } else { "FAIL" }; detail = "首次 Reload 后 mock provider chat requests=$motionChatRequests error=$($motionRequestError.Trim())" },
+      @{ id = "webview-ready-show-memory"; status = if ($null -ne $showMemoryReply) { "PASS" } else { "FAIL" }; detail = "首次 Reload Host 的 chipmate.v2.showMemory 已完成；该命令等待 webview ready" }
     )
     $pass = @($assertions | Where-Object { $_.status -ne "PASS" }).Count -eq 0
     Add-Result `
       -CaseId "WIN-UPDATE" `
       -Status $(if ($pass) { "PASS" } else { "FAIL" }) `
-      -Summary "PATH 无 code 的隔离中文空格目录完成旧版发现、下载、校验、内置 CLI 覆盖安装、Reload 与新版本激活。" `
-      -Screenshots @((Relative-EvidencePath $shot)) `
+      -Summary "PATH 无 code 的隔离中文空格目录完成旧版发现、下载、校验、内置 CLI 覆盖安装；首次 Reload 在同一 VS Code 窗口内以新 activation Probe、真实 working spinner 动态帧和 webview ready 命令回执验收。" `
+      -ErrorText (@($reloadError, $motionError, $motionRequestError | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine) `
+      -Screenshots @(
+        (@($promptScreenshot, $activatedScreenshot) + @(Get-ChildItem -LiteralPath $motionFrameDirectory -File -Filter "spinner-frame-*.png" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })) |
+          Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+          ForEach-Object { Relative-EvidencePath $_ }
+      ) `
       -Assertions $assertions
   } finally {
     $env:Path = $saved
@@ -703,8 +1122,13 @@ function Invoke-InstalledProbe {
 }
 
 function Start-GuiSubject {
-  param([switch] $Probe)
-  $args = @($Workspace, "--new-window", "--skip-welcome", "--skip-release-notes", "--disable-workspace-trust", "--disable-updates", "--force-renderer-accessibility", "--extensions-dir=$ExtDir", "--user-data-dir=$UserDir", "--remote-debugging-port=$script:CdpPort")
+  param(
+    [switch] $Probe,
+    [switch] $AllowMotion
+  )
+  $args = @($Workspace, "--new-window", "--skip-welcome", "--skip-release-notes", "--disable-workspace-trust", "--disable-updates")
+  if (-not $AllowMotion) { $args += "--force-renderer-accessibility" }
+  $args += @("--extensions-dir=$ExtDir", "--user-data-dir=$UserDir", "--remote-debugging-port=$script:CdpPort")
   if ($Probe) { $args += "--extensionDevelopmentPath=$(Join-Path $QaRoot 'probe')" }
   if ($Gpu -eq "disabled") { $args += "--disable-gpu" }
   $before = @(Get-Process -Name "Code" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
@@ -1657,7 +2081,14 @@ try {
   $script:MockPort = Get-FreeTcpPort
   $script:MockOrigin = "http://127.0.0.1:$script:MockPort"
   if ($Lane -eq "update") {
+    $script:ProviderMockPort = Get-FreeTcpPort
+    $script:ProviderMockOrigin = "http://127.0.0.1:$script:ProviderMockPort"
     $Mock = Start-UpdateServer
+    $ProviderMock = Start-MockProvider `
+      -Port $script:ProviderMockPort `
+      -Origin $script:ProviderMockOrigin `
+      -Name "update-motion-provider"
+    Initialize-MockProviderConfig -Origin $script:ProviderMockOrigin
     Invoke-UpdateRegression
     foreach ($case in $Matrix.cases) {
       if (@($Results | ForEach-Object { $_.id }) -contains $case.id) { continue }
@@ -1740,6 +2171,18 @@ try {
     }
   }
   if ($null -ne $Mock -and -not $Mock.HasExited) { Stop-Process -Id $Mock.Id -Force -ErrorAction SilentlyContinue }
+  if ($null -ne $ProviderMock -and -not $ProviderMock.HasExited) {
+    try {
+      Invoke-RestMethod -Uri "$script:ProviderMockOrigin/__qa/requests" -TimeoutSec 2 |
+        ConvertTo-Json -Depth 10 |
+        Set-Content -LiteralPath (Join-Path $Evidence "update-motion-provider-requests.json") -Encoding UTF8
+    } catch {
+      $_ | Out-String | Set-Content -LiteralPath (Join-Path $Evidence "update-motion-provider-requests-error.log") -Encoding UTF8
+    }
+  }
+  if ($null -ne $ProviderMock -and -not $ProviderMock.HasExited) {
+    Stop-Process -Id $ProviderMock.Id -Force -ErrorAction SilentlyContinue
+  }
   try {
     Save-RunSnapshot
   } catch {

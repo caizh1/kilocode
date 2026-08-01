@@ -124,11 +124,17 @@ describe("OpenAICompatibleEmbedder", () => {
 
       const result = await embedder.createEmbeddings(testTexts)
 
-      expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-        input: testTexts,
-        model: testModelId,
-        encoding_format: "base64",
-      })
+      expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+        {
+          input: testTexts,
+          model: testModelId,
+          encoding_format: "base64",
+        },
+        {
+          timeout: 120_000,
+          maxRetries: 0,
+        },
+      )
       expect(result).toEqual({
         embeddings: [[0.1, 0.2, 0.3]],
         usage: { promptTokens: 10, totalTokens: 15 },
@@ -192,11 +198,17 @@ describe("OpenAICompatibleEmbedder", () => {
 
       const result = await embedder.createEmbeddings(testTexts)
 
-      expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-        input: testTexts,
-        model: testModelId,
-        encoding_format: "base64",
-      })
+      expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+        {
+          input: testTexts,
+          model: testModelId,
+          encoding_format: "base64",
+        },
+        {
+          timeout: 120_000,
+          maxRetries: 0,
+        },
+      )
       expect(result).toEqual({
         embeddings: [
           [0.1, 0.2, 0.3],
@@ -217,11 +229,17 @@ describe("OpenAICompatibleEmbedder", () => {
 
       await embedder.createEmbeddings(testTexts, customModel)
 
-      expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-        input: testTexts,
-        model: customModel,
-        encoding_format: "base64",
-      })
+      expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+        {
+          input: testTexts,
+          model: customModel,
+          encoding_format: "base64",
+        },
+        {
+          timeout: 120_000,
+          maxRetries: 0,
+        },
+      )
     })
 
     test("should handle missing usage data gracefully", async () => {
@@ -262,11 +280,17 @@ describe("OpenAICompatibleEmbedder", () => {
 
         const result = await embedder.createEmbeddings(testTexts)
 
-        expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-          input: testTexts,
-          model: testModelId,
-          encoding_format: "base64",
-        })
+        expect(mockEmbeddingsCreate).toHaveBeenCalledWith(
+          {
+            input: testTexts,
+            model: testModelId,
+            encoding_format: "base64",
+          },
+          {
+            timeout: 120_000,
+            maxRetries: 0,
+          },
+        )
 
         // Verify the base64 string was converted back to the original float array
         expect(result).toEqual({
@@ -388,8 +412,7 @@ describe("OpenAICompatibleEmbedder", () => {
      * Test retry logic with exponential backoff
      */
     describe("retry logic", () => {
-      // TODO: bun:test doesn't support fake timers
-      test.skip("should retry on rate limit errors with exponential backoff", async () => {
+      test("should retry a rate limit error with bounded backoff", async () => {
         const testTexts = ["Hello world"]
         const rateLimitError = { status: 429, message: "Rate limit exceeded" }
 
@@ -397,17 +420,14 @@ describe("OpenAICompatibleEmbedder", () => {
         const testEmbedding = new Float32Array([0.25, 0.5, 0.75])
         const base64String = Buffer.from(testEmbedding.buffer).toString("base64")
 
-        mockEmbeddingsCreate
-          .mockRejectedValueOnce(rateLimitError)
-          .mockRejectedValueOnce(rateLimitError)
-          .mockResolvedValueOnce({
-            data: [{ embedding: base64String }],
-            usage: { prompt_tokens: 10, total_tokens: 15 },
-          })
+        mockEmbeddingsCreate.mockRejectedValueOnce(rateLimitError).mockResolvedValueOnce({
+          data: [{ embedding: base64String }],
+          usage: { prompt_tokens: 10, total_tokens: 15 },
+        })
 
         const result = await embedder.createEmbeddings(testTexts)
 
-        expect(mockEmbeddingsCreate).toHaveBeenCalledTimes(3)
+        expect(mockEmbeddingsCreate).toHaveBeenCalledTimes(2)
         expect(result).toEqual({
           embeddings: [[0.25, 0.5, 0.75]],
           usage: { promptTokens: 10, totalTokens: 15 },

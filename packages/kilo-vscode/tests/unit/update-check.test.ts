@@ -6,9 +6,11 @@ import * as path from "node:path"
 import { createHash } from "node:crypto"
 import * as yazl from "yazl"
 import { LAST_AUTO_KEY, UpdateCheckService, compareVersions, resolvePackageUrl } from "../../src/services/update-check"
+import { PENDING_ACTIVATION_KEY } from "../../src/services/update-check/activation"
 
 const INSTALL = "Install Update"
 const RELOAD = "Reload Window"
+const RELEASE_NOTES = "View Release Notes"
 const TARGET = "win32-x64-baseline"
 const roots: string[] = []
 const services: UpdateCheckService[] = []
@@ -18,10 +20,12 @@ type Config = Record<string, unknown>
 const api = vscode as unknown as {
   workspace: {
     getConfiguration: (section?: string) => { get: <T>(key: string, fallback: T) => T }
+    openTextDocument: (input: { content?: string; language?: string }) => Promise<unknown>
   }
   window: {
     showWarningMessage: (message: string) => Promise<unknown>
     showInformationMessage: (message: string, ...items: unknown[]) => Promise<unknown>
+    showTextDocument: (document: unknown, options?: unknown) => Promise<unknown>
   }
   commands: {
     executeCommand: (command: string) => Promise<unknown>
@@ -30,8 +34,10 @@ const api = vscode as unknown as {
 
 const original = {
   config: api.workspace.getConfiguration,
+  document: api.workspace.openTextDocument,
   warning: api.window.showWarningMessage,
   info: api.window.showInformationMessage,
+  editor: api.window.showTextDocument,
   command: api.commands.executeCommand,
 }
 
@@ -39,8 +45,10 @@ afterEach(async () => {
   for (const service of services.splice(0)) service.dispose()
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
   api.workspace.getConfiguration = original.config
+  api.workspace.openTextDocument = original.document
   api.window.showWarningMessage = original.warning
   api.window.showInformationMessage = original.info
+  api.window.showTextDocument = original.editor
   api.commands.executeCommand = original.command
 })
 
@@ -145,6 +153,11 @@ describe("UpdateCheckService", () => {
     ])
     expect(env.info).toEqual([{ message: "ChipMate update installed. Reload Window to finish.", items: [RELOAD] }])
     expect(env.commands).toEqual(["workbench.action.reloadWindow"])
+    expect(env.state.get(PENDING_ACTIVATION_KEY)).toMatchObject({
+      expectedVersion: "0.0.17",
+      target: TARGET,
+      reloadRequestedAt: 1_000,
+    })
     const log = env.logs.log.join("\n")
     expect(log).toContain("开始自动检查更新")
     expect(log).toContain("清单请求成功")
@@ -154,6 +167,54 @@ describe("UpdateCheckService", () => {
     expect(log).toContain("安装器成功退出")
     expect(log).toContain("等待用户重载窗口后激活")
     expect(log).not.toContain("VSCODE_IPC_HOOK_CLI")
+  })
+
+  it("offers complete release notes after an automatic install and returns to the reload action", async () => {
+    const body = await vsix()
+    const notes = "# ChipMate 0.0.17\n\n- 展示完整更新说明"
+    const env = await setup({ info: [RELEASE_NOTES, RELOAD] })
+    env.fetch.mockResolvedValueOnce(
+      json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length, releaseNotes: notes })),
+    )
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+    await env.service.checkAuto()
+
+    expect(env.documents).toEqual([{ language: "markdown", content: notes }])
+    expect(env.shownDocuments).toHaveLength(1)
+    expect(env.info).toEqual([
+      {
+        message: "ChipMate update installed. Reload Window to finish. What's new: 展示完整更新说明",
+        items: [RELEASE_NOTES, RELOAD],
+      },
+      {
+        message: "ChipMate update installed. Reload Window to finish. What's new: 展示完整更新说明",
+        items: [RELOAD],
+      },
+    ])
+    expect(env.commands).toEqual(["workbench.action.reloadWindow"])
+  })
+
+  it("shows release notes before an automatic offer when automatic installation is disabled", async () => {
+    const body = await vsix()
+    const notes = "# ChipMate 0.0.17\n\n- 检测新版后先查看更新说明"
+    const env = await setup({ config: { autoInstall: false }, info: [RELEASE_NOTES, INSTALL, RELOAD] })
+    env.fetch.mockResolvedValueOnce(
+      json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length, releaseNotes: notes })),
+    )
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+    await env.service.checkAuto()
+
+    expect(env.documents).toEqual([{ language: "markdown", content: notes }])
+    expect(env.shownDocuments).toHaveLength(1)
+    expect(env.info[0]).toEqual({
+      message:
+        "ChipMate update 0.0.17 is available. Current version: 0.0.16. What's new: 检测新版后先查看更新说明",
+      items: [RELEASE_NOTES, INSTALL],
+    })
+    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.commands).toEqual(["workbench.action.reloadWindow"])
   })
 
   it("offers manual installation when automatic installation is disabled", async () => {
@@ -170,6 +231,34 @@ describe("UpdateCheckService", () => {
       items: [INSTALL],
     })
     expect(env.exec).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows release notes before a command-triggered install and then continues the update", async () => {
+    const body = await vsix()
+    const notes = "# ChipMate 0.0.17\n\n- 安装前查看更新说明"
+    const env = await setup({ config: { autoInstall: false }, info: [RELEASE_NOTES, INSTALL, RELOAD] })
+    env.fetch.mockResolvedValueOnce(
+      json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length, releaseNotes: notes })),
+    )
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+    await env.service.checkManual()
+
+    expect(env.documents).toEqual([{ language: "markdown", content: notes }])
+    expect(env.shownDocuments).toHaveLength(1)
+    expect(env.info).toEqual([
+      {
+        message: "ChipMate update 0.0.17 is available. Current version: 0.0.16. What's new: 安装前查看更新说明",
+        items: [RELEASE_NOTES, INSTALL],
+      },
+      { message: "ChipMate update 0.0.17 is ready to install.", items: [INSTALL] },
+      {
+        message: "ChipMate update installed. Reload Window to finish. What's new: 安装前查看更新说明",
+        items: [RELEASE_NOTES, RELOAD],
+      },
+    ])
+    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.commands).toEqual(["workbench.action.reloadWindow"])
   })
 
   it("reports a manual check as current without downloading", async () => {
@@ -490,6 +579,8 @@ async function setup(opts: { config?: Config; info?: unknown[]; target?: string;
   const state = memento()
   const warnings: string[] = []
   const info: Array<{ message: string; items: unknown[] }> = []
+  const documents: Array<{ content?: string; language?: string }> = []
+  const shownDocuments: unknown[] = []
   const commands: string[] = []
   const logs = { log: [] as string[], warn: [] as string[], error: [] as string[], shown: 0 }
   const fetcher = mock(async () => new Response("", { status: 404 }))
@@ -511,6 +602,10 @@ async function setup(opts: { config?: Config; info?: unknown[]; target?: string;
   api.workspace.getConfiguration = () => ({
     get: <T>(key: string, fallback: T) => (key in (opts.config ?? {}) ? (opts.config?.[key] as T) : fallback),
   })
+  api.workspace.openTextDocument = async (input) => {
+    documents.push(input)
+    return { getText: () => input.content ?? "", languageId: input.language ?? "plaintext" }
+  }
   api.window.showWarningMessage = async (message) => {
     warnings.push(message)
     return undefined
@@ -518,6 +613,10 @@ async function setup(opts: { config?: Config; info?: unknown[]; target?: string;
   api.window.showInformationMessage = async (message, ...items) => {
     info.push({ message, items })
     return opts.info?.shift()
+  }
+  api.window.showTextDocument = async (document) => {
+    shownDocuments.push(document)
+    return undefined
   }
   api.commands.executeCommand = async (command) => {
     commands.push(command)
@@ -548,6 +647,8 @@ async function setup(opts: { config?: Config; info?: unknown[]; target?: string;
     exec,
     warnings,
     info,
+    documents,
+    shownDocuments,
     commands,
     logs,
     final: (version: string) => path.join(root, "update-check", `chipmate.chipmate-${version}.vsix`),

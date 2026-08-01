@@ -160,6 +160,12 @@ function protectedPaths(profile: Profile, allow: ReadonlyArray<PathRule>) {
   return [...found].sort((a, b) => a.length - b.length)
 }
 
+function unreadable(profile: Profile) {
+  return (profile.filesystem.denyRead ?? [])
+    .filter((rule) => existsSync(rule.path))
+    .sort((a, b) => a.path.length - b.path.length)
+}
+
 export function generate(
   profile: Profile,
   launch: Launch,
@@ -194,6 +200,13 @@ export function generate(
 
   for (const rule of allow) args.push("--bind", rule.path, rule.path)
   for (const target of protectedPaths(profile, allow)) args.push("--ro-bind", target, target)
+  for (const target of unreadable(profile)) {
+    if (statSync(target.path).isDirectory()) {
+      args.push("--tmpfs", target.path)
+      continue
+    }
+    args.push("--ro-bind", "/dev/null", target.path)
+  }
   if (proxy?.socket) args.push("--ro-bind", proxy.socket, proxy.socket)
   args.push("--proc", "/proc")
   if (launch.cwd) args.push("--chdir", launch.cwd)
@@ -221,16 +234,16 @@ function digest() {
   return typeof KILO_BWRAP_SHA256 === "undefined" ? undefined : KILO_BWRAP_SHA256
 }
 
-function resolve(executable: string, expected?: string) {
+function resolve(executable: string, expected?: string): string | undefined {
   try {
-    if (!path.isAbsolute(executable)) return
+    if (!path.isAbsolute(executable)) return undefined
     const target = realpathSync.native(executable)
     const entry = statSync(target)
-    if (!entry.isFile() || (entry.mode & 0o6000) !== 0) return
-    if (expected && createHash("sha256").update(readFileSync(target)).digest("hex") !== expected) return
+    if (!entry.isFile() || (entry.mode & 0o6000) !== 0) return undefined
+    if (expected && createHash("sha256").update(readFileSync(target)).digest("hex") !== expected) return undefined
     return target
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -281,7 +294,8 @@ function select(): Selection {
     const executable = resolve(candidate.executable, candidate.expected)
     if (!executable) continue
     const failure = probe(executable)
-    if (!failure) return { executable, support: { available: true } satisfies Support, network: undefined, proxy: undefined }
+    if (!failure)
+      return { executable, support: { available: true } satisfies Support, network: undefined, proxy: undefined }
     failures.push(failure)
   }
 
@@ -314,7 +328,8 @@ function selection(): Selection {
 
 function support(network?: Profile["network"]): Support {
   const selected = selection()
-  if (!selected.support.available || !network || network.mode === "allow" || !selected.executable) return selected.support
+  if (!selected.support.available || !network || network.mode === "allow" || !selected.executable)
+    return selected.support
   if (network?.mode === "proxy" && selected.proxy) return selected.proxy
   if (network?.mode === "deny" && selected.network) return selected.network
   const failure = probe(selected.executable, true)
@@ -322,8 +337,7 @@ function support(network?: Profile["network"]): Support {
     const value = { available: false, reason: failure }
     if (network?.mode === "proxy") selected.proxy = value
     else selected.network = value
-  }
-  else if (network?.mode === "proxy") {
+  } else if (network?.mode === "proxy") {
     const worker = relay().path
     const filter = seccomp()
     const missing = !existsSync(worker)
@@ -334,7 +348,10 @@ function support(network?: Profile["network"]): Support {
           ? filter
           : undefined
     selected.proxy = missing
-      ? { available: false, reason: `Linux sandbox proxy dependency is unavailable: ${missing ?? "unsupported architecture"}` }
+      ? {
+          available: false,
+          reason: `Linux sandbox proxy dependency is unavailable: ${missing ?? "unsupported architecture"}`,
+        }
       : { available: true }
   } else selected.network = { available: true }
   return network?.mode === "proxy" ? selected.proxy! : selected.network!

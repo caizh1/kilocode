@@ -82,6 +82,7 @@ test("worker owns import, revisions, FTS, state, metrics, and legacy export", { 
   const output = join(root, "legacy-latest")
   const v1 = join(skills, "source-backed-detail-design.tar.gz")
   const v2 = join(skills, "source-backed-detail-design-v2.tar.gz")
+  const v3 = join(skills, "source-backed-detail-design-v3.tar.gz")
   await mkdir(skills, { recursive: true })
   await copyFile(archive, v1)
   await catalog(legacy, "skills/source-backed-detail-design.tar.gz", "2026-07-10T00:00:00.000Z")
@@ -226,6 +227,22 @@ test("worker owns import, revisions, FTS, state, metrics, and legacy export", { 
     assert.equal(latest.items[0]?.githubUrl, "https://git.example/skill")
     assert.equal(latest.items[0]?.legacyOnly, "preserved")
     await readFile(join(output, "skills", "source-backed-detail-design.tar.gz"))
+
+    await catalog(legacy, "skills/source-backed-detail-design.tar.gz", "2026-07-12T03:00:00.000Z")
+    const reused = await db.importLegacy(legacy)
+    assert.equal(reused.imported, 0)
+    assert.equal(reused.unchanged, 1)
+    assert.equal((await db.get("source-backed-detail-design"))?.latestRevision, 2)
+    assert.equal((await db.releases("source-backed-detail-design")).length, 2)
+    assert.equal((await db.release("source-backed-detail-design"))?.revision, 2)
+
+    await writeFile(join(rev, "source-backed-detail-design", "revision.txt"), "revision 3\n")
+    execFileSync("tar", ["-czf", v3, "-C", rev, "source-backed-detail-design"], {
+      env: { ...process.env, COPYFILE_DISABLE: "1" },
+    })
+    await catalog(legacy, "skills/source-backed-detail-design-v3.tar.gz", "2026-07-12T04:00:00.000Z")
+    const third = await db.importLegacy(legacy)
+    assert.equal(third.revisions[0]?.revision, 3)
   } finally {
     await db.close()
   }

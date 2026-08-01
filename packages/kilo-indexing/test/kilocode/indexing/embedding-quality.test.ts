@@ -208,6 +208,69 @@ describe("embedding quality gate", () => {
     expect(result.embeddings).toEqual([duplicate, duplicate])
   })
 
+  test("allows one isolated identical vector pair for distinct production texts", async () => {
+    const profile: EmbeddingRuntimeProfile = {
+      provider: "openai-compatible",
+      modelId: "qwen3-embedding-8b",
+      dimensionMode: "auto",
+      dimension: 64,
+      endpointDigest: "endpoint",
+      fingerprint: samples().slice(0, 6).map(normalized),
+      fingerprintDigest: "fingerprint",
+      qualityVersion: "quality",
+      instructionVersion: "instruction",
+    }
+    const duplicate = dense(8)
+    const raw = new ProbeEmbedder([dense(1), duplicate, duplicate.slice(), dense(9)])
+    const guarded = new QualityCheckedEmbedder(raw, profile, { valid: true }, true)
+
+    const result = await guarded.createEmbeddings(["first chunk", "second chunk", "third chunk"])
+
+    expect(result.embeddings).toEqual([duplicate, duplicate, dense(9)])
+  })
+
+  test("blocks a production response that collapses three distinct texts", async () => {
+    const profile: EmbeddingRuntimeProfile = {
+      provider: "openai-compatible",
+      modelId: "qwen3-embedding-8b",
+      dimensionMode: "auto",
+      dimension: 64,
+      endpointDigest: "endpoint",
+      fingerprint: samples().slice(0, 6).map(normalized),
+      fingerprintDigest: "fingerprint",
+      qualityVersion: "quality",
+      instructionVersion: "instruction",
+    }
+    const collapsed = dense(8)
+    const raw = new ProbeEmbedder([dense(1), collapsed, collapsed.slice(), collapsed.slice()])
+    const guarded = new QualityCheckedEmbedder(raw, profile, { valid: true }, true)
+
+    await expect(guarded.createEmbeddings(["first chunk", "second chunk", "third chunk"])).rejects.toThrow(
+      "collapsed across distinct texts",
+    )
+  })
+
+  test("blocks a production response that maps a distinct text to the sentinel vector", async () => {
+    const profile: EmbeddingRuntimeProfile = {
+      provider: "openai-compatible",
+      modelId: "qwen3-embedding-8b",
+      dimensionMode: "auto",
+      dimension: 64,
+      endpointDigest: "endpoint",
+      fingerprint: samples().slice(0, 6).map(normalized),
+      fingerprintDigest: "fingerprint",
+      qualityVersion: "quality",
+      instructionVersion: "instruction",
+    }
+    const sentinel = dense(1)
+    const raw = new ProbeEmbedder([sentinel, sentinel.slice()])
+    const guarded = new QualityCheckedEmbedder(raw, profile, { valid: true }, true)
+
+    await expect(guarded.createEmbeddings(["unrelated production chunk"])).rejects.toThrow(
+      "collapsed across distinct texts",
+    )
+  })
+
   test("reuses a fingerprint only when the endpoint identity and vector space remain compatible", async () => {
     const first = await probeEmbedding(new ProbeEmbedder(), {
       provider: "openai-compatible",

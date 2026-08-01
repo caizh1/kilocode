@@ -118,6 +118,8 @@ interface AssistantMessageProps {
   message: SDKAssistantMessage
   parts?: SDKPart[]
   showAssistantCopyPartID?: string | null
+  /** Completed-turn metadata displayed in the copied text part's action row. */
+  completion?: () => JSX.Element | undefined
   feedback?: MessageFeedbackControls
   /** id of the part containing the current chat-search match, if any — forces
    * that part's collapsed tool/reasoning content open so the user can see
@@ -306,6 +308,10 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
             if (part.id !== props.showAssistantCopyPartID) return undefined
             return <ThroughputBadge metrics={metrics} />
           })
+          const completionEl = createMemo<JSX.Element | undefined>(() => {
+            if (part.id !== props.showAssistantCopyPartID) return undefined
+            return props.completion?.()
+          })
 
           return (
             <Show
@@ -354,6 +360,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                                         forceOpenFile={forceOpen() ? props.forceOpenFile : undefined}
                                         reasoningAutoCollapse={display.reasoningAutoCollapse()}
                                         feedback={props.feedback}
+                                        completion={completionEl()}
                                         working={session.status() !== "idle"}
                                         animate={
                                           part.type === "tool" &&

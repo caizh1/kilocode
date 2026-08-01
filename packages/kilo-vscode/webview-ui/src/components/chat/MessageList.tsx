@@ -191,6 +191,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
         live: new Set(active ? [active] : []),
         hidden: session.isErrorHidden,
         revert: revert(),
+        messages: session.messages(),
       },
       prev,
     )

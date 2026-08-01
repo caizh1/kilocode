@@ -7,6 +7,7 @@ import {
   INITIAL_RETRY_DELAY_MS as INITIAL_DELAY_MS,
   REMOTE_EMBEDDER_VALIDATION_MAX_RETRIES,
   REMOTE_EMBEDDER_VALIDATION_TIMEOUT_MS,
+  REMOTE_EMBEDDER_REQUEST_TIMEOUT_MS,
 } from "../constants"
 import { getDefaultModelId, getModelQueryPrefix } from "../model-registry"
 import {
@@ -289,18 +290,30 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
 
         if (isFullUrl) {
           // Use direct HTTP request for full endpoint URLs
-          response = await this.makeDirectEmbeddingRequest(this.baseUrl, batchTexts, model)
+          const ctl = new AbortController()
+          const timer = setTimeout(() => ctl.abort(), REMOTE_EMBEDDER_REQUEST_TIMEOUT_MS)
+          try {
+            response = await this.makeDirectEmbeddingRequest(this.baseUrl, batchTexts, model, ctl.signal)
+          } finally {
+            clearTimeout(timer)
+          }
         } else {
           // Use OpenAI SDK for base URLs
-          response = (await this.embeddingsClient.embeddings.create({
-            input: batchTexts,
-            model: model,
-            // OpenAI package (as of v4.78.1) has a parsing issue that truncates embedding dimensions to 256
-            // when processing numeric arrays, which breaks compatibility with models using larger dimensions.
-            // By requesting base64 encoding, we bypass the package's parser and handle decoding ourselves.
-            encoding_format: "base64",
-            ...(this.dimensions !== undefined ? { dimensions: this.dimensions } : {}),
-          })) as OpenAIEmbeddingResponse
+          response = (await this.embeddingsClient.embeddings.create(
+            {
+              input: batchTexts,
+              model: model,
+              // OpenAI package (as of v4.78.1) has a parsing issue that truncates embedding dimensions to 256
+              // when processing numeric arrays, which breaks compatibility with models using larger dimensions.
+              // By requesting base64 encoding, we bypass the package's parser and handle decoding ourselves.
+              encoding_format: "base64",
+              ...(this.dimensions !== undefined ? { dimensions: this.dimensions } : {}),
+            },
+            {
+              timeout: REMOTE_EMBEDDER_REQUEST_TIMEOUT_MS,
+              maxRetries: 0,
+            },
+          )) as OpenAIEmbeddingResponse
         }
 
         const embeddings = this.decode(response)
@@ -437,9 +450,7 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
     }
     for (const vector of vectors) {
       if (this.expectedDimension !== undefined && vector.length !== this.expectedDimension) {
-        throw new Error(
-          `Embedding dimension mismatch: expected ${this.expectedDimension}, received ${vector.length}.`,
-        )
+        throw new Error(`Embedding dimension mismatch: expected ${this.expectedDimension}, received ${vector.length}.`)
       }
       if (vector.length === 0) throw new Error("Embedding response contains an empty vector.")
       if (vector.some((value) => !Number.isFinite(value))) {
