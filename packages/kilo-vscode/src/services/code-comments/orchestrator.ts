@@ -25,6 +25,7 @@ type CompletedRound = {
 
 type FailedRound = {
   reason: string
+  kind: "parse" | "session"
 }
 
 export class CodeCommentOrchestrator {
@@ -37,15 +38,29 @@ export class CodeCommentOrchestrator {
     if (request.targets.length !== 1) throw new Error("V1 只支持一个函数目标")
     const target = request.targets[0]!
     const primary = await this.run({ request, target, round: "primary", token })
-    if ("reason" in primary) return unresolved(target, request.strategy, 1, [`primary: ${primary.reason}`])
+    if ("reason" in primary) {
+      if (request.strategy === "single-self-check" && primary.kind === "parse") {
+        return this.recoverSinglePass(request, target, token, [`primary: ${primary.reason}`])
+      }
+      return unresolved(target, request.strategy, 1, [`primary: ${primary.reason}`])
+    }
     const candidate = await validateCandidate(target, primary.response)
-    if (!candidate.ok)
+    if (!candidate.ok) {
+      if (request.strategy === "single-self-check") {
+        return this.recoverSinglePass(
+          request,
+          target,
+          token,
+          candidate.reasons.map((reason) => `primary: ${reason}`),
+        )
+      }
       return unresolved(
         target,
         request.strategy,
         1,
         candidate.reasons.map((reason) => `primary: ${reason}`),
       )
+    }
     if (request.strategy === "single-self-check") {
       return completed(target, request.strategy, candidate.value, primary.output, 1, false)
     }
@@ -71,19 +86,55 @@ export class CodeCommentOrchestrator {
     return completed(target, request.strategy, reviewed.value, review.output, 2, true)
   }
 
+  private async recoverSinglePass(
+    request: CodeCommentRequest,
+    target: FunctionTarget,
+    token: vscode.CancellationToken,
+    initialReasons: string[],
+  ): Promise<CommentGenerationResult> {
+    const recovery = await this.run({
+      request,
+      target,
+      round: "primary",
+      stage: "recovery",
+      validationFeedback: initialReasons,
+      token,
+    })
+    if ("reason" in recovery) {
+      return unresolved(target, request.strategy, 2, [...initialReasons, `recovery: ${recovery.reason}`])
+    }
+    const candidate = await validateCandidate(target, recovery.response)
+    if (!candidate.ok) {
+      return unresolved(
+        target,
+        request.strategy,
+        2,
+        [...initialReasons, ...candidate.reasons.map((reason) => `recovery: ${reason}`)],
+      )
+    }
+    return completed(target, request.strategy, candidate.value, recovery.output, 2, true)
+  }
+
   private async run(input: {
     request: CodeCommentRequest
     target: FunctionTarget
     round: "primary" | "review"
+    stage?: string
     candidate?: ValidatedCommentResult
+    validationFeedback?: string[]
     token: vscode.CancellationToken
   }): Promise<CompletedRound | FailedRound> {
     try {
       const output = await this.runner.run({
         directory: input.target.workspacePath,
         activeFile: input.target.filePath,
-        prompt: buildCommentPrompt({ target: input.target, round: input.round, candidate: input.candidate }),
-        stage: input.round,
+        prompt: buildCommentPrompt({
+          target: input.target,
+          round: input.round,
+          candidate: input.candidate,
+          validationFeedback: input.validationFeedback,
+        }),
+        stage: input.stage ?? input.round,
         functionHash: input.target.functionHash,
         model: input.request.model,
         timeoutMs: SESSION_TIMEOUT_MS,
@@ -92,7 +143,7 @@ export class CodeCommentOrchestrator {
       const parsed = parseCommentQaResponse(output.output, input.round)
       if (!parsed.ok) {
         this.log(`stage=${input.round} parse=failed reason=${parsed.reason}`)
-        return { reason: parsed.reason }
+        return { reason: parsed.reason, kind: "parse" }
       }
       this.log(`stage=${input.round} parse=passed decision=${parsed.value.decision}`)
       return { response: parsed.value, output }
@@ -102,6 +153,7 @@ export class CodeCommentOrchestrator {
       this.log(`stage=${input.round} failed=${reason}`)
       return {
         reason: error instanceof CodeCommentSessionError && error.nonRecoverable ? `不可恢复错误：${reason}` : reason,
+        kind: "session",
       }
     }
   }

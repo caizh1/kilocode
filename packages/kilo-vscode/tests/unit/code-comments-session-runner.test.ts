@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { CodeCommentCancelledError, CodeCommentSessionRunner } from "../../src/services/code-comments/session-runner"
 
-function runtime(options: { cancel?: boolean } = {}) {
+function runtime(options: { cancel?: boolean; completion?: "status" | "message" | "poll" } = {}) {
   const calls = {
     create: [] as unknown[],
     prompt: [] as unknown[],
@@ -12,7 +12,14 @@ function runtime(options: { cancel?: boolean } = {}) {
   let cancellation: (() => void) | undefined
   const assistant = {
     info: {
+      id: "assistant-message",
+      sessionID: "temporary-session",
       role: "assistant",
+      time: {
+        created: 1,
+        ...(options.completion === "poll" ? { completed: 2 } : {}),
+      },
+      finish: "stop",
       providerID: "provider",
       modelID: "main",
       structured: undefined,
@@ -32,6 +39,19 @@ function runtime(options: { cancel?: boolean } = {}) {
             cancellation?.()
             return
           }
+          if (options.completion === "message") {
+            listener?.({
+              type: "message.updated",
+              properties: {
+                info: {
+                  ...assistant.info,
+                  time: { created: 1, completed: 2 },
+                },
+              },
+            })
+            return
+          }
+          if (options.completion === "poll") return
           listener?.({
             type: "session.status",
             properties: { sessionID: "temporary-session", status: { type: "busy" } },
@@ -135,5 +155,41 @@ describe("高可信代码注释临时 Code 会话", () => {
     await expect(task).rejects.toBeInstanceOf(CodeCommentCancelledError)
     expect(state.calls.abort).toEqual([{ sessionID: "temporary-session", directory: "/repo" }])
     expect(state.calls.delete).toEqual([{ sessionID: "temporary-session", directory: "/repo" }])
+  })
+
+  it("没有 busy 事件时可由 assistant 完成事件结束", async () => {
+    const state = runtime({ completion: "message" })
+    const runner = new CodeCommentSessionRunner(state.connection as never, () => undefined)
+
+    const result = await runner.run({
+      directory: "/repo",
+      activeFile: "/repo/main.c",
+      prompt: "分析当前函数",
+      stage: "primary",
+      functionHash: "hash",
+      timeoutMs: 1000,
+      token: state.token as never,
+    })
+
+    expect(result.output).toContain("无需注释")
+    expect(state.calls.abort).toHaveLength(0)
+  })
+
+  it("SSE 完成事件全部遗漏时可由消息轮询结束", async () => {
+    const state = runtime({ completion: "poll" })
+    const runner = new CodeCommentSessionRunner(state.connection as never, () => undefined)
+
+    const result = await runner.run({
+      directory: "/repo",
+      activeFile: "/repo/main.c",
+      prompt: "分析当前函数",
+      stage: "primary",
+      functionHash: "hash",
+      timeoutMs: 1000,
+      token: state.token as never,
+    })
+
+    expect(result.output).toContain("无需注释")
+    expect(state.calls.abort).toHaveLength(0)
   })
 })

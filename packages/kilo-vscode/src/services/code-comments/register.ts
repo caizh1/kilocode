@@ -87,7 +87,7 @@ async function generateCurrentFunctionComments(input: {
       `command unresolved function=${target.functionHash.slice(0, 12)} rounds=${result.rounds} reasons=${result.reasons.join("；")}`,
     )
     const choice = await vscode.window.showWarningMessage(
-      `双轮核验未能形成可靠注释：${result.reasons[0] ?? "证据不足"}`,
+      `未能形成可靠注释：${result.reasons[0] ?? "证据不足"}`,
       SHOW_DETAILS,
     )
     if (choice === SHOW_DETAILS) input.output.show(true)

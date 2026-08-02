@@ -14,11 +14,13 @@ export function buildCommentPrompt(input: {
   target: FunctionTarget
   round: CommentRound
   candidate?: ValidatedCommentResult
+  validationFeedback?: string[]
 }): string {
   const task =
     input.round === "primary"
       ? [
           "阅读当前函数，必要时核对直接相关源码，然后决定是否值得增加注释。",
+          "输出前重新从头核对一次函数和直接证据；删除任何无法由源码证明的表述。",
           "第一行只能是“结论：生成注释”或“结论：无需注释”。",
           "随后用一小段中文说明你的函数理解；需要注释时，再给出一至四段 comment-only diff。",
         ]
@@ -68,6 +70,13 @@ export function buildCommentPrompt(input: {
           "<candidate_patch>",
           input.candidate.status === "skip" ? "无需注释" : input.candidate.patch!,
           "</candidate_patch>",
+        ]
+      : []),
+    ...(input.validationFeedback?.length
+      ? [
+          "",
+          "上一次输出未通过确定性校验，请只修正这些问题后重新给出完整结果：",
+          ...input.validationFeedback.map((reason) => `- ${reason}`),
         ]
       : []),
   ].join("\n")

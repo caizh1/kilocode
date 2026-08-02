@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { createTwoFilesPatch } from "diff"
 import { CodeCommentOrchestrator } from "../../src/services/code-comments/orchestrator"
 import { CodeCommentSessionError } from "../../src/services/code-comments/session-runner"
+import { PRODUCTION_COMMENT_STRATEGY } from "../../src/services/code-comments/strategy"
 import type { FunctionTarget } from "../../src/services/code-comments/types"
 
 const source = "int value(void)\n{\n    return 1;\n}\n"
@@ -76,6 +77,10 @@ function runner(outputs: Array<string | Error>) {
 }
 
 describe("双轮 Code QA 注释编排", () => {
+  it("生产默认使用一次 Code QA", () => {
+    expect(PRODUCTION_COMMENT_STRATEGY).toBe("single-self-check")
+  })
+
   it("单轮策略在首轮候选通过确定性校验后停止", async () => {
     const fake = runner([generate()])
     const service = new CodeCommentOrchestrator(fake as never, () => undefined)
@@ -87,7 +92,7 @@ describe("双轮 Code QA 注释编排", () => {
     expect(fake.calls[0]?.prompt).toContain("comment-only diff")
   })
 
-  it("生产策略必须启动全新复核会话，通过后才返回候选", async () => {
+  it("显式双轮策略启动全新复核会话，通过后才返回候选", async () => {
     const fake = runner([generate(), "结论：通过\n复核：返回值和无外部状态依赖均可由完整函数体直接证明。"])
     const service = new CodeCommentOrchestrator(fake as never, () => undefined)
 
@@ -156,5 +161,19 @@ describe("双轮 Code QA 注释编排", () => {
     )
     expect(timeoutResult.status).toBe("unresolved")
     expect(timeout.calls).toHaveLength(1)
+  })
+
+  it("单轮策略只在输出格式失败时启动一次恢复会话", async () => {
+    const fake = runner(["我认为应该添加一条注释。", generate()])
+    const service = new CodeCommentOrchestrator(fake as never, () => undefined)
+
+    const result = await service.generate({ targets: [target], strategy: "single-self-check" }, token as never)
+
+    expect(result.status).toBe("ready")
+    if (result.status !== "ready") return
+    expect(result.rounds).toBe(2)
+    expect(result.recovered).toBe(true)
+    expect(fake.calls.map((call) => call.stage)).toEqual(["primary", "recovery"])
+    expect(fake.calls[1]?.prompt).toContain("上一次输出未通过确定性校验")
   })
 })

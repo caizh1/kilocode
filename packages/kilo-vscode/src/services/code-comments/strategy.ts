@@ -1,4 +1,4 @@
 import type { CommentStrategy } from "./types"
 
-// 首轮 A/B 未达到发布门槛；暂保留事实正确率更高的双会话方案，不能据此宣称功能已验证。
-export const PRODUCTION_COMMENT_STRATEGY: CommentStrategy = "independent-review"
+// 默认与普通 Code QA 一样只执行一次模型调用；格式或确定性校验失败时由编排器按需恢复。
+export const PRODUCTION_COMMENT_STRATEGY: CommentStrategy = "single-self-check"

@@ -1,4 +1,4 @@
-import type { KiloClient } from "@kilocode/sdk/v2/client"
+import type { KiloClient, Message } from "@kilocode/sdk/v2/client"
 import type * as vscode from "vscode"
 import type { KiloConnectionService } from "../cli-backend"
 import type { SSEPayload } from "../cli-backend/sdk-sse-adapter"
@@ -15,6 +15,8 @@ export type CodeCommentSessionOutput = {
   modelID: string
   sessionID: string
 }
+
+type CompletionSource = "message-event" | "message-poll" | "session-status" | "session-idle"
 
 export class CodeCommentCancelledError extends Error {
   constructor() {
@@ -155,7 +157,8 @@ export class CodeCommentSessionRunner {
         },
         { throwOnError: true },
       )
-      await completion.done
+      completion.startPolling()
+      const completionSource = await completion.done
       const { data } = await client.session.messages(
         { sessionID: session.id, directory: input.directory },
         { throwOnError: true },
@@ -173,7 +176,7 @@ export class CodeCommentSessionRunner {
         .join("\n")
       const output = text.trim() ? text : typeof assistant.info.structured === "string" ? assistant.info.structured : ""
       this.log(
-        `stage=${input.stage} complete session=${session.id} provider=${assistant.info.providerID} model=${assistant.info.modelID} structured=${assistant.info.structured !== undefined}`,
+        `stage=${input.stage} complete session=${session.id} provider=${assistant.info.providerID} model=${assistant.info.modelID} structured=${assistant.info.structured !== undefined} completion=${completionSource}`,
       )
       return {
         output,
@@ -205,22 +208,24 @@ function waitForCompletion(input: {
   let busy = false
   let settled = false
   let stopped = false
+  let polling = false
+  let pollTimer: ReturnType<typeof setTimeout> | undefined
   let rejectDone: (reason: unknown) => void = () => {}
-  let resolveDone: () => void = () => {}
-  const done = new Promise<void>((resolve, reject) => {
+  let resolveDone: (source: CompletionSource) => void = () => {}
+  const done = new Promise<CompletionSource>((resolve, reject) => {
     resolveDone = resolve
     rejectDone = reject
   })
-  const settle = (error?: unknown) => {
+  const settle = (source: CompletionSource, error?: unknown) => {
     if (settled) return
     settled = true
     stop()
     if (error) rejectDone(error)
-    else resolveDone()
+    else resolveDone(source)
   }
   const abort = (error: unknown) => {
     void input.client.session.abort({ sessionID: input.sessionID, directory: input.directory }).catch(() => undefined)
-    settle(error)
+    settle("session-status", error)
   }
   const timer = setTimeout(
     () => abort(new CodeCommentSessionError(`Code agent 会话超过 ${Math.ceil(input.timeoutMs / 1000)} 秒未完成`)),
@@ -231,21 +236,48 @@ function waitForCompletion(input: {
     (event) => sessionEvent(event, input.sessionID),
     (event) => {
       if (event.type === "session.error") {
-        settle(sessionError(event.properties.error))
+        settle("session-status", sessionError(event.properties.error))
+        return
+      }
+      if (event.type === "message.updated") {
+        const info = event.properties.info
+        if (!terminalAssistant(info)) return
+        if (info.error) settle("message-event", sessionError(info.error))
+        else settle("message-event")
         return
       }
       if (event.type === "session.status") {
         if (event.properties.status.type === "busy") busy = true
-        if (armed && busy && event.properties.status.type === "idle") settle()
+        if (armed && busy && event.properties.status.type === "idle") settle("session-status")
         return
       }
-      if (event.type === "session.idle" && armed && busy) settle()
+      if (event.type === "session.idle" && armed && busy) settle("session-idle")
     },
   )
+  const poll = async () => {
+    if (!armed || settled || stopped || polling) return
+    polling = true
+    try {
+      const { data } = await input.client.session.messages(
+        { sessionID: input.sessionID, directory: input.directory },
+        { throwOnError: true },
+      )
+      const assistant = [...data].reverse().find((message) => message.info.role === "assistant")
+      if (!assistant || !terminalAssistant(assistant.info)) return
+      if (assistant.info.error) settle("message-poll", sessionError(assistant.info.error))
+      else settle("message-poll")
+    } catch {
+      // SSE 仍是主完成信号；轮询失败时等待下一次，最终由原始超时给出明确结果。
+    } finally {
+      polling = false
+      if (!settled && !stopped) pollTimer = setTimeout(() => void poll(), 2_000)
+    }
+  }
   function stop() {
     if (stopped) return
     stopped = true
     clearTimeout(timer)
+    if (pollTimer) clearTimeout(pollTimer)
     cancellation.dispose()
     unsubscribe()
   }
@@ -253,6 +285,9 @@ function waitForCompletion(input: {
     done,
     arm() {
       armed = true
+    },
+    startPolling() {
+      void poll()
     },
     stop,
   }
@@ -263,7 +298,14 @@ function sessionEvent(event: SSEPayload, sessionID: string): boolean {
     return event.properties.sessionID === sessionID
   }
   if (event.type === "session.error") return event.properties.sessionID === sessionID
+  if (event.type === "message.updated") return event.properties.info.sessionID === sessionID
   return false
+}
+
+function terminalAssistant(info: Message): info is Extract<Message, { role: "assistant" }> {
+  if (info.role !== "assistant" || info.time.completed === undefined || info.summary) return false
+  if (info.error) return true
+  return Boolean(info.finish && !["tool-calls", "unknown"].includes(info.finish))
 }
 
 function sessionError(error: unknown): CodeCommentSessionError {
