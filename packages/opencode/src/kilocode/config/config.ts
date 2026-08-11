@@ -67,7 +67,7 @@ export namespace KilocodeConfig {
    * in ancestor config directories, then existing root config files, and create
    * `.kilo/kilo.jsonc` when no project config exists yet.
    */
-  export const projectConfigUpdateTarget = Effect.fn("KilocodeConfig.projectConfigUpdateTarget")(function* (input: {
+  export const projectConfigFiles = Effect.fn("KilocodeConfig.projectConfigFiles")(function* (input: {
     fs: FSUtil.Interface
     directory: string
     worktree?: string
@@ -80,8 +80,7 @@ export namespace KilocodeConfig {
       : yield* input.fs
           .up({ targets: [...ALL_CONFIG_FILES], start: input.directory, stop: input.worktree })
           .pipe(Effect.orDie)
-    const files = [...dirs.flatMap((dir) => ACTIVE_CONFIG_FILES.map((file) => path.join(dir, file))), ...roots]
-    return files.find((file) => existsSync(file)) ?? path.join(input.directory, KILO_DIR_SUFFIXES[0], "kilo.jsonc")
+    return [...dirs.flatMap((dir) => ACTIVE_CONFIG_FILES.map((file) => path.join(dir, file))), ...roots]
   })
 
   export const updateProjectConfig = Effect.fn("KilocodeConfig.updateProjectConfig")(function* (input: {
@@ -94,27 +93,124 @@ export namespace KilocodeConfig {
     patch: (input: string, config: Config.Info) => string
     writable: (config: Config.Info) => Config.Info
   }) {
-    const file = yield* projectConfigUpdateTarget(input)
+    const files = yield* projectConfigFiles(input)
+    const file = files.find((item) => existsSync(item)) ?? path.join(input.directory, KILO_DIR_SUFFIXES[0], "kilo.jsonc")
     const source = yield* input.read(file)
     const before = source ?? "{}"
     const patch = input.writable(input.config)
 
     if (file.endsWith(".jsonc")) {
-      if (source === undefined && Object.keys(mergeConfig({}, patch)).length === 0) return
-      const updated = input.patch(before, patch)
-      yield* input.fs.writeWithDirs(file, updated).pipe(Effect.orDie)
-      return
+      if (!(source === undefined && Object.keys(mergeConfig({}, patch)).length === 0)) {
+        const updated = input.patch(before, patch)
+        yield* input.fs.writeWithDirs(file, updated).pipe(Effect.orDie)
+      }
+    } else {
+      const existing = input.parse(before, file)
+      const merged = mergeConfig(input.writable(existing), patch)
+      if (!(source === undefined && Object.keys(merged).length === 0)) {
+        yield* input.fs.writeWithDirs(file, JSON.stringify(merged, null, 2)).pipe(Effect.orDie)
+      }
     }
 
-    const existing = input.parse(before, file)
-    const merged = mergeConfig(input.writable(existing), patch)
-    if (source === undefined && Object.keys(merged).length === 0) return
-    yield* input.fs.writeWithDirs(file, JSON.stringify(merged, null, 2)).pipe(Effect.orDie)
+    yield* propagateUnset({ fs: input.fs, files, exclude: file, patch })
+  })
+
+  export function unsetPaths(patch: unknown, prefix: string[] = []): string[][] {
+    if (!isRecord(patch)) return []
+    return Object.entries(patch).flatMap(([key, value]) => {
+      const parts = [...prefix, key]
+      return value === null ? [parts] : unsetPaths(value, parts)
+    })
+  }
+
+  const blocked = new Set(["__proto__", "constructor", "prototype"])
+
+  function sentinel(out: Record<string, unknown>, parts: string[]) {
+    const [head, ...tail] = parts
+    if (!head || blocked.has(head)) return
+    if (tail.length === 0) {
+      out[head] = null
+      return
+    }
+    const next = isRecord(out[head]) ? out[head] : {}
+    out[head] = next
+    sentinel(next, tail)
+  }
+
+  function has(input: unknown, parts: string[]) {
+    let current = input
+    for (const part of parts) {
+      if (!isRecord(current) || !(part in current)) return false
+      current = current[part]
+    }
+    return true
+  }
+
+  export const propagateUnset = Effect.fn("KilocodeConfig.propagateUnset")(function* (input: {
+    fs: FSUtil.Interface
+    files: readonly string[]
+    exclude: string
+    patch: Config.Info
+  }) {
+    const paths = unsetPaths(input.patch)
+    if (paths.length === 0) return false
+    let changed = false
+    for (const file of input.files) {
+      if (file === input.exclude || !existsSync(file)) continue
+      const text = yield* input.fs.readFileStringSafe(file).pipe(Effect.orDie)
+      if (!text) continue
+      const parsed = parseJsonc(text)
+      const hits = paths.filter((parts) => has(parsed, parts))
+      if (hits.length === 0) continue
+      if (file.endsWith(".jsonc")) {
+        const updated = hits.reduce(
+          (result, parts) =>
+            applyEdits(result, modify(result, parts, undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } })),
+          text,
+        )
+        if (updated === text) continue
+        yield* input.fs.writeFileString(file, updated).pipe(Effect.orDie)
+        changed = true
+        continue
+      }
+      const patch = hits.reduce(
+        (result, parts) => {
+          sentinel(result, parts)
+          return result
+        },
+        {} as Record<string, unknown>,
+      )
+      const next = mergeConfig(parsed as Config.Info, patch as Config.Info)
+      yield* input.fs.writeFileString(file, JSON.stringify(next, null, 2)).pipe(Effect.orDie)
+      changed = true
+    }
+    return changed
   })
 
   export function scopeIndexing(info: Config.Info, scope: "global" | "local"): Config.Info {
     if (scope !== "global") return info
     return stripGlobalIndexing(info)
+  }
+
+  export function mergeAgentMarkdown(
+    existing: Record<string, ConfigAgentV1.Info>,
+    incoming: Record<string, ConfigAgentV1.Info>,
+    configured: Record<string, ConfigAgentV1.Info>,
+  ) {
+    const result = { ...existing }
+    for (const [name, agent] of Object.entries(incoming)) {
+      const current = result[name]
+      if (!current) {
+        result[name] = agent
+        continue
+      }
+      const config = configured[name]
+      result[name] =
+        agent.mode === "primary" && config && config.mode !== "primary"
+          ? mergeDeep(mergeDeep(current, agent), { ...config, mode: config.mode ?? "all" })
+          : mergeDeep(current, agent)
+    }
+    return result
   }
 
   export function retireIndexingFlag(info: Record<string, unknown>, source: string) {
@@ -343,7 +439,7 @@ export namespace KilocodeConfig {
 
   // ── Bash permission migration ────────────────────────────────────────
 
-  const GLOBAL_CONFIG_FILES = ["config.json", "kilo.json", "kilo.jsonc", "opencode.json", "opencode.jsonc"]
+  export const GLOBAL_CONFIG_FILES = ["config.json", "kilo.json", "kilo.jsonc", "opencode.json", "opencode.jsonc"]
 
   /**
    * Migrate bash permission for existing users before config is consumed.
@@ -430,13 +526,21 @@ export namespace KilocodeConfig {
    * 3. Strip null delete sentinels
    */
   export function mergeConfig(existing: Config.Info, patch: Config.Info): Config.Info {
+    return merge(existing, patch, true)
+  }
+
+  export function mergeProject(existing: Config.Info, patch: Config.Info): Config.Info {
+    return merge(existing, patch, false)
+  }
+
+  function merge(existing: Config.Info, patch: Config.Info, clean: boolean): Config.Info {
     const e = { ...existing } as Record<string, unknown>
-    const p = patch as Record<string, unknown>
+    const p = { ...patch } as Record<string, unknown>
 
     // Normalize permission scalars before merge
     const existingPerm = e.permission
     const patchPerm = p.permission
-    if (isRecord(existingPerm) && isRecord(patchPerm)) {
+    if (clean && isRecord(existingPerm) && isRecord(patchPerm)) {
       const cloned = { ...existingPerm }
       for (const [key, value] of Object.entries(patchPerm)) {
         const existing = cloned[key]
@@ -447,7 +551,58 @@ export namespace KilocodeConfig {
       e.permission = cloned
     }
 
-    return stripNulls(mergeDeep(e, p) as Record<string, unknown>) as Config.Info
+    const existingMcp = e.mcp
+    const patchMcp = p.mcp
+    if (!isRecord(existingMcp) && !isRecord(patchMcp)) {
+      return (clean ? stripNulls(mergeDeep(e, p) as Record<string, unknown>) : mergeDeep(e, p)) as Config.Info
+    }
+
+    delete e.mcp
+    delete p.mcp
+    const merged = (clean ? stripNulls(mergeDeep(e, p) as Record<string, unknown>) : mergeDeep(e, p)) as Config.Info
+    const baseMcp = isRecord(existingMcp) ? (existingMcp as NonNullable<Config.Info["mcp"]>) : undefined
+    const sourceMcp = isRecord(patchMcp) ? (patchMcp as NonNullable<Config.Info["mcp"]>) : undefined
+    if (!sourceMcp) {
+      if (baseMcp) merged.mcp = baseMcp
+      return merged
+    }
+    if (!baseMcp) {
+      merged.mcp = sourceMcp
+      return merged
+    }
+
+    const output: NonNullable<Config.Info["mcp"]> = { ...baseMcp }
+    for (const [name, source] of Object.entries(sourceMcp)) {
+      const base = baseMcp[name]
+      if (!isRecord(source) || !isRecord(base)) {
+        output[name] = source
+        continue
+      }
+      const kind = "type" in base && (base.type === "local" || base.type === "remote") ? base.type : undefined
+      const next = "type" in source && (source.type === "local" || source.type === "remote") ? source.type : undefined
+      const changed = next !== undefined && next !== kind
+      const seed = changed
+        ? {
+            ...("enabled" in base ? { enabled: base.enabled } : {}),
+            ...("timeout" in base ? { timeout: base.timeout } : {}),
+          }
+        : base
+      const entry = mergeDeep(seed, source) as (typeof output)[string]
+      const sourceUrl = "url" in source && typeof source.url === "string" ? source.url : undefined
+      const baseUrl = "url" in base && typeof base.url === "string" ? base.url : undefined
+      const retargeted =
+        kind === "remote" && next !== "local" && sourceUrl !== undefined && baseUrl !== undefined && sourceUrl !== baseUrl
+      if (!retargeted || !isRecord(entry)) {
+        output[name] = entry
+        continue
+      }
+      const { headers: _headers, oauth: _oauth, ...rest } = entry as Record<string, unknown>
+      if ("headers" in source) rest.headers = source.headers
+      if ("oauth" in source) rest.oauth = source.oauth
+      output[name] = rest as (typeof output)[string]
+    }
+    merged.mcp = output
+    return merged
   }
 
   // ── Directory check helper ───────────────────────────────────────────

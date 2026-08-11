@@ -1,3 +1,4 @@
+import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { NodeHttpServer } from "@effect/platform-node"
 import { Database } from "@opencode-ai/core/database/database"
 import { describe, expect } from "bun:test"
@@ -146,9 +147,9 @@ const layer = HttpRouter.serve(
       cache,
       providers,
       session,
-      EventV2Bridge.defaultLayer,
+      AppNodeBuilder.build(EventV2Bridge.node),
     ]),
-    Layer.provide(Database.defaultLayer),
+    Layer.provide(AppNodeBuilder.build(Database.node)),
     Layer.provide(storage),
   ),
   { disableListenLog: true, disableLogger: true },

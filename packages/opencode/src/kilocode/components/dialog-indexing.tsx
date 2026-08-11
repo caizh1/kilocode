@@ -9,12 +9,17 @@
 import { useDialog } from "@tui/ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
 import { DialogPrompt } from "@tui/ui/dialog-prompt"
-import { DEFAULT_VECTOR_STORE, isFileExtension, parseFileExtensions } from "@kilocode/kilo-indexing/config"
+import {
+  DEFAULT_VECTOR_STORE,
+  isFileExtension,
+  parseFileExtensions,
+  type IndexingConfig,
+} from "@kilocode/kilo-indexing/config"
 import { useSync } from "@tui/context/sync"
 import { useToast } from "@tui/ui/toast"
 import { createEffect, createMemo, createResource, createSignal, Show } from "solid-js"
 import { reconcile } from "solid-js/store"
-import type { IndexingConfig, Config } from "@kilocode/sdk/v2"
+import type { Config } from "@kilocode/sdk/v2"
 import * as Log from "@opencode-ai/core/util/log"
 import { hasKiloIndexingAuth, resolveKiloIndexingAuth, shouldDefaultIndexingToKilo } from "../indexing-auth"
 import {

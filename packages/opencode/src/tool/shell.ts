@@ -12,20 +12,20 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { Shell } from "@/shell/shell"
+import { model as modelEnv } from "@/kilocode/process/env" // kilocode_change
+import { Shell } from "@opencode-ai/core/shell"
 import { ShellID } from "./shell/id"
 
 import * as Truncate from "./truncate"
 import { Plugin } from "@/plugin"
 import { normalizeUrls } from "@/kilocode/util/url" // kilocode_change
-import { userEnv } from "@/kilocode/product-env" // kilocode_change
 import { CommandTimeout } from "@/kilocode/command-timeout" // kilocode_change
 import { heredocs } from "@/kilocode/tool/shell-heredoc" // kilocode_change
+import { unparsed } from "@/kilocode/tool/shell-unparsed" // kilocode_change
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
-import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
 
 export { Parameters } from "./shell/prompt"
 
@@ -335,12 +335,7 @@ export const ShellPermission = Effect.gen(function* () {
 
   const cygpath = Effect.fn("ShellTool.cygpath")(function* (shell: string, text: string) {
     const lines = yield* spawner
-      .lines(
-        ChildProcess.make(shell, ["-lc", 'cygpath -w -- "$1"', "_", text], {
-          env: userEnv(process.env),
-          extendEnv: false,
-        }),
-      ) // kilocode_change - helper commands must not inherit backend routing or credentials
+      .lines(ChildProcess.make(shell, ["-lc", 'cygpath -w -- "$1"', "_", text]))
       .pipe(Effect.catch(() => Effect.succeed([] as string[])))
     const file = lines[0]?.trim()
     if (!file) return
@@ -411,6 +406,14 @@ export const ShellPermission = Effect.gen(function* () {
       }
     }
 
+    // kilocode_change start - fail closed on commands the grammar failed to parse (#12326)
+    const lost = unparsed(root, nodes.length)
+    if (lost.length > 0) scan.access = "unknown"
+    for (const pattern of lost) {
+      scan.patterns.add(pattern)
+    }
+    // kilocode_change end
+
     return scan
   })
 
@@ -431,7 +434,28 @@ export const ShellPermission = Effect.gen(function* () {
     )
   })
 
-  return { ask: check, resolve }
+  // kilocode_change start - expose the tree-sitter scan (sub-command patterns + external-dir globs) for skill-shell batching
+  const dirGlob = (dir: string) =>
+    process.platform === "win32" ? FSUtil.normalizePathPattern(path.join(dir, "*")) : path.join(dir, "*")
+  const decompose = Effect.fn("ShellTool.decompose")(function* (input: {
+    command: string
+    cwd: string
+    shell: string
+  }) {
+    const instance = yield* InstanceState.context
+    const ps = Shell.ps(input.shell)
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const tree = yield* Effect.acquireRelease(parse(input.command, ps), (tree) => Effect.sync(() => tree.delete()))
+        const scan = yield* collect(tree.rootNode, input.cwd, ps, input.shell, instance)
+        if (!containsPath(input.cwd, instance)) scan.dirs.add(input.cwd)
+        return { patterns: Array.from(scan.patterns), dirs: Array.from(scan.dirs, dirGlob) }
+      }),
+    )
+  })
+  // kilocode_change end
+
+  return { ask: check, resolve, decompose } // kilocode_change - decompose for skill-shell
 })
 // kilocode_change end
 
@@ -442,7 +466,6 @@ function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv
       // kilocode_change end
       cwd,
       env,
-      extendEnv: false, // kilocode_change - env is already sanitized by shellEnv
       stdin: "ignore",
       detached: false,
     })
@@ -452,7 +475,6 @@ function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv
     shell,
     cwd,
     env,
-    extendEnv: false, // kilocode_change - env is already sanitized by shellEnv
     stdin: "ignore",
     detached: process.platform !== "win32",
   })
@@ -501,11 +523,7 @@ export const ShellTool = Tool.define(
         { cwd, sessionID: ctx.sessionID, callID: ctx.callID },
         { env: {} },
       )
-      return userEnv({
-        // kilocode_change
-        ...process.env,
-        ...extra.env,
-      })
+      return modelEnv(extra.env) // kilocode_change - model shells must not inherit backend credentials
     })
 
     const run = Effect.fn("ShellTool.run")(function* (
@@ -515,7 +533,7 @@ export const ShellTool = Tool.define(
         cwd: string
         env: NodeJS.ProcessEnv
         timeout: number
-        description: string
+        description: string // kilocode_change
       },
       ctx: Tool.Context,
     ) {
@@ -559,7 +577,6 @@ export const ShellTool = Tool.define(
       yield* ctx.metadata({
         metadata: {
           output: "",
-          description: input.description,
         },
       })
 
@@ -601,7 +618,6 @@ export const ShellTool = Tool.define(
                       ctx.metadata({
                         metadata: {
                           output: last,
-                          description: input.description,
                         },
                       }),
                     ),
@@ -612,7 +628,6 @@ export const ShellTool = Tool.define(
               return ctx.metadata({
                 metadata: {
                   output: last,
-                  description: input.description,
                 },
               })
             }),
@@ -680,11 +695,11 @@ export const ShellTool = Tool.define(
         output += "\n\n<shell_metadata>\n" + meta.join("\n") + "\n</shell_metadata>"
       }
       return {
-        title: input.description,
+        title: input.description, // kilocode_change - UI shows the model's description, command goes in metadata
         metadata: {
           output: last || preview(output),
           exit: code,
-          description: input.description,
+          description: input.description, // kilocode_change
           truncated: cut,
           ...(cut && file ? { outputPath: file } : {}),
         },
@@ -706,22 +721,6 @@ export const ShellTool = Tool.define(
           parameters: prompt.parameters,
           execute: (params: Parameters, ctx: Tool.Context) =>
             Effect.gen(function* () {
-              // kilocode_change start - source-backed document work uses native artifact tools only
-              if (WorkflowGuard.shell(ctx.sessionID, ctx.messages)) {
-                const description = params.description ?? params.command
-                return {
-                  title: "Shell blocked for source-backed document workflow",
-                  metadata: {
-                    output: "",
-                    exit: null,
-                    description,
-                    truncated: false,
-                  },
-                  output:
-                    "The active source-backed-detail-design turn cannot use shell commands. Use declare_artifact and the native read/grep/write/edit, Mermaid, and Word tools; do not create, copy, move, or rewrite work-package files through shell.",
-                }
-              }
-              // kilocode_change end
               const instanceCtx = yield* InstanceState.context
               const cwd = params.workdir
                 ? yield* permission.resolve(params.workdir, instanceCtx.directory, shell)

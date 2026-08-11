@@ -8,7 +8,7 @@ import { markNoIndex } from "./kilocode/spotlight" // kilocode_change
 import { ensureRealDir } from "./kilocode/global" // kilocode_change
 import { Product } from "./kilocode/product" // kilocode_change
 import { Flag } from "./flag/flag"
-import { LayerNode } from "./effect/layer-node"
+import { makeGlobalNode } from "./effect/app-node"
 
 const app = "kilo" // kilocode_change
 // kilocode_change start
@@ -89,13 +89,12 @@ export function make(input: Partial<Interface> = {}): Interface {
   }
 }
 
-export const layer = Layer.effect(
+const layer = Layer.effect(
   Service,
   Effect.sync(() => Service.of(make())),
 )
 
-export const defaultLayer = layer
-export const node = LayerNode.make(layer, [])
+export const node = makeGlobalNode({ service: Service, layer: layer, deps: [] })
 
 export const layerWith = (input: Partial<Interface>) =>
   Layer.effect(

@@ -22,8 +22,12 @@ import { ConfigCommand as ConfigCLICommand } from "@/cli/cmd/config"
 import { JsonMigration } from "@/kilocode/storage/json-migration"
 import { ProductProfile } from "@/kilocode/product-profile"
 import { KiloLog } from "@/kilocode/log"
+import { KiloSessions } from "@/kilo-sessions/kilo-sessions"
 
 const log = Log.create({ service: "kilocode.cli" })
+let skipShutdown = false
+
+KiloShutdown.register(() => KiloSessions.drainIngestForShutdown())
 
 // All Kilo-specific CLI customization lives here so the shared upstream entrypoint
 // (src/index.ts) only needs a handful of thin call-sites behind kilocode_change markers.
@@ -55,7 +59,11 @@ export namespace KiloCli {
 
   // Runs from the upstream `.middleware`, before any command handler. Env tagging is additive so
   // it never has to modify upstream's own env assignments.
-  export async function bootstrap(): Promise<void> {
+  export async function bootstrap(opts?: Record<string, unknown>): Promise<void> {
+    if (opts?.help || opts?.version) {
+      skipShutdown = true
+      return
+    }
     await KiloLog.init()
     if (!process.env[ENV_FEATURE]) process.env[ENV_FEATURE] = process.argv.includes("serve") ? "unknown" : "cli"
     if (!process.env[ENV_VERSION]) process.env[ENV_VERSION] = InstallationVersion
@@ -92,6 +100,10 @@ export namespace KiloCli {
 
   // Runs from the `finally` block on every exit path.
   export async function shutdown(): Promise<void> {
+    if (skipShutdown) {
+      skipShutdown = false
+      return
+    }
     const code = typeof process.exitCode === "number" ? process.exitCode : undefined
     Telemetry.trackCliExit(code)
     try {
@@ -105,7 +117,11 @@ export namespace KiloCli {
         log.warn("telemetry shutdown failed", { err })
       }
     } finally {
-      await KiloShutdown.run()
+      try {
+        await KiloShutdown.run()
+      } catch (err) {
+        log.warn("shutdown task failed", { err })
+      }
       await InstanceRuntime.disposeAllInstances() // safety net (no-op if already disposed)
     }
   }

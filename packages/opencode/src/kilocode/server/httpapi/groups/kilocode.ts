@@ -30,6 +30,7 @@ import {
 } from "@/kilocode/skill-market/protocol"
 import { ModelUsage } from "@/kilocode/session/model-usage"
 import { SessionID } from "@/session/schema"
+import { CommandFiles } from "@/kilocode/command-files"
 
 const root = "/kilocode"
 
@@ -42,6 +43,10 @@ export const RemoveSkillPayload = Schema.Struct({
 
 export const RefreshSkillsPayload = Schema.Struct({
   scope: SkillScope,
+})
+
+export const RemoveCommandPayload = Schema.Struct({
+  location: Schema.String,
 })
 
 export const RemoveAgentPayload = Schema.Struct({
@@ -62,6 +67,8 @@ export const SkillMarketRejectPayload = Schema.Struct({ error: SkillMarketFailur
 export const KilocodePaths = {
   heapSnapshot: `${root}/heap/snapshot`,
   agentRequirements: `${root}/agent/requirements`,
+  commandFiles: `${root}/command/files`,
+  removeCommand: `${root}/command/remove`,
   removeSkill: `${root}/skill/remove`,
   refreshSkills: `${root}/skill/refresh`,
   removeAgent: `${root}/agent/remove`,
@@ -100,6 +107,28 @@ export const KilocodeApi = HttpApi.make("kilocode")
             identifier: "kilocode.agentRequirements",
             summary: "Check agent requirements",
             description: "Check whether the selected agent's requirements are available in the request directory.",
+          }),
+        ),
+        HttpApiEndpoint.get("commandFiles", KilocodePaths.commandFiles, {
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(CommandFiles.Info), "Command files"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "kilocode.commandFiles",
+            summary: "List command files",
+            description: "List commands with editable file locations for settings clients.",
+          }),
+        ),
+        HttpApiEndpoint.post("removeCommand", KilocodePaths.removeCommand, {
+          query: WorkspaceRoutingQuery,
+          payload: RemoveCommandPayload,
+          success: described(Schema.Boolean, "Command removed"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "kilocode.removeCommand",
+            summary: "Remove a command",
+            description: "Remove a command by deleting its markdown file from disk and clearing it from cache.",
           }),
         ),
         HttpApiEndpoint.post("removeSkill", KilocodePaths.removeSkill, {

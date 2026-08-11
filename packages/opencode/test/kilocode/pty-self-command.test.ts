@@ -16,6 +16,7 @@ describe("pty self-command", () => {
       command: "/tmp/kilo",
       args: [],
       cwd: "/tmp/project",
+      self: true,
     })
     expect(
       KiloPtySelfCommand.command({
@@ -47,6 +48,7 @@ describe("pty self-command", () => {
       command: "/tmp/bun",
       args: ["--conditions=browser", "/tmp/kilo/src/index.ts", "/tmp/project"],
       cwd: "/tmp/kilo",
+      self: true,
     })
   })
 })

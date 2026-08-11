@@ -17,6 +17,10 @@ export namespace KilocodeSystemPrompt {
   const language =
     "Use Simplified Chinese by default for all user-visible reasoning summaries, progress updates, explanations, and final answers. If the user explicitly requests another language or clearly and consistently communicates in another language, follow that preference. Keep source code, identifiers, file paths, commands, configuration keys, environment variables, API and type names, model, library, and product names, URLs, quoted logs and error messages, protocol fields, and established technical terms in their original form when translation would reduce precision; explain them in Chinese instead of mechanically translating them. Generated code comments, documentation, and commit messages must follow the user's request and repository conventions rather than this conversational language default."
 
+  export function shouldIncludePersona(agent: string) {
+    return agent !== "title" && agent !== "branch-name"
+  }
+
   export function brand(text: string) {
     if (!ProductProfile.chipmate) return text
     return text

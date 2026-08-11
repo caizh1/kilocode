@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import path from "path"
 import { randomUUID } from "crypto" // kilocode_change
 import { pathToFileURL } from "url"
@@ -25,6 +26,8 @@ import { Git } from "@/git" // kilocode_change
 import { isRecord } from "@/util/record"
 import { Flag } from "@opencode-ai/core/flag/flag" // kilocode_change
 import { validateInstalledSkill } from "@/kilocode/skill/identity" // kilocode_change
+import { escapeHtml } from "@/util/html"
+import { trustedInProject } from "../kilocode/skill/trust" // kilocode_change
 
 const CLAUDE_EXTERNAL_DIR = ".claude"
 const AGENTS_EXTERNAL_DIR = ".agents"
@@ -40,6 +43,7 @@ export const Info = Schema.Struct({
   description: Schema.optional(Schema.String),
   location: Schema.String,
   content: Schema.String,
+  trusted: Schema.optional(Schema.Boolean), // kilocode_change - gate skill shell injection to trusted sources
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
@@ -181,6 +185,7 @@ const add = Effect.fnUntraced(function* (state: State, match: Match, events: Eve
     description: md.data.description,
     location: match.path, // kilocode_change
     content: md.content,
+    trusted: match.trusted, // kilocode_change
   }
 })
 
@@ -188,7 +193,7 @@ const scan = Effect.fnUntraced(function* (
   state: ScanState,
   root: string,
   pattern: string,
-  opts?: { dot?: boolean; scope?: string; trusted?: boolean; root?: string; sourceRoot?: string }, // kilocode_change
+  opts?: { dot?: boolean; scope?: string; trusted?: boolean; root?: string; sourceRoot?: string; projectRoot?: string }, // kilocode_change
 ) {
   const matches = yield* Effect.tryPromise({
     try: () =>
@@ -210,13 +215,15 @@ const scan = Effect.fnUntraced(function* (
   )
 
   for (const match of matches) {
-    // kilocode_change start
+    // kilocode_change start - a trusted match whose realpath resolves inside the project (e.g. a
+    // symlink from ~/.agents/skills into the repo) must not mint trust for project-controlled content
+    const trusted = (opts?.trusted ?? false) && !trustedInProject(match, opts?.projectRoot)
     state.matches.set(match, {
       path: match,
       scanRoot: root,
-      trusted: opts?.trusted ?? false,
-      root: opts?.root,
-      sourceRoot: opts?.sourceRoot,
+      trusted,
+      root: trusted ? opts?.root : (opts?.root ?? opts?.projectRoot),
+      sourceRoot: trusted ? opts?.sourceRoot : (opts?.sourceRoot ?? opts?.projectRoot),
     })
     // kilocode_change end
     state.dirs.add(path.dirname(match))
@@ -260,7 +267,7 @@ const discoverSkills = Effect.fnUntraced(function* (
     for (const dir of externalDirs) {
       const root = path.join(global.home, dir)
       if (!(yield* fsys.isDir(root))) continue
-      yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global", trusted: true }) // kilocode_change
+      yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global", trusted: true, projectRoot }) // kilocode_change
     }
 
     // kilocode_change start
@@ -299,6 +306,7 @@ const discoverSkills = Effect.fnUntraced(function* (
       trusted,
       root: trusted ? undefined : projectRoot,
       sourceRoot: trusted ? undefined : sourceRoot,
+      projectRoot,
     })
     // kilocode_change end
   }
@@ -315,7 +323,11 @@ const discoverSkills = Effect.fnUntraced(function* (
     // kilocode_change start - trust follows the config source that declared the path, never the selected path.
     const origin = cfg.skill_path_origins?.[item]
     const trusted = origin?.trusted === true && path.isAbsolute(expanded)
-    yield* scan(state, dir, SKILL_PATTERN, { trusted, root: trusted ? undefined : (origin?.root ?? projectRoot) })
+    yield* scan(state, dir, SKILL_PATTERN, {
+      trusted,
+      root: trusted ? undefined : (origin?.root ?? projectRoot),
+      projectRoot,
+    })
     // kilocode_change end
   }
 
@@ -346,6 +358,7 @@ const loadSkills = Effect.fnUntraced(function* (
       description: skill.description,
       location,
       content: skill.content,
+      trusted: true, // kilocode_change - builtin skills ship in the binary
     }
   }
   // kilocode_change end
@@ -384,7 +397,7 @@ function isSafeBuiltinSkillRelativePath(relative: string): boolean {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Skill") {}
 
-export const layer = Layer.effect(
+const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const discovery = yield* Discovery.Service
@@ -585,18 +598,6 @@ export const layer = Layer.effect(
   }),
 )
 
-// kilocode_change start - preserve the concrete layer type across Kilo's Agent/Skill cycle
-export const defaultLayer: Layer.Layer<Service> = layer.pipe(
-  // kilocode_change end
-  Layer.provide(Git.defaultLayer), // kilocode_change
-  Layer.provide(Discovery.defaultLayer),
-  Layer.provide(Config.defaultLayer),
-  Layer.provide(EventV2Bridge.defaultLayer),
-  Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(Global.layer),
-  Layer.provide(RuntimeFlags.defaultLayer),
-)
-
 export function fmt(list: Info[], opts: { verbose: boolean }) {
   const described = list.filter((skill) => skill.description !== undefined)
   if (described.length === 0) return "No skills are currently available."
@@ -609,7 +610,7 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
           "  <skill>",
           `    <name>${skill.name}</name>`,
           `    <description>${skill.description}</description>`,
-          `    <location>${pathToFileURL(skill.location).href}</location>`,
+          `    <location>${escapeHtml(skill.location)}</location>`,
           "  </skill>",
         ]),
       "</available_skills>",
@@ -624,14 +625,11 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
   ].join("\n")
 }
 
-export const node = LayerNode.make(layer, [
-  Discovery.node,
-  Config.node,
-  EventV2Bridge.node,
-  FSUtil.node,
-  Global.node,
-  RuntimeFlags.node,
-  Git.node, // kilocode_change
-])
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [Discovery.node, Config.node, EventV2Bridge.node, FSUtil.node, Global.node, RuntimeFlags.node, Git.node], // kilocode_change
+})
+export const defaultLayer = Layer.suspend(() => AppNodeBuilder.build(node))
 
 export * as Skill from "."

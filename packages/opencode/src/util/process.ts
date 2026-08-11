@@ -10,7 +10,7 @@ export type Shell = boolean | string
 export interface Options {
   cwd?: string
   env?: NodeJS.ProcessEnv | null
-  extendEnv?: boolean // kilocode_change
+  extendEnv?: boolean // kilocode_change - allow a complete sanitized environment
   stdin?: Stdio
   stdout?: Stdio
   stderr?: Stdio
@@ -64,15 +64,7 @@ export function spawn(cmd: string[], opts: Options = {}): Child {
   const proc = launch(cmd[0], cmd.slice(1), {
     cwd: opts.cwd,
     shell: opts.shell,
-    // kilocode_change - user-controlled Kilo child processes need an exact sanitized environment
-    env:
-      opts.env === null
-        ? {}
-        : opts.env
-          ? opts.extendEnv === false
-            ? opts.env
-            : { ...process.env, ...opts.env }
-          : undefined,
+    env: opts.env === null ? {} : opts.env ? (opts.extendEnv === false ? opts.env : { ...process.env, ...opts.env }) : undefined, // kilocode_change
     stdio: [opts.stdin ?? "ignore", opts.stdout ?? "ignore", opts.stderr ?? "ignore"],
     windowsHide: process.platform === "win32",
   })

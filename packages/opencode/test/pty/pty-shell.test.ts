@@ -4,7 +4,7 @@ import { Config } from "../../src/config/config"
 import { Plugin } from "../../src/plugin"
 import { PtyPreparation } from "../../src/pty-preparation"
 import { Pty } from "@opencode-ai/core/pty"
-import { Shell } from "../../src/shell/shell"
+import { Shell } from "@opencode-ai/core/shell"
 import { testEffect } from "../lib/effect"
 import { KiloPtySelfCommand } from "../../src/kilocode/pty/self-command"
 

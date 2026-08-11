@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createEffect, createRoot, createSignal } from "solid-js"
-import type { Config, IndexingConfig } from "@kilocode/sdk/v2"
+import type { Config } from "@kilocode/sdk/v2"
+import type { IndexingConfig } from "@kilocode/kilo-indexing/config"
 import {
   createIndexingDialogState,
   currentKiloModel,

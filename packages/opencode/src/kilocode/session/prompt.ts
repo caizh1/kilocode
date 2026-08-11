@@ -30,6 +30,7 @@ import { KiloToolRegistry } from "@/kilocode/tool/registry"
 import * as WorkflowGuard from "@/kilocode/skill/workflow-guard"
 import CODE_SWITCH from "@/session/prompt/code-switch.txt"
 import { DocumentAgentScope } from "@/kilocode/document-agent/scope"
+import { consumeAutoTitle, markAutoTitle } from "@/kilo-sessions/rename-adoptions"
 
 export namespace KiloSessionPrompt {
   const SOURCE_BACKED_STEP_LIMIT = 32
@@ -42,11 +43,14 @@ export namespace KiloSessionPrompt {
     env: string[]
     mem: string[]
     instructions: string[]
+    mcpInstructions?: string
     skills?: string
   }) {
+    const mcp = input.mcpInstructions ? [input.mcpInstructions] : []
     const skills = input.skills ? [input.skills] : []
-    if (KilocodeSystemPrompt.appends(input.agent)) return [...input.env, ...input.instructions, ...skills, ...input.mem]
-    return [...input.env, ...input.mem, ...input.instructions, ...skills]
+    if (KilocodeSystemPrompt.appends(input.agent))
+      return [...input.env, ...input.instructions, ...mcp, ...skills, ...input.mem]
+    return [...input.env, ...input.mem, ...input.instructions, ...mcp, ...skills]
   }
 
   export function syncSourceBackedWorkflow(sessionID: SessionID, messages: MessageV2.WithParts[]) {
@@ -112,6 +116,21 @@ export namespace KiloSessionPrompt {
 
   export function titleID(sessionID: SessionID) {
     return `title-${sessionID}`
+  }
+
+  export function prepareAutoTitle(input: {
+    sessionID: string
+    title: string
+    fresh: { title: string } | null | undefined
+    isDefaultTitle: (title: string) => boolean
+  }): boolean {
+    if (!input.fresh || !input.isDefaultTitle(input.fresh.title)) return false
+    markAutoTitle(input.sessionID, input.title)
+    return true
+  }
+
+  export function clearAutoTitleMark(sessionID: string, title: string) {
+    consumeAutoTitle(sessionID, title)
   }
 
   function mode(name: string) {

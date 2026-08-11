@@ -13,6 +13,8 @@ import { isRecord } from "@/util/record"
 import { GlobalBus } from "@/bus/global"
 import { Event } from "@/server/event"
 import { ProductProfile } from "../product-profile"
+import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
+import { AppRuntime } from "@/effect/app-runtime"
 
 export namespace KilocodeTuiConfig {
   export const Scope = z.enum(["project", "global"])
@@ -26,10 +28,12 @@ export namespace KilocodeTuiConfig {
   const dirs = ProductProfile.dirs
 
   export async function get(input: { directory: string }) {
-    const cfg = await Effect.runPromise(
+    const cfg = await AppRuntime.runPromise(
       TuiConfig.Service.use((svc) => svc.info()).pipe(
         Effect.provide(
-          TuiConfig.defaultLayer.pipe(Layer.provide(Layer.succeed(CurrentWorkingDirectory, input.directory))),
+          AppNodeBuilder.build(TuiConfig.node).pipe(
+            Layer.provide(Layer.succeed(CurrentWorkingDirectory, input.directory)),
+          ),
         ),
       ),
     )

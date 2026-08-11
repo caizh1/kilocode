@@ -1,23 +1,23 @@
 import * as InstanceState from "@/effect/instance-state"
+import { PtyPreparation } from "@/pty-preparation"
 import { registerDisposer } from "@/effect/instance-registry"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
-import { PtyPreparation } from "@/pty-preparation"
+import { Plugin } from "@/plugin"
 import { Pty } from "@opencode-ai/core/pty"
-import { handlePtyInput } from "@opencode-ai/core/pty/input"
+import { PtyProtocol } from "@opencode-ai/core/pty/protocol"
 import { PtyID } from "@opencode-ai/core/pty/schema"
 import { PtyTicket } from "@opencode-ai/core/pty/ticket"
-import { LocationServiceMap } from "@opencode-ai/core/location-layer"
+import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
 import { Location } from "@opencode-ai/core/location"
 import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Shell } from "@/shell/shell"
-import { EffectBridge } from "@/effect/bridge"
-import { CorsConfig, isAllowedRequestOrigin, type CorsOptions } from "@/server/cors"
+import { Shell } from "@opencode-ai/core/shell"
+import { CorsConfig, isAllowedRequestOrigin, type CorsOptions } from "@opencode-ai/server/cors"
 import {
   PTY_CONNECT_TICKET_QUERY,
   PTY_CONNECT_TOKEN_HEADER,
   PTY_CONNECT_TOKEN_HEADER_VALUE,
 } from "@/server/shared/pty-ticket"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Queue, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Socket from "effect/unstable/socket/Socket"
@@ -37,11 +37,15 @@ const ticketScope = Effect.gen(function* () {
   return { directory: instance?.directory, workspaceID }
 })
 
+// Legacy surface compatibility: before exited-session retention, sessions vanished the moment
+// their process exited. These routes preserve that observable behavior — exited sessions are
+// invisible here — while the canonical /api/pty surface exposes them until removal.
 export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handlers) =>
   Effect.gen(function* () {
     const tickets = yield* PtyTicket.Service
     const cors = yield* CorsConfig
-    const locations = yield* LocationServiceMap
+    const plugin = yield* Plugin.Service
+    const locations = yield* LocationServiceMap.Service
     const unregister = registerDisposer((directory) =>
       Effect.runPromise(locations.invalidate(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
     )
@@ -60,31 +64,44 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
     })
 
     const list = Effect.fn("PtyHttpApi.list")(function* () {
-      return yield* pty(Pty.Service.use((service) => service.list()))
+      const sessions = yield* pty(Pty.Service.use((service) => service.list()))
+      return sessions.filter((info) => info.status === "running")
     })
 
     const create = Effect.fn("PtyHttpApi.create")(function* (ctx: { payload: typeof Pty.CreateInput.Type }) {
       // kilocode_change start - attach Agent Console shells to the Kilo-only same-PTY bridge
       const directory = (yield* InstanceState.context).directory
+      const cwd = ctx.payload.cwd || directory
+      const shell = yield* plugin.trigger("shell.env", { cwd }, { env: {} as Record<string, string> })
       return yield* pty(
         Pty.Service.use((service) =>
           Effect.gen(function* () {
             const info = yield* PtyPreparation.prepareCreate({
               ...ctx.payload,
               args: ctx.payload.args ? [...ctx.payload.args] : undefined,
-              env: ctx.payload.env ? { ...ctx.payload.env } : undefined,
+              cwd,
+              env: { ...ctx.payload.env, ...shell.env },
             }).pipe(Effect.flatMap(service.create))
             const token = AgentConsolePty.registration(ctx.payload.env)
             if (!token || !AgentConsolePty.isAgentConsole(info.title)) return info
+            let attachment: Pty.Attachment | undefined
             const socket = AgentConsolePty.attach({
               directory,
               ptyID: info.id,
               token,
-              write: (data) => Effect.runPromise(service.write(info.id, data)),
+              write: async (data) => attachment?.write(data),
             })
-            const handler = yield* service.connect(info.id, socket, 0).pipe(Effect.orDie)
-            if (!handler) return info
-            socket.connected(handler.onClose)
+            attachment = yield* service
+              .attach(info.id, {
+                cursor: 0,
+                onData: (data) => socket.send(data),
+                onEnd: (event) =>
+                  socket.close(undefined, `PTY exited${event.exitCode === undefined ? "" : ` (${event.exitCode})`}`),
+              })
+              .pipe(Effect.orDie)
+            socket.connected(attachment.detach)
+            if (attachment.replay) socket.send(attachment.replay)
+            attachment.activate()
             return info
           }),
         ),
@@ -94,13 +111,21 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
 
     const get = Effect.fn("PtyHttpApi.get")(function* (ctx: { params: { ptyID: PtyID } }) {
       return yield* pty(Pty.Service.use((service) => service.get(ctx.params.ptyID))).pipe(
-        Effect.catchTag("Pty.NotFoundError", (error) =>
-          Effect.fail(
+        Effect.catchTag(
+          "Pty.NotFoundError",
+          (error) =>
             new ApiError.PtyNotFoundError({
               ptyID: error.ptyID,
               message: `PTY session not found: ${error.ptyID}`,
             }),
-          ),
+        ),
+        Effect.flatMap((info) =>
+          info.status === "running"
+            ? Effect.succeed(info)
+            : new ApiError.PtyNotFoundError({
+                ptyID: ctx.params.ptyID,
+                message: `PTY session not found: ${ctx.params.ptyID}`,
+              }),
         ),
       )
     })
@@ -110,6 +135,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
       payload: typeof Pty.UpdateInput.Type
     }) {
       const directory = (yield* InstanceState.context).directory // kilocode_change
+      yield* get(ctx)
       return yield* pty(
         Pty.Service.use(
           (service) =>
@@ -127,26 +153,27 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
           // kilocode_change end
         ),
       ).pipe(
-        Effect.catchTag("Pty.NotFoundError", (error) =>
-          Effect.fail(
+        Effect.catchTag(
+          "Pty.NotFoundError",
+          (error) =>
             new ApiError.PtyNotFoundError({
               ptyID: error.ptyID,
               message: `PTY session not found: ${error.ptyID}`,
             }),
-          ),
         ),
       )
     })
 
     const remove = Effect.fn("PtyHttpApi.remove")(function* (ctx: { params: { ptyID: PtyID } }) {
+      yield* get(ctx)
       yield* pty(Pty.Service.use((service) => service.remove(ctx.params.ptyID))).pipe(
-        Effect.catchTag("Pty.NotFoundError", (error) =>
-          Effect.fail(
+        Effect.catchTag(
+          "Pty.NotFoundError",
+          (error) =>
             new ApiError.PtyNotFoundError({
               ptyID: error.ptyID,
               message: `PTY session not found: ${error.ptyID}`,
             }),
-          ),
         ),
       )
       return true
@@ -156,16 +183,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
       const request = yield* HttpServerRequest.HttpServerRequest
       if (request.headers[PTY_CONNECT_TOKEN_HEADER] !== PTY_CONNECT_TOKEN_HEADER_VALUE || !validOrigin(request, cors))
         return yield* new ApiError.PtyForbiddenError({ message: "Invalid PTY connect token request" })
-      yield* pty(Pty.Service.use((service) => service.get(ctx.params.ptyID))).pipe(
-        Effect.catchTag("Pty.NotFoundError", (error) =>
-          Effect.fail(
-            new ApiError.PtyNotFoundError({
-              ptyID: error.ptyID,
-              message: `PTY session not found: ${error.ptyID}`,
-            }),
-          ),
-        ),
-      )
+      yield* get(ctx)
       return yield* tickets.issue({ ptyID: ctx.params.ptyID, ...(yield* ticketScope) })
     })
 
@@ -178,13 +196,13 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
       .handle("remove", remove)
       .handle("connectToken", connectToken)
   }),
-).pipe(Layer.provide(LocationServiceMap.layer))
+).pipe(Layer.provide(locationServiceMapLayer))
 
 export const ptyConnectHandlers = HttpApiBuilder.group(PtyConnectApi, "pty-connect", (handlers) =>
   Effect.gen(function* () {
     const tickets = yield* PtyTicket.Service
     const cors = yield* CorsConfig
-    const locations = yield* LocationServiceMap
+    const locations = yield* LocationServiceMap.Service
     const unregister = registerDisposer((directory) =>
       Effect.runPromise(locations.invalidate(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
     )
@@ -205,7 +223,7 @@ export const ptyConnectHandlers = HttpApiBuilder.group(PtyConnectApi, "pty-conne
         request: HttpServerRequest.HttpServerRequest
       }) {
         const exists = yield* pty(Pty.Service.use((service) => service.get(ctx.params.ptyID))).pipe(
-          Effect.as(true),
+          Effect.map((info) => info.status === "running"),
           Effect.catchTag("Pty.NotFoundError", () => Effect.succeed(false)),
         )
         if (!exists) return HttpServerResponse.empty({ status: 404 })
@@ -239,50 +257,55 @@ export const ptyConnectHandlers = HttpApiBuilder.group(PtyConnectApi, "pty-conne
           yield* closeAccepted(WebSocketTracker.SERVER_CLOSING_EVENT())
           return HttpServerResponse.empty()
         }
-        const bridge = yield* EffectBridge.make()
-        const writeScoped = (effect: Effect.Effect<void, unknown>) => {
-          bridge.fork(effect.pipe(Effect.catch(() => Effect.void)))
-        }
-        let closed = false
-        const adapter = {
-          get readyState() {
-            return closed ? 3 : 1
-          },
-          send: (data: string | Uint8Array | ArrayBuffer) => {
-            if (closed) return
-            writeScoped(write(data instanceof ArrayBuffer ? new Uint8Array(data) : data))
-          },
-          close: (code?: number, reason?: string) => {
-            if (closed) return
-            closed = true
-            writeScoped(write(new Socket.CloseEvent(code, reason)))
-          },
-        }
-        const handler = yield* pty(
-          Pty.Service.use((service) => service.connect(ctx.params.ptyID, adapter, cursor)),
-        ).pipe(
-          Effect.catchTag("Pty.NotFoundError", () =>
-            closeAccepted(new Socket.CloseEvent(4404, "session not found")).pipe(Effect.as(undefined)),
-          ),
-        )
-        if (!handler) return HttpServerResponse.empty()
 
-        // The handshake runs inside `socket.runRaw`, after the input callback is
-        // registered, so the client cannot send frames before PTY input is wired.
-        yield* socket
-          .runRaw((message) => handlePtyInput(handler, message))
-          .pipe(
-            Effect.catchReason("SocketError", "SocketCloseError", () => Effect.void),
-            Effect.ensuring(
-              Effect.sync(() => {
-                closed = true
-                handler.onClose()
-              }),
-            ),
-            Effect.orDie,
-          )
+        // Outbound frames flow through one queue drained by a single writer so replay, live
+        // output, and the close frame keep their order.
+        const outbox = yield* Queue.unbounded<string | Uint8Array | Socket.CloseEvent>()
+        const attachment = yield* pty(
+          Pty.Service.use((service) =>
+            service.attach(ctx.params.ptyID, {
+              cursor,
+              onData: (chunk) => Queue.offerUnsafe(outbox, chunk),
+              onEnd: () => Queue.offerUnsafe(outbox, new Socket.CloseEvent(1000)),
+            }),
+          ),
+        ).pipe(
+          Effect.catchTags({
+            "Pty.NotFoundError": () =>
+              closeAccepted(new Socket.CloseEvent(4404, "session not found")).pipe(Effect.as(undefined)),
+            "Pty.ExitedError": () =>
+              closeAccepted(new Socket.CloseEvent(4404, "session not found")).pipe(Effect.as(undefined)),
+          }),
+        )
+        if (!attachment) return HttpServerResponse.empty()
+
+        for (const chunk of PtyProtocol.chunks(attachment.replay)) Queue.offerUnsafe(outbox, chunk)
+        Queue.offerUnsafe(outbox, PtyProtocol.metaFrame(attachment.cursor))
+        attachment.activate()
+
+        const drain = Effect.gen(function* () {
+          while (true) {
+            const item = yield* Queue.take(outbox)
+            yield* write(item)
+            if (item instanceof Socket.CloseEvent) return
+          }
+        })
+
+        // The reader runs concurrently with the writer; whichever finishes first ends the
+        // connection and the attachment is always released.
+        yield* Effect.race(
+          drain,
+          socket.runRaw((message) => {
+            const decoded = PtyProtocol.decodeInput(message)
+            if (decoded !== undefined) attachment.write(decoded)
+          }),
+        ).pipe(
+          Effect.catchReason("SocketError", "SocketCloseError", () => Effect.void),
+          Effect.ensuring(Effect.sync(() => attachment.detach())),
+          Effect.orDie,
+        )
         return HttpServerResponse.empty()
       }),
     )
   }),
-).pipe(Layer.provide(LocationServiceMap.layer))
+).pipe(Layer.provide(locationServiceMapLayer))

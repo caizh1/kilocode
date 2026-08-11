@@ -3,7 +3,7 @@ export * as PtyPreparation from "./pty-preparation"
 import { Config } from "@/config/config"
 import * as InstanceState from "@/effect/instance-state"
 import { Plugin } from "@/plugin"
-import { Shell } from "@/shell/shell"
+import { Shell } from "@opencode-ai/core/shell"
 import { Pty } from "@opencode-ai/core/pty"
 import { KiloPtySelfCommand } from "@/kilocode/pty/self-command" // kilocode_change - ported from the deleted @/pty module
 import { selfEnv, userEnv } from "@/kilocode/product-env" // kilocode_change

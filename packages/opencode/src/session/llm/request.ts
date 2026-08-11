@@ -70,10 +70,11 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
 
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
+  const includePersona = KilocodeSystemPrompt.shouldIncludePersona(input.agent.name) // kilocode_change
   const system = [
     [
       // kilocode_change start - soul defines core identity and personality
-      ...(isOpenaiOauth || input.agent.name === DocumentAgentScope.AGENT ? [] : [SystemPrompt.soul()]),
+      ...(isOpenaiOauth || !includePersona ? [] : [SystemPrompt.soul()]),
       // kilocode_change end
       // kilocode_change start - brand only built-in prompts for the active product profile
       ...KilocodeSystemPrompt.provider({
@@ -126,8 +127,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   }
   if (isOpenaiOauth) {
     // kilocode_change start - prepend soul to instructions
-    options.instructions =
-      (input.agent.name === DocumentAgentScope.AGENT ? "" : SystemPrompt.soul() + "\n") + system.join("\n")
+    options.instructions = [...(includePersona ? [SystemPrompt.soul()] : []), ...system].join("\n")
     // kilocode_change end
   }
 
@@ -200,6 +200,15 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   // kilocode_change end
 
   const tools = resolveTools(input)
+  // Codex parity: Responses-family providers require non-strict dynamic tool schemas.
+  if (
+    input.model.api.npm === "@ai-sdk/openai" ||
+    input.model.api.npm === "@ai-sdk/azure" ||
+    input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle"
+  ) {
+    for (const key of Object.keys(tools)) tools[key] = { ...tools[key], strict: false }
+  }
+
   // kilocode_change start - switching an existing session to Document Agent must not replay hidden code/invalid tools
   const preparedMessages =
     input.agent.name === DocumentAgentScope.AGENT

@@ -16,6 +16,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import { filterDiagnostics } from "./diagnostics" // kilocode_change
 import { ConfigValidation } from "../kilocode/config-validation" // kilocode_change
 import * as EncodedIO from "../kilocode/tool/encoded-io" // kilocode_change
+import { assertMutablePath } from "../kilocode/agent-manager/protection" // kilocode_change
 import * as Bom from "@/util/bom"
 import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
 
@@ -93,6 +94,7 @@ export const WriteTool = Tool.define(
             }
           }
           // kilocode_change end
+          assertMutablePath(filepath) // kilocode_change
           yield* assertExternalDirectoryEffect(ctx, filepath)
 
           const exists = yield* fs.existsSafe(filepath)
