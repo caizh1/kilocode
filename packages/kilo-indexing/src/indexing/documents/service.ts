@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "crypto"
 import { readFile, realpath, stat } from "fs/promises"
 import path from "path"
 import { globIterate } from "glob"
+import { watch as chokidarWatch, type ChokidarOptions, type FSWatcher } from "chokidar"
 import { minimatch } from "minimatch"
 import { v5 as uuidv5 } from "uuid"
 import type { CodeIndexConfigManager } from "../config-manager"
@@ -46,6 +47,8 @@ const extractor = 1
 const chunker = 3
 const embeddingRecoverySplits = 256
 const patterns = [...DOCUMENT_EXTENSIONS, ...UNSUPPORTED_DOCUMENT_EXTENSIONS].map((ext) => `**/*${ext}`)
+const documentExtensions = new Set<string>(DOCUMENT_EXTENSIONS)
+const unsupportedDocumentExtensions = new Set<string>(UNSUPPORTED_DOCUMENT_EXTENSIONS)
 const office = new Set([".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"])
 type Telemetry = IndexingTelemetryEvent extends infer Event
   ? Event extends unknown
@@ -76,6 +79,22 @@ type EmbeddingRecoveryBudget = {
   remaining: number
 }
 
+type DocumentWatchEvent = "file" | "addDir" | "unlinkDir"
+
+export type DocumentIndexServiceOptions = {
+  autoRefresh?: boolean
+  debounceMs?: number
+  maxLatencyMs?: number
+  reconcileIntervalMs?: number
+  watcherFactory?: (paths: string[], options: ChokidarOptions) => FSWatcher
+}
+
+const defaultAutoRefresh = {
+  debounceMs: 500,
+  maxLatencyMs: 2_000,
+  reconcileIntervalMs: 10 * 60 * 1_000,
+}
+
 class EmbeddingCountError extends Error {}
 
 export class DocumentIndexService {
@@ -86,6 +105,16 @@ export class DocumentIndexService {
   private status: DocumentIndexStatus = disabled("Document RAG disabled.")
   private pressure: IndexingPressure = "normal"
   private root?: string
+  private watcher?: FSWatcher
+  private resolveWatcherReady?: () => void
+  private watcherRoots = ""
+  private watchedRoots: Root[] = []
+  private debounceTimer?: ReturnType<typeof setTimeout>
+  private maxLatencyTimer?: ReturnType<typeof setTimeout>
+  private reconcileTimer?: ReturnType<typeof setInterval>
+  private refreshRevision = 0
+  private appliedRefreshRevision = 0
+  private refreshTask?: Promise<void>
 
   constructor(
     private readonly workspace: string,
@@ -96,6 +125,7 @@ export class DocumentIndexService {
     private readonly ignore: IgnoreMatcher,
     private readonly onStatus?: () => void,
     private readonly onTelemetry?: IndexingTelemetryReporter,
+    private readonly options: DocumentIndexServiceOptions = {},
   ) {
     this.cache = new DocumentIndexCache(cacheDirectory, workspace)
     this.status = this.initialStatus()
@@ -111,10 +141,18 @@ export class DocumentIndexService {
   dispose(): Promise<void> {
     this.disposed = true
     if (this.close) return this.close
+    this.clearRefreshTimers()
+    this.resolveWatcherReady?.()
+    if (this.reconcileTimer) clearInterval(this.reconcileTimer)
+    this.reconcileTimer = undefined
+    const watcher = this.watcher
+    this.watcher = undefined
+    const refresh = this.refreshTask
     const task = this.task
     this.close = (async () => {
       try {
-        await task
+        await watcher?.close()
+        await Promise.all([task, refresh])
       } finally {
         await this.store?.close?.()
       }
@@ -235,6 +273,7 @@ export class DocumentIndexService {
     try {
       this.setStatus(progress("Discovering document files...", 0, 0))
       const resolved = await this.resolveRoots()
+      await this.ensureAutoRefresh(resolved.roots)
       skipped += resolved.skipped
       const meta = this.meta(resolved.roots)
       await this.cache.initialize(meta)
@@ -446,8 +485,8 @@ export class DocumentIndexService {
       if (!included(match, cfg.include)) return false
       if (excluded(match, cfg.exclude)) return false
       const ext = path.extname(canonical).toLowerCase()
-      const doc = DOCUMENT_EXTENSIONS.includes(ext as never)
-      const unsupported = UNSUPPORTED_DOCUMENT_EXTENSIONS.includes(ext as never)
+      const doc = documentExtensions.has(ext)
+      const unsupported = unsupportedDocumentExtensions.has(ext)
       if (!doc && !unsupported) return false
       if (unsupported) {
         skipped += 1
@@ -486,6 +525,149 @@ export class DocumentIndexService {
       }
     }
     return { files: sorted(out), skipped, limited: false }
+  }
+
+  private async ensureAutoRefresh(roots: Root[]): Promise<void> {
+    if (!this.options.autoRefresh || this.disposed) return
+    this.startReconciliation()
+    const key = roots
+      .map((root) => root.path)
+      .sort()
+      .join("\0")
+    if (this.watcher && key === this.watcherRoots) {
+      this.watchedRoots = roots
+      return
+    }
+
+    const previous = this.watcher
+    this.watcher = undefined
+    this.watcherRoots = ""
+    await previous?.close()
+    if (this.disposed || roots.length === 0) return
+
+    try {
+      const factory = this.options.watcherFactory ?? chokidarWatch
+      const watcher = factory(
+        roots.map((root) => root.path),
+        {
+          ignoreInitial: true,
+          persistent: true,
+          awaitWriteFinish: {
+            stabilityThreshold: 1_000,
+            pollInterval: 100,
+          },
+        },
+      )
+      const ready = new Promise<void>((resolve) => {
+        const finish = () => {
+          if (this.resolveWatcherReady === finish) this.resolveWatcherReady = undefined
+          resolve()
+        }
+        this.resolveWatcherReady = finish
+        watcher.once("ready", finish)
+        watcher.once("error", finish)
+      })
+      watcher.on("add", (file) => this.onFileEvent(file, "file"))
+      watcher.on("change", (file) => this.onFileEvent(file, "file"))
+      watcher.on("unlink", (file) => this.onFileEvent(file, "file"))
+      watcher.on("addDir", (file) => this.onFileEvent(file, "addDir"))
+      watcher.on("unlinkDir", (file) => this.onFileEvent(file, "unlinkDir"))
+      watcher.on("error", (err) => this.watcherError(err))
+      this.watcher = watcher
+      this.watcherRoots = key
+      this.watchedRoots = roots
+      await ready
+    } catch (err) {
+      this.watcherError(err)
+    }
+  }
+
+  private onFileEvent(file: string, event: DocumentWatchEvent): void {
+    if (this.disposed || !this.relevantEvent(file, event !== "file")) return
+    // Chokidar does not apply awaitWriteFinish to addDir. Supported child-file
+    // add events follow after they become stable, so avoid parsing partial copies.
+    if (event === "addDir") return
+    this.refreshRevision += 1
+    if (!this.maxLatencyTimer) {
+      this.maxLatencyTimer = setTimeout(
+        () => this.flushRefresh(),
+        this.options.maxLatencyMs ?? defaultAutoRefresh.maxLatencyMs,
+      )
+    }
+    if (this.debounceTimer) clearTimeout(this.debounceTimer)
+    this.debounceTimer = setTimeout(() => this.flushRefresh(), this.options.debounceMs ?? defaultAutoRefresh.debounceMs)
+  }
+
+  private relevantEvent(file: string, directory: boolean): boolean {
+    const absolute = path.resolve(file)
+    const root = this.watchedRoots.find((item) => same(item.path, absolute) || within(item.path, absolute))
+    if (!root) return false
+    const base = root.external ? (root.directory ? root.path : path.dirname(root.path)) : (this.root ?? this.workspace)
+    const relative = path.relative(base, absolute).replaceAll("\\", "/")
+    if (!relative || relative === "." || relative === ".." || relative.startsWith("../")) return directory
+    if (FileIgnore.match(relative) || root.ignore.ignores(relative)) return false
+    if (directory) return true
+    if (!documentExtensions.has(path.extname(absolute).toLowerCase())) return false
+    const cfg = this.config.currentDocuments
+    return included(relative, cfg.include) && !excluded(relative, cfg.exclude)
+  }
+
+  private flushRefresh(): void {
+    this.clearRefreshTimers()
+    this.runRefreshPump()
+  }
+
+  private requestReconciliation(): void {
+    if (this.disposed) return
+    this.refreshRevision += 1
+    this.runRefreshPump()
+  }
+
+  private runRefreshPump(): void {
+    if (this.disposed || this.refreshTask) return
+    this.refreshTask = (async () => {
+      while (!this.disposed && this.appliedRefreshRevision < this.refreshRevision) {
+        const revision = this.refreshRevision
+        await this.task
+        if (this.disposed) return
+        await this.start("background", false)
+        this.appliedRefreshRevision = revision
+      }
+    })().finally(() => {
+      this.refreshTask = undefined
+      if (!this.disposed && this.appliedRefreshRevision < this.refreshRevision) this.runRefreshPump()
+    })
+  }
+
+  private startReconciliation(): void {
+    if (this.reconcileTimer) return
+    this.reconcileTimer = setInterval(
+      () => this.requestReconciliation(),
+      this.options.reconcileIntervalMs ?? defaultAutoRefresh.reconcileIntervalMs,
+    )
+    this.reconcileTimer.unref?.()
+  }
+
+  private clearRefreshTimers(): void {
+    if (this.debounceTimer) clearTimeout(this.debounceTimer)
+    if (this.maxLatencyTimer) clearTimeout(this.maxLatencyTimer)
+    this.debounceTimer = undefined
+    this.maxLatencyTimer = undefined
+  }
+
+  private watcherError(err: unknown): void {
+    if (this.disposed) return
+    this.record("documents:watcher", err)
+    this.onStatus?.()
+    const message = err instanceof Error ? err.message : String(err)
+    this.emit({
+      type: "error",
+      source: "watcher",
+      location: "documents:watcher",
+      error: message,
+      trigger: "background",
+      pipeline: "documents",
+    })
   }
 
   private async upsert(file: File, hash: string, chunks: DocumentChunk[], meta: string): Promise<number> {

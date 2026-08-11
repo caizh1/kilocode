@@ -1,6 +1,19 @@
 import { describe, expect, test } from "bun:test"
 import { randomUUID } from "crypto"
-import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, unlink, writeFile } from "fs/promises"
+import {
+  appendFile,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from "fs/promises"
 import ignore from "ignore"
 import { tmpdir } from "os"
 import path from "path"
@@ -34,6 +47,38 @@ const store = {
   markIndexingIncomplete: async () => {},
   getCollectionName: () => "documents",
 } satisfies IVectorStore
+
+function memoryStore() {
+  let points: PointStruct[] = []
+  const value = {
+    ...store,
+    upsertPoints: async (items: PointStruct[]) => {
+      points.push(...items)
+    },
+    finalizeFileGenerations: async (files: readonly { filePath: string; generation: string; runId: string }[]) => {
+      for (const file of files) {
+        points = points.filter(
+          (point) => point.payload.filePath !== file.filePath || point.payload.generation === file.generation,
+        )
+      }
+    },
+    deletePointsByFilePath: async (filePath: string) => {
+      points = points.filter((point) => point.payload.filePath !== filePath)
+    },
+    search: async (): Promise<VectorStoreSearchResult[]> =>
+      points.map((point) => ({ id: point.id, score: 0.9, payload: point.payload })),
+    points: () => points.slice(),
+  }
+  return value
+}
+
+async function waitFor(check: () => boolean | Promise<boolean>, timeout = 8_000): Promise<void> {
+  const started = Date.now()
+  while (!(await check())) {
+    if (Date.now() - started >= timeout) throw new Error(`等待条件超时（${timeout}ms）`)
+    await Bun.sleep(25)
+  }
+}
 
 describe("DocumentIndexService", () => {
   test("completes an empty document scan with zero files", async () => {
@@ -188,6 +233,185 @@ describe("DocumentIndexService", () => {
       })
     } finally {
       await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("automatically refreshes when a document directory is moved, renamed, and removed", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const staging = await mkdtemp(path.join(tmpdir(), "kilo-doc-staging-"))
+    const documentEmbeddings = new Map<string, number>()
+    const memory = memoryStore()
+    let service: DocumentIndexService | undefined
+    try {
+      await writeFile(path.join(root, "stable.md"), "STABLE_DOCUMENT_MARKER")
+      const incoming = path.join(staging, "incoming")
+      await mkdir(incoming)
+      await writeFile(path.join(incoming, "one.md"), "MOVED_DIRECTORY_MARKER_ONE")
+      await writeFile(path.join(incoming, "two.txt"), "MOVED_DIRECTORY_MARKER_TWO")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const tracked = {
+        ...embedder,
+        createEmbeddings: async (texts: string[], _dimensions?: number, purpose?: string) => {
+          if (purpose === "document") {
+            for (const text of texts) documentEmbeddings.set(text, (documentEmbeddings.get(text) ?? 0) + 1)
+          }
+          return { embeddings: texts.map(() => [0.1]) }
+        },
+      } satisfies IEmbedder
+      service = new DocumentIndexService(
+        root,
+        path.join(staging, "cache"),
+        cfg,
+        tracked,
+        memory,
+        ignore(),
+        undefined,
+        undefined,
+        {
+          autoRefresh: true,
+          debounceMs: 30,
+          maxLatencyMs: 100,
+          reconcileIntervalMs: 60_000,
+        },
+      )
+
+      await service.start("manual")
+      await rename(incoming, path.join(root, "incoming"))
+      await waitFor(() => memory.points().some((point) => point.payload.codeChunk === "MOVED_DIRECTORY_MARKER_TWO"))
+
+      expect(documentEmbeddings.get("STABLE_DOCUMENT_MARKER")).toBe(1)
+      expect((await service.search("MOVED_DIRECTORY_MARKER_ONE", { maxResults: 1 }))[0]?.filePath).toBe(
+        "incoming/one.md",
+      )
+
+      await rename(path.join(root, "incoming"), path.join(root, "renamed"))
+      await waitFor(() => memory.points().some((point) => point.payload.filePath === path.join("renamed", "one.md")))
+      expect(memory.points().some((point) => String(point.payload.filePath).startsWith("incoming"))).toBe(false)
+
+      await rename(path.join(root, "renamed"), path.join(staging, "removed"))
+      await waitFor(() => memory.points().every((point) => point.payload.filePath === "stable.md"))
+      expect(documentEmbeddings.get("STABLE_DOCUMENT_MARKER")).toBe(1)
+    } finally {
+      await service?.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(staging, { recursive: true, force: true })
+    }
+  })
+
+  test("serially follows document events that arrive during an automatic refresh", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const cache = await mkdtemp(path.join(tmpdir(), "kilo-doc-cache-"))
+    const memory = memoryStore()
+    const gate = Promise.withResolvers<void>()
+    const entered = Promise.withResolvers<void>()
+    let delayed = false
+    let active = 0
+    let maximum = 0
+    let service: DocumentIndexService | undefined
+    try {
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const tracked = {
+        ...embedder,
+        createEmbeddings: async (texts: string[], _dimensions?: number, purpose?: string) => {
+          if (purpose === "document") {
+            active += 1
+            maximum = Math.max(maximum, active)
+            if (!delayed && texts.includes("FIRST_AUTOMATIC_MARKER")) {
+              delayed = true
+              entered.resolve()
+              await gate.promise
+            }
+            active -= 1
+          }
+          return { embeddings: texts.map(() => [0.1]) }
+        },
+      } satisfies IEmbedder
+      service = new DocumentIndexService(root, cache, cfg, tracked, memory, ignore(), undefined, undefined, {
+        autoRefresh: true,
+        debounceMs: 20,
+        maxLatencyMs: 50,
+        reconcileIntervalMs: 60_000,
+      })
+      await service.start("manual")
+
+      await writeFile(path.join(root, "first.md"), "FIRST_AUTOMATIC_MARKER")
+      await entered.promise
+      await writeFile(path.join(root, "second.md"), "SECOND_AUTOMATIC_MARKER")
+      gate.resolve()
+
+      await waitFor(
+        () =>
+          memory.points().some((point) => point.payload.codeChunk === "SECOND_AUTOMATIC_MARKER") &&
+          service?.getStatus().state === "Complete",
+      )
+      expect(maximum).toBe(1)
+      expect(service.getStatus()).toMatchObject({ state: "Complete", validFileCount: 2 })
+    } finally {
+      gate.resolve()
+      await service?.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(cache, { recursive: true, force: true })
+    }
+  })
+
+  test("uses reconciliation after watcher startup failure and stops after disposal", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const cache = await mkdtemp(path.join(tmpdir(), "kilo-doc-cache-"))
+    const memory = memoryStore()
+    let embeddings = 0
+    let service: DocumentIndexService | undefined
+    try {
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const tracked = {
+        ...embedder,
+        createEmbeddings: async (texts: string[], _dimensions?: number, purpose?: string) => {
+          if (purpose === "document") embeddings += texts.length
+          return { embeddings: texts.map(() => [0.1]) }
+        },
+      } satisfies IEmbedder
+      service = new DocumentIndexService(root, cache, cfg, tracked, memory, ignore(), undefined, undefined, {
+        autoRefresh: true,
+        reconcileIntervalMs: 50,
+        watcherFactory: () => {
+          throw new Error("simulated watcher startup failure")
+        },
+      })
+
+      await service.start("manual")
+      expect(service.getStatus().recentErrors?.[0]?.location).toBe("documents:watcher")
+      await writeFile(path.join(root, "reconciled.md"), "RECONCILIATION_MARKER")
+      await waitFor(
+        () =>
+          memory.points().some((point) => point.payload.codeChunk === "RECONCILIATION_MARKER") &&
+          service?.getStatus().state === "Complete",
+      )
+      expect(service.getStatus().state).toBe("Complete")
+
+      await service.dispose()
+      const count = embeddings
+      await writeFile(path.join(root, "after-dispose.md"), "AFTER_DISPOSE_MARKER")
+      await Bun.sleep(175)
+      expect(embeddings).toBe(count)
+      expect(memory.points().some((point) => point.payload.codeChunk === "AFTER_DISPOSE_MARKER")).toBe(false)
+    } finally {
+      await service?.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(cache, { recursive: true, force: true })
     }
   })
 
@@ -804,9 +1028,7 @@ describe("DocumentIndexService", () => {
       })
       const tracked = {
         ...store,
-        finalizeFileGenerations: async (
-          files: readonly { filePath: string; generation: string; runId: string }[],
-        ) => {
+        finalizeFileGenerations: async (files: readonly { filePath: string; generation: string; runId: string }[]) => {
           finalized.push(files)
         },
         activateFileGeneration: async () => {
@@ -875,6 +1097,67 @@ describe("DocumentIndexService", () => {
   })
 
   if (process.platform !== "win32") {
+    test("automatically indexes a PDF directory moved into an existing index", async () => {
+      const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+      const staging = await mkdtemp(path.join(tmpdir(), "kilo-doc-staging-"))
+      const memory = memoryStore()
+      const before = process.env.KILO_PDFTOTEXT_PATH
+      let service: DocumentIndexService | undefined
+      try {
+        const incoming = path.join(staging, "incoming")
+        const exe = path.join(staging, "pdftotext")
+        await mkdir(incoming)
+        await writeFile(path.join(incoming, "guide.pdf"), "%PDF-1.4\n% moved PDF fixture\n")
+        await writeFile(
+          exe,
+          "#!/bin/sh\ngrep -q 'COPY_COMPLETE' \"$2\" || exit 9\nprintf 'AUTOMATIC_PDF_DIRECTORY_MARKER\\f'\n",
+        )
+        await chmod(exe, 0o755)
+        process.env.KILO_PDFTOTEXT_PATH = exe
+        const cfg = new CodeIndexConfigManager({
+          enabled: true,
+          embedderProvider: "openai",
+          openAiKey: "sk-test",
+          documents: { enabled: true },
+        })
+        service = new DocumentIndexService(
+          root,
+          path.join(staging, "cache"),
+          cfg,
+          embedder,
+          memory,
+          ignore(),
+          undefined,
+          undefined,
+          {
+            autoRefresh: true,
+            debounceMs: 30,
+            maxLatencyMs: 100,
+            reconcileIntervalMs: 60_000,
+          },
+        )
+
+        await service.start("manual")
+        await rename(incoming, path.join(root, "incoming"))
+        await Bun.sleep(250)
+        await appendFile(path.join(root, "incoming", "guide.pdf"), "% COPY_COMPLETE\n")
+        await waitFor(() =>
+          memory.points().some((point) => point.payload.codeChunk === "AUTOMATIC_PDF_DIRECTORY_MARKER"),
+        )
+
+        const results = await service.search("AUTOMATIC_PDF_DIRECTORY_MARKER", { maxResults: 1 })
+        expect(results[0]?.filePath).toBe("incoming/guide.pdf")
+        expect(results[0]?.sourceRef).toBe("incoming/guide.pdf#page=1")
+        expect(service.getStatus().recentErrors ?? []).toHaveLength(0)
+      } finally {
+        await service?.dispose()
+        if (before === undefined) delete process.env.KILO_PDFTOTEXT_PATH
+        else process.env.KILO_PDFTOTEXT_PATH = before
+        await rm(root, { recursive: true, force: true })
+        await rm(staging, { recursive: true, force: true })
+      }
+    })
+
     test("indexes an approved external PDF with an absolute page reference", async () => {
       const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
       const external = await mkdtemp(path.join(tmpdir(), "kilo-doc-external-"))

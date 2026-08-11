@@ -658,6 +658,7 @@ export class CodeIndexServiceFactory {
       ignoreInstance,
       onStatus,
       this.onTelemetry,
+      { autoRefresh: true },
     )
   }
 }
