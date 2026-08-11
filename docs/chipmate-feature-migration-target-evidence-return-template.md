@@ -70,7 +70,7 @@ PARTIAL, NOT_RUN.
 
 | Case | Scope | Status | Evidence path | Notes |
 |---|---|---|---|---|
-| S1 | Native C QA call chain | TODO | TODO | Expected native Kilo code understanding; no Word/Mermaid/artifact tools |
+| S1 | Native C QA call chain | TODO | TODO | Expected native ChipMate code understanding; no Word/Mermaid/artifact tools |
 | S2 | Macro/register QA | TODO | TODO | Expected native search/code understanding tools |
 | S3 | Document RAG QA | TODO | TODO | Expected document_search path |
 | S4 | Artifact create/list | TODO | TODO | Expected artifact manifest and open/list behavior |
@@ -143,7 +143,7 @@ Fill this section if any runtime case is not PASS.
 | PARTIAL | TODO | TODO | Some evidence exists but scope is incomplete |
 | NOT_RUN | TODO | TODO | Case intentionally not run; explain why |
 
-## Native Kilo no-regression observations
+## Native ChipMate no-regression observations
 
 | Capability | Status | Evidence path | Notes |
 |---|---|---|---|

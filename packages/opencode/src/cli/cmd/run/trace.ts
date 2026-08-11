@@ -1,7 +1,7 @@
 // Dev-only JSONL event trace for direct interactive mode.
 //
-// Enable with KILO_DIRECT_TRACE=1. Writes one JSON line per event to
-// ~/.local/share/kilo/log/direct/<timestamp>-<pid>.jsonl. Also writes // kilocode_change
+// Enable with CHIPMATE_DIRECT_TRACE=1. Writes one JSON line per event to
+// ~/.local/share/chipmate/log/direct/<timestamp>-<pid>.jsonl. Also writes // chipmate_change
 // a latest.json pointer so you can quickly find the most recent trace.
 //
 // The trace captures the full closed loop: outbound prompts, inbound SDK
@@ -55,7 +55,7 @@ export function trace(): Trace | undefined {
     return state || undefined
   }
 
-  if (!process.env.KILO_DIRECT_TRACE) {
+  if (!process.env.CHIPMATE_DIRECT_TRACE) {
     state = false
     return undefined
   }

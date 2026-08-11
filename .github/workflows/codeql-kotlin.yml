@@ -1,16 +1,16 @@
-# kilocode_change - new file
+# chipmate_change - new file
 name: "CodeQL Kotlin"
 
 on:
   push:
     branches: ["main"]
     paths:
-      - "packages/kilo-jetbrains/**"
+      - "packages/chipmate-jetbrains/**"
       - ".github/workflows/codeql-kotlin.yml"
   pull_request:
     branches: ["main"]
     paths:
-      - "packages/kilo-jetbrains/**"
+      - "packages/chipmate-jetbrains/**"
       - ".github/workflows/codeql-kotlin.yml"
   schedule:
     - cron: "29 10 * * 5"
@@ -19,7 +19,7 @@ on:
 jobs:
   analyze:
     name: Analyze (java-kotlin)
-    if: github.event_name == 'workflow_dispatch' || github.repository == 'Kilo-Org/kilocode'
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'ChipMate-Org/chipmate'
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -61,7 +61,7 @@ jobs:
       - name: Build Java/Kotlin
         shell: bash
         run: ./gradlew typecheck --rerun-tasks --no-build-cache
-        working-directory: packages/kilo-jetbrains
+        working-directory: packages/chipmate-jetbrains
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

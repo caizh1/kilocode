@@ -1,0 +1,13 @@
+# chipmate_change - new file
+name: "Setup ChipMate"
+description: "Install ChipMate CLI globally"
+runs:
+  using: "composite"
+  steps:
+    - name: Install ChipMate CLI
+      run: curl -fsSL https://chipmate.ai/cli/install | bash
+      shell: bash
+
+    - name: Add ChipMate to PATH
+      run: echo "$HOME/.chipmate/bin" >> $GITHUB_PATH
+      shell: bash

@@ -40,7 +40,7 @@ export function Dialog(
       width={dimensions().width}
       height={dimensions().height}
       alignItems="center"
-      justifyContent="center" // kilocode_change
+      justifyContent="center" // chipmate_change
       position="absolute"
       zIndex={3000}
       left={0}
@@ -200,14 +200,14 @@ export function DialogProvider(props: ParentProps) {
         position="absolute"
         zIndex={3000}
         onMouseDown={(evt: { button: number; preventDefault(): void; stopPropagation(): void }) => {
-          if (!Flag.KILO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
+          if (!Flag.CHIPMATE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
           if (evt.button !== MouseButton.RIGHT) return
 
           if (!copySelection()) return
           evt.preventDefault()
           evt.stopPropagation()
         }}
-        onMouseUp={!Flag.KILO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? copySelection : undefined}
+        onMouseUp={!Flag.CHIPMATE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? copySelection : undefined}
       >
         <Show when={value.stack.length}>
           <Dialog onClose={() => value.clear()} size={value.size}>

@@ -105,7 +105,7 @@ def create_template(output_dir: Path, force: bool = False) -> None:
                 "",
                 "## Boundary",
                 "",
-                "This template does not run Kilo QA, does not execute target-machine commands, does not install VSIX files, does not run autocomplete, does not generate Word output, and does not accept ChipMate document-contract planning or missing-diagram auto-repair as evidence.",
+                "This template does not run ChipMate QA, does not execute target-machine commands, does not install VSIX files, does not run autocomplete, does not generate Word output, and does not accept ChipMate document-contract planning or missing-diagram auto-repair as evidence.",
                 "",
             ]
         ),

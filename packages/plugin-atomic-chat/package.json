@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@kilocode/plugin-atomic-chat",
+  "name": "@chipmate/plugin-atomic-chat",
   "version": "7.4.21",
-  "description": "Kilo Code plugin for Atomic Chat: auto-detection and dynamic model discovery (OpenAI-compatible local API)",
+  "description": "ChipMate plugin for Atomic Chat: auto-detection and dynamic model discovery (OpenAI-compatible local API)",
   "type": "module",
   "license": "MIT",
   "exports": {
@@ -18,7 +18,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@kilocode/plugin": "workspace:*"
+    "@chipmate/plugin": "workspace:*"
   },
   "devDependencies": {
     "@tsconfig/node22": "catalog:",
@@ -29,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Kilo-Org/kilocode",
+    "url": "https://github.com/ChipMate-Org/chipmate",
     "directory": "packages/plugin-atomic-chat"
   },
   "peerDependencies": {}

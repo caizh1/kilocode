@@ -58,11 +58,11 @@ const InfoCommand = effectCmd({
       : undefined
     const terminal = [termProgram, process.env.TERM].filter((item): item is string => Boolean(item)).join(" / ")
 
-    console.log(`kilo version: ${InstallationVersion}`) // kilocode_change
+    console.log(`chipmate version: ${InstallationVersion}`) // chipmate_change
     console.log(`os: ${os.type()} ${os.release()} ${os.arch()}`)
     console.log(`terminal: ${terminal || "unknown"}`)
     console.log("plugins:")
-    if (Flag.KILO_PURE) {
+    if (Flag.CHIPMATE_PURE) {
       console.log("external plugins disabled (--pure)")
       return
     }

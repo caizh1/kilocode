@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import path from "path"
-import { mkdir } from "node:fs/promises" // kilocode_change
+import { mkdir } from "node:fs/promises" // chipmate_change
 import { cliIt } from "../lib/cli-process"
 
 describe("opencode mcp add (non-interactive subprocess)", () => {
@@ -23,7 +23,7 @@ describe("opencode mcp add (non-interactive subprocess)", () => {
         opencode.expectExit(result, 0)
 
         const config = yield* Effect.promise(() =>
-          Bun.file(path.join(home, ".config", "kilo", "kilo.json")).json(), // kilocode_change
+          Bun.file(path.join(home, ".config", "chipmate", "chipmate.json")).json(), // chipmate_change
         )
         expect(config.mcp.github).toEqual({
           type: "remote",
@@ -59,7 +59,7 @@ describe("opencode mcp add (non-interactive subprocess)", () => {
         opencode.expectExit(result, 0)
 
         const config = yield* Effect.promise(() =>
-          Bun.file(path.join(home, ".config", "kilo", "kilo.json")).json(), // kilocode_change
+          Bun.file(path.join(home, ".config", "chipmate", "chipmate.json")).json(), // chipmate_change
         )
         expect(config.mcp.local).toEqual({
           type: "local",
@@ -73,26 +73,26 @@ describe("opencode mcp add (non-interactive subprocess)", () => {
     60_000,
   )
 
-  // kilocode_change start
+  // chipmate_change start
   cliIt.concurrent(
-    "writes to KILO_CONFIG_DIR without touching the default profile",
+    "writes to CHIPMATE_CONFIG_DIR without touching the default profile",
     ({ home, opencode }) =>
       Effect.gen(function* () {
         const profile = path.join(home, "profile")
         yield* Effect.promise(() => mkdir(profile, { recursive: true }))
         const result = yield* opencode.spawn(
           ["mcp", "add", "profile", "--url", "https://example.com/profile"],
-          { env: { KILO_CONFIG_DIR: profile } },
+          { env: { CHIPMATE_CONFIG_DIR: profile } },
         )
         opencode.expectExit(result, 0)
 
-        const config = yield* Effect.promise(() => Bun.file(path.join(profile, "kilo.json")).json())
+        const config = yield* Effect.promise(() => Bun.file(path.join(profile, "chipmate.json")).json())
         expect(config.mcp.profile).toEqual({ type: "remote", url: "https://example.com/profile" })
-        expect(yield* Effect.promise(() => Bun.file(path.join(home, ".config", "kilo", "kilo.json")).exists())).toBe(
+        expect(yield* Effect.promise(() => Bun.file(path.join(home, ".config", "chipmate", "chipmate.json")).exists())).toBe(
           false,
         )
       }),
     60_000,
   )
-        // kilocode_change end
+        // chipmate_change end
 })

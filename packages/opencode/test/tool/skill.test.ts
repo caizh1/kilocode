@@ -9,7 +9,7 @@ import type { Permission } from "../../src/permission"
 import type { Tool } from "@/tool/tool"
 import { SkillTool } from "../../src/tool/skill"
 import { ToolRegistry } from "@/tool/registry"
-import { disposeAllInstances, provideTmpdirInstance, TestInstance } from "../fixture/fixture" // kilocode_change
+import { disposeAllInstances, provideTmpdirInstance, TestInstance } from "../fixture/fixture" // chipmate_change
 import { SessionID, MessageID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
 
@@ -29,14 +29,14 @@ afterEach(async () => {
 
 const it = testEffect(LayerNode.compile(LayerNode.group([ToolRegistry.node, CrossSpawnSpawner.node, Ripgrep.node])))
 
-// kilocode_change - skip on windows: address windows ci failures #9496
+// chipmate_change - skip on windows: address windows ci failures #9496
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
 
 describe("tool.skill", () => {
   unix("execute returns skill content block with files", () =>
     Effect.gen(function* () {
       const dir = (yield* TestInstance).directory
-      const skill = path.join(dir, ".kilo", "skill", "tool-skill") // kilocode_change
+      const skill = path.join(dir, ".chipmate", "skill", "tool-skill") // chipmate_change
       yield* Effect.promise(() =>
         Bun.write(
           path.join(skill, "SKILL.md"),
@@ -53,11 +53,11 @@ Use this skill.
       )
       yield* Effect.promise(() => Bun.write(path.join(skill, "scripts", "demo.txt"), "demo"))
 
-      const home = process.env.KILO_TEST_HOME
-      process.env.KILO_TEST_HOME = dir
+      const home = process.env.CHIPMATE_TEST_HOME
+      process.env.CHIPMATE_TEST_HOME = dir
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
-          process.env.KILO_TEST_HOME = home
+          process.env.CHIPMATE_TEST_HOME = home
         }),
       )
 
@@ -70,8 +70,8 @@ Use this skill.
       })).find((tool) => tool.id === SkillTool.id)
       if (!tool) throw new Error("Skill tool not found")
 
-      expect(tool.description).toContain("tool-skill") // kilocode_change - include concise available-skill context
-      expect(tool.description).toContain("Skill for tool tests.") // kilocode_change
+      expect(tool.description).toContain("tool-skill") // chipmate_change - include concise available-skill context
+      expect(tool.description).toContain("Skill for tool tests.") // chipmate_change
 
       const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
       const ctx: Tool.Context = {
@@ -99,11 +99,11 @@ Use this skill.
   it.instance("execute preserves not found message", () =>
     Effect.gen(function* () {
       const dir = (yield* TestInstance).directory
-      const home = process.env.KILO_TEST_HOME
-      process.env.KILO_TEST_HOME = dir
+      const home = process.env.CHIPMATE_TEST_HOME
+      process.env.CHIPMATE_TEST_HOME = dir
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
-          process.env.KILO_TEST_HOME = home
+          process.env.CHIPMATE_TEST_HOME = home
         }),
       )
 
@@ -135,16 +135,16 @@ Use this skill.
     }),
   )
 
-  // kilocode_change start
-  it.live("built-in kilo-config keeps rendered shell examples inert", () =>
+  // chipmate_change start
+  it.live("built-in chipmate-config keeps rendered shell examples inert", () =>
     provideTmpdirInstance(
       (dir) =>
         Effect.gen(function* () {
-          const home = process.env.KILO_TEST_HOME
-          process.env.KILO_TEST_HOME = dir
+          const home = process.env.CHIPMATE_TEST_HOME
+          process.env.CHIPMATE_TEST_HOME = dir
           yield* Effect.addFinalizer(() =>
             Effect.sync(() => {
-              process.env.KILO_TEST_HOME = home
+              process.env.CHIPMATE_TEST_HOME = home
             }),
           )
 
@@ -166,12 +166,12 @@ Use this skill.
               }),
           }
 
-          const result = yield* tool.execute({ name: "kilo-config" }, ctx)
+          const result = yield* tool.execute({ name: "chipmate-config" }, ctx)
 
           expect(result.metadata.dir).toBe("builtin")
           expect(result.output).toContain("Finding a named command")
-          expect(result.output).toContain("~/.config/kilo/")
-          expect(result.output).toContain("~/.kilocode/")
+          expect(result.output).toContain("~/.config/chipmate/")
+          expect(result.output).toContain("~/.chipmate/")
           expect(result.output).toContain("**/command/")
           expect(result.output).toContain("explicit search")
           expect(result.output).toContain("`` !`cmd` ``")
@@ -181,5 +181,5 @@ Use this skill.
       { git: true },
     ),
   )
-  // kilocode_change end
+  // chipmate_change end
 })

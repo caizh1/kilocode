@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import Notifications from "../../../../src/feature-plugins/system/notifications"
-import type { Event, PermissionRequest, QuestionRequest, Session } from "@kilocode/sdk/v2"
-import type { TuiAttentionNotifyInput } from "@kilocode/plugin/tui"
+import type { Event, PermissionRequest, QuestionRequest, Session } from "@chipmate/sdk/v2"
+import type { TuiAttentionNotifyInput } from "@chipmate/plugin/tui"
 import { createTuiPluginApi } from "../../../fixture/tui-plugin"
 
 async function setup() {
@@ -136,7 +136,7 @@ describe("internal notifications TUI plugin", () => {
     ])
   })
 
-  // kilocode_change start
+  // chipmate_change start
   test("notifies only when an active turn closes as completed", async () => {
     const harness = await setup()
 
@@ -295,5 +295,5 @@ describe("internal notifications TUI plugin", () => {
       },
     ])
   })
-  // kilocode_change end
+  // chipmate_change end
 })

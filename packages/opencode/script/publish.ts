@@ -3,7 +3,7 @@ import { $ } from "bun"
 import pkg from "../package.json"
 import { Script } from "@opencode-ai/script"
 import { fileURLToPath } from "url"
-import { NpmPublish } from "./kilocode/npm-publish" // kilocode_change
+import { NpmPublish } from "./chipmate/npm-publish" // chipmate_change
 
 const dir = fileURLToPath(new URL("..", import.meta.url))
 process.chdir(dir)
@@ -21,20 +21,20 @@ async function publish(dir: string, name: string, version: string) {
     return
   }
   await $`bun pm pack`.cwd(dir)
-  // kilocode_change start
+  // chipmate_change start
   await NpmPublish.retry({
     name,
     version,
     run: () => $`npm publish *.tgz --access public --tag ${Script.channel} --provenance`.cwd(dir),
     exists: () => published(name, version),
   })
-  // kilocode_change end
+  // chipmate_change end
 }
 
 const binaries: Record<string, string> = {}
-// kilocode_change start
+// chipmate_change start
 for (const filepath of new Bun.Glob("*/*/package.json").scanSync({ cwd: "./dist" })) {
-  // kilocode_change end
+  // chipmate_change end
   const pkg = await Bun.file(`./dist/${filepath}`).json()
   binaries[pkg.name] = pkg.version
 }
@@ -45,34 +45,33 @@ await $`mkdir -p ./dist/${pkg.name}`
 await $`cp -r ./bin ./dist/${pkg.name}/bin`
 await $`cp ./script/postinstall.mjs ./dist/${pkg.name}/postinstall.mjs`
 await Bun.file(`./dist/${pkg.name}/LICENSE`).write(await Bun.file("../../LICENSE").text())
-await Bun.file(`./dist/${pkg.name}/README.md`).write(await Bun.file("./README.md").text()) // kilocode_change
+await Bun.file(`./dist/${pkg.name}/README.md`).write(await Bun.file("./README.md").text()) // chipmate_change
 
 await Bun.file(`./dist/${pkg.name}/package.json`).write(
   JSON.stringify(
     {
-      name: pkg.name, // kilocode_change
+      name: pkg.name, // chipmate_change
       bin: {
-        // kilocode_change start
-        kilo: `./bin/kilo`,
-        kilocode: `./bin/kilo`,
-        // kilocode_change end
+        // chipmate_change start
+        chipmate: `./bin/chipmate`,
+        // chipmate_change end
       },
       scripts: {
         postinstall: "node ./postinstall.mjs",
       },
       version: version,
       license: pkg.license,
-      keywords: pkg.keywords, // kilocode_change
-      private: pkg.private, // kilocode_change
+      keywords: pkg.keywords, // chipmate_change
+      private: pkg.private, // chipmate_change
       os: ["darwin", "linux", "win32"],
       cpu: ["arm64", "x64"],
       optionalDependencies: binaries,
-      // kilocode_change start
+      // chipmate_change start
       repository: {
         type: "git",
-        url: "https://github.com/Kilo-Org/kilocode",
+        url: "https://github.com/ChipMate-Org/chipmate",
       },
-      // kilocode_change end
+      // chipmate_change end
     },
     null,
     2,
@@ -83,9 +82,9 @@ const tasks = Object.entries(binaries).map(async ([name]) => {
   await publish(`./dist/${name}`, name, binaries[name])
 })
 await Promise.all(tasks)
-await publish(`./dist/${pkg.name}`, pkg.name, version) // kilocode_change
+await publish(`./dist/${pkg.name}`, pkg.name, version) // chipmate_change
 
-const image = "ghcr.io/kilo-org/kilocode" // kilocode_change
+const image = "ghcr.io/chipmate-org/chipmate" // chipmate_change
 const platforms = "linux/amd64,linux/arm64"
 const tags = [`${image}:${version}`, `${image}:${Script.channel}`]
 const tagFlags = tags.flatMap((t) => ["-t", t])
@@ -94,50 +93,50 @@ const tagFlags = tags.flatMap((t) => ["-t", t])
 if (!Script.preview) {
   await $`docker buildx build --platform ${platforms} ${tagFlags} --push .`
   // Calculate SHA values
-  const arm64Sha = await $`sha256sum ./dist/kilo-linux-arm64.tar.gz | cut -d' ' -f1`.text().then((x) => x.trim())
-  const x64Sha = await $`sha256sum ./dist/kilo-linux-x64.tar.gz | cut -d' ' -f1`.text().then((x) => x.trim())
-  const macX64Sha = await $`sha256sum ./dist/kilo-darwin-x64.zip | cut -d' ' -f1`.text().then((x) => x.trim())
-  const macArm64Sha = await $`sha256sum ./dist/kilo-darwin-arm64.zip | cut -d' ' -f1`.text().then((x) => x.trim())
+  const arm64Sha = await $`sha256sum ./dist/chipmate-linux-arm64.tar.gz | cut -d' ' -f1`.text().then((x) => x.trim())
+  const x64Sha = await $`sha256sum ./dist/chipmate-linux-x64.tar.gz | cut -d' ' -f1`.text().then((x) => x.trim())
+  const macX64Sha = await $`sha256sum ./dist/chipmate-darwin-x64.zip | cut -d' ' -f1`.text().then((x) => x.trim())
+  const macArm64Sha = await $`sha256sum ./dist/chipmate-darwin-arm64.zip | cut -d' ' -f1`.text().then((x) => x.trim())
 
   const [pkgver, _subver = ""] = Script.version.split(/(-.*)/, 2)
 
   // arch
   const binaryPkgbuild = [
-    "# Maintainer: kilo", // kilocode_change
+    "# Maintainer: chipmate", // chipmate_change
     "",
-    "pkgname='kilo-bin'",
+    "pkgname='chipmate-bin'",
     `pkgver=${pkgver}`,
     `_subver=${_subver}`,
     "options=('!debug' '!strip')",
     "pkgrel=1",
     "pkgdesc='The AI coding agent built for the terminal.'",
-    "url='https://github.com/Kilo-Org/kilocode'",
+    "url='https://github.com/ChipMate-Org/chipmate'",
     "arch=('aarch64' 'x86_64')",
-    "license=('MIT' 'LGPL-2.0-or-later')", // kilocode_change
-    "provides=('kilo')",
-    "conflicts=('kilo')",
+    "license=('MIT' 'LGPL-2.0-or-later')", // chipmate_change
+    "provides=('chipmate')",
+    "conflicts=('chipmate')",
     "depends=('ripgrep')",
     "",
-    `source_aarch64=("\${pkgname}_\${pkgver}_aarch64.tar.gz::https://github.com/Kilo-Org/kilocode/releases/download/v\${pkgver}\${_subver}/kilo-linux-arm64.tar.gz")`,
+    `source_aarch64=("\${pkgname}_\${pkgver}_aarch64.tar.gz::https://github.com/ChipMate-Org/chipmate/releases/download/v\${pkgver}\${_subver}/chipmate-linux-arm64.tar.gz")`,
     `sha256sums_aarch64=('${arm64Sha}')`,
 
-    `source_x86_64=("\${pkgname}_\${pkgver}_x86_64.tar.gz::https://github.com/Kilo-Org/kilocode/releases/download/v\${pkgver}\${_subver}/kilo-linux-x64.tar.gz")`,
+    `source_x86_64=("\${pkgname}_\${pkgver}_x86_64.tar.gz::https://github.com/ChipMate-Org/chipmate/releases/download/v\${pkgver}\${_subver}/chipmate-linux-x64.tar.gz")`,
     `sha256sums_x86_64=('${x64Sha}')`,
     "",
     "package() {",
-    '  install -Dm755 ./kilo "${pkgdir}/usr/lib/kilo/kilo"', // kilocode_change
-    '  install -Dm755 ./bwrap "${pkgdir}/usr/lib/kilo/bwrap"', // kilocode_change
-    '  install -Dm644 ./kilo-sandbox-mutation-worker.js "${pkgdir}/usr/lib/kilo/kilo-sandbox-mutation-worker.js"', // kilocode_change
-    '  install -dm755 "${pkgdir}/usr/bin" "${pkgdir}/usr/lib/kilo/tree-sitter" "${pkgdir}/usr/share/licenses/kilo"', // kilocode_change
-    '  cp -r ./tree-sitter/. "${pkgdir}/usr/lib/kilo/tree-sitter/"', // kilocode_change
-    '  cp -r ./licenses/. "${pkgdir}/usr/share/licenses/kilo/"', // kilocode_change
-    "  printf '%s\\n' '#!/bin/sh' 'export KILO_TREE_SITTER_WASM_DIR=/usr/lib/kilo/tree-sitter' 'exec /usr/lib/kilo/kilo \"$@\"' > \"${pkgdir}/usr/bin/kilo\"", // kilocode_change
-    '  chmod 755 "${pkgdir}/usr/bin/kilo"', // kilocode_change
+    '  install -Dm755 ./chipmate "${pkgdir}/usr/lib/chipmate/chipmate"', // chipmate_change
+    '  install -Dm755 ./bwrap "${pkgdir}/usr/lib/chipmate/bwrap"', // chipmate_change
+    '  install -Dm644 ./chipmate-sandbox-mutation-worker.js "${pkgdir}/usr/lib/chipmate/chipmate-sandbox-mutation-worker.js"', // chipmate_change
+    '  install -dm755 "${pkgdir}/usr/bin" "${pkgdir}/usr/lib/chipmate/tree-sitter" "${pkgdir}/usr/share/licenses/chipmate"', // chipmate_change
+    '  cp -r ./tree-sitter/. "${pkgdir}/usr/lib/chipmate/tree-sitter/"', // chipmate_change
+    '  cp -r ./licenses/. "${pkgdir}/usr/share/licenses/chipmate/"', // chipmate_change
+    "  printf '%s\\n' '#!/bin/sh' 'export CHIPMATE_TREE_SITTER_WASM_DIR=/usr/lib/chipmate/tree-sitter' 'exec /usr/lib/chipmate/chipmate \"$@\"' > \"${pkgdir}/usr/bin/chipmate\"", // chipmate_change
+    '  chmod 755 "${pkgdir}/usr/bin/chipmate"', // chipmate_change
     "}",
     "",
   ].join("\n")
 
-  for (const [pkg, pkgbuild] of [["kilo-bin", binaryPkgbuild]]) {
+  for (const [pkg, pkgbuild] of [["chipmate-bin", binaryPkgbuild]]) {
     for (let i = 0; i < 30; i++) {
       try {
         await $`rm -rf ./dist/aur-${pkg}`
@@ -162,49 +161,49 @@ if (!Script.preview) {
     "# frozen_string_literal: true",
     "",
     "# This file was generated by GoReleaser. DO NOT EDIT.",
-    "class Kilo < Formula", // kilocode_change
+    "class ChipMate < Formula", // chipmate_change
     `  desc "The AI coding agent built for the terminal."`,
-    `  homepage "https://kilo.ai"`, // kilocode_change
+    `  homepage "https://chipmate.ai"`, // chipmate_change
     `  version "${Script.version.split("-")[0]}"`,
     "",
     `  depends_on "ripgrep"`,
     "",
     "  on_macos do",
     "    if Hardware::CPU.intel?",
-    `      url "https://github.com/Kilo-Org/kilocode/releases/download/v${Script.version}/kilo-darwin-x64.zip"`,
+    `      url "https://github.com/ChipMate-Org/chipmate/releases/download/v${Script.version}/chipmate-darwin-x64.zip"`,
     `      sha256 "${macX64Sha}"`,
     "",
     "      def install",
-    '        libexec.install "kilo", "kilo-sandbox-mutation-worker.js", "tree-sitter"', // kilocode_change
-    '        (bin/"kilo").write_env_script libexec/"kilo", KILO_TREE_SITTER_WASM_DIR: libexec/"tree-sitter"', // kilocode_change
+    '        libexec.install "chipmate", "chipmate-sandbox-mutation-worker.js", "tree-sitter"', // chipmate_change
+    '        (bin/"chipmate").write_env_script libexec/"chipmate", CHIPMATE_TREE_SITTER_WASM_DIR: libexec/"tree-sitter"', // chipmate_change
     "      end",
     "    end",
     "    if Hardware::CPU.arm?",
-    `      url "https://github.com/Kilo-Org/kilocode/releases/download/v${Script.version}/kilo-darwin-arm64.zip"`,
+    `      url "https://github.com/ChipMate-Org/chipmate/releases/download/v${Script.version}/chipmate-darwin-arm64.zip"`,
     `      sha256 "${macArm64Sha}"`,
     "",
     "      def install",
-    '        libexec.install "kilo", "kilo-sandbox-mutation-worker.js", "tree-sitter"', // kilocode_change
-    '        (bin/"kilo").write_env_script libexec/"kilo", KILO_TREE_SITTER_WASM_DIR: libexec/"tree-sitter"', // kilocode_change
+    '        libexec.install "chipmate", "chipmate-sandbox-mutation-worker.js", "tree-sitter"', // chipmate_change
+    '        (bin/"chipmate").write_env_script libexec/"chipmate", CHIPMATE_TREE_SITTER_WASM_DIR: libexec/"tree-sitter"', // chipmate_change
     "      end",
     "    end",
     "  end",
     "",
     "  on_linux do",
     "    if Hardware::CPU.intel? and Hardware::CPU.is_64_bit?",
-    `      url "https://github.com/Kilo-Org/kilocode/releases/download/v${Script.version}/kilo-linux-x64.tar.gz"`,
+    `      url "https://github.com/ChipMate-Org/chipmate/releases/download/v${Script.version}/chipmate-linux-x64.tar.gz"`,
     `      sha256 "${x64Sha}"`,
     "      def install",
-    '        libexec.install "kilo", "bwrap", "kilo-sandbox-mutation-worker.js", "tree-sitter", "licenses"', // kilocode_change
-    '        (bin/"kilo").write_env_script libexec/"kilo", KILO_TREE_SITTER_WASM_DIR: libexec/"tree-sitter"', // kilocode_change
+    '        libexec.install "chipmate", "bwrap", "chipmate-sandbox-mutation-worker.js", "tree-sitter", "licenses"', // chipmate_change
+    '        (bin/"chipmate").write_env_script libexec/"chipmate", CHIPMATE_TREE_SITTER_WASM_DIR: libexec/"tree-sitter"', // chipmate_change
     "      end",
     "    end",
     "    if Hardware::CPU.arm? and Hardware::CPU.is_64_bit?",
-    `      url "https://github.com/Kilo-Org/kilocode/releases/download/v${Script.version}/kilo-linux-arm64.tar.gz"`,
+    `      url "https://github.com/ChipMate-Org/chipmate/releases/download/v${Script.version}/chipmate-linux-arm64.tar.gz"`,
     `      sha256 "${arm64Sha}"`,
     "      def install",
-    '        libexec.install "kilo", "bwrap", "kilo-sandbox-mutation-worker.js", "tree-sitter", "licenses"', // kilocode_change
-    '        (bin/"kilo").write_env_script libexec/"kilo", KILO_TREE_SITTER_WASM_DIR: libexec/"tree-sitter"', // kilocode_change
+    '        libexec.install "chipmate", "bwrap", "chipmate-sandbox-mutation-worker.js", "tree-sitter", "licenses"', // chipmate_change
+    '        (bin/"chipmate").write_env_script libexec/"chipmate", CHIPMATE_TREE_SITTER_WASM_DIR: libexec/"tree-sitter"', // chipmate_change
     "      end",
     "    end",
     "  end",
@@ -218,11 +217,11 @@ if (!Script.preview) {
     console.error("GITHUB_TOKEN is required to update homebrew tap")
     process.exit(1)
   }
-  const tap = `https://x-access-token:${token}@github.com/Kilo-Org/homebrew-tap.git` // kilocode_change
+  const tap = `https://x-access-token:${token}@github.com/ChipMate-Org/homebrew-tap.git` // chipmate_change
   await $`rm -rf ./dist/homebrew-tap`
   await $`git clone ${tap} ./dist/homebrew-tap`
-  await Bun.file("./dist/homebrew-tap/kilo.rb").write(homebrewFormula) // kilocode_change
-  await $`cd ./dist/homebrew-tap && git add kilo.rb` // kilocode_change
+  await Bun.file("./dist/homebrew-tap/chipmate.rb").write(homebrewFormula) // chipmate_change
+  await $`cd ./dist/homebrew-tap && git add chipmate.rb` // chipmate_change
   if ((await $`cd ./dist/homebrew-tap && git diff --cached --quiet`.nothrow()).exitCode !== 0) {
     await $`cd ./dist/homebrew-tap && git commit -m "Update to v${Script.version}"`
     await $`cd ./dist/homebrew-tap && git push`

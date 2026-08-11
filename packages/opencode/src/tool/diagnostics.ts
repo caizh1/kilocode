@@ -1,4 +1,4 @@
-// kilocode_change - new file
+// chipmate_change - new file
 import type { LSPClient } from "@/lsp/client"
 
 /**

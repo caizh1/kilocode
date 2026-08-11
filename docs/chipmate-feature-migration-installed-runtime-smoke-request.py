@@ -13,10 +13,10 @@ from pathlib import Path
 
 
 CASES = [
-    ("S1", "Native C QA call chain", "Ask about a C call chain in the target workspace.", "Native Kilo code understanding/search tools only; no Word/Mermaid/artifact tools."),
+    ("S1", "Native C QA call chain", "Ask about a C call chain in the target workspace.", "Native ChipMate code understanding/search tools only; no Word/Mermaid/artifact tools."),
     ("S2", "Macro/register QA", "Ask about a macro/register definition and its usage.", "Native code/search understanding path; no document-generation sidecar."),
     ("S3", "Document RAG QA", "Ask about an indexed existing document.", "Must expose/use `document_search`; no Word generation."),
-    ("S4", "Artifact create/list", "Generate and list a report artifact.", "Expected `.kilo/artifacts/.../artifact.json` and `declare_artifact`/artifact listing evidence."),
+    ("S4", "Artifact create/list", "Generate and list a report artifact.", "Expected `.chipmate/artifacts/.../artifact.json` and `declare_artifact`/artifact listing evidence."),
     ("S5", "Word create", "Create a small Word document from user-provided content.", "Generic Word creation only; no document runtime contract."),
     ("S6", "Word edit/add table", "Edit an existing Word document and add a table.", "New `.docx` artifact plus source backup or scoped edit evidence."),
     ("S7", "Word delete dry-run", "Dry-run deleting a section/table from a Word document.", "Dry-run impact first; apply only with explicit approval."),
@@ -98,7 +98,7 @@ def write_request(output: Path, target_profile: str, workspace_hint: str) -> Non
             "",
             "## Acceptance boundary",
             "",
-            "This request is not acceptance evidence. S1-S16 remains incomplete until the installed runtime evidence is returned, runtime intake reports `PASS` for required cases, and M11 review accepts the evidence without native Kilo regression.",
+            "This request is not acceptance evidence. S1-S16 remains incomplete until the installed runtime evidence is returned, runtime intake reports `PASS` for required cases, and M11 review accepts the evidence without native ChipMate regression.",
             "",
         ]
     )

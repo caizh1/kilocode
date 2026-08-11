@@ -18,11 +18,11 @@ Use package-specific commands instead.
 Optional capture helper:
 
 ```bash
-cd /Users/archer/Work/kilocode
+cd /Users/archer/Work/chipmate
 bash docs/chipmate-feature-migration-validation-capture.sh --run-commands
 bash docs/chipmate-feature-migration-validation-capture.sh --run-package
 bash docs/chipmate-feature-migration-validation-capture.sh --prepare-smoke
-bash docs/chipmate-feature-migration-validation-capture.sh --inspect-vsix packages/kilo-vscode/out/<generated>.vsix
+bash docs/chipmate-feature-migration-validation-capture.sh --inspect-vsix packages/chipmate-vscode/out/<generated>.vsix
 ```
 
 The helper is inert without an explicit run flag. It writes logs and `status.tsv`
@@ -33,7 +33,7 @@ helper is optional, but if used its output should be summarized in
 `--inspect-vsix` does not build or install anything. It inspects an existing
 VSIX, records version/size/file list, and flags high-risk renderer payload names
 such as LibreOffice, Chromium, Puppeteer, Mermaid CLI, or `mmdc`. It also lists
-Poppler/pdftotext separately because those may belong to Kilo's pre-existing
+Poppler/pdftotext separately because those may belong to ChipMate's pre-existing
 internal-offline document extraction path rather than this migration.
 
 After a capture run, create a reviewable summary without changing validation
@@ -76,7 +76,7 @@ Installed smoke prompts:
 Working directory:
 
 ```bash
-cd /Users/archer/Work/kilocode/packages/opencode
+cd /Users/archer/Work/chipmate/packages/opencode
 ```
 
 Commands:
@@ -93,7 +93,7 @@ Covers checklist areas:
 - Mermaid validate/render/save/insert tool tests;
 - source-backed detail-design skill fixture;
 - ordinary QA routing boundary for document tools;
-- Kilo native `codebase_analysis`, `semantic_search`, and `document_search` registry preservation.
+- ChipMate native `codebase_analysis`, `semantic_search`, and `document_search` registry preservation.
 
 Evidence to capture:
 
@@ -107,7 +107,7 @@ Evidence to capture:
 Working directory:
 
 ```bash
-cd /Users/archer/Work/kilocode/packages/kilo-vscode
+cd /Users/archer/Work/chipmate/packages/chipmate-vscode
 ```
 
 Commands:
@@ -143,7 +143,7 @@ Evidence to capture:
 Working directory:
 
 ```bash
-cd /Users/archer/Work/kilocode/packages/kilo-vscode
+cd /Users/archer/Work/chipmate/packages/chipmate-vscode
 ```
 
 Candidate commands:
@@ -152,7 +152,7 @@ Candidate commands:
 bun run package:internal-offline
 ```
 
-`package:internal-offline` runs `script/build.ts --internal-offline` and packages `.vsix` files under `packages/kilo-vscode/out/`. It may include Kilo's pre-existing internal-offline Poppler `pdftotext` helper for document extraction; do not treat that existing dependency as a Word/Mermaid renderer migration. The renderer boundary check is specifically whether this migration added LibreOffice, Chromium, Mermaid browser runtimes, or additional renderer payloads to support the new Word/Mermaid tools.
+`package:internal-offline` runs `script/build.ts --internal-offline` and packages `.vsix` files under `packages/chipmate-vscode/out/`. It may include ChipMate's pre-existing internal-offline Poppler `pdftotext` helper for document extraction; do not treat that existing dependency as a Word/Mermaid renderer migration. The renderer boundary check is specifically whether this migration added LibreOffice, Chromium, Mermaid browser runtimes, or additional renderer payloads to support the new Word/Mermaid tools.
 
 Covers checklist areas:
 
@@ -166,7 +166,7 @@ Evidence to capture:
 - package version;
 - VSIX filename;
 - VSIX size;
-- renderer dependency inspection result, preferably from `--inspect-vsix`, distinguishing pre-existing Kilo offline dependencies from newly introduced renderer payloads;
+- renderer dependency inspection result, preferably from `--inspect-vsix`, distinguishing pre-existing ChipMate offline dependencies from newly introduced renderer payloads;
 - package command output summary.
 
 ### 4. Installed VS Code smoke
@@ -177,10 +177,10 @@ Smoke matrix:
 
 | Area | Smoke prompt/action | Expected evidence |
 |---|---|---|
-| Native code QA | Ask for a C function call chain | Uses Kilo native code understanding tools; no Word/Mermaid/artifact tools |
+| Native code QA | Ask for a C function call chain | Uses ChipMate native code understanding tools; no Word/Mermaid/artifact tools |
 | Macro/register QA | Ask where a macro is defined and used | Uses native search/code tools; no document artifact creation |
 | Document RAG | Ask about an existing indexed document | Uses `document_search`; does not call Word generation |
-| Artifact | Generate/list/open a report artifact | `.kilo/artifacts/.../artifact.json` exists and can be opened |
+| Artifact | Generate/list/open a report artifact | `.chipmate/artifacts/.../artifact.json` exists and can be opened |
 | Word create | Generate a module interface design Word | `.docx` artifact exists |
 | Word edit | Add an error-code table | New version `.docx` exists; source backup exists |
 | Word delete | Delete a chapter dry-run first | Reports impact without writing until apply is explicit |
@@ -200,7 +200,7 @@ Evidence to capture:
 - actual tool sequence or visible behavior;
 - artifact paths;
 - warnings;
-- whether native Kilo QA behavior remained intact.
+- whether native ChipMate QA behavior remained intact.
 
 ### 5. Final review
 
@@ -209,7 +209,7 @@ After tests, package, install smoke, and real project validation pass, update:
 - `chipmate-feature-migration-plan.md` checklist;
 - `chipmate-feature-migration-static-review.md` with runtime evidence or link to a new runtime review note;
 - `chipmate-feature-migration-validation-evidence.md` with command, packaging, VSIX inspection, installed smoke, and known issue evidence;
-- `chipmate-feature-migration-kilo-no-regression-review.md` with native Kilo capability preservation evidence;
+- `chipmate-feature-migration-chipmate-no-regression-review.md` with native ChipMate capability preservation evidence;
 - final known issues and limitations.
 
 Only then mark M10, M11, and the active goal complete.

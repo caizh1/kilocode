@@ -20,10 +20,10 @@ body:
       required: false
 
   - type: input
-    id: kilo-version
+    id: chipmate-version
     attributes:
-      label: Kilo version
-      description: What version of Kilo are you using?
+      label: ChipMate version
+      description: What version of ChipMate are you using?
     validations:
       required: false
 

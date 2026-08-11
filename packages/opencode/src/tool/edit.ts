@@ -18,16 +18,16 @@ import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import * as Bom from "@/util/bom"
-import { filterDiagnostics } from "./diagnostics" // kilocode_change
-import { ConfigValidation } from "../kilocode/config-validation" // kilocode_change
-import * as EncodedIO from "../kilocode/tool/encoded-io" // kilocode_change
-import * as Encoding from "../kilocode/encoding" // kilocode_change
-import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
-import { assertMutablePath } from "../kilocode/agent-manager/protection" // kilocode_change
+import { filterDiagnostics } from "./diagnostics" // chipmate_change
+import { ConfigValidation } from "../chipmate/config-validation" // chipmate_change
+import * as EncodedIO from "../chipmate/tool/encoded-io" // chipmate_change
+import * as Encoding from "../chipmate/encoding" // chipmate_change
+import * as WorkflowGuard from "@/chipmate/skill/workflow-guard" // chipmate_change
+import { assertMutablePath } from "../chipmate/agent-manager/protection" // chipmate_change
 
-const MAX_DIFF_CONTENT = 500_000 // kilocode_change
+const MAX_DIFF_CONTENT = 500_000 // chipmate_change
 
-// kilocode_change start
+// chipmate_change start
 export function buildFileDiff(file: string, before: string, after: string): Snapshot.FileDiff {
   const tooLarge = before.length > MAX_DIFF_CONTENT || after.length > MAX_DIFF_CONTENT
   let additions = 0
@@ -45,7 +45,7 @@ export function buildFileDiff(file: string, before: string, after: string): Snap
     deletions,
   }
 }
-// kilocode_change end
+// chipmate_change end
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -108,7 +108,7 @@ export const EditTool = Tool.define(
           const filePath = path.isAbsolute(params.filePath)
             ? params.filePath
             : path.join(instance.directory, params.filePath)
-          // kilocode_change start - keep source-backed document mutations inside the declared artifact root
+          // chipmate_change start - keep source-backed document mutations inside the declared artifact root
           const blocked = WorkflowGuard.mutation(ctx.sessionID, ctx.messages, instance.directory, filePath)
           if (blocked) {
             return {
@@ -135,14 +135,14 @@ export const EditTool = Tool.define(
               output: staged,
             }
           }
-          // kilocode_change end
-          assertMutablePath(filePath) // kilocode_change
+          // chipmate_change end
+          assertMutablePath(filePath) // chipmate_change
           yield* assertExternalDirectoryEffect(ctx, filePath)
 
           let diff = ""
           let contentOld = ""
           let contentNew = ""
-          let cachedFilediff: Snapshot.FileDiff | undefined // kilocode_change
+          let cachedFilediff: Snapshot.FileDiff | undefined // chipmate_change
           yield* lock(filePath).withPermits(1)(
             Effect.gen(function* () {
               if (params.oldString === "") {
@@ -161,7 +161,7 @@ export const EditTool = Tool.define(
                 )
                 if (checkpoint) throw new Error(checkpoint)
                 diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
-                cachedFilediff = buildFileDiff(filePath, contentOld, contentNew) // kilocode_change
+                cachedFilediff = buildFileDiff(filePath, contentOld, contentNew) // chipmate_change
                 yield* ctx.ask({
                   permission: "edit",
                   patterns: [path.relative(instance.worktree, filePath)],
@@ -169,10 +169,10 @@ export const EditTool = Tool.define(
                   metadata: {
                     filepath: filePath,
                     diff,
-                    filediff: cachedFilediff, // kilocode_change
+                    filediff: cachedFilediff, // chipmate_change
                   },
                 })
-                yield* EncodedIO.write(afs, filePath, Bom.join(contentNew, desiredBom), Encoding.DEFAULT) // kilocode_change - encoding-aware write (mkdirs) replaces afs.writeWithDirs
+                yield* EncodedIO.write(afs, filePath, Bom.join(contentNew, desiredBom), Encoding.DEFAULT) // chipmate_change - encoding-aware write (mkdirs) replaces afs.writeWithDirs
                 if (yield* format.file(filePath)) {
                   contentNew = yield* EncodedIO.sync(afs, filePath, desiredBom, Encoding.DEFAULT)
                 }
@@ -187,11 +187,11 @@ export const EditTool = Tool.define(
               const info = yield* afs.stat(filePath).pipe(Effect.catch(() => Effect.succeed(undefined)))
               if (!info) throw new Error(`File ${filePath} not found`)
               if (info.type === "Directory") throw new Error(`Path is a directory, not a file: ${filePath}`)
-              // kilocode_change start - encoding-aware read; Encoding.read strips UTF-8 BOMs so
+              // chipmate_change start - encoding-aware read; Encoding.read strips UTF-8 BOMs so
               // derive the BOM flag from the detected encoding label instead of the decoded text.
               const pre = yield* EncodedIO.read(afs, filePath)
               const source = { bom: pre.encoding === "utf-8-bom", text: pre.text, encoding: pre.encoding }
-              // kilocode_change end
+              // chipmate_change end
               contentOld = source.text
 
               const ending = detectLineEnding(contentOld)
@@ -214,7 +214,7 @@ export const EditTool = Tool.define(
                   normalizeLineEndings(contentNew),
                 ),
               )
-              cachedFilediff = buildFileDiff(filePath, contentOld, contentNew) // kilocode_change
+              cachedFilediff = buildFileDiff(filePath, contentOld, contentNew) // chipmate_change
               yield* ctx.ask({
                 permission: "edit",
                 patterns: [path.relative(instance.worktree, filePath)],
@@ -222,11 +222,11 @@ export const EditTool = Tool.define(
                 metadata: {
                   filepath: filePath,
                   diff,
-                  filediff: cachedFilediff, // kilocode_change
+                  filediff: cachedFilediff, // chipmate_change
                 },
               })
 
-              yield* EncodedIO.write(afs, filePath, Bom.join(contentNew, desiredBom), source.encoding) // kilocode_change - encoding-aware write replaces afs.writeWithDirs
+              yield* EncodedIO.write(afs, filePath, Bom.join(contentNew, desiredBom), source.encoding) // chipmate_change - encoding-aware write replaces afs.writeWithDirs
               if (yield* format.file(filePath)) {
                 contentNew = yield* EncodedIO.sync(afs, filePath, desiredBom, source.encoding)
               }
@@ -246,12 +246,12 @@ export const EditTool = Tool.define(
             }).pipe(Effect.orDie),
           )
 
-          const filediff: Snapshot.FileDiff = cachedFilediff ?? buildFileDiff(filePath, contentOld, contentNew) // kilocode_change
+          const filediff: Snapshot.FileDiff = cachedFilediff ?? buildFileDiff(filePath, contentOld, contentNew) // chipmate_change
 
           yield* ctx.metadata({
             metadata: {
               diff,
-              filediff, // kilocode_change
+              filediff, // chipmate_change
               diagnostics: {},
             },
           })
@@ -262,13 +262,13 @@ export const EditTool = Tool.define(
           const normalizedFilePath = FSUtil.normalizePath(filePath)
           const block = LSP.Diagnostic.report(filePath, diagnostics[normalizedFilePath] ?? [])
           if (block) output += `\n\nLSP errors detected in this file, please fix:\n${block}`
-          output += yield* Effect.promise(() => ConfigValidation.check(filePath)) // kilocode_change
+          output += yield* Effect.promise(() => ConfigValidation.check(filePath)) // chipmate_change
 
           return {
             metadata: {
-              diagnostics: filterDiagnostics(diagnostics, [normalizedFilePath]), // kilocode_change
+              diagnostics: filterDiagnostics(diagnostics, [normalizedFilePath]), // chipmate_change
               diff,
-              filediff, // kilocode_change
+              filediff, // chipmate_change
             },
             title: `${path.relative(instance.worktree, filePath)}`,
             output,

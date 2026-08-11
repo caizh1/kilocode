@@ -1,16 +1,16 @@
 import { Effect } from "effect"
-import { define } from "@kilocode/plugin/v2/effect/plugin"
+import { define } from "@chipmate/plugin/v2/effect/plugin"
 import { ProviderV2 } from "../../provider"
 
-// kilocode_change start - Kilo keeps only the free-tier catalog gate from upstream's opencode plugin.
+// chipmate_change start - ChipMate keeps only the free-tier catalog gate from upstream's opencode plugin.
 //
 // Upstream turned this plugin into a full identity + remote-config integration: an OAuth device
 // flow against https://console.opencode.ai (client id "opencode-cli"), an "OpenCode Console
 // account" login method, an "API key (service account)" method, and a fetch that lets that console
-// drive Kilo's provider/model catalog. Kilo routes providers through the Kilo gateway and does not
+// drive ChipMate's provider/model catalog. ChipMate routes providers through the ChipMate gateway and does not
 // offer a competitor's account system as a sign-in option, so none of that is registered here.
 //
-// What remains is the behavior Kilo actually relies on and shipped before the v1.17.13 merge:
+// What remains is the behavior ChipMate actually relies on and shipped before the v1.17.13 merge:
 // gate the opencode ("zen") provider's paid models unless the user supplies a key, and mark the
 // provider as "public" otherwise. The provider itself still reaches the catalog through models.dev
 // sync (see catalog.ts), so this gate stays live.
@@ -41,4 +41,4 @@ export const OpencodePlugin = define({
     )
   }),
 })
-// kilocode_change end
+// chipmate_change end

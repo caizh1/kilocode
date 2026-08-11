@@ -6,7 +6,7 @@ import type { Data, Definition, Payload } from "@opencode-ai/schema/event"
 import { and, asc, eq, gt, inArray } from "drizzle-orm"
 import { Database } from "./database/database"
 import { EventSequenceTable, EventTable } from "./event/sql"
-import * as EventStorage from "./kilocode/event-storage" // kilocode_change - released tool content shapes
+import * as EventStorage from "./chipmate/event-storage" // chipmate_change - released tool content shapes
 import { Location } from "./location"
 import { makeGlobalNode } from "./effect/app-node"
 import { isDeepStrictEqual } from "node:util"
@@ -57,7 +57,7 @@ const decodeSerializedEvent = (event: SerializedEvent): Payload => {
     id: event.id,
     type: definition.type,
     durable: { aggregateID: event.aggregateID, seq: event.seq, version: definition.durable.version },
-    data: Schema.decodeUnknownSync(definition.data)(EventStorage.decode(definition.type, event.data)), // kilocode_change
+    data: Schema.decodeUnknownSync(definition.data)(EventStorage.decode(definition.type, event.data)), // chipmate_change
   }
 }
 
@@ -100,7 +100,7 @@ export const readAggregate = Effect.fn("EventV2.readAggregate")(function* <A>(
         seq: event.seq,
         version: input.manifest.definitions.get(event.type)?.durable?.version,
       },
-      data: EventStorage.decode(type, event.data), // kilocode_change
+      data: EventStorage.decode(type, event.data), // chipmate_change
     })
   })
   return {
@@ -249,7 +249,7 @@ export const layerWith = (options?: LayerOptions) =>
                             .get()
                             .pipe(Effect.orDie)
                           const latest = row?.seq ?? -1
-                          // kilocode_change - persist tool content in the released shape
+                          // chipmate_change - persist tool content in the released shape
                           const encoded = EventStorage.encode(
                             definition.type,
                             Schema.encodeUnknownSync(definition.data)(event.data),
@@ -455,7 +455,7 @@ export const layerWith = (options?: LayerOptions) =>
             const payload = {
               id: event.id,
               type: definition.type,
-              data: Schema.decodeUnknownSync(definition.data)(EventStorage.decode(definition.type, event.data)), // kilocode_change
+              data: Schema.decodeUnknownSync(definition.data)(EventStorage.decode(definition.type, event.data)), // chipmate_change
             } as Payload
             const committed = yield* commitDurableEvent(definition, payload, {
               seq: event.seq,

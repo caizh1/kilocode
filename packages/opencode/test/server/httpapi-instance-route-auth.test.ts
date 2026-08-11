@@ -14,15 +14,15 @@ function app(input: { password?: string; username?: string }) {
     HttpApiApp.routes.pipe(
       Layer.provide(
         ConfigProvider.layer(
-          // kilocode_change start - keep the filewatcher-disable flag visible so the
+          // chipmate_change start - keep the filewatcher-disable flag visible so the
           // @parcel/watcher Windows backend does not subscribe on temp dirs that
           // the tmpdir fixture deletes mid-test (throws "Invalid handle").
           ConfigProvider.fromUnknown({
-            KILO_SERVER_PASSWORD: input.password,
-            KILO_SERVER_USERNAME: input.username,
-            KILO_EXPERIMENTAL_DISABLE_FILEWATCHER: process.env.KILO_EXPERIMENTAL_DISABLE_FILEWATCHER ?? "true",
+            CHIPMATE_SERVER_PASSWORD: input.password,
+            CHIPMATE_SERVER_USERNAME: input.username,
+            CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER: process.env.CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER ?? "true",
           }),
-          // kilocode_change end
+          // chipmate_change end
         ),
       ),
     ),
@@ -54,14 +54,14 @@ describe("HttpApi instance route authorization", () => {
   test("requires configured auth before opening the instance event stream", async () => {
     await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
     const server = app({ password: "secret" })
-    const headers = { "x-kilo-directory": tmp.path }
+    const headers = { "x-chipmate-directory": tmp.path }
 
     const missing = await server.request(EventPaths.event, { headers })
     await cancelBody(missing)
     expect(missing.status).toBe(401)
 
     const authed = await server.request(EventPaths.event, {
-      headers: { ...headers, authorization: basic("kilo", "secret") }, // kilocode_change - Kilo username default
+      headers: { ...headers, authorization: basic("chipmate", "secret") }, // chipmate_change - ChipMate username default
     })
     await cancelBody(authed)
     expect(authed.status).toBe(200)
@@ -71,14 +71,14 @@ describe("HttpApi instance route authorization", () => {
     await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
     const server = app({ password: "secret" })
     const route = PtyPaths.connect.replace(":ptyID", PtyID.ascending())
-    const headers = { "x-kilo-directory": tmp.path }
+    const headers = { "x-chipmate-directory": tmp.path }
 
     const missing = await server.request(route, { headers })
     await cancelBody(missing)
     expect(missing.status).toBe(401)
 
     const authed = await server.request(route, {
-      headers: { ...headers, authorization: basic("kilo", "secret") }, // kilocode_change - Kilo username default
+      headers: { ...headers, authorization: basic("chipmate", "secret") }, // chipmate_change - ChipMate username default
     })
     await cancelBody(authed)
     expect(authed.status).toBe(404)

@@ -16,18 +16,18 @@ Status: `COMPLETE`
 - `server/chipmate-word-render/packages/skill-spec/**`
 - `server/chipmate-word-render/packages/market-db/**`
 - `server/chipmate-word-render/scripts/generate-contracts.ts`
-- `packages/kilo-vscode/src/services/marketplace/generated/market-api.ts`
-- `packages/kilo-vscode/src/services/marketplace/generated/market-client.ts`
-- `packages/kilo-vscode/tests/unit/marketplace-generated-contract.test.ts`
+- `packages/chipmate-vscode/src/services/marketplace/generated/market-api.ts`
+- `packages/chipmate-vscode/src/services/marketplace/generated/market-client.ts`
+- `packages/chipmate-vscode/tests/unit/marketplace-generated-contract.test.ts`
 - `docs/chipmate-skill-market-alignment-evidence/g1/review.md`
-- `docs/chipmate-skill-market-kilo-alignment-plan.md`
+- `docs/chipmate-skill-market-chipmate-alignment-plan.md`
 
 ## Design Summary
 
 - Render Service 现在是独立 npm workspace，包含 TypeScript + Fastify API 骨架、React + Vite Web 骨架、共享 contracts、skill-spec 和 market-db package。
 - TypeBox schema 是公共类型、发布状态、中文状态显示和错误码的单一来源。
-- 同一 schema 构建 OpenAPI 3.1；同一生成脚本输出 Web 与 Kilo 的 TypeScript API 类型和无外部运行时依赖的 fetch client。
-- 生成客户端拆分为 `market-api.ts` 和 `market-client.ts`，避免 Kilo 的 3,000 行 lint 上限，同时保持 Web/Kilo 字节一致。
+- 同一 schema 构建 OpenAPI 3.1；同一生成脚本输出 Web 与 ChipMate 的 TypeScript API 类型和无外部运行时依赖的 fetch client。
+- 生成客户端拆分为 `market-api.ts` 和 `market-client.ts`，避免 ChipMate 的 3,000 行 lint 上限，同时保持 Web/ChipMate 字节一致。
 - G1 只建立骨架和契约：Fastify 尚未接管 legacy 路由，React 尚未渲染用户界面，market-db schema version 保持 0。
 
 ## Contract Coverage
@@ -58,18 +58,18 @@ Status: `COMPLETE`
 - `npm run build`
   - Result: PASS。
   - Evidence: API/contracts/skill-spec/market-db TypeScript 通过；Vite production build 通过，首个空壳 bundle 59.98 KiB gzip。
-- `bun run typecheck`（`packages/kilo-vscode`）
+- `bun run typecheck`（`packages/chipmate-vscode`）
   - Result: PASS。
   - Evidence: extension 和 webview TypeScript 均通过。
 - `bun test tests/unit/marketplace-generated-contract.test.ts`
   - Result: PASS。
-  - Evidence: 1 pass，验证 Kilo 生成客户端可调用 capabilities endpoint。
+  - Evidence: 1 pass，验证 ChipMate 生成客户端可调用 capabilities endpoint。
 - `bunx eslint <generated clients and test>`
   - Result: PASS。
   - Evidence: 无 lint error；拆分后没有超过 max-lines。
-- `cmp -s <web generated> <kilo generated>`
+- `cmp -s <web generated> <chipmate generated>`
   - Result: PASS。
-  - Evidence: Web 与 Kilo 的 API 类型和 client 均字节一致。
+  - Evidence: Web 与 ChipMate 的 API 类型和 client 均字节一致。
 - `node --check server.js && node -e 'require("./server.js")'`
   - Result: PASS。
   - Evidence: `legacy-commonjs-load-ok`。
@@ -84,13 +84,13 @@ Status: `COMPLETE`
 - contracts：3 pass。
 - market-db skeleton：1 pass。
 - skill-spec：1 pass。
-- Kilo generated client：1 pass。
+- ChipMate generated client：1 pass。
 - TypeScript、ESLint、Vite production build、generate drift：全部 PASS。
 
 ## Runtime Evidence
 
 - Environment：macOS，Node 26.0.0，npm 11.12.1，Bun 1.3.14。
-- Artifacts：`packages/contracts/openapi/market-v1.json`、Web/Kilo generated clients、Vite `dist/`（ignored build output）。
+- Artifacts：`packages/contracts/openapi/market-v1.json`、Web/ChipMate generated clients、Vite `dist/`（ignored build output）。
 - Result：本地生成、编译和单元测试 PASS；Docker、Linux、真实 VS Code profile 仍为 NOT_RUN。
 
 ## Known Limitations
@@ -99,7 +99,7 @@ Status: `COMPLETE`
 - Node Docker 基础镜像仍是 Node 20；升级 Node 24 是 G2 范围。
 - market-db 只有 port 和 schema version 0；SQLite schema、migration、repository 和 Worker 是 G3 范围。
 - Web 只验证 React/Vite 空骨架，不包含可见 UI；选定视觉系统在 G4 实现。
-- 生成 Kilo client 尚未接入现有 Marketplace runtime；capability detection 和 legacy fallback 在 G7 前完成。
+- 生成 ChipMate client 尚未接入现有 Marketplace runtime；capability detection 和 legacy fallback 在 G7 前完成。
 
 ## Next Recommended Gate
 

@@ -1,10 +1,10 @@
 {
-  "$schema": "https://app.kilo.ai/config.json",
+  "$schema": "https://app.chipmate.ai/config.json",
   // "enterprise": {
   //   "url": "https://enterprise.dev.opencode.ai",
   // },
   "provider": {
-    "kilo": {
+    "chipmate": {
       "options": {},
     },
   },

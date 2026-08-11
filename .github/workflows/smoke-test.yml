@@ -1,5 +1,5 @@
-# kilocode_change - new file
-# Standalone smoke test — checks out kilo-bench and runs a small set of
+# chipmate_change - new file
+# Standalone smoke test — checks out chipmate-bench and runs a small set of
 # Harbor eval tasks against the latest published CLI (or a specific version).
 #
 # Tasks:  hello-world (~$0.01), log-summary-date-ranges (~$0.13)
@@ -10,9 +10,9 @@
 #   - workflow_call: from publish.yml after draft release assets are uploaded
 #
 # Required secrets:
-#   KILO_API_KEY         — Kilo Gateway key
-#   KILO_ORG_ID          — Kilo org ID
-#   BENCH_GITHUB_TOKEN   — PAT with contents:read on Kilo-Org/kilo-bench (private repo)
+#   CHIPMATE_API_KEY         — ChipMate Gateway key
+#   CHIPMATE_ORG_ID          — ChipMate org ID
+#   BENCH_GITHUB_TOKEN   — PAT with contents:read on ChipMate-Org/chipmate-bench (private repo)
 
 name: smoke-test
 
@@ -43,13 +43,13 @@ jobs:
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     env:
-      KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
-      KILO_ORG_ID: ${{ secrets.KILO_ORG_ID }}
+      CHIPMATE_API_KEY: ${{ secrets.CHIPMATE_API_KEY }}
+      CHIPMATE_ORG_ID: ${{ secrets.CHIPMATE_ORG_ID }}
     steps:
-      - name: Checkout kilo-bench
-        uses: actions/checkout@v6 # kilocode_change
+      - name: Checkout chipmate-bench
+        uses: actions/checkout@v6 # chipmate_change
         with:
-          repository: Kilo-Org/kilo-bench
+          repository: ChipMate-Org/chipmate-bench
           token: ${{ secrets.BENCH_GITHUB_TOKEN }}
 
       - name: Install uv
@@ -65,8 +65,8 @@ jobs:
 
       - name: Validate API key
         run: |
-          if [[ -z "$KILO_API_KEY" ]]; then
-            echo "::error::KILO_API_KEY secret is not set."
+          if [[ -z "$CHIPMATE_API_KEY" ]]; then
+            echo "::error::CHIPMATE_API_KEY secret is not set."
             exit 1
           fi
 
@@ -88,9 +88,9 @@ jobs:
           # The tag_name filter yields at most one release and one asset,
           # so --jq returns a single URL without needing head/pipefail games.
           URL=$(gh api "repos/${{ github.repository }}/releases" \
-            --jq ".[] | select(.tag_name == \"v${VERSION}\") | .assets[] | select(.name == \"kilo-linux-x64.tar.gz\") | .url")
+            --jq ".[] | select(.tag_name == \"v${VERSION}\") | .assets[] | select(.name == \"chipmate-linux-x64.tar.gz\") | .url")
           if [[ -z "$URL" ]]; then
-            echo "::error::asset kilo-linux-x64.tar.gz not found for v${VERSION}"
+            echo "::error::asset chipmate-linux-x64.tar.gz not found for v${VERSION}"
             exit 1
           fi
           echo "cli_url=$URL" >> "$GITHUB_OUTPUT"
@@ -108,22 +108,22 @@ jobs:
       # limits so this is harmless.
       - name: Run smoke test — hello-world
         env:
-          KILO_CLI_URL: ${{ steps.cli.outputs.cli_url }}
-          KILO_CLI_GITHUB_TOKEN: ${{ github.token }}
+          CHIPMATE_CLI_URL: ${{ steps.cli.outputs.cli_url }}
+          CHIPMATE_CLI_GITHUB_TOKEN: ${{ github.token }}
         run: |
           ./scripts/run_eval.sh \
-            -m kilo/anthropic/claude-sonnet-4.6 \
+            -m chipmate/anthropic/claude-sonnet-4.6 \
             -d hello-world \
             --job-name smoke-test-hello-world \
             --timeout-multiplier 2
 
       - name: Run smoke test — log-summary-date-ranges
         env:
-          KILO_CLI_URL: ${{ steps.cli.outputs.cli_url }}
-          KILO_CLI_GITHUB_TOKEN: ${{ github.token }}
+          CHIPMATE_CLI_URL: ${{ steps.cli.outputs.cli_url }}
+          CHIPMATE_CLI_GITHUB_TOKEN: ${{ github.token }}
         run: |
           ./scripts/run_eval.sh \
-            -m kilo/anthropic/claude-sonnet-4.6 \
+            -m chipmate/anthropic/claude-sonnet-4.6 \
             -d terminal-bench-sample \
             --include-task-name "log-summary-date-ranges" \
             --job-name smoke-test-log-summary \
@@ -135,12 +135,12 @@ jobs:
       # Also upload the agent setup logs (stdout/stderr/return-code from the
       # CLI install script) so we can see exactly which step stalls when the
       # next AgentSetupTimeoutError happens. These come from the install
-      # script in kilo-bench, which uses `set -euo pipefail` (no `set -x`)
+      # script in chipmate-bench, which uses `set -euo pipefail` (no `set -x`)
       # and never echoes auth tokens or API keys, so the captured output is
       # safe to upload.
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v7 # kilocode_change
+        uses: actions/upload-artifact@v7 # chipmate_change
         with:
           name: smoke-test-results
           path: |

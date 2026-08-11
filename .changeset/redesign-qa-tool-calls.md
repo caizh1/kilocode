@@ -1,5 +1,5 @@
 ---
-"@kilocode/kilo-ui": patch
+"@chipmate/chipmate-ui": patch
 "chipmate": patch
 ---
 

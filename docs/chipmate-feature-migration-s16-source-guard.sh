@@ -73,13 +73,13 @@ if evidence_dir_arg:
     evidence_dir = (root / evidence_dir_arg).resolve() if not Path(evidence_dir_arg).is_absolute() else Path(evidence_dir_arg).resolve()
 
 protected_paths = [
-    Path("packages/kilo-vscode/package.json"),
-    Path("packages/kilo-vscode/src/services/qwen-autocomplete/smoke.ts"),
-    Path("packages/kilo-vscode/src/services/qwen-autocomplete/index.ts"),
+    Path("packages/chipmate-vscode/package.json"),
+    Path("packages/chipmate-vscode/src/services/qwen-autocomplete/smoke.ts"),
+    Path("packages/chipmate-vscode/src/services/qwen-autocomplete/index.ts"),
 ]
 protected_prefixes = [
-    "packages/kilo-vscode/package.json",
-    "packages/kilo-vscode/src/services/qwen-autocomplete",
+    "packages/chipmate-vscode/package.json",
+    "packages/chipmate-vscode/src/services/qwen-autocomplete",
 ]
 mutating_tools = {"write", "edit", "apply_patch"}
 source_markers = (

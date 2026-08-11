@@ -88,7 +88,7 @@ export type ActiveScenario = {
   seed: (ctx: ScenarioContext) => Effect.Effect<unknown>
   request: (ctx: ScenarioContext, state: unknown) => RequestSpec
   authProbe: RequestSpec | undefined
-  validAuthProbe: boolean // kilocode_change
+  validAuthProbe: boolean // chipmate_change
   expect: (ctx: ScenarioContext, state: unknown, result: CallResult) => Effect.Effect<void>
   compare: Comparison
   capture: CaptureMode
@@ -105,7 +105,7 @@ export type BuilderState<S> = {
   seed: (ctx: ScenarioContext) => Effect.Effect<S>
   request: (ctx: SeededContext<S>) => RequestSpec
   authProbe: RequestSpec | undefined
-  validAuthProbe: boolean // kilocode_change
+  validAuthProbe: boolean // chipmate_change
   capture: CaptureMode
   mutates: boolean
   reset: boolean

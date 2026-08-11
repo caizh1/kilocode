@@ -15,7 +15,7 @@
 // The tick counter prevents stale idle events from resolving the wrong turn.
 // We also re-check live session status before resolving an idle event so a
 // delayed idle from an older turn cannot complete a newer busy turn.
-import type { Event, GlobalEvent, KiloClient } from "@kilocode/sdk/v2" // kilocode_change - revert to upstream native Event type
+import type { Event, GlobalEvent, ChipMateClient } from "@chipmate/sdk/v2" // chipmate_change - revert to upstream native Event type
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect"
 import { makeRuntime } from "@/effect/run-service"
 import {
@@ -67,7 +67,7 @@ type Trace = {
 const StreamClosed = undefined as never
 
 type StreamInput = {
-  sdk: KiloClient
+  sdk: ChipMateClient
   directory?: string
   sessionID: string
   thinking: boolean
@@ -145,7 +145,7 @@ function sid(event: Event): string | undefined {
     return event.properties.part.sessionID
   }
 
-  if (event.type === "interactive_terminal.updated") return event.properties.info.sessionID // kilocode_change
+  if (event.type === "interactive_terminal.updated") return event.properties.info.sessionID // chipmate_change
 
   if (
     event.type === "session.next.shell.started" ||
@@ -155,8 +155,8 @@ function sid(event: Event): string | undefined {
     event.type === "question.asked" ||
     event.type === "question.replied" ||
     event.type === "question.rejected" ||
-    event.type === "interactive_terminal.data" || // kilocode_change
-    event.type === "interactive_terminal.deleted" || // kilocode_change
+    event.type === "interactive_terminal.data" || // chipmate_change
+    event.type === "interactive_terminal.deleted" || // chipmate_change
     event.type === "session.error" ||
     event.type === "session.status"
   ) {
@@ -190,10 +190,10 @@ function globalPayloadEvent(value: unknown): Event | undefined {
     return undefined
   }
 
-  // kilocode_change start - revert to upstream: ignore sync compatibility copies
+  // chipmate_change start - revert to upstream: ignore sync compatibility copies
   if (value.payload.type === "sync") return undefined
   return isEvent(value.payload) ? value.payload : undefined
-  // kilocode_change end
+  // chipmate_change end
 }
 
 function isMatchingDisposeEvent(value: unknown, directory: string | undefined): boolean {
@@ -285,13 +285,13 @@ function sameView(a: FooterView, b: FooterView) {
     return false
   }
 
-  // kilocode_change start
+  // chipmate_change start
   if (a.type === "interactive_terminal" && b.type === "interactive_terminal") {
     return a.terminal === b.terminal
   }
 
   if (a.type === "interactive_terminal" || b.type === "interactive_terminal") return false
-  // kilocode_change end
+  // chipmate_change end
   return a.request === b.request
 }
 
@@ -312,7 +312,7 @@ function firstByOrder<T extends { id: string }>(left: T[], right: T[], order: Ma
 
 function pickView(data: SessionData, subagent: SubagentData, order: Map<string, number>): FooterView {
   return pickBlockerView({
-    terminal: data.terminal, // kilocode_change
+    terminal: data.terminal, // chipmate_change
     permission: firstByOrder(data.permissions, listSubagentPermissions(subagent), order),
     question: firstByOrder(data.questions, listSubagentQuestions(subagent), order),
   })

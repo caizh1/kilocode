@@ -25,7 +25,7 @@ import { InstanceHttpApi } from "../api"
 import * as ApiError from "../errors"
 import { CursorQuery, PtyConnectApi } from "../groups/pty"
 import { WebSocketTracker } from "../websocket-tracker"
-import * as AgentConsolePty from "@/kilocode/agent-console/pty" // kilocode_change
+import * as AgentConsolePty from "@/chipmate/agent-console/pty" // chipmate_change
 
 function validOrigin(request: HttpServerRequest.HttpServerRequest, opts: CorsOptions | undefined) {
   return isAllowedRequestOrigin(request.headers.origin, request.headers.host, opts)
@@ -69,7 +69,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
     })
 
     const create = Effect.fn("PtyHttpApi.create")(function* (ctx: { payload: typeof Pty.CreateInput.Type }) {
-      // kilocode_change start - attach Agent Console shells to the Kilo-only same-PTY bridge
+      // chipmate_change start - attach Agent Console shells to the ChipMate-only same-PTY bridge
       const directory = (yield* InstanceState.context).directory
       const cwd = ctx.payload.cwd || directory
       const shell = yield* plugin.trigger("shell.env", { cwd }, { env: {} as Record<string, string> })
@@ -106,7 +106,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
           }),
         ),
       )
-      // kilocode_change end
+      // chipmate_change end
     })
 
     const get = Effect.fn("PtyHttpApi.get")(function* (ctx: { params: { ptyID: PtyID } }) {
@@ -134,12 +134,12 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
       params: { ptyID: PtyID }
       payload: typeof Pty.UpdateInput.Type
     }) {
-      const directory = (yield* InstanceState.context).directory // kilocode_change
+      const directory = (yield* InstanceState.context).directory // chipmate_change
       yield* get(ctx)
       return yield* pty(
         Pty.Service.use(
           (service) =>
-            // kilocode_change start - bind a real Agent Console session before its first prompt
+            // chipmate_change start - bind a real Agent Console session before its first prompt
             Effect.gen(function* () {
               const info = yield* service.update(ctx.params.ptyID, {
                 ...ctx.payload,
@@ -150,7 +150,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
               }
               return info
             }),
-          // kilocode_change end
+          // chipmate_change end
         ),
       ).pipe(
         Effect.catchTag(

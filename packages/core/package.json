@@ -62,9 +62,9 @@
     "drizzle-kit": "catalog:"
   },
   "dependencies": {
-    "@kilocode/kilo-gateway": "workspace:*",
-    "@kilocode/kilo-indexing": "workspace:*",
-    "@kilocode/sandbox": "workspace:*",
+    "@chipmate/chipmate-gateway": "workspace:*",
+    "@chipmate/chipmate-indexing": "workspace:*",
+    "@chipmate/sandbox": "workspace:*",
     "@effect/opentelemetry": "catalog:",
     "@effect/platform-node": "catalog:",
     "@npmcli/arborist": "9.4.0",
@@ -128,7 +128,7 @@
     "@ff-labs/fff-bun": "0.9.4",
     "@silvia-odwyer/photon-node": "0.3.4",
     "@opencode-ai/schema": "workspace:*",
-    "@kilocode/plugin": "workspace:*",
+    "@chipmate/plugin": "workspace:*",
     "diff": "catalog:"
   },
   "overrides": {

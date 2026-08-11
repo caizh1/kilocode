@@ -1,4 +1,4 @@
-import type { AgentV2Info } from "@kilocode/sdk/v2/types"
+import type { AgentV2Info } from "@chipmate/sdk/v2/types"
 import type { Hooks } from "./registration.js"
 
 export interface AgentDraft {

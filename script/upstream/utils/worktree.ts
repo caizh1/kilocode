@@ -82,7 +82,7 @@ async function detach(path: string) {
 async function snapshot(input: RefInput) {
   if (input.snapshot) return input.snapshot
 
-  const idx = join(tmpdir(), `kilo-opencode-merge-${randomUUID()}.index`)
+  const idx = join(tmpdir(), `chipmate-opencode-merge-${randomUUID()}.index`)
   try {
     await $`env GIT_INDEX_FILE=${idx} git read-tree ${input.base}`.quiet()
     await $`env GIT_INDEX_FILE=${idx} git add -A`.quiet()
@@ -99,7 +99,7 @@ export async function prepare(input: RefInput): Promise<RefInfo> {
   const repo = await root()
   const dir = join(repo, ".worktrees", "opencode-merge")
   const opencode = join(dir, "opencode")
-  const main = join(dir, "kilo-main")
+  const main = join(dir, "chipmate-main")
   const auto = join(dir, "auto-merge")
   const branch = `opencode-merge/auto-${slug(input.tag)}`
 

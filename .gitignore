@@ -6,7 +6,7 @@ node_modules
 .sst
 .env
 .env.local
-.kilo-render-defaults.local.json
+.chipmate-render-defaults.local.json
 .idea/*
 !.idea/gradle.xml
 !.idea/.run
@@ -38,11 +38,11 @@ a.out
 target
 .scripts
 .direnv/
-packages/kilo-jetbrains/build-tasks/.gradle/
+packages/chipmate-jetbrains/build-tasks/.gradle/
 
 # Local dev files
 opencode-dev
-.kilo-dev/
+.chipmate-dev/
 UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
@@ -53,28 +53,28 @@ public-packages/
 telemetry-id
 tsconfig.tsbuildinfo
 
-# Kilo
-.kilo/.gitignore
-.kilo/package.json
-.kilo/package-lock.json
-.kilo/pnpm-lock.yaml
-.kilo/bun.lock
-.kilo/yarn.lock
-.kilo/node_modules
-.kilo/artifacts/
-.kilo/plans/
-.kilo/plans/*upstream-merge-report-*.md
-.kilocode/.gitignore
-.kilocode/package.json
-.kilocode/package-lock.json
-.kilocode/pnpm-lock.yaml
-.kilocode/bun.lock
-.kilocode/yarn.lock
-.kilocode/node_modules
-.kilocode/artifacts/
+# ChipMate
+.chipmate/.gitignore
+.chipmate/package.json
+.chipmate/package-lock.json
+.chipmate/pnpm-lock.yaml
+.chipmate/bun.lock
+.chipmate/yarn.lock
+.chipmate/node_modules
+.chipmate/artifacts/
+.chipmate/plans/
+.chipmate/plans/*upstream-merge-report-*.md
+.chipmate/.gitignore
+.chipmate/package.json
+.chipmate/package-lock.json
+.chipmate/pnpm-lock.yaml
+.chipmate/bun.lock
+.chipmate/yarn.lock
+.chipmate/node_modules
+.chipmate/artifacts/
 
 # Test Artifacts
 packages/app/.artifacts/
 packages/opencode/.artifacts/
-packages/kilo-vscode/benchmark-results/
+packages/chipmate-vscode/benchmark-results/
 docs/chipmate-feature-migration-validation-runs/

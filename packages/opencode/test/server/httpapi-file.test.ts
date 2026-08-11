@@ -17,7 +17,7 @@ function request(route: string, directory: string, query?: Record<string, string
   return HttpApiApp.webHandler().handler(
     new Request(url, {
       headers: {
-        "x-kilo-directory": directory,
+        "x-chipmate-directory": directory,
       },
     }),
     context,
@@ -52,8 +52,8 @@ describe("file HttpApi", () => {
     expect(await status.json()).toEqual([])
   })
 
-  // kilocode_change - skip on Windows: Kilo file search returns [] for hello.txt.
-  // Tracked in Kilo-Org/kilocode#9831.
+  // chipmate_change - skip on Windows: ChipMate file search returns [] for hello.txt.
+  // Tracked in ChipMate-Org/chipmate#9831.
   const searchTest = process.platform === "win32" ? test.skip : test
   searchTest("serves search endpoints", async () => {
     await using tmp = await tmpdir({ git: true })

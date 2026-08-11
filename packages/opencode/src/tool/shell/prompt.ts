@@ -7,14 +7,14 @@ import { ShellID } from "./id"
 const PS = new Set(["powershell", "pwsh"])
 const CMD = new Set(["cmd"])
 
-// kilocode_change start - description is optional, prefixed with "Recommended:" so the model knows it can omit it
+// chipmate_change start - description is optional, prefixed with "Recommended:" so the model knows it can omit it
 const descriptions = {
   bash: "Recommended: a clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
   powershell:
     'Recommended: a clear, concise description of what this command does in 5-10 words. Examples:\nInput: Get-ChildItem -LiteralPath "."\nOutput: Lists current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: New-Item -ItemType Directory -Path "tmp"\nOutput: Creates directory tmp',
   cmd: 'Recommended: a clear, concise description of what this command does in 5-10 words. Examples:\nInput: dir\nOutput: Lists current directory\n\nInput: if exist "package.json" type "package.json"\nOutput: Prints package.json when it exists\n\nInput: mkdir tmp\nOutput: Creates directory tmp',
 }
-// kilocode_change end
+// chipmate_change end
 export type Limits = {
   maxLines: number
   maxBytes: number
@@ -27,7 +27,7 @@ export function parameterSchema(description: string) {
     workdir: Schema.optional(Schema.String).annotate({
       description: `The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.`,
     }),
-    description: Schema.optional(Schema.String).annotate({ description }), // kilocode_change - description is optional
+    description: Schema.optional(Schema.String).annotate({ description }), // chipmate_change - description is optional
   })
 }
 
@@ -84,7 +84,7 @@ function chainGuidance(name: string) {
   return "If the commands depend on each other and must run sequentially, use a single Bash call with '&&' to chain them together (e.g., `git add . && git commit -m \"message\" && git push`). For instance, if one operation must complete before another starts (like mkdir before cp, Write before Bash for git operations, or git add before git commit), run these operations sequentially instead."
 }
 
-// kilocode_change start
+// chipmate_change start
 function bashCommandSection(chain: string, limits: Limits, defaultTimeoutMs: number) {
   return `Before executing the command, please follow these steps:
 
@@ -128,7 +128,7 @@ Usage notes:
     cd /foo/bar && pytest tests
     </bad-example>`
 }
-// kilocode_change end
+// chipmate_change end
 
 function powershellCommandSection(
   name: string,
@@ -271,10 +271,10 @@ function profile(name: string, platform: NodeJS.Platform, limits: Limits, defaul
     }
   }
   return {
-    // kilocode_change start
+    // chipmate_change start
     intro:
       "Executes a given command in a persistent shell session with optional timeout, ensuring proper handling and security measures.",
-    // kilocode_change end
+    // chipmate_change end
     workdirSection:
       "All commands run in the current working directory by default. Use the `workdir` parameter if you need to run a command in a different directory. AVOID using `cd <directory> && <command>` patterns - use `workdir` instead.",
     commandSection: bashCommandSection(chain, limits, defaultTimeoutMs),

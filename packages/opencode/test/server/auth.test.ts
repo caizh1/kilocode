@@ -4,37 +4,37 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { ServerAuth } from "../../src/server/auth"
 
 const original = {
-  KILO_SERVER_PASSWORD: Flag.KILO_SERVER_PASSWORD,
-  KILO_SERVER_USERNAME: Flag.KILO_SERVER_USERNAME,
+  CHIPMATE_SERVER_PASSWORD: Flag.CHIPMATE_SERVER_PASSWORD,
+  CHIPMATE_SERVER_USERNAME: Flag.CHIPMATE_SERVER_USERNAME,
 }
 
 afterEach(() => {
-  Flag.KILO_SERVER_PASSWORD = original.KILO_SERVER_PASSWORD
-  Flag.KILO_SERVER_USERNAME = original.KILO_SERVER_USERNAME
+  Flag.CHIPMATE_SERVER_PASSWORD = original.CHIPMATE_SERVER_PASSWORD
+  Flag.CHIPMATE_SERVER_USERNAME = original.CHIPMATE_SERVER_USERNAME
 })
 
 describe("ServerAuth", () => {
   test("does not emit auth headers without a password", () => {
-    Flag.KILO_SERVER_PASSWORD = undefined
-    Flag.KILO_SERVER_USERNAME = "alice"
+    Flag.CHIPMATE_SERVER_PASSWORD = undefined
+    Flag.CHIPMATE_SERVER_USERNAME = "alice"
 
     expect(ServerAuth.header()).toBeUndefined()
     expect(ServerAuth.headers()).toBeUndefined()
   })
 
-  test("defaults to the kilo username", () => {
-    // kilocode_change
-    Flag.KILO_SERVER_PASSWORD = "secret"
-    Flag.KILO_SERVER_USERNAME = undefined
+  test("defaults to the chipmate username", () => {
+    // chipmate_change
+    Flag.CHIPMATE_SERVER_PASSWORD = "secret"
+    Flag.CHIPMATE_SERVER_USERNAME = undefined
 
     expect(ServerAuth.headers()).toEqual({
-      Authorization: `Basic ${Buffer.from("kilo:secret").toString("base64")}`, // kilocode_change
+      Authorization: `Basic ${Buffer.from("chipmate:secret").toString("base64")}`, // chipmate_change
     })
   })
 
   test("uses the configured username", () => {
-    Flag.KILO_SERVER_PASSWORD = "secret"
-    Flag.KILO_SERVER_USERNAME = "alice"
+    Flag.CHIPMATE_SERVER_PASSWORD = "secret"
+    Flag.CHIPMATE_SERVER_USERNAME = "alice"
 
     expect(ServerAuth.headers()).toEqual({
       Authorization: `Basic ${Buffer.from("alice:secret").toString("base64")}`,
@@ -42,8 +42,8 @@ describe("ServerAuth", () => {
   })
 
   test("prefers explicit credentials", () => {
-    Flag.KILO_SERVER_PASSWORD = "secret"
-    Flag.KILO_SERVER_USERNAME = "alice"
+    Flag.CHIPMATE_SERVER_PASSWORD = "secret"
+    Flag.CHIPMATE_SERVER_USERNAME = "alice"
 
     expect(ServerAuth.headers({ password: "cli-secret", username: "bob" })).toEqual({
       Authorization: `Basic ${Buffer.from("bob:cli-secret").toString("base64")}`,
@@ -55,6 +55,6 @@ describe("ServerAuth", () => {
 
     expect(ServerAuth.required(config)).toBe(true)
     expect(ServerAuth.authorized({ username: "alice", password: Redacted.make("secret") }, config)).toBe(true)
-    expect(ServerAuth.authorized({ username: "kilo", password: Redacted.make("secret") }, config)).toBe(false) // kilocode_change
+    expect(ServerAuth.authorized({ username: "chipmate", password: Redacted.make("secret") }, config)).toBe(false) // chipmate_change
   })
 })

@@ -4,16 +4,16 @@ import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { Skill } from "../skill"
 import * as Tool from "./tool"
 import DESCRIPTION from "./skill.txt"
-import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
-import { Session } from "@/session/session" // kilocode_change
-// kilocode_change start - gate + run shell injection in skill bodies
+import * as WorkflowGuard from "@/chipmate/skill/workflow-guard" // chipmate_change
+import { Session } from "@/session/session" // chipmate_change
+// chipmate_change start - gate + run shell injection in skill bodies
 import { Config } from "@/config/config"
 import { Shell } from "@opencode-ai/core/shell"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ShellPermission } from "./shell"
-import { SkillInject } from "@/kilocode/skills/inject"
-// kilocode_change end
+import { SkillInject } from "@/chipmate/skills/inject"
+// chipmate_change end
 
 export const Parameters = Schema.Struct({
   name: Schema.String.annotate({ description: "The name of the skill from available_skills" }),
@@ -24,10 +24,10 @@ export const SkillTool = Tool.define(
   Effect.gen(function* () {
     const skill = yield* Skill.Service
     const ripgrep = yield* Ripgrep.Service
-    const sessions = yield* Session.Service // kilocode_change
-    const flags = yield* RuntimeFlags.Service // kilocode_change
-    const permission = yield* ShellPermission // kilocode_change - decompose skill commands like the bash tool
-    const config = yield* Config.Service // kilocode_change - resolve a parseable shell for injection
+    const sessions = yield* Session.Service // chipmate_change
+    const flags = yield* RuntimeFlags.Service // chipmate_change
+    const permission = yield* ShellPermission // chipmate_change - decompose skill commands like the bash tool
+    const config = yield* Config.Service // chipmate_change - resolve a parseable shell for injection
 
     return {
       description: DESCRIPTION,
@@ -44,7 +44,7 @@ export const SkillTool = Tool.define(
             always: [params.name],
             metadata: {},
           })
-          // kilocode_change start - restore the canonical document root from persisted turns
+          // chipmate_change start - restore the canonical document root from persisted turns
           const messages = yield* Effect.gen(function* () {
             if (info.name !== "source-backed-detail-design") return ctx.messages
             const history = yield* sessions.messages({ sessionID: ctx.sessionID })
@@ -52,9 +52,9 @@ export const SkillTool = Tool.define(
             return [...history, ...ctx.messages.filter((message) => !seen.has(message.info.id))]
           })
           WorkflowGuard.activate(ctx.sessionID, info.name, messages)
-          // kilocode_change end
+          // chipmate_change end
 
-          // kilocode_change start - render `!`cmd`` shell injection, gated by trust + kill-switch + batch approval
+          // chipmate_change start - render `!`cmd`` shell injection, gated by trust + kill-switch + batch approval
           const cfg = yield* config.get()
           const content = yield* SkillInject.render({
             content: info.content,
@@ -66,9 +66,9 @@ export const SkillTool = Tool.define(
             ctx,
             decompose: permission.decompose,
           })
-          // kilocode_change end
+          // chipmate_change end
 
-          // kilocode_change start - built-in skills have no filesystem directory
+          // chipmate_change start - built-in skills have no filesystem directory
           if (info.location === Skill.BUILTIN_LOCATION) {
             return {
               title: `Loaded skill: ${info.name}`,
@@ -76,7 +76,7 @@ export const SkillTool = Tool.define(
                 `<skill_content name="${info.name}">`,
                 `# Skill: ${info.name}`,
                 "",
-                content.trim(), // kilocode_change
+                content.trim(), // chipmate_change
                 "</skill_content>",
               ].join("\n"),
               metadata: {
@@ -85,7 +85,7 @@ export const SkillTool = Tool.define(
               },
             }
           }
-          // kilocode_change end
+          // chipmate_change end
 
           const dir = path.dirname(info.location)
           const base = dir
@@ -104,7 +104,7 @@ export const SkillTool = Tool.define(
               `<skill_content name="${info.name}">`,
               `# Skill: ${info.name}`,
               "",
-              content.trim(), // kilocode_change
+              content.trim(), // chipmate_change
               "",
               `Base directory for this skill: ${base}`,
               "Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.",

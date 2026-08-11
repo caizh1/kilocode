@@ -12,9 +12,9 @@ export {
 const AUTH_TOKEN_QUERY = "auth_token"
 const UNAUTHORIZED = 401
 const WWW_AUTHENTICATE = 'Basic realm="Secure Area"'
-// kilocode_change start - require auth for high-risk permission toggles even when global auth is optional
+// chipmate_change start - require auth for high-risk permission toggles even when global auth is optional
 const REQUIRED_AUTH_PATHS = new Set(["/permission/allow-everything"])
-// kilocode_change end
+// chipmate_change end
 
 // Avoid HttpApiSecurity alternatives here: Effect security middleware wraps the
 // full handler, so a downstream failure can make the next auth alternative run
@@ -44,10 +44,10 @@ function validateCredential<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   credential: ServerAuth.DecodedCredentials,
   config: ServerAuth.Info,
-  force = ServerAuth.required(config), // kilocode_change - allow endpoint-specific required auth
+  force = ServerAuth.required(config), // chipmate_change - allow endpoint-specific required auth
 ) {
   return Effect.gen(function* () {
-    if (!force) return yield* effect // kilocode_change
+    if (!force) return yield* effect // chipmate_change
     if (!ServerAuth.authorized(credential, config)) {
       yield* HttpEffect.appendPreResponseHandler((_request, response) =>
         Effect.succeed(HttpServerResponse.setHeader(response, "www-authenticate", WWW_AUTHENTICATE)),
@@ -58,11 +58,11 @@ function validateCredential<A, E, R>(
   })
 }
 
-// kilocode_change start - fail closed for high-risk unauthenticated endpoints
+// chipmate_change start - fail closed for high-risk unauthenticated endpoints
 function guarded(url: URL, config: ServerAuth.Info) {
   return ServerAuth.required(config) || REQUIRED_AUTH_PATHS.has(url.pathname)
 }
-// kilocode_change end
+// chipmate_change end
 
 function decodeCredential(input: string) {
   return Effect.fromResult(Encoding.decodeBase64String(input)).pipe(
@@ -132,10 +132,10 @@ export const authorizationLayer = Layer.effect(
     return Authorization.of((effect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const url = new URL(request.url, "http://localhost") // kilocode_change - inspect endpoint-specific auth policy
-        if (!guarded(url, config)) return yield* effect // kilocode_change
+        const url = new URL(request.url, "http://localhost") // chipmate_change - inspect endpoint-specific auth policy
+        if (!guarded(url, config)) return yield* effect // chipmate_change
         return yield* credentialFromRequest(request).pipe(
-          Effect.flatMap((credential) => validateCredential(effect, credential, config, true)), // kilocode_change
+          Effect.flatMap((credential) => validateCredential(effect, credential, config, true)), // chipmate_change
         )
       }),
     )

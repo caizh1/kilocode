@@ -36,7 +36,7 @@ shasum -a 256 -c SHA256SUMS-chipmate-0.0.38-offline-delivery.txt
 tar -xzf chipmate-0.0.38-offline-target-verify-kit.tar.gz
 python3 chipmate-0.0.38-offline-target-verify-kit/chipmate-feature-migration-offline-delivery-set-verify.py . --output evidence-delivery-set.md
 bash chipmate-0.0.38-offline-target-verify-kit/chipmate-feature-migration-offline-target-run-linux.sh . evidence-linux-package
-code --install-extension kilo-vscode-linux-x64-baseline.vsix --force
+code --install-extension chipmate-vscode-linux-x64-baseline.vsix --force
 
 # After package checks and any installed runtime smoke evidence are collected:
 python3 chipmate-0.0.38-offline-target-verify-kit/chipmate-feature-migration-target-evidence-return-pack.py \
@@ -51,7 +51,7 @@ Get-FileHash -Algorithm SHA256 .\\chipmate-0.0.38-offline-delivery-set.zip
 tar -xzf .\\chipmate-0.0.38-offline-target-verify-kit.tar.gz
 python .\\chipmate-0.0.38-offline-target-verify-kit\\chipmate-feature-migration-offline-delivery-set-verify.py . --output evidence-delivery-set.md
 powershell -ExecutionPolicy Bypass -File .\\chipmate-0.0.38-offline-target-verify-kit\\chipmate-feature-migration-offline-target-run-windows.ps1 -DeliveryDir . -EvidenceDir evidence-windows-package
-code --install-extension .\\kilo-vscode-win32-x64-baseline.vsix --force
+code --install-extension .\\chipmate-vscode-win32-x64-baseline.vsix --force
 
 # After package checks and any installed runtime smoke evidence are collected:
 python .\\chipmate-0.0.38-offline-target-verify-kit\\chipmate-feature-migration-target-evidence-return-pack.py `
@@ -114,7 +114,7 @@ def write_request(target: str, manifest: dict[str, Any], output: Path) -> None:
             "",
             "## Boundary",
             "",
-            "This request is an operator handoff only. It does not prove package execution, installed runtime S1-S16, native Kilo QA preservation, S16 autocomplete behavior, or M11 no-regression until target evidence is returned and accepted.",
+            "This request is an operator handoff only. It does not prove package execution, installed runtime S1-S16, native ChipMate QA preservation, S16 autocomplete behavior, or M11 no-regression until target evidence is returned and accepted.",
             "",
         ]
     )
@@ -124,7 +124,7 @@ def write_request(target: str, manifest: dict[str, Any], output: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--manifest", type=Path, default=Path("packages/kilo-vscode/out/CHIPMATE_OFFLINE_DELIVERY_MANIFEST-0.0.38.json"))
+    parser.add_argument("--manifest", type=Path, default=Path("packages/chipmate-vscode/out/CHIPMATE_OFFLINE_DELIVERY_MANIFEST-0.0.38.json"))
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 

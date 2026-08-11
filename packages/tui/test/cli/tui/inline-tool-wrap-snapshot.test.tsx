@@ -48,7 +48,7 @@ const tools: readonly ToolFixture[] = [
   {
     icon: "✱",
     label:
-      'Grep "export const KILO_DB|KILO_DB|KILO_DEV|Global\\.Path\\.data|data =" in packages/opencode/src (115 matches)',
+      'Grep "export const CHIPMATE_DB|CHIPMATE_DB|CHIPMATE_DEV|Global\\.Path\\.data|data =" in packages/opencode/src (115 matches)',
   },
 ] as const
 
@@ -225,11 +225,11 @@ async function renderFrame(component: () => JSX.Element, options: { width: numbe
 describe("TUI inline tool wrapping", () => {
   test("falls back for unknown tool names", () => {
     expect(toolDisplay("bash")).toBe("bash")
-    // kilocode_change start - Kilo tools keep their dedicated renderers
+    // chipmate_change start - ChipMate tools keep their dedicated renderers
     expect(toolDisplay("background_process")).toBe("background_process")
     expect(toolDisplay("interactive_terminal")).toBe("interactive_terminal")
     expect(toolDisplay("semantic_search")).toBe("semantic_search")
-    // kilocode_change end
+    // chipmate_change end
     expect(toolDisplay("plugin_tool")).toBe("generic")
   })
 

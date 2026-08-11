@@ -49,8 +49,8 @@
   },
   "dependencies": {
     "@opencode-ai/core": "workspace:*",
-    "@kilocode/plugin": "workspace:*",
-    "@kilocode/sdk": "workspace:*",
+    "@chipmate/plugin": "workspace:*",
+    "@chipmate/sdk": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@opentui/core": "catalog:",
     "@opentui/keymap": "catalog:",

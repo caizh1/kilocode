@@ -27,9 +27,9 @@ from pathlib import Path
 EXPECTED_VERSION = "0.0.38"
 EXPECTED_BUNDLE_SHA = "97a70108ae648a1998168d679c3c65638ea7756926860fad113cd06c31d2dba5"
 EXPECTED_BUNDLE_SIZE = 317784738
-EXPECTED_LINUX_VSIX = "kilo-vscode-linux-x64-baseline.vsix"
+EXPECTED_LINUX_VSIX = "chipmate-vscode-linux-x64-baseline.vsix"
 EXPECTED_LINUX_SHA = "95218162b0d0a09c6425c80a10e9745569c1b021edd9d666a5f43278d31458ad"
-EXPECTED_WINDOWS_VSIX = "kilo-vscode-win32-x64-baseline.vsix"
+EXPECTED_WINDOWS_VSIX = "chipmate-vscode-win32-x64-baseline.vsix"
 EXPECTED_WINDOWS_SHA = "3c6b9943ecf8259379c6f75b1ff321bb83677c092aac3974584524fcd90e489d"
 
 EXPECTED_CONTENTS = sorted(
@@ -170,8 +170,8 @@ def main() -> int:
             fail(f"linux vsix sha mismatch: expected {EXPECTED_LINUX_SHA} got {linux_sha}")
         if windows_sha != EXPECTED_WINDOWS_SHA:
             fail(f"windows vsix sha mismatch: expected {EXPECTED_WINDOWS_SHA} got {windows_sha}")
-        verify_vsix_cli_markers(linux_vsix_data, "extension/bin/kilo", "linux")
-        verify_vsix_cli_markers(windows_vsix_data, "extension/bin/kilo.exe", "windows")
+        verify_vsix_cli_markers(linux_vsix_data, "extension/bin/chipmate", "linux")
+        verify_vsix_cli_markers(windows_vsix_data, "extension/bin/chipmate.exe", "windows")
 
         release_index = json.loads(read_tar_member(tar, f"OFFLINE_RELEASE_INDEX-chipmate-{EXPECTED_VERSION}.json").decode("utf-8"))
         if release_index.get("version") != EXPECTED_VERSION:

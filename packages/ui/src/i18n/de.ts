@@ -59,7 +59,7 @@ export const dict = {
 
   "dialog.usageExceeded.freeTier.title": "Kostenloses Limit erreicht",
   "dialog.usageExceeded.freeTier.description":
-    "Abonniere Kilo Go für zuverlässigen Zugriff auf die besten Open-Source-Modelle, ab $5/Monat.",
+    "Abonniere ChipMate Go für zuverlässigen Zugriff auf die besten Open-Source-Modelle, ab $5/Monat.",
   "dialog.usageExceeded.freeTier.actionLabel": "Abonnieren",
   "dialog.usageExceeded.accountRateLimit.title": "Go-Limit erreicht",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -110,7 +110,7 @@ export const dict = {
   "ui.textField.copied": "Kopiert",
 
   "ui.imagePreview.alt": "Bildvorschau",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Mermaid-Diagramm wird gerendert...",
   "ui.mermaid.renderError": "Mermaid-Rendering fehlgeschlagen: {{message}}",
   "ui.mermaid.errorDefault": "Mermaid-Diagramm kann nicht gerendert werden.",
@@ -132,12 +132,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "scrollbarer Inhalt",
 
   "ui.tool.read": "Lesen",
   "ui.tool.loaded": "Geladen",
-  "ui.tool.swePruned": "SWE-Pruner · {{kept}} von {{total}} Zeilen behalten", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · {{kept}} von {{total}} Zeilen behalten", // chipmate_change
   "ui.tool.list": "Auflisten",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -173,7 +173,7 @@ export const dict = {
   "ui.message.collapse": "Nachricht reduzieren",
   "ui.message.copy": "Kopieren",
   "ui.message.copyMessage": "Nachricht kopieren",
-  "ui.message.deleteQueued": "Nachricht in Warteschlange löschen", // kilocode_change
+  "ui.message.deleteQueued": "Nachricht in Warteschlange löschen", // chipmate_change
   "ui.message.forkMessage": "In neue Sitzung abzweigen",
   "ui.message.revertMessage": "Auf diesen Punkt zurücksetzen",
   "ui.message.copyResponse": "Antwort kopieren",
@@ -189,9 +189,9 @@ export const dict = {
   "ui.patch.action.patched": "Gepatched",
 
   "ui.question.subtitle.answered": "{{count}} beantwortet",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(keine Antwort)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(nicht beantwortet)",
   "ui.question.multiHint": "Alle zutreffenden auswählen",
   "ui.question.singleHint": "Eine Antwort auswählen",

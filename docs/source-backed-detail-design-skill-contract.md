@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- [x] This document defines the boundary for source-backed detailed-design capability in Kilo as an optional skill-guided workflow.
+- [x] This document defines the boundary for source-backed detailed-design capability in ChipMate as an optional skill-guided workflow.
 - [x] This is not a migrated ChipMate skill contract, Word contract, artifact-consumption gate, or runtime planning contract.
 - [x] Only reusable skill guidance, evidence expectations, and generic deliverable mechanics migrate.
 - [x] ChipMate runtime planner, question routing, and `DesignDocAgentFlow` do not migrate.
@@ -15,9 +15,9 @@
 
 ## Evidence Tools
 
-- [x] Use Kilo-native `codebase_analysis` for C/C++ symbol relationships, callers/callees, call chains, macro/register/MMIO usage, state machines, error paths, cleanup paths, lifecycle, module flow, and impact analysis.
-- [x] Use Kilo-native `semantic_search` for broad conceptual source-code discovery before narrowing with grep/read.
-- [x] Use Kilo-native `document_search` for configured workspace PDF, DOCX, XLSX, ODS, Markdown, CSV, TSV, RST, or text evidence.
+- [x] Use ChipMate-native `codebase_analysis` for C/C++ symbol relationships, callers/callees, call chains, macro/register/MMIO usage, state machines, error paths, cleanup paths, lifecycle, module flow, and impact analysis.
+- [x] Use ChipMate-native `semantic_search` for broad conceptual source-code discovery before narrowing with grep/read.
+- [x] Use ChipMate-native `document_search` for configured workspace PDF, DOCX, XLSX, ODS, Markdown, CSV, TSV, RST, or text evidence.
 - [x] Use ordinary file read/search tools only after evidence tools identify precise files or anchors.
 
 ## Required Output Structure
@@ -57,7 +57,7 @@
 - [x] Do not migrate ChipMate QA planner.
 - [x] Do not migrate ChipMate question routing.
 - [x] Do not migrate ChipMate Word/document runtime contracts or required-artifact repair gates.
-- [x] Do not bypass Kilo-native evidence tools.
+- [x] Do not bypass ChipMate-native evidence tools.
 - [x] Do not make this skill the default path for ordinary code-understanding questions.
 
 ## Review Guidance
@@ -65,5 +65,5 @@
 - [x] Confirm generated design content is evidence-backed.
 - [x] Confirm claims without direct evidence are labeled as inference.
 - [x] Confirm Word/Mermaid/artifact tools are used only for explicit deliverables.
-- [x] Confirm ordinary Kilo QA still works without entering this skill.
-- [x] Confirm no ChipMate-style Word contract or skill contract gate has been added to Kilo's native QA path.
+- [x] Confirm ordinary ChipMate QA still works without entering this skill.
+- [x] Confirm no ChipMate-style Word contract or skill contract gate has been added to ChipMate's native QA path.

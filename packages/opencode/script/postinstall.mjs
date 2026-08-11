@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8"))
 
-// kilocode_change start - variant detection matching bin/kilo logic
+// chipmate_change start - variant detection matching bin/chipmate logic
 const platformMap = {
   darwin: "darwin",
   linux: "linux",
@@ -25,9 +25,9 @@ const archMap = {
 
 const platform = platformMap[os.platform()] ?? os.platform()
 const arch = archMap[os.arch()] ?? os.arch()
-const base = `@kilocode/cli-${platform}-${arch}`
-const sourceBinary = platform === "windows" ? "kilo.exe" : "kilo"
-const targetBinary = path.join(__dirname, "bin", ".kilo")
+const base = `@chipmate/cli-${platform}-${arch}`
+const sourceBinary = platform === "windows" ? "chipmate.exe" : "chipmate"
+const targetBinary = path.join(__dirname, "bin", ".chipmate")
 
 function supportsAvx2() {
   if (arch !== "x64") return false
@@ -123,9 +123,9 @@ function resolveBinary(name) {
   if (!fs.existsSync(binaryPath)) throw new Error(`Binary not found at ${binaryPath}`)
   return binaryPath
 }
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start - copy runtime resources next to cached binary
+// chipmate_change start - copy runtime resources next to cached binary
 function copyResources(source) {
   for (const [name, entry] of [
     ["tree-sitter", "tree-sitter.wasm"],
@@ -152,8 +152,8 @@ function copyResources(source) {
     fs.cpSync(licenses, target, { recursive: true })
   }
 
-  const worker = path.join(path.dirname(source), "kilo-sandbox-mutation-worker.js")
-  if (fs.existsSync(worker)) fs.copyFileSync(worker, path.join(__dirname, "bin", "kilo-sandbox-mutation-worker.js"))
+  const worker = path.join(path.dirname(source), "chipmate-sandbox-mutation-worker.js")
+  if (fs.existsSync(worker)) fs.copyFileSync(worker, path.join(__dirname, "bin", "chipmate-sandbox-mutation-worker.js"))
 }
 
 function copyBinary(source) {
@@ -168,7 +168,7 @@ function copyBinary(source) {
   copyResources(source)
   fs.chmodSync(targetBinary, 0o755)
 }
-// kilocode_change end
+// chipmate_change end
 
 function verifyBinary() {
   const result = childProcess.spawnSync(targetBinary, ["--version"], {
@@ -189,7 +189,7 @@ function main() {
       copyBinary(resolveBinary(name))
       if (verifyBinary()) return
     } catch {
-      const temp = fs.mkdtempSync(path.join(os.tmpdir(), "kilo-install-"))
+      const temp = fs.mkdtempSync(path.join(os.tmpdir(), "chipmate-install-"))
       try {
         const version = packageJson.optionalDependencies?.[name]
         if (!version) continue
@@ -208,7 +208,7 @@ function main() {
   }
 
   throw new Error(
-    `It seems your package manager failed to install the right Kilo CLI package. Try manually installing ${packageNames()
+    `It seems your package manager failed to install the right ChipMate CLI package. Try manually installing ${packageNames()
       .map((name) => JSON.stringify(name))
       .join(" or ")}.`,
   )
@@ -217,6 +217,6 @@ function main() {
 try {
   main()
 } catch (error) {
-  console.error("Failed to setup kilo binary:", error.message)
+  console.error("Failed to setup chipmate binary:", error.message)
   process.exit(1)
 }

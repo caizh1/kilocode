@@ -35,7 +35,7 @@ PACKET = """# Remaining Blocker Unblock Packet
 - Current external evidence action packet: `docs/chipmate-feature-migration-m11-external-evidence-action-packet.md`
 - Current receive quickstart: `docs/chipmate-feature-migration-m11-returned-evidence-receive-quickstart.md`
 - Preferred receive wrapper: `docs/chipmate-feature-migration-m11-returned-evidence-receive.py`
-- Purpose: give each blocker owner an exact unblock path without changing Kilo native QA or reintroducing ChipMate contract/repair/gating flows.
+- Purpose: give each blocker owner an exact unblock path without changing ChipMate native QA or reintroducing ChipMate contract/repair/gating flows.
 
 ## Boundary
 
@@ -86,7 +86,7 @@ The receive wrapper runs archive/structure verification before bundle intake. If
 | Installed VSIX S1-S16 | Runtime operator | Run installed VSIX chat/runtime S1-S16 in the agreed VS Code profile/workspace with usable providers. | Runtime evidence directory plus runtime intake summary. | Runtime intake summary `PASS` for required S1-S16 and no old ChipMate contract/repair markers. |
 | Offline Windows x86-64 target | Windows target owner | Run the generated Windows target execution request on the real offline Windows x86-64 target. | Returned target evidence pack and extracted evidence directory. | Return-pack verify passes; target intake final status `PASS`; runtime intake `PASS` where required. |
 | Offline Linux x86-64 target | Linux target owner | Run the generated Linux target execution request on the real offline Linux x86-64 target. | Returned target evidence pack and extracted evidence directory. | Return-pack verify passes; target intake final status `PASS`; runtime intake `PASS` where required. |
-| Internal embedded-C detail design | Internal project owner | Run source-backed-detail-design skill through installed VSIX/chat on a representative internal embedded C module. | Source evidence, Markdown/design doc, diagrams, Word output, quality report, and artifact manifest. | Evidence shows Kilo native QA/document tools plus skill instructions, not ChipMate runtime contract or repair flow. |
+| Internal embedded-C detail design | Internal project owner | Run source-backed-detail-design skill through installed VSIX/chat on a representative internal embedded C module. | Source evidence, Markdown/design doc, diagrams, Word output, quality report, and artifact manifest. | Evidence shows ChipMate native QA/document tools plus skill instructions, not ChipMate runtime contract or repair flow. |
 | Real company `.docx` template | Document/template owner | Provide a representative company `.docx` or `.dotx` and run the template validator plus S8 Word template flow. | Template validation summary and S8 runtime/template evidence. | Validation `PASS`, or explicitly accepted `PASS_WITH_LIMITS` with documented style inheritance limits. |
 | Visible Agent Terminal UX | VS Code UX/manual operator | Run visible installed VS Code checks for command-palette prompt, terminal pane opening, default-off behavior, and dangerous-command confirmation. | Screenshots/logs/manual evidence tied to installed VSIX profile. | M11 accepts visible UX evidence; local service/runtime rollup alone is not enough. |
 | M11 final no-regression review | Release reviewer | After all upstream gates return acceptable evidence, rerun readiness, completion audit, current-state consistency, and final signoff intake. | Final review template, readiness summary, completion audit, consistency summary, final signoff summary. | Final signoff intake `READY_FOR_FINAL_SIGNOFF` and final review decision `PASS` or explicitly accepted `PASS_WITH_KNOWN_LIMITS`. |
@@ -123,8 +123,8 @@ Decision record template:
 - Decision: `keep|revert|split-review`
 - Accepted by: `<name>`
 - Date: `<YYYY-MM-DD>`
-- Rationale: `<why this is safe for Kilo native autocomplete>`
-- Protected files considered: `packages/kilo-vscode/src/services/qwen-autocomplete/smoke.ts`, `packages/kilo-vscode/src/services/qwen-autocomplete/index.ts`, `packages/kilo-vscode/package.json`
+- Rationale: `<why this is safe for ChipMate native autocomplete>`
+- Protected files considered: `packages/chipmate-vscode/src/services/qwen-autocomplete/smoke.ts`, `packages/chipmate-vscode/src/services/qwen-autocomplete/index.ts`, `packages/chipmate-vscode/package.json`
 ```
 
 Intake command after the decision record exists:
@@ -236,7 +236,7 @@ Expected returned evidence:
 
 Acceptance:
 
-- The run uses Kilo native evidence tools and the migrated skill instructions
+- The run uses ChipMate native evidence tools and the migrated skill instructions
 - It does not require ChipMate runtime flow, Word contract, skill contract gate, missing-deliverable repair, or missing-diagram auto-render
 - The result is accepted by M11 review as representative internal embedded C evidence
 
@@ -262,7 +262,7 @@ Required visible checks:
 
 - Agent Terminal command appears only as an additive sidecar entry
 - Default-off behavior is visible and understandable
-- Opening the Agent Terminal creates a VS Code terminal pane rather than replacing Kilo native terminal/session behavior
+- Opening the Agent Terminal creates a VS Code terminal pane rather than replacing ChipMate native terminal/session behavior
 - Dangerous command flow requires explicit confirmation and preserves an auditable log/artifact path
 
 Acceptance:

@@ -18,7 +18,7 @@ Focused region comparison evidence:
 **Findings**
 
 - No actionable P0/P1/P2 findings remain.
-- [P3] The implementation uses the extension's native VS Code typography density, while the reference capture is visibly zoomed and uses larger terminal and card text. This is acceptable because the production xterm and webview font sizes continue to follow existing VS Code/Kilo settings rather than forcing a console-only scale.
+- [P3] The implementation uses the extension's native VS Code typography density, while the reference capture is visibly zoomed and uses larger terminal and card text. This is acceptable because the production xterm and webview font sizes continue to follow existing VS Code/ChipMate settings rather than forcing a console-only scale.
 - [P3] The reference places approval actions in the card header; the implementation keeps the existing `PermissionDock` action order below the command. This preserves the project's established keyboard and permission interaction pattern while retaining the same command-first hierarchy.
 
 Required fidelity surfaces:
@@ -60,21 +60,21 @@ final result: passed
 
 Source visual truth paths:
 
-- `/Users/archer/Work/kilocode/.runtime/design-qa/references/extension-market/06-upload-progress-corrected.png`
-- `/Users/archer/Work/kilocode/.runtime/design-qa/references/extension-market/05-upload-idle.png`
+- `/Users/archer/Work/chipmate/.runtime/design-qa/references/extension-market/06-upload-progress-corrected.png`
+- `/Users/archer/Work/chipmate/.runtime/design-qa/references/extension-market/05-upload-idle.png`
 
 Implementation screenshot paths:
 
-- 41 项扫描清单，`1484 × 1060`：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/10-extension-upload-many-review-1484x1060.png`
-- 41 项扫描清单，`1440 × 1024`：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/extension-upload-many-1440x1024.png`
-- 41 项扫描清单，`1050 × 1024`：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/extension-upload-many-1050x1024.png`
-- 显著上传进度，`1484 × 1060`：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/09-extension-upload-progress-1484x1060.png`
+- 41 项扫描清单，`1484 × 1060`：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/10-extension-upload-many-review-1484x1060.png`
+- 41 项扫描清单，`1440 × 1024`：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/extension-upload-many-1440x1024.png`
+- 41 项扫描清单，`1050 × 1024`：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/extension-upload-many-1050x1024.png`
+- 显著上传进度，`1484 × 1060`：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/09-extension-upload-progress-1484x1060.png`
 
 Comparison evidence:
 
-- 进度状态全视图并排：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-progress-side-by-side.png`
-- 大清单全视图并排：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-many-side-by-side.png`
-- 进度区域聚焦对比：`/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-progress-focus.png`
+- 进度状态全视图并排：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-progress-side-by-side.png`
+- 大清单全视图并排：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-many-side-by-side.png`
+- 进度区域聚焦对比：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-progress-focus.png`
 
 **Findings**
 
@@ -98,9 +98,9 @@ final result: passed
 
 # ChipMate VS Code 插件市场 Design QA
 
-Approved reference directory: `/Users/archer/Work/kilocode/.runtime/design-qa/references/extension-market/`
+Approved reference directory: `/Users/archer/Work/chipmate/.runtime/design-qa/references/extension-market/`
 
-Installed macOS Chrome evidence directory: `/Users/archer/Work/kilocode/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/`
+Installed macOS Chrome evidence directory: `/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/`
 
 Primary `1484 × 1060` evidence:
 
@@ -162,7 +162,7 @@ Scope: Composer presentation only. Mode, Model, Thinking, indexing, sandbox, spe
 - Direct Composer-content-width coverage: `170, 200, 240, 280, 299, 300, 301, 340, 341, 559, 560, 619, 620, 621, 759, 760, 761, 859, 860, 861, 960, 1200, 1450px`.
 - Maximum-density and sparse fixtures verify two centerlines at extreme width, the existing medium layout, density-aware one-line entry, rightmost Send/Stop, preserved indexing state, no overlap, no escaped control, and no horizontal scrolling.
 - Manual captures at `170px`, `300px`, `560px`, and `860px` confirm the same geometry and Liquid Glass hierarchy.
-- Passed: six scoped Composer responsive/state tests, seven QA accessibility stories, Webview type checking, ESLint, Storybook, Knip, the Kilo marker guard, and extension compile. The complete accessibility file reports `21 passed / 2 unrelated timed out`; only the pre-existing Marketplace skills/agents empty-state stories failed to mount.
+- Passed: six scoped Composer responsive/state tests, seven QA accessibility stories, Webview type checking, ESLint, Storybook, Knip, the ChipMate marker guard, and extension compile. The complete accessibility file reports `21 passed / 2 unrelated timed out`; only the pre-existing Marketplace skills/agents empty-state stories failed to mount.
 
 final result: passed
 
@@ -236,7 +236,7 @@ Final evidence:
 - The five Composer-scoped QA Playwright checks pass across `200、240、280、300、301、320、420、421、479、480、519、520、559、560、720、939、940、960、1200、1450px`, including maximum-density and sparse controls, fixed matrices, label padding, index states, themes, Reduced Motion, Send, and Stop.
 - All six QA accessibility stories pass. The complete accessibility run reports `19 passed / 3 unrelated failed`; the remaining Marketplace and Agent Manager failures are outside Composer scope.
 - The complete QA responsive file still contains three unrelated reading/fixture drifts: a strict locator now matches two text wrappers, the user-message hover fixture no longer raises its action opacity, and the queued fixture no longer renders the user-message slot. No production Composer rule was changed to conceal these existing failures.
-- Webview typecheck, package lint, targeted ESLint, Storybook production build, Knip, Kilo marker check, and extension compile pass. Storybook retains its existing unresolved package/font and large-chunk warnings.
+- Webview typecheck, package lint, targeted ESLint, Storybook production build, Knip, ChipMate marker check, and extension compile pass. Storybook retains its existing unresolved package/font and large-chunk warnings.
 
 scoped result: passed
 
@@ -280,7 +280,7 @@ Final evidence:
 **Quality gates**
 
 - Passed: eight scoped QA responsive tests, including all existing dense/sparse Composer geometry and the new HUD/message checks. The remaining queued-message test times out before CSS assertions because its existing Story no longer renders `user-message-text`; no production transcript logic was changed to hide that unrelated Fixture drift.
-- Passed: the new full-conversation WCAG story, Webview and extension typecheck, package lint, targeted ESLint, Storybook production build, Knip, and Kilo marker check.
+- Passed: the new full-conversation WCAG story, Webview and extension typecheck, package lint, targeted ESLint, Storybook production build, Knip, and ChipMate marker check.
 - The complete accessibility run retains three unrelated failures: two removed Marketplace story IDs and one existing Agent Manager sidebar-search finding. The new QA full-conversation scan passes with no automated WCAG violation.
 - Storybook retains its existing unresolved-package/font and large-chunk warnings. These warnings do not block the successful production build.
 
@@ -319,7 +319,7 @@ Final evidence:
 
 **Quality gates**
 
-- Passed: QA and Settings Playwright (`8 passed`), accessibility Playwright (`15 passed`), Settings alignment unit tests, Webview typecheck, targeted ESLint, Storybook production build, Knip, Kilo marker check, extension esbuild, package lint, package compile, and repository lint.
+- Passed: QA and Settings Playwright (`8 passed`), accessibility Playwright (`15 passed`), Settings alignment unit tests, Webview typecheck, targeted ESLint, Storybook production build, Knip, ChipMate marker check, extension esbuild, package lint, package compile, and repository lint.
 - Repository lint completed with its existing warning inventory and `0 errors`.
 - Storybook initially encountered an incomplete local dependency cache for a bundled font. A normal `bun install` restored the dependency, and the clean production build then passed.
 - VSIX packaging, upload, and Linux target runtime verification were intentionally not run because they are outside this plan.
@@ -402,7 +402,7 @@ Index-state and border-simplification follow-up:
 
 **Quality Gates**
 
-- Passed: QA responsive and accessibility Playwright set (`9 passed`), `bun run check-types:webview`, targeted ESLint for all QA-touched TypeScript/TSX files, `bun run build-storybook`, `bun run knip`, `bun run check-kilocode-change`, and direct `node esbuild.js` extension bundling.
+- Passed: QA responsive and accessibility Playwright set (`9 passed`), `bun run check-types:webview`, targeted ESLint for all QA-touched TypeScript/TSX files, `bun run build-storybook`, `bun run knip`, `bun run check-chipmate-change`, and direct `node esbuild.js` extension bundling.
 - Repository-level `bun run lint` passed in the current working tree. The previously recorded Agent Manager max-lines result did not reproduce in this final run.
 - `bun run compile` rebuilt and smoke-tested the current macOS CLI, regenerated the SDK, passed extension/webview typechecks and lint, and completed the final esbuild step.
 - No QA-specific warning or failure remains. This scoped visual change did not alter CLI, server, SDK, schema, indexing protocol, or settings behavior.
@@ -509,7 +509,7 @@ Focused comparison evidence:
 
 - Pass 1 found the old 180px flat sidebar, ungrouped content, mixed icon system, and missing whole-page material hierarchy. Rebuilt the shell, navigation descriptor, title/group structure, save bar, and scoped Liquid Glass token system.
 - Pass 2 found the ChipMate form geometry and desktop spacing below the source scale. Aligned the `296px` navigation, `56px` content inset, `1034 × 174` form group, `558px` input, `132px` test action, and `230px` stable status slot.
-- Pass 3 found raw pixel typography violating the webview font-size architecture. Replaced every Settings font size with Kilo tokens while preserving the designed scale.
+- Pass 3 found raw pixel typography violating the webview font-size architecture. Replaced every Settings font size with ChipMate tokens while preserving the designed scale.
 - Pass 4 found dark and light control borders below the plan's `3:1` non-text threshold and a specificity leak that left blur enabled in high contrast. Strengthened token-derived borders and added high-specificity high-contrast material fallbacks.
 - Pass 5 compared the source and final implementation in one full-view image plus five focused pairs. No P0/P1/P2 mismatch remained.
 - Pass 6 responded to the navigation scale follow-up. The first `18px` label/`24px` icon pass remained visibly lighter than the source, so the final pass uses `20px` labels, an optical `26px` Codicon size inside a `28px` normal-flow slot, and `54px` rows. The source and implementation were re-compared in full-view and focused navigation pairs; desktop and narrow views have no horizontal overflow, and no P0/P1/P2 mismatch remains.
@@ -522,11 +522,11 @@ final result: passed
 
 Source visual truth path: `/Users/archer/.codex/generated_images/019fb632-1de3-74e0-9fba-fb67d59b397c/exec-263b0948-039d-41d0-a5ef-bde8bf935440.png`
 
-Implementation screenshot path: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-420.png`
+Implementation screenshot path: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-420.png`
 
-Full-view comparison evidence: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-420-comparison.png`
+Full-view comparison evidence: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-420-comparison.png`
 
-Focused completion-row comparison evidence: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-420-focus-comparison.png`
+Focused completion-row comparison evidence: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-420-focus-comparison.png`
 
 Viewport and normalization:
 
@@ -543,7 +543,7 @@ State: Simplified Chinese, idle completed session, final assistant message has `
 
 **Required Fidelity Surfaces**
 
-- Fonts and typography: Both comparison regions use small muted metadata below the answer. The implementation uses the existing webview sans-serif and `--kilo-font-size-12` token, tabular numerals, normal wrapping, and Chinese copy matching the selected design state. The exact font family remains intentionally the installed VS Code/webview font rather than the ImageGen raster's inferred typeface.
+- Fonts and typography: Both comparison regions use small muted metadata below the answer. The implementation uses the existing webview sans-serif and `--chipmate-font-size-12` token, tabular numerals, normal wrapping, and Chinese copy matching the selected design state. The exact font family remains intentionally the installed VS Code/webview font rather than the ImageGen raster's inferred typeface.
 - Spacing and layout rhythm: The row is in normal flex flow immediately after the assistant content/actions, keeps the shared readable width, and has no extra card, border, or detached overlay. The final `20px` icon and `10px` gap match the source's visual weight and left-to-right rhythm at `420px`.
 - Colors and visual tokens: The label uses the existing muted VS Code description foreground; the check uses `--chipmate-agent-ultra-foreground`, including its existing light/high-contrast fallback. No hard-coded theme color or gradient was introduced.
 - Image quality and asset fidelity: The completion mark uses the repository's existing `circle-check` icon component rather than a handcrafted SVG, CSS drawing, emoji, or generated raster. The comparison source is a concept image only; no logo, illustration, or other image asset was added or substituted in the production UI.
@@ -578,11 +578,11 @@ final result: passed
 
 Source visual truth path: `/Users/archer/.codex/generated_images/019fb632-1de3-74e0-9fba-fb67d59b397c/exec-79abeeab-e246-476d-9db3-1d6c3d965d7e.png`
 
-Implementation screenshot path: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-modes-420.png`
+Implementation screenshot path: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-modes-420.png`
 
-Full-view comparison evidence: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-modes-420-comparison.png`
+Full-view comparison evidence: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-modes-420-comparison.png`
 
-Focused completion-action-row comparison evidence: `/Users/archer/Work/kilocode/packages/kilo-vscode/qa/artifacts/turn-completion-duration-modes-420-focus-comparison.png`
+Focused completion-action-row comparison evidence: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-modes-420-focus-comparison.png`
 
 Viewport, density, and state:
 
@@ -597,7 +597,7 @@ Viewport, density, and state:
 
 **Required Fidelity Surfaces**
 
-- Fonts and typography: Existing `--kilo-font-size-12`, sans-serif metadata, tabular numerals, and normal wrapping keep the completion copy compact and readable.
+- Fonts and typography: Existing `--chipmate-font-size-12`, sans-serif metadata, tabular numerals, and normal wrapping keep the completion copy compact and readable.
 - Spacing and layout rhythm: The completed state is in the normal-flow copy / feedback rail after a vertical divider. It aligns on one baseline at `420px` and wraps safely without overlap at `200px`.
 - Colors and visual tokens: `ultra` resolves to `--chipmate-agent-ultra-foreground`; every other persisted final agent resolves to `--vscode-foreground`. The check inherits `currentColor`, so icon and label stay synchronized in dark, light, and high-contrast themes.
 - Image quality and asset fidelity: The existing `circle-check` icon is used; no generated production asset, custom SVG, CSS drawing, emoji, or placeholder was introduced.
@@ -644,7 +644,7 @@ Viewport, density, and state:
 **Findings**
 
 - [P1] 原生通知无法 1:1 呈现设计图的多行卡片结构与“查看详情”按钮。
-  Location: VS Code 右下角通知，`packages/kilo-vscode/src/services/code-comments/register.ts`。
+  Location: VS Code 右下角通知，`packages/chipmate-vscode/src/services/code-comments/register.ts`。
   Evidence: 设计图把标题、完成数、耗时、进度条、运行/排队/失败、恢复说明和两个动作分成五行；真实实现受 `vscode.window.withProgress` 的稳定 API 限制，只能显示单行标题加消息、原生进度条和 Cancel。完成数、运行数、排队数、失败数、恢复状态与耗时的信息均存在，但视觉层级明显不同。
   Impact: 用户能够可靠判断任务仍在运行，也能取消，但未达到用户要求的设计图 100% 视觉还原，且通知内没有独立的“查看详情”动作。
   Fix: 若必须像素级还原，只能改为自有 Webview 进度面板，或采用不受支持的 VS Code 工作台 DOM 注入。前者不能作为编辑器右下角浮动通知，后者存在版本兼容与安全风险，因此当前稳定扩展 API 下没有可接受的 1:1 修复路径。

@@ -24,11 +24,11 @@ DEFAULT_OUTPUT = (
 
 
 DELIVERY_ARTIFACTS = [
-    "packages/kilo-vscode/out/chipmate-0.0.38-offline-handoff.tar.gz",
-    "packages/kilo-vscode/out/chipmate-0.0.38-offline-target-verify-kit.tar.gz",
-    "packages/kilo-vscode/out/chipmate-0.0.38-offline-delivery-set.tar.gz",
-    "packages/kilo-vscode/out/chipmate-0.0.38-offline-delivery-set.zip",
-    "packages/kilo-vscode/out/CHIPMATE_OFFLINE_DELIVERY_MANIFEST-0.0.38.json",
+    "packages/chipmate-vscode/out/chipmate-0.0.38-offline-handoff.tar.gz",
+    "packages/chipmate-vscode/out/chipmate-0.0.38-offline-target-verify-kit.tar.gz",
+    "packages/chipmate-vscode/out/chipmate-0.0.38-offline-delivery-set.tar.gz",
+    "packages/chipmate-vscode/out/chipmate-0.0.38-offline-delivery-set.zip",
+    "packages/chipmate-vscode/out/CHIPMATE_OFFLINE_DELIVERY_MANIFEST-0.0.38.json",
 ]
 
 
@@ -109,7 +109,7 @@ def main() -> int:
     )
     lines.append(
         "Docker availability alone is not accepted as Windows target evidence, and package-only "
-        "integrity checks do not replace installed VSIX S1-S16 runtime smoke, Kilo native QA "
+        "integrity checks do not replace installed VSIX S1-S16 runtime smoke, ChipMate native QA "
         "no-regression review, or final M11 review.\n\n"
     )
     lines.append(

@@ -1,5 +1,5 @@
 ---
-"@kilocode/cli": minor
+"@chipmate/cli": minor
 "chipmate": minor
 ---
 

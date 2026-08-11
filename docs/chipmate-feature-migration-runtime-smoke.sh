@@ -14,7 +14,7 @@ usage() {
   cat <<'USAGE'
 ChipMate feature migration runtime smoke runner.
 
-This runner captures auth/provider preflight and Kilo CLI runtime smoke logs for
+This runner captures auth/provider preflight and ChipMate CLI runtime smoke logs for
 the S1-S16 acceptance matrix. It is conservative by design: a successful
 process exit is recorded as NEEDS_REVIEW, not PASS, because the answer quality,
 tool sequence, and artifact outputs still need human review before M10/M11 can
@@ -35,21 +35,21 @@ Options:
 
 Environment:
   VALIDATION_RUN_DIR             Output directory.
-  KILO_SMOKE_TIMEOUT             Per-prompt timeout seconds, default 180.
-  KILO_SMOKE_QA_WORKSPACE        Workspace for embedded C QA prompts,
+  CHIPMATE_SMOKE_TIMEOUT             Per-prompt timeout seconds, default 180.
+  CHIPMATE_SMOKE_QA_WORKSPACE        Workspace for embedded C QA prompts,
                                  default /Users/archer/Work/qemu.
-  KILO_SMOKE_DOC_WORKSPACE       Workspace for document/artifact prompts,
+  CHIPMATE_SMOKE_DOC_WORKSPACE       Workspace for document/artifact prompts,
                                  default repository root.
-  KILO_SMOKE_CONFIG_CONTENT      Full JSON config for this smoke run.
-  KILO_SMOKE_PROVIDER_ID         One-shot provider id, default smoke.
-  KILO_SMOKE_PROVIDER_BASE_URL   One-shot OpenAI-compatible base URL.
-  KILO_SMOKE_PROVIDER_API_KEY    One-shot OpenAI-compatible API key.
-  KILO_SMOKE_PROVIDER_MODEL      One-shot model id.
+  CHIPMATE_SMOKE_CONFIG_CONTENT      Full JSON config for this smoke run.
+  CHIPMATE_SMOKE_PROVIDER_ID         One-shot provider id, default smoke.
+  CHIPMATE_SMOKE_PROVIDER_BASE_URL   One-shot OpenAI-compatible base URL.
+  CHIPMATE_SMOKE_PROVIDER_API_KEY    One-shot OpenAI-compatible API key.
+  CHIPMATE_SMOKE_PROVIDER_MODEL      One-shot model id.
 
 Notes:
   - This script does not modify global or project config.
   - Secret-looking environment values are redacted from captured logs.
-  - Use KILO_SMOKE_CONFIG_CONTENT or the KILO_SMOKE_PROVIDER_* variables to
+  - Use CHIPMATE_SMOKE_CONFIG_CONTENT or the CHIPMATE_SMOKE_PROVIDER_* variables to
     avoid depending on the current user's global model/auth state.
 USAGE
 }
@@ -116,15 +116,15 @@ run_dir = pathlib.Path(sys.argv[2])
 mode = sys.argv[3]
 ids_arg = sys.argv[4]
 
-timeout = int(os.environ.get("KILO_SMOKE_TIMEOUT", "180"))
-qa_workspace = os.environ.get("KILO_SMOKE_QA_WORKSPACE", "/Users/archer/Work/qemu")
-doc_workspace = os.environ.get("KILO_SMOKE_DOC_WORKSPACE", str(repo))
-provider_id = os.environ.get("KILO_SMOKE_PROVIDER_ID", "smoke")
-provider_base_url = os.environ.get("KILO_SMOKE_PROVIDER_BASE_URL", "")
-provider_api_key = os.environ.get("KILO_SMOKE_PROVIDER_API_KEY", "")
-provider_model = os.environ.get("KILO_SMOKE_PROVIDER_MODEL", "")
-template_docx = os.environ.get("KILO_SMOKE_TEMPLATE_DOCX", "")
-config_content = os.environ.get("KILO_SMOKE_CONFIG_CONTENT", "")
+timeout = int(os.environ.get("CHIPMATE_SMOKE_TIMEOUT", "180"))
+qa_workspace = os.environ.get("CHIPMATE_SMOKE_QA_WORKSPACE", "/Users/archer/Work/qemu")
+doc_workspace = os.environ.get("CHIPMATE_SMOKE_DOC_WORKSPACE", str(repo))
+provider_id = os.environ.get("CHIPMATE_SMOKE_PROVIDER_ID", "smoke")
+provider_base_url = os.environ.get("CHIPMATE_SMOKE_PROVIDER_BASE_URL", "")
+provider_api_key = os.environ.get("CHIPMATE_SMOKE_PROVIDER_API_KEY", "")
+provider_model = os.environ.get("CHIPMATE_SMOKE_PROVIDER_MODEL", "")
+template_docx = os.environ.get("CHIPMATE_SMOKE_TEMPLATE_DOCX", "")
+config_content = os.environ.get("CHIPMATE_SMOKE_CONFIG_CONTENT", "")
 
 def one_shot_config() -> str | None:
     if config_content.strip():
@@ -220,8 +220,8 @@ smokes = [
         "S4",
         "Artifact manifest",
         doc_workspace,
-        "Validation smoke S4: create a short migration validation report artifact with title, summary, and risk list. Do not create a Word document. Use a shell heredoc, not the write tool, to create .kilo/artifacts/runtime-smoke-s4/report.md with markdown content. Then call the exact tool named declare_artifact with kind terminal-report, title Runtime Smoke S4 Migration Validation Report, artifactDir .kilo/artifacts/runtime-smoke-s4, and primaryFile report.md so artifact.json exists. Do not stop after mkdir or file creation alone. Return generated file paths plus the artifact.json manifest path.",
-        "Creates .kilo/artifacts/.../artifact.json.",
+        "Validation smoke S4: create a short migration validation report artifact with title, summary, and risk list. Do not create a Word document. Use a shell heredoc, not the write tool, to create .chipmate/artifacts/runtime-smoke-s4/report.md with markdown content. Then call the exact tool named declare_artifact with kind terminal-report, title Runtime Smoke S4 Migration Validation Report, artifactDir .chipmate/artifacts/runtime-smoke-s4, and primaryFile report.md so artifact.json exists. Do not stop after mkdir or file creation alone. Return generated file paths plus the artifact.json manifest path.",
+        "Creates .chipmate/artifacts/.../artifact.json.",
         required_tools=("declare_artifact",),
         forbidden_tools=("write",),
     ),
@@ -257,7 +257,7 @@ smokes = [
         "S9",
         "Word template style",
         doc_workspace,
-        f"Apply a real company template DOCX style to the design document. Template path: {template_docx or '<provide KILO_SMOKE_TEMPLATE_DOCX>'}. Inherit supported styles only and report unsupported behavior.",
+        f"Apply a real company template DOCX style to the design document. Template path: {template_docx or '<provide CHIPMATE_SMOKE_TEMPLATE_DOCX>'}. Inherit supported styles only and report unsupported behavior.",
         "Style inheritance and warnings recorded.",
     ),
     Smoke(
@@ -309,7 +309,7 @@ smokes = [
         "Read-only autocomplete preservation smoke. Do not create, edit, or delete any source/package files. Do not implement missing commands. Only inspect existing qwen-direct autocomplete settings, package contributions, registered diagnostics/log commands, and available test or log evidence; if an existing diagnostic command is already registered, report it. Return whether provider registration and diagnostics appear available from existing code/config.",
         "Provider registers; diagnostics are available.",
         forbidden_tools=("write", "edit", "apply_patch"),
-        guard_paths=("packages/kilo-vscode/package.json", "packages/kilo-vscode/src/services/qwen-autocomplete"),
+        guard_paths=("packages/chipmate-vscode/package.json", "packages/chipmate-vscode/src/services/qwen-autocomplete"),
     ),
 ]
 smoke_map = {item.sid: item for item in smokes}
@@ -403,8 +403,8 @@ def run_one(sid: str, area: str, workspace: str, prompt: str, expected: str) -> 
     env = os.environ.copy()
     cfg = one_shot_config()
     if cfg:
-        env["KILO_CONFIG_CONTENT"] = cfg
-        env["KILO_DISABLE_PROJECT_CONFIG"] = env.get("KILO_DISABLE_PROJECT_CONFIG", "1")
+        env["CHIPMATE_CONFIG_CONTENT"] = cfg
+        env["CHIPMATE_DISABLE_PROJECT_CONFIG"] = env.get("CHIPMATE_DISABLE_PROJECT_CONFIG", "1")
     cmd = [
         "bun",
         "run",
@@ -464,7 +464,7 @@ def write_summary(rows: list[dict[str, str | int]], title: str) -> None:
         if one_shot_config():
             f.write("Config source: `one-shot smoke config`\n\n")
         else:
-            f.write("Config source: `current Kilo config/auth state`\n\n")
+            f.write("Config source: `current ChipMate config/auth state`\n\n")
         f.write("| ID | Area | Status | Exit | Workspace | Log |\n")
         f.write("|---|---|---:|---:|---|---|\n")
         for row in rows:
@@ -488,7 +488,7 @@ def write_summary(rows: list[dict[str, str | int]], title: str) -> None:
             f.write(f"{row['id']}\t{row['area']}\t{row['status']}\t{row['exit_code']}\t{row['workspace']}\t{row['log_file']}\n")
 
 if mode == "preflight":
-    workspace = tempfile.mkdtemp(prefix="kilo-runtime-preflight-")
+    workspace = tempfile.mkdtemp(prefix="chipmate-runtime-preflight-")
     rows = [run_one("P0", "Chat provider preflight", workspace, "Reply with exactly OK.", "A working chat provider returns OK.")]
     write_summary(rows, "Runtime smoke preflight")
 elif mode == "ids":

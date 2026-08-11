@@ -83,7 +83,7 @@ async function fixture(
     opts.toc === false || opts.headings === false
       ? ""
       : opts.pageFields
-        ? [tocParagraph("TOC1", "一、总览", "_KiloToc1"), tocParagraph("TOC2", "1.1 子模块", "_KiloToc2")].join("")
+        ? [tocParagraph("TOC1", "一、总览", "_ChipMateToc1"), tocParagraph("TOC2", "1.1 子模块", "_ChipMateToc2")].join("")
         : [paragraph("TOC1", "一、总览", opts.pages ? 1 : undefined), paragraph("TOC2", "1.1 子模块", opts.pages ? 2 : undefined)].join("")
   const drawings = Array.from({ length: opts.drawings ?? 2 }, () => "<w:p><w:r><w:drawing/></w:r></w:p>").join("")
   const body = opts.body === false ? "" : paragraph("Normal", "关键正文不得在刷新时丢失")
@@ -106,7 +106,7 @@ test("Word refresh inspection distinguishes no-TOC documents", async () => {
   assert.equal(inspected.drawingCount, 2)
 })
 
-test("Word refresh inspection recognizes the fldSimple TOC emitted by Kilo", async () => {
+test("Word refresh inspection recognizes the fldSimple TOC emitted by ChipMate", async () => {
   const inspected = await legacy.inspectWordDocx(await fixture({ simpleField: true }))
   assert.equal(inspected.valid, true)
   assert.equal(inspected.hasToc, true)

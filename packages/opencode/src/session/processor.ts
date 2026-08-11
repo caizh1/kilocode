@@ -13,7 +13,7 @@ import { Session } from "./session"
 import { LLM } from "./llm"
 import { MessageV2 } from "./message-v2"
 import { isOverflow } from "./overflow"
-import { RuntimeFlags } from "@/effect/runtime-flags" // kilocode_change - configured output token ceiling
+import { RuntimeFlags } from "@/effect/runtime-flags" // chipmate_change - configured output token ceiling
 import { PartID } from "./schema"
 import type { SessionID } from "./schema"
 import { SessionRetry } from "./retry"
@@ -21,15 +21,15 @@ import { SessionStatus } from "./status"
 import { SessionSummary } from "./summary"
 import type { Provider } from "@/provider/provider"
 import { Question } from "@/question"
-// kilocode_change start
-import { KiloSessionProcessor, type ReviewTelemetry } from "@/kilocode/session/processor"
-import { PermissionProvenance } from "@/kilocode/permission/provenance" // kilocode_change
-import { KiloSessionOverflow } from "@/kilocode/session/overflow"
-import { KiloSessionThinking } from "@/kilocode/session/thinking"
-import { KiloRoutedModel } from "@/kilocode/session/routed-model"
-import { KiloResponseMetadata } from "@/kilocode/session/response-metadata"
-import { Suggestion } from "@/kilocode/suggestion"
-// kilocode_change end
+// chipmate_change start
+import { ChipMateSessionProcessor, type ReviewTelemetry } from "@/chipmate/session/processor"
+import { PermissionProvenance } from "@/chipmate/permission/provenance" // chipmate_change
+import { ChipMateSessionOverflow } from "@/chipmate/session/overflow"
+import { ChipMateSessionThinking } from "@/chipmate/session/thinking"
+import { ChipMateRoutedModel } from "@/chipmate/session/routed-model"
+import { ChipMateResponseMetadata } from "@/chipmate/session/response-metadata"
+import { Suggestion } from "@/chipmate/suggestion"
+// chipmate_change end
 import { errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -45,12 +45,12 @@ export interface Handle {
     toolCallID: string,
     update: (part: SessionV1.ToolPart) => SessionV1.ToolPart,
   ) => Effect.Effect<SessionV1.ToolPart | undefined>
-  // kilocode_change start
+  // chipmate_change start
   readonly metadata: (
     toolCallID: string,
     input: { title?: string; metadata?: Record<string, any> },
   ) => Effect.Effect<void>
-  // kilocode_change end
+  // chipmate_change end
   readonly completeToolCall: (
     toolCallID: string,
     output: {
@@ -61,17 +61,17 @@ export interface Handle {
     },
   ) => Effect.Effect<void>
   readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
-  readonly compactError?: () => ReturnType<typeof MessageV2.ContextOverflowError.prototype.toObject> | undefined // kilocode_change
+  readonly compactError?: () => ReturnType<typeof MessageV2.ContextOverflowError.prototype.toObject> | undefined // chipmate_change
 }
 
 type Input = {
   assistantMessage: SessionV1.Assistant
   sessionID: SessionID
   model: Provider.Model
-  // kilocode_change start
+  // chipmate_change start
   telemetry?: ReviewTelemetry
   snapshotInitialization?: "wait"
-  // kilocode_change end
+  // chipmate_change end
 }
 
 export interface Interface {
@@ -87,19 +87,19 @@ type ToolCall = {
 
 interface ProcessorContext extends Input {
   toolcalls: Record<string, ToolCall>
-  toolmeta: Record<string, { title?: string; metadata?: Record<string, any> }> // kilocode_change
+  toolmeta: Record<string, { title?: string; metadata?: Record<string, any> }> // chipmate_change
   shouldBreak: boolean
   snapshot: string | undefined
   blocked: boolean
   needsCompaction: boolean
-  compactionError: ReturnType<typeof MessageV2.ContextOverflowError.prototype.toObject> | undefined // kilocode_change
+  compactionError: ReturnType<typeof MessageV2.ContextOverflowError.prototype.toObject> | undefined // chipmate_change
   currentText: SessionV1.TextPart | undefined
   reasoningMap: Record<string, SessionV1.ReasoningPart>
-  // kilocode_change start
+  // chipmate_change start
   stepStart: number
   stepStartDate: number | undefined
   step: { reasoning: boolean; text: boolean; tool: boolean }
-  // kilocode_change end
+  // chipmate_change end
 }
 
 type StreamEvent = LLMEvent
@@ -122,61 +122,61 @@ export const layer = Layer.effect(
     const image = yield* Image.Service
     const events = yield* EventV2Bridge.Service
     const database = yield* Database.Service
-    const flags = yield* RuntimeFlags.Service // kilocode_change
+    const flags = yield* RuntimeFlags.Service // chipmate_change
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
       // may execute tools internally before emitting start-step events,
       // so capturing inside the event handler can be too late.
-      // kilocode_change start - pass turn context for slow-snapshot UI/policy handling
+      // chipmate_change start - pass turn context for slow-snapshot UI/policy handling
       const initialSnapshot = yield* snapshot.track({
         sessionID: input.sessionID,
         messageID: input.assistantMessage.id,
         snapshotInitialization: input.snapshotInitialization,
       })
-      // kilocode_change end
+      // chipmate_change end
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
         model: input.model,
         toolcalls: {},
-        toolmeta: {}, // kilocode_change
+        toolmeta: {}, // chipmate_change
         shouldBreak: false,
         snapshot: initialSnapshot,
         blocked: false,
         needsCompaction: false,
-        compactionError: undefined, // kilocode_change
+        compactionError: undefined, // chipmate_change
         currentText: undefined,
         reasoningMap: {},
-        // kilocode_change start
+        // chipmate_change start
         telemetry: input.telemetry,
         stepStart: 0,
         stepStartDate: undefined,
         step: { reasoning: false, text: false, tool: false },
-        // kilocode_change end
+        // chipmate_change end
       }
       let aborted = false
-      const ac = new AbortController() // kilocode_change — abort controller for offline handler
-      let attempt = KiloSessionProcessor.attempt() // kilocode_change
+      const ac = new AbortController() // chipmate_change — abort controller for offline handler
+      let attempt = ChipMateSessionProcessor.attempt() // chipmate_change
 
-      // kilocode_change start
+      // chipmate_change start
       const parse = (e: unknown) =>
-        KiloSessionProcessor.parseError(e, {
+        ChipMateSessionProcessor.parseError(e, {
           providerID: input.model.providerID,
           aborted,
         })
       const retryParse = (e: unknown) => {
         const error = parse(e)
-        if (e instanceof KiloSessionProcessor.IncompleteResponseError) return KiloSessionProcessor.blockRetry(error)
-        if (attempt.text || attempt.reasoning || attempt.tool) return KiloSessionProcessor.blockRetry(error)
+        if (e instanceof ChipMateSessionProcessor.IncompleteResponseError) return ChipMateSessionProcessor.blockRetry(error)
+        if (attempt.text || attempt.reasoning || attempt.tool) return ChipMateSessionProcessor.blockRetry(error)
         return error
       }
-      // kilocode_change end
+      // chipmate_change end
 
       const settleToolCall = Effect.fn("SessionProcessor.settleToolCall")(function* (toolCallID: string) {
         const done = ctx.toolcalls[toolCallID]?.done
         delete ctx.toolcalls[toolCallID]
-        delete ctx.toolmeta[toolCallID] // kilocode_change
+        delete ctx.toolmeta[toolCallID] // chipmate_change
         if (done) yield* Deferred.succeed(done, undefined).pipe(Effect.ignore)
       })
 
@@ -190,13 +190,13 @@ export const layer = Layer.effect(
         })
         if (!part || part.type !== "tool") {
           delete ctx.toolcalls[toolCallID]
-          delete ctx.toolmeta[toolCallID] // kilocode_change
+          delete ctx.toolmeta[toolCallID] // chipmate_change
           return undefined
         }
         return { call, part }
       })
 
-      // kilocode_change start - tolerate deleted sessions during subagent cost reconciliation (#6321)
+      // chipmate_change start - tolerate deleted sessions during subagent cost reconciliation (#6321)
       const reconcile = Effect.fn("SessionProcessor.reconcileCost")(function* () {
         const fresh = yield* MessageV2.get({
           sessionID: ctx.assistantMessage.sessionID,
@@ -209,7 +209,7 @@ export const layer = Layer.effect(
         if (fresh.info.cost <= ctx.assistantMessage.cost) return
         ctx.assistantMessage.cost = fresh.info.cost
       })
-      // kilocode_change end
+      // chipmate_change end
 
       const updateToolCall = Effect.fn("SessionProcessor.updateToolCall")(function* (
         toolCallID: string,
@@ -227,7 +227,7 @@ export const layer = Layer.effect(
         return part
       })
 
-      // kilocode_change start - buffer metadata emitted before tool-call registration
+      // chipmate_change start - buffer metadata emitted before tool-call registration
       const metadata = Effect.fn("SessionProcessor.metadata")(function* (
         toolCallID: string,
         input: { title?: string; metadata?: Record<string, any> },
@@ -255,7 +255,7 @@ export const layer = Layer.effect(
           }
         })
       })
-      // kilocode_change end
+      // chipmate_change end
 
       const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(function* (
         toolCallID: string,
@@ -268,27 +268,27 @@ export const layer = Layer.effect(
       ) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return
-        // kilocode_change start - preserve approval provenance recorded during permission checks
+        // chipmate_change start - preserve approval provenance recorded during permission checks
         const prior = isRecord(match.part.state.metadata) ? match.part.state.metadata : undefined
         const metadata = PermissionProvenance.carryApproval(prior, output.metadata) ?? output.metadata
-        // kilocode_change end
+        // chipmate_change end
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "completed",
             input: match.part.state.input,
             output: output.output,
-            metadata, // kilocode_change - merged to keep approval
+            metadata, // chipmate_change - merged to keep approval
             title: output.title,
             time: { start: match.part.state.time.start, end: Date.now() },
             attachments: output.attachments,
           },
         })
-        // kilocode_change start - accepted suggest review actions tag following LLM completion telemetry
+        // chipmate_change start - accepted suggest review actions tag following LLM completion telemetry
         if (match.part.tool === "suggest") {
-          ctx.telemetry = KiloSessionProcessor.suggestionReviewTelemetry(output.metadata) ?? ctx.telemetry
+          ctx.telemetry = ChipMateSessionProcessor.suggestionReviewTelemetry(output.metadata) ?? ctx.telemetry
         }
-        // kilocode_change end
+        // chipmate_change end
         yield* settleToolCall(toolCallID)
       })
 
@@ -301,17 +301,17 @@ export const layer = Layer.effect(
             status: "error",
             input: match.part.state.input,
             error: errorMessage(error),
-            metadata: match.part.state.metadata, // kilocode_change - preserve running tool metadata on failure
+            metadata: match.part.state.metadata, // chipmate_change - preserve running tool metadata on failure
             time: { start: match.part.state.time.start, end: Date.now() },
           },
         })
-        // kilocode_change start
+        // chipmate_change start
         if (
           error instanceof PermissionV1.RejectedError ||
           error instanceof Question.RejectedError ||
           error instanceof Suggestion.DismissedError
         ) {
-          // kilocode_change end
+          // chipmate_change end
           ctx.blocked = ctx.shouldBreak
         }
         yield* settleToolCall(toolCallID)
@@ -390,7 +390,7 @@ export const layer = Layer.effect(
       }
 
       const handleEvent = Effect.fnUntraced(function* (value: StreamEvent) {
-        KiloSessionProcessor.observe(attempt, value) // kilocode_change
+        ChipMateSessionProcessor.observe(attempt, value) // chipmate_change
         switch (value.type) {
           case "reasoning-start":
             if (value.id in ctx.reasoningMap) return
@@ -410,7 +410,7 @@ export const layer = Layer.effect(
             // Match dev: silently drop orphan deltas (no preceding reasoning-start).
             if (!(value.id in ctx.reasoningMap)) return
             ctx.reasoningMap[value.id].text += value.text
-            if (value.text.trim()) ctx.step.reasoning = true // kilocode_change
+            if (value.text.trim()) ctx.step.reasoning = true // chipmate_change
             if (value.providerMetadata) ctx.reasoningMap[value.id].metadata = value.providerMetadata
             yield* session.updatePartDelta({
               sessionID: ctx.reasoningMap[value.id].sessionID,
@@ -432,28 +432,28 @@ export const layer = Layer.effect(
             if (ctx.assistantMessage.summary) {
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
-            // kilocode_change start
+            // chipmate_change start
             ctx.step.tool = true
-            // kilocode_change end
+            // chipmate_change end
             yield* ensureToolCall(value)
             return
 
-          // kilocode_change start - upstream calls ensureToolCall here, which creates a part when none
+          // chipmate_change start - upstream calls ensureToolCall here, which creates a part when none
           // exists and so resurrects a settled call as pending. Nothing else is needed from these two:
           // tool-call carries the full input, and the v2 runner publishes the input events.
           case "tool-input-delta":
           case "tool-input-end":
             return
-          // kilocode_change end
+          // chipmate_change end
 
           case "tool-call": {
             if (ctx.assistantMessage.summary) {
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
-            ctx.step.tool = true // kilocode_change
+            ctx.step.tool = true // chipmate_change
             yield* ensureToolCall(value)
             const input = isRecord(value.input) ? value.input : { value: value.input }
-            // kilocode_change start - apply metadata buffered before the running transition
+            // chipmate_change start - apply metadata buffered before the running transition
             const meta = ctx.toolmeta[value.id]
             yield* updateToolCall(value.id, (match) => ({
               ...match,
@@ -478,7 +478,7 @@ export const layer = Layer.effect(
                 : value.providerMetadata,
             }))
             delete ctx.toolmeta[value.id]
-            // kilocode_change end
+            // chipmate_change end
 
             const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
               Effect.provideService(Database.Service, database),
@@ -518,7 +518,7 @@ export const layer = Layer.effect(
               return
             }
             const rawOutput = toolResultOutput(value)
-            // kilocode_change start — send_file delivery attachments (up to 4 MiB raw)
+            // chipmate_change start — send_file delivery attachments (up to 4 MiB raw)
             // must reach mobile byte-for-byte. Base64-encoded images near the cap can
             // exceed the generic 5 MiB normalization limit, causing rewrites or omission
             // after the tool reports success. These attachments are delivery-only; the
@@ -535,7 +535,7 @@ export const layer = Layer.effect(
                   )
                 : Effect.succeed(Exit.succeed<SessionV1.FilePart>(attachment)),
             )
-            // kilocode_change end
+            // chipmate_change end
             const omitted = normalized.filter(Exit.isFailure).length
             const attachments = normalized.filter(Exit.isSuccess).map((item) => item.value)
             const output = {
@@ -547,11 +547,11 @@ export const layer = Layer.effect(
               attachments: attachments.length ? attachments : undefined,
             }
             yield* completeToolCall(value.id, output)
-            // kilocode_change start - dismissed suggestions stop the turn after persisting normalized output
+            // chipmate_change start - dismissed suggestions stop the turn after persisting normalized output
             if (output.metadata?.dismissed === true) {
               ctx.blocked = ctx.shouldBreak
             }
-            // kilocode_change end
+            // chipmate_change end
             return
           }
 
@@ -564,7 +564,7 @@ export const layer = Layer.effect(
             throw new Error(value.message)
 
           case "step-start":
-            // kilocode_change start
+            // chipmate_change start
             ctx.stepStart = performance.now()
             ctx.stepStartDate = Date.now()
             ctx.step = { reasoning: false, text: false, tool: false }
@@ -574,21 +574,21 @@ export const layer = Layer.effect(
                 messageID: ctx.assistantMessage.id,
                 snapshotInitialization: input.snapshotInitialization,
               })
-            // kilocode_change end
+            // chipmate_change end
             yield* session.updatePart({
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.sessionID,
               snapshot: ctx.snapshot,
               type: "step-start",
-              time: { start: ctx.stepStartDate }, // kilocode_change
+              time: { start: ctx.stepStartDate }, // chipmate_change
             })
             return
 
           case "step-finish": {
-            // kilocode_change start - retry only terminally incomplete attempts before settlement
+            // chipmate_change start - retry only terminally incomplete attempts before settlement
             if (
-              KiloSessionProcessor.replayable({
+              ChipMateSessionProcessor.replayable({
                 finish: attempt.finish,
                 text: attempt.text,
                 reasoning: attempt.reasoning,
@@ -597,43 +597,43 @@ export const layer = Layer.effect(
               })
             )
               return yield* Effect.fail(
-                new KiloSessionProcessor.IncompleteResponseError(KiloResponseMetadata.read(value.providerMetadata)),
+                new ChipMateSessionProcessor.IncompleteResponseError(ChipMateResponseMetadata.read(value.providerMetadata)),
               )
-            // kilocode_change end
-            // kilocode_change start - pass turn context for slow-snapshot UI/policy handling
+            // chipmate_change end
+            // chipmate_change start - pass turn context for slow-snapshot UI/policy handling
             const completedSnapshot = yield* snapshot.track({
               sessionID: ctx.sessionID,
               messageID: ctx.assistantMessage.id,
               snapshotInitialization: input.snapshotInitialization,
             })
-            // kilocode_change end
+            // chipmate_change end
             yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
             const usage = Session.getUsage({
               model: ctx.model,
               usage: value.usage ?? new Usage({}),
               metadata: value.providerMetadata,
             })
-            // kilocode_change start
-            const model = KiloRoutedModel.readAuto(value.providerMetadata, {
+            // chipmate_change start
+            const model = ChipMateRoutedModel.readAuto(value.providerMetadata, {
               providerID: ctx.model.providerID,
               modelID: ctx.model.id,
               selected: ctx.assistantMessage.modelID,
             })
-            const generationID = KiloSessionProcessor.generationID(value.providerMetadata)
-            const vercelID = KiloResponseMetadata.read(value.providerMetadata)
-            // kilocode_change end
-            // kilocode_change start - guard against finish-step without start-step:
+            const generationID = ChipMateSessionProcessor.generationID(value.providerMetadata)
+            const vercelID = ChipMateResponseMetadata.read(value.providerMetadata)
+            // chipmate_change end
+            // chipmate_change start - guard against finish-step without start-step:
             // ctx.stepStart is 0 until `start-step` fires, which would feed a
             // huge bogus `elapsed` into telemetry. Fall back to now().
             const endDate = Date.now()
             const elapsedMs = Math.round(performance.now() - (ctx.stepStart || performance.now()))
             const startDate = ctx.stepStartDate ?? (Number.isFinite(elapsedMs) ? endDate - elapsedMs : endDate)
-            const metrics = KiloSessionProcessor.computeMetrics({
+            const metrics = ChipMateSessionProcessor.computeMetrics({
               providerMetadata: value.providerMetadata,
               tokens: usage.tokens,
               elapsedMs,
             })
-            KiloSessionProcessor.trackStep({
+            ChipMateSessionProcessor.trackStep({
               sessionID: ctx.sessionID,
               model: ctx.model,
               tokens: usage.tokens,
@@ -641,11 +641,11 @@ export const layer = Layer.effect(
               elapsed: elapsedMs,
               telemetry: ctx.telemetry,
             })
-            // kilocode_change end
+            // chipmate_change end
             ctx.assistantMessage.finish = value.reason
-            // kilocode_change start - capture any subagent cost propagated by tool calls during this step (#6321)
+            // chipmate_change start - capture any subagent cost propagated by tool calls during this step (#6321)
             yield* reconcile()
-            // kilocode_change end
+            // chipmate_change end
             ctx.assistantMessage.cost += usage.cost
             ctx.assistantMessage.tokens = usage.tokens
             yield* session.updatePart({
@@ -655,16 +655,16 @@ export const layer = Layer.effect(
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.assistantMessage.sessionID,
               type: "step-finish",
-              time: { start: startDate, end: endDate, elapsed: elapsedMs }, // kilocode_change
-              ...(model ? { model } : {}), // kilocode_change
-              ...(generationID ? { generationID } : {}), // kilocode_change
-              ...(vercelID ? { vercelID } : {}), // kilocode_change
-              ...(metrics ? { metrics } : {}), // kilocode_change
+              time: { start: startDate, end: endDate, elapsed: elapsedMs }, // chipmate_change
+              ...(model ? { model } : {}), // chipmate_change
+              ...(generationID ? { generationID } : {}), // chipmate_change
+              ...(vercelID ? { vercelID } : {}), // chipmate_change
+              ...(metrics ? { metrics } : {}), // chipmate_change
               tokens: usage.tokens,
               cost: usage.cost,
             })
-            // kilocode_change start - surface output limit stops, with a stronger message for reasoning-only stops
-            const warn = KiloSessionProcessor.lengthWarning({ msg: ctx.assistantMessage, step: ctx.step })
+            // chipmate_change start - surface output limit stops, with a stronger message for reasoning-only stops
+            const warn = ChipMateSessionProcessor.lengthWarning({ msg: ctx.assistantMessage, step: ctx.step })
             if (warn) {
               yield* session.updatePart({
                 id: PartID.ascending(),
@@ -675,7 +675,7 @@ export const layer = Layer.effect(
                 ignored: true,
               })
             }
-            const providerError = KiloSessionProcessor.providerFinishError(ctx.assistantMessage)
+            const providerError = ChipMateSessionProcessor.providerFinishError(ctx.assistantMessage)
             if (providerError) {
               yield* events.publish(Session.Event.Error, {
                 sessionID: ctx.assistantMessage.sessionID,
@@ -683,7 +683,7 @@ export const layer = Layer.effect(
               })
               yield* status.set(ctx.sessionID, { type: "idle" })
             }
-            // kilocode_change end
+            // chipmate_change end
             yield* session.updateMessage(ctx.assistantMessage)
             if (ctx.snapshot) {
               const patch = yield* snapshot.patch(ctx.snapshot)
@@ -707,21 +707,21 @@ export const layer = Layer.effect(
               .pipe(Effect.ignore, Effect.forkIn(scope))
             if (
               !ctx.assistantMessage.summary &&
-              // kilocode_change start
+              // chipmate_change start
               isOverflow({
                 cfg: yield* config.get(),
                 tokens: usage.tokens,
                 model: ctx.model,
                 outputTokenMax: flags.outputTokenMax,
               })
-              // kilocode_change end
+              // chipmate_change end
             ) {
               ctx.needsCompaction = true
-              // kilocode_change start
+              // chipmate_change start
               ctx.compactionError = new MessageV2.ContextOverflowError({
                 message: "Input exceeds context window of this model",
               }).toObject()
-              // kilocode_change end
+              // chipmate_change end
             }
             return
           }
@@ -742,7 +742,7 @@ export const layer = Layer.effect(
           case "text-delta":
             if (!ctx.currentText) return
             ctx.currentText.text += value.text
-            if (value.text.trim()) ctx.step.text = true // kilocode_change
+            if (value.text.trim()) ctx.step.text = true // chipmate_change
             if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
             yield* session.updatePartDelta({
               sessionID: ctx.currentText.sessionID,
@@ -767,9 +767,9 @@ export const layer = Layer.effect(
               { text: ctx.currentText.text },
             )).text
             if (ctx.currentText.text.trim()) {
-              attempt.text = true // kilocode_change
+              attempt.text = true // chipmate_change
               ctx.step.text = true
-            } // kilocode_change
+            } // chipmate_change
             {
               const end = Date.now()
               ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
@@ -840,27 +840,27 @@ export const layer = Layer.effect(
           })
         }
         ctx.toolcalls = {}
-        ctx.toolmeta = {} // kilocode_change
-        // kilocode_change start - read parts through the upstream Effect database
-        KiloSessionProcessor.guardEmptyToolCalls(
+        ctx.toolmeta = {} // chipmate_change
+        // chipmate_change start - read parts through the upstream Effect database
+        ChipMateSessionProcessor.guardEmptyToolCalls(
           ctx.assistantMessage,
           yield* MessageV2.parts(ctx.assistantMessage.id).pipe(Effect.provideService(Database.Service, database)),
         )
-        // kilocode_change end
+        // chipmate_change end
         ctx.assistantMessage.time.completed = Date.now()
-        // kilocode_change start - reconcile cost with any subagent propagation written during tool calls (#6321)
+        // chipmate_change start - reconcile cost with any subagent propagation written during tool calls (#6321)
         yield* reconcile()
-        // kilocode_change end
+        // chipmate_change end
         yield* session.updateMessage(ctx.assistantMessage)
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown) {
-        // kilocode_change start - internal preflight signal, not a provider error
-        if (e instanceof KiloSessionOverflow.PreflightError) {
+        // chipmate_change start - internal preflight signal, not a provider error
+        if (e instanceof ChipMateSessionOverflow.PreflightError) {
           ctx.needsCompaction = true
           return
         }
-        // kilocode_change end
+        // chipmate_change end
         yield* Effect.logError("process", {
           "session.id": input.sessionID,
           messageID: input.assistantMessage.id,
@@ -868,10 +868,10 @@ export const layer = Layer.effect(
           stack: e instanceof Error ? e.stack : undefined,
         })
         const error = parse(e)
-        // kilocode_change start
-        if (e instanceof KiloSessionProcessor.IncompleteResponseError) ctx.assistantMessage.finish = "unknown"
+        // chipmate_change start
+        if (e instanceof ChipMateSessionProcessor.IncompleteResponseError) ctx.assistantMessage.finish = "unknown"
         ctx.compactionError = MessageV2.ContextOverflowError.isInstance(error) ? error : ctx.compactionError
-        // kilocode_change end
+        // chipmate_change end
         if (MessageV2.ContextOverflowError.isInstance(error)) {
           // respect compaction.auto === false by surfacing overflow as a hard error instead of auto-compacting
           if ((yield* config.get()).compaction?.auto === false && !ctx.assistantMessage.summary) {
@@ -893,31 +893,31 @@ export const layer = Layer.effect(
         yield* status.set(ctx.sessionID, { type: "idle" })
       })
 
-      // kilocode_change start
+      // chipmate_change start
       const output = {
         compactError: () => ctx.compactionError,
       }
-      // kilocode_change end
+      // chipmate_change end
 
       const process = Effect.fn("SessionProcessor.process")(function* (streamInput: LLM.StreamInput) {
         yield* Effect.logInfo("process", {
           "session.id": input.sessionID,
           messageID: input.assistantMessage.id,
         })
-        // kilocode_change start - a deleted session cannot accept EventV2 writes under core FK enforcement
+        // chipmate_change start - a deleted session cannot accept EventV2 writes under core FK enforcement
         const exists = yield* session.get(ctx.sessionID).pipe(
           Effect.as(true),
           Effect.catchTag("NotFoundError", () => Effect.succeed(false)),
         )
         if (!exists) return "stop"
-        // kilocode_change end
+        // chipmate_change end
         ctx.needsCompaction = false
-        ctx.compactionError = undefined // kilocode_change
-        const cfg = yield* config.get() // kilocode_change
+        ctx.compactionError = undefined // chipmate_change
+        const cfg = yield* config.get() // chipmate_change
         ctx.shouldBreak = cfg.experimental?.continue_loop_on_deny !== true
 
         return yield* Effect.gen(function* () {
-          // kilocode_change start - publish retry state consistently for provider and empty-response retries
+          // chipmate_change start - publish retry state consistently for provider and empty-response retries
           const retries = { provider: 0 }
           const bytes = Buffer.byteLength(JSON.stringify(streamInput.messages))
           const setRetry = (info: {
@@ -941,15 +941,15 @@ export const layer = Layer.effect(
               ctx.reasoningMap = {}
               yield* status.set(ctx.sessionID, { type: "busy" })
               ctx.step = { reasoning: false, text: false, tool: false }
-              // kilocode_change start - recover DeepSeek V4 think tags emitted as ordinary content
-              const stream = KiloSessionThinking.stream(
+              // chipmate_change start - recover DeepSeek V4 think tags emitted as ordinary content
+              const stream = ChipMateSessionThinking.stream(
                 llm.stream({
                   ...streamInput,
                   preflight: !ctx.assistantMessage.summary,
                 }),
                 ctx.model,
               )
-              // kilocode_change end
+              // chipmate_change end
 
               yield* stream.pipe(
                 Stream.tap((event) => handleEvent(event)),
@@ -960,7 +960,7 @@ export const layer = Layer.effect(
               Effect.onInterrupt(() =>
                 Effect.gen(function* () {
                   aborted = true
-                  ac.abort() // kilocode_change — also abort offline handler
+                  ac.abort() // chipmate_change — also abort offline handler
                   if (!ctx.assistantMessage.error) {
                     yield* halt(new DOMException("Aborted", "AbortError"))
                   }
@@ -974,7 +974,7 @@ export const layer = Layer.effect(
                 SessionRetry.policy({
                   provider: input.model.providerID,
                   parse: retryParse,
-                  ...KiloSessionProcessor.retryOpts({
+                  ...ChipMateSessionProcessor.retryOpts({
                     sessionID: ctx.sessionID,
                     abort: ac.signal,
                     set: status.set,
@@ -989,12 +989,12 @@ export const layer = Layer.effect(
                 }),
               ),
               Effect.catch((error) =>
-                KiloSessionProcessor.compact({
+                ChipMateSessionProcessor.compact({
                   error: retryParse(error),
                   bytes,
                   auto: cfg.compaction?.auto !== false,
                 })
-                  ? Effect.fail(new KiloSessionOverflow.PreflightError())
+                  ? Effect.fail(new ChipMateSessionOverflow.PreflightError())
                   : Effect.fail(error),
               ),
             )
@@ -1023,18 +1023,18 @@ export const layer = Layer.effect(
 
           const recover = () => {
             const baseline = new Set<string>()
-            return KiloSessionProcessor.recover({
+            return ChipMateSessionProcessor.recover({
               run: Effect.fn("SessionProcessor.incompleteAttempt")(function* () {
                 baseline.clear()
                 for (const part of yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
                   Effect.provideService(Database.Service, database),
                 ))
                   baseline.add(part.id)
-                attempt = KiloSessionProcessor.attempt()
+                attempt = ChipMateSessionProcessor.attempt()
                 yield* request()
               }),
               replayable: () =>
-                KiloSessionProcessor.replayable({
+                ChipMateSessionProcessor.replayable({
                   finish: attempt.finish,
                   text: attempt.text,
                   reasoning: attempt.reasoning,
@@ -1047,7 +1047,7 @@ export const layer = Layer.effect(
           }
 
           yield* recover().pipe(Effect.catch(halt), Effect.ensuring(cleanup()))
-          // kilocode_change end
+          // chipmate_change end
 
           if (ctx.needsCompaction) return "compact"
           if (ctx.blocked || ctx.assistantMessage.error) return "stop"
@@ -1060,9 +1060,9 @@ export const layer = Layer.effect(
           return ctx.assistantMessage
         },
         updateToolCall,
-        metadata, // kilocode_change
+        metadata, // chipmate_change
         completeToolCall,
-        ...output, // kilocode_change
+        ...output, // chipmate_change
         process,
       } satisfies Handle
     })
@@ -1087,7 +1087,7 @@ export const node = LayerNode.make({
     Image.node,
     EventV2Bridge.node,
     Database.node,
-    RuntimeFlags.node, // kilocode_change
+    RuntimeFlags.node, // chipmate_change
   ],
 })
 

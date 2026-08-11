@@ -1,0 +1,96 @@
+@media (max-width: 980px) {
+  .chipmate-console .app-header {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .chipmate-console .header-title {
+    display: none;
+  }
+
+  .chipmate-console .config-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .chipmate-console .config-sidebar {
+    position: static;
+    height: auto;
+    max-height: 18rem;
+    overflow-y: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .chipmate-console .config-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  html[data-theme="chipmate"],
+  html[data-theme="chipmate-console"],
+  .chipmate-console {
+    --app-header-height: auto;
+    --app-rail-width: 3rem;
+  }
+
+  [data-slot="page-header-main"],
+  [data-component="config-row"] {
+    align-items: stretch;
+  }
+
+  [data-component="config-row"] {
+    flex-wrap: wrap;
+  }
+
+  [data-slot="config-row-trailing"] {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .chipmate-console {
+    --app-rail-width: 3.75rem;
+  }
+
+  .chipmate-console .app-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .chipmate-console .notification-zone {
+    display: none;
+  }
+
+  .chipmate-console .console-body {
+    grid-template-columns: var(--app-rail-width) minmax(0, 1fr);
+  }
+
+  .chipmate-console .rail {
+    padding-inline: 0.45rem;
+  }
+
+  .chipmate-console .rail-action,
+  .chipmate-console .favorite-project {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+
+  .chipmate-console .content,
+  .chipmate-console .route-empty {
+    padding: 1rem;
+  }
+
+  .chipmate-console .config-sidebar-title {
+    min-height: 3.75rem;
+    padding: 0 1rem;
+  }
+
+  .chipmate-console .content {
+    padding-top: 0;
+  }
+
+  .chipmate-console .config-options {
+    grid-template-columns: 1fr;
+  }
+}

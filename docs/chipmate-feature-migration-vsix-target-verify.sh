@@ -6,11 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 RUN_STAMP="$(date +%Y%m%d-%H%M%S)"
 RUN_DIR="${VALIDATION_RUN_DIR:-${REPO_ROOT}/docs/chipmate-feature-migration-validation-runs/${RUN_STAMP}-vsix-target-verify}"
-OUT_DIR="${OUT_DIR:-${REPO_ROOT}/packages/kilo-vscode/out}"
+OUT_DIR="${OUT_DIR:-${REPO_ROOT}/packages/chipmate-vscode/out}"
 VERSION="${CHIPMATE_OFFLINE_VERSION:-0.0.38}"
 
-LINUX_VSIX="${LINUX_VSIX:-${OUT_DIR}/kilo-vscode-linux-x64-baseline.vsix}"
-WIN32_VSIX="${WIN32_VSIX:-${OUT_DIR}/kilo-vscode-win32-x64-baseline.vsix}"
+LINUX_VSIX="${LINUX_VSIX:-${OUT_DIR}/chipmate-vscode-linux-x64-baseline.vsix}"
+WIN32_VSIX="${WIN32_VSIX:-${OUT_DIR}/chipmate-vscode-win32-x64-baseline.vsix}"
 
 usage() {
   cat <<'USAGE'
@@ -21,7 +21,7 @@ Usage:
 
 Environment:
   VALIDATION_RUN_DIR          Optional output directory.
-  OUT_DIR                     VSIX out directory. Defaults to packages/kilo-vscode/out.
+  OUT_DIR                     VSIX out directory. Defaults to packages/chipmate-vscode/out.
   CHIPMATE_OFFLINE_VERSION    Expected extension version. Defaults to 0.0.38.
   LINUX_VSIX                  Optional Linux target VSIX path.
   WIN32_VSIX                  Optional Windows target VSIX path.
@@ -67,16 +67,16 @@ TARGETS = [
     {
         "id": "linux-x64",
         "path": linux_vsix,
-        "cli": "extension/bin/kilo",
+        "cli": "extension/bin/chipmate",
         "required": [
             "extension/package.json",
             "extension/dist/extension.js",
-            "extension/bin/kilo",
+            "extension/bin/chipmate",
             "extension/bin/codegraph-parser-worker.mjs",
             "extension/bin/lancedb/node_modules/@lancedb/lancedb-linux-x64-gnu/lancedb.linux-x64-gnu.node",
         ],
         "forbidden": [
-            "extension/bin/kilo.exe",
+            "extension/bin/chipmate.exe",
             "extension/bin/lancedb/node_modules/@lancedb/lancedb-win32-x64-msvc/lancedb.win32-x64-msvc.node",
             "extension/bin/lancedb/node_modules/@lancedb/lancedb-darwin-arm64/lancedb.darwin-arm64.node",
             "extension/bin/lancedb/node_modules/@lancedb/lancedb-darwin-x64/lancedb.darwin-x64.node",
@@ -85,18 +85,18 @@ TARGETS = [
     {
         "id": "win32-x64",
         "path": win32_vsix,
-        "cli": "extension/bin/kilo.exe",
+        "cli": "extension/bin/chipmate.exe",
         "required": [
             "extension/package.json",
             "extension/dist/extension.js",
-            "extension/bin/kilo.exe",
+            "extension/bin/chipmate.exe",
             "extension/bin/codegraph-parser-worker.mjs",
             "extension/bin/rg.exe",
             "extension/bin/poppler/pdftotext.exe",
             "extension/bin/lancedb/node_modules/@lancedb/lancedb-win32-x64-msvc/lancedb.win32-x64-msvc.node",
         ],
         "forbidden": [
-            "extension/bin/kilo",
+            "extension/bin/chipmate",
             "extension/bin/lancedb/node_modules/@lancedb/lancedb-linux-x64-gnu/lancedb.linux-x64-gnu.node",
             "extension/bin/lancedb/node_modules/@lancedb/lancedb-darwin-arm64/lancedb.darwin-arm64.node",
             "extension/bin/lancedb/node_modules/@lancedb/lancedb-darwin-x64/lancedb.darwin-x64.node",

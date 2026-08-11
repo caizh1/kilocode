@@ -2,14 +2,14 @@ import type { NamedError } from "@opencode-ai/core/util/error"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Cause, Clock, Duration, Effect, Schedule } from "effect"
 import { MessageV2 } from "./message-v2"
-import { isKiloError } from "@/kilocode/kilo-errors" // kilocode_change
-import { SessionNetwork } from "./network" // kilocode_change
+import { isChipMateError } from "@/chipmate/chipmate-errors" // chipmate_change
+import { SessionNetwork } from "./network" // chipmate_change
 import { iife } from "@/util/iife"
 import { isRecord } from "@/util/record"
 
 export type Err = ReturnType<NamedError["toObject"]>
 
-export type RetryReason = string & {} // kilocode_change - Kilo does not support OpenCode Go upsell reasons
+export type RetryReason = string & {} // chipmate_change - ChipMate does not support OpenCode Go upsell reasons
 
 export type Retryable = {
   message: string
@@ -65,25 +65,25 @@ export function delay(attempt: number, error?: SessionV1.APIError) {
   return cap(Math.min(RETRY_INITIAL_DELAY * Math.pow(RETRY_BACKOFF_FACTOR, attempt - 1), RETRY_MAX_DELAY_NO_HEADERS))
 }
 
-// kilocode_change - Kilo does not emit OpenCode Go actions
+// chipmate_change - ChipMate does not emit OpenCode Go actions
 export function retryable(error: Err, _provider?: string): Retryable | undefined {
   // context overflow errors should not be retried
   if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
   if (SessionV1.APIError.isInstance(error)) {
     const status = error.data.statusCode
-    // kilocode_change start - Current Kilo errors require user action (login/signup), don't retry
-    if (isKiloError(error)) return undefined
-    // kilocode_change end
+    // chipmate_change start - Current ChipMate errors require user action (login/signup), don't retry
+    if (isChipMateError(error)) return undefined
+    // chipmate_change end
 
     // 5xx errors are transient server failures and should always be retried,
     // even when the provider SDK doesn't explicitly mark them as retryable.
     if (!error.data.isRetryable && !(status !== undefined && status >= 500)) return undefined
 
-    // kilocode_change start - Kilo does not support OpenCode Go upsells. FreeUsageLimitError is not retryable: retrying
+    // chipmate_change start - ChipMate does not support OpenCode Go upsells. FreeUsageLimitError is not retryable: retrying
     // the same capped model is futile and the backoff loop cannot be broken by switching models in the chat selector
     // because the retry loop holds a stale model ref.
     if (error.data.responseBody?.includes("FreeUsageLimitError")) return undefined
-    // kilocode_change end
+    // chipmate_change end
     return { message: error.data.message.includes("Overloaded") ? "Provider is overloaded" : error.data.message }
   }
 
@@ -131,24 +131,24 @@ export function policy(opts: {
   provider: string
   parse: (error: unknown) => Err
   set: (input: { attempt: number; message: string; action?: Retryable["action"]; next: number }) => Effect.Effect<void>
-  // kilocode_change start
+  // chipmate_change start
   limit?: number
   offline?: (input: { error: unknown; message: string }) => Effect.Effect<"retry" | "blocked" | "aborted">
-  // kilocode_change end
+  // chipmate_change end
 }) {
   return Schedule.fromStepWithMetadata(
     Effect.succeed((meta: Schedule.InputMetadata<unknown>) => {
-      // kilocode_change start — enforce retry limit
+      // chipmate_change start — enforce retry limit
       if (opts.limit !== undefined && meta.attempt > opts.limit) {
         return Cause.done(meta.attempt)
       }
-      // kilocode_change end
+      // chipmate_change end
 
       const error = opts.parse(meta.input)
       const retry = retryable(error, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
-        // kilocode_change start — handle network disconnect via offline handler
+        // chipmate_change start — handle network disconnect via offline handler
         if (opts.offline && SessionNetwork.disconnected(meta.input)) {
           const result = yield* opts.offline({
             error: meta.input,
@@ -160,7 +160,7 @@ export function policy(opts: {
           yield* opts.set({ attempt: 0, message: "Reconnected", next: Date.now() })
           return [0, Duration.zero] as [number, Duration.Duration]
         }
-        // kilocode_change end
+        // chipmate_change end
 
         const wait = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
         const now = yield* Clock.currentTimeMillis

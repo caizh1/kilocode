@@ -7,18 +7,18 @@ ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=${BUN_RUNTIME_TRANSPILER_CACHE_PATH}
 RUN apk add libgcc libstdc++ ripgrep
 
 FROM base AS build-amd64
-# kilocode_change start
-COPY dist/@kilocode/cli-linux-x64-baseline-musl/bin/kilo dist/@kilocode/cli-linux-x64-baseline-musl/bin/bwrap /usr/local/bin/
-COPY dist/@kilocode/cli-linux-x64-baseline-musl/bin/licenses /usr/local/share/licenses/kilo
-# kilocode_change end
+# chipmate_change start
+COPY dist/@chipmate/cli-linux-x64-baseline-musl/bin/chipmate dist/@chipmate/cli-linux-x64-baseline-musl/bin/bwrap /usr/local/bin/
+COPY dist/@chipmate/cli-linux-x64-baseline-musl/bin/licenses /usr/local/share/licenses/chipmate
+# chipmate_change end
 
 FROM base AS build-arm64
-# kilocode_change start
-COPY dist/@kilocode/cli-linux-arm64-musl/bin/kilo dist/@kilocode/cli-linux-arm64-musl/bin/bwrap /usr/local/bin/
-COPY dist/@kilocode/cli-linux-arm64-musl/bin/licenses /usr/local/share/licenses/kilo
-# kilocode_change end
+# chipmate_change start
+COPY dist/@chipmate/cli-linux-arm64-musl/bin/chipmate dist/@chipmate/cli-linux-arm64-musl/bin/bwrap /usr/local/bin/
+COPY dist/@chipmate/cli-linux-arm64-musl/bin/licenses /usr/local/share/licenses/chipmate
+# chipmate_change end
 
 ARG TARGETARCH
 FROM build-${TARGETARCH}
-RUN kilo --version
-ENTRYPOINT ["kilo"]
+RUN chipmate --version
+ENTRYPOINT ["chipmate"]

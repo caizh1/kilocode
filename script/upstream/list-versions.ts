@@ -6,7 +6,7 @@
  *   bun run script/upstream/list-versions.ts
  */
 
-import { getAvailableUpstreamVersions, getCurrentKiloVersion } from "./utils/version"
+import { getAvailableUpstreamVersions, getCurrentChipMateVersion } from "./utils/version"
 import { fetchUpstream, hasUpstreamRemote, isAncestor } from "./utils/git"
 import { header, info, success, warn, error } from "./utils/logger"
 
@@ -24,10 +24,10 @@ async function main() {
   await fetchUpstream()
 
   const versions = await getAvailableUpstreamVersions()
-  const kiloVersion = await getCurrentKiloVersion()
+  const chipmateVersion = await getCurrentChipMateVersion()
 
   console.log()
-  success(`Current Kilo version: ${kiloVersion}`)
+  success(`Current ChipMate version: ${chipmateVersion}`)
   console.log()
 
   info("Available upstream versions (newest first):")

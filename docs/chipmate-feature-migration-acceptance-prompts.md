@@ -15,7 +15,7 @@ Use these prompts after a VSIX has been packaged and installed into the agreed V
 - For generated artifacts, record the `artifact.json` path and primary output path.
 - For skipped prompts, record the reason and risk.
 
-## Native Kilo QA Preservation
+## Native ChipMate QA Preservation
 
 ### S1: Embedded C call-chain QA
 
@@ -27,7 +27,7 @@ Prompt:
 
 Expected behavior:
 
-- Uses Kilo native code understanding/search tools such as `codebase_analysis`, `semantic_search`, `Grep`, or `Read`.
+- Uses ChipMate native code understanding/search tools such as `codebase_analysis`, `semantic_search`, `Grep`, or `Read`.
 - Does not call Word, Mermaid, or artifact-generation tools.
 - Answer cites source files/functions and separates direct evidence from inference.
 
@@ -35,7 +35,7 @@ Evidence to record:
 
 - Function name and project.
 - Tool sequence or visible source references.
-- Confirmation that no `.kilo/artifacts/...` deliverable was created for ordinary QA.
+- Confirmation that no `.chipmate/artifacts/...` deliverable was created for ordinary QA.
 
 ### S2: Macro/register/MMIO QA
 
@@ -67,7 +67,7 @@ Prompt:
 
 Expected behavior:
 
-- Uses Kilo native `document_search` for indexed document QA.
+- Uses ChipMate native `document_search` for indexed document QA.
 - Does not call Word generation/edit tools.
 - Does not create document artifacts unless explicitly requested.
 
@@ -89,7 +89,7 @@ Prompt:
 
 Expected behavior:
 
-- Creates a generated artifact under `.kilo/artifacts/...`.
+- Creates a generated artifact under `.chipmate/artifacts/...`.
 - Produces or declares an `artifact.json`.
 - Returns artifact directory and manifest path.
 
@@ -295,7 +295,7 @@ Prompt:
 
 Expected behavior:
 
-- Uses Kilo native evidence tools such as `codebase_analysis`, `semantic_search`, and `document_search`.
+- Uses ChipMate native evidence tools such as `codebase_analysis`, `semantic_search`, and `document_search`.
 - Uses the source-backed detail-design skill process.
 - Produces Markdown, diagrams, Word document, and evidence/quality report artifacts.
 
@@ -336,16 +336,16 @@ Evidence to record:
 Action:
 
 ```text
-Run command: Kilo Agent Terminal: Open
+Run command: ChipMate Agent Terminal: Open
 Then ask: 帮我分析这个项目应该怎么构建，但先不要执行命令。
 ```
 
 Expected behavior:
 
-- `kilo.agentTerminal.enabled` is disabled by default.
+- `chipmate.agentTerminal.enabled` is disabled by default.
 - User is prompted before enabling/opening.
 - The terminal helper provides safe command planning.
-- Native Kilo terminal/session manager remains available.
+- Native ChipMate terminal/session manager remains available.
 
 Evidence to record:
 

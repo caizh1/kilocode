@@ -3,7 +3,7 @@
 
 This helper checks bundle transport/structure before the bundle is handed to
 chipmate-feature-migration-m11-returned-evidence-bundle-intake.py. It does not
-run Kilo QA, install VSIX files, execute target commands, run autocomplete, or
+run ChipMate QA, install VSIX files, execute target commands, run autocomplete, or
 decide M11 readiness/final signoff.
 """
 

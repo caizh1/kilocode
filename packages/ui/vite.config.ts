@@ -36,18 +36,18 @@ function providerIconsPlugin() {
   return {
     name: "provider-icons-plugin",
     configureServer() {
-      if (!process.env.KILO_FETCH_PROVIDER_ICONS) return // kilocode_change
+      if (!process.env.CHIPMATE_FETCH_PROVIDER_ICONS) return // chipmate_change
       void fetchProviderIcons()
     },
     buildStart() {
-      if (!process.env.KILO_FETCH_PROVIDER_ICONS) return // kilocode_change
+      if (!process.env.CHIPMATE_FETCH_PROVIDER_ICONS) return // chipmate_change
       void fetchProviderIcons()
     },
   }
 }
 
 async function fetchProviderIcons() {
-  const url = process.env.KILO_MODELS_URL || "https://models.dev"
+  const url = process.env.CHIPMATE_MODELS_URL || "https://models.dev"
   const providers = await fetch(`${url}/api.json`)
     .then((res) => res.json())
     .then((json) => Object.keys(json))

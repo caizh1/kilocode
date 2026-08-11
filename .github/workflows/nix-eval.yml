@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   nix-eval:
-    if: github.repository == 'Kilo-Org/kilocode'
+    if: github.repository == 'ChipMate-Org/chipmate'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
@@ -39,7 +39,7 @@ jobs:
           nix flake show --all-systems
 
           SYSTEMS="x86_64-linux aarch64-linux x86_64-darwin aarch64-darwin"
-          PACKAGES="kilo"
+          PACKAGES="chipmate"
 
           echo ""
           echo "=== Evaluating packages for all systems ==="

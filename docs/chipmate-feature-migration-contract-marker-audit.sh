@@ -32,11 +32,11 @@ PATTERNS=(
 
 CANDIDATE_PATHS=(
   "${REPO_ROOT}/packages/opencode/src"
-  "${REPO_ROOT}/packages/kilo-vscode/src"
-  "${REPO_ROOT}/packages/kilo-vscode/webview-ui/src"
-  "${REPO_ROOT}/packages/kilo-vscode/package.json"
-  "${REPO_ROOT}/.kilo/skills"
-  "${REPO_ROOT}/packages/opencode/.kilo/skills"
+  "${REPO_ROOT}/packages/chipmate-vscode/src"
+  "${REPO_ROOT}/packages/chipmate-vscode/webview-ui/src"
+  "${REPO_ROOT}/packages/chipmate-vscode/package.json"
+  "${REPO_ROOT}/.chipmate/skills"
+  "${REPO_ROOT}/packages/opencode/.chipmate/skills"
 )
 
 CHECK_PATHS=()

@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
-import type { TuiPlugin, TuiPluginApi, TuiRouteCurrent } from "@kilocode/plugin/tui"
-import type { SnapshotFileDiff, VcsFileDiff } from "@kilocode/sdk/v2"
+import type { TuiPlugin, TuiPluginApi, TuiRouteCurrent } from "@chipmate/plugin/tui"
+import type { SnapshotFileDiff, VcsFileDiff } from "@chipmate/sdk/v2"
 import {
   TextAttributes,
   type BorderSides,

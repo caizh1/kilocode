@@ -4,14 +4,14 @@
 
 - [x] This document defines the minimum contract for migrated document artifact, Word, and Mermaid tools.
 - [x] These tools are deliverable-generation tools, not QA-routing tools.
-- [x] These tools must be implemented as additive Kilo tools and must not replace Kilo `document_search`.
+- [x] These tools must be implemented as additive ChipMate tools and must not replace ChipMate `document_search`.
 - [x] This is a generic tool API boundary only. It is not a migrated ChipMate Word/document runtime contract, recipe gate, repair loop, or planner steering mechanism.
-- [x] Do not migrate ChipMate `nextToolContract`, required-artifact validators, document-depth gates, recipe-specific Word repair prompts, or skill contract gates into Kilo QA.
+- [x] Do not migrate ChipMate `nextToolContract`, required-artifact validators, document-depth gates, recipe-specific Word repair prompts, or skill contract gates into ChipMate QA.
 
 ## Artifact Tool Boundary
 
-- [x] Artifact root defaults to `.kilo/artifacts`.
-- [x] Each artifact lives under `.kilo/artifacts/<timestamp>-<task-slug>/`.
+- [x] Artifact root defaults to `.chipmate/artifacts`.
+- [x] Each artifact lives under `.chipmate/artifacts/<timestamp>-<task-slug>/`.
 - [x] Every generated deliverable must be declared through an artifact manifest.
 - [x] All manifest file paths must be artifact-relative or workspace-relative.
 - [x] Tools must reject output paths outside the active workspace.
@@ -44,8 +44,8 @@ Artifact tools:
 ## Generic Word Tool Boundary
 
 - [x] Word migration scope is generic `.docx` creation, inspection, editing, style inheritance, merge, diff, and render diagnostics.
-- [x] Word tools may validate their own arguments and return warnings, but they must not impose a ChipMate-style document contract on ordinary Kilo QA.
-- [x] Word tools must not force missing-deliverable repair prompts, artifact-consumption gates, or recipe-specific document-depth checks into the Kilo native agent loop.
+- [x] Word tools may validate their own arguments and return warnings, but they must not impose a ChipMate-style document contract on ordinary ChipMate QA.
+- [x] Word tools must not force missing-deliverable repair prompts, artifact-consumption gates, or recipe-specific document-depth checks into the ChipMate native agent loop.
 
 - [x] `create_word_document` creates a `.docx` from a structured document spec.
 - [x] `inspect_word_document` returns bounded outline, paragraph, table, image, style, and anchor summaries.
@@ -112,4 +112,4 @@ Mermaid boundary:
 - [x] These tools must not replace `document_search`.
 - [x] These tools must not trigger for ordinary source-code QA.
 - [x] These tools must not return large document bodies to the model by default.
-- [x] These tools must preserve Kilo's existing permission and path-safety expectations.
+- [x] These tools must preserve ChipMate's existing permission and path-safety expectations.

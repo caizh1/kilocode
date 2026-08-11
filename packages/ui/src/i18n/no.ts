@@ -57,7 +57,7 @@ export const dict: Record<Keys, string> = {
 
   "dialog.usageExceeded.freeTier.title": "Gratis grense nådd",
   "dialog.usageExceeded.freeTier.description":
-    "Abonner på Kilo Go for pålitelig tilgang til de beste åpen kildekode-modellene, fra $5/måned.",
+    "Abonner på ChipMate Go for pålitelig tilgang til de beste åpen kildekode-modellene, fra $5/måned.",
   "dialog.usageExceeded.freeTier.actionLabel": "Abonner",
   "dialog.usageExceeded.accountRateLimit.title": "Go-grense nådd",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -108,7 +108,7 @@ export const dict: Record<Keys, string> = {
   "ui.textField.copied": "Kopiert",
 
   "ui.imagePreview.alt": "Bildeforhåndsvisning",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Gjengir Mermaid-diagram...",
   "ui.mermaid.renderError": "Mermaid-gjengivelse mislyktes: {{message}}",
   "ui.mermaid.errorDefault": "Kan ikke gjengi Mermaid-diagram.",
@@ -130,12 +130,12 @@ export const dict: Record<Keys, string> = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "rullbart innhold",
 
   "ui.tool.read": "Les",
   "ui.tool.loaded": "Lastet",
-  "ui.tool.swePruned": "SWE-Pruner · {{kept}} av {{total}} linjer beholdt", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · {{kept}} av {{total}} linjer beholdt", // chipmate_change
   "ui.tool.list": "Liste",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -171,7 +171,7 @@ export const dict: Record<Keys, string> = {
   "ui.message.collapse": "Skjul melding",
   "ui.message.copy": "Kopier",
   "ui.message.copyMessage": "Kopier melding",
-  "ui.message.deleteQueued": "Slett melding i kø", // kilocode_change
+  "ui.message.deleteQueued": "Slett melding i kø", // chipmate_change
   "ui.message.forkMessage": "Forgren til ny sesjon",
   "ui.message.revertMessage": "Tilbakestill til dette punktet",
   "ui.message.copyResponse": "Kopier svar",
@@ -187,9 +187,9 @@ export const dict: Record<Keys, string> = {
   "ui.patch.action.patched": "Oppdatert",
 
   "ui.question.subtitle.answered": "{{count}} besvart",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(ingen svar)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(ikke besvart)",
   "ui.question.multiHint": "Velg alle som gjelder",
   "ui.question.singleHint": "Velg ett svar",

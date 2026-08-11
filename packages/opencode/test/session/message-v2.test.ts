@@ -494,7 +494,7 @@ describe("session.message-v2.toModelMessage", () => {
     })
   })
 
-  // kilocode_change start — send_file delivery attachments must not be replayed to the model
+  // chipmate_change start — send_file delivery attachments must not be replayed to the model
   test("strips send_file delivery attachments from model context", async () => {
     const userID = "m-user-sendfile"
     const assistantID = "m-assistant-sendfile"
@@ -521,7 +521,7 @@ describe("session.message-v2.toModelMessage", () => {
             state: {
               status: "completed",
               input: { path: "/tmp/example.log" },
-              output: "File example.log (50 bytes, text/plain) delivered to the user's Kilo app.",
+              output: "File example.log (50 bytes, text/plain) delivered to the user's ChipMate app.",
               title: "Sent file: example.log",
               metadata: {},
               time: { start: 0, end: 1 },
@@ -549,10 +549,10 @@ describe("session.message-v2.toModelMessage", () => {
     // Output should be plain text — no attachments replayed to the model
     expect(toolContent.output).toStrictEqual({
       type: "text",
-      value: "File example.log (50 bytes, text/plain) delivered to the user's Kilo app.",
+      value: "File example.log (50 bytes, text/plain) delivered to the user's ChipMate app.",
     })
   })
-  // kilocode_change end
+  // chipmate_change end
 
   test("moves bedrock pdf tool-result media into a separate user message", async () => {
     const bedrockModel: Provider.Model = {

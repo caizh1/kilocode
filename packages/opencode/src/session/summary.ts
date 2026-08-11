@@ -6,8 +6,8 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Snapshot } from "@/snapshot"
 import { Session } from "./session"
 import { SessionID, MessageID } from "./schema"
-import { appendSessionDiffs, readSessionDiffBase } from "@/kilocode/session-portability/cumulative-diff" // kilocode_change
-import { Storage } from "@/storage/storage" // kilocode_change
+import { appendSessionDiffs, readSessionDiffBase } from "@/chipmate/session-portability/cumulative-diff" // chipmate_change
+import { Storage } from "@/storage/storage" // chipmate_change
 import { Config } from "@/config/config"
 
 function unquoteGitPath(input: string) {
@@ -68,7 +68,7 @@ function unquoteGitPath(input: string) {
 
 export interface Interface {
   readonly summarize: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<void>
-  readonly diff: (input: DiffInput) => Effect.Effect<Snapshot.FileDiff[]> // kilocode_change - full-content detail input
+  readonly diff: (input: DiffInput) => Effect.Effect<Snapshot.FileDiff[]> // chipmate_change - full-content detail input
   readonly computeDiff: (input: { messages: SessionV1.WithParts[] }) => Effect.Effect<Snapshot.FileDiff[]>
 }
 
@@ -81,7 +81,7 @@ const layer = Layer.effect(
     const snapshot = yield* Snapshot.Service
     const events = yield* EventV2Bridge.Service
     const config = yield* Config.Service
-    const storage = yield* Storage.Service // kilocode_change
+    const storage = yield* Storage.Service // chipmate_change
 
     const computeDiff = Effect.fn("SessionSummary.computeDiff")(function* (input: { messages: SessionV1.WithParts[] }) {
       let from: string | undefined
@@ -109,9 +109,9 @@ const layer = Layer.effect(
     }) {
       const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
       if (!all.length) return
-      if ((yield* config.get()).snapshot === false) return // kilocode_change - respect snapshot config toggle
+      if ((yield* config.get()).snapshot === false) return // chipmate_change - respect snapshot config toggle
 
-      // kilocode_change start - preserve imported cumulative diffs when summarizing cloud-forked sessions
+      // chipmate_change start - preserve imported cumulative diffs when summarizing cloud-forked sessions
       const base = yield* readSessionDiffBase(storage, input.sessionID)
       const messages = all.filter(
         (m) => m.info.id === input.messageID || (m.info.role === "assistant" && m.info.parentID === input.messageID),
@@ -127,7 +127,7 @@ const layer = Layer.effect(
               ),
             )
           : yield* computeDiff({ messages: all })
-      // kilocode_change end
+      // chipmate_change end
       yield* sessions.setSummary({
         sessionID: input.sessionID,
         summary: {
@@ -136,17 +136,17 @@ const layer = Layer.effect(
           files: diffs.length,
         },
       })
-      yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore) // kilocode_change
+      yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore) // chipmate_change
       yield* events.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
 
       if (!target || target.info.role !== "user") return
-      const msgDiffs = base.length > 0 ? local : yield* computeDiff({ messages }) // kilocode_change
+      const msgDiffs = base.length > 0 ? local : yield* computeDiff({ messages }) // chipmate_change
       target.info.summary = { ...target.info.summary, diffs: msgDiffs }
       yield* sessions.updateMessage(target.info)
     })
 
-    const diff = Effect.fn("SessionSummary.diff")(function* (input: DiffInput) { // kilocode_change - full-content detail input
-      // kilocode_change start - authoritative full-content detail for one file (editor diff tabs)
+    const diff = Effect.fn("SessionSummary.diff")(function* (input: DiffInput) { // chipmate_change - full-content detail input
+      // chipmate_change start - authoritative full-content detail for one file (editor diff tabs)
       if (input.full && input.file) {
         const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
         const messages = input.messageID
@@ -164,8 +164,8 @@ const layer = Layer.effect(
         const detail = yield* snapshot.diffFile(from, to, input.file)
         return detail ? [detail] : []
       }
-      // kilocode_change end
-      // kilocode_change start - retain cumulative diffs for legacy TUI and VS Code consumers
+      // chipmate_change end
+      // chipmate_change start - retain cumulative diffs for legacy TUI and VS Code consumers
       if (!input.messageID) {
         const diffs = yield* storage
           .read<Snapshot.FileDiff[]>(["session_diff", input.sessionID])
@@ -181,7 +181,7 @@ const layer = Layer.effect(
         }
         return next
       }
-      // kilocode_change end
+      // chipmate_change end
       const message = (yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
         (item) => item.info.id === input.messageID,
       )
@@ -202,15 +202,15 @@ const layer = Layer.effect(
 export const DiffInput = Schema.Struct({
   sessionID: SessionID,
   messageID: Schema.optional(MessageID),
-  full: Schema.optional(Schema.Boolean), // kilocode_change - request full-content detail
-  file: Schema.optional(Schema.String), // kilocode_change - scope full detail to one file
+  full: Schema.optional(Schema.Boolean), // chipmate_change - request full-content detail
+  file: Schema.optional(Schema.String), // chipmate_change - scope full detail to one file
 })
 export type DiffInput = Schema.Schema.Type<typeof DiffInput>
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Session.node, Snapshot.node, EventV2Bridge.node, Config.node, Storage.node], // kilocode_change
+  deps: [Session.node, Snapshot.node, EventV2Bridge.node, Config.node, Storage.node], // chipmate_change
 })
 export const defaultLayer = Layer.suspend(() => AppNodeBuilder.build(node))
 

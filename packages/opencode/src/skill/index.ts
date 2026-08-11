@@ -1,10 +1,10 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import path from "path"
-import { randomUUID } from "crypto" // kilocode_change
+import { randomUUID } from "crypto" // chipmate_change
 import { pathToFileURL } from "url"
 import { Effect, Layer, Context, Schema } from "effect"
-import { ScopedCache } from "effect" // kilocode_change
+import { ScopedCache } from "effect" // chipmate_change
 import { NamedError } from "@opencode-ai/core/util/error"
 import type { Agent } from "@/agent/agent"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -18,24 +18,24 @@ import { ConfigMarkdown } from "@/config/markdown"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@opencode-ai/core/util/glob"
 import { Discovery } from "./discovery"
-import { lstat, mkdir, rename, rm, writeFile } from "fs/promises" // kilocode_change
-import { BUILTIN_SKILLS } from "../kilocode/skills/builtin" // kilocode_change
-import { primaryPaths } from "../kilocode/primary-worktree" // kilocode_change
-import { ProductProfile } from "../kilocode/product-profile" // kilocode_change
-import { Git } from "@/git" // kilocode_change
+import { lstat, mkdir, rename, rm, writeFile } from "fs/promises" // chipmate_change
+import { BUILTIN_SKILLS } from "../chipmate/skills/builtin" // chipmate_change
+import { primaryPaths } from "../chipmate/primary-worktree" // chipmate_change
+import { ProductProfile } from "../chipmate/product-profile" // chipmate_change
+import { Git } from "@/git" // chipmate_change
 import { isRecord } from "@/util/record"
-import { Flag } from "@opencode-ai/core/flag/flag" // kilocode_change
-import { validateInstalledSkill } from "@/kilocode/skill/identity" // kilocode_change
+import { Flag } from "@opencode-ai/core/flag/flag" // chipmate_change
+import { validateInstalledSkill } from "@/chipmate/skill/identity" // chipmate_change
 import { escapeHtml } from "@/util/html"
-import { trustedInProject } from "../kilocode/skill/trust" // kilocode_change
+import { trustedInProject } from "../chipmate/skill/trust" // chipmate_change
 
 const CLAUDE_EXTERNAL_DIR = ".claude"
 const AGENTS_EXTERNAL_DIR = ".agents"
-// kilocode_change start
+// chipmate_change start
 export const BUILTIN_LOCATION = "builtin"
-// kilocode_change end
+// chipmate_change end
 const EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"
-const KILO_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
+const CHIPMATE_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
 const SKILL_PATTERN = "**/SKILL.md"
 
 export const Info = Schema.Struct({
@@ -43,7 +43,7 @@ export const Info = Schema.Struct({
   description: Schema.optional(Schema.String),
   location: Schema.String,
   content: Schema.String,
-  trusted: Schema.optional(Schema.Boolean), // kilocode_change - gate skill shell injection to trusted sources
+  trusted: Schema.optional(Schema.Boolean), // chipmate_change - gate skill shell injection to trusted sources
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
@@ -89,7 +89,7 @@ type State = {
   dirs: Set<string>
 }
 
-// kilocode_change start - retain markdown trust provenance through discovery
+// chipmate_change start - retain markdown trust provenance through discovery
 type Match = {
   path: string
   scanRoot: string
@@ -107,7 +107,7 @@ type ScanState = {
   matches: Map<string, Match>
   dirs: Set<string>
 }
-// kilocode_change end
+// chipmate_change end
 
 export interface Interface {
   readonly get: (name: string) => Effect.Effect<Info | undefined>
@@ -115,31 +115,31 @@ export interface Interface {
   readonly all: () => Effect.Effect<Info[]>
   readonly dirs: () => Effect.Effect<string[]>
   readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
-  readonly refresh: (scope: "project" | "global") => Effect.Effect<void> // kilocode_change
-  readonly remove: (location: string, scope: "project" | "global") => Effect.Effect<void, Error> // kilocode_change
+  readonly refresh: (scope: "project" | "global") => Effect.Effect<void> // chipmate_change
+  readonly remove: (location: string, scope: "project" | "global") => Effect.Effect<void, Error> // chipmate_change
 }
 
-// kilocode_change start
+// chipmate_change start
 const add = Effect.fnUntraced(function* (state: State, match: Match, events: EventV2Bridge.Service["Service"]) {
   const source = match.sourceRoot ?? match.root
-  // kilocode_change end
+  // chipmate_change end
   const md = yield* Effect.tryPromise({
-    // kilocode_change start - project skills cannot read env or files outside the project root
+    // chipmate_change start - project skills cannot read env or files outside the project root
     try: () =>
       ConfigMarkdown.parse(match.path, {
         trusted: match.trusted,
         fileScope: match.trusted || !match.root ? undefined : { root: match.root, source: match.path },
         sourceScope: match.trusted || !source ? undefined : { root: source, source: match.path },
       }),
-    // kilocode_change end
+    // chipmate_change end
     catch: (err) => err,
   }).pipe(
     Effect.catch(
       Effect.fnUntraced(function* (err) {
-        const message = FrontmatterError.isInstance(err) ? err.data.message : `Failed to parse skill ${match.path}` // kilocode_change
+        const message = FrontmatterError.isInstance(err) ? err.data.message : `Failed to parse skill ${match.path}` // chipmate_change
         const { Session } = yield* Effect.promise(() => import("@/session/session"))
         yield* events.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
-        yield* Effect.logError("failed to load skill", { skill: match.path, error: err }) // kilocode_change
+        yield* Effect.logError("failed to load skill", { skill: match.path, error: err }) // chipmate_change
         return undefined
       }),
     ),
@@ -149,7 +149,7 @@ const add = Effect.fnUntraced(function* (state: State, match: Match, events: Eve
 
   if (!isSkillFrontmatter(md.data)) return
 
-  // kilocode_change start - ChipMate uses one canonical identity across CLI and Marketplace
+  // chipmate_change start - ChipMate uses one canonical identity across CLI and Marketplace
   if (ProductProfile.chipmate) {
     const identity = yield* Effect.tryPromise({
       try: () => validateInstalledSkill(match.path, md.data.name),
@@ -169,23 +169,23 @@ const add = Effect.fnUntraced(function* (state: State, match: Match, events: Eve
       return
     }
   }
-  // kilocode_change end
+  // chipmate_change end
 
   if (state.skills[md.data.name]) {
     yield* Effect.logWarning("duplicate skill name", {
       name: md.data.name,
       existing: state.skills[md.data.name].location,
-      duplicate: match.path, // kilocode_change
+      duplicate: match.path, // chipmate_change
     })
   }
 
-  state.dirs.add(path.dirname(match.path)) // kilocode_change
+  state.dirs.add(path.dirname(match.path)) // chipmate_change
   state.skills[md.data.name] = {
     name: md.data.name,
     description: md.data.description,
-    location: match.path, // kilocode_change
+    location: match.path, // chipmate_change
     content: md.content,
-    trusted: match.trusted, // kilocode_change
+    trusted: match.trusted, // chipmate_change
   }
 })
 
@@ -193,7 +193,7 @@ const scan = Effect.fnUntraced(function* (
   state: ScanState,
   root: string,
   pattern: string,
-  opts?: { dot?: boolean; scope?: string; trusted?: boolean; root?: string; sourceRoot?: string; projectRoot?: string }, // kilocode_change
+  opts?: { dot?: boolean; scope?: string; trusted?: boolean; root?: string; sourceRoot?: string; projectRoot?: string }, // chipmate_change
 ) {
   const matches = yield* Effect.tryPromise({
     try: () =>
@@ -215,7 +215,7 @@ const scan = Effect.fnUntraced(function* (
   )
 
   for (const match of matches) {
-    // kilocode_change start - a trusted match whose realpath resolves inside the project (e.g. a
+    // chipmate_change start - a trusted match whose realpath resolves inside the project (e.g. a
     // symlink from ~/.agents/skills into the repo) must not mint trust for project-controlled content
     const trusted = (opts?.trusted ?? false) && !trustedInProject(match, opts?.projectRoot)
     state.matches.set(match, {
@@ -225,7 +225,7 @@ const scan = Effect.fnUntraced(function* (
       root: trusted ? opts?.root : (opts?.root ?? opts?.projectRoot),
       sourceRoot: trusted ? opts?.sourceRoot : (opts?.sourceRoot ?? opts?.projectRoot),
     })
-    // kilocode_change end
+    // chipmate_change end
     state.dirs.add(path.dirname(match))
   }
 })
@@ -240,14 +240,14 @@ const discoverSkills = Effect.fnUntraced(function* (
   directory: string,
   worktree: string,
 ) {
-  const state: ScanState = { matches: new Map(), dirs: new Set() } // kilocode_change
-  const projectRoot = worktree === "/" ? directory : worktree // kilocode_change - project substitution boundary
+  const state: ScanState = { matches: new Map(), dirs: new Set() } // chipmate_change
+  const projectRoot = worktree === "/" ? directory : worktree // chipmate_change - project substitution boundary
 
-  // kilocode_change start - ChipMate discovers only its fixed global and current-project Skill roots
+  // chipmate_change start - ChipMate discovers only its fixed global and current-project Skill roots
   if (ProductProfile.chipmate) {
     const global = ProductProfile.config()!
     yield* scan(state, global, "skills/*/SKILL.md", { scope: "global", trusted: true })
-    if (!Flag.KILO_DISABLE_PROJECT_CONFIG) {
+    if (!Flag.CHIPMATE_DISABLE_PROJECT_CONFIG) {
       const local = ProductProfile.project(projectRoot)
       yield* scan(state, local, "skills/*/SKILL.md", {
         scope: "project",
@@ -257,7 +257,7 @@ const discoverSkills = Effect.fnUntraced(function* (
     }
     return { matches: Array.from(state.matches.values()), dirs: Array.from(state.dirs) }
   }
-  // kilocode_change end
+  // chipmate_change end
 
   const externalDirs: string[] = []
   if (!disableExternalSkills) {
@@ -267,48 +267,48 @@ const discoverSkills = Effect.fnUntraced(function* (
     for (const dir of externalDirs) {
       const root = path.join(global.home, dir)
       if (!(yield* fsys.isDir(root))) continue
-      yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global", trusted: true, projectRoot }) // kilocode_change
+      yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global", trusted: true, projectRoot }) // chipmate_change
     }
 
-    // kilocode_change start
+    // chipmate_change start
     const local = yield* fsys
       .up({ targets: externalDirs, start: directory, stop: projectRoot })
       .pipe(Effect.catch(() => Effect.succeed([] as string[])))
-    const fallbacks = yield* primaryPaths(directory, worktree, externalDirs) // kilocode_change
+    const fallbacks = yield* primaryPaths(directory, worktree, externalDirs) // chipmate_change
     const upDirs = [...fallbacks, ...local]
-    // kilocode_change end
+    // chipmate_change end
 
     for (const root of upDirs) {
-      const scope = fallbacks.includes(root) ? path.dirname(root) : projectRoot // kilocode_change
-      // kilocode_change start
+      const scope = fallbacks.includes(root) ? path.dirname(root) : projectRoot // chipmate_change
+      // chipmate_change start
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, {
         dot: true,
         scope: "project",
         root: projectRoot,
         sourceRoot: scope,
       })
-      // kilocode_change end
+      // chipmate_change end
     }
   }
 
-  // kilocode_change start - include primary-checkout Kilo config roots for worktree sessions
+  // chipmate_change start - include primary-checkout ChipMate config roots for worktree sessions
   const primary = new Set(yield* primaryPaths(directory, worktree, [...ProductProfile.dirs]))
   const configDirs = yield* config.directories()
-  // kilocode_change end
+  // chipmate_change end
   for (const dir of configDirs) {
-    // kilocode_change start - global and explicit KILO_CONFIG_DIR skills are trusted; project and primary-checkout
+    // chipmate_change start - global and explicit CHIPMATE_CONFIG_DIR skills are trusted; project and primary-checkout
     // skills remain confined to the active project boundary.
     const rel = path.relative(projectRoot, dir)
     const local = primary.has(dir) || rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))
-    const trusted = dir === Flag.KILO_CONFIG_DIR || !local
+    const trusted = dir === Flag.CHIPMATE_CONFIG_DIR || !local
     const sourceRoot = primary.has(dir) ? path.dirname(dir) : projectRoot
-    yield* scan(state, dir, KILO_SKILL_PATTERN, {
+    yield* scan(state, dir, CHIPMATE_SKILL_PATTERN, {
       trusted,
       root: trusted ? undefined : projectRoot,
       sourceRoot: trusted ? undefined : sourceRoot,
       projectRoot,
     })
-    // kilocode_change end
+    // chipmate_change end
   }
 
   const cfg = yield* config.get()
@@ -320,7 +320,7 @@ const discoverSkills = Effect.fnUntraced(function* (
       continue
     }
 
-    // kilocode_change start - trust follows the config source that declared the path, never the selected path.
+    // chipmate_change start - trust follows the config source that declared the path, never the selected path.
     const origin = cfg.skill_path_origins?.[item]
     const trusted = origin?.trusted === true && path.isAbsolute(expanded)
     yield* scan(state, dir, SKILL_PATTERN, {
@@ -328,18 +328,18 @@ const discoverSkills = Effect.fnUntraced(function* (
       root: trusted ? undefined : (origin?.root ?? projectRoot),
       projectRoot,
     })
-    // kilocode_change end
+    // chipmate_change end
   }
 
   for (const url of cfg.skills?.urls ?? []) {
     const pulledDirs = yield* discovery.pull(url)
     for (const dir of pulledDirs) {
-      yield* scan(state, dir, SKILL_PATTERN, { root: dir }) // kilocode_change - downloaded markdown is untrusted
+      yield* scan(state, dir, SKILL_PATTERN, { root: dir }) // chipmate_change - downloaded markdown is untrusted
     }
   }
 
   return {
-    matches: Array.from(state.matches.values()), // kilocode_change
+    matches: Array.from(state.matches.values()), // chipmate_change
     dirs: Array.from(state.dirs),
   }
 })
@@ -349,7 +349,7 @@ const loadSkills = Effect.fnUntraced(function* (
   discovered: DiscoveryState,
   events: EventV2Bridge.Service["Service"],
 ) {
-  // kilocode_change start - seed built-in skills before discovery so user skills can override
+  // chipmate_change start - seed built-in skills before discovery so user skills can override
   for (const skill of BUILTIN_SKILLS) {
     const location = yield* Effect.promise(() => materializeBuiltinSkill(skill))
     if (location !== BUILTIN_LOCATION) state.dirs.add(path.dirname(location))
@@ -358,17 +358,17 @@ const loadSkills = Effect.fnUntraced(function* (
       description: skill.description,
       location,
       content: skill.content,
-      trusted: true, // kilocode_change - builtin skills ship in the binary
+      trusted: true, // chipmate_change - builtin skills ship in the binary
     }
   }
-  // kilocode_change end
+  // chipmate_change end
 
-  for (const match of discovered.matches) yield* add(state, match, events) // kilocode_change
+  for (const match of discovered.matches) yield* add(state, match, events) // chipmate_change
 
   yield* Effect.logInfo("init", { count: Object.keys(state.skills).length })
 })
 
-// kilocode_change start - materialize complex built-in skills so references/scripts/templates are readable offline
+// chipmate_change start - materialize complex built-in skills so references/scripts/templates are readable offline
 async function materializeBuiltinSkill(skill: (typeof BUILTIN_SKILLS)[number]): Promise<string> {
   if (!skill.files || Object.keys(skill.files).length === 0) return BUILTIN_LOCATION
 
@@ -393,7 +393,7 @@ function isSafeBuiltinSkillRelativePath(relative: string): boolean {
   if (normalized.startsWith("..") || normalized.includes(`..${path.sep}`)) return false
   return normalized === relative
 }
-// kilocode_change end
+// chipmate_change end
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Skill") {}
 
@@ -406,7 +406,7 @@ const layer = Layer.effect(
     const fsys = yield* FSUtil.Service
     const global = yield* Global.Service
     const flags = yield* RuntimeFlags.Service
-    const git = yield* Git.Service // kilocode_change
+    const git = yield* Git.Service // chipmate_change
     const discovered = yield* InstanceState.make(
       Effect.fn("Skill.discovery")(function* (ctx) {
         return yield* discoverSkills(
@@ -417,8 +417,8 @@ const layer = Layer.effect(
           flags.disableExternalSkills,
           flags.disableClaudeCodeSkills,
           ctx.directory,
-          ctx.worktree, // kilocode_change
-        ).pipe(Effect.provideService(Git.Service, git)) // kilocode_change
+          ctx.worktree, // chipmate_change
+        ).pipe(Effect.provideService(Git.Service, git)) // chipmate_change
       }),
     )
     const state = yield* InstanceState.make(
@@ -457,7 +457,7 @@ const layer = Layer.effect(
       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
     })
 
-    // kilocode_change start - refresh only Skill discovery/state without disposing the workspace instance
+    // chipmate_change start - refresh only Skill discovery/state without disposing the workspace instance
     const refresh = Effect.fn("Skill.refresh")(function* (scope: "project" | "global") {
       if (scope === "global") {
         yield* ScopedCache.invalidateAll(discovered.cache)
@@ -592,9 +592,9 @@ const layer = Layer.effect(
         ),
       )
     })
-    // kilocode_change end
+    // chipmate_change end
 
-    return Service.of({ get, require, all, dirs, available, refresh, remove }) // kilocode_change
+    return Service.of({ get, require, all, dirs, available, refresh, remove }) // chipmate_change
   }),
 )
 
@@ -628,7 +628,7 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Discovery.node, Config.node, EventV2Bridge.node, FSUtil.node, Global.node, RuntimeFlags.node, Git.node], // kilocode_change
+  deps: [Discovery.node, Config.node, EventV2Bridge.node, FSUtil.node, Global.node, RuntimeFlags.node, Git.node], // chipmate_change
 })
 export const defaultLayer = Layer.suspend(() => AppNodeBuilder.build(node))
 

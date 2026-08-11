@@ -11,7 +11,7 @@ It does not replace the migration plan. Do not mark M10/M11 complete from this r
 - [ ] Internal embedded C workspace is available for S1, S2, and S13.
 - [ ] Representative indexed document or project document is available for S3.
 - [ ] Representative company `.docx` template is available for S8/S9.
-- [ ] Current Linux and Windows x86-64 VSIX artifacts are present under `packages/kilo-vscode/out`.
+- [ ] Current Linux and Windows x86-64 VSIX artifacts are present under `packages/chipmate-vscode/out`.
 - [ ] Offline handoff verification passes before transferring packages.
 
 ## Provider preflight
@@ -19,14 +19,14 @@ It does not replace the migration plan. Do not mark M10/M11 complete from this r
 Use one-shot environment variables when possible so global config does not need to be edited.
 
 ```bash
-cd /Users/archer/Work/kilocode
+cd /Users/archer/Work/chipmate
 
-export KILO_SMOKE_PROVIDER_BASE_URL='<openai-compatible-base-url>'
-export KILO_SMOKE_PROVIDER_API_KEY='<api-key>'
-export KILO_SMOKE_PROVIDER_MODEL='<model-id>'
+export CHIPMATE_SMOKE_PROVIDER_BASE_URL='<openai-compatible-base-url>'
+export CHIPMATE_SMOKE_PROVIDER_API_KEY='<api-key>'
+export CHIPMATE_SMOKE_PROVIDER_MODEL='<model-id>'
 
 VALIDATION_RUN_DIR="docs/chipmate-feature-migration-validation-runs/$(date +%Y%m%d-%H%M%S)-runtime-preflight" \
-KILO_SMOKE_TIMEOUT=120 \
+CHIPMATE_SMOKE_TIMEOUT=120 \
 docs/chipmate-feature-migration-runtime-smoke.sh --preflight
 ```
 
@@ -44,11 +44,11 @@ against the same representative document workspace. This checks that
 provider is usable, and `document_search` is actually exposed to runtime.
 
 ```bash
-cd /Users/archer/Work/kilocode
+cd /Users/archer/Work/chipmate
 
 VALIDATION_RUN_DIR="docs/chipmate-feature-migration-validation-runs/$(date +%Y%m%d-%H%M%S)-document-rag-readiness" \
-KILO_DOCUMENT_RAG_SMOKE_SOURCE='/path/to/representative/document.md' \
-KILO_SMOKE_TIMEOUT=180 \
+CHIPMATE_DOCUMENT_RAG_SMOKE_SOURCE='/path/to/representative/document.md' \
+CHIPMATE_SMOKE_TIMEOUT=180 \
 docs/chipmate-feature-migration-document-rag-readiness-smoke.sh
 ```
 
@@ -60,12 +60,12 @@ Document RAG readiness pass condition:
 - [ ] If `document_search unavailable because Document RAG indexing provider/readiness failed` appears, fix embedding/indexing provider configuration before rerunning S3.
 
 ```bash
-cd /Users/archer/Work/kilocode
+cd /Users/archer/Work/chipmate
 
 VALIDATION_RUN_DIR="docs/chipmate-feature-migration-validation-runs/$(date +%Y%m%d-%H%M%S)-runtime-s1-s3" \
-KILO_SMOKE_QA_WORKSPACE='/path/to/internal/embedded-c-workspace' \
-KILO_SMOKE_DOC_WORKSPACE='/path/to/document-rag-workspace' \
-KILO_SMOKE_TIMEOUT=180 \
+CHIPMATE_SMOKE_QA_WORKSPACE='/path/to/internal/embedded-c-workspace' \
+CHIPMATE_SMOKE_DOC_WORKSPACE='/path/to/document-rag-workspace' \
+CHIPMATE_SMOKE_TIMEOUT=180 \
 docs/chipmate-feature-migration-runtime-smoke.sh --run-qa
 ```
 
@@ -78,19 +78,19 @@ Manual review gates:
 ## Full S1-S16 runtime smoke
 
 ```bash
-cd /Users/archer/Work/kilocode
+cd /Users/archer/Work/chipmate
 
 VALIDATION_RUN_DIR="docs/chipmate-feature-migration-validation-runs/$(date +%Y%m%d-%H%M%S)-runtime-s1-s16" \
-KILO_SMOKE_QA_WORKSPACE='/path/to/internal/embedded-c-workspace' \
-KILO_SMOKE_DOC_WORKSPACE='/path/to/document-rag-or-artifact-workspace' \
-KILO_SMOKE_TEMPLATE_DOCX='/path/to/company-template.docx' \
-KILO_SMOKE_TIMEOUT=300 \
+CHIPMATE_SMOKE_QA_WORKSPACE='/path/to/internal/embedded-c-workspace' \
+CHIPMATE_SMOKE_DOC_WORKSPACE='/path/to/document-rag-or-artifact-workspace' \
+CHIPMATE_SMOKE_TEMPLATE_DOCX='/path/to/company-template.docx' \
+CHIPMATE_SMOKE_TIMEOUT=300 \
 docs/chipmate-feature-migration-runtime-smoke.sh --run-all
 ```
 
 Manual review gates:
 
-- [ ] S4 creates `.kilo/artifacts/.../artifact.json`.
+- [ ] S4 creates `.chipmate/artifacts/.../artifact.json`.
 - [ ] S5 creates a `.docx` artifact.
 - [ ] S6 creates a new `.docx` without overwriting the original.
 - [ ] S7 performs dry-run only.
@@ -126,21 +126,21 @@ Pass condition:
 Run both target VSIX files through the installed extension-host smoke helper.
 
 ```bash
-cd /Users/archer/Work/kilocode
+cd /Users/archer/Work/chipmate
 
 VALIDATION_RUN_DIR="docs/chipmate-feature-migration-validation-runs/$(date +%Y%m%d-%H%M%S)-installed-linux-smoke" \
 docs/chipmate-feature-migration-installed-vsix-host-smoke.sh \
-  packages/kilo-vscode/out/kilo-vscode-linux-x64-baseline.vsix
+  packages/chipmate-vscode/out/chipmate-vscode-linux-x64-baseline.vsix
 
 VALIDATION_RUN_DIR="docs/chipmate-feature-migration-validation-runs/$(date +%Y%m%d-%H%M%S)-installed-win32-smoke" \
 docs/chipmate-feature-migration-installed-vsix-host-smoke.sh \
-  packages/kilo-vscode/out/kilo-vscode-win32-x64-baseline.vsix
+  packages/chipmate-vscode/out/chipmate-vscode-win32-x64-baseline.vsix
 ```
 
 Pass condition:
 
 - [ ] Installed extension activates from isolated installed extensions dir.
-- [ ] Native Kilo commands remain registered.
+- [ ] Native ChipMate commands remain registered.
 - [ ] Document artifact commands remain registered.
 - [ ] Agent Terminal profile/command remain registered.
 - [ ] qwen autocomplete diagnostics/log commands remain registered.
@@ -149,7 +149,7 @@ Pass condition:
 ## Offline package handoff verification
 
 ```bash
-cd /Users/archer/Work/kilocode
+cd /Users/archer/Work/chipmate
 
 VALIDATION_RUN_DIR="docs/chipmate-feature-migration-validation-runs/$(date +%Y%m%d-%H%M%S)-offline-handoff-final-verify" \
 docs/chipmate-feature-migration-offline-handoff-verify.sh

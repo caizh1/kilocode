@@ -4,33 +4,33 @@ import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
 import os from "os"
 import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
-import { markNoIndex } from "./kilocode/spotlight" // kilocode_change
-import { ensureRealDir } from "./kilocode/global" // kilocode_change
-import { Product } from "./kilocode/product" // kilocode_change
+import { markNoIndex } from "./chipmate/spotlight" // chipmate_change
+import { ensureRealDir } from "./chipmate/global" // chipmate_change
+import { Product } from "./chipmate/product" // chipmate_change
 import { Flag } from "./flag/flag"
 import { makeGlobalNode } from "./effect/app-node"
 
-const app = "kilo" // kilocode_change
-// kilocode_change start
+const app = "chipmate" // chipmate_change
+// chipmate_change start
 // Defensively strip newline characters from the resolved XDG paths.
 // If `$HOME` (or any `$XDG_*_HOME` override) has a trailing newline in
 // the user's shell — e.g. because a shell snippet did `export HOME=$(cmd)`
 // against a command with an implicit newline — the unsanitised path
 // makes `fs.mkdir` try to create `/Users/<name>\n` and fail with EACCES,
-// which breaks every `kilo` invocation at startup (including the SDK
+// which breaks every `chipmate` invocation at startup (including the SDK
 // regen that runs during `bun run extension`).
 const clean = (p: string | undefined) => p?.replace(/[\r\n]+/g, "")
-const root = Product.root() // kilocode_change
-const data = root ? path.join(root, "data") : path.join(clean(xdgData)!, app) // kilocode_change
-const cache = root ? path.join(root, "cache") : path.join(clean(xdgCache)!, app) // kilocode_change
-const config = root ? path.join(root, "config") : path.join(clean(xdgConfig)!, app) // kilocode_change
-const state = root ? path.join(root, "state") : path.join(clean(xdgState)!, app) // kilocode_change
-// kilocode_change end
-const tmp = root ? path.join(root, "tmp") : path.join(os.tmpdir(), app) // kilocode_change
+const root = Product.root() // chipmate_change
+const data = root ? path.join(root, "data") : path.join(clean(xdgData)!, app) // chipmate_change
+const cache = root ? path.join(root, "cache") : path.join(clean(xdgCache)!, app) // chipmate_change
+const config = root ? path.join(root, "config") : path.join(clean(xdgConfig)!, app) // chipmate_change
+const state = root ? path.join(root, "state") : path.join(clean(xdgState)!, app) // chipmate_change
+// chipmate_change end
+const tmp = root ? path.join(root, "tmp") : path.join(os.tmpdir(), app) // chipmate_change
 
 const paths = {
   get home() {
-    return (process.env.KILO_TEST_HOME ?? os.homedir()).trim() // kilocode_change — defensive trim, see above
+    return (process.env.CHIPMATE_TEST_HOME ?? os.homedir()).trim() // chipmate_change — defensive trim, see above
   },
   data,
   bin: path.join(cache, "bin"),
@@ -47,18 +47,18 @@ export const Path = paths
 Flock.setGlobal({ state })
 
 await Promise.all([
-  ensureRealDir(Path.data), // kilocode_change
-  ensureRealDir(Path.config), // kilocode_change
-  ensureRealDir(Path.state), // kilocode_change
-  ensureRealDir(Path.tmp), // kilocode_change
-  ensureRealDir(Path.log), // kilocode_change
-  ensureRealDir(Path.bin), // kilocode_change
-  ensureRealDir(Path.repos), // kilocode_change
+  ensureRealDir(Path.data), // chipmate_change
+  ensureRealDir(Path.config), // chipmate_change
+  ensureRealDir(Path.state), // chipmate_change
+  ensureRealDir(Path.tmp), // chipmate_change
+  ensureRealDir(Path.log), // chipmate_change
+  ensureRealDir(Path.bin), // chipmate_change
+  ensureRealDir(Path.repos), // chipmate_change
 ])
 
-// kilocode_change start - keep generated Kilo data out of macOS Spotlight
+// chipmate_change start - keep generated ChipMate data out of macOS Spotlight
 await Promise.all([Path.data, Path.cache, Path.state].map(markNoIndex))
-// kilocode_change end
+// chipmate_change end
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Global") {}
 
@@ -79,7 +79,7 @@ export function make(input: Partial<Interface> = {}): Interface {
     home: Path.home,
     data: Path.data,
     cache: Path.cache,
-    config: Flag.KILO_CONFIG_DIR ?? Path.config,
+    config: Flag.CHIPMATE_CONFIG_DIR ?? Path.config,
     state: Path.state,
     tmp: Path.tmp,
     bin: Path.bin,

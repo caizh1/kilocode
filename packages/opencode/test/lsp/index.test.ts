@@ -9,15 +9,15 @@ import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LSP } from "@/lsp/lsp"
 import * as LSPServer from "@/lsp/server"
-import * as launch from "../../src/lsp/launch" // kilocode_change - spy on spawn
+import * as launch from "../../src/lsp/launch" // chipmate_change - spy on spawn
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { provideTestInstance, provideTmpdirInstance, TestInstance, tmpdir } from "../fixture/fixture" // kilocode_change
+import { provideTestInstance, provideTmpdirInstance, TestInstance, tmpdir } from "../fixture/fixture" // chipmate_change
 import { awaitWithTimeout, testEffect } from "../lib/effect"
 import { type InstanceContext } from "../../src/project/instance-context"
-import { Flag } from "@opencode-ai/core/flag/flag" // kilocode_change
-import { TsCheck } from "../../src/kilocode/ts-check" // kilocode_change
+import { Flag } from "@opencode-ai/core/flag/flag" // chipmate_change
+import { TsCheck } from "../../src/chipmate/ts-check" // chipmate_change
 
-// kilocode_change - Typescript.spawn ignores ctx, so a cast is fine here.
+// chipmate_change - Typescript.spawn ignores ctx, so a cast is fine here.
 const fakeCtx = {} as InstanceContext
 const fakeFlags = {} as RuntimeFlags.Info
 
@@ -80,7 +80,7 @@ describe("lsp.spawn", () => {
     ),
   )
 
-  // kilocode_change start - provide the runtime flag so spawn() is reached past the TsClient short-circuit
+  // chipmate_change start - provide the runtime flag so spawn() is reached past the TsClient short-circuit
   const experimentalToolIt = testEffect(
     Layer.mergeAll(lspLayer({ experimentalLspTool: true }), AppNodeBuilder.build(CrossSpawnSpawner.node)),
   )
@@ -167,12 +167,12 @@ describe("lsp.spawn", () => {
       },
     ),
   )
-  // kilocode_change end
+  // chipmate_change end
 
-  // kilocode_change start - Typescript spawn is gated behind KILO_EXPERIMENTAL_LSP_TOOL.
-  test("spawns tsgo LSP when KILO_EXPERIMENTAL_LSP_TOOL is enabled", async () => {
-    const saved = Flag.KILO_EXPERIMENTAL_LSP_TOOL
-    Flag.KILO_EXPERIMENTAL_LSP_TOOL = true
+  // chipmate_change start - Typescript spawn is gated behind CHIPMATE_EXPERIMENTAL_LSP_TOOL.
+  test("spawns tsgo LSP when CHIPMATE_EXPERIMENTAL_LSP_TOOL is enabled", async () => {
+    const saved = Flag.CHIPMATE_EXPERIMENTAL_LSP_TOOL
+    Flag.CHIPMATE_EXPERIMENTAL_LSP_TOOL = true
     await using tmp = await tmpdir()
 
     const spawnSpy = spyOn(launch, "spawn").mockImplementation(
@@ -194,23 +194,23 @@ describe("lsp.spawn", () => {
         },
       })
     } finally {
-      Flag.KILO_EXPERIMENTAL_LSP_TOOL = saved
+      Flag.CHIPMATE_EXPERIMENTAL_LSP_TOOL = saved
       spawnSpy.mockRestore()
       tsgoSpy.mockRestore()
     }
   })
 
-  test("Typescript.spawn returns undefined when KILO_EXPERIMENTAL_LSP_TOOL is off", async () => {
-    const saved = Flag.KILO_EXPERIMENTAL_LSP_TOOL
-    Flag.KILO_EXPERIMENTAL_LSP_TOOL = false
+  test("Typescript.spawn returns undefined when CHIPMATE_EXPERIMENTAL_LSP_TOOL is off", async () => {
+    const saved = Flag.CHIPMATE_EXPERIMENTAL_LSP_TOOL
+    Flag.CHIPMATE_EXPERIMENTAL_LSP_TOOL = false
     try {
       const result = await LSPServer.Typescript.spawn("/tmp/any", fakeCtx, fakeFlags)
       expect(result).toBeUndefined()
     } finally {
-      Flag.KILO_EXPERIMENTAL_LSP_TOOL = saved
+      Flag.CHIPMATE_EXPERIMENTAL_LSP_TOOL = saved
     }
   })
-  // kilocode_change end
+  // chipmate_change end
   it.live("uses pyright instead of ty by default", () =>
     provideTmpdirInstance(
       (dir) =>

@@ -2,9 +2,9 @@
 /**
  * jscodeshift codemod: Transform string literals
  *
- * Transforms string literals containing opencode references to kilo:
- * - "opencode-ai" -> "@kilocode/cli"
- * - "npx opencode" -> "npx @kilocode/cli"
+ * Transforms string literals containing opencode references to chipmate:
+ * - "opencode-ai" -> "@chipmate/cli"
+ * - "npx opencode" -> "npx @chipmate/cli"
  * - etc.
  *
  * Usage:
@@ -23,30 +23,30 @@ interface StringReplacement {
 
 const STRING_REPLACEMENTS: StringReplacement[] = [
   // Package names in strings (no trailing \b to allow subpath matching like @opencode-ai/sdk/v2)
-  { pattern: /\bopencode-ai\b/g, replacement: "@kilocode/cli" },
-  { pattern: /@opencode-ai\/cli(?=\/|"|'|`|$)/g, replacement: "@kilocode/cli" },
-  { pattern: /@opencode-ai\/sdk(?=\/|"|'|`|$)/g, replacement: "@kilocode/sdk" },
-  { pattern: /@opencode-ai\/plugin(?=\/|"|'|`|$)/g, replacement: "@kilocode/plugin" },
+  { pattern: /\bopencode-ai\b/g, replacement: "@chipmate/cli" },
+  { pattern: /@opencode-ai\/cli(?=\/|"|'|`|$)/g, replacement: "@chipmate/cli" },
+  { pattern: /@opencode-ai\/sdk(?=\/|"|'|`|$)/g, replacement: "@chipmate/sdk" },
+  { pattern: /@opencode-ai\/plugin(?=\/|"|'|`|$)/g, replacement: "@chipmate/plugin" },
 
   // CLI commands
-  { pattern: /\bnpx opencode\b/g, replacement: "npx @kilocode/cli" },
-  { pattern: /\bbun add opencode\b/g, replacement: "bun add @kilocode/cli" },
-  { pattern: /\bnpm install opencode\b/g, replacement: "npm install @kilocode/cli" },
-  { pattern: /\bnpm i opencode\b/g, replacement: "npm i @kilocode/cli" },
+  { pattern: /\bnpx opencode\b/g, replacement: "npx @chipmate/cli" },
+  { pattern: /\bbun add opencode\b/g, replacement: "bun add @chipmate/cli" },
+  { pattern: /\bnpm install opencode\b/g, replacement: "npm install @chipmate/cli" },
+  { pattern: /\bnpm i opencode\b/g, replacement: "npm i @chipmate/cli" },
 
   // Database filename
-  { pattern: /\bopencode\.db\b/g, replacement: "kilo.db" },
+  { pattern: /\bopencode\.db\b/g, replacement: "chipmate.db" },
 
   // Binary name references (be careful with these)
-  { pattern: /\bopencode upgrade\b/g, replacement: "kilo upgrade" },
+  { pattern: /\bopencode upgrade\b/g, replacement: "chipmate upgrade" },
 
   // HTTP header prefix
-  { pattern: /x-opencode-/g, replacement: "x-kilo-" },
+  { pattern: /x-opencode-/g, replacement: "x-chipmate-" },
 
   // Environment variables (exclude OPENCODE_API_KEY - upstream Zen SaaS key)
-  { pattern: /\bOPENCODE_(?!API_KEY\b)([A-Z_]+)\b/g, replacement: "KILO_$1" },
-  { pattern: /\bVITE_OPENCODE_/g, replacement: "VITE_KILO_" },
-  { pattern: /\b_EXTENSION_OPENCODE_/g, replacement: "_EXTENSION_KILO_" },
+  { pattern: /\bOPENCODE_(?!API_KEY\b)([A-Z_]+)\b/g, replacement: "CHIPMATE_$1" },
+  { pattern: /\bVITE_OPENCODE_/g, replacement: "VITE_CHIPMATE_" },
+  { pattern: /\b_EXTENSION_OPENCODE_/g, replacement: "_EXTENSION_CHIPMATE_" },
 ]
 
 export interface TransformResult {

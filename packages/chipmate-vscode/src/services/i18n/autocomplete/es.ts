@@ -1,0 +1,47 @@
+export const dict = {
+  "chipmate:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) Autocompletado",
+  "chipmate:autocomplete.statusBar.snoozed": "pospuesto",
+  "chipmate:autocomplete.statusBar.warning": "$(warning) Autocompletado",
+  "chipmate:autocomplete.statusBar.tooltip.basic": "Autocompletado de ChipMate",
+  "chipmate:autocomplete.statusBar.tooltip.disabled": "Autocompletado de ChipMate (deshabilitado)",
+  "chipmate:autocomplete.statusBar.tooltip.noUsableProvider":
+    "**No hay ningún modelo de autocompletado configurado**\n\nPara habilitar el autocompletado, añade un perfil con uno de estos proveedores compatibles: {{providers}}.\n\n[Abrir configuración]({{command}})",
+  "chipmate:autocomplete.statusBar.tooltip.sessionTotal": "Coste total de la sesión:",
+  "chipmate:autocomplete.statusBar.tooltip.provider": "Proveedor:",
+  "chipmate:autocomplete.statusBar.tooltip.model": "Modelo:",
+  "chipmate:autocomplete.statusBar.tooltip.profile": "Perfil: ",
+  "chipmate:autocomplete.statusBar.tooltip.defaultProfile": "Predeterminado",
+  "chipmate:autocomplete.statusBar.tooltip.completionSummary":
+    "Se realizaron {{count}} completados entre {{startTime}} y {{endTime}}, con un coste total de {{cost}}.",
+  "chipmate:autocomplete.statusBar.tooltip.providerInfo":
+    "Autocompletados proporcionados por {{model}} mediante {{provider}}.",
+  "chipmate:autocomplete.statusBar.cost.zero": "$0.00",
+  "chipmate:autocomplete.statusBar.cost.lessThanCent": "<$0.01",
+  "chipmate:autocomplete.toggleMessage": "Autocompletado de ChipMate {{status}}",
+  "chipmate:autocomplete.progress.title": "ChipMate",
+  "chipmate:autocomplete.progress.analyzing": "Analizando tu código...",
+  "chipmate:autocomplete.progress.generating": "Generando ediciones sugeridas...",
+  "chipmate:autocomplete.progress.processing": "Procesando ediciones sugeridas...",
+  "chipmate:autocomplete.progress.showing": "Mostrando ediciones sugeridas...",
+  "chipmate:autocomplete.input.title": "ChipMate: Tarea rápida",
+  "chipmate:autocomplete.input.placeholder": "p. ej., 'refactoriza esta función para que sea más eficiente'",
+  "chipmate:autocomplete.commands.generateSuggestions": "ChipMate: Generar ediciones sugeridas",
+  "chipmate:autocomplete.commands.displaySuggestions": "Mostrar ediciones sugeridas",
+  "chipmate:autocomplete.commands.cancelSuggestions": "Cancelar ediciones sugeridas",
+  "chipmate:autocomplete.commands.applyCurrentSuggestion": "Aplicar edición sugerida actual",
+  "chipmate:autocomplete.commands.applyAllSuggestions": "Aplicar todas las ediciones sugeridas",
+  "chipmate:autocomplete.commands.category": "ChipMate",
+  "chipmate:autocomplete.codeAction.title": "ChipMate: Ediciones sugeridas",
+  "chipmate:autocomplete.chatParticipant.fullName": "Agente de ChipMate",
+  "chipmate:autocomplete.chatParticipant.name": "Agente",
+  "chipmate:autocomplete.chatParticipant.description": "Puedo ayudarte con tareas rápidas y ediciones sugeridas.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.message":
+    "El autocompletado de ChipMate está bloqueado por un conflicto con GitHub Copilot. Para solucionarlo, debes deshabilitar las sugerencias en línea de Copilot.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableCopilot": "Deshabilitar Copilot",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableInlineAssist": "Deshabilitar autocompletado",
+  "chipmate:autocomplete.creditsExhausted.message":
+    "El autocompletado de ChipMate se ha pausado. Posibles causas: tu cuenta de ChipMate no tiene créditos restantes, o tu clave de API configurada (BYOK) alcanzó su límite de cuota. Agrega créditos de ChipMate o revisa la configuración de tu clave de API para reanudar el autocompletado.",
+  "chipmate:autocomplete.creditsExhausted.addCredits": "Añadir créditos",
+  "chipmate:autocomplete.authError.message":
+    "El autocompletado de ChipMate se ha pausado por un problema de autenticación. Posibles causas: no has iniciado sesión en ChipMate, o tu clave de API (BYOK) no es válida o falta. Vuelve a iniciar sesión o revisa la configuración de la clave de API de tu proveedor.",
+}

@@ -8,7 +8,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { which } from "./util/which"
-import { PowerShell } from "./kilocode/powershell" // kilocode_change
+import { PowerShell } from "./chipmate/powershell" // chipmate_change
 
 const SIGKILL_TIMEOUT_MS = 200
 const META: Record<string, { deny?: boolean; login?: boolean; posix?: boolean; ps?: boolean }> = {
@@ -123,7 +123,7 @@ function select(file: string | undefined, opts?: { acceptable?: boolean }) {
 
 export function gitbash() {
   if (process.platform !== "win32") return
-  if (Flag.KILO_GIT_BASH_PATH) return Flag.KILO_GIT_BASH_PATH
+  if (Flag.CHIPMATE_GIT_BASH_PATH) return Flag.CHIPMATE_GIT_BASH_PATH
   const git = which("git")
   if (!git) return
   const file = path.join(git, "..", "..", "bin", "bash.exe")
@@ -177,7 +177,7 @@ export function args(file: string, command: string, cwd: string) {
         cd -- "$1"
         eval ${JSON.stringify(command)}
       `,
-      "kilo", // kilocode_change
+      "chipmate", // chipmate_change
       cwd,
     ]
   }
@@ -191,12 +191,12 @@ export function args(file: string, command: string, cwd: string) {
         cd -- "$1"
         eval ${JSON.stringify(command)}
       `,
-      "kilo", // kilocode_change
+      "chipmate", // chipmate_change
       cwd,
     ]
   }
   if (n === "cmd") return ["/c", command]
-  if (ps(file)) return PowerShell.args(command) // kilocode_change - preserve UTF-8 and script prologues
+  if (ps(file)) return PowerShell.args(command) // chipmate_change - preserve UTF-8 and script prologues
   return ["-c", command]
 }
 

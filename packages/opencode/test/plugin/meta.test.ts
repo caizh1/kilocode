@@ -23,7 +23,7 @@ async function map<Value>(file: string): Promise<Record<string, Value>> {
 }
 
 afterEach(() => {
-  delete process.env.KILO_PLUGIN_META_FILE
+  delete process.env.CHIPMATE_PLUGIN_META_FILE
 })
 
 describe("plugin.meta", () => {
@@ -36,8 +36,8 @@ describe("plugin.meta", () => {
       },
     })
 
-    process.env.KILO_PLUGIN_META_FILE = path.join(tmp.path, "state", "plugin-meta.json")
-    const file = process.env.KILO_PLUGIN_META_FILE!
+    process.env.CHIPMATE_PLUGIN_META_FILE = path.join(tmp.path, "state", "plugin-meta.json")
+    const file = process.env.CHIPMATE_PLUGIN_META_FILE!
     const spec = pathToFileURL(tmp.extra.file).href
 
     const one = await PluginMeta.touch(spec, spec, "demo.file")
@@ -50,11 +50,11 @@ describe("plugin.meta", () => {
     expect(two.state).toBe("same")
     expect(two.entry.load_count).toBe(2)
 
-    // kilocode_change start
+    // chipmate_change start
     // WORKAROUND: bun 1.3.11 fs.utimes produces 32-bit overflow for current-era timestamps.
     // Use a real write after a brief sleep so the OS assigns a naturally different mtime.
     await Bun.sleep(1100)
-    // kilocode_change end
+    // chipmate_change end
     await Bun.write(tmp.extra.file, "export default async () => ({ ok: true })\n")
 
     const three = await PluginMeta.touch(spec, spec, "demo.file")
@@ -80,8 +80,8 @@ describe("plugin.meta", () => {
       },
     })
 
-    process.env.KILO_PLUGIN_META_FILE = path.join(tmp.path, "state", "plugin-meta.json")
-    const file = process.env.KILO_PLUGIN_META_FILE!
+    process.env.CHIPMATE_PLUGIN_META_FILE = path.join(tmp.path, "state", "plugin-meta.json")
+    const file = process.env.CHIPMATE_PLUGIN_META_FILE!
 
     const one = await PluginMeta.touch("acme-plugin@latest", tmp.extra.mod, "acme-plugin")
     expect(one.state).toBe("first")
@@ -111,8 +111,8 @@ describe("plugin.meta", () => {
       },
     })
 
-    process.env.KILO_PLUGIN_META_FILE = path.join(tmp.path, "state", "plugin-meta.json")
-    const file = process.env.KILO_PLUGIN_META_FILE!
+    process.env.CHIPMATE_PLUGIN_META_FILE = path.join(tmp.path, "state", "plugin-meta.json")
+    const file = process.env.CHIPMATE_PLUGIN_META_FILE!
     const spec = pathToFileURL(tmp.extra.file).href
     const n = 12
 

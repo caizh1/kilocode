@@ -6,8 +6,8 @@ import { KVProvider, useKV } from "../../../../src/context/kv"
 import { ProjectProvider, useProject } from "../../../../src/context/project"
 import { SDKProvider } from "../../../../src/context/sdk"
 import { SyncProvider, useSync } from "../../../../src/context/sync"
-import { ToastProvider } from "../../../../src/ui/toast" // kilocode_change
-import { ExitProvider } from "../../../../src/context/exit" // kilocode_change
+import { ToastProvider } from "../../../../src/ui/toast" // chipmate_change
+import { ExitProvider } from "../../../../src/context/exit" // chipmate_change
 import { PermissionProvider } from "../../../../src/context/permission"
 import { createEventSource, createFetch, type FetchHandler, directory } from "../../../fixture/tui-sdk"
 import { TestTuiContexts } from "../../../fixture/tui-environment"
@@ -49,32 +49,32 @@ export async function mount(override?: FetchHandler, state?: string) {
     <TestTuiContexts paths={state ? { state } : undefined}>
       <ArgsProvider>
         <KVProvider>
-          {/* kilocode_change start */}
+          {/* chipmate_change start */}
           <ToastProvider>
-            {/* kilocode_change end */}
+            {/* chipmate_change end */}
             <SDKProvider url="http://test" directory={directory} fetch={calls.fetch} events={events.source}>
               <PermissionProvider>
                 <ProjectProvider>
-                  {/* kilocode_change start - SyncProvider consumes the exit context */}
+                  {/* chipmate_change start - SyncProvider consumes the exit context */}
                   <ExitProvider exit={() => {}}>
                     <SyncProvider>
                       <Probe />
                     </SyncProvider>
                   </ExitProvider>
-                  {/* kilocode_change end */}
+                  {/* chipmate_change end */}
                 </ProjectProvider>
               </PermissionProvider>
             </SDKProvider>
-            {/* kilocode_change start */}
+            {/* chipmate_change start */}
           </ToastProvider>
-          {/* kilocode_change end */}
+          {/* chipmate_change end */}
         </KVProvider>
       </ArgsProvider>
     </TestTuiContexts>
   ))
 
   await ready
-  await project.sync() // kilocode_change - event routing requires the resolved project
+  await project.sync() // chipmate_change - event routing requires the resolved project
   await wait(() => sync.status === "complete")
   return { app, emit: events.emit, kv, project, sync, session: calls.session }
 }

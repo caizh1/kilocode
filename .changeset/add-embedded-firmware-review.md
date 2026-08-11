@@ -1,6 +1,6 @@
 ---
-"@kilocode/cli": minor
-"@kilocode/kilo-indexing": patch
+"@chipmate/cli": minor
+"@chipmate/chipmate-indexing": patch
 "chipmate": minor
 ---
 

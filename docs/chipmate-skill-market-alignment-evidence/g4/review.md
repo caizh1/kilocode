@@ -20,7 +20,7 @@ Status: `PASS_WITH_USER_WAIVER`
 - `server/chipmate-word-render/apps/web/public/assets/*`
 - `server/chipmate-word-render/packages/contracts/src/schema.ts`
 - `server/chipmate-word-render/packages/market-db/src/{model,repo,protocol,worker,client}.ts`
-- Generated Web and Kilo aligned-v1 contract clients.
+- Generated Web and ChipMate aligned-v1 contract clients.
 - `server/chipmate-word-render/design-qa.md`
 
 ## Design Summary
@@ -41,7 +41,7 @@ Status: `PASS_WITH_USER_WAIVER`
 - `npm run test:e2e:web:edge`
 - `bun run typecheck`
 - `bun test tests/unit/marketplace-generated-contract.test.ts`
-- `bun run check-kilocode-change`
+- `bun run check-chipmate-change`
 - In-app browser interaction and screenshot QA at `1440×1024` and `390×844`.
 - Google Chrome 150 headless screenshot smoke at `1440×1024`.
 
@@ -50,7 +50,7 @@ Status: `PASS_WITH_USER_WAIVER`
 - Server contract generation, TypeScript and ESLint: PASS.
 - Server tests: 18 tests across API/Web/contracts/DB/spec packages, all PASS.
 - Fastify API integration: 8/8 PASS, including ETag/304, SSE, pagination, author artwork, file preview and legacy compatibility.
-- Kilo generated contract typecheck and targeted unit: PASS.
+- ChipMate generated contract typecheck and targeted unit: PASS.
 - In-app browser: search, filter, sort, detail, revision, file preview, theme and status refresh PASS; final clean tab has 0 console errors and 0 warnings.
 - Accessibility baseline: 0 missing alt attributes, 0 unnamed buttons, 0 unlabelled fields, 0 targets below 24×24, one h1, no horizontal overflow.
 - Performance sample: 76,985 bytes gzip initial JavaScript and 5,127 bytes gzip CSS; detail and status are hashed dynamic chunks of 3,458 and 1,608 bytes gzip. LCP is 588ms, CLS is 0 and no Event Timing entry exceeded 16ms.

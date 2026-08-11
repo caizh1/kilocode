@@ -1,15 +1,15 @@
-import type { Hooks, PluginInput } from "@kilocode/plugin"
-import * as Log from "@opencode-ai/core/util/log" // kilocode_change
+import type { Hooks, PluginInput } from "@chipmate/plugin"
+import * as Log from "@opencode-ai/core/util/log" // chipmate_change
 import { escapeHtml } from "@/util/html"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { OAUTH_DUMMY_KEY } from "../../auth"
 import os from "os"
 import { setTimeout as sleep } from "node:timers/promises"
 import { createServer } from "http"
-import { refreshCodexAuth } from "@/kilocode/provider/codex-refresh" // kilocode_change
+import { refreshCodexAuth } from "@/chipmate/provider/codex-refresh" // chipmate_change
 import { OpenAIWebSocketPool } from "./ws-pool"
 
-const log = Log.create({ service: "plugin.codex" }) // kilocode_change
+const log = Log.create({ service: "plugin.codex" }) // chipmate_change
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 const ISSUER = "https://auth.openai.com"
@@ -21,16 +21,16 @@ const ALLOWED_MODELS = new Set([
   "gpt-5.3-codex-spark",
   "gpt-5.4",
   "gpt-5.4-mini",
-  // kilocode_change start - additional codex models supported by Kilo
+  // chipmate_change start - additional codex models supported by ChipMate
   "gpt-5.1-codex",
   "gpt-5.1-codex-max",
   "gpt-5.1-codex-mini",
   "gpt-5.2-codex",
-  // kilocode_change end
+  // chipmate_change end
 ])
-// kilocode_change start
+// chipmate_change start
 const DISALLOWED_MODELS = new Set(["gpt-5.5-pro", "gpt-5.6"])
-// kilocode_change end
+// chipmate_change end
 
 interface PkceCodes {
   verifier: string
@@ -103,7 +103,7 @@ function buildAuthorizeUrl(redirectUri: string, pkce: PkceCodes, state: string):
     id_token_add_organizations: "true",
     codex_cli_simplified_flow: "true",
     state,
-    originator: "kilo", // kilocode_change
+    originator: "chipmate", // chipmate_change
   })
   return `${ISSUER}/oauth/authorize?${params.toString()}`
 }
@@ -139,13 +139,13 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
   return response.json()
 }
 
-// kilocode_change start
+// chipmate_change start
 async function refreshAccessToken(refreshToken: string, issuer = ISSUER, signal?: AbortSignal): Promise<TokenResponse> {
   const response = await fetch(`${issuer}/oauth/token`, {
     method: "POST",
     signal,
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": `kilo/${InstallationVersion}` },
-    // kilocode_change end
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": `chipmate/${InstallationVersion}` },
+    // chipmate_change end
     body: new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
@@ -158,13 +158,13 @@ async function refreshAccessToken(refreshToken: string, issuer = ISSUER, signal?
   return response.json()
 }
 
-// kilocode_change start - retain Kilo-branded OAuth callback until the shared page supports Kilo branding
+// chipmate_change start - retain ChipMate-branded OAuth callback until the shared page supports ChipMate branding
 const HTML_SUCCESS = `<!doctype html>
 <html>
   <head>
-    <!-- kilocode_change start -->
-    <title>Kilo - Codex Authorization Successful</title>
-    <!-- kilocode_change end -->
+    <!-- chipmate_change start -->
+    <title>ChipMate - Codex Authorization Successful</title>
+    <!-- chipmate_change end -->
     <style>
       body {
         font-family:
@@ -195,9 +195,9 @@ const HTML_SUCCESS = `<!doctype html>
   <body>
     <div class="container">
       <h1>Authorization Successful</h1>
-      <!-- kilocode_change start -->
-      <p>You can close this window and return to Kilo.</p>
-      <!-- kilocode_change end -->
+      <!-- chipmate_change start -->
+      <p>You can close this window and return to ChipMate.</p>
+      <!-- chipmate_change end -->
     </div>
     <script>
       setTimeout(() => window.close(), 2000)
@@ -208,9 +208,9 @@ const HTML_SUCCESS = `<!doctype html>
 export const renderOAuthError = (error: string) => `<!doctype html>
 <html>
   <head>
-    <!-- kilocode_change start -->
-    <title>Kilo - Codex Authorization Failed</title>
-    <!-- kilocode_change end -->
+    <!-- chipmate_change start -->
+    <title>ChipMate - Codex Authorization Failed</title>
+    <!-- chipmate_change end -->
     <style>
       body {
         font-family:
@@ -254,7 +254,7 @@ export const renderOAuthError = (error: string) => `<!doctype html>
     </div>
   </body>
 </html>`
-// kilocode_change end
+// chipmate_change end
 
 interface PendingOAuth {
   pkce: PkceCodes
@@ -315,7 +315,7 @@ async function startOAuthServer(): Promise<{ port: number; redirectUri: string }
         .catch((err) => current.reject(err))
 
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-      res.end(HTML_SUCCESS) // kilocode_change - shared callback page is currently OpenCode-branded
+      res.end(HTML_SUCCESS) // chipmate_change - shared callback page is currently OpenCode-branded
       return
     }
 
@@ -399,7 +399,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
           Object.entries(provider.models)
             .filter(([, model]) => {
               if (ALLOWED_MODELS.has(model.api.id)) return true
-              if (DISALLOWED_MODELS.has(model.api.id)) return false // kilocode_change
+              if (DISALLOWED_MODELS.has(model.api.id)) return false // chipmate_change
               const match = model.api.id.match(/^gpt-(\d+\.\d+)/)
               return match ? parseFloat(match[1]) > 5.4 : false
             })
@@ -468,7 +468,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
             if (!currentAuth.access || currentAuth.expires < Date.now()) {
               if (!refreshPromise) {
                 log.info("refreshing codex access token")
-                // kilocode_change start
+                // chipmate_change start
                 refreshPromise = refreshCodexAuth({
                   input,
                   getAuth,
@@ -483,7 +483,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                   .finally(() => {
                     refreshPromise = undefined
                   })
-                // kilocode_change end
+                // chipmate_change end
               }
 
               const refreshed = await refreshPromise

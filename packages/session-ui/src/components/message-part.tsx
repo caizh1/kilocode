@@ -30,7 +30,7 @@ import {
   Todo,
   QuestionAnswer,
   QuestionInfo,
-} from "@kilocode/sdk/v2"
+} from "@chipmate/sdk/v2"
 import { useData } from "../context"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useDialog } from "@opencode-ai/ui/context/dialog"

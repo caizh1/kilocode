@@ -6,7 +6,7 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { Deferred, Effect, Latch, Option, Schema, Stream } from "effect"
 import type { OpenCodeEvent } from "../src"
 
-// kilocode_change start - retry Windows SQLite locks until GC finalizers release them
+// chipmate_change start - retry Windows SQLite locks until GC finalizers release them
 const cleanup = async (dir: string, retries = 30): Promise<void> => {
   try {
     await rm(dir, { recursive: true, force: true })
@@ -18,12 +18,12 @@ const cleanup = async (dir: string, retries = 30): Promise<void> => {
     return cleanup(dir, retries - 1)
   }
 }
-// kilocode_change end
+// chipmate_change end
 
 test("embedded client uses the real router and handlers", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-"))
-  const database = Flag.KILO_DB
-  Flag.KILO_DB = join(directory, "opencode.sqlite")
+  const database = Flag.CHIPMATE_DB
+  Flag.CHIPMATE_DB = join(directory, "opencode.sqlite")
   const { AbsolutePath, Agent, Location, Model, OpenCode, Prompt, Provider, Session, Tool } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
   const model = Model.Ref.make({ id: Model.ID.make("embedded"), providerID: Provider.ID.make("test") })
@@ -113,15 +113,15 @@ test("embedded client uses the real router and handlers", async () => {
     })
     await Effect.runPromise(Effect.scoped(program))
   } finally {
-    Flag.KILO_DB = database
-    await cleanup(directory) // kilocode_change
+    Flag.CHIPMATE_DB = database
+    await cleanup(directory) // chipmate_change
   }
 })
 
 test("Location-owned runner events reach the ready global client", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-events-"))
-  const database = Flag.KILO_DB
-  Flag.KILO_DB = join(directory, "opencode.sqlite")
+  const database = Flag.CHIPMATE_DB
+  Flag.CHIPMATE_DB = join(directory, "opencode.sqlite")
   const { AbsolutePath, Location, OpenCode, Prompt, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
 
@@ -152,15 +152,15 @@ test("Location-owned runner events reach the ready global client", async () => {
     })
     await Effect.runPromise(Effect.scoped(program))
   } finally {
-    Flag.KILO_DB = database
-    await cleanup(directory) // kilocode_change
+    Flag.CHIPMATE_DB = database
+    await cleanup(directory) // chipmate_change
   }
 }, 10_000)
 
 test("independent embedded hosts do not share live notifications", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-hosts-"))
-  const database = Flag.KILO_DB
-  Flag.KILO_DB = join(directory, "opencode.sqlite")
+  const database = Flag.CHIPMATE_DB
+  Flag.CHIPMATE_DB = join(directory, "opencode.sqlite")
   const { AbsolutePath, Agent, Location, OpenCode, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
 
@@ -195,15 +195,15 @@ test("independent embedded hosts do not share live notifications", async () => {
     })
     await Effect.runPromise(Effect.scoped(program))
   } finally {
-    Flag.KILO_DB = database
-    await cleanup(directory) // kilocode_change
+    Flag.CHIPMATE_DB = database
+    await cleanup(directory) // chipmate_change
   }
 }, 10_000)
 
 test("embedded client is available as a Layer service", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-layer-"))
-  const database = Flag.KILO_DB
-  Flag.KILO_DB = join(directory, "opencode.sqlite")
+  const database = Flag.CHIPMATE_DB
+  Flag.CHIPMATE_DB = join(directory, "opencode.sqlite")
   const { AbsolutePath, Location, OpenCode, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
 
@@ -220,7 +220,7 @@ test("embedded client is available as a Layer service", async () => {
 
     expect(created.id).toBe(sessionID)
   } finally {
-    Flag.KILO_DB = database
-    await cleanup(directory) // kilocode_change
+    Flag.CHIPMATE_DB = database
+    await cleanup(directory) // chipmate_change
   }
 })

@@ -10,23 +10,23 @@ on:
 jobs:
   typecheck-js:
     name: typecheck-js
-    runs-on: blacksmith-4vcpu-ubuntu-2404 # kilocode_change
+    runs-on: blacksmith-4vcpu-ubuntu-2404 # chipmate_change
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6 # kilocode_change
+        uses: actions/checkout@v6 # chipmate_change
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
-      # kilocode_change start
+      # chipmate_change start
       - name: Run TypeScript typecheck
-        run: bun turbo typecheck --filter='!@kilocode/kilo-jetbrains'
+        run: bun turbo typecheck --filter='!@chipmate/chipmate-jetbrains'
 
-      - name: Build Kilo Console
-        run: bun turbo build --filter=@kilocode/kilo-console
-      # kilocode_change end
+      - name: Build ChipMate Console
+        run: bun turbo build --filter=@chipmate/chipmate-console
+      # chipmate_change end
 
-  # kilocode_change start
+  # chipmate_change start
   jetbrains-changes:
     name: detect JetBrains changes
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -40,15 +40,15 @@ jobs:
       - name: Detect JetBrains changes
         if: github.event_name != 'workflow_dispatch'
         id: filter
-        uses: Kilo-Org/paths-filter@668c092af3649c4b664c54e4b704aa46782f6f7c # v3
+        uses: ChipMate-Org/paths-filter@668c092af3649c4b664c54e4b704aa46782f6f7c # v3
         with:
           predicate-quantifier: every
           filters: |
             jetbrains:
               - '**'
               - '!.changeset/**'
-              - '!packages/kilo-vscode/**'
-              - '!packages/kilo-docs/**'
+              - '!packages/chipmate-vscode/**'
+              - '!packages/chipmate-docs/**'
 
   typecheck-jetbrains:
     name: typecheck-jetbrains
@@ -75,7 +75,7 @@ jobs:
 
       - name: Run JetBrains typecheck
         run: ./gradlew typecheck
-        working-directory: packages/kilo-jetbrains
+        working-directory: packages/chipmate-jetbrains
 
   required:
     name: typecheck
@@ -99,4 +99,4 @@ jobs:
             test "${{ needs.jetbrains-changes.outputs.jetbrains }}" = "false"
             test "${{ needs.typecheck-jetbrains.result }}" = "skipped"
           fi
-  # kilocode_change end
+  # chipmate_change end

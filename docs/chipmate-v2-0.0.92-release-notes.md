@@ -2,7 +2,7 @@
 
 对比版本：ChipMate `0.2.0-build.91`
 
-本次版本以 Kilo Code `7.4.8` 的成熟 Agent Runtime 为基础，完成 ChipMate 品牌、运行时、索引、技能市场、文档工具与离线交付体系的整合。与上一代以单会话直连模型为主的 ChipMate 相比，ChipMate v2 已升级为可处理多步骤工程任务、多会话并行协作和大型代码库分析的完整编码 Agent。
+本次版本以 ChipMate `7.4.8` 的成熟 Agent Runtime 为基础，完成 ChipMate 品牌、运行时、索引、技能市场、文档工具与离线交付体系的整合。与上一代以单会话直连模型为主的 ChipMate 相比，ChipMate v2 已升级为可处理多步骤工程任务、多会话并行协作和大型代码库分析的完整编码 Agent。
 
 ## 重点更新
 
@@ -89,7 +89,7 @@
 
 ### 安装、离线与共存
 
-- 扩展命令、设置、视图、存储、CLI 状态和索引数据统一迁移到 `chipmate.v2` 隔离命名空间，可与 Kilo Code 安装在同一个 VS Code Profile 中。
+- 扩展命令、设置、视图、存储、CLI 状态和索引数据统一迁移到 `chipmate.v2` 隔离命名空间，可与 ChipMate 安装在同一个 VS Code Profile 中。
 - 支持 macOS、Windows x64 baseline 和显式 Linux x64 baseline 包；内部 Windows 默认采用无音频、中文优先、Custom Provider only 的离线精简方案。
 - ChipMate Server 地址统一用于 Skill Market、插件市场、文档渲染和更新服务，减少多处重复配置。
 
@@ -107,4 +107,4 @@
 
 ## 一句话总结
 
-ChipMate v2 将上一代的本地问答、C/C++ 检索、Document RAG、Qwen 补全和文档生成能力，整合进更成熟的 Kilo Agent Runtime，并新增多会话并行、worktree 隔离、Agent Console、Skill/扩展市场、项目记忆、沙箱权限和可靠离线更新，面向真实大型工程形成了更完整的开发闭环。
+ChipMate v2 将上一代的本地问答、C/C++ 检索、Document RAG、Qwen 补全和文档生成能力，整合进更成熟的 ChipMate Agent Runtime，并新增多会话并行、worktree 隔离、Agent Console、Skill/扩展市场、项目记忆、沙箱权限和可靠离线更新，面向真实大型工程形成了更完整的开发闭环。

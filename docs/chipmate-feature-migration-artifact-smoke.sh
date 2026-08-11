@@ -24,12 +24,12 @@ import {
   exportArtifactDiagnostics,
   listArtifacts,
   resolveOpenArtifact,
-} from "@/kilocode/documents/artifacts"
+} from "@/chipmate/documents/artifacts"
 
 const workspace = path.resolve(process.argv[2] ?? process.cwd())
 const runDir = path.resolve(process.argv[3] ?? path.join(workspace, "docs", "chipmate-feature-migration-validation-runs", "artifact-smoke"))
 const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "").replace("T", "-")
-const artifactDir = `.kilo/artifacts/${stamp}-s4-deterministic-artifact-smoke`
+const artifactDir = `.chipmate/artifacts/${stamp}-s4-deterministic-artifact-smoke`
 const reportFile = "report.md"
 
 type Summary = {

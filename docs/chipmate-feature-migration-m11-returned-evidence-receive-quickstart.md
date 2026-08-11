@@ -1,7 +1,7 @@
 # M11 Returned Evidence Receive Quickstart
 
 This quickstart standardizes how external evidence is returned and received for
-the ChipMate non-QA migration to Kilo-code.
+the ChipMate non-QA migration to ChipMate-code.
 
 ## 1. Generate a skeleton bundle
 
@@ -45,7 +45,7 @@ python3 docs/chipmate-feature-migration-internal-embedded-c-intake.py \
 
 python3 docs/chipmate-feature-migration-company-docx-template-validate.py \
   --template-docx <company-template.docx> \
-  --generated-docx <generated-docx-from-kilo.docx> \
+  --generated-docx <generated-docx-from-chipmate.docx> \
   --output /tmp/chipmate-m11-returned-evidence-bundle/company-template/summary.md
 
 python3 docs/chipmate-feature-migration-agent-terminal-visible-ux-intake.py \
@@ -81,7 +81,7 @@ review; it is not final signoff.
 
 ## Boundary
 
-This quickstart does not migrate QA, does not run Kilo QA, does not execute
+This quickstart does not migrate QA, does not run ChipMate QA, does not execute
 target-machine commands, does not run autocomplete, does not generate Word
 output, does not run missing-diagram repair, does not trigger document-contract planning,
 and does not accept `nextToolContract`, `missingDeliverable`, or

@@ -1,5 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { decorateFileSystem, ensureDirectory } from "@kilocode/sandbox" // kilocode_change
+import { decorateFileSystem, ensureDirectory } from "@chipmate/sandbox" // chipmate_change
 import { dirname, isAbsolute, join, relative, resolve as pathResolve, sep } from "path"
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
@@ -53,7 +53,7 @@ export namespace FSUtil {
   const layer = Layer.effect(
     Service,
     Effect.gen(function* () {
-      const fs = decorateFileSystem(yield* FileSystem.FileSystem) // kilocode_change
+      const fs = decorateFileSystem(yield* FileSystem.FileSystem) // chipmate_change
 
       const existsSafe = Effect.fn("FileSystem.existsSafe")(function* (path: string) {
         return yield* fs.exists(path).pipe(Effect.orElseSucceed(() => false))
@@ -105,7 +105,7 @@ export namespace FSUtil {
       })
 
       const ensureDir = Effect.fn("FileSystem.ensureDir")(function* (path: string) {
-        yield* ensureDirectory(fs, path) // kilocode_change - mutate through the sandbox-confined filesystem
+        yield* ensureDirectory(fs, path) // chipmate_change - mutate through the sandbox-confined filesystem
       })
 
       const writeWithDirs = Effect.fn("FileSystem.writeWithDirs")(function* (
@@ -120,7 +120,7 @@ export namespace FSUtil {
             (e) => e.reason._tag === "NotFound",
             () =>
               Effect.gen(function* () {
-                yield* ensureDirectory(fs, dirname(path)) // kilocode_change - sandbox-confined mkdir
+                yield* ensureDirectory(fs, dirname(path)) // chipmate_change - sandbox-confined mkdir
                 yield* write
               }),
           ),
@@ -202,7 +202,7 @@ export namespace FSUtil {
   )
 
   export const node = makeGlobalNode({ service: Service, layer: layer, deps: [filesystem] })
-  export const defaultLayer = layer.pipe(Layer.provide(NodeFileSystem.layer)) // kilocode_change - legacy Kilo runtime compatibility
+  export const defaultLayer = layer.pipe(Layer.provide(NodeFileSystem.layer)) // chipmate_change - legacy ChipMate runtime compatibility
 
   // Pure helpers that don't need Effect (path manipulation, sync operations)
   export function mimeType(p: string): string {

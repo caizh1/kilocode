@@ -48,7 +48,7 @@ writeFileSync(join(bundleDir, `${archiveName}.sha256`), archiveSha)
 
 const catalogItems = []
 for (const skill of seedSkills) {
-  const sourceDir = join(repoRoot, ".kilo", "skills", skill.id)
+  const sourceDir = join(repoRoot, ".chipmate", "skills", skill.id)
   const skillMd = join(sourceDir, "SKILL.md")
   if (!existsSync(skillMd)) throw new Error(`Seed skill missing SKILL.md: ${skillMd}`)
   const cleanSourceDir = join(workDir, skill.id)

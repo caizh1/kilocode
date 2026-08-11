@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
- * Transform web/docs files with Kilo branding
+ * Transform web/docs files with ChipMate branding
  *
  * This script handles documentation and web content files (.mdx, etc.)
- * by transforming OpenCode references to Kilo.
+ * by transforming OpenCode references to ChipMate.
  */
 
 import { $ } from "bun"
 import { info, success, warn, debug } from "../utils/logger"
 import { defaultConfig } from "../utils/config"
-import { oursHasKilocodeChanges } from "../utils/git"
+import { oursHasChipMateChanges } from "../utils/git"
 
 export interface WebTransformResult {
   file: string
@@ -34,68 +34,68 @@ const WEB_REPLACEMENTS: WebReplacement[] = [
   // GitHub references
   {
     pattern: /github\.com\/anomalyco\/opencode/g,
-    replacement: "github.com/Kilo-Org/kilocode",
+    replacement: "github.com/ChipMate-Org/chipmate",
     description: "GitHub URL",
   },
   {
     pattern: /anomalyco\/opencode/g,
-    replacement: "Kilo-Org/kilocode",
+    replacement: "ChipMate-Org/chipmate",
     description: "GitHub repo",
   },
 
   // Domains
   {
     pattern: /app\.opencode\.ai/g,
-    replacement: "app.kilo.ai",
+    replacement: "app.chipmate.ai",
     description: "App domain",
   },
   {
     pattern: /opencode\.ai(?!\/zen)/g,
-    replacement: "kilo.ai",
+    replacement: "chipmate.ai",
     description: "Main domain (excluding zen)",
   },
 
   // Product names
   {
     pattern: /\bOpenCode\b(?!\.json|\/| Zen)/g,
-    replacement: "Kilo",
+    replacement: "ChipMate",
     description: "Product name",
   },
 
   // CLI commands
   {
     pattern: /npx opencode(?!\w)/g,
-    replacement: "npx kilo",
+    replacement: "npx chipmate",
     description: "npx command",
   },
   {
     pattern: /bun add opencode(?!\w)/g,
-    replacement: "bun add kilo",
+    replacement: "bun add chipmate",
     description: "bun add command",
   },
   {
     pattern: /npm install opencode(?!\w)/g,
-    replacement: "npm install kilo",
+    replacement: "npm install chipmate",
     description: "npm install command",
   },
   {
     pattern: /opencode upgrade/g,
-    replacement: "kilo upgrade",
+    replacement: "chipmate upgrade",
     description: "upgrade command",
   },
   {
     pattern: /opencode dev/g,
-    replacement: "kilo dev",
+    replacement: "chipmate dev",
     description: "dev command",
   },
   {
     pattern: /opencode serve/g,
-    replacement: "kilo serve",
+    replacement: "chipmate serve",
     description: "serve command",
   },
   {
     pattern: /opencode auth/g,
-    replacement: "kilo auth",
+    replacement: "chipmate auth",
     description: "auth command",
   },
 ]
@@ -174,9 +174,9 @@ export async function transformWebFile(file: string, options: WebTransformOption
     return { file, action: "transformed", replacements: 0, dryRun: true }
   }
 
-  // If our version has kilocode_change markers, flag for manual resolution
-  if (await oursHasKilocodeChanges(file)) {
-    warn(`${file} has kilocode_change markers — skipping auto-transform, needs manual resolution`)
+  // If our version has chipmate_change markers, flag for manual resolution
+  if (await oursHasChipMateChanges(file)) {
+    warn(`${file} has chipmate_change markers — skipping auto-transform, needs manual resolution`)
     return { file, action: "flagged", replacements: 0, dryRun: false }
   }
 

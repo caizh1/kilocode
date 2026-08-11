@@ -9,28 +9,28 @@ import type { MessageV2 } from "../message-v2"
 import type { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { SystemPrompt } from "../system"
-import { USER_AGENT } from "@/installation" // kilocode_change
+import { USER_AGENT } from "@/installation" // chipmate_change
 import { Effect, Record } from "effect"
 import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
-import { DEFAULT_HEADERS } from "@/kilocode/const" // kilocode_change
-// kilocode_change start
-import { getKiloProjectId } from "@/kilocode/project-id"
+import { DEFAULT_HEADERS } from "@/chipmate/const" // chipmate_change
+// chipmate_change start
+import { getChipMateProjectId } from "@/chipmate/project-id"
 import {
   HEADER_FEATURE,
   HEADER_PARENT_TASKID,
   HEADER_PROJECTID,
   HEADER_MACHINEID,
   HEADER_TASKID,
-} from "@kilocode/kilo-gateway"
-import { Identity } from "@kilocode/kilo-telemetry"
-import { KiloSession } from "@/kilocode/session"
-import { stripInternalOptions } from "@/kilocode/agent/options"
-import { KilocodeSystemPrompt } from "@/kilocode/system-prompt"
-import { DocumentAgentScope } from "@/kilocode/document-agent/scope"
-import { documentAgentHistory } from "@/kilocode/document-agent/history"
-// kilocode_change end
+} from "@chipmate/chipmate-gateway"
+import { Identity } from "@chipmate/chipmate-telemetry"
+import { ChipMateSession } from "@/chipmate/session"
+import { stripInternalOptions } from "@/chipmate/agent/options"
+import { ChipMateSystemPrompt } from "@/chipmate/system-prompt"
+import { DocumentAgentScope } from "@/chipmate/document-agent/scope"
+import { documentAgentHistory } from "@/chipmate/document-agent/history"
+// chipmate_change end
 
 type PrepareInput = {
   readonly user: SessionV1.User
@@ -70,19 +70,19 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
 
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
-  const includePersona = KilocodeSystemPrompt.shouldIncludePersona(input.agent.name) // kilocode_change
+  const includePersona = ChipMateSystemPrompt.shouldIncludePersona(input.agent.name) // chipmate_change
   const system = [
     [
-      // kilocode_change start - soul defines core identity and personality
+      // chipmate_change start - soul defines core identity and personality
       ...(isOpenaiOauth || !includePersona ? [] : [SystemPrompt.soul()]),
-      // kilocode_change end
-      // kilocode_change start - brand only built-in prompts for the active product profile
-      ...KilocodeSystemPrompt.provider({
+      // chipmate_change end
+      // chipmate_change start - brand only built-in prompts for the active product profile
+      ...ChipMateSystemPrompt.provider({
         custom: input.agent.prompt,
         defaults: SystemPrompt.provider(input.model),
-        append: KilocodeSystemPrompt.appends(input.agent),
+        append: ChipMateSystemPrompt.appends(input.agent),
       }),
-      // kilocode_change end
+      // chipmate_change end
       ...input.system,
       ...(input.user.system ? [input.user.system] : []),
     ]
@@ -113,11 +113,11 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
         sessionID: input.sessionID,
         providerOptions: input.provider.options,
       })
-  // kilocode_change start - drop Kilo-internal agent metadata (id/displayName/source)
+  // chipmate_change start - drop ChipMate-internal agent metadata (id/displayName/source)
   // so it never leaks into providerOptions and gets rejected by strict providers
   const agentOptions = stripInternalOptions(input.agent.options)
   const options = mergeOptions(mergeOptions(mergeOptions(base, input.model.options), agentOptions), variant)
-  // kilocode_change end
+  // chipmate_change end
   if (
     input.model.api.npm === "@ai-sdk/azure" &&
     (input.provider.options.useCompletionUrls || input.model.options.useCompletionUrls || options.useCompletionUrls)
@@ -126,9 +126,9 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     delete options.include
   }
   if (isOpenaiOauth) {
-    // kilocode_change start - prepend soul to instructions
+    // chipmate_change start - prepend soul to instructions
     options.instructions = [...(includePersona ? [SystemPrompt.soul()] : []), ...system].join("\n")
-    // kilocode_change end
+    // chipmate_change end
   }
 
   const messages =
@@ -159,14 +159,14 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
         : undefined,
       topP: input.agent.topP ?? ProviderTransform.topP(input.model),
       topK: ProviderTransform.topK(input.model),
-      // kilocode_change start - gpt-5 via @ai-sdk/openai-compatible proxies (e.g. LiteLLM)
+      // chipmate_change start - gpt-5 via @ai-sdk/openai-compatible proxies (e.g. LiteLLM)
       // rejects `max_tokens`; OpenAI requires `max_completion_tokens` and the compatible
       // SDK cannot rename the field, so drop the cap and let the upstream default apply.
       maxOutputTokens:
         input.model.api.npm === "@ai-sdk/openai-compatible" && input.model.api.id.toLowerCase().includes("gpt-5")
           ? undefined
           : ProviderTransform.maxOutputTokens(input.model, input.flags.outputTokenMax),
-      // kilocode_change end
+      // chipmate_change end
       options,
     },
   )
@@ -185,19 +185,19 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     },
   )
 
-  // kilocode_change start - resolve project ID and machine ID for kilo provider
-  const isKilo = input.model.api.npm === "@kilocode/kilo-gateway"
-  const kiloProjectId = yield* isKilo
-    ? Effect.promise(() => getKiloProjectId().catch(() => undefined))
+  // chipmate_change start - resolve project ID and machine ID for chipmate provider
+  const isChipMate = input.model.api.npm === "@chipmate/chipmate-gateway"
+  const chipmateProjectId = yield* isChipMate
+    ? Effect.promise(() => getChipMateProjectId().catch(() => undefined))
     : Effect.succeed(undefined)
-  const machineId = yield* isKilo
+  const machineId = yield* isChipMate
     ? Effect.promise(() => Identity.getMachineId().catch(() => undefined))
     : Effect.succeed(undefined)
-  const parent = input.parentSessionID ?? KiloSession.resolveParent(input.sessionID)
-  // kilocode_change end
-  // kilocode_change start - attribute Kilo gateway usage to the root product session
-  const attr = KiloSession.attribution(input.sessionID)
-  // kilocode_change end
+  const parent = input.parentSessionID ?? ChipMateSession.resolveParent(input.sessionID)
+  // chipmate_change end
+  // chipmate_change start - attribute ChipMate gateway usage to the root product session
+  const attr = ChipMateSession.attribution(input.sessionID)
+  // chipmate_change end
 
   const tools = resolveTools(input)
   // Codex parity: Responses-family providers require non-strict dynamic tool schemas.
@@ -209,12 +209,12 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     for (const key of Object.keys(tools)) tools[key] = { ...tools[key], strict: false }
   }
 
-  // kilocode_change start - switching an existing session to Document Agent must not replay hidden code/invalid tools
+  // chipmate_change start - switching an existing session to Document Agent must not replay hidden code/invalid tools
   const preparedMessages =
     input.agent.name === DocumentAgentScope.AGENT
       ? documentAgentHistory(messages, new Set(Object.keys(tools)))
       : messages
-  // kilocode_change end
+  // chipmate_change end
   if (
     input.model.providerID.includes("github-copilot") &&
     Object.keys(tools).length === 0 &&
@@ -233,23 +233,23 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     })
   }
 
-  const kiloProjectID = input.model.providerID.startsWith("kilo") // kilocode_change
+  const chipmateProjectID = input.model.providerID.startsWith("chipmate") // chipmate_change
     ? (yield* InstanceState.context).project.id
     : undefined
 
   return {
     system,
-    messages: preparedMessages, // kilocode_change
+    messages: preparedMessages, // chipmate_change
     tools: Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b))),
     params,
     messageTransformOptions: options,
     headers: {
-      ...(input.model.providerID.startsWith("kilo") // kilocode_change
+      ...(input.model.providerID.startsWith("chipmate") // chipmate_change
         ? {
-            ...(kiloProjectID ? { "x-kilo-project": kiloProjectID } : {}),
-            "x-kilo-session": input.sessionID,
-            "x-kilo-request": input.user.id,
-            "x-kilo-client": input.flags.client,
+            ...(chipmateProjectID ? { "x-chipmate-project": chipmateProjectID } : {}),
+            "x-chipmate-session": input.sessionID,
+            "x-chipmate-request": input.user.id,
+            "x-chipmate-client": input.flags.client,
             "User-Agent": USER_AGENT,
           }
         : {
@@ -257,16 +257,16 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
             "X-Session-Id": input.sessionID,
             ...(input.parentSessionID ? { "x-parent-session-id": input.parentSessionID } : {}),
             "User-Agent": USER_AGENT,
-            ...(input.model.providerID !== "anthropic" ? DEFAULT_HEADERS : undefined), // kilocode_change
+            ...(input.model.providerID !== "anthropic" ? DEFAULT_HEADERS : undefined), // chipmate_change
           }),
-      // kilocode_change start - headers for kilo provider
-      ...(isKilo && input.agent.name ? { "x-kilocode-mode": input.agent.name.toLowerCase() } : {}),
-      ...(isKilo && kiloProjectId ? { [HEADER_PROJECTID]: kiloProjectId } : {}),
-      ...(isKilo && machineId ? { [HEADER_MACHINEID]: machineId } : {}),
-      ...(isKilo ? { [HEADER_TASKID]: input.sessionID } : {}),
-      ...(isKilo && parent ? { [HEADER_PARENT_TASKID]: parent } : {}),
-      ...(isKilo && attr.feature ? { [HEADER_FEATURE]: attr.feature } : {}),
-      // kilocode_change end
+      // chipmate_change start - headers for chipmate provider
+      ...(isChipMate && input.agent.name ? { "x-chipmate-mode": input.agent.name.toLowerCase() } : {}),
+      ...(isChipMate && chipmateProjectId ? { [HEADER_PROJECTID]: chipmateProjectId } : {}),
+      ...(isChipMate && machineId ? { [HEADER_MACHINEID]: machineId } : {}),
+      ...(isChipMate ? { [HEADER_TASKID]: input.sessionID } : {}),
+      ...(isChipMate && parent ? { [HEADER_PARENT_TASKID]: parent } : {}),
+      ...(isChipMate && attr.feature ? { [HEADER_FEATURE]: attr.feature } : {}),
+      // chipmate_change end
       ...input.model.headers,
       ...headers,
     },

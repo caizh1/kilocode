@@ -1,4 +1,4 @@
-# kilocode_change - new file
+# chipmate_change - new file
 name: prepare-jetbrains-release
 
 on:
@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.repository == 'Kilo-Org/kilocode'
+    if: github.repository == 'ChipMate-Org/chipmate'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Checkout repository
@@ -46,8 +46,8 @@ jobs:
         id: committer
         uses: ./.github/actions/setup-git-committer
         with:
-          kilo-maintainer-app-id: ${{ secrets.KILO_MAINTAINER_APP_ID }}
-          kilo-maintainer-app-secret: ${{ secrets.KILO_MAINTAINER_APP_SECRET }}
+          chipmate-maintainer-app-id: ${{ secrets.CHIPMATE_MAINTAINER_APP_ID }}
+          chipmate-maintainer-app-secret: ${{ secrets.CHIPMATE_MAINTAINER_APP_SECRET }}
 
       - name: Create release tag and PR
         run: |

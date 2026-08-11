@@ -3,8 +3,8 @@ import {
   type SnapshotFileDiff,
   Message as MessageType,
   Part as PartType,
-} from "@kilocode/sdk/v2/client"
-import type { SessionStatus } from "@kilocode/sdk/v2"
+} from "@chipmate/sdk/v2/client"
+import type { SessionStatus } from "@chipmate/sdk/v2"
 import { useData } from "../context"
 import { useFileComponent } from "../context/file"
 
@@ -159,7 +159,7 @@ export function SessionTurn(
     shellToolDefaultOpen?: boolean
     editToolDefaultOpen?: boolean
     active?: boolean
-    queued?: boolean // kilocode_change
+    queued?: boolean // chipmate_change
     status?: SessionStatus
     onUserInteracted?: () => void
     classes?: {
@@ -206,7 +206,7 @@ export function SessionTurn(
   })
 
   const pending = createMemo(() => {
-    if (typeof props.active === "boolean" && typeof props.queued === "boolean") return // kilocode_change
+    if (typeof props.active === "boolean" && typeof props.queued === "boolean") return // chipmate_change
     const messages = allMessages() ?? emptyMessages
     return messages.findLast(
       (item): item is AssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
@@ -231,7 +231,7 @@ export function SessionTurn(
     return parent.id === msg.id
   })
 
-  // kilocode_change start — restore queued feature
+  // chipmate_change start — restore queued feature
   const queued = createMemo(() => {
     if (typeof props.queued === "boolean") return props.queued
     const id = message()?.id
@@ -241,7 +241,7 @@ export function SessionTurn(
     if (!item) return false
     return id > item.id
   })
-  // kilocode_change end
+  // chipmate_change end
 
   const parts = createMemo(() => {
     const msg = message()
@@ -383,7 +383,7 @@ export function SessionTurn(
   const reasoningHeading = createMemo(() => assistantDerived().reason)
   const showThinking = createMemo(() => {
     if (!working() || !!error()) return false
-    if (queued()) return false // kilocode_change
+    if (queued()) return false // chipmate_change
     if (status().type === "retry") return false
     if (showReasoningSummaries()) return assistantVisible() === 0
     return true
@@ -412,9 +412,9 @@ export function SessionTurn(
               class={props.classes?.container}
             >
               <div data-slot="session-turn-message-content" aria-live="off">
-                {/* kilocode_change start */}
+                {/* chipmate_change start */}
                 <Message message={message()!} parts={parts()} actions={props.actions} queued={queued()} />
-                {/* kilocode_change end */}
+                {/* chipmate_change end */}
               </div>
               <Show when={divider()}>
                 <div data-slot="session-turn-compaction">

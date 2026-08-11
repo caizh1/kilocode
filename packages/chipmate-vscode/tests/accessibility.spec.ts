@@ -1,0 +1,326 @@
+import AxeBuilder from "@axe-core/playwright"
+import { expect, test, type Locator, type Page } from "@playwright/test"
+
+const GLOBALS = "colorScheme:dark;theme:chipmate-vscode;vscodeTheme:dark-modern"
+const RULES = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"]
+
+// Explicitly ratchet in repaired/stable workflows rather than making existing
+// untriaged Storybook findings block unrelated webview changes.
+const STORIES = [
+  { id: "profile--not-logged-in", name: "Profile / not logged in" },
+  { id: "profile--logged-in-personal", name: "Profile / personal account" },
+  { id: "profile--logged-in", name: "Profile / organization account" },
+  { id: "settings--providers-configure", name: "Settings / providers empty state" },
+  { id: "marketplace--skills-tab-empty", name: "Marketplace / skills empty state" },
+  { id: "marketplace--agents-tab-empty", name: "Marketplace / agents empty state" },
+  { id: "marketplace--aligned-skills-home", name: "Marketplace / aligned Skill home" },
+  { id: "marketplace--aligned-skill-detail", name: "Marketplace / aligned Skill detail" },
+  { id: "chat--chat-view-idle", name: "QA / aligned empty state" },
+  { id: "chat--qa-tool-calls-dark", name: "QA / tool call status strip" },
+  { id: "chat--qa-welcome-recent-light", name: "QA / light welcome with recent sessions" },
+  { id: "chat--qa-titanium-full-conversation", name: "QA / Titanium full conversation" },
+  { id: "prompt-input--qa-all-controls-send", name: "QA / all controls send state" },
+  { id: "prompt-input--qa-all-controls-stop", name: "QA / all controls busy stop state" },
+  { id: "prompt-input--qa-indexing-standby", name: "QA / indexing standby state" },
+  { id: "prompt-input--qa-indexing-warning", name: "QA / indexing warning state" },
+  { id: "prompt-input--qa-thinking-open", name: "QA / thinking selector open state" },
+  { id: "marketplace--empty-list", name: "Marketplace / empty state" },
+  { id: "agentmanager--sidebar-search-open", name: "Agent Manager / sidebar search" },
+  { id: "settings--titanium-studio-light-review", name: "Settings / light indexing review" },
+  { id: "session-tabs--switcher-open", name: "Session tabs / switcher" },
+]
+
+const LIGHT = new Set(["chat--qa-welcome-recent-light", "settings--titanium-studio-light-review"])
+
+function url(id: string) {
+  const globals = LIGHT.has(id) ? "colorScheme:light;theme=chipmate-vscode;vscodeTheme:light-modern" : GLOBALS
+  return `/iframe.html?id=${id}&viewMode=story&globals=${globals}`
+}
+
+async function open(page: Page, id: string) {
+  await page.goto(url(id), { waitUntil: "load" })
+  await page.waitForSelector("#storybook-root *", { state: "attached" })
+}
+
+async function scan(page: Page) {
+  const result = await new AxeBuilder({ page }).include("#storybook-root").withTags(RULES).analyze()
+  const details = result.violations
+    .map((item) => `${item.id}: ${item.help}\n${item.nodes.map((node) => `  ${node.target.join(" ")}`).join("\n")}`)
+    .join("\n")
+
+  expect(result.violations, details).toEqual([])
+}
+
+async function reach(page: Page, target: Locator) {
+  for (let step = 0; step < 10; step++) {
+    await page.keyboard.press("Tab")
+    if (await target.evaluate((node) => node === document.activeElement)) return
+  }
+}
+
+test.describe("webview accessibility ratchet", () => {
+  for (const story of STORIES) {
+    test(`${story.name} passes automated WCAG checks`, async ({ page }) => {
+      await open(page, story.id)
+      await scan(page)
+    })
+  }
+
+  test("QA collapsed input panel is keyboard-operable and passes WCAG checks", async ({ page }) => {
+    await open(page, "prompt-input--qa-all-controls-stop")
+    const collapse = page.getByRole("button", { name: "Collapse input panel" })
+    await collapse.focus()
+    await expect(collapse).toBeFocused()
+    await page.keyboard.press("Enter")
+
+    const expand = page.getByRole("button", { name: "Expand input panel" })
+    await expect(expand).toBeFocused()
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible()
+    await scan(page)
+
+    await page.keyboard.press("Enter")
+    await expect(page.locator("textarea.prompt-input")).toBeFocused()
+  })
+
+  test("QA tool call status stays semantic and preserves disclosure behavior", async ({ page }) => {
+    await open(page, "chat--qa-tool-calls-dark")
+
+    const completed = page.locator('[data-slot="basic-tool-completed"]')
+    await expect(completed).toHaveCount(4)
+    await expect(completed.first().locator('[data-slot="basic-tool-completed-label"]')).toHaveText("完成")
+    await expect(completed.first()).not.toHaveAttribute("role", "status")
+    await expect(completed.first()).not.toHaveAttribute("aria-live")
+
+    const order = await page.locator('.chat-view[data-ui="qa-shell"]').evaluate((root) =>
+      Array.from(root.querySelectorAll<HTMLElement>('[data-component="tool-trigger"]')).map((trigger) => {
+        const content = trigger.querySelector<HTMLElement>('[data-slot="basic-tool-tool-trigger-content"]')!
+        const base = trigger.querySelector<HTMLElement>('[data-slot="basic-tool-icon"]')
+        const custom = trigger.querySelector<HTMLElement>('[data-slot="basic-tool-qa-read-icon"]')
+        const icon = custom && getComputedStyle(custom).display !== "none" ? custom : base!
+        const title = trigger.querySelector<HTMLElement>(
+          '[data-slot="basic-tool-qa-read-title"], [data-slot="basic-tool-tool-title"], [data-slot="message-part-title-text"]',
+        )!
+        const line = getComputedStyle(content, "::before")
+        const start = content.getBoundingClientRect().left + Number.parseFloat(line.marginInlineStart)
+        const end = start + Number.parseFloat(line.width)
+        const iconBox = icon.getBoundingClientRect()
+        const titleBox = title.getBoundingClientRect()
+        const layout = trigger.querySelector<HTMLElement>('[data-slot="basic-tool-trigger-layout"]')
+        return {
+          lineGap: iconBox.left - end,
+          titleGap: titleBox.left - iconBox.right,
+          layoutLine: layout ? getComputedStyle(layout, "::before").content : "none",
+        }
+      }),
+    )
+    expect(order).toHaveLength(5)
+    for (const row of order) {
+      expect(row.lineGap).toBeCloseTo(6, 0)
+      expect(row.titleGap).toBeCloseTo(2, 0)
+      expect(row.layoutLine).toBe("none")
+    }
+
+    const read = page.locator('[data-component="tool-part-wrapper"][data-tool="read"]')
+    await expect(read.locator('[data-slot="collapsible-arrow"]')).toHaveCount(0)
+
+    const bash = page.locator('[data-part-id="part-header-bash-001"]')
+    const trigger = bash.locator('[data-slot="collapsible-trigger"]')
+    const before = await trigger.getAttribute("aria-expanded")
+    await trigger.focus()
+    await expect(trigger).toBeFocused()
+    await page.keyboard.press("Enter")
+    await expect(trigger).toHaveAttribute("aria-expanded", before === "true" ? "false" : "true")
+    await scan(page)
+  })
+
+  test("Agent Manager keeps virtualized transcript fragments laid out", async ({ page }) => {
+    await open(page, "agentmanager--sidebar-search-open")
+
+    const visibility = await page.locator("#storybook-root").evaluate((root) => {
+      const layout = document.createElement("div")
+      layout.className = "am-layout"
+      root.append(layout)
+      const names = ["assistant-message", "tool-trigger", "file", "code", "diff"]
+      const values = names.map((name) => {
+        const node = document.createElement("div")
+        node.dataset.component = name
+        layout.append(node)
+        return getComputedStyle(node).contentVisibility
+      })
+      layout.remove()
+      return values
+    })
+
+    expect(visibility).toEqual(["visible", "visible", "visible", "visible", "visible"])
+  })
+
+  test("Agent Manager avoids generated separator text in updating tool rows", async ({ page }) => {
+    await open(page, "agentmanager--sidebar-search-open")
+
+    const content = await page.locator("#storybook-root").evaluate((root) => {
+      const layout = document.createElement("div")
+      layout.className = "am-layout"
+      const wrapper = document.createElement("div")
+      wrapper.dataset.component = "tool-part-wrapper"
+      wrapper.dataset.partType = "tool"
+      const collapsible = document.createElement("div")
+      collapsible.className = "tool-collapsible"
+      collapsible.dataset.component = "collapsible"
+      const title = document.createElement("span")
+      title.dataset.slot = "basic-tool-tool-title"
+      const subtitle = document.createElement("span")
+      subtitle.dataset.slot = "basic-tool-tool-subtitle"
+      collapsible.append(title, subtitle)
+      wrapper.append(collapsible)
+      layout.append(wrapper)
+      root.append(layout)
+      const value = getComputedStyle(subtitle, "::before").content
+      layout.remove()
+      return value
+    })
+
+    expect(content).toBe("none")
+  })
+
+  test("sidebar keeps transcript announcements while Agent Manager bounds them", async ({ page }) => {
+    await open(page, "chat--chat-view-with-messages")
+    await expect(page.locator(".message-list")).toHaveAttribute("role", "log")
+    await expect(page.locator(".message-list")).toHaveAttribute("aria-live", "polite")
+
+    await open(page, "chat--chat-view-agent-manager-completed")
+    await expect(page.locator(".message-list")).not.toHaveAttribute("role")
+    await expect(page.locator(".message-list")).not.toHaveAttribute("aria-live")
+    await expect(page.locator('.sr-only[role="status"]')).toHaveAttribute("aria-live", "polite")
+  })
+
+  test("Profile login exposes a keyboard-operable named control", async ({ page }) => {
+    await open(page, "profile--not-logged-in")
+
+    const login = page.getByRole("button", { name: "Login with ChipMate" })
+    await reach(page, login)
+    await expect(login).toBeFocused()
+
+    await login.evaluate((node) => {
+      node.addEventListener("click", () => node.setAttribute("data-keyboard-activated", "true"), { once: true })
+    })
+    await page.keyboard.press("Enter")
+    await expect(login).toHaveAttribute("data-keyboard-activated", "true")
+  })
+
+  test("Aligned Marketplace sections remain keyboard-addressable and accessible", async ({ page }) => {
+    await open(page, "marketplace--aligned-skills-home")
+    for (const name of ["Favorites", "Installed", "My publications", "Analytics", "Diagnostics"]) {
+      const button = page.getByRole("button", { name })
+      await button.focus()
+      await expect(button).toBeFocused()
+      await page.keyboard.press("Enter")
+      await scan(page)
+    }
+  })
+
+  test("Agent Manager sidebar search filters and selects with the keyboard", async ({ page }) => {
+    await open(page, "agentmanager--sidebar-search-open")
+
+    const trigger = page.getByRole("button", { name: "Search worktrees and sessions" })
+    const input = page.getByPlaceholder("Search worktrees and sessions", { exact: true })
+    const prompt = page.getByRole("textbox", { name: "Story prompt" })
+    await expect(input).toBeFocused()
+    await expect(page.locator('[data-slot="list-header"]')).toHaveText(["SESSIONS", "LOCAL & WORKTREES"])
+
+    await input.fill("Render")
+    await expect(page.locator('[data-slot="sidebar-search-result"]').first()).toContainText(
+      "Render images in diff viewer",
+    )
+    await input.fill("rndr img")
+    await expect(page.locator('[data-slot="sidebar-search-result"]').first()).toContainText(
+      "Render images in diff viewer",
+    )
+
+    await input.fill("main")
+    await expect(page.locator('[data-slot="sidebar-search-result"]').first()).toContainText("local")
+    await page.keyboard.press("Enter")
+    await expect(page.locator('[data-slot="sidebar-search-selection"]')).toHaveText("local")
+    await expect(prompt).toBeFocused()
+
+    await trigger.click()
+    await input.fill("Build grouped")
+    await expect(page.getByText("Build grouped worktree search", { exact: true })).toBeVisible()
+
+    await page.keyboard.press("Enter")
+    await expect(page.locator('[data-slot="sidebar-search-selection"]')).toHaveText("session:session-build")
+    await expect(input).toBeHidden()
+    await expect(prompt).toBeFocused()
+
+    await trigger.click()
+    await input.fill("local indexing")
+    await expect(page.getByText("Investigate local indexing", { exact: true })).toBeVisible()
+    await page.keyboard.press("Enter")
+    await expect(page.locator('[data-slot="sidebar-search-selection"]')).toHaveText("session:session-local")
+
+    await trigger.click()
+    await input.fill("does not exist")
+    await expect(page.locator('[data-slot="list-empty-state"]')).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(prompt).toBeFocused()
+
+    await trigger.click()
+    await expect(input).toBeFocused()
+    await page.locator(".am-section-label").click()
+    await expect(prompt).toBeFocused()
+
+    await trigger.hover()
+    await expect(
+      page.getByText("Searches the local workspace, local sessions, worktrees, and their sessions", { exact: true }),
+    ).toBeVisible()
+    await expect(page.getByText("⌘F", { exact: true })).toBeVisible()
+  })
+
+  test("Search lists do not select an unhighlighted result on Enter by default", async ({ page }) => {
+    await open(page, "agentmanager--sidebar-search-open")
+
+    const input = page.getByPlaceholder("Search worktrees and sessions", { exact: true })
+    const row = page.locator('[data-slot="list-item"]').first()
+    const selected = page.locator('[data-slot="sidebar-search-selection"]')
+
+    await input.fill("Render")
+    await expect(row).toContainText("Render images in diff viewer")
+    await row.dispatchEvent("mousemove", { movementX: 1 })
+    await expect(row).toHaveAttribute("data-active", "true")
+    await row.dispatchEvent("mouseleave")
+    await expect(page.locator('[data-slot="list-item"][data-active="true"]')).toHaveCount(0)
+
+    await input.press("Enter")
+    await expect(selected).toHaveText("worktree:wt-search")
+    await expect(input).toBeFocused()
+  })
+
+  test("Session tab switcher restores chat focus after keyboard and mouse selection", async ({ page }) => {
+    await open(page, "session-tabs--switcher-open")
+
+    const input = page.getByPlaceholder("Search open tabs")
+    const prompt = page.getByRole("textbox", { name: "Chat input" })
+    await expect(page.locator('[data-slot="list-item"][data-active="true"]')).toHaveCount(0)
+    await expect(page.locator('[data-slot="list-item"][data-key="current"]')).toHaveAttribute("data-selected", "true")
+    await expect(page.locator('[data-slot="list-item"][data-key="refactor"]')).toHaveAttribute("data-selected", "false")
+    await input.press("ArrowDown")
+    await input.press("Enter")
+    await expect(prompt).toBeFocused()
+
+    await page.getByRole("button", { name: "Show open tabs" }).click()
+    await page.locator('[data-slot="list-item"][data-key="current"]').click()
+    await expect(prompt).toBeFocused()
+
+    // Enter without prior ArrowDown selects the first filtered result (noInitialSelection)
+    await page.getByRole("button", { name: "Show open tabs" }).click()
+    await input.fill("Review")
+    await input.press("Enter")
+    await expect(prompt).toBeFocused()
+  })
+
+  test("Search popovers expose accessible dialog names", async ({ page }) => {
+    for (const id of ["agentmanager--sidebar-search-open", "session-tabs--switcher-open"]) {
+      await open(page, id)
+      await expect(page.getByRole("dialog")).toHaveAccessibleName(/.+/)
+    }
+  })
+})

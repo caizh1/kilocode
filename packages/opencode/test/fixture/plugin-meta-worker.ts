@@ -12,7 +12,7 @@ if (typeof msg.file !== "string" || typeof msg.spec !== "string" || typeof msg.t
 }
 if (typeof msg.id !== "string") throw new Error("Invalid worker payload")
 
-process.env.KILO_PLUGIN_META_FILE = msg.file
+process.env.CHIPMATE_PLUGIN_META_FILE = msg.file
 
 const { PluginMeta } = await import("../../src/plugin/meta")
 

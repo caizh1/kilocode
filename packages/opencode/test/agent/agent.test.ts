@@ -15,14 +15,14 @@ import { Plugin } from "../../src/plugin"
 import { Provider } from "../../src/provider/provider"
 import { Skill } from "../../src/skill"
 import { Truncate } from "../../src/tool/truncate"
-import { MCP } from "../../src/mcp" // kilocode_change
+import { MCP } from "../../src/mcp" // chipmate_change
 import { LocationServiceMap } from "@opencode-ai/core/location-services"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { InstanceBootstrap as InstanceBootstrapNode } from "../../src/project/bootstrap"
 
 const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   AppNodeBuilder.build(Agent.node, [
-    [MCP.node, Layer.mock(MCP.Service)({})], // kilocode_change
+    [MCP.node, Layer.mock(MCP.Service)({})], // chipmate_change
     [RuntimeFlags.node, RuntimeFlags.layer(flags)],
     [
       InstanceBootstrapNode.node,
@@ -31,7 +31,7 @@ const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   ])
 
 const it = testEffect(agentLayer())
-const scout = testEffect(agentLayer({ experimentalScout: true })) // kilocode_change
+const scout = testEffect(agentLayer({ experimentalScout: true })) // chipmate_change
 
 // Helper to evaluate permission for a tool with wildcard pattern
 function evalPerm(agent: Agent.Info | undefined, permission: string): PermissionV1.Action | undefined {
@@ -61,12 +61,53 @@ it.instance("returns default native agents when no config", () =>
     expect(names).toContain("plan")
     expect(names).toContain("general")
     expect(names).toContain("explore")
-    expect(names).not.toContain("scout") // kilocode_change
+    expect(names).not.toContain("scout") // chipmate_change
     expect(names).toContain("compaction")
     expect(names).toContain("title")
     expect(names).toContain("summary")
   }),
 )
+
+// chipmate_change start - deprecated orchestrator stays compatible but is hidden by default
+it.instance("deprecated orchestrator is hidden by default", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* load((svc) => svc.get("orchestrator"))
+    expect(orchestrator).toBeDefined()
+    expect(orchestrator?.deprecated).toBe(true)
+    expect(orchestrator?.hidden).toBe(true)
+  }),
+)
+
+it.instance(
+  "deprecated orchestrator can be explicitly shown",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* load((svc) => svc.get("orchestrator"))
+      expect(orchestrator).toBeDefined()
+      expect(orchestrator?.deprecated).toBe(true)
+      expect(orchestrator?.hidden).toBe(false)
+      expect(yield* load((svc) => svc.defaultAgent())).toBe("orchestrator")
+    }),
+  {
+    config: {
+      default_agent: "orchestrator",
+      agent: {
+        orchestrator: { hidden: false },
+      },
+    },
+  },
+)
+
+it.instance(
+  "hidden orchestrator cannot be the default agent without an explicit visibility override",
+  () => expectDefaultAgentError('default agent "orchestrator" is hidden'),
+  {
+    config: {
+      default_agent: "orchestrator",
+    },
+  },
+)
+// chipmate_change end
 
 it.instance("build agent has correct default properties", () =>
   Effect.gen(function* () {
@@ -78,7 +119,7 @@ it.instance("build agent has correct default properties", () =>
     expect(evalPerm(build, "bash")).toBe("ask")
     expect(evalPerm(build, "repo_clone")).toBe("deny")
     expect(evalPerm(build, "repo_overview")).toBe("deny")
-    expect(evalPerm(build, "interactive_terminal")).toBe("allow") // kilocode_change
+    expect(evalPerm(build, "interactive_terminal")).toBe("allow") // chipmate_change
   }),
 )
 
@@ -88,7 +129,7 @@ it.instance("plan agent denies edits except .opencode/plans/*", () =>
     expect(plan).toBeDefined()
     // Wildcard is denied
     expect(evalPerm(plan, "edit")).toBe("deny")
-    expect(evalPerm(plan, "interactive_terminal")).toBe("deny") // kilocode_change
+    expect(evalPerm(plan, "interactive_terminal")).toBe("deny") // chipmate_change
     // But specific path is allowed
     expect(Permission.evaluate("edit", ".opencode/plans/foo.md", plan!.permission).action).toBe("allow")
   }),
@@ -131,7 +172,7 @@ it.instance("explore agent denies edit and write", () =>
     expect(evalPerm(explore, "edit")).toBe("deny")
     expect(evalPerm(explore, "write")).toBe("deny")
     expect(evalPerm(explore, "todowrite")).toBe("deny")
-    expect(evalPerm(explore, "interactive_terminal")).toBe("deny") // kilocode_change
+    expect(evalPerm(explore, "interactive_terminal")).toBe("deny") // chipmate_change
   }),
 )
 
@@ -147,7 +188,7 @@ it.instance("explore agent asks for external directories and allows whitelisted 
   }),
 )
 
-// kilocode_change start - Scout is opt-in and owns repository research permissions
+// chipmate_change start - Scout is opt-in and owns repository research permissions
 scout.instance("scout agent allows repo cloning and repo cache reads", () =>
   Effect.gen(function* () {
     const agent = yield* load((svc) => svc.get("scout"))
@@ -179,7 +220,7 @@ scout.instance(
     }),
   {
     config: {
-      // kilocode_change - Scout-backed Kilo agents use the supported references config
+      // chipmate_change - Scout-backed ChipMate agents use the supported references config
       references: {
         effect: "github.com/effect/effect-smol",
         effectFull: {
@@ -194,7 +235,7 @@ scout.instance(
     },
   },
 )
-// kilocode_change end
+// chipmate_change end
 
 it.instance("general agent denies todo tools", () =>
   Effect.gen(function* () {
@@ -634,7 +675,7 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const skillDir = path.join(test.directory, ".kilo", "skill", "perm-skill") // kilocode_change
+      const skillDir = path.join(test.directory, ".chipmate", "skill", "perm-skill") // chipmate_change
       yield* Effect.promise(() =>
         Bun.write(
           path.join(skillDir, "SKILL.md"),

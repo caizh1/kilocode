@@ -1,4 +1,4 @@
-# kilocode_change - new file
+# chipmate_change - new file
 name: publish-jetbrains-bundled
 
 on:
@@ -25,7 +25,7 @@ env:
 
 jobs:
   validate:
-    if: github.repository == 'Kilo-Org/kilocode'
+    if: github.repository == 'ChipMate-Org/chipmate'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
@@ -64,7 +64,7 @@ jobs:
 
   bundle:
     needs: validate
-    if: github.repository == 'Kilo-Org/kilocode'
+    if: github.repository == 'ChipMate-Org/chipmate'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       actions: read
@@ -82,8 +82,8 @@ jobs:
 
       - name: Save reviewed release metadata
         run: |
-          cp packages/kilo-jetbrains/CHANGELOG.md "$RUNNER_TEMP/jetbrains-CHANGELOG.md"
-          cp packages/kilo-jetbrains/gradle.properties "$RUNNER_TEMP/jetbrains-gradle.properties"
+          cp packages/chipmate-jetbrains/CHANGELOG.md "$RUNNER_TEMP/jetbrains-CHANGELOG.md"
+          cp packages/chipmate-jetbrains/gradle.properties "$RUNNER_TEMP/jetbrains-gradle.properties"
 
       - name: Checkout release tag
         uses: actions/checkout@v6
@@ -93,8 +93,8 @@ jobs:
 
       - name: Restore reviewed release metadata
         run: |
-          cp "$RUNNER_TEMP/jetbrains-CHANGELOG.md" packages/kilo-jetbrains/CHANGELOG.md
-          cp "$RUNNER_TEMP/jetbrains-gradle.properties" packages/kilo-jetbrains/gradle.properties
+          cp "$RUNNER_TEMP/jetbrains-CHANGELOG.md" packages/chipmate-jetbrains/CHANGELOG.md
+          cp "$RUNNER_TEMP/jetbrains-gradle.properties" packages/chipmate-jetbrains/gradle.properties
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -159,13 +159,13 @@ jobs:
           JETBRAINS_PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
 
       - name: Build signed bundled plugin
-        working-directory: packages/kilo-jetbrains
+        working-directory: packages/chipmate-jetbrains
         run: |
           args=(
             -Pproduction=true
-            -Pkilo.version="$VERSION"
-            -Pkilo.channel="$CHANNEL"
-            -Pkilo.cli.bundled=true
+            -Pchipmate.version="$VERSION"
+            -Pchipmate.channel="$CHANNEL"
+            -Pchipmate.cli.bundled=true
           )
           ./gradlew clean buildPlugin signPlugin verifyPluginSignature verifyPlugin "${args[@]}"
         env:
@@ -182,14 +182,14 @@ jobs:
       - name: Resolve bundled archive
         id: archive
         run: |
-          mapfile -t signed < <(compgen -G "packages/kilo-jetbrains/build/distributions/*-signed.zip")
+          mapfile -t signed < <(compgen -G "packages/chipmate-jetbrains/build/distributions/*-signed.zip")
           if [[ "${#signed[@]}" -ne 1 ]]; then
             echo "Expected exactly one signed bundled JetBrains plugin ZIP, found ${#signed[@]}." >&2
             printf '%s\n' "${signed[@]}" >&2
             exit 1
           fi
-          asset="kilo-code-${VERSION}-bundled.zip"
-          dest="packages/kilo-jetbrains/build/release/$asset"
+          asset="chipmate-code-${VERSION}-bundled.zip"
+          dest="packages/chipmate-jetbrains/build/release/$asset"
           mkdir -p "$(dirname "$dest")"
           cp "${signed[0]}" "$dest"
           echo "asset=$asset" >> "$GITHUB_OUTPUT"
@@ -256,9 +256,9 @@ jobs:
           def cdata(value):
               return "<![CDATA[" + value.replace("]]>", "]]]]><![CDATA[>") + "]]>"
 
-          plugin = text("id", "ai.kilocode.jetbrains")
-          name = text("name", "Kilo Code")
-          vendor = text("vendor", "Kilo Code")
+          plugin = text("id", "ai.chipmate.jetbrains")
+          name = text("name", "ChipMate")
+          vendor = text("vendor", "ChipMate")
           desc = text("description")
           notes = text("change-notes")
           idea = root.find("idea-version")
@@ -304,9 +304,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kilo-jetbrains-bundled-${{ needs.validate.outputs.version }}
+          name: chipmate-jetbrains-bundled-${{ needs.validate.outputs.version }}
           path: |
-            packages/kilo-jetbrains/build/release/*.zip
+            packages/chipmate-jetbrains/build/release/*.zip
             pages/jetbrains/updatePlugins.xml
           if-no-files-found: ignore
 

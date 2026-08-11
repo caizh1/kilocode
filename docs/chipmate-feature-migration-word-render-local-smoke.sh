@@ -20,7 +20,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { Effect } from "effect"
 import { WithInstance } from "@/project/with-instance"
-import { createWordDocument, renderWordDocument } from "@/kilocode/documents/word"
+import { createWordDocument, renderWordDocument } from "@/chipmate/documents/word"
 
 const workspace = path.resolve(process.argv[2] ?? process.cwd())
 const runDir = path.resolve(process.argv[3] ?? path.join(workspace, "docs", "chipmate-feature-migration-validation-runs", "word-render-local-smoke"))
@@ -71,8 +71,8 @@ async function main(): Promise<Summary> {
       return {
         status: "PASS",
         workspace,
-        soffice: process.env.KILO_WORD_RENDER_SOFFICE,
-        pdftoppm: process.env.KILO_WORD_RENDER_PDFTOPPM,
+        soffice: process.env.CHIPMATE_WORD_RENDER_SOFFICE,
+        pdftoppm: process.env.CHIPMATE_WORD_RENDER_PDFTOPPM,
         sourcePath: source.path,
         artifactDir: rendered.artifactDir,
         manifestPath: rendered.manifestPath,
@@ -119,8 +119,8 @@ try {
   const summary: Summary = {
     status: "FAIL",
     workspace,
-    soffice: process.env.KILO_WORD_RENDER_SOFFICE,
-    pdftoppm: process.env.KILO_WORD_RENDER_PDFTOPPM,
+    soffice: process.env.CHIPMATE_WORD_RENDER_SOFFICE,
+    pdftoppm: process.env.CHIPMATE_WORD_RENDER_PDFTOPPM,
     error: err instanceof Error ? err.message : String(err),
   }
   await fs.mkdir(runDir, { recursive: true })

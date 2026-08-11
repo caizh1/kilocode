@@ -53,7 +53,7 @@ export const dict = {
 
   "dialog.usageExceeded.freeTier.title": "Достигнут бесплатный лимит",
   "dialog.usageExceeded.freeTier.description":
-    "Подпишитесь на Kilo Go для надёжного доступа к лучшим моделям с открытым исходным кодом, от $5/месяц.",
+    "Подпишитесь на ChipMate Go для надёжного доступа к лучшим моделям с открытым исходным кодом, от $5/месяц.",
   "dialog.usageExceeded.freeTier.actionLabel": "Подписаться",
   "dialog.usageExceeded.accountRateLimit.title": "Достигнут лимит Go",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -104,7 +104,7 @@ export const dict = {
   "ui.textField.copied": "Скопировано",
 
   "ui.imagePreview.alt": "Предпросмотр изображения",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Отрисовка диаграммы Mermaid...",
   "ui.mermaid.renderError": "Не удалось отрисовать Mermaid: {{message}}",
   "ui.mermaid.errorDefault": "Не удалось отрисовать диаграмму Mermaid.",
@@ -126,12 +126,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "прокручиваемый контент",
 
   "ui.tool.read": "Чтение",
   "ui.tool.loaded": "Загружено",
-  "ui.tool.swePruned": "SWE-Pruner · сохранено {{kept}} из {{total}} строк", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · сохранено {{kept}} из {{total}} строк", // chipmate_change
   "ui.tool.list": "Список",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -167,7 +167,7 @@ export const dict = {
   "ui.message.collapse": "Свернуть сообщение",
   "ui.message.copy": "Копировать",
   "ui.message.copyMessage": "Копировать сообщение",
-  "ui.message.deleteQueued": "Удалить сообщение из очереди", // kilocode_change
+  "ui.message.deleteQueued": "Удалить сообщение из очереди", // chipmate_change
   "ui.message.forkMessage": "Ответвить в новую сессию",
   "ui.message.revertMessage": "Сбросить до этого момента",
   "ui.message.copyResponse": "Копировать ответ",
@@ -183,9 +183,9 @@ export const dict = {
   "ui.patch.action.patched": "Изменено",
 
   "ui.question.subtitle.answered": "{{count}} отвечено",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(нет ответа)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(не отвечено)",
   "ui.question.multiHint": "Выберите все подходящие",
   "ui.question.singleHint": "Выберите один ответ",

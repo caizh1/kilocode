@@ -45,7 +45,7 @@ type CachedApp = BackendApp & { readonly dispose: () => Promise<void> }
 const appCache: Partial<Record<string, CachedApp>> = {}
 
 export async function disposeApps() {
-  // kilocode_change start - an in-flight SSE fiber can leave the in-process router scope unable
+  // chipmate_change start - an in-flight SSE fiber can leave the in-process router scope unable
   // to close; bound disposal so a completed scenario run cannot wedge the exerciser or CI
   const apps = Object.entries(appCache)
   for (const key of Object.keys(appCache)) delete appCache[key]
@@ -63,7 +63,7 @@ export async function disposeApps() {
           ],
     ),
   )
-  // kilocode_change end
+  // chipmate_change end
 }
 
 function app(modules: Runtime, options: CallOptions) {
@@ -75,15 +75,15 @@ function app(modules: Runtime, options: CallOptions) {
   const web = HttpRouter.toWebHandler(
     modules.HttpApiApp.routes.pipe(
       Layer.provide(
-        // kilocode_change start - keep the filewatcher-disable flag visible (see httpapi-instance-route-auth.test.ts)
+        // chipmate_change start - keep the filewatcher-disable flag visible (see httpapi-instance-route-auth.test.ts)
         ConfigProvider.layer(
           ConfigProvider.fromUnknown({
-            KILO_SERVER_PASSWORD: password,
-            KILO_SERVER_USERNAME: username,
-            KILO_EXPERIMENTAL_DISABLE_FILEWATCHER: process.env.KILO_EXPERIMENTAL_DISABLE_FILEWATCHER ?? "true",
+            CHIPMATE_SERVER_PASSWORD: password,
+            CHIPMATE_SERVER_USERNAME: username,
+            CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER: process.env.CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER ?? "true",
           }),
         ),
-        // kilocode_change end
+        // chipmate_change end
       ),
     ),
     { disableLogger: true, memoMap: modules.memoMap },
@@ -116,7 +116,7 @@ function toAuthProbeRequest(scenario: ActiveScenario, credentials: "missing" | "
   const headers = {
     ...(spec.body === undefined ? {} : { "content-type": "application/json" }),
     ...spec.headers,
-    ...(credentials === "valid" ? { authorization: basic("kilo", "secret") } : {}), // kilocode_change
+    ...(credentials === "valid" ? { authorization: basic("chipmate", "secret") } : {}), // chipmate_change
   }
   return new Request(new URL(spec.path, "http://localhost"), {
     method: scenario.method,

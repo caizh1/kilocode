@@ -19,9 +19,9 @@ New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null
 $Bundle = Join-Path $DeliveryDir "chipmate-$Version-offline-handoff.tar.gz"
 $SofficeCommand = Get-Command soffice -ErrorAction SilentlyContinue
 $PdftoppmCommand = Get-Command pdftoppm -ErrorAction SilentlyContinue
-$WordRenderEndpointStatus = if ([string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable("KILO_WORD_RENDER_ENDPOINT"))) { "not configured" } else { "configured" }
-$WordRenderSofficeEnv = [System.Environment]::GetEnvironmentVariable("KILO_WORD_RENDER_SOFFICE")
-$WordRenderPdftoppmEnv = [System.Environment]::GetEnvironmentVariable("KILO_WORD_RENDER_PDFTOPPM")
+$WordRenderEndpointStatus = if ([string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable("CHIPMATE_WORD_RENDER_ENDPOINT"))) { "not configured" } else { "configured" }
+$WordRenderSofficeEnv = [System.Environment]::GetEnvironmentVariable("CHIPMATE_WORD_RENDER_SOFFICE")
+$WordRenderPdftoppmEnv = [System.Environment]::GetEnvironmentVariable("CHIPMATE_WORD_RENDER_PDFTOPPM")
 $WordRenderSofficeStatus = if (-not [string]::IsNullOrWhiteSpace($WordRenderSofficeEnv)) {
   if (Test-Path -LiteralPath $WordRenderSofficeEnv -PathType Leaf) { $WordRenderSofficeEnv } else { "configured but not found: $WordRenderSofficeEnv" }
 } elseif ($SofficeCommand) {
@@ -50,7 +50,7 @@ $WordRenderPdftoppmStatus = if (-not [string]::IsNullOrWhiteSpace($WordRenderPdf
 
 ## Optional Word render availability
 
-- KILO_WORD_RENDER_ENDPOINT: $WordRenderEndpointStatus
+- CHIPMATE_WORD_RENDER_ENDPOINT: $WordRenderEndpointStatus
 - soffice: $WordRenderSofficeStatus
 - pdftoppm: $WordRenderPdftoppmStatus
 "@ | Set-Content -Encoding UTF8 -Path (Join-Path $EvidenceDir "environment.md")
@@ -172,7 +172,7 @@ if ($Python -and (Test-Path -LiteralPath $IntakeVerifier -PathType Leaf)) {
 - Evidence return template: ``chipmate-feature-migration-target-evidence-return-template.md``
 - Evidence return pack helper available in kit: ``chipmate-feature-migration-target-evidence-return-pack.py``
 
-This runner verifies delivery/package integrity only. It does not install VS Code, does not run S1-S16 runtime smoke, and does not prove Kilo native QA/no-regression acceptance.
+This runner verifies delivery/package integrity only. It does not install VS Code, does not run S1-S16 runtime smoke, and does not prove ChipMate native QA/no-regression acceptance.
 "@ | Set-Content -Encoding UTF8 -Path (Join-Path $EvidenceDir "summary.md")
 
 Write-Host "${RunnerStatus}: wrote $(Join-Path $EvidenceDir "summary.md")"

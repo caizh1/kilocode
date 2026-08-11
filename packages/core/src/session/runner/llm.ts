@@ -175,7 +175,7 @@ const layer = Layer.effect(
       if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
         return yield* Effect.interrupt
       const agent = yield* agents.select(session.agent)
-      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id, location) // kilocode_change
+      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id, location) // chipmate_change
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
       let currentStep = step
@@ -190,7 +190,7 @@ const layer = Layer.effect(
         if (promoted > 0) currentStep = 1
       }
       const system =
-        // kilocode_change - pass the expected Location so a concurrent move aborts the epoch
+        // chipmate_change - pass the expected Location so a concurrent move aborts the epoch
         initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id, location))
       const model = yield* models.resolve(session)
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)

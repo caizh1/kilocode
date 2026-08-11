@@ -1,6 +1,6 @@
 # OpenAI Responses WebSocket
 
-Enabled by default on `local`, `dev`, and `beta`. On `latest` and `prod`, set `KILO_EXPERIMENTAL_WEBSOCKETS=true`.
+Enabled by default on `local`, `dev`, and `beta`. On `latest` and `prod`, set `CHIPMATE_EXPERIMENTAL_WEBSOCKETS=true`.
 
 ## Flow
 

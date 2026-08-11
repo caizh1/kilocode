@@ -2,7 +2,7 @@
 """Validate returned internal embedded-C source-backed detail-design evidence.
 
 This is a conservative evidence-shape intake helper. It does not open VS Code,
-run Kilo chat, execute the source-backed skill, generate Word files, render
+run ChipMate chat, execute the source-backed skill, generate Word files, render
 diagrams, or decide final M11 acceptance.
 """
 
@@ -25,7 +25,7 @@ REQUIRED_CONTEXT = [
 ]
 
 REQUIRED_PASS_STATUSES = [
-    "Kilo native QA preserved",
+    "ChipMate native QA preserved",
     "Source-backed detail-design skill selected",
     "Current source evidence collected",
     "Markdown detail design generated",
@@ -207,7 +207,7 @@ def write_summary(result: IntakeResult, output: Path) -> None:
             "",
             "## Boundary",
             "",
-            "This helper validates returned internal embedded-C detail-design evidence only. It does not run Kilo QA, does not execute the source-backed skill, does not generate Word output, does not require missing artifacts, does not run recipe repair, and does not accept ChipMate document-contract planning or missing-diagram auto-repair as completion evidence.",
+            "This helper validates returned internal embedded-C detail-design evidence only. It does not run ChipMate QA, does not execute the source-backed skill, does not generate Word output, does not require missing artifacts, does not run recipe repair, and does not accept ChipMate document-contract planning or missing-diagram auto-repair as completion evidence.",
             "",
         ]
     )
@@ -233,7 +233,7 @@ def run_self_check(output: Path) -> int:
 
 ## Required statuses
 
-- Kilo native QA preserved: PASS
+- ChipMate native QA preserved: PASS
 - Source-backed detail-design skill selected: PASS
 - Current source evidence collected: PASS
 - Markdown detail design generated: PASS
@@ -256,7 +256,7 @@ def run_self_check(output: Path) -> int:
 
 ## Required statuses
 
-- Kilo native QA preserved: PASS
+- ChipMate native QA preserved: PASS
 - Source-backed detail-design skill selected: TODO
 """
         (complete / "internal-embedded-c-detail-design-evidence.md").write_text(complete_text, encoding="utf-8")

@@ -15,8 +15,8 @@ export type DecodedCredentials = {
 }
 
 export class Config extends ConfigService.Service<Config>()("@opencode/ServerAuthConfig", {
-  password: EffectConfig.string("KILO_SERVER_PASSWORD").pipe(EffectConfig.option),
-  username: EffectConfig.string("KILO_SERVER_USERNAME").pipe(EffectConfig.withDefault("kilo")), // kilocode_change
+  password: EffectConfig.string("CHIPMATE_SERVER_PASSWORD").pipe(EffectConfig.option),
+  username: EffectConfig.string("CHIPMATE_SERVER_USERNAME").pipe(EffectConfig.withDefault("chipmate")), // chipmate_change
 }) {}
 
 export type Info = Context.Service.Shape<typeof Config>
@@ -34,10 +34,10 @@ export function authorized(credentials: DecodedCredentials, config: Info) {
 }
 
 export function header(credentials?: Credentials) {
-  const password = credentials?.password ?? Flag.KILO_SERVER_PASSWORD
+  const password = credentials?.password ?? Flag.CHIPMATE_SERVER_PASSWORD
   if (!password) return undefined
 
-  const username = credentials?.username ?? Flag.KILO_SERVER_USERNAME ?? "kilo" // kilocode_change
+  const username = credentials?.username ?? Flag.CHIPMATE_SERVER_USERNAME ?? "chipmate" // chipmate_change
   return `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
 }
 

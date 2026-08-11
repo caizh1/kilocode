@@ -3,20 +3,20 @@ name: Check Source Links
 on:
   pull_request:
     paths:
-      - "packages/kilo-vscode/src/**"
-      - "packages/kilo-vscode/webview-ui/**"
+      - "packages/chipmate-vscode/src/**"
+      - "packages/chipmate-vscode/webview-ui/**"
       - "packages/opencode/src/**"
-      - "packages/kilo-docs/source-links.md"
+      - "packages/chipmate-docs/source-links.md"
       - "script/extract-source-links.ts"
       - ".github/workflows/source-check-links.yml"
   workflow_dispatch: # Allow manual trigger
 
 jobs:
   source-links-freshness:
-    if: github.repository == 'Kilo-Org/kilocode'
+    if: github.repository == 'ChipMate-Org/chipmate'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6 # kilocode_change
+      - uses: actions/checkout@v6 # chipmate_change
 
       - uses: oven-sh/setup-bun@v2
 

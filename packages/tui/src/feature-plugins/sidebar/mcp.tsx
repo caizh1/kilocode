@@ -1,4 +1,4 @@
-import type { TuiPlugin, TuiPluginApi } from "@kilocode/plugin/tui"
+import type { TuiPlugin, TuiPluginApi } from "@chipmate/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, For, Match, Show, Switch, createSignal } from "solid-js"
 

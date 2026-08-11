@@ -11,8 +11,8 @@
 //     → stream.ts bridges to footer API
 //       → footer.ts queues commits and patches the footer view
 //         → OpenTUI split-footer renderer writes to terminal
-import type { KiloClient, PermissionRequest, QuestionRequest, ToolPart } from "@kilocode/sdk/v2"
-import type { RunInteractiveTerminalSnapshot } from "@/kilocode/cli/cmd/run/types" // kilocode_change
+import type { ChipMateClient, PermissionRequest, QuestionRequest, ToolPart } from "@chipmate/sdk/v2"
+import type { RunInteractiveTerminalSnapshot } from "@/chipmate/cli/cmd/run/types" // chipmate_change
 import type { TuiConfig } from "@opencode-ai/tui/config"
 
 export type RunFilePart = {
@@ -22,14 +22,14 @@ export type RunFilePart = {
   mime: string
 }
 
-type PromptModel = Parameters<KiloClient["session"]["prompt"]>[0]["model"]
-type PromptInput = Parameters<KiloClient["session"]["prompt"]>[0]
+type PromptModel = Parameters<ChipMateClient["session"]["prompt"]>[0]["model"]
+type PromptInput = Parameters<ChipMateClient["session"]["prompt"]>[0]
 
 export type RunPromptPart = NonNullable<PromptInput["parts"]>[number]
 
-export type RunCommand = NonNullable<Awaited<ReturnType<KiloClient["command"]["list"]>>["data"]>[number]
+export type RunCommand = NonNullable<Awaited<ReturnType<ChipMateClient["command"]["list"]>>["data"]>[number]
 
-export type RunProvider = NonNullable<Awaited<ReturnType<KiloClient["provider"]["list"]>>["data"]>["all"][number]
+export type RunProvider = NonNullable<Awaited<ReturnType<ChipMateClient["provider"]["list"]>>["data"]>["all"][number]
 
 export type RunPrompt = {
   messageID?: string
@@ -49,14 +49,14 @@ export type FooterQueuedPrompt = {
   prompt: RunPrompt
 }
 
-export type RunAgent = NonNullable<Awaited<ReturnType<KiloClient["app"]["agents"]>>["data"]>[number]
+export type RunAgent = NonNullable<Awaited<ReturnType<ChipMateClient["app"]["agents"]>>["data"]>[number]
 
-type RunResourceMap = NonNullable<Awaited<ReturnType<KiloClient["experimental"]["resource"]["list"]>>["data"]>
+type RunResourceMap = NonNullable<Awaited<ReturnType<ChipMateClient["experimental"]["resource"]["list"]>>["data"]>
 
 export type RunResource = RunResourceMap[string]
 
 export type RunInput = {
-  sdk: KiloClient
+  sdk: ChipMateClient
   directory: string
   sessionID: string
   sessionTitle?: string
@@ -175,7 +175,7 @@ export type FooterView =
   | { type: "prompt" }
   | { type: "permission"; request: PermissionRequest }
   | { type: "question"; request: QuestionRequest }
-  | { type: "interactive_terminal"; terminal: RunInteractiveTerminalSnapshot } // kilocode_change
+  | { type: "interactive_terminal"; terminal: RunInteractiveTerminalSnapshot } // chipmate_change
 
 export type FooterPromptRoute =
   | { type: "composer" }
@@ -282,11 +282,11 @@ export type FooterEvent =
       state: FooterSubagentState
     }
 
-export type PermissionReply = Parameters<KiloClient["permission"]["reply"]>[0]
+export type PermissionReply = Parameters<ChipMateClient["permission"]["reply"]>[0]
 
-export type QuestionReply = Parameters<KiloClient["question"]["reply"]>[0]
+export type QuestionReply = Parameters<ChipMateClient["question"]["reply"]>[0]
 
-export type QuestionReject = Parameters<KiloClient["question"]["reject"]>[0]
+export type QuestionReject = Parameters<ChipMateClient["question"]["reject"]>[0]
 
 export type RunTuiConfig = Pick<TuiConfig.Resolved, "keybinds" | "leader_timeout" | "diff_style">
 

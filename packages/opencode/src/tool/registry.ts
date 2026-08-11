@@ -1,13 +1,13 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // kilocode_change
+import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // chipmate_change
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { PlanExitTool } from "./plan"
 import { Session } from "@/session/session"
 import { QuestionTool } from "./question"
-// kilocode_change start
-import { SuggestTool } from "../kilocode/suggestion/tool"
+// chipmate_change start
+import { SuggestTool } from "../chipmate/suggestion/tool"
 import { Command } from "@/command"
-// kilocode_change end
+// chipmate_change end
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
@@ -22,7 +22,7 @@ import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 import * as Tool from "./tool"
 import { Config } from "@/config/config"
-import { type ToolContext as PluginToolContext, type ToolDefinition } from "@kilocode/plugin"
+import { type ToolContext as PluginToolContext, type ToolDefinition } from "@chipmate/plugin"
 import type { JSONSchema7, JSONSchema7Definition } from "@ai-sdk/provider"
 import { Schema } from "effect"
 import z from "zod"
@@ -30,22 +30,22 @@ import { Plugin } from "../plugin"
 import { Provider } from "@/provider/provider"
 
 import { WebSearchTool } from "./websearch"
-import { KiloToolRegistry } from "../kilocode/tool/registry" // kilocode_change
-import { Notebook } from "@/kilocode/notebook/service" // kilocode_change
-import { AgentManager } from "@/kilocode/agent-manager/service" // kilocode_change
-import { RepoOverviewTool } from "@/kilocode/tool/repo-overview" // kilocode_change
-import { RepoCloneTool } from "./repo_clone" // kilocode_change
-import { Flag } from "@opencode-ai/core/flag/flag" // kilocode_change
-import { Auth } from "@/auth" // kilocode_change
+import { ChipMateToolRegistry } from "../chipmate/tool/registry" // chipmate_change
+import { Notebook } from "@/chipmate/notebook/service" // chipmate_change
+import { AgentManager } from "@/chipmate/agent-manager/service" // chipmate_change
+import { RepoOverviewTool } from "@/chipmate/tool/repo-overview" // chipmate_change
+import { RepoCloneTool } from "./repo_clone" // chipmate_change
+import { Flag } from "@opencode-ai/core/flag/flag" // chipmate_change
+import { Auth } from "@/auth" // chipmate_change
 import { LspTool } from "./lsp"
 import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
 import { Glob } from "@opencode-ai/core/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
-import { Effect, Layer, Context, Option } from "effect" // kilocode_change
+import { Effect, Layer, Context, Option } from "effect" // chipmate_change
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { HttpClient } from "effect/unstable/http" // kilocode_change
+import { HttpClient } from "effect/unstable/http" // chipmate_change
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
@@ -60,24 +60,24 @@ import { Bus } from "../bus"
 import { Agent } from "../agent/agent"
 import { Skill } from "../skill"
 import { Permission } from "@/permission"
-import { SessionStatus } from "@/session/status" // kilocode_change
-import { KiloSessions } from "@/kilo-sessions/kilo-sessions" // kilocode_change - provide KiloSessions.Service so the notify_user tool's init resolves
-import { Git } from "@/git" // kilocode_change
+import { SessionStatus } from "@/session/status" // chipmate_change
+import { ChipMateSessions } from "@/chipmate-sessions/chipmate-sessions" // chipmate_change - provide ChipMateSessions.Service so the notify_user tool's init resolves
+import { Git } from "@/git" // chipmate_change
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import * as ToolNetwork from "@/kilocode/sandbox/network" // kilocode_change
-import { MemoryService } from "@kilocode/kilo-memory/effect/service" // kilocode_change
+import * as ToolNetwork from "@/chipmate/sandbox/network" // chipmate_change
+import { MemoryService } from "@chipmate/chipmate-memory/effect/service" // chipmate_change
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
-import { RepositoryCache } from "@opencode-ai/core/repository-cache" // kilocode_change
-import { RipgrepBinary } from "@opencode-ai/core/ripgrep/binary" // kilocode_change
-import { AppProcess } from "@opencode-ai/core/process" // kilocode_change
+import { RepositoryCache } from "@opencode-ai/core/repository-cache" // chipmate_change
+import { RipgrepBinary } from "@opencode-ai/core/ripgrep/binary" // chipmate_change
+import { AppProcess } from "@opencode-ai/core/process" // chipmate_change
 
 export function webSearchEnabled(
   providerID: ProviderV2.ID,
-  flags = { exa: Flag.KILO_ENABLE_EXA, parallel: Flag.KILO_ENABLE_PARALLEL },
+  flags = { exa: Flag.CHIPMATE_ENABLE_EXA, parallel: Flag.CHIPMATE_ENABLE_PARALLEL },
 ) {
-  return providerID === ProviderV2.ID.kilo || flags.exa || flags.parallel // kilocode_change
+  return providerID === ProviderV2.ID.chipmate || flags.exa || flags.parallel // chipmate_change
 }
 
 type TaskDef = Tool.InferDef<typeof TaskTool>
@@ -94,14 +94,14 @@ export interface Interface {
   readonly ids: () => Effect.Effect<string[]>
   readonly all: () => Effect.Effect<Tool.Def[]>
   readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
-  // kilocode_change start
+  // chipmate_change start
   readonly tools: (model: {
     providerID: ProviderV2.ID
     modelID: ModelV2.ID
     family?: string
     agent: Agent.Info
   }) => Effect.Effect<Tool.Def[]>
-  // kilocode_change end
+  // chipmate_change end
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ToolRegistry") {}
@@ -112,7 +112,7 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const plugin = yield* Plugin.Service
     const agents = yield* Agent.Service
-    const skill = yield* Skill.Service // kilocode_change - keep the available skill summary in model-facing tool context
+    const skill = yield* Skill.Service // chipmate_change - keep the available skill summary in model-facing tool context
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
 
@@ -125,8 +125,8 @@ const layer = Layer.effect(
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
-    const clone = yield* RepoCloneTool // kilocode_change
-    const overview = yield* RepoOverviewTool // kilocode_change
+    const clone = yield* RepoCloneTool // chipmate_change
+    const overview = yield* RepoOverviewTool // chipmate_change
     const shell = yield* ShellTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
@@ -135,12 +135,12 @@ const layer = Layer.effect(
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
     const agent = yield* Agent.Service
-    // kilocode_change start
+    // chipmate_change start
     const suggesttool = yield* SuggestTool
     const manager = Option.getOrUndefined(yield* Effect.serviceOption(AgentManager.Service))
     const notebook = Option.getOrUndefined(yield* Effect.serviceOption(Notebook.Service))
-    const kiloToolInfos = yield* KiloToolRegistry.infos(manager, notebook).pipe(Effect.provide(MemoryService.layer))
-    // kilocode_change end
+    const chipmateToolInfos = yield* ChipMateToolRegistry.infos(manager, notebook).pipe(Effect.provide(MemoryService.layer))
+    // chipmate_change end
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
@@ -227,12 +227,12 @@ const layer = Layer.effect(
           }
         }
 
-        // kilocode_change start
+        // chipmate_change start
         const cfg = yield* config.get()
         const global = yield* config.getGlobal()
-        const indexing = KiloToolRegistry.indexing(cfg, global)
-        // kilocode_change end
-        const questionEnabled = ["app", "cli", "desktop", "vscode"].includes(flags.client) || flags.enableQuestionTool // kilocode_change: add vscode client
+        const indexing = ChipMateToolRegistry.indexing(cfg, global)
+        // chipmate_change end
+        const questionEnabled = ["app", "cli", "desktop", "vscode"].includes(flags.client) || flags.enableQuestionTool // chipmate_change: add vscode client
 
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),
@@ -246,28 +246,28 @@ const layer = Layer.effect(
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
-          clone: Tool.init(clone), // kilocode_change
-          overview: Tool.init(overview), // kilocode_change
+          clone: Tool.init(clone), // chipmate_change
+          overview: Tool.init(overview), // chipmate_change
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
-          suggest: Tool.init(suggesttool), // kilocode_change
+          suggest: Tool.init(suggesttool), // chipmate_change
         })
 
-        // kilocode_change start
-        const kilo = yield* KiloToolRegistry.build(kiloToolInfos, {
+        // chipmate_change start
+        const chipmate = yield* ChipMateToolRegistry.build(chipmateToolInfos, {
           agent: agents,
           truncate,
           indexing: indexing ?? false,
         })
-        // kilocode_change end
+        // chipmate_change end
 
         return {
           custom,
-          // kilocode_change start
-          builtin: KiloToolRegistry.describe(
+          // chipmate_change start
+          builtin: ChipMateToolRegistry.describe(
             [
               tool.invalid,
               ...(questionEnabled ? [tool.question] : []),
@@ -281,17 +281,17 @@ const layer = Layer.effect(
               tool.fetch,
               tool.todo,
               tool.search,
-              ...(flags.experimentalScout ? [tool.clone, tool.overview] : []), // kilocode_change
+              ...(flags.experimentalScout ? [tool.clone, tool.overview] : []), // chipmate_change
               tool.skill,
               tool.patch,
               tool.plan,
               ...(["cli", "vscode"].includes(flags.client) ? [tool.suggest] : []),
-              ...KiloToolRegistry.extra(kilo, cfg),
+              ...ChipMateToolRegistry.extra(chipmate, cfg),
               ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ],
-            kilo,
+            chipmate,
           ),
-          // kilocode_change end
+          // chipmate_change end
           task: tool.task,
           read: tool.read,
         }
@@ -300,7 +300,7 @@ const layer = Layer.effect(
 
     const all: Interface["all"] = Effect.fn("ToolRegistry.all")(function* () {
       const s = yield* InstanceState.get(state)
-      return [...s.builtin.map(ToolNetwork.builtin), ...s.custom] as Tool.Def[] // kilocode_change
+      return [...s.builtin.map(ToolNetwork.builtin), ...s.custom] as Tool.Def[] // chipmate_change
     })
 
     const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {
@@ -322,7 +322,7 @@ const layer = Layer.effect(
       return ["Available agent types and the tools they have access to:", description].join("\n")
     })
 
-    // kilocode_change start - retain the concise skill inventory added to the skill tool description
+    // chipmate_change start - retain the concise skill inventory added to the skill tool description
     const describeSkill = Effect.fn("ToolRegistry.describeSkill")(function* (agent: Agent.Info) {
       const list = yield* skill.available(agent)
       if (list.length === 0) return "No skills are currently available."
@@ -334,27 +334,27 @@ const layer = Layer.effect(
         Skill.fmt(list, { verbose: false }),
       ].join("\n")
     })
-    // kilocode_change end
+    // chipmate_change end
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
-      const cfg = yield* config.get() // kilocode_change
+      const cfg = yield* config.get() // chipmate_change
       const filtered = (yield* all()).filter((tool) => {
-        if (!KiloToolRegistry.available(tool, input.agent)) return false // kilocode_change
+        if (!ChipMateToolRegistry.available(tool, input.agent)) return false // chipmate_change
         if (tool.id === WebSearchTool.id) {
-          if (cfg.web_search === true) return true // kilocode_change
+          if (cfg.web_search === true) return true // chipmate_change
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
         }
 
-        const usePatch = KiloToolRegistry.usePatch(input) // kilocode_change
+        const usePatch = ChipMateToolRegistry.usePatch(input) // chipmate_change
         if (tool.id === ApplyPatchTool.id) return usePatch
-        if (tool.id === EditTool.id) return !usePatch // kilocode_change
+        if (tool.id === EditTool.id) return !usePatch // chipmate_change
 
         return true
       })
-      const kiloFiltered = yield* KiloToolRegistry.applyVisibility(filtered) // kilocode_change
+      const chipmateFiltered = yield* ChipMateToolRegistry.applyVisibility(filtered) // chipmate_change
 
       return yield* Effect.forEach(
-        kiloFiltered, // kilocode_change
+        chipmateFiltered, // chipmate_change
         Effect.fnUntraced(function* (tool: Tool.Def) {
           const output = {
             description: tool.description,
@@ -366,7 +366,7 @@ const layer = Layer.effect(
             output.parameters === tool.parameters || output.jsonSchema !== tool.jsonSchema
               ? output.jsonSchema
               : undefined
-          // kilocode_change start
+          // chipmate_change start
           const result = {
             id: tool.id,
             description: [
@@ -382,7 +382,7 @@ const layer = Layer.effect(
             formatValidationError: tool.formatValidationError,
           }
           return ToolNetwork.isBuiltin(tool) ? ToolNetwork.builtin(result) : result
-          // kilocode_change end
+          // chipmate_change end
         }),
         { concurrency: "unbounded" },
       )
@@ -397,7 +397,7 @@ const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer: Layer.Layer<Service> = Layer.suspend(() => AppNodeBuilder.build(node)) // kilocode_change - build from the LayerNode graph
+export const defaultLayer: Layer.Layer<Service> = Layer.suspend(() => AppNodeBuilder.build(node)) // chipmate_change - build from the LayerNode graph
 
 function isZodType(value: unknown): value is z.ZodType {
   return typeof value === "object" && value !== null && "_zod" in value
@@ -475,7 +475,7 @@ function isJsonSchemaObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-// kilocode_change start - preserve Kilo registry dependencies and sandbox-aware HTTP in the upstream node graph
+// chipmate_change start - preserve ChipMate registry dependencies and sandbox-aware HTTP in the upstream node graph
 const network = LayerNode.make({ service: HttpClient.HttpClient, layer: ToolNetwork.httpLayer, deps: [] })
 
 export const node = LayerNode.suspend(() =>
@@ -511,10 +511,10 @@ export const node = LayerNode.suspend(() =>
       AgentManager.node,
       Notebook.node,
       RepositoryCache.node,
-      KiloSessions.node,
+      ChipMateSessions.node,
     ],
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
 export * as ToolRegistry from "./registry"

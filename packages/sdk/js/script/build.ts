@@ -58,7 +58,7 @@ await createClient({
     },
     {
       name: "@hey-api/sdk",
-      instance: "KiloClient",
+      instance: "ChipMateClient",
       exportFromIndex: false,
       auth: false,
       paramsStructure: "flat",
@@ -94,7 +94,7 @@ if (historySdkPatched === generatedSdk) {
 }
 await Bun.write("./src/v2/gen/sdk.gen.ts", historySdkPatched)
 
-// kilocode_change start - tolerate generators where the SSE generic bug is already fixed
+// chipmate_change start - tolerate generators where the SSE generic bug is already fixed
 // Patch a @hey-api/openapi-ts codegen bug: SseFn incorrectly passes the
 // endpoint's TError into the second generic of ServerSentEventsResult, which
 // is the AsyncGenerator's TReturn slot. Iterator return values have nothing
@@ -112,10 +112,10 @@ if (!sseTypesPatched.includes(fixed)) {
   throw new Error(`SseFn patch did not apply; @hey-api/openapi-ts output may have changed (${sseTypesPath})`)
 }
 await Bun.write(sseTypesPath, sseTypesPatched)
-// kilocode_change end
+// chipmate_change end
 
 // The legacy SDK generator is retired, but this public Config type remains exported.
-// Keep Kilo's released sandbox settings aligned with the current generated client.
+// Keep ChipMate's released sandbox settings aligned with the current generated client.
 const legacyTypesPath = "./src/gen/types.gen.ts"
 const legacyTypesFile = Bun.file(legacyTypesPath)
 const legacySource = await legacyTypesFile.text()

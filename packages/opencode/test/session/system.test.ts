@@ -8,7 +8,7 @@ import { Permission } from "../../src/permission"
 import { SystemPrompt } from "../../src/session/system"
 import { LocationServiceMap } from "@opencode-ai/core/location-services"
 import { testEffect } from "../lib/effect"
-import { Config } from "../../src/config/config" // kilocode_change
+import { Config } from "../../src/config/config" // chipmate_change
 
 const skills: Skill.Info[] = [
   {
@@ -59,8 +59,8 @@ const it = testEffect(
           all: () => Effect.succeed(skills),
           dirs: () => Effect.succeed([]),
           available: () => Effect.succeed(skills),
-          refresh: () => Effect.void, // kilocode_change
-          remove: () => Effect.void, // kilocode_change
+          refresh: () => Effect.void, // chipmate_change
+          remove: () => Effect.void, // chipmate_change
         }),
       ),
     ],

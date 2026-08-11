@@ -1,4 +1,4 @@
-// kilocode_change - new file
+// chipmate_change - new file
 
 import fs from "fs/promises"
 import path from "path"
@@ -14,7 +14,7 @@ process.env.XDG_DATA_HOME = path.join(dir, "share")
 process.env.XDG_CACHE_HOME = path.join(dir, "cache")
 process.env.XDG_CONFIG_HOME = path.join(dir, "config")
 process.env.XDG_STATE_HOME = path.join(dir, "state")
-process.env.KILO_TEST_HOME = path.join(dir, "home")
+process.env.CHIPMATE_TEST_HOME = path.join(dir, "home")
 
 const Log = await import("@opencode-ai/core/util/log")
 
@@ -44,7 +44,7 @@ const log = Log.create({ service: "test" })
 const msg = "x".repeat(1024 * 1024)
 const first = mode === "missing" ? 10 : 55
 
-await fs.mkdir(path.join(dir, "share", "kilo", "log"), { recursive: true })
+await fs.mkdir(path.join(dir, "share", "chipmate", "log"), { recursive: true })
 for (const _ of Array.from({ length: first })) {
   log.info(msg)
 }

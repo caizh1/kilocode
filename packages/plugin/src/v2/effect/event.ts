@@ -1,4 +1,4 @@
-import type { Event as SDKEvent } from "@kilocode/sdk/v2/types"
+import type { Event as SDKEvent } from "@chipmate/sdk/v2/types"
 import type { Stream } from "effect"
 
 export type EventMap = {

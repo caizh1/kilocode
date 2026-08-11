@@ -7,7 +7,7 @@
 - 执行状态：未开始
 - 目标环境：远程 Linux 离线 VS Code
 - 目标模型：`qwen-coder-30b0`
-- 目标传输：本地 CLI `/kilo/qwen-fim` → Provider `/completions`
+- 目标传输：本地 CLI `/chipmate/qwen-fim` → Provider `/completions`
 - 完成标准：源码测试、实际 VSIX 检查、远程 Linux ghost text 验收全部通过
 
 本文件是本轮 Qwen 自动补全修复的唯一执行账本。后续实施、验证、打包和远程签收均应更新本文件中的复选框和结果记录，不得用聊天中的临时结论替代本文件状态。
@@ -29,7 +29,7 @@
 - [x] `qwen-coder-30b0` 是唯一正确运行时模型。
 - [x] “自动选择”和“真实 Qwen Provider”不再显示成同一个选项。
 - [x] 删除 Qwen Provider 后不再莫名回弹到不可用的 Codestral 并弹认证错误。
-- [x] Qwen 模式下不残留 Classic `/kilo/fim` provider。
+- [x] Qwen 模式下不残留 Classic `/chipmate/fim` provider。
 - [ ] Smoke 和真实编辑器补全都返回 ghost text。
 - [x] 生成并验收 `chipmate-0.0.51-linux-x64-baseline.vsix`。
 
@@ -37,7 +37,7 @@
 
 ### 根因一：自定义 Provider URL 契约断裂
 
-自定义 Provider UI 保存 `provider.options.baseURL`，聊天读取该字段，所以对话正常；但 `/kilo/qwen-fim` 只读取 `model.api.url`。对于不在内置模型快照中的自定义 Provider，UI 不保存根级 `api` 或模型级 `provider.api`，因此 `model.api.url` 为空，请求在本地直接返回 400。
+自定义 Provider UI 保存 `provider.options.baseURL`，聊天读取该字段，所以对话正常；但 `/chipmate/qwen-fim` 只读取 `model.api.url`。对于不在内置模型快照中的自定义 Provider，UI 不保存根级 `api` 或模型级 `provider.api`，因此 `model.api.url` 为空，请求在本地直接返回 400。
 
 ### 根因二：`Qwen FIM (Default)` 实际是清空项
 
@@ -52,7 +52,7 @@ model = null
 
 ### 根因三：自动 fallback 会触发无效认证提示
 
-在离线内部环境中，Kilo Gateway Codestral 通常不可用。无条件 fallback 到 Codestral 会让旧 Classic provider 请求 `/kilo/fim`，然后显示：
+在离线内部环境中，ChipMate Gateway Codestral 通常不可用。无条件 fallback 到 Codestral 会让旧 Classic provider 请求 `/chipmate/fim`，然后显示：
 
 ```text
 ChipMate Autocomplete has been paused due to an authentication error
@@ -62,7 +62,7 @@ ChipMate Autocomplete has been paused due to an authentication error
 
 ### 根因四：Classic manager 可以在 dispose 后复活
 
-`AutocompleteServiceManager.load()` 是异步 fire-and-forget。切换到 Qwen 后，即使 manager 已 dispose，旧 `load()` 仍可能从 `await` 恢复并重新注册 Classic provider，造成 Qwen 与 Classic 同时活动、`/kilo/qwen-fim` 和 `/kilo/fim` 并存，以及误导性的 authentication warning。
+`AutocompleteServiceManager.load()` 是异步 fire-and-forget。切换到 Qwen 后，即使 manager 已 dispose，旧 `load()` 仍可能从 `await` 恢复并重新注册 Classic provider，造成 Qwen 与 Classic 同时活动、`/chipmate/qwen-fim` 和 `/chipmate/fim` 并存，以及误导性的 authentication warning。
 
 ### 根因五：Smoke 不等于真实编辑器注册验证
 
@@ -70,7 +70,7 @@ ChipMate Autocomplete has been paused due to an authentication error
 
 ## Phase 0：版本、改动隔离与兼容边界
 
-- [x] 将 `packages/kilo-vscode/package.json` 从 `0.0.50` 升级到 `0.0.51`。
+- [x] 将 `packages/chipmate-vscode/package.json` 从 `0.0.50` 升级到 `0.0.51`。
 - [x] 保持 `publisher=chipmate`。
 - [x] 保持 `name=chipmate`。
 - [x] 保持扩展 ID、SecretStorage/Auth store key 和配置命名空间不变。
@@ -79,11 +79,11 @@ ChipMate Autocomplete has been paused due to an authentication error
 - [x] 实施前保存 autocomplete、qwen-autocomplete、ModelsTab 和 qwen gateway handler 的 scoped diff。
 - [x] 不修改 SDK endpoint body。
 - [x] 不运行 SDK codegen。
-- [x] 不修改共享上游 `packages/opencode/src/provider/provider.ts`；URL 修复放在 Kilo-owned handler。
+- [x] 不修改共享上游 `packages/opencode/src/provider/provider.ts`；URL 修复放在 ChipMate-owned handler。
 
 ### Phase 0 结果记录
 
-- 修改文件：`packages/kilo-vscode/package.json`、`.changeset/fix-node-navigator.md`。
+- 修改文件：`packages/chipmate-vscode/package.json`、`.changeset/fix-node-navigator.md`。
 - 执行命令：读取包身份与版本；保存 autocomplete、Qwen、ModelsTab、gateway handler 的 scoped diff。
 - 测试结果：确认版本为 `0.0.51`，`publisher/name` 仍为 `chipmate/chipmate`。
 - 已知限制：远程 Linux 安装态尚未验证。
@@ -93,7 +93,7 @@ ChipMate Autocomplete has been paused due to an authentication error
 
 ### 1.1 统一 URL 解析
 
-修改 `packages/opencode/src/kilocode/server/httpapi/handlers/kilo-gateway.ts`。
+修改 `packages/opencode/src/chipmate/server/httpapi/handlers/chipmate-gateway.ts`。
 
 Qwen base URL 解析顺序与聊天保持一致：
 
@@ -133,7 +133,7 @@ provider.options.headers
 继续使用：
 
 ```http
-POST /kilo/qwen-fim
+POST /chipmate/qwen-fim
 ```
 
 请求体和成功响应保持不变：
@@ -183,8 +183,8 @@ success
 
 ### Phase 1 结果记录
 
-- 修改文件：`packages/opencode/src/kilocode/server/httpapi/handlers/kilo-gateway.ts`、`packages/opencode/test/kilocode/server/kilo-gateway-statuses.test.ts`。
-- 执行命令：`bun test test/kilocode/server/kilo-gateway-statuses.test.ts`；对两个修改文件执行 Prettier。
+- 修改文件：`packages/opencode/src/chipmate/server/httpapi/handlers/chipmate-gateway.ts`、`packages/opencode/test/chipmate/server/chipmate-gateway-statuses.test.ts`。
+- 执行命令：`bun test test/chipmate/server/chipmate-gateway-statuses.test.ts`；对两个修改文件执行 Prettier。
 - 测试结果：16 pass，0 fail；覆盖 `options.baseURL` 优先级、URL 规范化、header 合并、Secret/Auth store、401、provider 类型和旧模型拒绝。
 - 已知限制：尚未在真实远程自定义 Provider 上执行网络请求。
 - 下一步：修复 autocomplete 选择对、UI 语义和删除 Provider 后的回弹。
@@ -195,8 +195,8 @@ success
 
 修改：
 
-- `packages/kilo-vscode/webview-ui/src/components/settings/ModelsTab.tsx`
-- `packages/kilo-vscode/webview-ui/src/components/settings/autocomplete-model-selector.ts`
+- `packages/chipmate-vscode/webview-ui/src/components/settings/ModelsTab.tsx`
+- `packages/chipmate-vscode/webview-ui/src/components/settings/autocomplete-model-selector.ts`
 
 顶部清空项改名为：
 
@@ -253,12 +253,12 @@ updateAutocompleteSelection({
 不新增公开运行时选择来源，继续以以下配置作为真实 runtime 选择：
 
 ```text
-kilo-code.new.autocomplete.provider
-kilo-code.new.autocomplete.model
-kilo-code.new.autocomplete.enableAutoTrigger
+chipmate-code.new.autocomplete.provider
+chipmate-code.new.autocomplete.model
+chipmate-code.new.autocomplete.enableAutoTrigger
 ```
 
-现有隐藏状态 `kilo.autocomplete.qwenDefault` 仅作为自动选择来源兼容标记。
+现有隐藏状态 `chipmate.autocomplete.qwenDefault` 仅作为自动选择来源兼容标记。
 
 - [x] 自动项保存时一次性设为 `true`。
 - [x] 真实模型保存时一次性设为 `false`。
@@ -289,7 +289,7 @@ kilo-code.new.autocomplete.enableAutoTrigger
 
 - [x] 有 connected、exact-model、OpenAI-compatible Qwen Provider 时使用 Qwen。
 - [x] 公共/多云包且 Codestral 认证真实可用时，允许 Codestral fallback。
-- [x] 内部离线包或无 Kilo Gateway 认证时不启动 Codestral。
+- [x] 内部离线包或无 ChipMate Gateway 认证时不启动 Codestral。
 - [x] 内部离线包无 Qwen 时显示“未找到兼容 Qwen Provider”。
 - [x] `enableAutoTrigger=true` 但没有可用 provider 时进入可解释的 unavailable 状态。
 - [x] 不注册一个必然 401 的 Classic provider。
@@ -309,7 +309,7 @@ kilo-code.new.autocomplete.enableAutoTrigger
 
 ### Phase 2 结果记录
 
-- 修改文件：`settings.ts`、`workspace.ts`、`KiloProvider.ts`、`provider-actions.ts`、Webview settings/message/selector 文件及行为测试。
+- 修改文件：`settings.ts`、`workspace.ts`、`ChipMateProvider.ts`、`provider-actions.ts`、Webview settings/message/selector 文件及行为测试。
 - 执行命令：focused autocomplete tests、扩展 typecheck、Prettier。
 - 测试结果：原子选择、三层配置作用域、删除 Provider、自动/显式文案和 fallback 行为通过。
 - 已知限制：真实 VS Code UI 点击与远程目标机仍在 Phase 9/10 验收。
@@ -319,8 +319,8 @@ kilo-code.new.autocomplete.enableAutoTrigger
 
 修改：
 
-- `packages/kilo-vscode/src/services/autocomplete/AutocompleteServiceManager.ts`
-- `packages/kilo-vscode/src/services/autocomplete/index.ts`
+- `packages/chipmate-vscode/src/services/autocomplete/AutocompleteServiceManager.ts`
+- `packages/chipmate-vscode/src/services/autocomplete/index.ts`
 
 ### 3.1 Manager 生命周期防护
 
@@ -363,7 +363,7 @@ single active load promise
 
 - [x] Qwen 错误继续只进入 Qwen diagnostics，不显示 Classic authentication toast。
 - [x] Classic provider 只有在自身仍是当前活动 runtime 时才允许显示 fatal auth warning。
-- [x] 显式 Qwen 模式日志中出现 `/kilo/fim` 视为测试失败。
+- [x] 显式 Qwen 模式日志中出现 `/chipmate/fim` 视为测试失败。
 - [x] 显式 Qwen 模式出现 Classic authentication warning 视为测试失败。
 
 ### Phase 3 结果记录
@@ -394,8 +394,8 @@ directory?: string
 
 修改：
 
-- `packages/kilo-vscode/src/services/qwen-autocomplete/QwenFimClient.ts`
-- `packages/kilo-vscode/src/services/qwen-autocomplete/KiloQwenInlineCompletionProvider.ts`
+- `packages/chipmate-vscode/src/services/qwen-autocomplete/QwenFimClient.ts`
+- `packages/chipmate-vscode/src/services/qwen-autocomplete/ChipMateQwenInlineCompletionProvider.ts`
 
 - [x] 从当前 document URI 解析 workspace folder。
 - [x] 调用 SDK `qwenFim` 时传 directory query。
@@ -434,7 +434,7 @@ serverPhase
 保留命令 ID：
 
 ```text
-kilo-code.new.qwenAutocomplete.smokeDiagnostics
+chipmate-code.new.qwenAutocomplete.smokeDiagnostics
 ```
 
 用户文案改为：
@@ -453,7 +453,7 @@ ChipMate: Test qwen-direct Transport
 保留命令 ID：
 
 ```text
-kilo-code.new.qwenAutocomplete.exportDiagnostics
+chipmate-code.new.qwenAutocomplete.exportDiagnostics
 ```
 
 - [x] Smoke 结束消息提供 `Export Diagnostics` 操作。
@@ -480,7 +480,7 @@ kilo-code.new.qwenAutocomplete.exportDiagnostics
 UI 形态 custom provider config
 → options.baseURL
 → real Provider.Service model construction
-→ /kilo/qwen-fim
+→ /chipmate/qwen-fim
 → local test HTTP /completions
 → choices[0].text
 ```
@@ -563,7 +563,7 @@ UI 形态 custom provider config
 
 更新：
 
-- `packages/kilo-vscode/docs/QWEN_DIRECT_OFFLINE_MANUAL_TEST.md`
+- `packages/chipmate-vscode/docs/QWEN_DIRECT_OFFLINE_MANUAL_TEST.md`
 - 其他当前 Qwen 离线验证文档
 - `.changeset/fix-node-navigator.md`
 
@@ -590,7 +590,7 @@ UI 形态 custom provider config
 ### VS Code Extension
 
 ```bash
-cd /Users/archer/Work/kilocode/packages/kilo-vscode
+cd /Users/archer/Work/chipmate/packages/chipmate-vscode
 
 bun test \
   src/services/cli-backend/connection-service.test.ts \
@@ -607,17 +607,17 @@ bun run typecheck
 bun run lint
 bun run test:unit
 bun run knip
-bun run check-kilocode-change
+bun run check-chipmate-change
 ```
 
 ### CLI
 
 ```bash
-cd /Users/archer/Work/kilocode/packages/opencode
+cd /Users/archer/Work/chipmate/packages/opencode
 
 bun test \
-  test/kilocode/server/kilo-gateway-statuses.test.ts \
-  test/kilocode/server/qwen-fim-custom-provider.test.ts
+  test/chipmate/server/chipmate-gateway-statuses.test.ts \
+  test/chipmate/server/qwen-fim-custom-provider.test.ts
 
 bun run typecheck
 ```
@@ -625,7 +625,7 @@ bun run typecheck
 ### 仓库守卫
 
 ```bash
-cd /Users/archer/Work/kilocode
+cd /Users/archer/Work/chipmate
 
 bun run script/check-opencode-annotations.ts
 bun run script/check-opencode-promise-facades.ts
@@ -652,7 +652,7 @@ bun run script/check-md-table-padding.ts
 - Knip：通过。
 - CLI tests：`20 pass / 0 fail / 56 assertions`，包含真实 custom-provider HTTP/SDK 集成。
 - CLI typecheck：通过。
-- Repository guards：`check-kilocode-change`、Markdown table 通过；annotations 与 promise-facades 仍被其他任务的脏工作树改动阻断。
+- Repository guards：`check-chipmate-change`、Markdown table 通过；annotations 与 promise-facades 仍被其他任务的脏工作树改动阻断。
 - 无关既有失败：Worktree 1、旧自动补全品牌映射 1、原生标题 1、server env/memory debug 3、Code Action 品牌断言 5、i18n locale completeness 1、Agent Manager 源码窗口断言 1；annotations 另报 shared build/provider/control/global 改动，promise-facades 另报 `internal-offline-provider.test.ts`。
 - 签收阻断项：上述 13 个全量单测和 2 个仓库守卫失败必须在最终签收时保持可见；它们不属于 Qwen 模型/传输修复，Phase 9 可继续生成候选 VSIX，但不能据此宣称整个脏工作树全绿。
 
@@ -661,14 +661,14 @@ bun run script/check-md-table-padding.ts
 先构建新鲜 CLI：
 
 ```bash
-cd /Users/archer/Work/kilocode/packages/opencode
+cd /Users/archer/Work/chipmate/packages/opencode
 bun run script/build.ts --targets=linux-x64-baseline --skip-install
 ```
 
 再构建内部离线包：
 
 ```bash
-cd /Users/archer/Work/kilocode/packages/kilo-vscode
+cd /Users/archer/Work/chipmate/packages/chipmate-vscode
 bun script/build.ts --internal-offline --targets=linux-x64-baseline
 ```
 
@@ -688,7 +688,7 @@ chipmate-0.0.51-linux-x64-baseline.vsix
 - [x] 不含 FFmpeg。
 - [x] 不含 source map。
 - [x] bundle 包含 `qwen-coder-30b0`。
-- [x] bundle 包含 `/kilo/qwen-fim`。
+- [x] bundle 包含 `/chipmate/qwen-fim`。
 - [x] bundle 包含 `options.baseURL` 解析逻辑。
 - [x] bundle 包含三条诊断命令。
 - [x] bundle 包含 Automatic 与真实 Qwen 的新文案。
@@ -698,7 +698,7 @@ chipmate-0.0.51-linux-x64-baseline.vsix
 
 ### Phase 9 结果记录
 
-- VSIX 路径：`/Users/archer/Work/kilocode/chipmate-0.0.51-linux-x64-baseline.vsix`。
+- VSIX 路径：`/Users/archer/Work/chipmate/chipmate-0.0.51-linux-x64-baseline.vsix`。
 - 文件大小：`191998424` bytes（约 `183.1 MiB`）。
 - SHA-256：`1acd3e2de403bb715f050516bb2f15f6850dfe04622a235af97100201a70b71a`。
 - Manifest 版本：`0.0.51`。
@@ -795,7 +795,7 @@ return-items itemCount>=1
 - [ ] stale completion 不显示。
 - [ ] Tab 接受建议。
 - [ ] directory 对应当前 workspace。
-- [ ] 显式 Qwen 期间不出现 `/kilo/fim`。
+- [ ] 显式 Qwen 期间不出现 `/chipmate/fim`。
 
 ### 稳定性验收
 
@@ -833,7 +833,7 @@ provider-enter
 - 三次 Reload 结果：
 - 十次补全结果：
 - authentication warning：
-- `/kilo/fim` 残留：
+- `/chipmate/fim` 残留：
 - 未处理异常：
 - 最终签收人/时间：
 
@@ -851,7 +851,7 @@ provider-enter
 
 - 最终状态：`BLOCKED`；本地实现、相关门禁、打包与 installed-host smoke 已完成，但连续三个目标轮次都没有远程 Linux 连接入口或目标机采证结果，33 项真实运行验收无法在本机替代。
 - 完成版本：候选版本 `0.0.51`，远程签收前不标记最终完成。
-- VSIX：`/Users/archer/Work/kilocode/chipmate-0.0.51-linux-x64-baseline.vsix`。
+- VSIX：`/Users/archer/Work/chipmate/chipmate-0.0.51-linux-x64-baseline.vsix`。
 - SHA-256：`1acd3e2de403bb715f050516bb2f15f6850dfe04622a235af97100201a70b71a`。
 - 远程验收：未执行
 - 阻断项：

@@ -1,5 +1,5 @@
-# kilocode_change start
-ARG REGISTRY=ghcr.io/kilo-org
+# chipmate_change start
+ARG REGISTRY=ghcr.io/chipmate-org
 FROM ${REGISTRY}/build/bun-node:24.04 AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -49,4 +49,4 @@ FROM runtime
 
 ENV BUN_INSTALL_CACHE_DIR=/opt/bun/install/cache
 COPY --from=bun-cache /bun-cache/ /opt/bun/install/cache/
-# kilocode_change end
+# chipmate_change end

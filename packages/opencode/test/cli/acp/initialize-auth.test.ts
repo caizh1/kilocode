@@ -21,7 +21,7 @@ describe("opencode acp initialize/auth subprocess", () => {
         expect(initialized.agentCapabilities?.sessionCapabilities?.fork).toEqual({})
         expect(initialized.agentCapabilities?.sessionCapabilities?.list).toEqual({})
         expect(initialized.agentCapabilities?.sessionCapabilities?.resume).toEqual({})
-        expect(initialized.agentInfo?.name).toBe("Kilo") // kilocode_change
+        expect(initialized.agentInfo?.name).toBe("ChipMate") // chipmate_change
       }),
     60_000,
   )
@@ -33,16 +33,16 @@ describe("opencode acp initialize/auth subprocess", () => {
         const acp = yield* createAcpClient({ opencode })
         const initialized = yield* initialize(acp)
 
-        expect(initialized.authMethods?.[0]?.id).toBe("kilo-login") // kilocode_change
+        expect(initialized.authMethods?.[0]?.id).toBe("chipmate-login") // chipmate_change
         expect(initialized.authMethods?.[0]?._meta?.["terminal-auth"]).toBeDefined()
-        expect(yield* acp.request<AuthenticateResponse>("authenticate", { methodId: "kilo-login" })).toMatchObject({
-          // kilocode_change
+        expect(yield* acp.request<AuthenticateResponse>("authenticate", { methodId: "chipmate-login" })).toMatchObject({
+          // chipmate_change
           result: {},
         })
 
         const rejected = yield* acp.request<AuthenticateResponse>("authenticate", { methodId: "missing-auth-method" })
         expectErrorCode(rejected.error, -32602)
-        expect(JSON.stringify(rejected.error)).not.toContain(process.env.KILO_AUTH_CONTENT ?? "not-present")
+        expect(JSON.stringify(rejected.error)).not.toContain(process.env.CHIPMATE_AUTH_CONTENT ?? "not-present")
       }),
     60_000,
   )
@@ -54,7 +54,7 @@ describe("opencode acp initialize/auth subprocess", () => {
         const acp = yield* createAcpClient({ opencode })
         const initialized = yield* acp.request<InitializeResponse>("initialize", { protocolVersion: 1 })
 
-        expect(initialized.result?.authMethods?.[0]?.id).toBe("kilo-login") // kilocode_change
+        expect(initialized.result?.authMethods?.[0]?.id).toBe("chipmate-login") // chipmate_change
         expect(initialized.result?.authMethods?.[0]?._meta?.["terminal-auth"]).toBeUndefined()
       }),
     60_000,

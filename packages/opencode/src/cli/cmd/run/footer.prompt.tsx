@@ -12,7 +12,7 @@ import { normalizePromptContent } from "@opencode-ai/tui/editor"
 import fuzzysort from "fuzzysort"
 import path from "path"
 import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, type Accessor } from "solid-js"
-import { slashDisplay, slashMatches } from "@/kilocode/cli/cmd/command-display" // kilocode_change
+import { slashDisplay, slashMatches } from "@/chipmate/cli/cmd/command-display" // chipmate_change
 import * as Locale from "@/util/locale"
 import {
   createPromptHistory,
@@ -24,7 +24,7 @@ import {
   movePromptHistory,
   pushPromptHistory,
 } from "./prompt.shared"
-import { KILO_BASE_MODE, useBindings } from "@opencode-ai/tui/keymap"
+import { CHIPMATE_BASE_MODE, useBindings } from "@opencode-ai/tui/keymap"
 import { realignEditorPromptParts, resolveEditorSlashValue } from "./prompt.editor"
 import { FOOTER_MENU_ROWS, createFooterMenuState, type RunFooterMenuItem } from "./footer.menu"
 import type { RunFooterTheme } from "./theme"
@@ -177,7 +177,7 @@ function parseSlashCommand(text: string, commands: RunCommand[] | undefined) {
   }
 
   if (!commands.some((item) => slashMatches(item, head.name))) {
-    // kilocode_change
+    // chipmate_change
     return { type: "none" as const }
   }
 
@@ -419,7 +419,7 @@ export function createPromptState(input: PromptInput): PromptState {
         description: "compose in your external editor",
       } satisfies SlashOption,
       { kind: "slash", name: "new", display: "/new", description: "start a new session" } satisfies SlashOption,
-      { kind: "slash", name: "exit", display: "/exit", description: "close direct mode" } satisfies SlashOption, // kilocode_change
+      { kind: "slash", name: "exit", display: "/exit", description: "close direct mode" } satisfies SlashOption, // chipmate_change
     ]
     const hidden = new Set(builtins.map((item) => item.name))
     const showSkillMenu = !shell() && skillCommands().length > 0 && !hasSkillsCommand()
@@ -440,13 +440,13 @@ export function createPromptState(input: PromptInput): PromptState {
           ]
         : []),
       ...(input.commands() ?? [])
-        .filter((item) => !hidden.has(item.name)) // kilocode_change - suggest skills as slash commands
+        .filter((item) => !hidden.has(item.name)) // chipmate_change - suggest skills as slash commands
         .map(
           (item) =>
             ({
               kind: "slash",
               name: item.name,
-              display: slashDisplay(item), // kilocode_change
+              display: slashDisplay(item), // chipmate_change
               description: item.description,
             }) satisfies SlashOption,
         ),
@@ -865,7 +865,7 @@ export function createPromptState(input: PromptInput): PromptState {
       const head = slashHead(area.plainText)
       const local = !shell() && (next.name === "new" || next.name === "exit")
       const separator = !shell() && !local && head && /\s/.test(area.plainText[head.end] ?? "") ? "" : " "
-      const text = `${next.display}${separator}` // kilocode_change
+      const text = `${next.display}${separator}` // chipmate_change
 
       area.cursorOffset = 0
       const start = area.logicalCursor
@@ -978,7 +978,7 @@ export function createPromptState(input: PromptInput): PromptState {
   }
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: baseBindingsEnabled(),
     commands: [
       {
@@ -995,7 +995,7 @@ export function createPromptState(input: PromptInput): PromptState {
   }))
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: input.prompt(),
     commands: [
       {
@@ -1012,7 +1012,7 @@ export function createPromptState(input: PromptInput): PromptState {
   }))
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: input.prompt() && !visible(),
     commands: [
       {
@@ -1028,7 +1028,7 @@ export function createPromptState(input: PromptInput): PromptState {
   }))
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: input.prompt() && !visible(),
     commands: [
       {
@@ -1055,7 +1055,7 @@ export function createPromptState(input: PromptInput): PromptState {
   }))
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: input.prompt() && !visible(),
     bindings: [
       {
@@ -1073,7 +1073,7 @@ export function createPromptState(input: PromptInput): PromptState {
   }))
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: input.prompt() && shell() && !visible(),
     bindings: [
       {
@@ -1096,7 +1096,7 @@ export function createPromptState(input: PromptInput): PromptState {
   }))
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: input.prompt() && visible(),
     commands: [
       {

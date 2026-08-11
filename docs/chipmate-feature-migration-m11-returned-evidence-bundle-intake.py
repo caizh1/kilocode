@@ -2,7 +2,7 @@
 """Intake a returned M11 external-evidence bundle.
 
 This helper is intentionally conservative. It does not execute VS Code, run
-Kilo chat, package VSIX files, run target-machine commands, or decide final
+ChipMate chat, package VSIX files, run target-machine commands, or decide final
 signoff. It discovers typed evidence summaries in a returned bundle and then
 delegates the actual readiness decision to
 chipmate-feature-migration-m11-readiness-intake.py.
@@ -163,7 +163,7 @@ def write_bundle_summary(
             "",
             "## Boundary",
             "",
-            "This helper only discovers returned typed evidence summaries and delegates readiness to the M11 readiness helper. It does not run Kilo QA, does not execute target-machine commands, does not install VSIX files, does not run autocomplete, does not generate Word output, and does not mark final signoff complete.",
+            "This helper only discovers returned typed evidence summaries and delegates readiness to the M11 readiness helper. It does not run ChipMate QA, does not execute target-machine commands, does not install VSIX files, does not run autocomplete, does not generate Word output, and does not mark final signoff complete.",
             "",
         ]
     )
@@ -276,7 +276,7 @@ def build_ready_bundle(root: Path) -> tuple[Path, Path, Path]:
                 "- context filled: Installed VSIX profile",
                 "- context filled: Source workspace",
                 "- context filled: Embedded C module",
-                "- status PASS: Kilo native QA preserved",
+                "- status PASS: ChipMate native QA preserved",
                 "- status PASS: Source-backed detail-design skill selected",
                 "- status PASS: Markdown detail design generated",
                 "- status PASS: Word detail design generated",
@@ -312,7 +312,7 @@ def build_ready_bundle(root: Path) -> tuple[Path, Path, Path]:
                 "- context filled: Installed VSIX profile",
                 "- status PASS: Agent Terminal command visible",
                 "- status PASS: Terminal pane opens after enable",
-                "- status PASS: Native Kilo terminal unaffected",
+                "- status PASS: Native ChipMate terminal unaffected",
                 "- status PASS: Dangerous command confirmation visible",
                 "- attached evidence assets: 2",
                 "",

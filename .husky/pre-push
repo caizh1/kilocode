@@ -18,7 +18,7 @@ if (process.versions.bun !== expectedBunVersion) {
 }
 '
 
-# kilocode_change start
+# chipmate_change start
 jetbrains=0
 zero=0000000000000000000000000000000000000000
 
@@ -34,17 +34,17 @@ while read -r local_ref local_oid remote_ref remote_oid; do
 
   if ! git diff --quiet "$base" "$local_oid" -- . \
     ':(exclude).changeset/**' \
-    ':(exclude)packages/kilo-vscode/**' \
-    ':(exclude)packages/kilo-docs/**'; then
+    ':(exclude)packages/chipmate-vscode/**' \
+    ':(exclude)packages/chipmate-docs/**'; then
     jetbrains=1
   fi
 done
 
-bun typecheck --filter='!@kilocode/kilo-jetbrains'
+bun typecheck --filter='!@chipmate/chipmate-jetbrains'
 
 if [ "$jetbrains" -eq 1 ]; then
-  bun typecheck --filter='@kilocode/kilo-jetbrains'
+  bun typecheck --filter='@chipmate/chipmate-jetbrains'
 else
   echo "Skipping JetBrains typecheck (no relevant changes)"
 fi
-# kilocode_change end
+# chipmate_change end

@@ -1,9 +1,9 @@
-# kilocode_change - new file
+# chipmate_change - new file
 name: docs-sync
 
-# Daily bot: collects PRs merged to Kilo-Org/cloud and Kilo-Org/kilocode,
-# triages them for docs relevance, runs Kilo CLI headless to update
-# packages/kilo-docs, and maintains one rolling PR for human review.
+# Daily bot: collects PRs merged to ChipMate-Org/cloud and ChipMate-Org/chipmate,
+# triages them for docs relevance, runs ChipMate CLI headless to update
+# packages/chipmate-docs, and maintains one rolling PR for human review.
 #
 # Security posture: scheduled/manual runs check out the dispatched ref and may
 # push/comment with write permissions and org secrets. PR runs (paths-limited to
@@ -41,12 +41,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TRIAGE_MODEL: ${{ vars.DOCS_SYNC_TRIAGE_MODEL || 'kilo/moonshotai/kimi-k3' }}
-  EDIT_MODEL: ${{ vars.DOCS_SYNC_EDIT_MODEL || 'kilo/moonshotai/kimi-k3' }}
+  TRIAGE_MODEL: ${{ vars.DOCS_SYNC_TRIAGE_MODEL || 'chipmate/moonshotai/kimi-k3' }}
+  EDIT_MODEL: ${{ vars.DOCS_SYNC_EDIT_MODEL || 'chipmate/moonshotai/kimi-k3' }}
 
 jobs:
   selftest:
-    if: github.repository == 'Kilo-Org/kilocode'
+    if: github.repository == 'ChipMate-Org/chipmate'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
@@ -64,7 +64,7 @@ jobs:
         run: node .github/docs-sync/selftest.mjs
 
   sync:
-    if: github.repository == 'Kilo-Org/kilocode' && github.event_name != 'pull_request'
+    if: github.repository == 'ChipMate-Org/chipmate' && github.event_name != 'pull_request'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     # Budget: 4 setup/collect + 10 learn + 90 triage + 120 edit + 2 verify + 10 fix + 2 upsert = 238 min, 12-minute reserve.
     # These are ceilings, not costs: a caught-up run triages ~2 chunks and edits
@@ -74,10 +74,10 @@ jobs:
     # in the PR description for the arithmetic.
     timeout-minutes: 250
     env:
-      # Both are required: without KILO_ORG_ID the gateway bills the key
+      # Both are required: without CHIPMATE_ORG_ID the gateway bills the key
       # owner's personal balance (402 "Add credits") instead of the org.
-      KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
-      KILO_ORG_ID: ${{ secrets.KILO_ORG_ID }}
+      CHIPMATE_API_KEY: ${{ secrets.CHIPMATE_API_KEY }}
+      CHIPMATE_ORG_ID: ${{ secrets.CHIPMATE_ORG_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -98,10 +98,10 @@ jobs:
       - name: Run docs-sync selftest
         run: node .github/docs-sync/selftest.mjs
 
-      - name: Install Kilo CLI
+      - name: Install ChipMate CLI
         run: |
-          npm install -g @kilocode/cli
-          kilo --version
+          npm install -g @chipmate/cli
+          chipmate --version
 
       - name: Resolve watermark
         id: wm
@@ -167,7 +167,7 @@ jobs:
         if: (steps.worthy.outputs.count || '0') != '0' && inputs.dry_run != true
         run: git restore --source=${{ github.sha }} -- .github/docs-sync
 
-      - name: Update docs (Kilo CLI, batched)
+      - name: Update docs (ChipMate CLI, batched)
         if: (steps.worthy.outputs.count || '0') != '0' && inputs.dry_run != true
         continue-on-error: true
         env:
@@ -185,7 +185,7 @@ jobs:
           NEXT_PUBLIC_POSTHOG_KEY: ${{ secrets.POSTHOG_API_KEY }}
         run: |
           set -o pipefail
-          { bun run --filter @kilocode/kilo-docs build && bun run --filter @kilocode/kilo-docs test; } 2>&1 | tee docs-sync-out/verify.log
+          { bun run --filter @chipmate/chipmate-docs build && bun run --filter @chipmate/chipmate-docs test; } 2>&1 | tee docs-sync-out/verify.log
 
       - name: Fix verify failures (one pass)
         id: fix
@@ -196,20 +196,20 @@ jobs:
           NEXT_PUBLIC_POSTHOG_KEY: ${{ secrets.POSTHOG_API_KEY }}
         run: |
           set -o pipefail
-          # Headless kilo run auto-rejects every permission ask; the runner has no
+          # Headless chipmate run auto-rejects every permission ask; the runner has no
           # user config granting bash, so without --auto the agent cannot run ordinary
           # shell commands against the repository.
-          kilo run --auto "The docs build or tests failed. Read the attached docs-sync-out/verify.log and fix the packages/kilo-docs changes so they pass. Do not revert doc edits; fix them. Do not modify anything outside packages/kilo-docs." \
+          chipmate run --auto "The docs build or tests failed. Read the attached docs-sync-out/verify.log and fix the packages/chipmate-docs changes so they pass. Do not revert doc edits; fix them. Do not modify anything outside packages/chipmate-docs." \
             -m "$EDIT_MODEL" --dir "$GITHUB_WORKSPACE" -f docs-sync-out/verify.log \
             | node .github/docs-sync/redact-stream.mjs \
             | tee -a docs-sync-out/edit-log.txt \
-            || echo "::warning::kilo fix pass exited nonzero; re-verifying anyway"
+            || echo "::warning::chipmate fix pass exited nonzero; re-verifying anyway"
           # The rebuild below decides this step's outcome, not the agent's exit code.
           # Without the guard above, `set -o pipefail` + the default `bash -e` would
           # abort here once the CLI half of this PR ships: a mid-stream session error
           # (or an auto-rejected ask) exits 1, verify2.log is never written, and
           # `Re-verify status` reports VERIFIED=false even when the docs build fine.
-          { bun run --filter @kilocode/kilo-docs build && bun run --filter @kilocode/kilo-docs test; } 2>&1 | tee docs-sync-out/verify2.log
+          { bun run --filter @chipmate/chipmate-docs build && bun run --filter @chipmate/chipmate-docs test; } 2>&1 | tee docs-sync-out/verify2.log
 
       - name: Re-verify status
         id: verified

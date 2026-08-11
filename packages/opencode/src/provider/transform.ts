@@ -4,9 +4,9 @@ import type { JSONSchema7 } from "@ai-sdk/provider"
 import type * as Provider from "./provider"
 import type * as ModelsDev from "@opencode-ai/core/models-dev"
 import { iife } from "@/util/iife"
-import { kiloProviderOptions } from "@/kilocode/provider-options"
-import { isLing } from "@/kilocode/model-match" // kilocode_change
-import { reasoningSummary } from "@/kilocode/provider/reasoning-summary" // kilocode_change
+import { chipmateProviderOptions } from "@/chipmate/provider-options"
+import { isLing } from "@/chipmate/model-match" // chipmate_change
+import { reasoningSummary } from "@/chipmate/provider/reasoning-summary" // chipmate_change
 
 type Modality = NonNullable<ModelsDev.Model["modalities"]>["input"][number]
 
@@ -53,7 +53,7 @@ function sdkKey(npm: string): string | undefined {
       return "gateway"
     case "@openrouter/ai-sdk-provider":
       return "openrouter"
-    case "@kilocode/kilo-gateway": // kilocode_change
+    case "@chipmate/chipmate-gateway": // chipmate_change
       return "openrouter"
     case "ai-gateway-provider":
       // ai-gateway-provider/unified wraps createOpenAICompatible({ name: "Unified" }),
@@ -164,10 +164,10 @@ function normalizeMessages(
   }
 
   // Bedrock specific transforms
-  // kilocode_change start - only filter for Claude models on Bedrock, not all Bedrock models
+  // chipmate_change start - only filter for Claude models on Bedrock, not all Bedrock models
   const claude = model.api.id.includes("anthropic") || model.api.id.includes("claude") || model.id.includes("claude")
   if (model.api.npm === "@ai-sdk/amazon-bedrock" && claude) {
-    // kilocode_change end
+    // chipmate_change end
     msgs = msgs
       .map((msg) => {
         if (typeof msg.content === "string") {
@@ -328,7 +328,7 @@ function normalizeMessages(
   return msgs
 }
 
-// kilocode_change start - explicit prompt cache breakpoints for GPT-5.6+ (excluding ChatGPT subscriptions)
+// chipmate_change start - explicit prompt cache breakpoints for GPT-5.6+ (excluding ChatGPT subscriptions)
 function isLikelyChatGPTSubscription(model: Provider.Model): boolean {
   return model.providerID === "openai" && model.cost?.input === 0 && model.cost?.output === 0
 }
@@ -345,7 +345,7 @@ function supportsPromptCacheBreakpoint(model: Provider.Model): boolean {
   if (majorMatch && Number(majorMatch[1]) >= 6) return true
   return false
 }
-// kilocode_change end
+// chipmate_change end
 
 function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
   const system = msgs.filter((msg) => msg.role === "system").slice(0, 2)
@@ -370,7 +370,7 @@ function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage
     alibaba: {
       cacheControl: { type: "ephemeral" },
     },
-    // kilocode_change start
+    // chipmate_change start
     ...(supportsPromptCacheBreakpoint(model)
       ? {
           openai: {
@@ -381,7 +381,7 @@ function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage
           },
         }
       : {}),
-    // kilocode_change end
+    // chipmate_change end
   }
 
   for (const msg of unique([...system, ...final])) {
@@ -391,7 +391,7 @@ function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage
       model.api.npm === "@ai-sdk/amazon-bedrock"
     const shouldUseContentOptions = !useMessageLevelOptions && Array.isArray(msg.content) && msg.content.length > 0
 
-    // kilocode_change start - place caching breakpoint on stable content before trailing <environment_details>
+    // chipmate_change start - place caching breakpoint on stable content before trailing <environment_details>
     if (shouldUseContentOptions && Array.isArray(msg.content)) {
       const parts = msg.content
       let targetIndex = -1
@@ -419,7 +419,7 @@ function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage
         continue
       }
     }
-    // kilocode_change end
+    // chipmate_change end
 
     msg.providerOptions = mergeDeep(msg.providerOptions ?? {}, providerOptions)
   }
@@ -486,7 +486,7 @@ function mapProviderOptions(
 export function message(msgs: ModelMessage[], model: Provider.Model, options: Record<string, unknown>) {
   msgs = unsupportedParts(msgs, model)
   msgs = normalizeMessages(msgs, model, options)
-  // kilocode_change start - apply caching for anthropic, alibaba, and GPT-5.6+ openai/azure/kilo-gateway
+  // chipmate_change start - apply caching for anthropic, alibaba, and GPT-5.6+ openai/azure/chipmate-gateway
   if (
     (model.providerID === "anthropic" ||
       model.providerID === "google-vertex-anthropic" ||
@@ -498,13 +498,13 @@ export function message(msgs: ModelMessage[], model: Provider.Model, options: Re
       model.api.npm === "@ai-sdk/alibaba" ||
       ((model.api.npm === "@ai-sdk/openai" ||
         model.api.npm === "@ai-sdk/azure" ||
-        model.api.npm === "@kilocode/kilo-gateway") &&
+        model.api.npm === "@chipmate/chipmate-gateway") &&
         supportsPromptCacheBreakpoint(model))) &&
     model.api.npm !== "@ai-sdk/gateway"
   ) {
     msgs = applyCaching(msgs, model)
   }
-  // kilocode_change end
+  // chipmate_change end
 
   // Remap providerOptions keys from stored providerID to expected SDK key
   const key = sdkKey(model.api.npm)
@@ -556,7 +556,7 @@ export function temperature(model: Provider.Model) {
     }
     return 0.6
   }
-  if (isLing(model.api.id)) return 0.3 // kilocode_change
+  if (isLing(model.api.id)) return 0.3 // chipmate_change
   return undefined
 }
 
@@ -566,7 +566,7 @@ export function topP(model: Provider.Model) {
   if (["minimax-m2", "gemini", "kimi-k2.5", "kimi-k2p5", "kimi-k2-5"].some((s) => id.includes(s))) {
     return 0.95
   }
-  if (isLing(model.api.id)) return 0.95 // kilocode_change
+  if (isLing(model.api.id)) return 0.95 // chipmate_change
   return undefined
 }
 
@@ -577,7 +577,7 @@ export function topK(model: Provider.Model) {
     return 20
   }
   if (id.includes("gemini")) return 64
-  if (isLing(model.api.id)) return 20 // kilocode_change
+  if (isLing(model.api.id)) return 20 // chipmate_change
   return undefined
 }
 
@@ -672,22 +672,22 @@ function anthropicOpus47OrLater(apiId: string) {
   return major > 4 || (major === 4 && minor >= 7)
 }
 
-// kilocode_change start - Claude 5+ models are adaptive thinking models like opus-4.7/4.8
+// chipmate_change start - Claude 5+ models are adaptive thinking models like opus-4.7/4.8
 function anthropicClaude5(apiId: string) {
   const id = apiId.toLowerCase()
   if (id.includes("fable")) return true
   const version = /(?:opus|sonnet)[.-](\d+)(?:[.@-]|$)|claude-(\d+)(?:[.-]\d+)?-(?:opus|sonnet)(?:[.@-]|$)/.exec(id)
   return Number(version?.[1] ?? version?.[2]) >= 5
 }
-// kilocode_change end
+// chipmate_change end
 
 
 function anthropicAdaptiveEfforts(apiId: string): string[] | null {
-  // kilocode_change start - include Claude 5+ models
+  // chipmate_change start - include Claude 5+ models
   if (anthropicOpus47OrLater(apiId) || anthropicClaude5(apiId)) {
     return ["low", "medium", "high", "xhigh", "max"]
   }
-  // kilocode_change end
+  // chipmate_change end
   if (
     ["opus-4-6", "opus-4.6", "4-6-opus", "4.6-opus", "sonnet-4-6", "sonnet-4.6", "4-6-sonnet", "4.6-sonnet"].some((v) =>
       apiId.includes(v),
@@ -699,7 +699,7 @@ function anthropicAdaptiveEfforts(apiId: string): string[] | null {
 }
 
 function anthropicOmitsThinking(apiId: string) {
-  return anthropicOpus47OrLater(apiId) || anthropicClaude5(apiId) // kilocode_change - include Kilo's Claude 5 aliases
+  return anthropicOpus47OrLater(apiId) || anthropicClaude5(apiId) // chipmate_change - include ChipMate's Claude 5 aliases
 }
 
 function googleThinkingLevelEfforts(apiId: string) {
@@ -725,7 +725,7 @@ function wrapInSapModelParams(variants: Record<string, Record<string, any>>): Re
 
 function googleThinkingVariants(model: Provider.Model): Record<string, Record<string, any>> {
   const id = model.api.id.toLowerCase()
-  if (id.includes("gemma")) return {} // kilocode_change
+  if (id.includes("gemma")) return {} // chipmate_change
   if (id.includes("2.5")) {
     return {
       high: { thinkingConfig: { includeThoughts: true, thinkingBudget: 16000 } },
@@ -743,15 +743,15 @@ function googleThinkingVariants(model: Provider.Model): Record<string, Record<st
 }
 
 export function variants(model: Provider.Model): Record<string, Record<string, any>> {
-  // kilocode_change start
+  // chipmate_change start
   if (
-    ["@kilocode/kilo-gateway", "@ai-sdk/openai-compatible"].includes(model.api.npm) &&
+    ["@chipmate/chipmate-gateway", "@ai-sdk/openai-compatible"].includes(model.api.npm) &&
     model.variants &&
     Object.keys(model.variants).length > 0
   ) {
     return model.variants
   }
-  // kilocode_change end
+  // chipmate_change end
 
   if (!model.capabilities.reasoning) return {}
 
@@ -794,9 +794,9 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
     id.includes("deepseek-reasoner") ||
     id.includes("deepseek-r1") ||
     id.includes("deepseek-v3") ||
-    // id.includes("minimax") || // kilocode_change
-    // id.includes("glm") || // kilocode_change
-    // id.includes("kimi") || // kilocode_change
+    // id.includes("minimax") || // chipmate_change
+    // id.includes("glm") || // chipmate_change
+    // id.includes("kimi") || // chipmate_change
     // TODO: Remove this after models.dev data is fixed to use "kimi-k2.5" instead of "k2p5"
     id.includes("k2p") ||
     id.includes("qwen") ||
@@ -806,8 +806,8 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
 
   // see: https://docs.x.ai/docs/guides/reasoning#control-how-hard-the-model-thinks
   if (id.includes("grok") && id.includes("grok-3-mini")) {
-    if (model.api.npm === "@openrouter/ai-sdk-provider" || model.api.npm === "@kilocode/kilo-gateway") {
-      // kilocode_change - add Kilo Gateway support
+    if (model.api.npm === "@openrouter/ai-sdk-provider" || model.api.npm === "@chipmate/chipmate-gateway") {
+      // chipmate_change - add ChipMate Gateway support
       return {
         low: { reasoning: { effort: "low" } },
         high: { reasoning: { effort: "high" } },
@@ -818,47 +818,47 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
       high: { reasoningEffort: "high" },
     }
   }
-  // kilocode_change start
+  // chipmate_change start
   if (id.includes("grok") && !id.includes("grok-4.5")) {
     return {}
   }
-  // kilocode_change end
+  // chipmate_change end
 
   switch (model.api.npm) {
-    case "@kilocode/kilo-gateway": // kilocode_change
-      // kilocode_change start
+    case "@chipmate/chipmate-gateway": // chipmate_change
+      // chipmate_change start
       if (id.includes("glm") || id.includes("kimi") || id.includes("qwen") || id.includes("minimax")) {
         return {
           instant: { reasoning: { enabled: false } },
           thinking: { reasoning: { enabled: true } },
         }
       }
-      // kilocode_change end
+      // chipmate_change end
       if (
         !id.includes("gpt") &&
         !id.includes("gemini-3") &&
         !id.includes("claude") &&
-        !model.id.includes("mercury") // kilocode_change
+        !model.id.includes("mercury") // chipmate_change
       )
         return {}
       return Object.fromEntries(
-        OPENAI_EFFORTS.map((effort) => [effort, { reasoning: { effort } }]), // kilocode_change
+        OPENAI_EFFORTS.map((effort) => [effort, { reasoning: { effort } }]), // chipmate_change
       )
 
     case "@openrouter/ai-sdk-provider":
-      // kilocode_change start - preserve Kilo thinking toggles for supported OpenRouter models
+      // chipmate_change start - preserve ChipMate thinking toggles for supported OpenRouter models
       if (id.includes("glm") || id.includes("kimi") || id.includes("qwen") || id.includes("minimax")) {
         return {
           instant: { reasoning: { enabled: false } },
           thinking: { reasoning: { enabled: true } },
         }
       }
-      // kilocode_change end
-      // kilocode_change start - Mercury exposes the full OpenRouter effort set
+      // chipmate_change end
+      // chipmate_change start - Mercury exposes the full OpenRouter effort set
       if (model.id.includes("mercury")) {
         return Object.fromEntries(OPENAI_EFFORTS.map((effort) => [effort, { reasoning: { effort } }]))
       }
-      // kilocode_change end
+      // chipmate_change end
       return Object.fromEntries(
         (model.api.id.startsWith("openai/") || id.includes("gpt")
           ? openaiCompatibleReasoningEfforts(model.api.id)
@@ -987,14 +987,14 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
       }
       const efforts = [...WIDELY_SUPPORTED_EFFORTS]
       if (model.api.id.toLowerCase().includes("deepseek-v4")) {
-        // kilocode_change start - expose explicit DeepSeek V4 thinking controls for its tool-choice compatibility route
+        // chipmate_change start - expose explicit DeepSeek V4 thinking controls for its tool-choice compatibility route
         efforts.push("max")
         return {
           none: { thinking: { type: "disabled" } },
           thinking: { thinking: { type: "enabled" } },
           ...Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }])),
         }
-        // kilocode_change end
+        // chipmate_change end
       }
       return Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
 
@@ -1020,7 +1020,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
           effort,
           {
             reasoningEffort: effort,
-            reasoningSummary: reasoningSummary(model), // kilocode_change
+            reasoningSummary: reasoningSummary(model), // chipmate_change
             include: INCLUDE_ENCRYPTED_REASONING,
           },
         ]),
@@ -1031,18 +1031,18 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
     // https://v5.ai-sdk.dev/providers/ai-sdk-providers/anthropic
     case "@ai-sdk/google-vertex/anthropic":
       // https://v5.ai-sdk.dev/providers/ai-sdk-providers/google-vertex#anthropic-provider
-      // kilocode_change start - MiniMax M-series toggles thinking on/off rather than exposing effort levels
+      // chipmate_change start - MiniMax M-series toggles thinking on/off rather than exposing effort levels
       if (id.includes("minimax")) {
         return {
           instant: { thinking: { type: "disabled" } },
           thinking: { thinking: { type: "adaptive" } },
         }
       }
-      // kilocode_change end
+      // chipmate_change end
       if (adaptiveEfforts) {
         let efforts = [...adaptiveEfforts]
         if (model.providerID === "github-copilot") {
-          // kilocode_change start - include Claude 5+ models
+          // chipmate_change start - include Claude 5+ models
           if (
             model.api.id.includes("opus-4.7") ||
             model.api.id.includes("opus-4.8") ||
@@ -1050,7 +1050,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
           ) {
             efforts = ["medium"]
           }
-          // kilocode_change end
+          // chipmate_change end
           // Efforts currently supported are: low, medium, high
           efforts = efforts.filter((v) => v !== "max" && v !== "xhigh")
         }
@@ -1142,17 +1142,17 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
 
     case "@ai-sdk/mistral":
       // https://v5.ai-sdk.dev/providers/ai-sdk-providers/mistral
-      // https://docs.mistral.ai/studio-api/conversations/reasoning // kilocode_change
+      // https://docs.mistral.ai/studio-api/conversations/reasoning // chipmate_change
       if (!model.capabilities.reasoning) return {}
       // Only Mistral Small 4 and Medium 3.5 support reasoning
       const MISTRAL_REASONING_IDS = [
         "mistral-small-2603",
         "mistral-small-latest",
         "mistral-medium-3.5",
-        // kilocode_change start
+        // chipmate_change start
         "mistral-medium-3-5",
         "mistral-medium-latest",
-        // kilocode_change end
+        // chipmate_change end
         "mistral-medium-2604",
       ]
       const mistralId = model.api.id.toLowerCase()
@@ -1218,7 +1218,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
   return {}
 }
 
-// kilocode_change start - derive variants from models.dev reasoning_options
+// chipmate_change start - derive variants from models.dev reasoning_options
 // (snatched from upstream v1.18.11, #36624 + follow-up fixes). Takes precedence
 // over the heuristic variants() when the model publishes reasoning_options.
 export function reasoningVariants(model: ModelsDev.Model, target: Provider.Model): Provider.Model["variants"] {
@@ -1326,9 +1326,9 @@ function reasoningEffort(model: Provider.Model, effort: string) {
       return { reasoningEffort: effort, reasoningSummary: "auto", include: INCLUDE_ENCRYPTED_REASONING }
     case "@ai-sdk/openai":
     case "@ai-sdk/amazon-bedrock/mantle":
-      return { reasoningEffort: effort, reasoningSummary: reasoningSummary(model), include: INCLUDE_ENCRYPTED_REASONING } // kilocode_change - keep gpt-5.6 detailed summaries
+      return { reasoningEffort: effort, reasoningSummary: reasoningSummary(model), include: INCLUDE_ENCRYPTED_REASONING } // chipmate_change - keep gpt-5.6 detailed summaries
     case "@ai-sdk/azure":
-      return { reasoningEffort: effort, reasoningSummary: reasoningSummary(model), include: INCLUDE_ENCRYPTED_REASONING } // kilocode_change
+      return { reasoningEffort: effort, reasoningSummary: reasoningSummary(model), include: INCLUDE_ENCRYPTED_REASONING } // chipmate_change
     case "@jerome-benoit/sap-ai-provider-v2":
       if (model.id.includes("anthropic"))
         return { modelParams: { thinking: { type: "adaptive", display: "summarized" }, output_config: { effort } } }
@@ -1343,8 +1343,8 @@ function reasoningEffort(model: Provider.Model, effort: string) {
     case "venice-ai-sdk-provider":
     case "ai-gateway-provider":
       return { reasoningEffort: effort }
-    case "@kilocode/kilo-gateway": // kilocode_change - OpenRouter-shaped reasoning effort
-      return { reasoning: { effort } } // kilocode_change
+    case "@chipmate/chipmate-gateway": // chipmate_change - OpenRouter-shaped reasoning effort
+      return { reasoning: { effort } } // chipmate_change
     case "@ai-sdk/cohere":
     case "@ai-sdk/perplexity":
     case "@ai-sdk/vercel":
@@ -1438,7 +1438,7 @@ function isKimiFamily(model: Provider.Model) {
 function anthropicOpus45(apiId: string) {
   return ["opus-4-5", "opus-4.5"].some((value) => apiId.includes(value))
 }
-// kilocode_change end
+// chipmate_change end
 
 export function options(input: {
   model: Provider.Model
@@ -1472,7 +1472,7 @@ export function options(input: {
   if (
     input.model.api.npm === "@openrouter/ai-sdk-provider" ||
     input.model.api.npm === "@llmgateway/ai-sdk-provider" ||
-    input.model.api.npm === "@kilocode/kilo-gateway" // kilocode_change
+    input.model.api.npm === "@chipmate/chipmate-gateway" // chipmate_change
   ) {
     result["usage"] = {
       include: true,
@@ -1499,7 +1499,7 @@ export function options(input: {
     }
   }
 
-  // kilocode_change start
+  // chipmate_change start
   if (
     input.providerOptions?.setCacheKey !== false &&
     (input.model.providerID === "openai" ||
@@ -1508,7 +1508,7 @@ export function options(input: {
   ) {
     result["promptCacheKey"] = input.sessionID
   }
-  // kilocode_change end
+  // chipmate_change end
 
   if (input.model.api.npm === "@ai-sdk/google" || input.model.api.npm === "@ai-sdk/google-vertex") {
     if (input.model.capabilities.reasoning) {
@@ -1564,11 +1564,11 @@ export function options(input: {
         input.model.api.npm === "@ai-sdk/openai" ||
         input.model.api.npm === "@ai-sdk/azure" ||
         input.model.api.npm === "@ai-sdk/github-copilot" ||
-        input.model.api.npm === "@openrouter/ai-sdk-provider" || // kilocode_change
-        input.model.api.npm === "@kilocode/kilo-gateway" || // kilocode_change
+        input.model.api.npm === "@openrouter/ai-sdk-provider" || // chipmate_change
+        input.model.api.npm === "@chipmate/chipmate-gateway" || // chipmate_change
         input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle"
       ) {
-        result["reasoningSummary"] = reasoningSummary(input.model) // kilocode_change
+        result["reasoningSummary"] = reasoningSummary(input.model) // chipmate_change
         if (input.model.api.npm === "@ai-sdk/openai" || input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle") {
           result["include"] = INCLUDE_ENCRYPTED_REASONING
         }
@@ -1576,14 +1576,14 @@ export function options(input: {
     }
 
     if (
-      // kilocode_change start - gate textVerbosity to Responses-API providers
+      // chipmate_change start - gate textVerbosity to Responses-API providers
       (input.model.api.npm === "@ai-sdk/openai" ||
         input.model.api.npm === "@ai-sdk/azure" ||
         input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle" ||
         input.model.api.npm === "@ai-sdk/github-copilot" ||
         input.model.api.npm === "@openrouter/ai-sdk-provider" ||
-        input.model.api.npm === "@kilocode/kilo-gateway") &&
-      // kilocode_change end
+        input.model.api.npm === "@chipmate/chipmate-gateway") &&
+      // chipmate_change end
       input.model.api.id.includes("gpt-5.") &&
       !input.model.api.id.includes("codex") &&
       !input.model.api.id.includes("-chat") &&
@@ -1628,13 +1628,13 @@ export function smallOptions(model: Provider.Model) {
   if (
     model.providerID === "openrouter" ||
     model.providerID === "llmgateway" ||
-    model.api.npm === "@kilocode/kilo-gateway" // kilocode_change
+    model.api.npm === "@chipmate/chipmate-gateway" // chipmate_change
   ) {
     if (model.providerID === "openrouter" && small.reasoning?.effort === "low") {
       return { reasoning: { effort: "none" } }
     }
-    if (!model.capabilities.reasoning) return {} // kilocode_change - omit unsupported reasoning options
-    return { reasoning: { enabled: true } } // kilocode_change - use the model's supported default effort
+    if (!model.capabilities.reasoning) return {} // chipmate_change - omit unsupported reasoning options
+    return { reasoning: { enabled: true } } // chipmate_change - use the model's supported default effort
   }
 
   if (model.providerID === "venice") {
@@ -1692,11 +1692,11 @@ export function providerOptions(model: Provider.Model, options: { [x: string]: a
     return result
   }
 
-  // kilocode_change start
-  if (model.api.npm === "@kilocode/kilo-gateway") {
-    return kiloProviderOptions(options)
+  // chipmate_change start
+  if (model.api.npm === "@chipmate/chipmate-gateway") {
+    return chipmateProviderOptions(options)
   }
-  // kilocode_change end
+  // chipmate_change end
 
   // AI SDK packages that resolve providerOptionsName by splitting the
   // provider name on "." (e.g. "wafer.ai" -> "wafer") need the same
@@ -1925,7 +1925,7 @@ export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 
       }
 
       // Filter required array to only include fields that exist in properties
-      // kilocode_change start - Gemini rejects required entries without matching properties
+      // chipmate_change start - Gemini rejects required entries without matching properties
       if (result.type === "object" && Array.isArray(result.required)) {
         const properties = isPlainObject(result.properties) ? result.properties : undefined
         result.required = properties ? result.required.filter((field: any) => field in properties) : []
@@ -1933,7 +1933,7 @@ export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 
           delete result.required
         }
       }
-      // kilocode_change end
+      // chipmate_change end
 
       if (result.type === "array" && !hasCombiner(result)) {
         if (result.items == null) {

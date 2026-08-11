@@ -1,4 +1,4 @@
-# kilocode_change - new file
+# chipmate_change - new file
 name: publish-jetbrains
 
 on:
@@ -33,7 +33,7 @@ env:
 jobs:
   publish:
     if: >-
-      github.repository == 'Kilo-Org/kilocode' &&
+      github.repository == 'ChipMate-Org/chipmate' &&
       (
         (
           github.event_name == 'pull_request' &&
@@ -65,8 +65,8 @@ jobs:
 
       - name: Save reviewed release metadata
         run: |
-          cp packages/kilo-jetbrains/CHANGELOG.md "$RUNNER_TEMP/jetbrains-CHANGELOG.md"
-          cp packages/kilo-jetbrains/gradle.properties "$RUNNER_TEMP/jetbrains-gradle.properties"
+          cp packages/chipmate-jetbrains/CHANGELOG.md "$RUNNER_TEMP/jetbrains-CHANGELOG.md"
+          cp packages/chipmate-jetbrains/gradle.properties "$RUNNER_TEMP/jetbrains-gradle.properties"
 
       - name: Checkout release tag
         uses: actions/checkout@v6
@@ -76,8 +76,8 @@ jobs:
 
       - name: Restore reviewed release metadata
         run: |
-          cp "$RUNNER_TEMP/jetbrains-CHANGELOG.md" packages/kilo-jetbrains/CHANGELOG.md
-          cp "$RUNNER_TEMP/jetbrains-gradle.properties" packages/kilo-jetbrains/gradle.properties
+          cp "$RUNNER_TEMP/jetbrains-CHANGELOG.md" packages/chipmate-jetbrains/CHANGELOG.md
+          cp "$RUNNER_TEMP/jetbrains-gradle.properties" packages/chipmate-jetbrains/gradle.properties
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -127,18 +127,18 @@ jobs:
           JETBRAINS_PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
 
       - name: Verify plugin
-        working-directory: packages/kilo-jetbrains
-        run: ./gradlew verifyPlugin -Pproduction=true -Pkilo.channel="$CHANNEL"
+        working-directory: packages/chipmate-jetbrains
+        run: ./gradlew verifyPlugin -Pproduction=true -Pchipmate.channel="$CHANNEL"
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.release.outputs.version }}
           CHANNEL: ${{ steps.release.outputs.marketplace_channel }}
 
       - name: Render release notes
-        working-directory: packages/kilo-jetbrains
+        working-directory: packages/chipmate-jetbrains
         run: |
           if ! grep -Fq "## [$VERSION]" CHANGELOG.md; then
-            echo "Missing packages/kilo-jetbrains/CHANGELOG.md entry for $VERSION. Review and merge a release PR before publishing." >&2
+            echo "Missing packages/chipmate-jetbrains/CHANGELOG.md entry for $VERSION. Review and merge a release PR before publishing." >&2
             exit 1
           fi
           ./gradlew getChangelog --project-version "$VERSION" --no-header --no-empty-sections --output-file=build/release-notes.md
@@ -146,8 +146,8 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
 
       - name: Publish to JetBrains Marketplace
-        working-directory: packages/kilo-jetbrains
-        run: ./gradlew publishPlugin -Pproduction=true -Pkilo.channel="$CHANNEL"
+        working-directory: packages/chipmate-jetbrains
+        run: ./gradlew publishPlugin -Pproduction=true -Pchipmate.channel="$CHANNEL"
         env:
           VERSION: ${{ steps.release.outputs.version }}
           CHANNEL: ${{ steps.release.outputs.marketplace_channel }}
@@ -159,7 +159,7 @@ jobs:
       - name: Resolve plugin archive
         id: archive
         run: |
-          mapfile -t signed < <(compgen -G "packages/kilo-jetbrains/build/distributions/*-signed.zip")
+          mapfile -t signed < <(compgen -G "packages/chipmate-jetbrains/build/distributions/*-signed.zip")
           if [[ "${#signed[@]}" -eq 1 ]]; then
             echo "path=${signed[0]}" >> "$GITHUB_OUTPUT"
             exit 0
@@ -170,7 +170,7 @@ jobs:
             exit 1
           fi
 
-          mapfile -t files < <(compgen -G "packages/kilo-jetbrains/build/distributions/*.zip")
+          mapfile -t files < <(compgen -G "packages/chipmate-jetbrains/build/distributions/*.zip")
           if [[ "${#files[@]}" -ne 1 ]]; then
             echo "Expected exactly one JetBrains plugin ZIP, found ${#files[@]}." >&2
             printf '%s\n' "${files[@]}" >&2
@@ -198,7 +198,7 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
           KIND: ${{ steps.release.outputs.kind }}
           ARCHIVE: ${{ steps.archive.outputs.path }}
-          NOTES: packages/kilo-jetbrains/build/release-notes.md
+          NOTES: packages/chipmate-jetbrains/build/release-notes.md
 
       - name: Dispatch bundled GitHub release build
         continue-on-error: true
@@ -217,6 +217,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kilo-jetbrains-${{ steps.release.outputs.version }}
-          path: packages/kilo-jetbrains/build/distributions/*.zip
+          name: chipmate-jetbrains-${{ steps.release.outputs.version }}
+          path: packages/chipmate-jetbrains/build/distributions/*.zip
           if-no-files-found: ignore

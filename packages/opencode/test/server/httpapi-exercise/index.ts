@@ -6,7 +6,7 @@
  * requests, uses the right instance context, mutates storage when expected, and
  * returns the expected response shape.
  *
- * The script intentionally isolates `KILO_DB` before importing modules that touch
+ * The script intentionally isolates `CHIPMATE_DB` before importing modules that touch
  * storage. Scenarios may create/delete sessions and reset the database after each run,
  * so this must never point at a developer's real session database.
  *
@@ -17,7 +17,7 @@
  * - `.json(...)` / `.jsonEffect(...)` assert response shape and optional side effects.
  * - `.mutating()` tells the runner to reset isolated state after destructive routes.
  */
-import { Effect, Layer } from "effect" // kilocode_change
+import { Effect, Layer } from "effect" // chipmate_change
 import { OpenApi } from "effect/unstable/httpapi"
 import { TestLLMServer } from "../../lib/llm-server"
 import path from "path"
@@ -36,7 +36,7 @@ import { runScenario } from "./runner"
 import { disposeApps } from "./backend"
 import { runtime } from "./runtime"
 import { type Scenario } from "./types"
-import { kiloScenarios } from "../../kilocode/server/httpapi-exercise-scenarios" // kilocode_change
+import { chipmateScenarios } from "../../chipmate/server/httpapi-exercise-scenarios" // chipmate_change
 
 function cursor(input: Record<string, unknown>) {
   return Buffer.from(JSON.stringify(input)).toString("base64url")
@@ -118,8 +118,8 @@ const scenarios: Scenario[] = [
     ),
   http.protected.get("/path", "path.get").json(200, (body, ctx) => {
     object(body)
-    check(body.directory === ctx.directory, "directory should resolve from x-kilo-directory")
-    check(body.worktree === ctx.directory, "worktree should resolve from x-kilo-directory")
+    check(body.directory === ctx.directory, "directory should resolve from x-chipmate-directory")
+    check(body.worktree === ctx.directory, "worktree should resolve from x-chipmate-directory")
   }),
   http.protected.get("/vcs", "vcs.get").json(),
   http.protected.get("/vcs/status", "vcs.status").json(200, array),
@@ -298,12 +298,12 @@ const scenarios: Scenario[] = [
     }))
     .json(404, object, "status"),
   http.protected.get("/question", "question.list").json(200, array),
-  // kilocode_change start
-  http.protected.get("/kilocode/notebook", "kilocode.notebook.list").json(200, array),
+  // chipmate_change start
+  http.protected.get("/chipmate/notebook", "chipmate.notebook.list").json(200, array),
   http.protected
-    .post("/kilocode/notebook/{requestID}/reply", "kilocode.notebook.reply")
+    .post("/chipmate/notebook/{requestID}/reply", "chipmate.notebook.reply")
     .at((ctx) => ({
-      path: route("/kilocode/notebook/{requestID}/reply", { requestID: "nbr_httpapi_reply" }),
+      path: route("/chipmate/notebook/{requestID}/reply", { requestID: "nbr_httpapi_reply" }),
       headers: ctx.headers(),
       body: {
         result: {
@@ -317,31 +317,31 @@ const scenarios: Scenario[] = [
     }))
     .json(404, object, "status"),
   http.protected
-    .post("/kilocode/notebook/{requestID}/reject", "kilocode.notebook.reject")
+    .post("/chipmate/notebook/{requestID}/reject", "chipmate.notebook.reject")
     .at((ctx) => ({
-      path: route("/kilocode/notebook/{requestID}/reject", { requestID: "nbr_httpapi_reject" }),
+      path: route("/chipmate/notebook/{requestID}/reject", { requestID: "nbr_httpapi_reject" }),
       headers: ctx.headers(),
       body: { error: { code: "not_found", message: "Notebook not found" } },
     }))
     .json(404, object, "status"),
-  http.protected.get("/kilocode/agent-manager", "kilocode.agentManager.list").json(200, array),
+  http.protected.get("/chipmate/agent-manager", "chipmate.agentManager.list").json(200, array),
   http.protected
-    .post("/kilocode/agent-manager/{requestID}/reply", "kilocode.agentManager.reply")
+    .post("/chipmate/agent-manager/{requestID}/reply", "chipmate.agentManager.reply")
     .at((ctx) => ({
-      path: route("/kilocode/agent-manager/{requestID}/reply", { requestID: "amr_httpapi_reply" }),
+      path: route("/chipmate/agent-manager/{requestID}/reply", { requestID: "amr_httpapi_reply" }),
       headers: ctx.headers(),
       body: { result: { operation: "overview", overview: { sections: [], ungrouped: [] } } },
     }))
     .json(404, object, "status"),
   http.protected
-    .post("/kilocode/agent-manager/{requestID}/reject", "kilocode.agentManager.reject")
+    .post("/chipmate/agent-manager/{requestID}/reject", "chipmate.agentManager.reject")
     .at((ctx) => ({
-      path: route("/kilocode/agent-manager/{requestID}/reject", { requestID: "amr_httpapi_reject" }),
+      path: route("/chipmate/agent-manager/{requestID}/reject", { requestID: "amr_httpapi_reject" }),
       headers: ctx.headers(),
       body: { error: { code: "unknown_session", message: "Managed session not found" } },
     }))
     .json(404, object, "status"),
-  // kilocode_change end
+  // chipmate_change end
   http.protected
     .post("/question/{requestID}/reply", "question.reply.invalid")
     .at((ctx) => ({
@@ -834,7 +834,7 @@ const scenarios: Scenario[] = [
     .post("/api/pty/{ptyID}/connect-token", "v2.pty.connectToken")
     .at((ctx) => ({
       path: route("/api/pty/{ptyID}/connect-token", { ptyID: "pty_httpapi_missing" }),
-      headers: { ...ctx.headers(), "x-kilo-ticket": "1" },
+      headers: { ...ctx.headers(), "x-chipmate-ticket": "1" },
     }))
     .json(404, object, "status"),
   http.protected
@@ -1713,13 +1713,13 @@ const scenarios: Scenario[] = [
     .mutating()
     .seeded((ctx) => ctx.session({ title: "Share session" }))
     .at((ctx) => ({ path: route("/session/{sessionID}/share", { sessionID: ctx.state.id }), headers: ctx.headers() }))
-    .status(500, undefined, "status"), // kilocode_change
+    .status(500, undefined, "status"), // chipmate_change
   http.protected
     .delete("/session/{sessionID}/share", "session.unshare")
     .mutating()
     .seeded((ctx) => ctx.session({ title: "Unshare session" }))
     .at((ctx) => ({ path: route("/session/{sessionID}/share", { sessionID: ctx.state.id }), headers: ctx.headers() }))
-    .status(500, undefined, "status"), // kilocode_change
+    .status(500, undefined, "status"), // chipmate_change
   http.protected
     .post("/tui/append-prompt", "tui.appendPrompt")
     .at((ctx) => ({ path: "/tui/append-prompt", headers: ctx.headers(), body: { text: "hello" } }))
@@ -1765,7 +1765,7 @@ const scenarios: Scenario[] = [
     .json(200, boolean, "status"),
   http.protected
     .get("/tui/control/next", "tui.control.next")
-    .skipValidAuthProbe() // kilocode_change - valid requests intentionally block waiting for queued TUI input
+    .skipValidAuthProbe() // chipmate_change - valid requests intentionally block waiting for queued TUI input
     .mutating()
     .seeded((ctx) => ctx.tuiRequest({ path: "/tui/exercise", body: { text: "queued" } }))
     .json(
@@ -1784,7 +1784,7 @@ const scenarios: Scenario[] = [
     .probe({ path: "/global/upgrade", body: { target: 1 } })
     .at(() => ({ path: "/global/upgrade", body: { target: 1 } }))
     .status(400),
-  ...kiloScenarios, // kilocode_change
+  ...chipmateScenarios, // chipmate_change
 ]
 
 const llmScenarios = new Set([
@@ -1796,7 +1796,7 @@ const llmScenarios = new Set([
 ])
 
 const main = Effect.gen(function* () {
-  // kilocode_change start - dispose final non-mutating instances so shared test scopes can close
+  // chipmate_change start - dispose final non-mutating instances so shared test scopes can close
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       const modules = yield* Effect.promise(() => runtime())
@@ -1805,7 +1805,7 @@ const main = Effect.gen(function* () {
       yield* cleanupExercisePaths
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
   const options = parseOptions(Bun.argv.slice(2))
   const modules = yield* Effect.promise(() => runtime())
   const effectRoutes = routeKeys(OpenApi.fromApi(modules.PublicApi))
@@ -1847,7 +1847,7 @@ const main = Effect.gen(function* () {
   return undefined
 })
 
-// kilocode_change start - route-only coverage must not acquire a listening fake LLM server
+// chipmate_change start - route-only coverage must not acquire a listening fake LLM server
 const llm =
   parseOptions(Bun.argv.slice(2)).mode === "coverage"
     ? Layer.mock(TestLLMServer)({ url: "http://coverage.invalid" })
@@ -1860,4 +1860,4 @@ Effect.runPromise(main.pipe(Effect.provide(llm), Effect.scoped)).then(
     process.exit(1)
   },
 )
-// kilocode_change end
+// chipmate_change end

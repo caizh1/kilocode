@@ -5,7 +5,7 @@ Technical reference for the current TUI plugin system.
 ## Overview
 
 - TUI plugin config lives in `tui.json`.
-- Author package entrypoint is `@kilocode/plugin/tui`.
+- Author package entrypoint is `@chipmate/plugin/tui`.
 - Internal plugins load inside the CLI app the same way external TUI plugins do.
 - Package plugins can be installed from CLI or TUI.
 - v1 plugin modules are target-exclusive: a module can export `server` or `tui`, never both.
@@ -18,7 +18,7 @@ Example:
 
 ```json
 {
-  "$schema": "https://app.kilo.ai/tui.json",
+  "$schema": "https://app.chipmate.ai/tui.json",
   "theme": "smoke-theme",
   "leader_timeout": 2000,
   "keybinds": {
@@ -35,7 +35,7 @@ Example:
     "notifications": true,
     "sound": true,
     "volume": 0.4,
-    "sound_pack": "kilo.default",
+    "sound_pack": "chipmate.default",
     "sounds": {
       "error": "/Users/me/sounds/error.mp3"
     }
@@ -68,14 +68,14 @@ Example:
 
 Package entrypoint:
 
-- Import types from `@kilocode/plugin/tui`.
-- `@kilocode/plugin` exports `./tui` and declares optional peer deps on `@opentui/core` and `@opentui/solid`.
+- Import types from `@chipmate/plugin/tui`.
+- `@chipmate/plugin` exports `./tui` and declares optional peer deps on `@opentui/core` and `@opentui/solid`.
 
 Minimal module shape:
 
 ```tsx
 /** @jsxImportSource @opentui/solid */
-import type { TuiPlugin, TuiPluginModule } from "@kilocode/plugin/tui"
+import type { TuiPlugin, TuiPluginModule } from "@chipmate/plugin/tui"
 
 const tui: TuiPlugin = async (api, options, meta) => {
   api.keymap.registerLayer({
@@ -184,19 +184,19 @@ npm plugins can declare a version compatibility range in `package.json` using th
 }
 ```
 
-- The value is a semver range checked against the running Kilo version.
+- The value is a semver range checked against the running ChipMate version.
 - If the range is not satisfied, the plugin is skipped with a warning and a session error.
 - If `engines.opencode` is absent, no check is performed (backward compatible).
 - File plugins are never checked; only npm package plugins are validated.
 
 - Install flow is shared by CLI and TUI in `src/plugin/install.ts`.
 - Shared helpers are `installPlugin`, `readPluginManifest`, and `patchPluginConfig`.
-- `kilo plugin <module>` and TUI install both run install → manifest read → config patch.
-- Alias: `kilo plug <module>`.
+- `chipmate plugin <module>` and TUI install both run install → manifest read → config patch.
+- Alias: `chipmate plug <module>`.
 - `-g` / `--global` writes into the global config dir.
 - Local installs resolve target dir inside `patchPluginConfig`.
-- For local scope, path is `<worktree>/.kilo` only when VCS is git and `worktree !== "/"`; otherwise `<directory>/.kilo`.
-- Root-worktree fallback (`worktree === "/"` uses `<directory>/.kilo`) is covered by regression tests.
+- For local scope, path is `<worktree>/.chipmate` only when VCS is git and `worktree !== "/"`; otherwise `<directory>/.chipmate`.
+- Root-worktree fallback (`worktree === "/"` uses `<directory>/.chipmate`) is covered by regression tests.
 - `patchPluginConfig` applies all detected targets (`server` and/or `tui`) in one call.
 - `patchPluginConfig` returns structured result unions (`ok`, `code`, fields by error kind) instead of custom thrown errors.
 - `patchPluginConfig` serializes per-target config writes with `Flock.acquire(...)`.
@@ -213,14 +213,14 @@ npm plugins can declare a version compatibility range in `package.json` using th
 - There is no uninstall, list, or update CLI command for external plugins.
 - Local file plugins are configured directly in `tui.json`.
 
-When `plugin` entries exist in a writable `.kilo` or legacy `.kilocode` directory, or `KILO_CONFIG_DIR`, Kilo installs `@kilocode/plugin` into that directory and writes:
+When `plugin` entries exist in a writable `.chipmate` or legacy `.chipmate` directory, or `CHIPMATE_CONFIG_DIR`, ChipMate installs `@chipmate/plugin` into that directory and writes:
 
 - `package.json`
 - `bun.lock`
 - `node_modules/`
 - `.gitignore`
 
-That is what makes local config-scoped plugins able to import `@kilocode/plugin/tui`.
+That is what makes local config-scoped plugins able to import `@chipmate/plugin/tui`.
 
 ## TUI plugin API
 
@@ -247,7 +247,7 @@ Top-level API groups exposed to `tui(api, options, meta)`:
 ### Keymap
 
 - `api.keymap` exposes the raw `Keymap<Renderable, KeyEvent>` instance from the host.
-- The host already installs the default OpenTUI bundle (`default keys`, metadata fields, and enabled fields) plus Kilo's comma bindings, leader token, base layout fallback, pending-sequence helpers, and managed textarea layer.
+- The host already installs the default OpenTUI bundle (`default keys`, metadata fields, and enabled fields) plus ChipMate's comma bindings, leader token, base layout fallback, pending-sequence helpers, and managed textarea layer.
 - Register commands with `api.keymap.registerLayer({ commands: [...] })`.
 - Register key bindings with `bindings: [{ key, cmd, desc }]` in the same layer or a separate layer.
 - Use `api.keymap.acquireResource(...)` for shared plugin addon setup that should ref-count against the host keymap.
@@ -258,7 +258,7 @@ Top-level API groups exposed to `tui(api, options, meta)`:
 
 #### Mode-aware layers
 
-Kilo registers a `mode` layer field on the host keymap. Plugins can use it to keep bindings active only in the relevant UI state.
+ChipMate registers a `mode` layer field on the host keymap. Plugins can use it to keep bindings active only in the relevant UI state.
 
 Built-in modes:
 
@@ -316,19 +316,19 @@ api.keymap.registerLayer({
 })
 ```
 
-Mode pushes are automatically tracked by the plugin runtime. If a plugin is disabled, fails during activation, or the TUI shuts down before the plugin calls the disposer, Kilo pops the plugin's pushed modes during plugin cleanup. Calling the disposer yourself is still recommended for component lifetimes; cleanup remains idempotent.
+Mode pushes are automatically tracked by the plugin runtime. If a plugin is disabled, fails during activation, or the TUI shuts down before the plugin calls the disposer, ChipMate pops the plugin's pushed modes during plugin cleanup. Calling the disposer yourself is still recommended for component lifetimes; cleanup remains idempotent.
 
 ### Keys
 
 - `api.keys` exposes host-formatted shortcut display helpers for plugin UI.
 - `formatSequence(parts)` formats parsed key sequence parts using the host's display policy.
 - `formatBindings(bindings)` formats binding lists and returns `undefined` when there is nothing to show.
-- For generic config-to-bindings helpers, import `createBindingLookup` from `@kilocode/plugin/tui`.
+- For generic config-to-bindings helpers, import `createBindingLookup` from `@chipmate/plugin/tui`.
 
 ### Attention
 
 - `api.attention.notify({ title?, message, notification?, sound? })` requests user attention while keeping terminal focus, notifications, and audio owned by the host.
-- `message` is required; `title` defaults to `"Kilo"`; `notification` defaults to enabled with `when: "blurred"`; `sound` defaults to enabled with `when: "always"`.
+- `message` is required; `title` defaults to `"ChipMate"`; `notification` defaults to enabled with `when: "blurred"`; `sound` defaults to enabled with `when: "always"`.
 - `when: "always"` requests delivery regardless of terminal focus state.
 - `when: "focused"` only requests delivery after the terminal is known focused; `when: "blurred"` only requests delivery after the terminal is known blurred.
 - Example: `notification: { when: "blurred" }, sound: { name: "question", when: "always" }` plays sound while focused but only triggers system notifications when blurred.
@@ -338,7 +338,7 @@ Mode pushes are automatically tracked by the plugin runtime. If a plugin is disa
 - `api.attention.soundboard.registerPack({ id, name?, sounds })` registers a sound pack and returns a disposer. Relative paths resolve from the plugin root and are cleaned up on plugin deactivation.
 - `api.attention.soundboard.activate(id, { persist })` selects the active pack. `persist: true` writes the selected pack id to TUI KV state, not `tui.json`.
 - `api.attention.soundboard.current()` and `list()` expose the active/registered packs for plugin UX.
-- Config `attention.sounds` overrides active-pack sounds by slot. Failed loads fall back to the active pack and then `kilo.default`.
+- Config `attention.sounds` overrides active-pack sounds by slot. Failed loads fall back to the active pack and then `chipmate.default`.
 - The host strips ANSI/control characters and collapses newlines before sending text to the terminal notification API.
 - Terminal and OS settings decide whether a requested notification is visibly displayed.
 - Prefer privacy-safe messages such as `"A question needs your input"`; avoid full commands, paths, prompts, errors, secrets, or file contents unless the plugin intentionally exposes them.
@@ -413,7 +413,7 @@ Theme install behavior:
 - If the theme name already exists, install is skipped unless plugin metadata state is `updated`.
 - On `updated`, host skips rewrite when tracked `mtime`/`size` is unchanged.
 - When a theme already exists and state is not `updated`, host can still persist theme metadata when destination already exists.
-- Local plugins persist installed themes under `.kilo/themes`, or under `themes` beside a config source in `.kilo` or legacy `.kilocode`.
+- Local plugins persist installed themes under `.chipmate/themes`, or under `themes` beside a config source in `.chipmate` or legacy `.chipmate`.
 - Global plugins persist installed themes under the global `themes` dir.
 - Invalid or unreadable theme files are ignored.
 
@@ -483,7 +483,7 @@ Metadata is persisted by plugin id.
 
 - Internal TUI plugins load first.
 - External TUI plugins load from `tuiConfig.plugin`.
-- `--pure` / `KILO_PURE` skips external TUI plugins only.
+- `--pure` / `CHIPMATE_PURE` skips external TUI plugins only.
 - External plugin resolution and import are parallel.
 - Packages with no `./tui` entrypoint and valid `oc-themes` are loaded as synthetic no-op TUI plugin modules.
 - Theme-only packages loaded this way appear in `api.plugins.list()` and plugin manager rows like other external plugins.
@@ -538,4 +538,4 @@ The plugin manager is exposed as a command with title `Plugins` and value `plugi
 
 ## Current in-repo examples
 
-The upstream `.opencode` smoke fixtures remain in the repository for OpenCode compatibility, but Kilo does not auto-load them. Kilo-local examples must live under `.kilo` or legacy `.kilocode`.
+The upstream `.opencode` smoke fixtures remain in the repository for OpenCode compatibility, but ChipMate does not auto-load them. ChipMate-local examples must live under `.chipmate` or legacy `.chipmate`.

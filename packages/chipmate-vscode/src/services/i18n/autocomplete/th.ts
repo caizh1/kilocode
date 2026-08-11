@@ -1,0 +1,47 @@
+export const dict = {
+  "chipmate:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) เติมข้อความอัตโนมัติ",
+  "chipmate:autocomplete.statusBar.snoozed": "พักไว้",
+  "chipmate:autocomplete.statusBar.warning": "$(warning) เติมข้อความอัตโนมัติ",
+  "chipmate:autocomplete.statusBar.tooltip.basic": "การเติมข้อความอัตโนมัติของ ChipMate",
+  "chipmate:autocomplete.statusBar.tooltip.disabled": "การเติมข้อความอัตโนมัติของ ChipMate (ปิดใช้งาน)",
+  "chipmate:autocomplete.statusBar.tooltip.noUsableProvider":
+    "**ยังไม่ได้กำหนดค่าโมเดลเติมข้อความอัตโนมัติ**\n\nหากต้องการเปิดใช้การเติมข้อความอัตโนมัติ ให้เพิ่มโปรไฟล์ที่มีผู้ให้บริการที่รองรับต่อไปนี้: {{providers}}\n\n[เปิดการตั้งค่า]({{command}})",
+  "chipmate:autocomplete.statusBar.tooltip.sessionTotal": "ค่าใช้จ่ายรวมของเซสชัน:",
+  "chipmate:autocomplete.statusBar.tooltip.provider": "ผู้ให้บริการ:",
+  "chipmate:autocomplete.statusBar.tooltip.model": "โมเดล:",
+  "chipmate:autocomplete.statusBar.tooltip.profile": "โปรไฟล์: ",
+  "chipmate:autocomplete.statusBar.tooltip.defaultProfile": "ค่าเริ่มต้น",
+  "chipmate:autocomplete.statusBar.tooltip.completionSummary":
+    "ดำเนินการเติมข้อความ {{count}} ครั้งระหว่าง {{startTime}} ถึง {{endTime}} โดยมีค่าใช้จ่ายรวม {{cost}}",
+  "chipmate:autocomplete.statusBar.tooltip.providerInfo":
+    "การเติมข้อความอัตโนมัติให้บริการโดย {{model}} ผ่าน {{provider}}",
+  "chipmate:autocomplete.statusBar.cost.zero": "$0.00",
+  "chipmate:autocomplete.statusBar.cost.lessThanCent": "<$0.01",
+  "chipmate:autocomplete.toggleMessage": "การเติมข้อความอัตโนมัติของ ChipMate {{status}}",
+  "chipmate:autocomplete.progress.title": "ChipMate",
+  "chipmate:autocomplete.progress.analyzing": "กำลังวิเคราะห์โค้ดของคุณ...",
+  "chipmate:autocomplete.progress.generating": "กำลังสร้างการแก้ไขที่แนะนำ...",
+  "chipmate:autocomplete.progress.processing": "กำลังประมวลผลการแก้ไขที่แนะนำ...",
+  "chipmate:autocomplete.progress.showing": "กำลังแสดงการแก้ไขที่แนะนำ...",
+  "chipmate:autocomplete.input.title": "ChipMate: งานด่วน",
+  "chipmate:autocomplete.input.placeholder": "เช่น 'รีแฟกเตอร์ฟังก์ชันนี้ให้มีประสิทธิภาพมากขึ้น'",
+  "chipmate:autocomplete.commands.generateSuggestions": "ChipMate: สร้างการแก้ไขที่แนะนำ",
+  "chipmate:autocomplete.commands.displaySuggestions": "แสดงการแก้ไขที่แนะนำ",
+  "chipmate:autocomplete.commands.cancelSuggestions": "ยกเลิกการแก้ไขที่แนะนำ",
+  "chipmate:autocomplete.commands.applyCurrentSuggestion": "ใช้การแก้ไขที่แนะนำปัจจุบัน",
+  "chipmate:autocomplete.commands.applyAllSuggestions": "ใช้การแก้ไขที่แนะนำทั้งหมด",
+  "chipmate:autocomplete.commands.category": "ChipMate",
+  "chipmate:autocomplete.codeAction.title": "ChipMate: การแก้ไขที่แนะนำ",
+  "chipmate:autocomplete.chatParticipant.fullName": "ตัวแทน ChipMate",
+  "chipmate:autocomplete.chatParticipant.name": "ตัวแทน",
+  "chipmate:autocomplete.chatParticipant.description": "ฉันช่วยคุณทำงานด่วนและการแก้ไขที่แนะนำได้",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.message":
+    "การเติมข้อความอัตโนมัติของ ChipMate ถูกบล็อกเนื่องจากขัดแย้งกับ GitHub Copilot หากต้องการแก้ไข คุณต้องปิดข้อเสนอแนะแบบอินไลน์ของ Copilot",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableCopilot": "ปิดใช้งาน Copilot",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableInlineAssist": "ปิดใช้งานเติมข้อความอัตโนมัติ",
+  "chipmate:autocomplete.creditsExhausted.message":
+    "การเติมข้อความอัตโนมัติของ ChipMate ถูกพักไว้ สาเหตุที่เป็นไปได้: บัญชี ChipMate ของคุณไม่มีเครดิตเหลืออยู่ หรือคีย์ API ที่กำหนดค่าไว้ (BYOK) ถึงขีดจำกัดโควตาแล้ว เพิ่มเครดิต ChipMate หรือตรวจสอบการกำหนดค่าคีย์ API เพื่อเริ่มใช้การเติมข้อความอัตโนมัติต่อ",
+  "chipmate:autocomplete.creditsExhausted.addCredits": "เพิ่มเครดิต",
+  "chipmate:autocomplete.authError.message":
+    "การเติมข้อความอัตโนมัติของ ChipMate ถูกพักไว้เนื่องจากปัญหาการยืนยันตัวตน สาเหตุที่เป็นไปได้: คุณไม่ได้ลงชื่อเข้าใช้ ChipMate หรือคีย์ API (BYOK) ของคุณไม่ถูกต้องหรือหายไป โปรดลงชื่อเข้าใช้อีกครั้งหรือตรวจสอบการตั้งค่าคีย์ API ของผู้ให้บริการ",
+}

@@ -1,35 +1,35 @@
 import { marked } from "marked"
-// kilocode_change: marked-shiki highlighted code blocks synchronously during
+// chipmate_change: marked-shiki highlighted code blocks synchronously during
 // parse, freezing the main thread on session switches with many code blocks
 // (issue #6221 / PR #7102). We render plain <pre><code data-lang="..."> here
 // and hand off to deferredHighlight() in markdown.tsx for progressive Shiki.
 // This import was re-added by an upstream merge; removing it restores the
 // two-pass rendering design.
 import katex from "katex"
-// kilocode_change start: import types for double-dollar math extension
+// chipmate_change start: import types for double-dollar math extension
 import type { MarkedExtension, TokenizerAndRendererExtension } from "marked"
-// kilocode_change end
+// chipmate_change end
 import { bundledLanguages, type BundledLanguage } from "shiki"
-import { parseFilePath } from "../file-path" // kilocode_change
+import { parseFilePath } from "../file-path" // chipmate_change
 import { createSimpleContext } from "./helper"
-import { getSharedHighlighter, type ThemeRegistrationResolved } from "@pierre/diffs" // kilocode_change
-import { ensureKiloDiffTheme, KILO_DIFF_THEME } from "../pierre/kilo-diff-theme" // kilocode_change
+import { getSharedHighlighter, type ThemeRegistrationResolved } from "@pierre/diffs" // chipmate_change
+import { ensureChipMateDiffTheme, CHIPMATE_DIFF_THEME } from "../pierre/chipmate-diff-theme" // chipmate_change
 
-// kilocode_change start: the "Kilo" diff/highlight theme registration moved to
-// ../pierre/kilo-diff-theme so the diff worker pool can register it without
+// chipmate_change start: the "ChipMate" diff/highlight theme registration moved to
+// ../pierre/chipmate-diff-theme so the diff worker pool can register it without
 // importing this module's katex/marked dependencies. This call keeps the markdown
 // highlighter (getSharedHighlighter, below) working. Upstream keeps an inline
 // registerCustomTheme("OpenCode", …) block here — do not restore it on merges;
-// route registration through ensureKiloDiffTheme() instead.
-ensureKiloDiffTheme()
-// kilocode_change end
+// route registration through ensureChipMateDiffTheme() instead.
+ensureChipMateDiffTheme()
+// chipmate_change end
 
-// kilocode_change start: theme object consumed by the streaming Shiki worker
+// chipmate_change start: theme object consumed by the streaming Shiki worker
 // (markdown-worker.ts sends it via postMessage on worker init). Registration
-// with Pierre is handled by ensureKiloDiffTheme() above; this export only
+// with Pierre is handled by ensureChipMateDiffTheme() above; this export only
 // provides the raw theme data to the worker.
-export const KiloTheme = {
-  name: KILO_DIFF_THEME,
+export const ChipMateTheme = {
+  name: CHIPMATE_DIFF_THEME,
   bg: "var(--color-background-stronger)",
   fg: "var(--text-base)",
   colors: {
@@ -398,19 +398,19 @@ export const KiloTheme = {
     "variable.defaultLibrary": "var(--syntax-unknown)",
   },
 } as unknown as ThemeRegistrationResolved
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start: double-dollar-only math rules for marked.
+// chipmate_change start: double-dollar-only math rules for marked.
 const BLOCK = /^\$\$\n((?:\\[^]|[^\\])+?)\n\$\$(?:\n|$)/
 const INLINE = /^\$\$(?!\$)((?:\\.|[^\\\n])*?(?:\\.|[^\\\n$]))\$\$/
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start: isolate KaTeX from the markdown root dir=auto.
+// chipmate_change start: isolate KaTeX from the markdown root dir=auto.
 function renderKatex(text: string, options: katex.KatexOptions): string {
   const html = katex.renderToString(text, options)
   return `<span dir="auto">${html}</span>`
 }
-// kilocode_change end
+// chipmate_change end
 
 function renderMathInText(text: string): string {
   let result = text
@@ -419,18 +419,18 @@ function renderMathInText(text: string): string {
   const displayMathRegex = /\$\$([\s\S]*?)\$\$/g
   result = result.replace(displayMathRegex, (_, math) => {
     try {
-      // kilocode_change start
+      // chipmate_change start
       return renderKatex(math, {
         displayMode: true,
         throwOnError: false,
       })
-      // kilocode_change end
+      // chipmate_change end
     } catch {
       return `$$${math}$$`
     }
   })
 
-  // kilocode_change: removed single-dollar inline math ($...$) rendering.
+  // chipmate_change: removed single-dollar inline math ($...$) rendering.
   // Single $ is far more common as a currency symbol in agent responses
   // (e.g. $93K, $307K) than as a LaTeX delimiter. Only $$...$$ is supported.
 
@@ -460,7 +460,7 @@ async function highlightCodeBlocks(html: string): Promise<string> {
   if (matches.length === 0) return html
 
   const highlighter = await getSharedHighlighter({
-    themes: ["Kilo"],
+    themes: ["ChipMate"],
     langs: [],
     preferredHighlighter: "shiki-wasm",
   })
@@ -485,7 +485,7 @@ async function highlightCodeBlocks(html: string): Promise<string> {
 
     const highlighted = highlighter.codeToHtml(code, {
       lang: language,
-      theme: "Kilo",
+      theme: "ChipMate",
       tabindex: false,
     })
     result = result.replace(fullMatch, () => highlighted)
@@ -496,9 +496,9 @@ async function highlightCodeBlocks(html: string): Promise<string> {
 
 export type NativeMarkdownParser = (markdown: string) => Promise<string>
 
-// kilocode_change: parseFilePath imported from ../file-path
+// chipmate_change: parseFilePath imported from ../file-path
 
-// kilocode_change start: highlight cache for deferred highlighting
+// chipmate_change start: highlight cache for deferred highlighting
 
 /** FNV-1a hash — lightweight alternative to storing full source code in DOM attributes. */
 export function fnv1a(s: string): string {
@@ -538,8 +538,8 @@ function replaceWithHighlighted(block: Element, html: string, sourceHash: string
   temp.innerHTML = html
   const highlighted = temp.firstElementChild
   if (!highlighted) return
-  const dir = pre.getAttribute("dir") // kilocode_change
-  if (dir) highlighted.setAttribute("dir", dir) // kilocode_change
+  const dir = pre.getAttribute("dir") // chipmate_change
+  if (dir) highlighted.setAttribute("dir", dir) // chipmate_change
   // Store a hash of the source code so the morphdom guard in Markdown can detect
   // mid-stream content changes without keeping the full source in the DOM.
   highlighted.setAttribute("data-source-hash", sourceHash)
@@ -577,7 +577,7 @@ export async function deferredHighlight(
     return
   }
 
-  const highlighter = await getSharedHighlighter({ themes: ["Kilo"], langs: [] })
+  const highlighter = await getSharedHighlighter({ themes: ["ChipMate"], langs: [] })
 
   for (const block of blocks) {
     // Short-circuit if the container is unmounted or the caller cancelled this run
@@ -614,7 +614,7 @@ export async function deferredHighlight(
               resolve()
               return
             }
-            const html = highlighter.codeToHtml(code, { lang: language, theme: "Kilo", tabindex: false })
+            const html = highlighter.codeToHtml(code, { lang: language, theme: "ChipMate", tabindex: false })
             touchHighlightCache(cacheKey, html)
             // Note: data-highlighted is NOT set on `block` here because
             // replaceWithHighlighted replaces the parent <pre> entirely — the
@@ -650,11 +650,11 @@ export async function deferredHighlight(
     onComplete?.()
   }
 }
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start: expose the parser setup for Kilo markdown tests.
+// chipmate_change start: expose the parser setup for ChipMate markdown tests.
 export const createMarkedParser = (props: { nativeParser?: NativeMarkdownParser }) => {
-  // kilocode_change start: two-pass parser — first pass skips Shiki highlighting
+  // chipmate_change start: two-pass parser — first pass skips Shiki highlighting
   // to avoid blocking the main thread with Oniguruma WASM regex (issue #6221).
   // Code blocks render as plain <pre><code data-lang="..."> immediately.
   // The Markdown component calls deferredHighlight() after DOM paint.
@@ -665,7 +665,7 @@ export const createMarkedParser = (props: { nativeParser?: NativeMarkdownParser 
           const titleAttr = title ? ` title="${title}"` : ""
           return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
         },
-        // kilocode_change start
+        // chipmate_change start
         codespan({ text }) {
           const file = parseFilePath(text)
           const escaped = text
@@ -696,9 +696,9 @@ export const createMarkedParser = (props: { nativeParser?: NativeMarkdownParser 
           const attr = data ? ` class="language-${data}" data-lang="${data}"` : ' data-lang="text"'
           return `<pre dir="auto"><code${attr}>${escaped}</code></pre>`
         },
-        // kilocode_change end
+        // chipmate_change end
       },
-      // kilocode_change start: Marked accepts a tilde preceded by an opening
+      // chipmate_change start: Marked accepts a tilde preceded by an opening
       // parenthesis as the closing delimiter. It is left-flanking there, so
       // preserve it literally instead of corrupting text such as "(~1 GB)".
       tokenizer: {
@@ -708,9 +708,9 @@ export const createMarkedParser = (props: { nativeParser?: NativeMarkdownParser 
           return false
         },
       },
-      // kilocode_change end
+      // chipmate_change end
     },
-    // kilocode_change start: enable only double-dollar math.
+    // chipmate_change start: enable only double-dollar math.
     // Single $ is far more common as a currency symbol in agent responses
     // (e.g. $93K, $307K) than as a LaTeX delimiter. Avoid registering the
     // marked-katex-extension inline tokenizer because Marked falls through
@@ -758,13 +758,13 @@ export const createMarkedParser = (props: { nativeParser?: NativeMarkdownParser 
         } satisfies TokenizerAndRendererExtension,
       ],
     } satisfies MarkedExtension,
-    // kilocode_change end
-    // kilocode_change: markedShiki removed — the custom `code` renderer
+    // chipmate_change end
+    // chipmate_change: markedShiki removed — the custom `code` renderer
     // above returns plain <pre><code data-lang="..."> and markdown.tsx
     // calls deferredHighlight() after paint. Running Shiki inside parse
     // blocks the main thread on session switches (issue #6221).
   )
-  // kilocode_change end
+  // chipmate_change end
 
   if (props.nativeParser) {
     const nativeParser = props.nativeParser
@@ -784,4 +784,4 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
   name: "Marked",
   init: createMarkedParser,
 })
-// kilocode_change end
+// chipmate_change end

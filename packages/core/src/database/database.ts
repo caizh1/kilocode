@@ -6,9 +6,9 @@ import { Context, Effect, Layer } from "effect"
 import { Global } from "../global"
 import { Flag } from "../flag/flag"
 import { isAbsolute, join } from "path"
-import { existsSync } from "fs" // kilocode_change
-import { DbPreflight } from "../kilocode/db-preflight" // kilocode_change
-import { ensure as compat } from "../kilocode/database-compat" // kilocode_change
+import { existsSync } from "fs" // chipmate_change
+import { DbPreflight } from "../chipmate/db-preflight" // chipmate_change
+import { ensure as compat } from "../chipmate/database-compat" // chipmate_change
 import { DatabaseMigration } from "./migration"
 import { InstallationChannel } from "../installation/version"
 import { makeGlobalNode } from "../effect/app-node"
@@ -34,38 +34,38 @@ const layer = Layer.effect(
     yield* db.run("PRAGMA foreign_keys = ON")
     yield* db.run("PRAGMA wal_checkpoint(PASSIVE)")
     yield* DatabaseMigration.apply(db)
-    yield* compat(db) // kilocode_change - keep the shared database usable by released CLIs
+    yield* compat(db) // chipmate_change - keep the shared database usable by released CLIs
 
     return { db }
   }).pipe(Effect.orDie),
 )
 
 export function layerFromPath(filename: string) {
-  DbPreflight.assertWritable(filename) // kilocode_change - actionable error (and self-heal for kilo-owned files) instead of an opaque wal_checkpoint crash on read-only db files
+  DbPreflight.assertWritable(filename) // chipmate_change - actionable error (and self-heal for chipmate-owned files) instead of an opaque wal_checkpoint crash on read-only db files
   return layer.pipe(Layer.provide(sqliteLayer({ filename })))
 }
 
 export function path() {
-  if (Flag.KILO_DB) {
-    if (Flag.KILO_DB === ":memory:" || isAbsolute(Flag.KILO_DB)) return Flag.KILO_DB
-    return join(Global.Path.data, Flag.KILO_DB)
+  if (Flag.CHIPMATE_DB) {
+    if (Flag.CHIPMATE_DB === ":memory:" || isAbsolute(Flag.CHIPMATE_DB)) return Flag.CHIPMATE_DB
+    return join(Global.Path.data, Flag.CHIPMATE_DB)
   }
   if (
     ["latest", "beta", "prod"].includes(InstallationChannel) ||
-    process.env.KILO_DISABLE_CHANNEL_DB === "1" ||
-    process.env.KILO_DISABLE_CHANNEL_DB === "true"
+    process.env.CHIPMATE_DISABLE_CHANNEL_DB === "1" ||
+    process.env.CHIPMATE_DISABLE_CHANNEL_DB === "true"
   )
-    return join(Global.Path.data, "kilo.db")
-  // kilocode_change start - kilo-branded dev-channel db name, falling back to a pre-existing opencode-named db
+    return join(Global.Path.data, "chipmate.db")
+  // chipmate_change start - chipmate-branded dev-channel db name, falling back to a pre-existing opencode-named db
   const safe = InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
-  const next = join(Global.Path.data, `kilo-${safe}.db`)
+  const next = join(Global.Path.data, `chipmate-${safe}.db`)
   const prev = join(Global.Path.data, `opencode-${safe}.db`)
   if (!existsSync(next) && existsSync(prev)) return prev
   return next
-  // kilocode_change end
+  // chipmate_change end
 }
 
-// kilocode_change - resolve the database path when the layer builds, not at module evaluation, so KILO_DB overrides set after import (tests, embedded hosts) take effect
+// chipmate_change - resolve the database path when the layer builds, not at module evaluation, so CHIPMATE_DB overrides set after import (tests, embedded hosts) take effect
 export const node = makeGlobalNode({
   service: Service,
   layer: Layer.unwrap(Effect.sync(() => layerFromPath(path()))),

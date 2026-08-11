@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// kilocode_change - new file
+// chipmate_change - new file
 
 /**
  * Greps tracked files for forbidden strings that must not appear in the repo.
@@ -23,14 +23,14 @@ const forbidden: { pattern: string; reason: string; allow?: string[] }[] = [
   { pattern: "opncd.ai/s/", reason: "legacy upstream share URL pattern" },
   {
     pattern: "github.com/anomalyco/opencode",
-    reason: "upstream repo URL -- should be Kilo-Org/kilocode",
+    reason: "upstream repo URL -- should be ChipMate-Org/chipmate",
     allow: [
       "AGENTS.md",
       "README.md",
       "translations/README.",
       ".opencode/glossary/",
-      "packages/kilo-vscode/AGENTS.md",
-      "packages/kilo-docs/source-links.md",
+      "packages/chipmate-vscode/AGENTS.md",
+      "packages/chipmate-docs/source-links.md",
       "patches/",
       "script/upstream/",
       "translations/",
@@ -38,8 +38,8 @@ const forbidden: { pattern: string; reason: string; allow?: string[] }[] = [
   },
   {
     pattern: "sst/opencode",
-    reason: "old upstream org path -- should be Kilo-Org/kilocode",
-    allow: [".kilo/agent/upstream-merge.md", "script/upstream/"],
+    reason: "old upstream org path -- should be ChipMate-Org/chipmate",
+    allow: [".chipmate/agent/upstream-merge.md", "script/upstream/"],
   },
   { pattern: `"HTTP-Referer": "https://opencode.ai/"`, reason: "attributes outbound LLM traffic to upstream" },
   { pattern: `"http-referer": "https://opencode.ai/"`, reason: "attributes outbound LLM traffic to upstream" },

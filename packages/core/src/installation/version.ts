@@ -1,13 +1,13 @@
 declare global {
-  const KILO_VERSION: string
-  const KILO_CHANNEL: string
-  const KILO_BUILD_KIND: string // kilocode_change
+  const CHIPMATE_VERSION: string
+  const CHIPMATE_CHANNEL: string
+  const CHIPMATE_BUILD_KIND: string // chipmate_change
 }
 
-export const InstallationVersion = typeof KILO_VERSION === "string" ? KILO_VERSION : "local"
-export const InstallationChannel = typeof KILO_CHANNEL === "string" ? KILO_CHANNEL : "local"
+export const InstallationVersion = typeof CHIPMATE_VERSION === "string" ? CHIPMATE_VERSION : "local"
+export const InstallationChannel = typeof CHIPMATE_CHANNEL === "string" ? CHIPMATE_CHANNEL : "local"
 export const InstallationLocal = InstallationChannel === "local"
-// kilocode_change start - distinguish release builds from source / local builds
+// chipmate_change start - distinguish release builds from source / local builds
 export const InstallationBuildKind: "source" | "release" =
-  typeof KILO_BUILD_KIND === "string" && KILO_BUILD_KIND === "release" ? "release" : "source"
-// kilocode_change end
+  typeof CHIPMATE_BUILD_KIND === "string" && CHIPMATE_BUILD_KIND === "release" ? "release" : "source"
+// chipmate_change end

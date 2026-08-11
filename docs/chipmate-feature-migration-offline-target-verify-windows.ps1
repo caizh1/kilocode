@@ -11,9 +11,9 @@ $ErrorActionPreference = "Stop"
 $ExpectedVersion = "0.0.38"
 $ExpectedBundleSha = "97a70108ae648a1998168d679c3c65638ea7756926860fad113cd06c31d2dba5"
 $ExpectedBundleSize = 317784738
-$ExpectedLinuxVsix = "kilo-vscode-linux-x64-baseline.vsix"
+$ExpectedLinuxVsix = "chipmate-vscode-linux-x64-baseline.vsix"
 $ExpectedLinuxSha = "95218162b0d0a09c6425c80a10e9745569c1b021edd9d666a5f43278d31458ad"
-$ExpectedWindowsVsix = "kilo-vscode-win32-x64-baseline.vsix"
+$ExpectedWindowsVsix = "chipmate-vscode-win32-x64-baseline.vsix"
 $ExpectedWindowsSha = "3c6b9943ecf8259379c6f75b1ff321bb83677c092aac3974584524fcd90e489d"
 
 function Fail([string] $Message) {
@@ -136,8 +136,8 @@ try {
     Fail "windows vsix sha mismatch: expected $ExpectedWindowsSha got $WindowsSha"
   }
 
-  Assert-VsixCliMarkers (Join-Path $WorkDir $ExpectedLinuxVsix) "extension/bin/kilo" "linux"
-  Assert-VsixCliMarkers (Join-Path $WorkDir $ExpectedWindowsVsix) "extension/bin/kilo.exe" "windows"
+  Assert-VsixCliMarkers (Join-Path $WorkDir $ExpectedLinuxVsix) "extension/bin/chipmate" "linux"
+  Assert-VsixCliMarkers (Join-Path $WorkDir $ExpectedWindowsVsix) "extension/bin/chipmate.exe" "windows"
   "linux: CLI marker boundary OK`nwindows: CLI marker boundary OK" | Set-Content -Encoding UTF8 -Path (Join-Path $EvidenceDir "vsix-marker-verify.txt")
 
   $ReleaseIndexJson = Get-Content -Raw -Path (Join-Path $WorkDir "OFFLINE_RELEASE_INDEX-chipmate-$ExpectedVersion.json")

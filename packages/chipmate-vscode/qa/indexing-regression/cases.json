@@ -1,0 +1,163 @@
+{
+  "$schema": "./case.schema.json",
+  "version": 1,
+  "suite": "chipmate-indexing-regression",
+  "cases": [
+    {
+      "id": "IDX-REG-001",
+      "title": "Code RAG 每个候选文件只能计数一次",
+      "severity": "P0",
+      "scope": ["source", "package", "windows-installed"],
+      "regression": "DirectoryScanner 同时调用 onProgress 和 onFilesIndexed 时，processedFiles 被重复增加，实际只完成约一半便显示全部文件已处理。",
+      "preconditions": ["创建三个可产生代码分块的 C、C++、H 文件", "使用正式 DirectoryScanner 或包内 chipmate-indexer IPC"],
+      "steps": ["启动全新 Code RAG", "记录全部 RAG status 事件", "提取非零 processedFiles 去重序列"],
+      "expected": [
+        "三个候选文件的 processedFiles 序列严格为 1、2、3",
+        "processedFiles 永远不大于 totalFiles",
+        "onFilesIndexed 只更新成功向量化指标，不增加 processedFiles"
+      ],
+      "sourceExecutors": ["progress-core"],
+      "packageExecutor": "formal-indexer-ipc",
+      "evidence": ["status-trace", "source-test"]
+    },
+    {
+      "id": "IDX-REG-002",
+      "title": "运行态不得提前显示 100%，终态才显示 100%",
+      "severity": "P0",
+      "scope": ["source", "package", "windows-installed"],
+      "regression": "文件回调重复计数使页面提前显示 100%，但索引 Promise 尚未结束，RAG 图标持续旋转。",
+      "preconditions": ["Code RAG 至少包含三个候选文件", "能够记录 Indexing 与 Complete 状态"],
+      "steps": ["启动索引", "遍历所有顶层和 RAG pipeline 状态", "等待真实 Complete 终态"],
+      "expected": [
+        "任意 In Progress 或 Indexing 状态的 percent 最大为 99",
+        "向量提交或候选校验阶段显示正在完成向量索引",
+        "只有 Complete 或 Indexed 终态的 percent 为 100",
+        "终态后不再产生运行态状态"
+      ],
+      "sourceExecutors": ["progress-core"],
+      "packageExecutor": "formal-indexer-ipc",
+      "evidence": ["status-trace", "source-test"]
+    },
+    {
+      "id": "IDX-REG-003",
+      "title": "Document RAG 只在 CodeGraph 与 Code RAG 真实完成后启动",
+      "severity": "P0",
+      "scope": ["source", "package", "windows-installed"],
+      "regression": "Code RAG 页面已假 100%，但 Promise 未完成，Document RAG 永久显示等待代码图和代码 RAG 完成。",
+      "preconditions": ["同时启用 CodeGraph、Code RAG 与 Document RAG", "工作区包含代码和 Markdown 文档"],
+      "steps": ["启动三条流水线", "记录 RAG Complete 与 Document In Progress 的事件顺序", "执行文档固定标记检索"],
+      "expected": [
+        "Document RAG 每轮最多启动一次",
+        "任何 Document RAG In Progress 事件中的 CodeGraph 和 Code RAG 都已经是 Complete",
+        "Document RAG 最终为 Complete，固定文档标记 Top-1 且引用路径正确"
+      ],
+      "sourceExecutors": ["manager-lifecycle", "progress-core"],
+      "packageExecutor": "formal-indexer-ipc",
+      "evidence": ["status-trace", "retrieval-result", "source-test"]
+    },
+    {
+      "id": "IDX-REG-004",
+      "title": "新一轮 RAG 必须立即清除旧 100% 与终态",
+      "severity": "P1",
+      "scope": ["source", "package", "windows-installed"],
+      "regression": "从旧 Complete 状态修改 embedding 配置后，验证和重建期间仍显示上一轮 100%，造成已完成假象。",
+      "preconditions": ["先完成一次 CodeGraph、Code RAG 与 Document RAG", "修改仅影响 embedding 空间的配置"],
+      "steps": ["记录旧 Complete", "更新 endpoint 查询参数触发新一轮 RAG", "检查新一轮首个 RAG 运行态并等待再次完成"],
+      "expected": [
+        "新一轮首个 RAG 运行态 processedFiles、totalFiles、percent 都从 0 开始",
+        "旧的 100% 不会跨轮次保留",
+        "重建完成后代码与文档检索仍然正确"
+      ],
+      "sourceExecutors": ["progress-core", "manager-lifecycle"],
+      "packageExecutor": "formal-indexer-ipc",
+      "evidence": ["status-trace", "retrieval-result", "source-test"]
+    },
+    {
+      "id": "IDX-REG-005",
+      "title": "Embedding 401、403、404 必须快速失败且不得启动文件扫描",
+      "severity": "P0",
+      "scope": ["source", "package", "windows-installed"],
+      "regression": "不可重试认证或路由错误被持续恢复，导致索引永久 In Progress，并产生无效 LanceDB 写入。",
+      "preconditions": ["CodeGraph 可独立完成", "Embedding mock 固定返回 HTTP 404"],
+      "steps": [
+        "使用全新缓存启动索引",
+        "统计 embedding 请求和 RAG 文件进度",
+        "检查向量目录与最终 pipeline 状态",
+        "执行 graph-only 查询"
+      ],
+      "expected": [
+        "只发送一次 embedding 验证请求",
+        "RAG processedFiles 与 totalFiles 始终为 0，且不创建向量库",
+        "CodeGraph 为 Complete、Code RAG 为 Error、Document RAG 为 Standby",
+        "CodeGraph 在 embedding 失败后仍可查询"
+      ],
+      "sourceExecutors": ["manager-lifecycle", "progress-core"],
+      "packageExecutor": "formal-indexer-ipc",
+      "evidence": ["request-count", "status-trace", "graph-result", "source-test"]
+    },
+    {
+      "id": "IDX-REG-006",
+      "title": "Embedding 与 Document 配置变化不得重建已完成 CodeGraph",
+      "severity": "P1",
+      "scope": ["source", "package", "windows-installed"],
+      "regression": "修改 RAG、provider、rerank 或 Document RAG 配置时无条件重建 CodeGraph，使索引页所有流水线反复从零开始。",
+      "preconditions": ["CodeGraph 已完成且固定符号可查询", "准备 embedding 与 Document RAG 配置变化"],
+      "steps": [
+        "修改 embedding 配置并等待 RAG 完成",
+        "修改仅 Document RAG 的配置",
+        "比较 CodeGraph 记录并再次查询固定符号"
+      ],
+      "expected": [
+        "embedding 变化只允许一次不重新解析文件的一致性扫描，不重建图谱记录",
+        "仅 Document RAG 配置变化不触发 CodeGraph 或 Code RAG",
+        "每次配置变化后 CodeGraph 固定证据仍可查询"
+      ],
+      "sourceExecutors": ["manager-lifecycle"],
+      "packageExecutor": "formal-indexer-ipc",
+      "evidence": ["status-trace", "graph-result", "source-test"]
+    },
+    {
+      "id": "IDX-REG-007",
+      "title": "延迟 HTTP snapshot 不得覆盖更新的 SSE 终态",
+      "severity": "P1",
+      "scope": ["source", "windows-installed"],
+      "regression": "较旧的 HTTP 状态请求晚于 SSE Complete 或 Error 返回，覆盖新终态并让页面 spinner 重新出现。",
+      "preconditions": ["能够控制 HTTP snapshot 与 SSE 状态到达顺序", "SSE 终态具有更高 revision"],
+      "steps": ["先挂起 HTTP snapshot", "发送较新的 SSE Complete 或 Error", "再释放旧 HTTP 响应"],
+      "expected": [
+        "缓存和页面保留较新的 SSE 终态",
+        "旧 HTTP snapshot 被 revision guard 丢弃",
+        "终态不会恢复成 In Progress"
+      ],
+      "sourceExecutors": ["vscode-status-sync"],
+      "packageExecutor": "not-required",
+      "evidence": ["status-trace", "source-test"]
+    },
+    {
+      "id": "IDX-REG-008",
+      "title": "LanceDB 批量 generation finalize 必须兼容真实原生运行库",
+      "severity": "P0",
+      "scope": ["source", "package", "windows-installed"],
+      "regression": "批量 finalize 使用 LanceDB 0.26.2 不支持的 CASE WHEN update 表达式，CodeGraph 完成后首个 Code RAG 文件即进入 Error。",
+      "preconditions": [
+        "加载当前目标平台真实 LanceDB 原生模块",
+        "同一路径存在旧 active generation 与新 inactive generation"
+      ],
+      "steps": [
+        "批量激活新 generation",
+        "批量清理同路径旧 generation",
+        "执行原生向量搜索",
+        "在包内 IPC 中完成冷启动索引"
+      ],
+      "expected": [
+        "批量 finalize 使用一次支持的 update 和一次 delete",
+        "搜索只返回新 generation 且 active=true",
+        "日志不包含 unsupported SQL 或 CASE WHEN 错误",
+        "候选读回成功后才提升 active，失败时不更新文件 hash"
+      ],
+      "sourceExecutors": ["lancedb-native"],
+      "packageExecutor": "formal-indexer-ipc",
+      "evidence": ["native-runtime", "vector-readback", "status-trace", "source-test"]
+    }
+  ]
+}

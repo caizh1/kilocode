@@ -7,16 +7,16 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 RUN_STAMP="$(date +%Y%m%d-%H%M%S)"
 RUN_ID="${RUN_STAMP}-${BASHPID:-$$}-${RANDOM}"
 RUN_DIR="${VALIDATION_RUN_DIR:-${REPO_ROOT}/docs/chipmate-feature-migration-validation-runs/${RUN_ID}-installed-vsix-host-smoke}"
-SHORT_ROOT="${SHORT_ROOT:-/tmp/kilo-installed-smoke-${RUN_ID}}"
+SHORT_ROOT="${SHORT_ROOT:-/tmp/chipmate-installed-smoke-${RUN_ID}}"
 WORKSPACE_DIR="${WORKSPACE_DIR:-${SHORT_ROOT}/workspace}"
-VSCODE_TEST_ROOT="${VSCODE_TEST_ROOT:-${REPO_ROOT}/packages/kilo-vscode/.vscode-test/vscode-darwin-arm64-1.127.0/Visual Studio Code.app}"
+VSCODE_TEST_ROOT="${VSCODE_TEST_ROOT:-${REPO_ROOT}/packages/chipmate-vscode/.vscode-test/vscode-darwin-arm64-1.127.0/Visual Studio Code.app}"
 CODE_BIN="${CODE_BIN:-${VSCODE_TEST_ROOT}/Contents/Resources/app/bin/code}"
 CODE_EXE="${CODE_EXE:-${VSCODE_TEST_ROOT}/Contents/MacOS/Electron}"
-NODE_MODULES_DIR="${NODE_MODULES_DIR:-${REPO_ROOT}/packages/kilo-vscode/node_modules}"
+NODE_MODULES_DIR="${NODE_MODULES_DIR:-${REPO_ROOT}/packages/chipmate-vscode/node_modules}"
 
 usage() {
   cat <<'USAGE'
-Installed VSIX extension-host smoke for ChipMate/Kilo migration validation.
+Installed VSIX extension-host smoke for ChipMate/ChipMate migration validation.
 
 Usage:
   bash docs/chipmate-feature-migration-installed-vsix-host-smoke.sh <vsix-path>
@@ -145,37 +145,37 @@ suite("Installed ChipMate VSIX smoke", () => {
 
     const commands = await vscode.commands.getCommands(true)
     for (const command of [
-      "kilo-code.new.agentManagerOpen",
-      "kilo-code.new.settingsButtonClicked",
-      "kilo-code.new.generateTerminalCommand",
-      "kilo-code.new.documents.openArtifact",
-      "kilo-code.new.documents.exportDiagnostics",
-      "kilo-code.new.agentTerminal.open",
-      "kilo-code.new.qwenAutocomplete.showLogs",
-      "kilo-code.new.qwenAutocomplete.exportDiagnostics",
-      "kilo-code.new.qwenAutocomplete.smokeDiagnostics",
-      "kilo-code.new.autocomplete.generateSuggestions",
-      "kilo-code.new.terminalFixCommand",
+      "chipmate-code.new.agentManagerOpen",
+      "chipmate-code.new.settingsButtonClicked",
+      "chipmate-code.new.generateTerminalCommand",
+      "chipmate-code.new.documents.openArtifact",
+      "chipmate-code.new.documents.exportDiagnostics",
+      "chipmate-code.new.agentTerminal.open",
+      "chipmate-code.new.qwenAutocomplete.showLogs",
+      "chipmate-code.new.qwenAutocomplete.exportDiagnostics",
+      "chipmate-code.new.qwenAutocomplete.smokeDiagnostics",
+      "chipmate-code.new.autocomplete.generateSuggestions",
+      "chipmate-code.new.terminalFixCommand",
     ]) {
       assert.ok(commands.includes(command), `${command} must be registered by installed extension`)
     }
 
     const config = vscode.workspace.getConfiguration()
-    assert.strictEqual(config.get("kilo.documents.artifacts.root"), ".kilo/artifacts")
-    assert.strictEqual(config.get("kilo.documents.tools.enabled"), true)
-    assert.strictEqual(config.get("kilo.agentTerminal.enabled"), false)
-    assert.strictEqual(config.get("kilo.autocomplete.enabled"), false)
-    assert.strictEqual(config.get("kilo.autocomplete.provider"), "none")
-    assert.ok(config.has("kilo.autocomplete.qwen.model"))
-    assert.strictEqual(config.get("kilo.autocomplete.qwen.model"), "qwen-coder-30b0")
-    assert.strictEqual(config.has("kilo.autocomplete.qwen.endpoint"), false)
-    assert.strictEqual(config.has("kilo.autocomplete.qwen.apiKey"), false)
-    assert.ok(config.has("kilo-code.new.autocomplete.provider"))
-    assert.ok(config.has("kilo-code.new.autocomplete.model"))
+    assert.strictEqual(config.get("chipmate.documents.artifacts.root"), ".chipmate/artifacts")
+    assert.strictEqual(config.get("chipmate.documents.tools.enabled"), true)
+    assert.strictEqual(config.get("chipmate.agentTerminal.enabled"), false)
+    assert.strictEqual(config.get("chipmate.autocomplete.enabled"), false)
+    assert.strictEqual(config.get("chipmate.autocomplete.provider"), "none")
+    assert.ok(config.has("chipmate.autocomplete.qwen.model"))
+    assert.strictEqual(config.get("chipmate.autocomplete.qwen.model"), "qwen-coder-30b0")
+    assert.strictEqual(config.has("chipmate.autocomplete.qwen.endpoint"), false)
+    assert.strictEqual(config.has("chipmate.autocomplete.qwen.apiKey"), false)
+    assert.ok(config.has("chipmate-code.new.autocomplete.provider"))
+    assert.ok(config.has("chipmate-code.new.autocomplete.model"))
 
     const contributes = extension.packageJSON.contributes
-    assert.ok((contributes.terminal?.profiles ?? []).some((profile) => profile.id === "kilo.agentTerminal"))
-    assert.ok((contributes.views?.["kilo-code-ActivityBar"] ?? []).some((view) => view.id === "kilo-code.SidebarProvider"))
+    assert.ok((contributes.terminal?.profiles ?? []).some((profile) => profile.id === "chipmate.agentTerminal"))
+    assert.ok((contributes.views?.["chipmate-code-ActivityBar"] ?? []).some((view) => view.id === "chipmate-code.SidebarProvider"))
   })
 
   const sidecar = process.env.SKIP_SIDECAR_SMOKE === "1" ? test.skip : test
@@ -186,7 +186,7 @@ suite("Installed ChipMate VSIX smoke", () => {
     const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
     assert.ok(workspace, "workspace folder is required")
 
-    const artifactRoot = path.join(workspace, ".kilo", "artifacts")
+    const artifactRoot = path.join(workspace, ".chipmate", "artifacts")
     const artifactName = `installed-host-smoke-${Date.now()}`
     const artifactDir = path.join(artifactRoot, artifactName)
     await fs.mkdir(artifactDir, { recursive: true })
@@ -209,18 +209,18 @@ suite("Installed ChipMate VSIX smoke", () => {
     )
 
     const beforeDiagnostics = new Set((await fs.readdir(artifactRoot)).filter((item) => /^artifact-diagnostics-.*\.json$/.test(item)))
-    await vscode.commands.executeCommand("kilo-code.new.documents.openArtifact", `.kilo/artifacts/${artifactName}/report.md`)
-    await vscode.commands.executeCommand("kilo-code.new.documents.exportDiagnostics")
+    await vscode.commands.executeCommand("chipmate-code.new.documents.openArtifact", `.chipmate/artifacts/${artifactName}/report.md`)
+    await vscode.commands.executeCommand("chipmate-code.new.documents.exportDiagnostics")
     const afterDiagnostics = (await fs.readdir(artifactRoot)).filter((item) => /^artifact-diagnostics-.*\.json$/.test(item))
     assert.ok(afterDiagnostics.some((item) => !beforeDiagnostics.has(item)), "document artifact diagnostics command must write a diagnostics JSON file")
 
-    await vscode.workspace.getConfiguration().update("kilo.agentTerminal.enabled", true, vscode.ConfigurationTarget.Workspace)
-    await vscode.commands.executeCommand("kilo-code.new.agentTerminal.open")
+    await vscode.workspace.getConfiguration().update("chipmate.agentTerminal.enabled", true, vscode.ConfigurationTarget.Workspace)
+    await vscode.commands.executeCommand("chipmate-code.new.agentTerminal.open")
     await new Promise((resolve) => setTimeout(resolve, 250))
-    await fs.stat(path.join(workspace, ".kilo", "agent-terminal", "agent-terminal.sh"))
-    await fs.stat(path.join(workspace, ".kilo", "agent-terminal", "context.md"))
+    await fs.stat(path.join(workspace, ".chipmate", "agent-terminal", "agent-terminal.sh"))
+    await fs.stat(path.join(workspace, ".chipmate", "agent-terminal", "context.md"))
 
-    await vscode.commands.executeCommand("kilo-code.new.qwenAutocomplete.showLogs")
+    await vscode.commands.executeCommand("chipmate-code.new.qwenAutocomplete.showLogs")
   })
 })
 JS

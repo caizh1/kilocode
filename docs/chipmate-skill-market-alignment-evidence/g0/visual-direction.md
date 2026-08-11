@@ -52,7 +52,7 @@ G4 首个 image-to-code 验收面固定为 `/` 亮色首页，随后扩展到暗
 - 品牌头部高度约 112px；主内容最大宽度约 1320px，居中排列。
 - 首屏主标题、搜索和推荐卡形成单一阅读路径；分类作为第二层，不把所有能力塞进首屏。
 - 玻璃材质优先用于头部、搜索、推荐和少量分类表面；禁止全页叠加大量 `backdrop-filter`。
-- 图标使用高质量图标库；品牌图标使用 `packages/kilo-vscode/assets/icons/chipmate-icon.png`，不手画 SVG/CSS 图标。
+- 图标使用高质量图标库；品牌图标使用 `packages/chipmate-vscode/assets/icons/chipmate-icon.png`，不手画 SVG/CSS 图标。
 - 图标按钮和工具栏使用 flex/grid 正常流，不使用 `position:absolute` 对齐。
 - 正文 14–16px，系统中文字体栈优先；长描述控制在舒适行长。
 - 支持键盘导航、清晰焦点、`prefers-reduced-motion` 和 WCAG 2.2 AA。
@@ -70,5 +70,5 @@ G4 首个 image-to-code 验收面固定为 `/` 亮色首页，随后扩展到暗
 ## 平台分界
 
 - Web 按本文件的 Liquid Glass 方向实现。
-- Kilo Marketplace 保持 SolidJS、kilo-ui、VS Code theme token、currentColor 和单色 Codicons。
+- ChipMate Marketplace 保持 SolidJS、chipmate-ui、VS Code theme token、currentColor 和单色 Codicons。
 - 不把 Web 的大面积玻璃背景移植到 VS Code webview。

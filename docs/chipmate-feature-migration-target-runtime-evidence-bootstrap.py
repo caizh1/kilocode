@@ -2,7 +2,7 @@
 """
 Bootstrap offline target runtime evidence files for ChipMate migration S1-S16.
 
-This helper does not execute Kilo, VS Code, QA, Word, Mermaid, autocomplete, or
+This helper does not execute ChipMate, VS Code, QA, Word, Mermaid, autocomplete, or
 Agent Terminal flows. It only creates a conservative, machine-readable evidence
 skeleton so target operators can fill real results and then run the strict
 runtime/target intake verifiers.
@@ -23,7 +23,7 @@ from pathlib import Path
 
 VERSION = "0.0.38"
 S_CASES = [
-    ("S1", "Native C QA call chain", "Expected native Kilo code understanding; no Word/Mermaid/artifact tools"),
+    ("S1", "Native C QA call chain", "Expected native ChipMate code understanding; no Word/Mermaid/artifact tools"),
     ("S2", "Macro/register QA", "Expected native search/code understanding tools"),
     ("S3", "Document RAG QA", "Expected document_search path"),
     ("S4", "Artifact create/list", "Expected artifact manifest and open/list behavior"),

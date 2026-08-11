@@ -10,7 +10,7 @@
 
 - 状态：`进行中（入口和安全写入链路已实现，模型质量门槛未通过）`
 - 记录日期：2026-07-31
-- 模块：`packages/kilo-vscode/src/services/code-comments`、`packages/kilo-vscode/qa/code-comments`
+- 模块：`packages/chipmate-vscode/src/services/code-comments`、`packages/chipmate-vscode/qa/code-comments`
 - 背景：当前已实现光标函数定位、临时只读 Code 会话、双会话复核、确定性注释校验、原生 Diff 和原子应用。首轮 A/B 的 54.6/31.6 总分因交互工具和认证环境污染已作废；去干扰后的双会话 5 函数重测中，完成样本内容平均 86.0、估算事实正确率 97.1%、严重幻觉为 0，但可用完成率只有 2/5。2026-08-01 已将大体量 JSON 与第三轮仲裁替换为两轮原始 Code QA 和 comment-only Diff；随后 OpenSSD 3 函数回归达到 3/3 完成，但人工核验发现 1 处复核漏过的事实错误。新换的 5 个 OpenSSD 分级函数回归达到 5/5 完成、10/10 会话无超时、最终事实正确率 100%、严重幻觉为 0、平均 93.6 分；复核实际修正了 `AllocateTempDataBuf` 的 1 处错误定性。
 - 目标：继续以 OpenSSD 真实函数验证简化协议的完成率、事实正确率和克制性；当前 5 函数分级回归已通过小样本门槛，下一步完成 45 个未见函数和人工效率验收。小样本通过不能替代发布门槛。
 
@@ -54,7 +54,7 @@
 
 - 状态：`待开发`
 - 记录日期：2026-07-22
-- 模块：`packages/kilo-vscode`、`packages/opencode/src/kilocode`
+- 模块：`packages/chipmate-vscode`、`packages/opencode/src/chipmate`
 - 背景：ChipMate Server 切换 HTTPS 后，如果服务器使用自签名证书或企业私有 CA，用户目前需要在实际运行扩展宿主的 Windows、macOS、Linux 或 Remote-SSH 环境中预先配置证书信任。期望允许用户在插件内确认指定远端证书，同时不降低其他 HTTPS 连接的安全性。
 - 目标：为 ChipMate Server 提供按精确 `https://host:port` 隔离的证书探测、用户确认、持久信任和撤销能力，使用户无需全局关闭 TLS 校验即可使用受信任的自签名或私有 CA 服务。
 
@@ -107,7 +107,7 @@
 
 - 状态：`进行中（薄 Runtime 机制覆盖通过，生产门槛未验证）`
 - 记录日期：2026-07-28
-- 模块：`packages/opencode/src/kilocode/embedded-review`、ChipMate Server 部署环境
+- 模块：`packages/opencode/src/chipmate/embedded-review`、ChipMate Server 部署环境
 - 背景：`/embedded-review` 的确定性范围解析、RulePack、机械规则、证据封印和固定 224 案例（112 组正反配对）基准已实现。重证据包 Runtime 的首轮 3 组 OpenSSD 缺陷/干净对照盲测未达到发布质量，且禁止了模型自主源码检索，不能用于判断模型能力上限。现已切换为允许 `deepseek-v4-flash max` 自主调用 `read/grep/glob` 的薄 Runtime。
 - 目标：在真实内网部署模型上运行直接 `grep/glob/read`、B0 和最终 Runtime 三组盲测，并以未参与调优的新案例完成人工耗时对照。
 
@@ -139,8 +139,8 @@ Qwen 组仅完成 G2-09-D 且漏检；随后端点持续返回 `403 AccessDenied
 
 - 状态：`待开发`
 - 记录日期：2026-07-28
-- 模块：`packages/kilo-vscode/webview-ui`（样式层 `src/styles/`、`ChatView`/`PromptInput`/`WelcomeEmptyState` 等组件）
-- 背景：当前 QA 界面沿用 Kilo 布局骨架叠加 Titanium Studio 蓝色玻璃材质，视觉上接近 Kilo 换皮。2026-07-28 第一版 Signal Workbench 设计稿（石墨 + 琥珀仪器风）被用户否决；同日交付第二版 Liquid Glass 设计稿（类 iOS 26：静态极光底色 + 磨砂玻璃面 + 紫→青品牌渐变 + iMessage 式用户气泡），性能约束为常驻模糊面 ≤3 处、blur ≤20px、背景单次绘制零动画，待用户评审确认。
+- 模块：`packages/chipmate-vscode/webview-ui`（样式层 `src/styles/`、`ChatView`/`PromptInput`/`WelcomeEmptyState` 等组件）
+- 背景：当前 QA 界面沿用 ChipMate 布局骨架叠加 Titanium Studio 蓝色玻璃材质，视觉上接近 ChipMate 换皮。2026-07-28 第一版 Signal Workbench 设计稿（石墨 + 琥珀仪器风）被用户否决；同日交付第二版 Liquid Glass 设计稿（类 iOS 26：静态极光底色 + 磨砂玻璃面 + 紫→青品牌渐变 + iMessage 式用户气泡），性能约束为常驻模糊面 ≤3 处、blur ≤20px、背景单次绘制零动画，待用户评审确认。
 - 目标：用户确认设计稿后，以 CSS token 层替换 `titanium-studio.css` / `qa-liquid-glass.css` 材质，落地欢迎态、悬浮胶囊头、气泡消息流、玻璃输入坞与权限坞新视觉，深浅色双主题，高对比主题保持现有兜底。
 
 ### 验收标准
@@ -159,7 +159,7 @@ Qwen 组仅完成 G2-09-D 且漏检；随后端点持续返回 `403 AccessDenied
 
 - 状态：`进行中`
 - 记录日期：2026-07-28
-- 模块：`packages/kilo-vscode/src/services/update-check`、`packages/kilo-vscode/qa/windows-real`
+- 模块：`packages/chipmate-vscode/src/services/update-check`、`packages/chipmate-vscode/qa/windows-real`
 - 背景：Windows 内置 CLI 安装适配、专用更新日志、设置页原始错误展示和独立 `update` lane 已实现并完成 macOS 自动化验证；当前会话没有 native-x64 Windows 运行环境，且按当前源码版本增加一个 patch 后的 `1.0.9` Windows baseline 产物已存在，不能覆盖同名产物或伪报真实闭环通过。
 - 目标：准备两个新鲜、连续版本的 Windows baseline VSIX，在原生 Windows x64 上完成旧版到候选版的真实离线自动更新与故障矩阵，确认后再发布 handoff 产物。
 
@@ -185,7 +185,7 @@ Qwen 组仅完成 G2-09-D 且漏检；随后端点持续返回 `403 AccessDenied
 
 - 状态：`已完成（组合模式未通过优于纯三路验证的验收）`
 - 记录日期：2026-07-29
-- 模块：`packages/opencode/src/kilocode/agent/ultra-verify.ts`、`packages/opencode/src/kilocode/tool/ultra-verify.ts`
+- 模块：`packages/opencode/src/chipmate/agent/ultra-verify.ts`、`packages/opencode/src/chipmate/tool/ultra-verify.ts`
 - 背景：与既有实验一致的纯三路验证模式已完成 12 题公平 A/B，并交付 ChipMate 1.0.9 Linux/Windows baseline VSIX。组合模式实现为“冻结 Code 基准 → 三路并行深化 → 三路并行验证全部深化报告 → 独立 Ask 综合”。两种模式均已使用同一 `deepseek-v4-flash` Judge、相同题目和 rubric 完成双轮反向 A/B。
 - 目标：验证组合模式是否同时优于配对 Code 和纯三路验证，并据此决定是否保留额外深化阶段。
 

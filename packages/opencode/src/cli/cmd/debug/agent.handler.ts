@@ -14,7 +14,7 @@ import { iife } from "../../../util/iife"
 import { fail } from "../../effect-cmd"
 import { InstanceRef } from "@/effect/instance-ref"
 import type { InstanceContext } from "@/project/instance-context"
-import { KiloIndexing } from "@/kilocode/indexing" // kilocode_change
+import { ChipMateIndexing } from "@/chipmate/indexing" // chipmate_change
 
 export const debugAgent = Effect.fn("Cli.debug.agent")(function* (args: {
   name: string
@@ -42,11 +42,11 @@ const run = Effect.fn("Cli.debug.agent.body")(function* (
   const resolvedTools = resolveTools(agent, availableTools)
   const toolID = args.tool
   if (toolID) {
-    // kilocode_change start - wait for the asynchronously opened document index in direct debug calls
+    // chipmate_change start - wait for the asynchronously opened document index in direct debug calls
     if (toolID === "document_search") {
-      yield* Effect.promise(() => KiloIndexing.waitUntilDocumentsReady())
+      yield* Effect.promise(() => ChipMateIndexing.waitUntilDocumentsReady())
     }
-    // kilocode_change end
+    // chipmate_change end
     const tool = availableTools.find((item) => item.id === toolID)
     if (!tool) {
       process.stderr.write(`Tool ${toolID} not found for agent ${agentName}` + EOL)

@@ -1,0 +1,610 @@
+/* ============================================================
+   QA workspace — hc-black default with Liquid Glass light-theme fallback
+
+   This layer is intentionally scoped to ChatView so Settings and the other
+   extension surfaces retain their own material systems. Geometry remains in
+   normal flow: responsive icon groups use grid/flex, never absolute offsets.
+   ============================================================ */
+
+body:has(.chat-view[data-ui="qa-shell"]),
+.chat-view[data-ui="qa-shell"] {
+  --qa-shell-bg: #000;
+  --qa-shell-ambient: transparent;
+  --qa-glass-fill: #000;
+  --qa-glass-fill-strong: #000;
+  --qa-glass-fill-inset: #000;
+  --qa-glass-border: #6fc3df;
+  --qa-glass-border-soft: #6fc3df;
+  --qa-divider: color-mix(in srgb, #fff 24%, transparent);
+  --qa-glass-highlight: transparent;
+  --qa-glass-shadow: transparent;
+  --qa-active-fill: #0f4c75;
+  --qa-active-border: #f38518;
+  --qa-composer-border: #c39c61;
+  --qa-control-border: color-mix(in srgb, #6fc3df 32%, transparent);
+  --qa-control-border-hover: color-mix(in srgb, #6fc3df 58%, transparent);
+  --qa-control-fill: color-mix(in srgb, #fff 3%, #000);
+  --qa-control-fill-hover: color-mix(in srgb, #fff 6%, #000);
+  --qa-control-highlight: color-mix(in srgb, #fff 9%, transparent);
+  --qa-control-shadow: inset 0 1px 0 var(--qa-control-highlight);
+  --qa-danger-fill: color-mix(in srgb, var(--vscode-errorForeground, #f48771) 16%, var(--qa-glass-fill));
+  --qa-success-fill: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 14%, var(--qa-glass-fill));
+  --qa-radius-shell: 20px;
+  --qa-radius-card: 14px;
+  --qa-radius-control: 11px;
+  --qa-blur: none;
+  --qa-shadow-card: none;
+  --qa-shadow-control: none;
+}
+
+/* Shell and conversation plane */
+.chat-view[data-ui="qa-shell"] {
+  isolation: isolate;
+  color: var(--vscode-foreground);
+  background: radial-gradient(circle at 50% -8%, var(--qa-shell-ambient), transparent 48%), var(--qa-shell-bg);
+}
+
+.chat-view[data-ui="qa-shell"] [data-ui="qa-conversation"] {
+  min-width: 0;
+  background: color-mix(in srgb, var(--qa-shell-bg) 88%, transparent);
+}
+
+.chat-view[data-ui="qa-shell"] .message-list-container {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-view[data-ui="qa-shell"] .message-list {
+  grid-area: 1 / 1;
+  padding: 18px clamp(14px, 3.2vw, 34px) 22px;
+  scrollbar-color: color-mix(in srgb, var(--vscode-scrollbarSlider-background) 76%, transparent) transparent;
+}
+
+.chat-view[data-ui="qa-shell"] .message-list-content,
+.chat-view[data-ui="qa-shell"] .message-list-content-empty,
+.chat-view[data-ui="qa-shell"] .message-list-turns {
+  width: min(100%, 820px);
+  margin-inline: auto;
+}
+
+.chat-view[data-ui="qa-shell"] .message-list-content {
+  gap: 18px;
+}
+
+/* Welcome state */
+.chat-view[data-ui="qa-shell"] .message-list-empty {
+  width: min(100%, 560px);
+  height: auto;
+  min-height: 100%;
+  margin-inline: auto;
+  padding: 36px 24px;
+  gap: 18px;
+}
+
+.chat-view[data-ui="qa-shell"] .chipmate-logo {
+  width: clamp(66px, 15vw, 78px);
+  height: clamp(66px, 15vw, 78px);
+}
+
+.chat-view[data-ui="qa-shell"] .chipmate-logo img {
+  filter: saturate(1.24) brightness(1.16) drop-shadow(0 16px 30px color-mix(in srgb, #2babff 34%, transparent))
+    drop-shadow(0 1px 0 color-mix(in srgb, #fff 30%, transparent));
+}
+
+.chat-view[data-ui="qa-shell"] .chipmate-about-text {
+  max-width: 520px;
+  margin: 0;
+  color: color-mix(in srgb, var(--vscode-foreground) 84%, var(--vscode-descriptionForeground));
+  font-size: var(--chipmate-font-size-16);
+  font-weight: 520;
+  line-height: 1.62;
+  text-wrap: balance;
+}
+
+.chat-view[data-ui="qa-shell"] .feedback-button,
+.chat-view[data-ui="qa-shell"] .show-history-btn,
+.chat-view[data-ui="qa-shell"] .recent-session-item {
+  min-height: 38px;
+  border: 1px solid var(--qa-glass-border-soft);
+  border-radius: var(--qa-radius-control);
+  background: var(--qa-glass-fill);
+  box-shadow: var(--qa-shadow-control);
+  color: var(--vscode-foreground);
+  backdrop-filter: var(--qa-blur);
+  -webkit-backdrop-filter: var(--qa-blur);
+}
+
+.chat-view[data-ui="qa-shell"] .feedback-button {
+  padding: 8px 16px;
+  font-size: var(--chipmate-font-size-13);
+}
+
+.chat-view[data-ui="qa-shell"] .feedback-button:hover,
+.chat-view[data-ui="qa-shell"] .show-history-btn:hover,
+.chat-view[data-ui="qa-shell"] .recent-session-item:hover {
+  border-color: var(--qa-active-border);
+  background: var(--qa-active-fill);
+  color: var(--vscode-foreground);
+}
+
+.chat-view[data-ui="qa-shell"] .recent-sessions {
+  max-width: 420px;
+  gap: 7px;
+}
+
+.chat-view[data-ui="qa-shell"] .recent-sessions-label {
+  font-size: var(--chipmate-font-size-12);
+  letter-spacing: 0.06em;
+}
+
+.chat-view[data-ui="qa-shell"] .recent-session-item {
+  padding: 9px 12px;
+  font-size: var(--chipmate-font-size-14);
+}
+
+/* Header and task context */
+.chat-view[data-ui="qa-shell"] [data-component="task-header"],
+.chat-view[data-ui="qa-shell"] [data-component="task-header-graph"],
+.chat-view[data-ui="qa-shell"] [data-component="task-header-todos"] {
+  margin-inline: 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.chat-view[data-ui="qa-shell"] [data-component="task-header"] {
+  margin-top: 10px;
+  min-height: 44px;
+}
+
+.chat-view[data-ui="qa-shell"]
+  :is([data-component="task-header"], [data-component="task-header-graph"], [data-component="task-header-todos"]):has(
+    + [data-ui="qa-conversation"]
+  ) {
+  border-bottom: 1px solid var(--qa-divider);
+}
+
+.chat-view[data-ui="qa-shell"] [data-slot="task-header-title-label"] {
+  font-size: var(--chipmate-font-size-14);
+  font-weight: 620;
+}
+
+/* Message rhythm and reading surfaces */
+.chat-view[data-ui="qa-shell"] .vscode-session-turn {
+  gap: 14px;
+  padding: 0 2px 18px;
+  font-size: var(--chipmate-font-size-14);
+  line-height: 1.65;
+}
+
+.chat-view[data-ui="qa-shell"] .vscode-session-turn-user {
+  padding-block: 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.chat-view[data-ui="qa-shell"] .vscode-session-turn-assistant {
+  gap: 14px;
+  color: color-mix(in srgb, var(--vscode-foreground) 94%, var(--vscode-descriptionForeground));
+}
+
+.chat-view[data-ui="qa-shell"] .vscode-session-turn-assistant p,
+.chat-view[data-ui="qa-shell"] .vscode-session-turn-user p {
+  line-height: 1.65;
+}
+
+/* Reading parts stay flat; actual tool wrappers retain their semantic card. */
+.chat-view[data-ui="qa-shell"] [data-component="tool-part-wrapper"][data-part-type="text"],
+.chat-view[data-ui="qa-shell"] [data-component="tool-part-wrapper"][data-part-type="reasoning"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Tool, artifact, approval, and recovery containers */
+.chat-view[data-ui="qa-shell"] [data-component="todos"],
+.chat-view[data-ui="qa-shell"] .document-artifact-card,
+.chat-view[data-ui="qa-shell"] [data-component="question-dock"],
+.chat-view[data-ui="qa-shell"] [data-component="dock-prompt"][data-kind="permission"],
+.chat-view[data-ui="qa-shell"] [data-component="suggest-bar"],
+.chat-view[data-ui="qa-shell"] [data-component="plan-exit-card"],
+.chat-view[data-ui="qa-shell"] .startup-error-banner,
+.chat-view[data-ui="qa-shell"] .revert-banner,
+.chat-view[data-ui="qa-shell"] [data-component="auth-prompt"] {
+  border: 1px solid var(--qa-glass-border-soft);
+  border-radius: var(--qa-radius-card);
+  background: var(--qa-glass-fill);
+  box-shadow: var(--qa-shadow-control);
+  backdrop-filter: var(--qa-blur);
+  -webkit-backdrop-filter: var(--qa-blur);
+}
+
+.chat-view[data-ui="qa-shell"] [data-component="tool-output"][data-scrollable],
+.chat-view[data-ui="qa-shell"] [data-slot="task-header-todos-list"],
+.chat-view[data-ui="qa-shell"] .revert-banner-files,
+.chat-view[data-ui="qa-shell"] .startup-error-details {
+  background: var(--qa-glass-fill-inset);
+}
+
+.chat-view[data-ui="qa-shell"] [data-component="question-dock"]:focus-within,
+.chat-view[data-ui="qa-shell"] [data-component="dock-prompt"][data-kind="permission"]:focus-within {
+  border-color: var(--qa-active-border);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--qa-active-border) 34%, transparent),
+    var(--qa-shadow-card);
+}
+
+.chat-view[data-ui="qa-shell"] .startup-error-banner,
+.chat-view[data-ui="qa-shell"] .revert-banner {
+  border-color: color-mix(in srgb, var(--vscode-errorForeground, #f48771) 46%, var(--qa-glass-border-soft));
+  background: var(--qa-danger-fill);
+}
+
+.chat-view[data-ui="qa-shell"] .session-actions-row {
+  gap: 6px;
+  min-height: 34px;
+  padding: 3px;
+}
+
+.chat-view[data-ui="qa-shell"] .session-actions-row > [data-component="tooltip-trigger"] > [data-component="button"],
+.chat-view[data-ui="qa-shell"] .session-worktree-split {
+  min-height: 30px;
+  border: 1px solid var(--qa-glass-border-soft);
+  border-radius: 9px;
+  background: var(--qa-glass-fill);
+  box-shadow: inset 0 1px 0 var(--qa-glass-highlight);
+}
+
+.chat-view[data-ui="qa-shell"] .session-actions-row > [data-component="tooltip-trigger"] > [data-component="button"] {
+  padding-inline: 9px !important;
+  font-size: var(--chipmate-font-size-13);
+}
+
+/* Scroll control overlays through grid, while remaining in normal flow. */
+.chat-view[data-ui="qa-shell"] .scroll-to-bottom-button {
+  position: static;
+  grid-area: 1 / 1;
+  align-self: end;
+  justify-self: end;
+  z-index: 3;
+  width: 42px;
+  height: 42px;
+  margin: 0 16px 16px 0;
+  border: 1px solid var(--qa-active-border);
+  background: var(--qa-active-fill);
+  box-shadow: var(--qa-shadow-card);
+  backdrop-filter: var(--qa-blur);
+  -webkit-backdrop-filter: var(--qa-blur);
+}
+
+/* Composer dock */
+.chat-view[data-ui="qa-shell"] [data-ui="qa-dock"] {
+  border-top-color: var(--qa-glass-border-soft);
+  background: color-mix(in srgb, var(--qa-shell-bg) 84%, transparent);
+  box-shadow: 0 -14px 34px color-mix(in srgb, var(--qa-glass-shadow) 32%, transparent);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
+  margin: 12px 14px 14px;
+  padding: 9px;
+  overflow: visible;
+  border: 1px solid var(--qa-composer-border);
+  border-radius: var(--qa-radius-shell);
+  background: var(--qa-glass-fill);
+  box-shadow: var(--qa-shadow-card);
+  backdrop-filter: var(--qa-blur);
+  -webkit-backdrop-filter: var(--qa-blur);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"]:focus-within {
+  border-color: var(--qa-composer-border);
+  background: var(--qa-glass-fill-strong);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--qa-active-border) 42%, transparent),
+    var(--qa-shadow-card);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-wrapper[data-ui="qa-composer-input"] {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--qa-active-border) 72%, transparent);
+  border-radius: var(--qa-radius-card);
+  background: var(--qa-glass-fill-inset);
+  box-shadow:
+    inset 0 1px 0 var(--qa-glass-highlight),
+    inset 0 -1px 0 color-mix(in srgb, #000 10%, transparent);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-wrapper[data-ui="qa-composer-input"]:focus-within {
+  border-color: color-mix(in srgb, var(--qa-active-border) 72%, transparent);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input,
+.chat-view[data-ui="qa-shell"] .prompt-input-highlight-overlay {
+  min-height: 92px;
+  max-height: 210px;
+  padding: 14px 14px calc(14px + 1.45em);
+  font-size: var(--chipmate-font-size-14);
+  line-height: 1.5;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input::placeholder {
+  color: color-mix(in srgb, var(--vscode-input-placeholderForeground, var(--text-weaker)) 88%, transparent);
+}
+
+.chat-view[data-ui="qa-shell"] .image-attachments,
+.chat-view[data-ui="qa-shell"] .prompt-review-comments {
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 8px;
+  border: 1px solid var(--qa-glass-border-soft);
+  border-radius: var(--qa-radius-card);
+  background: var(--qa-glass-fill-inset);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-review-chip {
+  min-height: 42px;
+  border-color: var(--qa-glass-border-soft);
+  border-radius: var(--qa-radius-control);
+  background: var(--qa-glass-fill);
+  box-shadow: inset 0 1px 0 var(--qa-glass-highlight);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-review-chip-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--qa-active-fill);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-review-chip-title,
+.chat-view[data-ui="qa-shell"] .prompt-review-chip-line {
+  font-size: var(--chipmate-font-size-12);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-review-chip-remove,
+.chat-view[data-ui="qa-shell"] .image-attachment-remove {
+  border-color: var(--qa-glass-border-soft);
+  background: var(--qa-glass-fill-strong);
+  color: var(--vscode-foreground);
+  box-shadow: inset 0 1px 0 var(--qa-glass-highlight);
+}
+
+/* Titanium Studio owns all Composer geometry and responsive tracks. This
+   layer only supplies the Liquid Glass material and semantic states. */
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"] {
+  border: 1px solid var(--qa-control-border);
+  border-radius: var(--qa-radius-control);
+  background: var(--qa-control-fill);
+  box-shadow: var(--qa-control-shadow);
+  color: var(--vscode-foreground);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"]:hover:not(:disabled) {
+  border-color: var(--qa-control-border-hover);
+  background: var(--qa-control-fill-hover) !important;
+  box-shadow: var(--qa-control-shadow);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"]:focus-visible {
+  border-color: var(--qa-control-border-hover);
+  outline: 2px solid var(--qa-active-border) !important;
+  outline-offset: 2px !important;
+  background: var(--qa-control-fill-hover) !important;
+  box-shadow: var(--qa-control-shadow);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"][data-expanded] {
+  border-color: var(--qa-active-border);
+  background: var(--qa-active-fill) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--qa-active-border) 26%, transparent),
+    var(--qa-control-shadow);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon [data-slot="icon-svg"],
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-icon .codicon {
+  color: currentColor;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors .prompt-selector-chevron {
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--chipmate-font-size-14);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="button"],
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="icon-button"] {
+  border: 1px solid var(--qa-control-border);
+  border-radius: 12px;
+  background: var(--qa-control-fill);
+  box-shadow: var(--qa-control-shadow);
+  color: var(--vscode-foreground);
+  opacity: 1;
+  transition:
+    transform 130ms ease,
+    border-color 130ms ease,
+    background-color 130ms ease,
+    color 130ms ease,
+    opacity 130ms ease;
+}
+
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-actions
+  [data-component="button"]:hover:not(:disabled):not([aria-disabled="true"]),
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="icon-button"]:hover:not(:disabled) {
+  border-color: var(--qa-index-border, var(--qa-control-border-hover));
+  background: var(--qa-index-bg, var(--qa-control-fill-hover));
+  transform: translateY(-1px);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="button"]:active:not(:disabled),
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="icon-button"]:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="button"]:focus-visible,
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="icon-button"]:focus-visible {
+  outline: 2px solid var(--qa-active-border) !important;
+  outline-offset: 2px !important;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="button"]:disabled,
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [data-component="icon-button"]:disabled,
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions [aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.42;
+  filter: saturate(0.58);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-codicon-stack .prompt-indexing-status-codicon {
+  background: var(--qa-glass-fill);
+  box-shadow: 0 0 0 1px var(--qa-glass-fill);
+  color: var(--prompt-indexing-tone) !important;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-button {
+  --qa-index-border: var(--qa-control-border);
+  --qa-index-bg: var(--qa-control-fill);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-button[data-state="indexing"] {
+  --prompt-indexing-tone: var(--qa-active-border);
+  --qa-index-border: var(--qa-active-border);
+  --qa-index-bg: color-mix(in srgb, var(--qa-active-border) 15%, var(--qa-glass-fill));
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-button[data-tone="success"] {
+  --qa-index-border: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 82%, var(--qa-glass-border-soft));
+  --qa-index-bg: var(--qa-success-fill);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-button[data-state="complete"][data-tone="warning"] {
+  --prompt-indexing-tone: var(--vscode-editorWarning-foreground, #d7a93a);
+  --qa-index-border: var(--vscode-editorWarning-foreground, #d7a93a);
+  --qa-index-bg: color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a93a) 14%, var(--qa-glass-fill));
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-button[data-tone="error"] {
+  --qa-index-border: var(--vscode-errorForeground, #f48771);
+  --qa-index-bg: var(--qa-danger-fill);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-button[data-tone] {
+  border-color: var(--qa-index-border);
+  background: var(--qa-index-bg);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-indexing-button[data-tone]:hover:not(:disabled) {
+  border-color: var(--qa-index-border);
+  background: color-mix(in srgb, var(--qa-index-bg) 84%, var(--qa-index-border) 16%);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-send-button {
+  border-color: color-mix(in srgb, var(--vscode-button-foreground) 30%, var(--vscode-button-background)) !important;
+  border-radius: 14px !important;
+  background: var(--vscode-button-background) !important;
+  color: var(--vscode-button-foreground) !important;
+  box-shadow:
+    0 10px 24px color-mix(in srgb, var(--vscode-button-background) 42%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent) !important;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-send-button:hover:not([aria-disabled="true"]) {
+  background: var(--vscode-button-hoverBackground) !important;
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-stop-button {
+  border-color: color-mix(in srgb, var(--vscode-errorForeground, #f48771) 62%, var(--qa-glass-border-soft)) !important;
+  background: var(--qa-danger-fill) !important;
+  color: var(--vscode-errorForeground, #f48771) !important;
+}
+
+/* Portalled menus inherit QA tokens from body. */
+body:has(.chat-view[data-ui="qa-shell"]) [data-component="popover-content"],
+body:has(.chat-view[data-ui="qa-shell"]) [data-component="dropdown-menu-content"],
+body:has(.chat-view[data-ui="qa-shell"]) .prompt-dropdown,
+body:has(.chat-view[data-ui="qa-shell"]) .file-picker-dropdown,
+body:has(.chat-view[data-ui="qa-shell"]) .slash-command-dropdown,
+body:has(.chat-view[data-ui="qa-shell"]) .model-selector-content {
+  border: 1px solid var(--qa-glass-border);
+  border-radius: var(--qa-radius-card);
+  background: var(--qa-glass-fill-strong);
+  box-shadow: var(--qa-shadow-card);
+  backdrop-filter: var(--qa-blur);
+  -webkit-backdrop-filter: var(--qa-blur);
+}
+
+/* Small host surfaces keep the reading plane comfortable. */
+@media (max-width: 420px) {
+  .chat-view[data-ui="qa-shell"] .message-list {
+    padding: 14px 10px 18px;
+  }
+
+  .chat-view[data-ui="qa-shell"] .message-list-empty {
+    padding: 28px 14px;
+  }
+
+  .chat-view[data-ui="qa-shell"] .chipmate-about-text {
+    font-size: var(--chipmate-font-size-15);
+  }
+}
+
+/* Accessible material fallbacks. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  body.vscode-light:has(.chat-view[data-ui="qa-shell"]),
+  .vscode-light .chat-view[data-ui="qa-shell"] {
+    --qa-glass-fill: color-mix(in srgb, var(--surface-raised-base) 96%, #dce9f6 4%);
+    --qa-glass-fill-strong: color-mix(in srgb, var(--surface-raised-base) 92%, #dce9f6 8%);
+  }
+}
+
+body.vscode-high-contrast:has(.chat-view[data-ui="qa-shell"]),
+body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]),
+.vscode-high-contrast .chat-view[data-ui="qa-shell"],
+.vscode-high-contrast-light .chat-view[data-ui="qa-shell"] {
+  --qa-shell-bg: var(--vscode-editor-background);
+  --qa-shell-ambient: transparent;
+  --qa-glass-fill: var(--vscode-editor-background);
+  --qa-glass-fill-strong: var(--vscode-input-background);
+  --qa-glass-fill-inset: var(--vscode-editor-background);
+  --qa-glass-border: var(--vscode-contrastBorder, var(--vscode-foreground));
+  --qa-glass-border-soft: var(--vscode-contrastBorder, var(--vscode-foreground));
+  --qa-divider: var(--vscode-contrastBorder, var(--vscode-foreground));
+  --qa-glass-highlight: transparent;
+  --qa-glass-shadow: transparent;
+  --qa-active-border: var(--vscode-focusBorder);
+  --qa-active-fill: var(--vscode-list-activeSelectionBackground);
+  --qa-control-border: var(--vscode-contrastBorder, var(--vscode-foreground));
+  --qa-control-border-hover: var(--vscode-contrastBorder, var(--vscode-foreground));
+  --qa-control-fill: var(--vscode-editor-background);
+  --qa-control-fill-hover: var(--vscode-list-hoverBackground, var(--vscode-editor-background));
+  --qa-control-highlight: transparent;
+  --qa-control-shadow: none;
+  --qa-blur: none;
+  --qa-shadow-card: none;
+  --qa-shadow-control: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-view[data-ui="qa-shell"] *,
+  .chat-view[data-ui="qa-shell"] *::before,
+  .chat-view[data-ui="qa-shell"] *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

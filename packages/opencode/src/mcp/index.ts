@@ -1,11 +1,11 @@
-// kilocode_change start
+// chipmate_change start
 // The MCP SDK only sets windowsHide:true in Electron (checks `'type' in process`).
 // Bun's process object lacks `type`, so stdio transports flash a CMD window on
 // every MCP server start. We patch it before the SDK is imported.
 if (process.platform === "win32" && !("type" in process)) {
-  Object.defineProperty(process, "type", { value: "kilo-bun", configurable: true })
+  Object.defineProperty(process, "type", { value: "chipmate-bun", configurable: true })
 }
-// kilocode_change end
+// chipmate_change end
 
 import path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -40,29 +40,29 @@ import { TuiEvent } from "@/server/tui-event"
 import open from "open"
 import { Cause, Effect, Exit, Layer, Context, Schema, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
-import { model as modelEnv } from "@/kilocode/process/env" // kilocode_change
+import { model as modelEnv } from "@/chipmate/process/env" // chipmate_change
 import { InstanceState } from "@/effect/instance-state"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import * as SandboxNetwork from "@/kilocode/sandbox/network" // kilocode_change
+import * as SandboxNetwork from "@/chipmate/sandbox/network" // chipmate_change
 import { McpCatalog } from "./catalog"
 import { McpEvent } from "@opencode-ai/schema/mcp-event"
 
 const DEFAULT_TIMEOUT = 30_000
 const CLIENT_OPTIONS = {
   capabilities: {
-    // Upstream issue anomalyco/opencode#11948 // kilocode_change
+    // Upstream issue anomalyco/opencode#11948 // chipmate_change
     // sampling: {},
-    // Upstream issue anomalyco/opencode#23066 // kilocode_change
+    // Upstream issue anomalyco/opencode#23066 // chipmate_change
     // elicitation: {},
-    // Upstream issue anomalyco/opencode#2308 // kilocode_change
+    // Upstream issue anomalyco/opencode#2308 // chipmate_change
     roots: {},
-    // Upstream issue anomalyco/opencode#28567 // kilocode_change
+    // Upstream issue anomalyco/opencode#28567 // chipmate_change
     // tasks: {},
   },
 } satisfies ClientOptions
 
-// kilocode_change start - inject --rm for Docker containers to prevent stopped container accumulation
+// chipmate_change start - inject --rm for Docker containers to prevent stopped container accumulation
 export function ensureDockerRm(cmd: string, args: string[]): string[] {
   const isDocker = cmd === "docker" || cmd === "podman"
   if (!isDocker) return args
@@ -74,7 +74,7 @@ export function ensureDockerRm(cmd: string, args: string[]): string[] {
   result.splice(runIdx + 1, 0, "--rm")
   return result
 }
-// kilocode_change end
+// chipmate_change end
 
 export const Resource = Schema.Struct({
   name: Schema.String,
@@ -100,7 +100,7 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("MCP
 type MCPClient = Client
 
 function createClient(directory: string) {
-  const client = new Client({ name: "kilo", version: InstallationVersion }, CLIENT_OPTIONS) // kilocode_change
+  const client = new Client({ name: "chipmate", version: InstallationVersion }, CLIENT_OPTIONS) // chipmate_change
   client.setRequestHandler(ListRootsRequestSchema, () =>
     Promise.resolve({ roots: [{ uri: pathToFileURL(directory).href }] }),
   )
@@ -332,7 +332,7 @@ const layer = Layer.effect(
                 return events
                   .publish(TuiEvent.ToastShow, {
                     title: "MCP Authentication Required",
-                    message: `Server "${key}" requires authentication. Run: kilo mcp auth ${key}`, // kilocode_change
+                    message: `Server "${key}" requires authentication. Run: chipmate mcp auth ${key}`, // chipmate_change
                     variant: "warning",
                     duration: 8000,
                   })
@@ -360,27 +360,27 @@ const layer = Layer.effect(
       mcp: ConfigMCPV1.Info & { type: "local" },
     ) {
       const [cmd, ...args] = mcp.command
-      const finalArgs = ensureDockerRm(cmd, args) // kilocode_change
+      const finalArgs = ensureDockerRm(cmd, args) // chipmate_change
       const baseDir = yield* InstanceState.directory
       const cwd = mcp.cwd ? path.resolve(baseDir, mcp.cwd) : baseDir
-      const bridge = yield* EffectBridge.make() // kilocode_change - drain child stderr without writing over the TUI
+      const bridge = yield* EffectBridge.make() // chipmate_change - drain child stderr without writing over the TUI
       const transport = new StdioClientTransport({
         stderr: "pipe",
         command: cmd,
-        args: finalArgs, // kilocode_change
+        args: finalArgs, // chipmate_change
         cwd,
-        // kilocode_change start - local MCPs must not inherit backend credentials
+        // chipmate_change start - local MCPs must not inherit backend credentials
         env: modelEnv({
           ...(cmd === "opencode" ? { BUN_BE_BUN: "1" } : {}),
           ...mcp.environment,
         }),
-        // kilocode_change end
+        // chipmate_change end
       })
-      // kilocode_change start - a piped stderr stream must be consumed or verbose MCP servers can block
+      // chipmate_change start - a piped stderr stream must be consumed or verbose MCP servers can block
       transport.stderr?.on("data", (chunk: Buffer) => {
         bridge.fork(Effect.logInfo("mcp stderr", { key, output: chunk.toString() }))
       })
-      // kilocode_change end
+      // chipmate_change end
 
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT
       return yield* connectTransport(transport, connectTimeout).pipe(
@@ -709,10 +709,10 @@ const layer = Layer.effect(
         const timeout = requestTimeout(s, clientName, mcpConfig, defaultTimeout)
         for (const mcpTool of listed) {
           const key = McpCatalog.toolName(clientName, mcpTool.name)
-          // kilocode_change start - remote MCP calls must use the sandbox network authority
+          // chipmate_change start - remote MCP calls must use the sandbox network authority
           const tool = McpCatalog.convertTool(mcpTool, client, timeout)
           result[key] = entry?.type === "remote" ? SandboxNetwork.remote(tool) : tool
-          // kilocode_change end
+          // chipmate_change end
         }
       }
       return result
@@ -733,7 +733,7 @@ const layer = Layer.effect(
           ),
           ([clientName, client]) =>
             McpCatalog.collect(
-              // kilocode_change - distinguish collection from direct network fetch
+              // chipmate_change - distinguish collection from direct network fetch
               clientName,
               client,
               (c) => listFn(c, requestTimeout(s, clientName, cfg.mcp?.[clientName], cfg.experimental?.mcp_timeout)),
@@ -835,9 +835,9 @@ const layer = Layer.effect(
       return mcpConfig
     })
 
-    // kilocode_change start - `opts?: { callback?: boolean }` parameter is Kilo-specific
+    // chipmate_change start - `opts?: { callback?: boolean }` parameter is ChipMate-specific
     const startAuth = Effect.fn("MCP.startAuth")(function* (mcpName: string, opts?: { callback?: boolean }) {
-      // kilocode_change end
+      // chipmate_change end
       const mcpConfig = yield* requireMcpConfig(mcpName)
       if (mcpConfig.type !== "remote") throw new Error(`MCP server ${mcpName} is not a remote server`)
       if (mcpConfig.oauth === false) throw new Error(`MCP server ${mcpName} has OAuth explicitly disabled`)
@@ -852,11 +852,11 @@ const layer = Layer.effect(
         oauthConfig?.redirectUri ??
         (oauthConfig?.callbackPort ? `http://127.0.0.1:${oauthConfig.callbackPort}${OAUTH_CALLBACK_PATH}` : undefined)
 
-      // kilocode_change start - authenticate() defers binding the callback port until a redirect is needed
+      // chipmate_change start - authenticate() defers binding the callback port until a redirect is needed
       if (opts?.callback !== false) {
         yield* Effect.promise(() => McpOAuthCallback.ensureRunning(effectiveRedirectUri))
       }
-      // kilocode_change end
+      // chipmate_change end
 
       const oauthState = Array.from(crypto.getRandomValues(new Uint8Array(32)))
         .map((b) => b.toString(16).padStart(2, "0"))
@@ -910,7 +910,7 @@ const layer = Layer.effect(
       mcpName: string,
       onAuthorization?: (authorizationUrl: string) => void,
     ) {
-      const result = yield* startAuth(mcpName, { callback: false }) // kilocode_change
+      const result = yield* startAuth(mcpName, { callback: false }) // chipmate_change
       if (!result.authorizationUrl) {
         const client = "client" in result ? result.client : undefined
         const mcpConfig = yield* requireMcpConfig(mcpName).pipe(
@@ -931,7 +931,7 @@ const layer = Layer.effect(
         yield* auth.clearOAuthState(mcpName)
         return yield* storeClient(s, mcpName, client, listed, client.getInstructions()?.trim(), mcpConfig.timeout)
       }
-      // kilocode_change start - bind only after redirect exists, and clean up if binding fails
+      // chipmate_change start - bind only after redirect exists, and clean up if binding fails
       const mcpConfig = yield* getMcpConfig(mcpName)
       if (!mcpConfig) return { status: "failed", error: "MCP config not found after auth" } as Status
       if (mcpConfig.type !== "remote")
@@ -957,7 +957,7 @@ const layer = Layer.effect(
         yield* Effect.tryPromise(() => pending?.transport.close() ?? Promise.resolve()).pipe(Effect.ignore)
         return { status: "failed", error: err.message } as Status
       }
-      // kilocode_change end
+      // chipmate_change end
 
       yield* Effect.logInfo("opening browser for oauth", {
         mcpName,

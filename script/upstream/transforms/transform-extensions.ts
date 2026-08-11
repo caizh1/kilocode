@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
- * Transform extension files (Zed, etc.) with Kilo branding
+ * Transform extension files (Zed, etc.) with ChipMate branding
  *
  * This script handles extension configuration files by transforming
- * OpenCode references to Kilo.
+ * OpenCode references to ChipMate.
  */
 
 import { $ } from "bun"
 import { info, success, warn, debug } from "../utils/logger"
 import { defaultConfig } from "../utils/config"
-import { oursHasKilocodeChanges } from "../utils/git"
+import { oursHasChipMateChanges } from "../utils/git"
 
 export interface ExtensionTransformResult {
   file: string
@@ -35,19 +35,19 @@ const EXTENSION_REPLACEMENTS: ExtensionReplacement[] = [
   // TOML files (Zed extension)
   {
     pattern: /name\s*=\s*"opencode"/g,
-    replacement: 'name = "kilo"',
+    replacement: 'name = "chipmate"',
     description: "Extension name",
     fileTypes: [".toml"],
   },
   {
     pattern: /id\s*=\s*"opencode"/g,
-    replacement: 'id = "kilo"',
+    replacement: 'id = "chipmate"',
     description: "Extension ID",
     fileTypes: [".toml"],
   },
   {
     pattern: /description\s*=\s*"OpenCode[^"]*"/g,
-    replacement: 'description = "Kilo - AI coding assistant"',
+    replacement: 'description = "ChipMate - AI coding assistant"',
     description: "Extension description",
     fileTypes: [".toml"],
   },
@@ -55,45 +55,45 @@ const EXTENSION_REPLACEMENTS: ExtensionReplacement[] = [
   // GitHub/Repository references
   {
     pattern: /repository\s*=\s*"[^"]*anomalyco\/opencode[^"]*"/g,
-    replacement: 'repository = "https://github.com/Kilo-Org/kilocode"',
+    replacement: 'repository = "https://github.com/ChipMate-Org/chipmate"',
     description: "Repository URL",
     fileTypes: [".toml"],
   },
   {
     pattern: /github\.com\/anomalyco\/opencode/g,
-    replacement: "github.com/Kilo-Org/kilocode",
+    replacement: "github.com/ChipMate-Org/chipmate",
     description: "GitHub URL",
   },
   {
     pattern: /anomalyco\/opencode/g,
-    replacement: "Kilo-Org/kilocode",
+    replacement: "ChipMate-Org/chipmate",
     description: "GitHub repo",
   },
 
   // Binary/command references
   {
     pattern: /command\s*=\s*"opencode"/g,
-    replacement: 'command = "kilo"',
+    replacement: 'command = "chipmate"',
     description: "Command name",
     fileTypes: [".toml"],
   },
 
-  // Generic OpenCode -> Kilo in strings
+  // Generic OpenCode -> ChipMate in strings
   {
     pattern: /"OpenCode"/g,
-    replacement: '"Kilo"',
+    replacement: '"ChipMate"',
     description: "Product name",
   },
 
   // Environment variables
   {
     pattern: /_EXTENSION_OPENCODE_/g,
-    replacement: "_EXTENSION_KILO_",
+    replacement: "_EXTENSION_CHIPMATE_",
     description: "Extension env var",
   },
   {
     pattern: /OpenCode\s+language\s+server/gi,
-    replacement: "Kilo language server",
+    replacement: "ChipMate language server",
     description: "Language server name",
   },
 ]
@@ -165,9 +165,9 @@ export async function transformExtensionFile(
     return { file, action: "transformed", replacements: 0, dryRun: true }
   }
 
-  // If our version has kilocode_change markers, flag for manual resolution
-  if (await oursHasKilocodeChanges(file)) {
-    warn(`${file} has kilocode_change markers — skipping auto-transform, needs manual resolution`)
+  // If our version has chipmate_change markers, flag for manual resolution
+  if (await oursHasChipMateChanges(file)) {
+    warn(`${file} has chipmate_change markers — skipping auto-transform, needs manual resolution`)
     return { file, action: "flagged", replacements: 0, dryRun: false }
   }
 

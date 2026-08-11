@@ -1,0 +1,441 @@
+{
+  "$schema": "./case.schema.json",
+  "version": 1,
+  "cases": [
+    {
+      "id": "WIN-PACKAGE-INSTALL",
+      "suite": "包与安装",
+      "title": "验证冻结的 Windows baseline VSIX 内容、身份与隔离安装",
+      "severity": "P0",
+      "profiles": ["clean", "empty"],
+      "changesets": [
+        "chipmate-vscode-icons",
+        "chipmate-windows-ripgrep",
+        "internal-linux-vsix",
+        "keep-packaged-mermaid-tools",
+        "verify-macos-chipmate-v2",
+        "vscode-193-support"
+      ],
+      "pathPatterns": ["^packages/chipmate-vscode/package\\.json$", "^packages/chipmate-vscode/script/", "^packages/core/src/"],
+      "preconditions": ["VSIX SHA-256 已冻结", "Windows 11 交互式桌面可用"],
+      "steps": [
+        "解包并验证必须/禁止文件与 chipmatePackageTarget",
+        "使用独立 extensions-dir 和 user-data-dir 安装 VSIX",
+        "列出安装扩展并启动无工作区窗口"
+      ],
+      "expectedState": [
+        "chipmate.chipmate@1.0.9 已安装",
+        "包含 chipmate.exe、rg.exe、LanceDB、Tree-sitter 和 dist bundles",
+        "不包含 ffmpeg.exe 或 dist source maps",
+        "无工作区时索引保持 idle"
+      ],
+      "visualOracle": "structure",
+      "timeoutSeconds": 300,
+      "cleanup": ["仅删除带 .chipmate-windows-qa-root sentinel 的运行目录"]
+    },
+    {
+      "id": "WIN-IDENTITY-UPGRADE",
+      "suite": "身份、隔离与升级",
+      "title": "验证 ChipMate v2 命名空间、覆盖升级和同 Profile 共存",
+      "severity": "P0",
+      "profiles": ["upgrade", "coexist"],
+      "changesets": ["isolate-chipmate-v2"],
+      "pathPatterns": ["^packages/chipmate-vscode/src/", "^packages/opencode/src/config/paths\\.ts$"],
+      "preconditions": ["1.0.8 VSIX 可选提供", "ChipMate VSIX 可选提供"],
+      "steps": [
+        "在隔离 Profile 安装 1.0.8 并写入测试设置",
+        "使用 --force 覆盖安装 1.0.9",
+        "执行 installed-host probe 并连续三次 Reload",
+        "在 coexist Profile 同时启用 ChipMate 与 ChipMate"
+      ],
+      "expectedState": [
+        "chipmate.v2 命令、配置、视图、上下文、存储和后端根保持隔离",
+        "升级后测试设置仍存在",
+        "无 command already exists 或视图注册冲突"
+      ],
+      "visualOracle": "structure",
+      "timeoutSeconds": 600,
+      "cleanup": ["关闭隔离 VS Code", "删除隔离 Profile"]
+    },
+    {
+      "id": "WIN-BRANDING-FIRST-RUN",
+      "suite": "首次启动与品牌",
+      "title": "验证中文默认值、ChipMate 品牌与内部离线入口",
+      "severity": "P1",
+      "profiles": ["clean", "empty"],
+      "changesets": [
+        "chipmate-chinese-branding",
+        "chipmate-default-chinese",
+        "fix-chipmate-work-style-welcome",
+        "internal-offline-gateway-login"
+      ],
+      "pathPatterns": ["^packages/chipmate-i18n/src/", "^packages/chipmate-vscode/webview-ui/src/components/chat/"],
+      "preconditions": ["使用内部离线 VSIX", "VS Code display language 为 zh-cn"],
+      "steps": ["首次打开 ChipMate", "检查 Welcome、工作方式和离线入口", "切换 Auto 后 Reload"],
+      "expectedState": ["可见品牌统一为 ChipMate", "默认简体中文", "Auto 选择被保留", "不出现 Gateway 登录阻塞"],
+      "visualOracle": "baseline",
+      "timeoutSeconds": 240,
+      "cleanup": ["关闭首次启动窗口"]
+    },
+    {
+      "id": "WIN-SETTINGS-PROVIDER",
+      "suite": "Provider 与设置",
+      "title": "逐字符验证设置草稿、blur、Provider 稳定性与 Server 默认值",
+      "severity": "P0",
+      "profiles": ["clean", "upgrade"],
+      "changesets": [
+        "align-subagent-model-controls",
+        "configure-chipmate-server",
+        "fix-indexing-model-blur",
+        "focus-custom-provider-models",
+        "honor-packaged-chipmate-server-default",
+        "localize-indexing-settings",
+        "restore-indexing-field-input"
+      ],
+      "pathPatterns": [
+        "^packages/chipmate-vscode/webview-ui/src/components/settings/",
+        "^packages/chipmate-vscode/src/SettingsEditorProvider\\.ts$",
+        "^packages/chipmate-vscode/src/services/chipmate-server\\.ts$",
+        "^packages/chipmate-vscode/src/chipmate-provider/indexing-settings\\.ts$"
+      ],
+      "preconditions": ["模拟 Provider 处于 success", "Settings 已打开 Indexing 页面"],
+      "steps": [
+        "通过 SendInput 逐字符输入 qa-embedding-model 与 2048",
+        "切换焦点并重新进入字段",
+        "保存同一个 openai-compatible Provider",
+        "检查打包 Server 默认值后写入并清除用户覆盖"
+      ],
+      "expectedState": [
+        "字符不丢失且 blur 后值不回退",
+        "同 Provider 保存不清空模型或维度",
+        "确认保存后 Save bar 消失",
+        "无用户覆盖时恢复打包默认值"
+      ],
+      "visualOracle": "baseline",
+      "timeoutSeconds": 420,
+      "cleanup": ["清除隔离 Profile 中测试 Provider 设置"]
+    },
+    {
+      "id": "WIN-QA-SESSION",
+      "suite": "QA 与会话",
+      "title": "验证会话、流式 UI、草稿、压缩、DSML 与恢复",
+      "severity": "P1",
+      "profiles": ["clean", "upgrade"],
+      "changesets": [
+        "align-qa-liquid-glass",
+        "clear-lions-compress",
+        "memory-debug-recovery",
+        "preserve-slash-drafts",
+        "prompt-input-legacy-icons",
+        "remove-sidebar-history-shortcut",
+        "repair-targeted-dsml-calls",
+        "restore-native-reasoning-stream",
+        "soften-task-hud",
+        "stabilize-long-session-navigation"
+      ],
+      "pathPatterns": [
+        "^packages/chipmate-vscode/webview-ui/src/",
+        "^packages/chipmate-vscode/src/ChipMateProvider\\.ts$",
+        "^packages/opencode/src/session/",
+        "^packages/opencode/src/chipmate/session/"
+      ],
+      "preconditions": ["模拟 Provider 可切换 chat、reasoning、tool-call 与 error 场景"],
+      "steps": [
+        "新建会话并接收固定 SSE",
+        "停止并重试",
+        "选择 slash command 后核对草稿",
+        "创建长历史并往返当前会话",
+        "模拟 CLI 退出并等待重连"
+      ],
+      "expectedState": [
+        "流式文本与 reasoning 不重复不丢失",
+        "压缩只显示一个状态卡",
+        "slash 草稿保留且 Settings 关闭按钮关闭编辑器",
+        "长会话导航保持响应",
+        "DSML 修复只执行无副作用定向重试"
+      ],
+      "visualOracle": "baseline",
+      "timeoutSeconds": 900,
+      "cleanup": ["删除测试会话和临时工作区"]
+    },
+    {
+      "id": "WIN-INDEXING-LIFECYCLE",
+      "suite": "索引生命周期",
+      "title": "验证顺序启动、项目隔离、恢复与诊断清理",
+      "severity": "P0",
+      "profiles": ["clean", "upgrade"],
+      "changesets": [
+        "bounded-indexing-process",
+        "clear-recovered-rag-diagnostics",
+        "default-document-rag-discovery",
+        "indexing-abandoned-artifact-cleanup",
+        "indexing-failure-observability",
+        "indexing-settings-hot-reload",
+        "indexing-toolbar-codicons",
+        "indexing-upgrade-recovery",
+        "keep-indexing-project-bound",
+        "lancedb-default-vector-store",
+        "lancedb-schema-rebuild-notice",
+        "fix-rag-progress-and-finalization",
+        "sequential-indexing",
+        "stabilize-indexing-pipeline",
+        "start-indexing-pipelines"
+      ],
+      "pathPatterns": ["^packages/chipmate-indexing/src/", "^packages/opencode/src/chipmate/indexing-worker-client\\.ts$"],
+      "preconditions": ["固定 C/C++ 与文档夹具可写", "模拟 embeddings 返回 2048 维向量"],
+      "steps": [
+        "打开项目并记录三条 pipeline 状态顺序",
+        "记录 Code RAG 全部 processedFiles、percent、state 事件并核对按钮 aria-busy 与旋转图标",
+        "保存 embedding 设置并比较 CodeGraph 代次",
+        "注入 stale lock、中断产物与旧 schema",
+        "先注入 401 再切回 success 并重新验证",
+        "切换第二项目和 Agent Manager session"
+      ],
+      "expectedState": [
+        "CodeGraph、Code RAG、Document RAG 顺序启动",
+        "每个候选文件只计数一次，运行态不超过 99%，真实 Complete 才为 100% 且旋转停止",
+        "Document RAG 只在 CodeGraph 与 Code RAG 真实 Complete 后启动且每轮一次",
+        "保存 embedding 不重建 CodeGraph",
+        "stale lock、中断产物和旧 schema 可恢复",
+        "成功验证后旧认证诊断被清除",
+        "状态与数据严格绑定项目"
+      ],
+      "visualOracle": "structure",
+      "timeoutSeconds": 1800,
+      "cleanup": ["停止索引子进程", "删除夹具索引目录"]
+    },
+    {
+      "id": "WIN-RETRIEVAL-EVIDENCE",
+      "suite": "检索协议",
+      "title": "验证 graph、BM25、vector、Document RAG 与证据预算",
+      "severity": "P0",
+      "profiles": ["clean"],
+      "changesets": [
+        "codebase-analysis-bm25-fusion",
+        "codebase-analysis-graph-evidence",
+        "codebase-analysis-phase-zero",
+        "codebase-analysis-vector-fusion",
+        "codegraph-parser-storage",
+        "codegraph-parser-worker-sidecar",
+        "codegraph-sidecar-lifecycle",
+        "document-rag-v1",
+        "expose-internal-retrieval-tools",
+        "fast-codegraph-full-scan"
+      ],
+      "pathPatterns": ["^packages/opencode/src/chipmate/tool/", "^packages/opencode/src/chipmate/agent/"],
+      "preconditions": ["固定 C/C++ 图、BM25 与文档查询答案已声明"],
+      "steps": [
+        "执行 graph-only 并统计模拟 Provider 请求",
+        "执行 hybrid 并核对 graph/BM25/vector 来源",
+        "执行 semantic_search 与 document_search 固定查询"
+      ],
+      "expectedState": [
+        "graph-only 的 embedding 请求计数为零",
+        "hybrid 结果包含有预算限制的路径和行号证据",
+        "semantic_search 保持可用",
+        "Document RAG 返回固定来源"
+      ],
+      "visualOracle": "none",
+      "timeoutSeconds": 900,
+      "cleanup": ["清除检索夹具输出"]
+    },
+    {
+      "id": "WIN-QWEN-AUTOCOMPLETE",
+      "suite": "Qwen 补全",
+      "title": "验证 qwen-direct 请求、ghost text、缓存、上下文与诊断",
+      "severity": "P0",
+      "profiles": ["clean", "upgrade"],
+      "changesets": [
+        "align-qwen-autocomplete",
+        "fix-node-navigator",
+        "qwen-autocomplete-cache",
+        "qwen-context-selection-hardening",
+        "qwen-diagnostics-prompt-preview",
+        "qwen-direct-autocomplete",
+        "qwen-direct-offline-observability",
+        "qwen-helpervars-token-budget",
+        "qwen-import-root-context",
+        "qwen-multiline-security-prefilter",
+        "qwen-non-streaming-filters",
+        "qwen-recently-edited-context",
+        "qwen-recently-edited-snippet-injection",
+        "qwen-recently-opened-context"
+      ],
+      "pathPatterns": [
+        "^packages/chipmate-vscode/src/services/qwen-autocomplete/",
+        "^packages/chipmate-vscode/src/services/autocomplete/"
+      ],
+      "preconditions": ["模拟 /completions 同时支持 stream 与 non-stream"],
+      "steps": [
+        "触发 non-stream 与 stream 补全并检查请求日志",
+        "检查 ghost text，执行 Tab 接受和取消",
+        "连续补全十次并执行三次 Reload",
+        "启用最近编辑、最近打开、import/root 上下文并导出诊断"
+      ],
+      "expectedState": [
+        "请求不包含不兼容 suffix",
+        "choices[0].text 和 SSE 文本均产生 ghost text",
+        "缓存和上下文诊断符合固定夹具",
+        "诊断不含 prompt、API Key 或敏感源码"
+      ],
+      "visualOracle": "structure",
+      "timeoutSeconds": 1200,
+      "cleanup": ["关闭补全并删除测试编辑文件"]
+    },
+    {
+      "id": "WIN-AGENT-CONSOLE",
+      "suite": "Agent Manager 与终端",
+      "title": "验证 session/worktree/terminal 和危险操作审批",
+      "severity": "P1",
+      "profiles": ["clean"],
+      "changesets": ["agent-console-webview", "fix-agent-console-windows-powershell"],
+      "pathPatterns": [
+        "^packages/chipmate-vscode/src/agent-console/",
+        "^packages/chipmate-vscode/webview-ui/agent-console/",
+        "^packages/chipmate-vscode/assets/agent-console/",
+        "^packages/chipmate-vscode/src/agent-manager/",
+        "^packages/chipmate-vscode/src/services/agent-terminal/"
+      ],
+      "preconditions": [
+        "测试 Git 仓库与 sentinel 临时根已创建",
+        "x64 VS Code Stable 与正式 win32-x64-baseline VSIX 已安装",
+        "确定性本地 Mock Provider 已启动",
+        "本次运行明确声明 arm64-vm 或 native-x64 gate"
+      ],
+      "steps": [
+        "打开 Agent Console 并确认 Agent 模式只有一个真实 PowerShell 提示符和一个 UIA Edit 控件",
+        "逐字符输入 Write-Output CHIPMATE_QA_OK 并按 Enter，确认直接执行且只出现一次输出",
+        "输入中文自然语言并确认进入 Agent 时间线而不是 PowerShell 执行",
+        "用 Mock Provider 触发命令审批，依次验证取消与确认",
+        "连续提交 100 次并检查零丢失零重复",
+        "切换 Agent/Shell 50 次，执行 5000 行输出、Reload 与重连",
+        "分别在 GPU 默认与 --disable-gpu 下采集逐帧视频、截图、UIA 树和 Extension Host 日志"
+      ],
+      "expectedState": [
+        "命令与自然语言共享同一个真实 PowerShell 提示符",
+        "Enter 无丢失或重复并保留 PSReadLine 历史、补全、光标与中文 IME",
+        "命令直接执行，自然语言进入 Agent，审批命令仍需用户确认",
+        "Shell 标签保持同一 PTY 的完整 scrollback",
+        "字体、DPI、滚动、模式切换与流式输出无闪白、跳动或未裁决差异"
+      ],
+      "visualOracle": "baseline",
+      "timeoutSeconds": 900,
+      "cleanup": ["仅删除 sentinel 临时 worktree"]
+    },
+    {
+      "id": "WIN-MARKETPLACE",
+      "suite": "Skill 与 Extension Market",
+      "title": "验证本地导入、发布、风险、身份同步和批量上传",
+      "severity": "P1",
+      "profiles": ["clean"],
+      "changesets": [
+        "close-skill-publication-progress",
+        "atomic-skill-market-tools",
+        "extension-market-batch-upload",
+        "extension-market-unlimited-batches",
+        "fix-local-skill-removal",
+        "import-local-skills",
+        "marketplace-aligned-workspace",
+        "marketplace-analytics-hardening",
+        "marketplace-identity-install-sync",
+        "marketplace-raw-skill-unpublish",
+        "marketplace-unified-publication",
+        "open-extension-market",
+        "publish-skill-risk-guidance",
+        "skill-market-identity-icons"
+      ],
+      "pathPatterns": [
+        "^packages/chipmate-vscode/src/services/marketplace/",
+        "^packages/chipmate-vscode/webview-ui/src/components/marketplace/",
+        "^server/chipmate-word-render/"
+      ],
+      "preconditions": ["本地模拟 Market 服务和安全 Skill/VSIX 夹具可用"],
+      "steps": [
+        "导入 folder/SKILL/ZIP/TAR.GZ",
+        "删除本地 Skill",
+        "执行发布、风险提示、取消和 unpublish",
+        "批量选择 VSIX 并中断后恢复"
+      ],
+      "expectedState": [
+        "导入原子化且删除立即生效",
+        "风险为非阻塞但安装前可见",
+        "发布进度及时关闭",
+        "批处理取消与恢复状态真实"
+      ],
+      "visualOracle": "baseline",
+      "timeoutSeconds": 1800,
+      "cleanup": ["删除测试 Skill、扩展记录和上传临时文件"]
+    },
+    {
+      "id": "WIN-DOCUMENTS",
+      "suite": "Word、Mermaid 与 Artifact",
+      "title": "验证文档工具可用且普通 QA 不误触发",
+      "severity": "P1",
+      "profiles": ["clean"],
+      "changesets": ["remote-mermaid-render-response", "source-backed-word-visual-quality"],
+      "pathPatterns": [
+        "^packages/opencode/src/chipmate/documents/",
+        "^packages/opencode/src/chipmate/tool/(word|mermaid|document)-"
+      ],
+      "preconditions": ["固定工具调用脚本、模板和模拟 render 响应可用"],
+      "steps": [
+        "普通代码 QA 并检查无 artifact",
+        "执行 Artifact/Word/Mermaid 固定工具调用序列",
+        "执行 dry-run、merge/diff/render 与 PNG 插图"
+      ],
+      "expectedState": [
+        "普通 QA 不调用文档工具",
+        "原文档不被覆盖",
+        "artifact.json 与派生文件完整",
+        "Mermaid PNG 尺寸和诊断被保留"
+      ],
+      "visualOracle": "review",
+      "timeoutSeconds": 1800,
+      "cleanup": ["删除测试 .chipmate-v2/artifacts 目录"]
+    },
+    {
+      "id": "WIN-UPDATE",
+      "suite": "更新",
+      "title": "验证 target-aware manifest、SHA、同源、大小和同一窗口首次 Reload",
+      "severity": "P0",
+      "profiles": ["upgrade"],
+      "changesets": ["internal-vsix-update-check", "render-service-vsix-auto-update"],
+      "pathPatterns": [
+        "^packages/chipmate-vscode/src/services/update-check/",
+        "^server/chipmate-word-render/apps/api/src/extensions\\.ts$"
+      ],
+      "preconditions": ["本地更新服务可返回合法与异常 manifest", "动态 spinner 验收在 editor.accessibilitySupport=off 且不传 --force-renderer-accessibility 的正常渲染条件下执行", "若额外验收 pending activation receipt 的自动二次 Reload，PreviousVsix 必须是已包含该协议的桥接版本；1.0.10 到候选版只裁决首次 Reload 的真实宿主和动态 UI"],
+      "steps": ["检查同 target 新版本", "依次注入错误 target、SHA、跨源和超大文件", "恢复合法 manifest 并安装后在同一 VS Code 窗口点击 Reload", "等待候选版本的新 activation Probe，并通过 control channel 执行 openInTab", "mock provider 保持 [QA:TIMEOUT] 请求，CDP 检查 working spinner 的 reduced-motion、资源就绪和三帧像素变化", "最后执行 showMemory 以确认 webview ready"],
+      "expectedState": [
+        "仅合法同源同 target 且 SHA 正确的包可安装",
+        "错误包不会改变已安装版本",
+        "成功后出现 Reload 提示",
+        "首次 Reload 在原窗口内产生候选版本、target、扩展路径和 active 状态均匹配的新 activation Probe",
+        "首次 Reload 的 working spinner 不处于 reduced-motion 降级，动态图层 is-ready、资源 complete/naturalWidth 正常且三帧像素发生变化",
+        "首次 Reload 的 showMemory 命令完成，证明其等待的 webview ready 握手已返回"
+      ],
+      "visualOracle": "structure",
+      "timeoutSeconds": 900,
+      "cleanup": ["停止本地更新服务"]
+    },
+    {
+      "id": "WIN-FAILURE-SECURITY",
+      "suite": "失败路径与安全",
+      "title": "验证鉴权、上游、超时、异常响应和证据脱敏",
+      "severity": "P0",
+      "profiles": ["clean"],
+      "changesets": [],
+      "pathPatterns": ["^packages/opencode/src/"],
+      "preconditions": ["模拟 Provider 管理端可切换场景"],
+      "steps": ["切换 401、403、503、timeout、malformed", "采集截图、UIA、日志和设置", "运行证据敏感信息扫描"],
+      "expectedState": [
+        "错误分类和恢复路径明确",
+        "插件与索引进程不永久卡死",
+        "证据包不含 test-secret、Authorization 或 SecretStorage"
+      ],
+      "visualOracle": "structure",
+      "timeoutSeconds": 900,
+      "cleanup": ["恢复模拟 Provider success", "删除故障夹具"]
+    }
+  ]
+}

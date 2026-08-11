@@ -15,16 +15,16 @@ async function configured(value: string) {
   return Effect.runPromise(
     Effect.acquireUseRelease(
       Effect.sync(() => {
-        const prev = process.env.KILO_RIPGREP_PATH
-        process.env.KILO_RIPGREP_PATH = value
+        const prev = process.env.CHIPMATE_RIPGREP_PATH
+        process.env.CHIPMATE_RIPGREP_PATH = value
         return prev
       }),
       () =>
         RipgrepBinary.Service.use((service) => service.filepath).pipe(Effect.provide(RipgrepBinary.defaultLayer)),
       (prev) =>
         Effect.sync(() => {
-          if (prev === undefined) delete process.env.KILO_RIPGREP_PATH
-          else process.env.KILO_RIPGREP_PATH = prev
+          if (prev === undefined) delete process.env.CHIPMATE_RIPGREP_PATH
+          else process.env.CHIPMATE_RIPGREP_PATH = prev
         }),
     ),
   )
@@ -97,14 +97,14 @@ describe("Ripgrep", () => {
           expect(observed).toEqual(limited.map((item) => item.path))
 
           const matches = yield* ripgrep.grep({ cwd: tmp.path, pattern: "needle", include: "config", limit: 10 })
-          expect(matches.items.map((item) => item.entry.path)).toContain(RelativePath.make(".opencode/config")) // kilocode_change
-          expect(matches.items.map((item) => item.entry.path)).not.toContain(RelativePath.make(".git/config")) // kilocode_change
+          expect(matches.items.map((item) => item.entry.path)).toContain(RelativePath.make(".opencode/config")) // chipmate_change
+          expect(matches.items.map((item) => item.entry.path)).not.toContain(RelativePath.make(".git/config")) // chipmate_change
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
 
-  // kilocode_change start - surfaced error keeps the underlying reason
+  // chipmate_change start - surfaced error keeps the underlying reason
   it.live("includes the underlying reason in execution failures", () =>
     Effect.gen(function* () {
       const ripgrep = yield* Ripgrep.Service
@@ -116,5 +116,5 @@ describe("Ripgrep", () => {
       expect(error.message).toMatch(/^ripgrep execution failed: .+/)
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
 })

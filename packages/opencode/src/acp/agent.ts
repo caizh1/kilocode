@@ -17,11 +17,11 @@ import {
   type SetSessionModeRequest,
 } from "@agentclientprotocol/sdk"
 import { Effect } from "effect"
-import type { KiloClient } from "@kilocode/sdk/v2"
+import type { ChipMateClient } from "@chipmate/sdk/v2"
 import * as ACPError from "./error"
 import * as ACPService from "./service"
 
-export function init({ sdk: _sdk }: { sdk: KiloClient }) {
+export function init({ sdk: _sdk }: { sdk: ChipMateClient }) {
   return {
     create: (connection: AgentSideConnection) => {
       return new Agent(ACPService.make({ sdk: _sdk, connection }))

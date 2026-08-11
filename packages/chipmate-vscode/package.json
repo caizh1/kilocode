@@ -1,0 +1,1702 @@
+{
+  "name": "chipmate",
+  "displayName": "ChipMate: AI Coding Agent, Copilot, and Autocomplete",
+  "description": "Open Source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
+  "version": "1.1.0",
+  "icon": "assets/icons/logo-outline-black.png",
+  "galleryBanner": {
+    "color": "#FFFFFF",
+    "theme": "light"
+  },
+  "publisher": "chipmate",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "ChipMate"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages",
+    "Education",
+    "Snippets",
+    "Testing"
+  ],
+  "keywords": [
+    "chipmate",
+    "ChipMate",
+    "embedded",
+    "firmware",
+    "ai",
+    "agent",
+    "agentic",
+    "coding",
+    "coding agent",
+    "coding assistant",
+    "autocomplete",
+    "code completion",
+    "pair programming",
+    "chat",
+    "terminal",
+    "chatgpt",
+    "claude",
+    "sonnet",
+    "anthropic",
+    "openai",
+    "zoo code",
+    "opencode",
+    "open code"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onUri"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "taskDefinitions": [
+      {
+        "type": "chipmate-v2-worktree-setup",
+        "properties": {
+          "script": {
+            "type": "string",
+            "description": "The setup script command to execute"
+          }
+        }
+      }
+    ],
+    "icons": {
+      "chipmate-v2-logo": {
+        "description": "ChipMate logo",
+        "default": {
+          "fontPath": "assets/icons/chipmate-icon-font.woff2",
+          "fontCharacter": "\\F101"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "chipmate-v2-activitybar",
+          "title": "ChipMate",
+          "icon": "assets/icons/chipmate-light.svg",
+          "darkIcon": "assets/icons/chipmate-dark.svg"
+        }
+      ]
+    },
+    "views": {
+      "chipmate-v2-activitybar": [
+        {
+          "type": "webview",
+          "id": "chipmate.v2.SidebarProvider",
+          "name": "ChipMate"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "chipmate.v2.plusButtonClicked",
+        "title": "New Task",
+        "category": "ChipMate",
+        "icon": "$(add)"
+      },
+      {
+        "command": "chipmate.v2.agentManagerOpen",
+        "title": "Agent Manager",
+        "category": "ChipMate",
+        "icon": "$(organization)"
+      },
+      {
+        "command": "chipmate.v2.designDocOpen",
+        "title": "源码详细设计",
+        "category": "ChipMate",
+        "icon": "$(symbol-structure)"
+      },
+      {
+        "command": "chipmate.v2.chipmateClawOpen",
+        "title": "ChipMateClaw",
+        "category": "ChipMate",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "chipmate.v2.marketplaceButtonClicked",
+        "title": "市场",
+        "icon": "$(extensions)"
+      },
+      {
+        "command": "chipmate.v2.historyButtonClicked",
+        "title": "History",
+        "category": "ChipMate",
+        "icon": "$(history)"
+      },
+      {
+        "command": "chipmate.v2.profileButtonClicked",
+        "title": "Profile",
+        "category": "ChipMate",
+        "icon": "$(account)"
+      },
+      {
+        "command": "chipmate.v2.settingsButtonClicked",
+        "title": "Settings",
+        "category": "ChipMate",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "chipmate.v2.sidebarTitle.plusButtonClicked",
+        "title": "New Task",
+        "icon": "$(add)"
+      },
+      {
+        "command": "chipmate.v2.sidebarTitle.agentManagerOpen",
+        "title": "Agent Manager",
+        "icon": "$(organization)"
+      },
+      {
+        "command": "chipmate.v2.sidebarTitle.agentTerminalOpen",
+        "title": "Agent Console",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "chipmate.v2.sidebarTitle.chipmateClawOpen",
+        "title": "ChipMateClaw",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "chipmate.v2.sidebarTitle.marketplaceButtonClicked",
+        "title": "市场",
+        "icon": "$(extensions)"
+      },
+      {
+        "command": "chipmate.v2.sidebarTitle.historyButtonClicked",
+        "title": "History",
+        "icon": "$(history)"
+      },
+      {
+        "command": "chipmate.v2.sidebarTitle.profileButtonClicked",
+        "title": "Profile",
+        "icon": "$(account)"
+      },
+      {
+        "command": "chipmate.v2.sidebarTitle.settingsButtonClicked",
+        "title": "Settings",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "chipmate.v2.openInTab",
+        "title": "ChipMate",
+        "icon": {
+          "light": "assets/icons/chipmate-light.svg",
+          "dark": "assets/icons/chipmate-dark.svg"
+        }
+      },
+      {
+        "command": "chipmate.v2.showChanges",
+        "title": "Show Changes",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.showMemory",
+        "title": "Show Project Memory",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.toggleMemory",
+        "title": "Toggle Project Memory",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.autocomplete.generateSuggestions",
+        "title": "Generate Suggested Edits",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.autocomplete.cancelSuggestions",
+        "title": "Cancel Suggested Edits",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.autocomplete.nextEdit.acceptOrJump",
+        "title": "Next Edit: Accept or Jump to Suggested Edit",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.autocomplete.nextEdit.dismiss",
+        "title": "Next Edit: Dismiss Pending Suggestion",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.qwenAutocomplete.showLogs",
+        "title": "ChipMate: Show qwen-direct Autocomplete Logs",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.qwenAutocomplete.exportDiagnostics",
+        "title": "ChipMate: Export qwen-direct Autocomplete Diagnostics",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.qwenAutocomplete.smokeDiagnostics",
+        "title": "ChipMate: Test qwen-direct Transport",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.documents.openArtifact",
+        "title": "ChipMate: Open Document Artifact",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.documents.openArtifactFolder",
+        "title": "ChipMate: Open Document Artifact Folder",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.documents.exportDiagnostics",
+        "title": "ChipMate: Export Document Artifact Diagnostics",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentTerminal.open",
+        "title": "ChipMate: Open Agent Console",
+        "category": "ChipMate",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "chipmate.v2.agentManager.previousSession",
+        "title": "Agent Manager: Previous Session",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.nextSession",
+        "title": "Agent Manager: Next Session",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.previousTab",
+        "title": "Agent Manager: Previous Tab",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.nextTab",
+        "title": "Agent Manager: Next Tab",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.search",
+        "title": "Agent Manager: Search Worktrees and Sessions",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.showTerminal",
+        "title": "Agent Manager: Focus Terminal",
+        "category": "ChipMate",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "chipmate.v2.agentManager.runScript",
+        "title": "Agent Manager: Run Script",
+        "category": "ChipMate",
+        "icon": "$(play)"
+      },
+      {
+        "command": "chipmate.v2.agentManager.toggleDiff",
+        "title": "Agent Manager: Toggle Diff Panel",
+        "category": "ChipMate",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "chipmate.v2.agentManager.showShortcuts",
+        "title": "Agent Manager: Show Keyboard Shortcuts",
+        "category": "ChipMate",
+        "icon": "$(keyboard)"
+      },
+      {
+        "command": "chipmate.v2.agentManager.newTab",
+        "title": "Agent Manager: New Tab",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.newTerminal",
+        "title": "Agent Manager: New Terminal Tab (Experimental)",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.closeTab",
+        "title": "Agent Manager: Close Tab",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.newWorktree",
+        "title": "Agent Manager: Configure New Worktree",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.quickWorktree",
+        "title": "Agent Manager: New Worktree",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.openWorktree",
+        "title": "Agent Manager: Open Worktree",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.openPR",
+        "title": "Agent Manager: Open Pull Request",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.closeWorktree",
+        "title": "Agent Manager: Close Worktree",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.advancedWorktree",
+        "title": "Agent Manager: Advanced New Worktree",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo1",
+        "title": "Agent Manager: Jump to Item 1",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo2",
+        "title": "Agent Manager: Jump to Item 2",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo3",
+        "title": "Agent Manager: Jump to Item 3",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo4",
+        "title": "Agent Manager: Jump to Item 4",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo5",
+        "title": "Agent Manager: Jump to Item 5",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo6",
+        "title": "Agent Manager: Jump to Item 6",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo7",
+        "title": "Agent Manager: Jump to Item 7",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo8",
+        "title": "Agent Manager: Jump to Item 8",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo9",
+        "title": "Agent Manager: Jump to Item 9",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.generateCommitMessage",
+        "title": "Generate Commit Message",
+        "category": "ChipMate",
+        "icon": {
+          "light": "assets/icons/chipmate-light.svg",
+          "dark": "assets/icons/chipmate-dark.svg"
+        }
+      },
+      {
+        "command": "chipmate.v2.explainCode",
+        "title": "Explain Code",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.fixCode",
+        "title": "Fix Code",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.improveCode",
+        "title": "Improve Code",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.generateCommentsForCurrentFunction",
+        "title": "为当前函数生成高可信注释",
+        "category": "ChipMate",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "chipmate.v2.generateCommentsForSelectedFunctions",
+        "title": "为选中函数批量生成高可信注释",
+        "category": "ChipMate",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "chipmate.v2.applyCodeCommentPreview",
+        "title": "应用注释",
+        "category": "ChipMate",
+        "icon": "$(check)",
+        "enablement": "chipmate.v2.codeComments.previewPending"
+      },
+      {
+        "command": "chipmate.v2.discardCodeCommentPreview",
+        "title": "放弃预览",
+        "category": "ChipMate",
+        "icon": "$(close)",
+        "enablement": "chipmate.v2.codeComments.previewPending"
+      },
+      {
+        "command": "chipmate.v2.addToContext",
+        "title": "Add to Context",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.addExplorerPathsToQa",
+        "title": "ChipMate: 引用路径到 QA"
+      },
+      {
+        "command": "chipmate.v2.terminalAddToContext",
+        "title": "Add Terminal Content to Context",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.terminalFixCommand",
+        "title": "Fix This Command",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.terminalExplainCommand",
+        "title": "Explain This Command",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.focusChatInput",
+        "title": "Focus Chat Input",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.toggleChatSearch",
+        "title": "Toggle Chat Search",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.cycleAgentMode",
+        "title": "Cycle Agent Mode",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.cyclePreviousAgentMode",
+        "title": "Cycle Previous Agent Mode",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.toggleAutoApprove",
+        "title": "Toggle Auto-Approve",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.generateTerminalCommand",
+        "title": "Generate Terminal Command",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.takeHeapSnapshot",
+        "title": "Take Heap Snapshot",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.openMemoryDebug",
+        "title": "Open Memory Debug Log",
+        "category": "ChipMate"
+      },
+      {
+        "command": "chipmate.v2.checkForUpdates",
+        "title": "ChipMate: Check for Updates"
+      },
+      {
+        "command": "chipmate.v2.showUpdateLog",
+        "title": "ChipMate: 显示更新日志"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "chipmate.v2.editorContextMenu",
+        "label": "ChipMate"
+      },
+      {
+        "id": "chipmate.v2.terminalContextMenu",
+        "label": "ChipMate"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "chipmate.v2.applyCodeCommentPreview",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.discardCodeCommentPreview",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.plusButtonClicked",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.historyButtonClicked",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.agentManagerOpen",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.agentTerminalOpen",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.chipmateClawOpen",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.marketplaceButtonClicked",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.profileButtonClicked",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.settingsButtonClicked",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.addExplorerPathsToQa",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.chipmateClawOpen",
+          "when": "!chipmate.v2.internalOffline"
+        },
+        {
+          "command": "chipmate.v2.profileButtonClicked",
+          "when": "!chipmate.v2.internalOffline"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "chipmate.v2.sidebarTitle.plusButtonClicked",
+          "group": "navigation@0",
+          "when": "view == chipmate.v2.SidebarProvider"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.historyButtonClicked",
+          "group": "navigation@1",
+          "when": "view == chipmate.v2.SidebarProvider"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.agentManagerOpen",
+          "group": "navigation@2",
+          "when": "view == chipmate.v2.SidebarProvider"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.agentTerminalOpen",
+          "group": "navigation@3",
+          "when": "view == chipmate.v2.SidebarProvider"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.chipmateClawOpen",
+          "group": "navigation@4",
+          "when": "view == chipmate.v2.SidebarProvider && !chipmate.v2.internalOffline"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.marketplaceButtonClicked",
+          "group": "navigation@5",
+          "when": "view == chipmate.v2.SidebarProvider"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.profileButtonClicked",
+          "group": "navigation@6",
+          "when": "view == chipmate.v2.SidebarProvider && !chipmate.v2.internalOffline"
+        },
+        {
+          "command": "chipmate.v2.sidebarTitle.settingsButtonClicked",
+          "group": "navigation@7",
+          "when": "view == chipmate.v2.SidebarProvider"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "chipmate.v2.generateCommitMessage",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ],
+      "scm/input": [
+        {
+          "command": "chipmate.v2.generateCommitMessage",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "chipmate.v2.applyCodeCommentPreview",
+          "group": "navigation@100",
+          "when": "isInDiffEditor && resourceScheme == chipmate-code-comment-preview && chipmate.v2.codeComments.previewPending"
+        },
+        {
+          "command": "chipmate.v2.discardCodeCommentPreview",
+          "group": "navigation@101",
+          "when": "isInDiffEditor && resourceScheme == chipmate-code-comment-preview && chipmate.v2.codeComments.previewPending"
+        },
+        {
+          "command": "chipmate.v2.openInTab",
+          "group": "navigation",
+          "when": "true"
+        },
+        {
+          "command": "chipmate.v2.plusButtonClicked",
+          "group": "navigation@0",
+          "when": "activeWebviewPanelId == chipmate.v2.TabPanel"
+        },
+        {
+          "command": "chipmate.v2.historyButtonClicked",
+          "group": "navigation@1",
+          "when": "activeWebviewPanelId == chipmate.v2.TabPanel"
+        },
+        {
+          "command": "chipmate.v2.profileButtonClicked",
+          "group": "navigation@2",
+          "when": "activeWebviewPanelId == chipmate.v2.TabPanel && !chipmate.v2.internalOffline"
+        },
+        {
+          "command": "chipmate.v2.settingsButtonClicked",
+          "group": "navigation@3",
+          "when": "activeWebviewPanelId == chipmate.v2.TabPanel"
+        }
+      ],
+      "editor/context": [
+        {
+          "submenu": "chipmate.v2.editorContextMenu",
+          "group": "1_chipmate"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "chipmate.v2.addExplorerPathsToQa",
+          "group": "2_workspace@50"
+        }
+      ],
+      "chipmate.v2.editorContextMenu": [
+        {
+          "command": "chipmate.v2.generateCommentsForCurrentFunction",
+          "group": "1_actions@0",
+          "when": "(resourceLangId == c || resourceLangId == cpp) && !editorHasSelection"
+        },
+        {
+          "command": "chipmate.v2.generateCommentsForSelectedFunctions",
+          "group": "1_actions@0",
+          "when": "(resourceLangId == c || resourceLangId == cpp) && editorHasSelection"
+        },
+        {
+          "command": "chipmate.v2.explainCode",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "chipmate.v2.fixCode",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "chipmate.v2.improveCode",
+          "group": "1_actions@3"
+        },
+        {
+          "command": "chipmate.v2.addToContext",
+          "group": "1_actions@4"
+        }
+      ],
+      "terminal/context": [
+        {
+          "submenu": "chipmate.v2.terminalContextMenu",
+          "group": "2_chipmate"
+        }
+      ],
+      "chipmate.v2.terminalContextMenu": [
+        {
+          "command": "chipmate.v2.terminalAddToContext",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "chipmate.v2.terminalFixCommand",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "chipmate.v2.terminalExplainCommand",
+          "group": "1_actions@3"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "chipmate.v2.focusChatInput",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "chipmate.v2.globalShortcutsActive"
+      },
+      {
+        "command": "chipmate.v2.toggleAutoApprove",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a",
+        "when": "chipmate.v2.globalShortcutsActive"
+      },
+      {
+        "command": "chipmate.v2.generateTerminalCommand",
+        "key": "ctrl+shift+g",
+        "mac": "cmd+shift+g",
+        "when": "chipmate.v2.globalShortcutsActive"
+      },
+      {
+        "command": "chipmate.v2.agentManagerOpen",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m",
+        "when": "chipmate.v2.globalShortcutsActive"
+      },
+      {
+        "command": "chipmate.v2.addToContext",
+        "key": "ctrl+k ctrl+a",
+        "mac": "cmd+k cmd+a",
+        "when": "chipmate.v2.globalShortcutsActive && editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "chipmate.v2.agentManager.previousSession",
+        "key": "ctrl+alt+up",
+        "mac": "cmd+alt+up",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.nextSession",
+        "key": "ctrl+alt+down",
+        "mac": "cmd+alt+down",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.previousTab",
+        "key": "ctrl+alt+left",
+        "mac": "cmd+alt+left",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.nextTab",
+        "key": "ctrl+alt+right",
+        "mac": "cmd+alt+right",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.search",
+        "key": "ctrl+f",
+        "mac": "cmd+f",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel' && !terminalFocus"
+      },
+      {
+        "command": "chipmate.v2.agentManager.showTerminal",
+        "key": "ctrl+/",
+        "mac": "cmd+/",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.runScript",
+        "key": "ctrl+e",
+        "mac": "cmd+e",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel' && (isMac || !terminalFocus)"
+      },
+      {
+        "command": "chipmate.v2.agentManager.toggleDiff",
+        "key": "ctrl+d",
+        "mac": "cmd+d",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.showShortcuts",
+        "key": "ctrl+shift+/",
+        "mac": "cmd+shift+/",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.newTab",
+        "key": "ctrl+t",
+        "mac": "cmd+t",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.newTerminal",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.closeTab",
+        "key": "ctrl+w",
+        "mac": "cmd+w",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.newWorktree",
+        "key": "ctrl+n",
+        "mac": "cmd+n",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.openWorktree",
+        "key": "ctrl+shift+o",
+        "mac": "cmd+shift+o",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.openPR",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.closeWorktree",
+        "key": "ctrl+shift+w",
+        "mac": "cmd+shift+w",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.quickWorktree",
+        "key": "ctrl+shift+n",
+        "mac": "cmd+shift+n",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo1",
+        "key": "ctrl+1",
+        "mac": "cmd+1",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo2",
+        "key": "ctrl+2",
+        "mac": "cmd+2",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo3",
+        "key": "ctrl+3",
+        "mac": "cmd+3",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo4",
+        "key": "ctrl+4",
+        "mac": "cmd+4",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo5",
+        "key": "ctrl+5",
+        "mac": "cmd+5",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo6",
+        "key": "ctrl+6",
+        "mac": "cmd+6",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo7",
+        "key": "ctrl+7",
+        "mac": "cmd+7",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo8",
+        "key": "ctrl+8",
+        "mac": "cmd+8",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.agentManager.jumpTo9",
+        "key": "ctrl+9",
+        "mac": "cmd+9",
+        "when": "activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel'"
+      },
+      {
+        "command": "chipmate.v2.cycleAgentMode",
+        "key": "ctrl+.",
+        "mac": "cmd+.",
+        "when": "sideBarFocus && chipmate.v2.sidebarVisible || activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel' || activeWebviewPanelId == 'chipmate.v2.TabPanel'"
+      },
+      {
+        "command": "chipmate.v2.cyclePreviousAgentMode",
+        "key": "ctrl+shift+.",
+        "mac": "cmd+shift+.",
+        "when": "sideBarFocus && chipmate.v2.sidebarVisible || activeWebviewPanelId == 'chipmate.v2.AgentManagerPanel' || activeWebviewPanelId == 'chipmate.v2.TabPanel'"
+      },
+      {
+        "command": "chipmate.v2.autocomplete.cancelSuggestions",
+        "key": "escape",
+        "when": "chipmate.v2.globalShortcutsActive && editorTextFocus && !editorTabMovesFocus && !inSnippetMode && chipmate.v2.autocomplete.hasSuggestions"
+      },
+      {
+        "command": "chipmate.v2.autocomplete.generateSuggestions",
+        "key": "ctrl+l",
+        "mac": "cmd+l",
+        "when": "chipmate.v2.globalShortcutsActive && editorTextFocus && !editorTabMovesFocus && !inSnippetMode && chipmate.v2.autocomplete.enableSmartInlineTaskKeybinding && !github.copilot.completions.enabled"
+      },
+      {
+        "command": "chipmate.v2.autocomplete.showIncompatibilityExtensionPopup",
+        "key": "ctrl+l",
+        "mac": "cmd+l",
+        "when": "chipmate.v2.globalShortcutsActive && editorTextFocus && !editorTabMovesFocus && !inSnippetMode && chipmate.v2.autocomplete.enableSmartInlineTaskKeybinding && github.copilot.completions.enabled"
+      },
+      {
+        "command": "chipmate.v2.autocomplete.nextEdit.acceptOrJump",
+        "key": "tab",
+        "when": "chipmate.v2.globalShortcutsActive && editorTextFocus && !editorTabMovesFocus && !inSnippetMode && !suggestWidgetVisible && chipmate.v2.nextEdit.hasPendingSuggestion"
+      },
+      {
+        "command": "chipmate.v2.autocomplete.nextEdit.dismiss",
+        "key": "escape",
+        "when": "chipmate.v2.globalShortcutsActive && editorTextFocus && !editorTabMovesFocus && !inSnippetMode && chipmate.v2.nextEdit.hasPendingSuggestion"
+      }
+    ],
+    "configuration": {
+      "title": "ChipMate",
+      "properties": {
+        "chipmate.v2.language": {
+          "type": "string",
+          "default": "zh",
+          "description": "Override the UI language for ChipMate (e.g. en, de, ja). Defaults to Simplified Chinese; choose Auto to use VS Code's display language.",
+          "enum": [
+            "",
+            "en",
+            "zh",
+            "zht",
+            "ko",
+            "de",
+            "es",
+            "fr",
+            "da",
+            "ja",
+            "pl",
+            "ru",
+            "ar",
+            "no",
+            "br",
+            "th",
+            "bs",
+            "tr",
+            "nl",
+            "uk",
+            "it"
+          ],
+          "enumDescriptions": [
+            "Auto (VS Code language)",
+            "English",
+            "简体中文",
+            "繁體中文",
+            "한국어",
+            "Deutsch",
+            "Español",
+            "Français",
+            "Dansk",
+            "日本語",
+            "Polski",
+            "Русский",
+            "العربية",
+            "Norsk",
+            "Português (Brasil)",
+            "ภาษาไทย",
+            "Bosanski",
+            "Türkçe",
+            "Nederlands",
+            "Українська",
+            "Italiano"
+          ]
+        },
+        "chipmate.v2.languageCommitMessage": {
+          "type": "string",
+          "default": "sync",
+          "description": "Language used for AI-generated commit messages. Choose 'sync' to follow the ChipMate UI language, or select a specific language.",
+          "enum": [
+            "sync",
+            "en",
+            "zh",
+            "zht",
+            "ko",
+            "de",
+            "es",
+            "fr",
+            "da",
+            "ja",
+            "pl",
+            "ru",
+            "ar",
+            "no",
+            "br",
+            "th",
+            "bs",
+            "tr",
+            "nl",
+            "uk",
+            "it"
+          ],
+          "enumDescriptions": [
+            "跟随界面语言 (Sync with UI language)",
+            "English",
+            "简体中文",
+            "繁體中文",
+            "한국어",
+            "Deutsch",
+            "Español",
+            "Français",
+            "Dansk",
+            "日本語",
+            "Polski",
+            "Русский",
+            "العربية",
+            "Norsk",
+            "Português (Brasil)",
+            "ภาษาไทย",
+            "Bosanski",
+            "Türkçe",
+            "Nederlands",
+            "Українська",
+            "Italiano"
+          ]
+        },
+        "chipmate.v2.updateCheck.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable ChipMate plugin update checks from the unified ChipMate Server."
+        },
+        "chipmate.v2.updateCheck.autoInstall": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically download and install compatible ChipMate plugin updates. A window reload is still required to finish the update."
+        },
+        "chipmate.v2.updateCheck.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Deprecated. Update checks use chipmate.v2.chipmateServer.baseUrl.",
+          "deprecationMessage": "Use chipmate.v2.chipmateServer.baseUrl to configure the unified ChipMate Server."
+        },
+        "chipmate.v2.updateCheck.manifestFile": {
+          "type": "string",
+          "default": "latest.json",
+          "description": "Deprecated. Update checks use /packages/manifest.json on the unified ChipMate Server.",
+          "deprecationMessage": "Use chipmate.v2.chipmateServer.baseUrl to configure the unified ChipMate Server."
+        },
+        "chipmate.v2.updateCheck.checkOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check for ChipMate updates after extension startup."
+        },
+        "chipmate.v2.updateCheck.intervalHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "description": "Minimum hours between automatic ChipMate update checks and repeated automatic warning notifications."
+        },
+        "chipmate.v2.updateCheck.timeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1,
+          "description": "Timeout in milliseconds for the ChipMate update manifest and VSIX connection/response headers."
+        },
+        "chipmate.v2.updateCheck.downloadTimeoutMs": {
+          "type": "number",
+          "default": 900000,
+          "minimum": 1,
+          "description": "Total timeout in milliseconds for downloading a complete ChipMate VSIX update."
+        },
+        "chipmate.v2.updateCheck.codeCliPath": {
+          "type": "string",
+          "default": "code",
+          "description": "VS Code CLI used to install ChipMate updates. On Windows, the default value \"code\" uses the CLI bundled with the current VS Code instance instead of PATH. Absolute .exe, .cmd, and .bat paths remain supported."
+        },
+        "chipmate.v2.updateCheck.maxDownloadBytes": {
+          "type": "number",
+          "default": 536870912,
+          "minimum": 1,
+          "description": "Maximum downloaded VSIX size in bytes for ChipMate update checks."
+        },
+        "chipmate.v2.documents.artifacts.root": {
+          "type": "string",
+          "default": ".chipmate-v2/artifacts",
+          "description": "Workspace-relative root directory used by VS Code document artifact commands. Document generation tools currently default to .chipmate-v2/artifacts unless configured separately."
+        },
+        "chipmate.v2.documents.wordRender.remoteEndpoint": {
+          "type": "string",
+          "default": "",
+          "description": "Deprecated compatibility setting for the Word renderer endpoint. Configure ChipMate Server in the extension settings instead.",
+          "deprecationMessage": "Use chipmate.v2.chipmateServer.baseUrl to configure the unified ChipMate Server."
+        },
+        "chipmate.v2.documents.mermaidRender.remoteEndpoint": {
+          "type": "string",
+          "default": "",
+          "description": "Deprecated compatibility setting for the Mermaid renderer endpoint. Configure ChipMate Server in the extension settings instead.",
+          "deprecationMessage": "Use chipmate.v2.chipmateServer.baseUrl to configure the unified ChipMate Server."
+        },
+        "chipmate.v2.documents.wordRender.autoVerify": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt-in flag for explicit document workflows that choose to render Word documents after generation or edits. It is disabled by default and does not affect ordinary QA."
+        },
+        "chipmate.v2.documents.tools.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable VS Code document artifact commands. The opencode document tools remain explicit sidecar tools; ordinary ChipMate QA, Document RAG, autocomplete, and native terminal behavior are unchanged."
+        },
+        "chipmate.v2.marketplace.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Deprecated compatibility setting for the marketplace API base URL. Configure ChipMate Server in the extension settings instead.",
+          "deprecationMessage": "Use chipmate.v2.chipmateServer.baseUrl to configure the unified ChipMate Server."
+        },
+        "chipmate.v2.marketplace.skillsOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fetch only marketplace skills from the configured marketplace base URL. Internal/offline packages enable this when targeting the ChipMate skill market."
+        },
+        "chipmate.v2.indexing.openaiCompatible.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Optional OpenAI-compatible embeddings endpoint for codebase RAG indexing. Internal/offline packages may set this at packaging time; API keys are never defaulted."
+        },
+        "chipmate.v2.indexing.showButtonWhenDisabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Show the codebase indexing button below the prompt while indexing is disabled."
+        },
+        "chipmate.v2.model.providerID": {
+          "type": "string",
+          "default": "",
+          "description": "Default model provider ID for new sessions"
+        },
+        "chipmate.v2.model.modelID": {
+          "type": "string",
+          "default": "",
+          "description": "Default model ID for new sessions"
+        },
+        "chipmate.v2.chipmateServer.baseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:6001",
+          "description": "Unified remote ChipMate Server address used by the skill market and document rendering services. Configure this profile-wide value from the extension settings."
+        },
+        "chipmate.v2.autocomplete.model": {
+          "type": "string",
+          "enum": [
+            "qwen-coder-30b0",
+            "mistralai/codestral-2508",
+            "inception/mercury-edit-2",
+            "inception/mercury-next-edit",
+            "codestral-2508",
+            "mercury-edit-2",
+            "mercury-next-edit"
+          ],
+          "enumDescriptions": [
+            "Qwen Coder through a connected OpenAI-compatible provider",
+            "Codestral via ChipMate Gateway",
+            "Mercury Edit 2 (FIM) via ChipMate Gateway",
+            "Mercury Edit 2 (Next Edit), multi-line edit predictions with jump-to-edit UX, via ChipMate Gateway",
+            "Codestral via your connected Mistral provider API key",
+            "Mercury Edit 2 (FIM) via your connected Inception provider API key",
+            "Mercury Edit 2 (Next Edit), multi-line edit predictions with jump-to-edit UX, via your connected Inception provider API key"
+          ],
+          "description": "Model to use for inline autocomplete suggestions. If unset, the recommended default is used."
+        },
+        "chipmate.v2.autocomplete.provider": {
+          "type": "string",
+          "examples": [
+            "chipmate",
+            "mistral",
+            "inception",
+            "your-connected-provider-id"
+          ],
+          "description": "Connected provider ID to use for inline autocomplete suggestions. If unset, the runtime selects an eligible provider or the recommended fallback."
+        },
+        "chipmate.v2.autocomplete.enableAutoTrigger": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic inline completion suggestions"
+        },
+        "chipmate.v2.autocomplete.enableSmartInlineTaskKeybinding": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable smart inline task keybinding"
+        },
+        "chipmate.v2.autocomplete.enableChatAutocomplete": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable chat textarea autocomplete"
+        },
+        "chipmate.v2.autocomplete.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable ChipMate inline autocomplete."
+        },
+        "chipmate.v2.autocomplete.qwen.model": {
+          "type": "string",
+          "default": "qwen-coder-30b0",
+          "description": "Qwen Coder autocomplete model name."
+        },
+        "chipmate.v2.autocomplete.qwen.debounceMs": {
+          "type": "number",
+          "default": 350,
+          "description": "Autocomplete debounce in milliseconds."
+        },
+        "chipmate.v2.autocomplete.qwen.maxTokens": {
+          "type": "number",
+          "default": 128,
+          "description": "Maximum tokens for inline completion."
+        },
+        "chipmate.v2.autocomplete.qwen.maxPromptTokens": {
+          "type": "number",
+          "default": 1024,
+          "description": "Continue-style prompt token budget for qwen-direct autocomplete context."
+        },
+        "chipmate.v2.autocomplete.qwen.prefixPercentage": {
+          "type": "number",
+          "default": 0.3,
+          "description": "Continue-style fraction of prompt budget reserved for prefix context."
+        },
+        "chipmate.v2.autocomplete.qwen.maxSuffixPercentage": {
+          "type": "number",
+          "default": 0.2,
+          "description": "Continue-style maximum fraction of prompt budget reserved for suffix context."
+        },
+        "chipmate.v2.autocomplete.qwen.modelTimeout": {
+          "type": "number",
+          "default": 150,
+          "description": "Continue autocomplete model timeout setting retained for qwen-direct helper parity diagnostics."
+        },
+        "chipmate.v2.autocomplete.qwen.temperature": {
+          "type": "number",
+          "default": 0.01,
+          "description": "Sampling temperature for autocomplete."
+        },
+        "chipmate.v2.autocomplete.qwen.cache.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Continue-style in-memory qwen-direct autocomplete cache reuse."
+        },
+        "chipmate.v2.autocomplete.qwen.cache.maxEntries": {
+          "type": "number",
+          "default": 1000,
+          "description": "Maximum qwen-direct autocomplete cache entries."
+        },
+        "chipmate.v2.autocomplete.qwen.prefixChars": {
+          "type": "number",
+          "default": 12000,
+          "description": "Legacy compatibility limit retained for qwen-direct autocomplete settings; Continue-style token budget controls default prompt pruning."
+        },
+        "chipmate.v2.autocomplete.qwen.suffixChars": {
+          "type": "number",
+          "default": 6000,
+          "description": "Legacy compatibility limit retained for qwen-direct autocomplete settings; Continue-style token budget controls default prompt pruning."
+        },
+        "chipmate.v2.autocomplete.qwen.multifileContext.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Continue-style lightweight multi-file context for FIM autocomplete."
+        },
+        "chipmate.v2.autocomplete.qwen.contextLength": {
+          "type": "number",
+          "default": 0,
+          "description": "Explicit qwen-direct autocomplete model context length. Zero means unknown and disables snippet prompt injection."
+        },
+        "chipmate.v2.autocomplete.qwen.context.recentlyEdited.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable opt-in qwen-direct autocomplete recently edited range context collection."
+        },
+        "chipmate.v2.autocomplete.qwen.context.recentlyEdited.injectIntoPrompt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Inject selected recently edited snippets into the qwen-coder multifile FIM autocomplete prompt when context length is safe."
+        },
+        "chipmate.v2.autocomplete.qwen.context.recentlyEdited.maxRanges": {
+          "type": "number",
+          "default": 3,
+          "description": "Maximum recently edited ranges retained in memory for qwen-direct autocomplete."
+        },
+        "chipmate.v2.autocomplete.qwen.context.recentlyEdited.maxRangeLines": {
+          "type": "number",
+          "default": 20,
+          "description": "Maximum lines retained per recently edited range for qwen-direct autocomplete."
+        },
+        "chipmate.v2.autocomplete.qwen.context.recentlyOpened.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable opt-in qwen-direct autocomplete recently opened file context collection."
+        },
+        "chipmate.v2.autocomplete.qwen.context.recentlyOpened.injectIntoPrompt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Inject selected recently opened file snippets into the qwen-coder multifile FIM autocomplete prompt when context length is safe."
+        },
+        "chipmate.v2.autocomplete.qwen.context.recentlyOpened.maxFiles": {
+          "type": "number",
+          "default": 20,
+          "description": "Maximum recently opened file paths retained in memory for qwen-direct autocomplete."
+        },
+        "chipmate.v2.autocomplete.qwen.context.recentlyOpened.fileReadTimeoutMs": {
+          "type": "number",
+          "default": 80,
+          "description": "Per-file read timeout in milliseconds for qwen-direct recently opened autocomplete context."
+        },
+        "chipmate.v2.autocomplete.qwen.context.importDefinitions.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable opt-in qwen-direct autocomplete import definition context collection."
+        },
+        "chipmate.v2.autocomplete.qwen.context.importDefinitions.injectIntoPrompt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Inject selected import definition snippets into the qwen-coder multifile FIM autocomplete prompt when context length is safe."
+        },
+        "chipmate.v2.autocomplete.qwen.context.importDefinitions.timeoutMs": {
+          "type": "number",
+          "default": 100,
+          "description": "Timeout in milliseconds for qwen-direct import definition lookup and range reads."
+        },
+        "chipmate.v2.autocomplete.qwen.context.importDefinitions.cacheSize": {
+          "type": "number",
+          "default": 10,
+          "description": "Maximum import definition file-info entries retained in memory for qwen-direct autocomplete."
+        },
+        "chipmate.v2.autocomplete.qwen.context.rootPath.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable opt-in qwen-direct autocomplete root path context collection."
+        },
+        "chipmate.v2.autocomplete.qwen.context.rootPath.injectIntoPrompt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Inject selected root path snippets into the qwen-coder multifile FIM autocomplete prompt when context length is safe."
+        },
+        "chipmate.v2.autocomplete.qwen.context.rootPath.timeoutMs": {
+          "type": "number",
+          "default": 100,
+          "description": "Timeout in milliseconds for qwen-direct root path definition lookup and range reads."
+        },
+        "chipmate.v2.autocomplete.qwen.context.rootPath.cacheSize": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum root path snippet entries retained in memory for qwen-direct autocomplete."
+        },
+        "chipmate.v2.autocomplete.qwen.trace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable qwen-direct autocomplete diagnostic tracing."
+        },
+        "chipmate.v2.autocomplete.qwen.logLevel": {
+          "type": "string",
+          "enum": [
+            "off",
+            "info",
+            "debug"
+          ],
+          "default": "off",
+          "description": "Diagnostic log level for qwen-direct autocomplete."
+        },
+        "chipmate.v2.autocomplete.qwen.logPromptPreview": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include short redacted prompt previews in qwen-direct debug diagnostics."
+        },
+        "chipmate.v2.autocomplete.qwen.logCompletionPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include short redacted completion previews in qwen-direct debug diagnostics."
+        },
+        "chipmate.v2.speechToText.model": {
+          "type": "string",
+          "description": "Model to use for experimental speech-to-text voice input. Requires ChipMate Gateway."
+        },
+        "chipmate.v2.claudeCodeCompat": {
+          "type": "boolean",
+          "default": false,
+          "description": "Load CLAUDE.md instructions and skills from your Claude Code configuration directory into ChipMate sessions. Enable this if you want ChipMate to use your Claude Code instructions and skills."
+        },
+        "chipmate.v2.extraCaCerts": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to a PEM file containing extra CA certificates to trust when the ChipMate backend makes HTTPS requests (sets NODE_EXTRA_CA_CERTS on the CLI process). Use this if you're behind a corporate proxy that performs SSL inspection. Leave empty to rely on the OS trust store."
+        },
+        "chipmate.v2.autoApprove.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start ChipMate with the main auto-approve toggle enabled. When enabled, permission prompts are approved automatically."
+        },
+        "chipmate.v2.maxCost": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Show a non-blocking alert when a session exceeds this USD amount. Use whole dollars; set to 0 to disable."
+        },
+        "chipmate.v2.fontSize": {
+          "type": "number",
+          "default": 13,
+          "minimum": 10,
+          "maximum": 24,
+          "description": "Font size in pixels for the ChipMate webview UI."
+        },
+        "chipmate.v2.browserAutomation.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable browser automation powered by Playwright. When enabled, the AI agent can interact with web pages in a visible Chrome window."
+        },
+        "chipmate.v2.browserAutomation.useSystemChrome": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use your system's installed Chrome browser instead of downloading a separate Chromium instance."
+        },
+        "chipmate.v2.browserAutomation.headless": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run browser automation in headless mode (no visible window). When disabled, you can watch the agent interact with the browser."
+        },
+        "chipmate.v2.attention.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Play sounds when sessions complete, error, or need input"
+        },
+        "chipmate.v2.attention.sound": {
+          "type": "string",
+          "default": "default",
+          "enum": [
+            "default",
+            "system",
+            "alert-01",
+            "alert-02",
+            "alert-03",
+            "alert-04",
+            "alert-05",
+            "alert-06",
+            "alert-07",
+            "alert-08",
+            "alert-09",
+            "alert-10",
+            "bip-bop-01",
+            "bip-bop-02",
+            "bip-bop-03",
+            "bip-bop-04",
+            "bip-bop-05",
+            "bip-bop-06",
+            "bip-bop-07",
+            "bip-bop-08",
+            "bip-bop-09",
+            "bip-bop-10",
+            "staplebops-01",
+            "staplebops-02",
+            "staplebops-03",
+            "staplebops-04",
+            "staplebops-05",
+            "staplebops-06",
+            "staplebops-07",
+            "nope-01",
+            "nope-02",
+            "nope-03",
+            "nope-04",
+            "nope-05",
+            "nope-06",
+            "nope-07",
+            "nope-08",
+            "nope-09",
+            "nope-10",
+            "nope-11",
+            "nope-12",
+            "yup-01",
+            "yup-02",
+            "yup-03",
+            "yup-04",
+            "yup-05",
+            "yup-06"
+          ],
+          "description": "Use different sounds for completion, input, and errors, or choose one sound for every event"
+        },
+        "chipmate.v2.showTaskTimeline": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the task timeline graph in the chat header"
+        },
+        "chipmate.v2.showTokenThroughput": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show text-generation tokens-per-second values on assistant messages."
+        },
+        "chipmate.v2.chat.shiftTabCyclesVariant": {
+          "type": "boolean",
+          "default": true,
+          "description": "Cycle through reasoning effort variants with Shift+Tab in prompt inputs. Disable to keep Shift+Tab for keyboard focus navigation."
+        },
+        "chipmate.v2.agentWorkStyle": {
+          "type": "string",
+          "scope": "application",
+          "default": "unset",
+          "enum": [
+            "unset",
+            "human-in-the-loop",
+            "autonomous",
+            "skipped"
+          ],
+          "enumDescriptions": [
+            "Show work style onboarding so you can choose again",
+            "Human in the Loop: review agent actions as they happen",
+            "High autonomy: let ChipMate take most actions with fewer interruptions",
+            "Onboarding was skipped without changing work style settings"
+          ],
+          "description": "Preferred agent work style. Set to Unset to show the onboarding flow again."
+        },
+        "chipmate.v2.diff.renderMarkdown": {
+          "type": "boolean",
+          "default": false,
+          "description": "Render Markdown files in ChipMate diff viewers by default. Toggle this from a Markdown file header in the diff viewer."
+        },
+        "chipmate.v2.comments.model": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "高可信 C/C++ 代码注释使用的模型，格式为 `providerID/modelID`。留空时使用当前 CLI 主模型；不会降级使用小模型。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "prepare:cli-binary": "bun script/local-bin.ts",
+    "compile": "bun run prepare:cli-binary -- --force && bun run rebuild-sdk && bun run typecheck && bun run lint && node esbuild.js",
+    "watch": "bun run rebuild-sdk && bun run --parallel watch:esbuild watch:tsc",
+    "watch:esbuild": "bun run prepare:cli-binary && node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "watch:cli": "bun script/watch-cli.ts",
+    "package": "bun run prepare:cli-binary && bun run rebuild-sdk && bun run typecheck && bun run lint && node esbuild.js --production",
+    "package:internal-offline": "bun script/build.ts --internal-offline",
+    "compile-tests": "tsc -p tsconfig.test.json --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "bun run compile-tests && bun run compile && bun run lint",
+    "check-types": "tsc --noEmit",
+    "check-types:webview": "tsc --noEmit --project webview-ui/tsconfig.json",
+    "typecheck": "bun run check-types && bun run check-types:webview",
+    "benchmark:qwen-autocomplete": "bun --preload ./script/qwen-benchmark-vscode-preload.ts script/benchmark-qwen-autocomplete.ts",
+    "benchmark:low-end:webview": "node qa/low-end/run-webview.mjs",
+    "benchmark:low-end:installed": "node qa/low-end/run-installed.mjs",
+    "test:low-end:contract": "node --test qa/low-end/contract.test.mjs",
+    "qa:agent-console:render-proxy": "node qa/agent-console-render/run.mjs",
+    "test:agent-console:render-contract": "node --test qa/agent-console-render/contract.test.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "knip": "knip",
+    "check-chipmate-change": "! grep -rIn 'chipmate_change' . ../chipmate-ui/ --exclude='package.json' --exclude='*.md' --exclude-dir='node_modules' --exclude-dir='dist' | grep -v '`chipmate_change`'",
+    "lint": "eslint src webview-ui",
+    "test": "vscode-test",
+    "test:unit": "bun test tests/unit/ --dots",
+    "rebuild-sdk": "bun run --cwd ../sdk/js build",
+    "storybook": "storybook dev -p 6007",
+    "build-storybook": "storybook build -o storybook-static",
+    "test:a11y": "playwright test tests/accessibility.spec.ts",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
+    "qa:windows:coverage": "node qa/windows-real/coverage.mjs",
+    "qa:windows:freeze": "node qa/windows-real/freeze-kit.mjs",
+    "qa:windows:mock": "node --test qa/windows-real/mock-provider.test.mjs",
+    "qa:windows:update-server": "node --test qa/windows-real/update-server.test.mjs",
+    "qa:macos:run": "node qa/macos-real/run.mjs",
+    "qa:macos:indexing": "bun qa/macos-indexing/run.mjs",
+    "qa:indexing:regression": "bun qa/indexing-regression/run.mjs",
+    "test:indexing:regression:contract": "node --test qa/indexing-regression/contract.test.mjs",
+    "qa:code-comments:list": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts list",
+    "qa:code-comments:ab": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts ab",
+    "qa:code-comments:review": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts review",
+    "qa:code-comments:acceptance": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts acceptance",
+    "snapshot:build": "bun script/dev-snapshot.ts build",
+    "snapshot:install": "bun script/dev-snapshot.ts install",
+    "extension": "bun script/launch.ts"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.11.3",
+    "@playwright/test": "1.57.0",
+    "@storybook/addon-a11y": "10.2.10",
+    "@storybook/addon-docs": "10.2.10",
+    "@types/diff": "^6.0.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "8.18.1",
+    "@types/yazl": "^2.4.5",
+    "@types/yauzl": "^3.4.0",
+    "@types/vscode": "1.93.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.27.2",
+    "esbuild-plugin-solid": "^0.6.0",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "happy-dom": "20.8.9",
+    "knip": "5.85.0",
+    "prettier": "3.6.2",
+    "qrcode": "^1.5.4",
+    "storybook": "10.2.10",
+    "storybook-solidjs-vite": "10.0.9",
+    "ts-morph": "27.0.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0",
+    "vite": "7.3.5",
+    "vite-plugin-solid": "2.11.10"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@chipmate/skill-spec": "workspace:*",
+    "@kobalte/core": "catalog:",
+    "fuzzysort": "3.1.0",
+    "@chipmate/chipmate-gateway": "workspace:*",
+    "@chipmate/chipmate-i18n": "workspace:*",
+    "@chipmate/chipmate-indexing": "workspace:*",
+    "@chipmate/chipmate-memory": "workspace:*",
+    "@chipmate/chipmate-ui": "workspace:*",
+    "@chipmate/plugin": "workspace:*",
+    "@chipmate/sdk": "workspace:*",
+    "@opencode-ai/core": "workspace:*",
+    "@opencode-ai/ui": "workspace:*",
+    "@pierre/diffs": "catalog:",
+    "@thisbeyond/solid-dnd": "0.7.5",
+    "@vscode/codicons": "^0.0.44",
+    "@xterm/addon-clipboard": "0.2.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-unicode-graphemes": "0.4.0",
+    "@xterm/addon-web-links": "0.12.0",
+    "@xterm/xterm": "6.0.0",
+    "diff": "8.0.4",
+    "fastest-levenshtein": "^1.0.16",
+    "friendly-words": "1.3.1",
+    "ignore": "^7.0.3",
+    "js-tiktoken": "^1.0.18",
+    "lru-cache": "^11.0.2",
+    "marked": "catalog:",
+    "openai": "^4.85.4",
+    "quick-lru": "^7.0.0",
+    "simple-git": "3.36.0",
+    "solid-js": "^1.9.11",
+    "uri-js": "^4.4.1",
+    "virtua": "catalog:",
+    "web-tree-sitter": "^0.24.7",
+    "ws": "8.21.0",
+    "yaml": "2.8.3",
+    "yauzl": "^3.4.0",
+    "yazl": "^2.5.1",
+    "zod": "^3.24.2"
+  },
+  "peerDependencies": {}
+}

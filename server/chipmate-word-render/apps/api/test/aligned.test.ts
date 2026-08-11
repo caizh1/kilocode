@@ -212,10 +212,10 @@ test("market SSE sends an initial catalog invalidation event and closes cleanly"
   }
 })
 
-test("web session and Kilo bearer resolve to one user with protected favorites and installations", async () => {
+test("web session and ChipMate bearer resolve to one user with protected favorites and installations", async () => {
   const data = await fixture()
   const resolveUser = async (key: string) =>
-    key === "web-key" || key === "kilo-key"
+    key === "web-key" || key === "chipmate-key"
       ? ({ ok: true, user: { name: "Alice", tokenName: "Alice@chipmate" }, status: 200 } as const)
       : ({ ok: false, code: "token-not-found", status: 404 } as const)
   const app = build(data.db, { resolveUser })
@@ -232,7 +232,7 @@ test("web session and Kilo bearer resolve to one user with protected favorites a
     const bearer = await app.inject({
       method: "GET",
       url: "/api/v1/auth/me",
-      headers: { authorization: "Bearer kilo-key" },
+      headers: { authorization: "Bearer chipmate-key" },
     })
     assert.equal(me.json().id, bearer.json().id)
     assert.equal(me.json().displayName, "Alice")
@@ -256,7 +256,7 @@ test("web session and Kilo bearer resolve to one user with protected favorites a
     const favorites = await app.inject({
       method: "GET",
       url: "/api/v1/me/favorites",
-      headers: { authorization: "Bearer kilo-key" },
+      headers: { authorization: "Bearer chipmate-key" },
     })
     assert.equal(favorites.json()[0].id, "source-backed-detail-design")
     assert.equal(favorites.json()[0].favorite, true)
@@ -276,7 +276,7 @@ test("web session and Kilo bearer resolve to one user with protected favorites a
     const installed = await app.inject({
       method: "PUT",
       url: `/api/v1/installations/${item.id}`,
-      headers: { authorization: "Bearer kilo-key" },
+      headers: { authorization: "Bearer chipmate-key" },
       payload: installation,
     })
     assert.equal(installed.statusCode, 200)
@@ -346,7 +346,7 @@ test("event batches derive identity, hash clients, reject sensitive context, and
   const data = await fixture()
   const now = Date.parse("2026-07-12T12:00:00.000Z")
   const resolveUser = async (key: string) =>
-    key === "kilo-key"
+    key === "chipmate-key"
       ? ({ ok: true, user: { name: "Alice", tokenName: "Alice@chipmate" }, status: 200 } as const)
       : ({ ok: false, code: "token-not-found", status: 404 } as const)
   const app = build(data.db, { resolveUser, now: () => now })
@@ -354,7 +354,7 @@ test("event batches derive identity, hash clients, reject sensitive context, and
     const invalid = await app.inject({
       method: "POST",
       url: "/api/v1/events/batch",
-      headers: { authorization: "Bearer kilo-key" },
+      headers: { authorization: "Bearer chipmate-key" },
       payload: [
         {
           name: "skill_open",
@@ -371,7 +371,7 @@ test("event batches derive identity, hash clients, reject sensitive context, and
     const accepted = await app.inject({
       method: "POST",
       url: "/api/v1/events/batch",
-      headers: { authorization: "Bearer kilo-key" },
+      headers: { authorization: "Bearer chipmate-key" },
       payload: [
         {
           name: "market_search",

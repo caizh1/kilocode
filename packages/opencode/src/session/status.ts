@@ -51,7 +51,7 @@ export const layer = Layer.effect(
   }),
 )
 
-// kilocode_change - preserve legacy layer composition for Kilo callers
+// chipmate_change - preserve legacy layer composition for ChipMate callers
 export const defaultLayer = layer.pipe(Layer.provide(EventV2Bridge.defaultLayer))
 
 export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node] })

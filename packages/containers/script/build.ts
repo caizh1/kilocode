@@ -7,7 +7,7 @@ import { fileURLToPath } from "url"
 const rootDir = fileURLToPath(new URL("../../..", import.meta.url))
 process.chdir(rootDir)
 
-const reg = process.env.REGISTRY ?? "ghcr.io/kilo-org" // kilocode_change
+const reg = process.env.REGISTRY ?? "ghcr.io/chipmate-org" // chipmate_change
 const tag = process.env.TAG ?? "24.04"
 const push = process.argv.includes("--push") || process.env.PUSH === "1"
 
@@ -17,18 +17,18 @@ const manager = pkg.packageManager ?? ""
 const bun = manager.startsWith("bun@") ? manager.slice(4) : ""
 if (!bun) throw new Error("packageManager must be bun@<version>")
 
-const images = ["base", "bun-node", "jetbrains", "rust", "tauri-linux", "publish"] // kilocode_change
+const images = ["base", "bun-node", "jetbrains", "rust", "tauri-linux", "publish"] // chipmate_change
 
 const setup = async () => {
   if (!push) return
   const list = await $`docker buildx ls`.text()
-  // kilocode_change start
-  if (list.includes("kilo")) {
-    await $`docker buildx use kilo`
+  // chipmate_change start
+  if (list.includes("chipmate")) {
+    await $`docker buildx use chipmate`
     return
   }
-  await $`docker buildx create --name kilo --use`
-  // kilocode_change end
+  await $`docker buildx create --name chipmate --use`
+  // chipmate_change end
 }
 
 await setup()

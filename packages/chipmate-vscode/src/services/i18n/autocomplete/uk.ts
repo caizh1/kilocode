@@ -1,0 +1,47 @@
+export const dict = {
+  "chipmate:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) Автодоповнення",
+  "chipmate:autocomplete.statusBar.snoozed": "відкладено",
+  "chipmate:autocomplete.statusBar.warning": "$(warning) Автодоповнення",
+  "chipmate:autocomplete.statusBar.tooltip.basic": "Автодоповнення ChipMate",
+  "chipmate:autocomplete.statusBar.tooltip.disabled": "Автодоповнення ChipMate (вимкнено)",
+  "chipmate:autocomplete.statusBar.tooltip.noUsableProvider":
+    "**Модель автодоповнення не налаштована**\n\nЩоб увімкнути автодоповнення, додайте профіль з одним із цих підтримуваних постачальників: {{providers}}.\n\n[Відкрити налаштування]({{command}})",
+  "chipmate:autocomplete.statusBar.tooltip.sessionTotal": "Загальна вартість сеансу:",
+  "chipmate:autocomplete.statusBar.tooltip.provider": "Постачальник:",
+  "chipmate:autocomplete.statusBar.tooltip.model": "Модель:",
+  "chipmate:autocomplete.statusBar.tooltip.profile": "Профіль: ",
+  "chipmate:autocomplete.statusBar.tooltip.defaultProfile": "За замовчуванням",
+  "chipmate:autocomplete.statusBar.tooltip.completionSummary":
+    "Виконано {{count}} доповнень між {{startTime}} і {{endTime}}, із загальною вартістю {{cost}}.",
+  "chipmate:autocomplete.statusBar.tooltip.providerInfo": "Автодоповнення надає {{model}} через {{provider}}.",
+  "chipmate:autocomplete.statusBar.cost.zero": "$0.00",
+  "chipmate:autocomplete.statusBar.cost.lessThanCent": "<$0.01",
+  "chipmate:autocomplete.toggleMessage": "Автодоповнення ChipMate {{status}}",
+  "chipmate:autocomplete.progress.title": "ChipMate",
+  "chipmate:autocomplete.progress.analyzing": "Аналіз вашого коду...",
+  "chipmate:autocomplete.progress.generating": "Створення запропонованих змін...",
+  "chipmate:autocomplete.progress.processing": "Обробка запропонованих змін...",
+  "chipmate:autocomplete.progress.showing": "Показ запропонованих змін...",
+  "chipmate:autocomplete.input.title": "ChipMate: Швидке завдання",
+  "chipmate:autocomplete.input.placeholder": "наприклад, 'рефакторинг цієї функції, щоб вона була ефективнішою'",
+  "chipmate:autocomplete.commands.generateSuggestions": "ChipMate: Створити запропоновані зміни",
+  "chipmate:autocomplete.commands.displaySuggestions": "Показати запропоновані зміни",
+  "chipmate:autocomplete.commands.cancelSuggestions": "Скасувати запропоновані зміни",
+  "chipmate:autocomplete.commands.applyCurrentSuggestion": "Застосувати поточну запропоновану зміну",
+  "chipmate:autocomplete.commands.applyAllSuggestions": "Застосувати всі запропоновані зміни",
+  "chipmate:autocomplete.commands.category": "ChipMate",
+  "chipmate:autocomplete.codeAction.title": "ChipMate: Запропоновані зміни",
+  "chipmate:autocomplete.chatParticipant.fullName": "Агент ChipMate",
+  "chipmate:autocomplete.chatParticipant.name": "Агент",
+  "chipmate:autocomplete.chatParticipant.description":
+    "Я можу допомогти зі швидкими завданнями та запропонованими змінами.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.message":
+    "Автодоповнення ChipMate блокується через конфлікт із GitHub Copilot. Щоб виправити це, потрібно вимкнути вбудовані пропозиції Copilot.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableCopilot": "Вимкнути Copilot",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableInlineAssist": "Вимкнути автодоповнення",
+  "chipmate:autocomplete.creditsExhausted.message":
+    "Автодоповнення ChipMate призупинено. Можливі причини: у вашому обліковому записі ChipMate не залишилося кредитів або налаштований API-ключ (BYOK) досяг ліміту квоти. Додайте кредити ChipMate або перевірте конфігурацію API-ключа, щоб відновити автодоповнення.",
+  "chipmate:autocomplete.creditsExhausted.addCredits": "Додати кредити",
+  "chipmate:autocomplete.authError.message":
+    "Автодоповнення ChipMate призупинено через проблему автентифікації. Можливі причини: ви не ввійшли в ChipMate або ваш API-ключ (BYOK) недійсний чи відсутній. Увійдіть знову або перевірте налаштування API-ключа постачальника.",
+}

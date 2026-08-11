@@ -6,11 +6,11 @@
 // the original /event race or #27371's invalid-model hang).
 //
 // Configuration flows through opencode's built-in test affordances:
-//   - KILO_CONFIG_CONTENT      : provider config inline, no files to find
-//   - KILO_TEST_HOME           : pins os.homedir() → tmpdir
-//   - KILO_DISABLE_PROJECT_CONFIG : skip walking up for opencode.json
-//   - KILO_PURE                : skip external plugin discovery + install
-//   - KILO_DISABLE_AUTOUPDATE / AUTOCOMPACT / MODELS_FETCH : no background work
+//   - CHIPMATE_CONFIG_CONTENT      : provider config inline, no files to find
+//   - CHIPMATE_TEST_HOME           : pins os.homedir() → tmpdir
+//   - CHIPMATE_DISABLE_PROJECT_CONFIG : skip walking up for opencode.json
+//   - CHIPMATE_PURE                : skip external plugin discovery + install
+//   - CHIPMATE_DISABLE_AUTOUPDATE / AUTOCOMPACT / MODELS_FETCH : no background work
 // Plus HOME / XDG_* pointing at the tmpdir for belt-and-suspenders isolation.
 //
 // Today only `opencode.run` is fully wired. The shape supports adding more
@@ -29,15 +29,15 @@ import path from "node:path"
 import { TestLLMServer } from "./llm-server"
 import { testProviderConfig } from "./test-provider"
 import { it } from "./effect"
-import { TestCli } from "../../script/kilocode/test-cli" // kilocode_change
+import { TestCli } from "../../script/chipmate/test-cli" // chipmate_change
 
 const opencodeRoot = path.resolve(import.meta.dir, "../../")
 const cliEntry = path.join(opencodeRoot, "src/index.ts")
-// kilocode_change start - reuse the runner's once-built CLI graph instead of transpiling it in every child
+// chipmate_change start - reuse the runner's once-built CLI graph instead of transpiling it in every child
 const cliArgs = process.env[TestCli.ENV]
   ? ["run", process.env[TestCli.ENV]]
   : ["run", "--conditions=browser", "--preload=@opentui/solid/preload", cliEntry]
-// kilocode_change end
+// chipmate_change end
 
 export const testModelID = "test/test-model"
 
@@ -67,19 +67,19 @@ function forkStderrDrain(stream: ReadableStream<Uint8Array>, into: string[]) {
 
 function isolatedEnv(home: string, configJson: string): Record<string, string> {
   return {
-    KILO_TEST_HOME: home,
+    CHIPMATE_TEST_HOME: home,
     HOME: home,
     XDG_CONFIG_HOME: path.join(home, ".config"),
     XDG_DATA_HOME: path.join(home, ".local/share"),
     XDG_STATE_HOME: path.join(home, ".local/state"),
     XDG_CACHE_HOME: path.join(home, ".cache"),
-    KILO_CONFIG_CONTENT: configJson,
-    KILO_DISABLE_PROJECT_CONFIG: "1",
-    KILO_PURE: "1",
-    KILO_DISABLE_AUTOUPDATE: "1",
-    KILO_DISABLE_AUTOCOMPACT: "1",
-    KILO_DISABLE_MODELS_FETCH: "1",
-    KILO_AUTH_CONTENT: "{}",
+    CHIPMATE_CONFIG_CONTENT: configJson,
+    CHIPMATE_DISABLE_PROJECT_CONFIG: "1",
+    CHIPMATE_PURE: "1",
+    CHIPMATE_DISABLE_AUTOUPDATE: "1",
+    CHIPMATE_DISABLE_AUTOCOMPACT: "1",
+    CHIPMATE_DISABLE_MODELS_FETCH: "1",
+    CHIPMATE_AUTH_CONTENT: "{}",
   }
 }
 
@@ -212,7 +212,7 @@ export function withCliFixture<A, E>(
 
     const spawn = Effect.fn("opencode.spawn")(function* (args: string[], opts?: SpawnOpts) {
       const start = Date.now()
-      const timeoutMs = opts?.timeoutMs ?? 45_000 // kilocode_change - current full CLI startup leaves less than 30s for multi-step runs
+      const timeoutMs = opts?.timeoutMs ?? 45_000 // chipmate_change - current full CLI startup leaves less than 30s for multi-step runs
       // stdin: "ignore" so the child doesn't see a piped stdin and block
       // on `Bun.stdin.text()` (see src/cli/cmd/run.ts — non-TTY stdin is
       // consumed as the prompt). The old Process.run wrapper defaulted to
@@ -222,7 +222,7 @@ export function withCliFixture<A, E>(
         env: { ...env, ...opts?.env },
         extendEnv: true,
         stdin: "ignore",
-        detached: false, // kilocode_change - keep test children in the runner's process lifecycle
+        detached: false, // chipmate_change - keep test children in the runner's process lifecycle
       })
       // Pass timeout to appProc.run rather than wrapping with
       // Effect.timeoutOrElse externally: AppProcess.run is itself scoped, so
@@ -273,7 +273,7 @@ export function withCliFixture<A, E>(
         ...opts,
         env: {
           ...opts.env,
-          KILO_CONFIG_CONTENT: JSON.stringify({
+          CHIPMATE_CONFIG_CONTENT: JSON.stringify({
             ...testProviderConfig(llm.url),
             permission: opts.permission,
           }),
@@ -291,7 +291,7 @@ export function withCliFixture<A, E>(
       const proc = yield* Effect.acquireRelease(
         Effect.sync(() =>
           Bun.spawn(["bun", ...cliArgs, ...runArgs(message, opts)], {
-            // kilocode_change - cliArgs carries the solid preload
+            // chipmate_change - cliArgs carries the solid preload
             cwd: home,
             env: { ...process.env, ...env, ...options?.env },
             stdin: "ignore",
@@ -337,7 +337,7 @@ export function withCliFixture<A, E>(
             env: { ...process.env, ...env, ...opts?.env },
             stdout: "pipe",
             stderr: "pipe",
-            windowsHide: true, // kilocode_change
+            windowsHide: true, // chipmate_change
           }),
         ),
         (p) =>
@@ -410,7 +410,7 @@ export function withCliFixture<A, E>(
             stdin: "pipe",
             stdout: "pipe",
             stderr: "pipe",
-            windowsHide: true, // kilocode_change
+            windowsHide: true, // chipmate_change
           }),
         ),
         (p) =>
@@ -537,11 +537,11 @@ export const cliIt = {
     body: (input: CliFixture) => Effect.Effect<A, E, Scope.Scope | HttpClient.HttpClient>,
     opts?: number | TestOptions,
   ) =>
-    // kilocode_change start - full CLI processes contend heavily during startup after the Effect graph migration
+    // chipmate_change start - full CLI processes contend heavily during startup after the Effect graph migration
     test.serial(
       name,
       () => Effect.runPromise(Effect.scoped(withCliFixture(body))),
       opts,
     ),
-  // kilocode_change end
+  // chipmate_change end
 }

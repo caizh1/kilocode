@@ -20,7 +20,7 @@ import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { SessionInput } from "@opencode-ai/core/session/input"
 import { SessionInputTable, SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
-import * as StoredMessage from "@opencode-ai/core/kilocode/session-message" // kilocode_change
+import * as StoredMessage from "@opencode-ai/core/chipmate/session-message" // chipmate_change
 import { testEffect } from "./lib/effect"
 import { Snapshot } from "@opencode-ai/core/snapshot"
 
@@ -244,7 +244,7 @@ describe("SessionProjector", () => {
         timestamp: created,
         model,
       })
-      // kilocode_change start
+      // chipmate_change start
       const assistantID = SessionMessage.ID.create()
       yield* events.publish(SessionEvent.Step.Started, {
         sessionID,
@@ -285,7 +285,7 @@ describe("SessionProjector", () => {
         content: [{ type: "file", uri: "data:image/png;base64,AAAA", mime: "image/png", name: "pixel.png" }],
         provider: { executed: false },
       })
-      // kilocode_change end
+      // chipmate_change end
       yield* events.publish(SessionEvent.Synthetic, {
         sessionID,
         messageID: SessionMessage.ID.create(),
@@ -350,11 +350,11 @@ describe("SessionProjector", () => {
         .orderBy(asc(SessionMessageTable.seq))
         .all()
         .pipe(Effect.orDie)
-      // kilocode_change start - assert the projector itself writes the released-reader compaction shape.
+      // chipmate_change start - assert the projector itself writes the released-reader compaction shape.
       const compaction = rows.find((row) => row.type === "compaction")
       expect(compaction?.data).toMatchObject({
         summary: "summary\n\nRecent context:\nrecent context",
-        kilo_summary: "summary",
+        chipmate_summary: "summary",
         recent: "recent context",
       })
       const released = Schema.decodeUnknownSync(
@@ -399,19 +399,19 @@ describe("SessionProjector", () => {
           ),
         }),
       )({ ...assistant?.data, type: assistant?.type })
-      // kilocode_change end
+      // chipmate_change end
       const messages = rows.map((row) =>
-        // kilocode_change start
+        // chipmate_change start
         Schema.decodeUnknownSync(SessionMessage.Message)(
           StoredMessage.normalize({ ...row.data, id: row.id, type: row.type }),
         ),
-        // kilocode_change end
+        // chipmate_change end
       )
 
       expect(messages.map((message) => message.type)).toEqual([
         "agent-switched",
         "model-switched",
-        "assistant", // kilocode_change
+        "assistant", // chipmate_change
         "synthetic",
         "shell",
         "compaction",

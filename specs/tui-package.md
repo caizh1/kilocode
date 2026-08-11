@@ -144,7 +144,7 @@ Exit criteria:
 
 - `packages/tui` typechecks independently.
 - Its test command runs from `packages/tui`.
-- The package has no dependency on `opencode`, `@kilocode/cli`, or
+- The package has no dependency on `opencode`, `@chipmate/cli`, or
   `@opencode-ai/core`.
 
 Checkpoint commit:
@@ -368,7 +368,7 @@ Tasks:
 Exit criteria:
 
 - Domain-facing TUI code imports OpenCode data and operations only from
-  `@kilocode/sdk`.
+  `@chipmate/sdk`.
 - No TUI source imports private session, provider, reference, LSP, server, or
   core domain implementations.
 - SDK generation is clean after any API changes.

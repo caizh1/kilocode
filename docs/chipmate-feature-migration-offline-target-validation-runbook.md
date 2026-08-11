@@ -78,8 +78,8 @@ cd .\chipmate-0.0.38-offline
 Expected extracted files:
 
 ```text
-kilo-vscode-linux-x64-baseline.vsix
-kilo-vscode-win32-x64-baseline.vsix
+chipmate-vscode-linux-x64-baseline.vsix
+chipmate-vscode-win32-x64-baseline.vsix
 SHA256SUMS-chipmate-0.0.38-offline.txt
 OFFLINE_RELEASE_NOTES-chipmate-0.0.38.md
 OFFLINE_RELEASE_INDEX-chipmate-0.0.38.json
@@ -109,7 +109,7 @@ Windows PowerShell:
 
 ```powershell
 $expectedWin = "3c6b9943ecf8259379c6f75b1ff321bb83677c092aac3974584524fcd90e489d"
-$actualWin = (Get-FileHash .\kilo-vscode-win32-x64-baseline.vsix -Algorithm SHA256).Hash.ToLowerInvariant()
+$actualWin = (Get-FileHash .\chipmate-vscode-win32-x64-baseline.vsix -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actualWin -ne $expectedWin) { throw "win32 VSIX sha256 mismatch: $actualWin" }
 ```
 
@@ -117,21 +117,21 @@ Expected VSIX hashes:
 
 | Target | File | SHA256 |
 |---|---|---|
-| Linux x86-64 | `kilo-vscode-linux-x64-baseline.vsix` | `95218162b0d0a09c6425c80a10e9745569c1b021edd9d666a5f43278d31458ad` |
-| Windows x86-64 | `kilo-vscode-win32-x64-baseline.vsix` | `3c6b9943ecf8259379c6f75b1ff321bb83677c092aac3974584524fcd90e489d` |
+| Linux x86-64 | `chipmate-vscode-linux-x64-baseline.vsix` | `95218162b0d0a09c6425c80a10e9745569c1b021edd9d666a5f43278d31458ad` |
+| Windows x86-64 | `chipmate-vscode-win32-x64-baseline.vsix` | `3c6b9943ecf8259379c6f75b1ff321bb83677c092aac3974584524fcd90e489d` |
 
 ## Step 4: install the target VSIX
 
 Linux target:
 
 ```bash
-code --install-extension ./kilo-vscode-linux-x64-baseline.vsix --force
+code --install-extension ./chipmate-vscode-linux-x64-baseline.vsix --force
 ```
 
 Windows target:
 
 ```powershell
-code --install-extension .\kilo-vscode-win32-x64-baseline.vsix --force
+code --install-extension .\chipmate-vscode-win32-x64-baseline.vsix --force
 ```
 
 Expected result:
@@ -162,8 +162,8 @@ Open VS Code on a representative workspace and confirm:
 | Extension ID | `chipmate.chipmate` |
 | Version | `0.0.38` |
 | Display name | ChipMate |
-| Sidebar contribution | Existing Kilo/ChipMate sidebar appears. |
-| Native Kilo commands | Existing Kilo commands remain visible in Command Palette. |
+| Sidebar contribution | Existing ChipMate/ChipMate sidebar appears. |
+| Native ChipMate commands | Existing ChipMate commands remain visible in Command Palette. |
 | Document sidecar commands | Document artifact commands appear, but do not trigger during ordinary QA unless requested. |
 | Agent Terminal | Default-off unless explicitly enabled. |
 | Qwen autocomplete settings | Existing qwen-direct settings remain present. |
@@ -173,10 +173,10 @@ Open VS Code on a representative workspace and confirm:
 Word render does not bundle LibreOffice, Chromium, or Poppler renderer binaries
 into the VSIX. On target machines, S10 can pass in either of these ways:
 
-- Remote renderer: set `KILO_WORD_RENDER_ENDPOINT` or pass an explicit
+- Remote renderer: set `CHIPMATE_WORD_RENDER_ENDPOINT` or pass an explicit
   `remoteEndpoint` to `render_word_document`.
-- Local external renderer: set `KILO_WORD_RENDER_SOFFICE` to an existing
-  `soffice` executable and `KILO_WORD_RENDER_PDFTOPPM` to an existing
+- Local external renderer: set `CHIPMATE_WORD_RENDER_SOFFICE` to an existing
+  `soffice` executable and `CHIPMATE_WORD_RENDER_PDFTOPPM` to an existing
   `pdftoppm` executable, or make both available on `PATH`.
 - Warning-only boundary: if no renderer is available, the expected output is a
   warning diagnostics artifact such as `word-render-endpoint-not-configured`;
@@ -185,15 +185,15 @@ into the VSIX. On target machines, S10 can pass in either of these ways:
 Linux example:
 
 ```bash
-export KILO_WORD_RENDER_SOFFICE=/path/to/soffice
-export KILO_WORD_RENDER_PDFTOPPM=/path/to/pdftoppm
+export CHIPMATE_WORD_RENDER_SOFFICE=/path/to/soffice
+export CHIPMATE_WORD_RENDER_PDFTOPPM=/path/to/pdftoppm
 ```
 
 Windows PowerShell example:
 
 ```powershell
-$env:KILO_WORD_RENDER_SOFFICE = "C:\Program Files\LibreOffice\program\soffice.exe"
-$env:KILO_WORD_RENDER_PDFTOPPM = "C:\path\to\pdftoppm.exe"
+$env:CHIPMATE_WORD_RENDER_SOFFICE = "C:\Program Files\LibreOffice\program\soffice.exe"
+$env:CHIPMATE_WORD_RENDER_PDFTOPPM = "C:\path\to\pdftoppm.exe"
 ```
 
 ## Step 6: runtime smoke matrix S1-S16
@@ -212,10 +212,10 @@ unaccepted.
 
 | ID | Area | Prompt or action | Expected behavior | Status |
 |---|---|---|---|---|
-| S1 | Native C QA | Ask for a C function call chain. | Uses Kilo native code understanding; no Word/Mermaid/artifact tools. | TODO |
+| S1 | Native C QA | Ask for a C function call chain. | Uses ChipMate native code understanding; no Word/Mermaid/artifact tools. | TODO |
 | S2 | Macro/register QA | Ask where a macro is defined and used. | Uses native code/search tools only. | TODO |
 | S3 | Document RAG | Ask about an indexed existing document. | Uses `document_search`; no Word generation. | TODO |
-| S4 | Artifact | Generate and list a report artifact. | `.kilo/artifacts/.../artifact.json` exists and opens. | TODO |
+| S4 | Artifact | Generate and list a report artifact. | `.chipmate/artifacts/.../artifact.json` exists and opens. | TODO |
 | S5 | Word create | Generate a module interface design Word. | `.docx` artifact exists. | TODO |
 | S6 | Word edit | Add an error-code table. | New `.docx` artifact and source backup exist. | TODO |
 | S7 | Word delete | Delete a chapter dry-run first. | Impact is reported without writing until explicit apply. | TODO |
@@ -253,7 +253,7 @@ Collect these files or screenshots after target validation:
 | VSIX CLI marker boundary output | Proves migrated skill markers are present and old ChipMate document-contract repair markers are absent. |
 | VS Code extension list output | Proves installed extension ID and version. |
 | VS Code screenshots or logs | Useful for sidebar/command/Agent Terminal behavior. |
-| `.kilo/artifacts` output paths | Required for artifact, Word, Mermaid, and detail-design checks. |
+| `.chipmate/artifacts` output paths | Required for artifact, Word, Mermaid, and detail-design checks. |
 | Provider/auth error logs | Required when status is `BLOCKED_AUTH`. |
 | Completed S1-S16 table | Required before M11 can claim installed runtime no-regression. |
 
@@ -339,7 +339,7 @@ This runbook can prove target-machine package installability and installed
 runtime behavior only after it is executed on the target machines. Preparing the
 runbook is not enough to mark M11 complete.
 
-Do not claim final no-regression for Kilo QA, Document RAG, autocomplete, or
+Do not claim final no-regression for ChipMate QA, Document RAG, autocomplete, or
 installed source-backed detail design until S1-S16 are either PASS or explicitly
 accepted as scoped release limits by the release owner.
 
@@ -465,7 +465,7 @@ The final M11 review should treat any runtime intake status other than `PASS` as
 
 ## Standard evidence return template
 
-The sidecar target verify kit includes `chipmate-feature-migration-target-evidence-return-template.md`. Fill this template on each offline Windows/Linux target before returning evidence. The template is designed to keep package-integrity evidence, VSIX install evidence, S1-S16 runtime smoke, blocking status, native Kilo no-regression observations, and returned file inventory in one consistent shape.
+The sidecar target verify kit includes `chipmate-feature-migration-target-evidence-return-template.md`. Fill this template on each offline Windows/Linux target before returning evidence. The template is designed to keep package-integrity evidence, VSIX install evidence, S1-S16 runtime smoke, blocking status, native ChipMate no-regression observations, and returned file inventory in one consistent shape.
 
 A filled template with package-integrity PASS but missing S1-S16 runtime evidence should still be treated as partial evidence, not final acceptance.
 

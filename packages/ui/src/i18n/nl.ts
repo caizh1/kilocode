@@ -53,16 +53,16 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.error.freeUsageExceeded": "Gratis gebruik overschreden",
   "ui.sessionTurn.error.addCredits": "Credits toevoegen",
 
-  // kilocode_change start - complete upstream usage-exceeded translations
+  // chipmate_change start - complete upstream usage-exceeded translations
   "dialog.usageExceeded.freeTier.title": "Gratis limiet bereikt",
   "dialog.usageExceeded.freeTier.description":
-    "Abonneer je op Kilo Go voor betrouwbare toegang tot de beste open-sourcemodellen, vanaf $5 per maand.",
+    "Abonneer je op ChipMate Go voor betrouwbare toegang tot de beste open-sourcemodellen, vanaf $5 per maand.",
   "dialog.usageExceeded.freeTier.actionLabel": "Abonneren",
   "dialog.usageExceeded.accountRateLimit.title": "Go-limiet bereikt",
   "dialog.usageExceeded.accountRateLimit.description":
     "Gebruikslimiet bereikt. Schakel gebruik vanuit je beschikbare saldo in om dit model nu te blijven gebruiken",
   "dialog.usageExceeded.accountRateLimit.actionLabel": "Instellingen openen",
-  // kilocode_change end
+  // chipmate_change end
 
   "ui.sessionTurn.status.delegating": "Werk delegeren",
   "ui.sessionTurn.status.delegatingWaitingPermission": "Subagent waiting for permission",
@@ -108,7 +108,7 @@ export const dict: Record<string, string> = {
   "ui.textField.copied": "Gekopieerd",
 
   "ui.imagePreview.alt": "Afbeeldingsvoorbeeld",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Mermaid-diagram renderen...",
   "ui.mermaid.renderError": "Mermaid-rendering mislukt: {{message}}",
   "ui.mermaid.errorDefault": "Kan Mermaid-diagram niet renderen.",
@@ -130,7 +130,7 @@ export const dict: Record<string, string> = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "scrollbare inhoud",
 
   "ui.fileSearch.placeholder": "Zoeken",
@@ -145,7 +145,7 @@ export const dict: Record<string, string> = {
 
   "ui.tool.read": "Lezen",
   "ui.tool.loaded": "Geladen",
-  "ui.tool.swePruned": "SWE-Pruner · {{kept}} van {{total}} regels behouden", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · {{kept}} van {{total}} regels behouden", // chipmate_change
   "ui.tool.list": "Lijst",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -184,7 +184,7 @@ export const dict: Record<string, string> = {
   "ui.message.collapse": "Bericht inklappen",
   "ui.message.copy": "Kopiëren",
   "ui.message.copyMessage": "Bericht kopiëren",
-  "ui.message.deleteQueued": "Bericht in wachtrij verwijderen", // kilocode_change
+  "ui.message.deleteQueued": "Bericht in wachtrij verwijderen", // chipmate_change
   "ui.message.copyResponse": "Antwoord kopiëren",
   "ui.message.copied": "Gekopieerd",
   "ui.message.forkMessage": "Fork to new session",
@@ -202,9 +202,9 @@ export const dict: Record<string, string> = {
   "ui.patch.action.patched": "Gepatcht",
 
   "ui.question.subtitle.answered": "{{count}} beantwoord",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(geen antwoord)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(niet beantwoord)",
   "ui.question.multiHint": "Selecteer alle antwoorden die van toepassing zijn",
   "ui.question.singleHint": "Selecteer één antwoord",

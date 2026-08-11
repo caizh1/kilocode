@@ -8,9 +8,9 @@ import PROMPT_DEFAULT from "./prompt/default.txt"
 import PROMPT_BEAST from "./prompt/beast.txt"
 import PROMPT_GEMINI from "./prompt/gemini.txt"
 import PROMPT_GPT from "./prompt/gpt.txt"
-import PROMPT_GPT55 from "./prompt/kilocode-gpt-5.5.txt" // kilocode_change
+import PROMPT_GPT55 from "./prompt/chipmate-gpt-5.5.txt" // chipmate_change
 import PROMPT_KIMI from "./prompt/kimi.txt"
-import PROMPT_LING from "./prompt/ling.txt" // kilocode_change
+import PROMPT_LING from "./prompt/ling.txt" // chipmate_change
 
 import PROMPT_CODEX from "./prompt/codex.txt"
 import PROMPT_TRINITY from "./prompt/trinity.txt"
@@ -24,29 +24,29 @@ import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/l
 import { Reference } from "@opencode-ai/core/reference"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
-import { PluginV2 } from "@opencode-ai/core/plugin" // kilocode_change
+import { PluginV2 } from "@opencode-ai/core/plugin" // chipmate_change
 
-// kilocode_change start
-import SOUL from "../kilocode/soul.txt"
-import type { EditorContext } from "../kilocode/editor-context"
-import { KilocodeSystemPrompt } from "../kilocode/system-prompt"
-import { isLing } from "../kilocode/model-match"
+// chipmate_change start
+import SOUL from "../chipmate/soul.txt"
+import type { EditorContext } from "../chipmate/editor-context"
+import { ChipMateSystemPrompt } from "../chipmate/system-prompt"
+import { isLing } from "../chipmate/model-match"
 import { Config } from "@/config/config"
-import * as KiloReference from "@/kilocode/reference"
-// kilocode_change end
+import * as ChipMateReference from "@/chipmate/reference"
+// chipmate_change end
 
-// kilocode_change start
+// chipmate_change start
 export function instructions() {
-  return KilocodeSystemPrompt.brand(PROMPT_CODEX).trim()
+  return ChipMateSystemPrompt.brand(PROMPT_CODEX).trim()
 }
 
 export function soul() {
-  return KilocodeSystemPrompt.soul(SOUL).trim()
+  return ChipMateSystemPrompt.soul(SOUL).trim()
 }
-// kilocode_change end
+// chipmate_change end
 
 export function provider(model: Provider.Model) {
-  // kilocode_change start
+  // chipmate_change start
   function prompt() {
     switch (model.prompt) {
       case "anthropic":
@@ -69,9 +69,9 @@ export function provider(model: Provider.Model) {
     return undefined
   }
 
-  const kilo = prompt()
-  if (kilo) return kilo
-  // kilocode_change end
+  const chipmate = prompt()
+  if (chipmate) return chipmate
+  // chipmate_change end
 
   if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
     return [PROMPT_BEAST]
@@ -85,12 +85,12 @@ export function provider(model: Provider.Model) {
   if (model.api.id.includes("claude")) return [PROMPT_ANTHROPIC]
   if (model.api.id.toLowerCase().includes("trinity")) return [PROMPT_TRINITY]
   if (model.api.id.toLowerCase().includes("kimi")) return [PROMPT_KIMI]
-  if (isLing(model.api.id)) return [PROMPT_LING] // kilocode_change
+  if (isLing(model.api.id)) return [PROMPT_LING] // chipmate_change
   return [PROMPT_DEFAULT]
 }
 
 export interface Interface {
-  readonly environment: (model: Provider.Model, editorContext?: EditorContext) => Effect.Effect<string[]> // kilocode_change
+  readonly environment: (model: Provider.Model, editorContext?: EditorContext) => Effect.Effect<string[]> // chipmate_change
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
   readonly mcp: (agent: Agent.Info, permission?: PermissionV1.Ruleset) => Effect.Effect<string | undefined>
 }
@@ -103,10 +103,10 @@ const layer = Layer.effect(
     const skill = yield* Skill.Service
     const mcp = yield* MCP.Service
     const locations = yield* LocationServiceMap.Service
-    const config = yield* Config.Service // kilocode_change
+    const config = yield* Config.Service // chipmate_change
 
     return Service.of({
-      // kilocode_change start
+      // chipmate_change start
       environment: Effect.fn("SystemPrompt.environment")(function* (
         model: Provider.Model,
         editorContext?: EditorContext,
@@ -117,7 +117,7 @@ const layer = Layer.effect(
           if (Object.keys(cfg.references ?? cfg.reference ?? {}).length) {
             yield* (yield* PluginV2.Service).wait(PluginV2.ID.make("core/config-reference"))
           }
-          yield* KiloReference.sync({
+          yield* ChipMateReference.sync({
             references: cfg.references ?? cfg.reference ?? {},
             directory: ctx.directory,
             worktree: ctx.worktree,
@@ -125,7 +125,7 @@ const layer = Layer.effect(
           return (yield* (yield* Reference.Service).list()).filter((reference) => reference.description !== undefined)
         }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
         return [
-          ...KilocodeSystemPrompt.environment({ ctx, model, editor: editorContext }),
+          ...ChipMateSystemPrompt.environment({ ctx, model, editor: editorContext }),
           references.length === 0
             ? undefined
             : [
@@ -146,7 +146,7 @@ const layer = Layer.effect(
               ].join("\n"),
         ].filter((part): part is string => part !== undefined)
       }),
-      // kilocode_change end
+      // chipmate_change end
 
       skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info) {
         if (Permission.disabled(["skill"], agent.permission).has("skill")) return
@@ -192,7 +192,7 @@ const locationServiceMapNode = LayerNode.make({
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Skill.node, MCP.node, Config.node, locationServiceMapNode], // kilocode_change
+  deps: [Skill.node, MCP.node, Config.node, locationServiceMapNode], // chipmate_change
 })
 
 export * as SystemPrompt from "./system"

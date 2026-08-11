@@ -1,4 +1,4 @@
-import type { TuiDialogSelectOption, TuiPluginApi, TuiSlotProps } from "@kilocode/plugin/tui"
+import type { TuiDialogSelectOption, TuiPluginApi, TuiSlotProps } from "@chipmate/plugin/tui"
 import type { TuiConfig } from "../config"
 import type { useEvent } from "../context/event"
 import type { useRoute } from "../context/route"
@@ -66,9 +66,9 @@ function routeCurrent(route: ReturnType<typeof useRoute>): TuiPluginApi["route"]
     }
   }
 
-  // kilocode_change start
-  if (route.data.type === "kiloclaw") return { name: "kiloclaw" }
-  // kilocode_change end
+  // chipmate_change start
+  if (route.data.type === "chipmateclaw") return { name: "chipmateclaw" }
+  // chipmate_change end
 
   return {
     name: route.data.id,
@@ -107,11 +107,11 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
     get config() {
       return sync.data.config
     },
-    // kilocode_change start
+    // chipmate_change start
     get globalConfig() {
       return sync.data.globalConfig
     },
-    // kilocode_change end
+    // chipmate_change end
     get provider() {
       return sync.data.provider
     },
@@ -140,7 +140,7 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
       todo(sessionID) {
         return sync.data.todo[sessionID] ?? []
       },
-      // kilocode_change start
+      // chipmate_change start
       processes(sessionID) {
         const own = sync.data.background_process[sessionID] ?? []
         const persistent = Object.values(sync.data.background_process)
@@ -148,7 +148,7 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
           .filter((item) => item.lifetime === "persistent" && item.sessionID !== sessionID)
         return [...own, ...persistent].toSorted((a, b) => a.id.localeCompare(b.id))
       },
-      // kilocode_change end
+      // chipmate_change end
       messages(sessionID) {
         return sync.data.message[sessionID] ?? []
       },

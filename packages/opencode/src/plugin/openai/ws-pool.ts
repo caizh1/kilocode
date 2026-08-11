@@ -1,12 +1,12 @@
 import WebSocket from "ws"
-import * as Log from "@opencode-ai/core/util/log" // kilocode_change
+import * as Log from "@opencode-ai/core/util/log" // chipmate_change
 import { ProviderError } from "@/provider/error"
 import { isRecord } from "@/util/record"
 import { OpenAIWebSocket } from "./ws"
 
-export const TITLE_HEADER = "x-kilo-title"
+export const TITLE_HEADER = "x-chipmate-title"
 
-const log = Log.create({ service: "plugin.openai.ws" }) // kilocode_change
+const log = Log.create({ service: "plugin.openai.ws" }) // chipmate_change
 
 export interface CreateWebSocketFetchOptions {
   httpFetch?: typeof globalThis.fetch
@@ -142,7 +142,7 @@ export function createWebSocketFetch(options?: CreateWebSocketFetchOptions) {
         })
       }
       if (!entry.fallback) return response
-      discard(response) // kilocode_change
+      discard(response) // chipmate_change
       log.debug("http fallback", { key, reason: "websocket_retries_exhausted" })
       return httpFetch(input, httpInit)
     } catch (error) {
@@ -218,13 +218,13 @@ function failedResponse(error: ProviderError.ResponseStreamError) {
   )
 }
 
-// kilocode_change start
+// chipmate_change start
 function discard(response: Response) {
   void response.text().catch((error) => {
     log.debug("discard websocket response", { error: error instanceof Error ? error.message : String(error) })
   })
 }
-// kilocode_change end
+// chipmate_change end
 
 async function socket(
   entry: PoolEntry,

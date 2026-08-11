@@ -6,8 +6,8 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Cause, Effect, Exit } from "effect"
 import type { MCP as MCPNS } from "../../src/mcp/index"
 import { testEffect } from "../lib/effect"
-import * as SandboxNetwork from "../../src/kilocode/sandbox/network" // kilocode_change
-import { run as runSandbox, type Profile } from "@kilocode/sandbox" // kilocode_change
+import * as SandboxNetwork from "../../src/chipmate/sandbox/network" // chipmate_change
+import { run as runSandbox, type Profile } from "@chipmate/sandbox" // chipmate_change
 import { TestInstance } from "../fixture/fixture"
 
 // --- Mock infrastructure ---
@@ -280,7 +280,7 @@ const { McpOAuthCallback } = await import("../../src/mcp/oauth-callback")
 
 const it = testEffect(LayerNode.compile(MCP.node))
 
-// kilocode_change start
+// chipmate_change start
 function sandboxProfile(): Profile {
   return {
     filesystem: { allowWrite: [], denyWrite: [], denyNames: [] },
@@ -288,14 +288,14 @@ function sandboxProfile(): Profile {
     environment: { deny: [], set: {} },
   }
 }
-// kilocode_change end
+// chipmate_change end
 
 function statusName(status: Record<string, MCPNS.Status> | MCPNS.Status, server: string) {
   if ("status" in status) return status.status
   return status[server]?.status
 }
 
-// kilocode_change start
+// chipmate_change start
 it.instance(
   "denies local and remote MCP tools while network sandboxing is active",
   () =>
@@ -349,7 +349,7 @@ it.instance(
     ),
   { config: { mcp: {} } },
 )
-// kilocode_change end
+// chipmate_change end
 
 it.instance(
   "advertises and lists the instance directory as its root",

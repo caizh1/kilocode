@@ -220,7 +220,7 @@ def internal_embedded_c_gate(path: Path | None) -> Gate:
             "context filled: Installed VSIX profile",
             "context filled: Source workspace",
             "context filled: Embedded C module",
-            "status PASS: Kilo native QA preserved",
+            "status PASS: ChipMate native QA preserved",
             "status PASS: Source-backed detail-design skill selected",
             "status PASS: Markdown detail design generated",
             "status PASS: Word detail design generated",
@@ -283,7 +283,7 @@ def agent_terminal_visible_ux_gate(path: Path | None) -> Gate:
         "context filled: Installed VSIX profile",
         "status PASS: Agent Terminal command visible",
         "status PASS: Terminal pane opens after enable",
-        "status PASS: Native Kilo terminal unaffected",
+        "status PASS: Native ChipMate terminal unaffected",
         "status PASS: Dangerous command confirmation visible",
         "attached evidence assets:",
     ]

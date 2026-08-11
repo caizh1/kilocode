@@ -55,4 +55,4 @@ export const OpenCodeEvent = event.schema
 export type OpenCodeEvent = typeof OpenCodeEvent.Type
 export type OpenCodeEventEncoded = typeof OpenCodeEvent.Encoded
 
-export const KiloEvent = schema(EventManifest.Definitions) // kilocode_change - encode the full Kilo event bus
+export const ChipMateEvent = schema(EventManifest.Definitions) // chipmate_change - encode the full ChipMate event bus

@@ -12,7 +12,7 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import "opentui-spinner/solid"
 import { createColors, createFrames } from "@opencode-ai/tui/ui/spinner"
-import { RunInteractiveTerminalBody } from "@/kilocode/cli/cmd/run/interactive-terminal" // kilocode_change
+import { RunInteractiveTerminalBody } from "@/chipmate/cli/cmd/run/interactive-terminal" // chipmate_change
 import {
   RUN_SUBAGENT_PANEL_ROWS,
   RunCommandMenuBody,
@@ -29,7 +29,7 @@ import { RunPermissionBody } from "./footer.permission"
 import { RunQuestionBody } from "./footer.question"
 import { footerWidthPolicy } from "./footer.width"
 import {
-  KILO_BASE_MODE,
+  CHIPMATE_BASE_MODE,
   formatKeyBindings,
   formatKeySequence,
   useBindings,
@@ -95,9 +95,9 @@ type RunFooterViewProps = {
   onPermissionReply: (input: PermissionReply) => void | Promise<void>
   onQuestionReply: (input: QuestionReply) => void | Promise<void>
   onQuestionReject: (input: QuestionReject) => void | Promise<void>
-  onTerminalWrite: (input: { terminalID: string; data: string }) => Promise<void> // kilocode_change
-  onTerminalResize: (input: { terminalID: string; cols: number; rows: number }) => Promise<void> // kilocode_change
-  onTerminalClose: (terminalID: string) => Promise<void> // kilocode_change
+  onTerminalWrite: (input: { terminalID: string; data: string }) => Promise<void> // chipmate_change
+  onTerminalResize: (input: { terminalID: string; cols: number; rows: number }) => Promise<void> // chipmate_change
+  onTerminalClose: (terminalID: string) => Promise<void> // chipmate_change
   onCycle: () => void
   onInterrupt: () => boolean
   onBackground?: () => void
@@ -280,12 +280,12 @@ export function RunFooterView(props: RunFooterViewProps) {
     const view = active()
     return view.type === "question" ? view : undefined
   })
-  // kilocode_change start
+  // chipmate_change start
   const terminal = createMemo<Extract<FooterView, { type: "interactive_terminal" }> | undefined>(() => {
     const view = active()
     return view.type === "interactive_terminal" ? view : undefined
   })
-  // kilocode_change end
+  // chipmate_change end
   const promptView = createMemo(() => {
     if (active().type !== "prompt") {
       return active().type
@@ -506,7 +506,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   })
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: active().type === "prompt" && route().type === "composer" && !composer.visible(),
     commands: [
       {
@@ -529,7 +529,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   }))
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: active().type === "prompt" && route().type === "composer" && foregroundSubagents(),
     priority: 1,
     commands: [
@@ -544,7 +544,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   }))
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: active().type === "prompt" && route().type === "composer" && tabs().length > 0,
     commands: [
       {
@@ -558,7 +558,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   }))
 
   useBindings(() => ({
-    mode: KILO_BASE_MODE,
+    mode: CHIPMATE_BASE_MODE,
     enabled: active().type === "prompt" && route().type === "composer" && queuedPrompts().length > 0,
     commands: [
       {
@@ -802,7 +802,7 @@ export function RunFooterView(props: RunFooterViewProps) {
                             onReject={props.onQuestionReject}
                           />
                         </Match>
-                        {/* kilocode_change start */}
+                        {/* chipmate_change start */}
                         <Match when={active().type === "interactive_terminal"}>
                           <RunInteractiveTerminalBody
                             terminal={() => terminal()!.terminal}
@@ -812,7 +812,7 @@ export function RunFooterView(props: RunFooterViewProps) {
                             onClose={props.onTerminalClose}
                           />
                         </Match>
-                        {/* kilocode_change end */}
+                        {/* chipmate_change end */}
                       </Switch>
                     </box>
                   </box>

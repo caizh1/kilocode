@@ -14,10 +14,10 @@ Do not check a plan item merely because a script exists, a prompt exists, or a s
 |---|---|---|---|
 | C1 `packages/opencode && bun run test` | `PASS` | M1-M7 automated test checklist items for artifact, Word, Mermaid, source-backed skill, and QA routing boundary | Review failures by test name before checking any subitem. |
 | C2 `packages/opencode && bun run typecheck` | `PASS` | Tool-layer type-safety confidence for M1-M7 and M10 | Does not prove installed VS Code behavior. |
-| C3 `packages/kilo-vscode && bun run test:unit` | `PASS` | M8 artifact UI tests, M9 Agent Terminal unit tests, autocomplete contribution smoke | Does not prove real installed profile behavior. |
-| C4 `packages/kilo-vscode && bun run typecheck` | `PASS` | VS Code activation/type boundary confidence | Still requires installed smoke before M10/M11. |
-| C5 `packages/kilo-vscode && bun run lint` | `PASS` | Extension/webview hygiene review | Does not prove runtime behavior. |
-| C6 `packages/kilo-vscode && bun run package` | `PASS` | Local package/build readiness review | Still requires VSIX packaging if C7 is separate. |
+| C3 `packages/chipmate-vscode && bun run test:unit` | `PASS` | M8 artifact UI tests, M9 Agent Terminal unit tests, autocomplete contribution smoke | Does not prove real installed profile behavior. |
+| C4 `packages/chipmate-vscode && bun run typecheck` | `PASS` | VS Code activation/type boundary confidence | Still requires installed smoke before M10/M11. |
+| C5 `packages/chipmate-vscode && bun run lint` | `PASS` | Extension/webview hygiene review | Does not prove runtime behavior. |
+| C6 `packages/chipmate-vscode && bun run package` | `PASS` | Local package/build readiness review | Still requires VSIX packaging if C7 is separate. |
 | C7 `bun run package:internal-offline` | `PASS` | `打包 VSIX` and packaging evidence fields | Record VSIX path, version, and size before checking. |
 | P1 `--inspect-vsix <path>` | `PASS` or reviewed `REVIEW` | Renderer dependency boundary and VSIX size review | `REVIEW` requires manual conclusion before checking packaging review items. `FAIL` blocks M10. |
 
@@ -25,10 +25,10 @@ Do not check a plan item merely because a script exists, a prompt exists, or a s
 
 | Smoke | Required status | Plan items it may unlock | Notes |
 |---|---|---|---|
-| S1 Native C QA | `PASS` | QA regression call-chain acceptance item; Kilo code understanding preservation | Must confirm Word/Mermaid/artifact tools were not used. |
+| S1 Native C QA | `PASS` | QA regression call-chain acceptance item; ChipMate code understanding preservation | Must confirm Word/Mermaid/artifact tools were not used. |
 | S2 Macro/register QA | `PASS` | QA regression macro/register acceptance item | Must confirm no generated artifact was created for ordinary QA. |
 | S3 Document RAG | `PASS` | Document RAG preservation review | Must use native `document_search` or equivalent installed behavior evidence. |
-| S4 Artifact | `PASS` | Artifact acceptance item | Record `.kilo/artifacts/.../artifact.json`. |
+| S4 Artifact | `PASS` | Artifact acceptance item | Record `.chipmate/artifacts/.../artifact.json`. |
 | S5 Word create | `PASS` | Word create acceptance item | Record `.docx` and manifest paths. |
 | S6 Word append/edit | `PASS` | Word add/edit acceptance items | Record source backup and new `.docx`. |
 | S7 Word delete dry-run | `PASS` | Word delete dry-run acceptance item | Confirm no new file for dry-run until explicit apply. |
@@ -48,7 +48,7 @@ Check M10 review items only after the following minimum evidence exists:
 
 - `所有新增能力能按需触发`: S4-S15 are PASS or explicitly scoped with known issues.
 - `所有非目标能力没有被误迁移`: static non-goal review plus S1-S3, S16, and Agent Terminal sidecar smoke are reviewed.
-- `Kilo 原有 QA、terminal、autocomplete、Document RAG 没有明显退化`: S1-S3, S14, and S16 are PASS.
+- `ChipMate 原有 QA、terminal、autocomplete、Document RAG 没有明显退化`: S1-S3, S14, and S16 are PASS.
 - `VSIX 体积和启动耗时没有明显异常`: C7 plus P1 plus installed startup observation are reviewed.
 
 ## M11 Final Review Update Rules
@@ -59,7 +59,7 @@ Before checking M11 final items:
 - `chipmate-feature-migration-final-review-template.md` must be filled in with concrete evidence, not TODO placeholders.
 - Known issues must be listed with severity, user impact, and mitigation.
 - The completion audit helper should report no blockers.
-- The final answer must explicitly separate migrated capabilities, non-migrated capabilities, verified native Kilo capabilities, and residual risks.
+- The final answer must explicitly separate migrated capabilities, non-migrated capabilities, verified native ChipMate capabilities, and residual risks.
 
 ## Known Issue Handling
 

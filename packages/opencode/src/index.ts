@@ -2,7 +2,7 @@ import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
 import { RunCommand } from "./cli/cmd/run"
 import { GenerateCommand } from "./cli/cmd/generate"
-// kilocode_change - upstream account console intentionally omitted; KiloCli registers `kilo console` for local settings
+// chipmate_change - upstream account console intentionally omitted; ChipMateCli registers `chipmate console` for local settings
 import { ProvidersCommand } from "./cli/cmd/providers"
 import { AgentCommand } from "./cli/cmd/agent"
 import { UpgradeCommand } from "./cli/cmd/upgrade"
@@ -22,21 +22,21 @@ import { AttachCommand } from "./cli/cmd/attach"
 import { TuiThreadCommand } from "./cli/cmd/tui"
 import { AcpCommand } from "./cli/cmd/acp"
 import { EOL } from "os"
-// kilocode_change - upstream web command intentionally omitted; Kilo does not ship an embedded web UI
+// chipmate_change - upstream web command intentionally omitted; ChipMate does not ship an embedded web UI
 import { PrCommand } from "./cli/cmd/pr"
 import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
-import { KiloCli } from "@/kilocode/cli/setup" // kilocode_change
-import * as Log from "@opencode-ai/core/util/log" // kilocode_change
-import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process" // kilocode_change
+import { ChipMateCli } from "@/chipmate/cli/setup" // chipmate_change
+import * as Log from "@opencode-ai/core/util/log" // chipmate_change
+import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process" // chipmate_change
 
 const args = hideBin(process.argv)
-const metadata = ensureProcessMetadata("main") // kilocode_change - correlate logs across the CLI and TUI worker
+const metadata = ensureProcessMetadata("main") // chipmate_change - correlate logs across the CLI and TUI worker
 
-if (await KiloCli.runner()) process.exit() // kilocode_change - run persistent process guardians before CLI bootstrap
+if (await ChipMateCli.runner()) process.exit() // chipmate_change - run persistent process guardians before CLI bootstrap
 
 function show(out: string) {
   const text = out.trimStart()
@@ -48,9 +48,9 @@ function show(out: string) {
   process.stderr.write(out)
 }
 
-let cli = yargs(args) // kilocode_change
+let cli = yargs(args) // chipmate_change
   .parserConfiguration({ "populate--": true })
-  .scriptName("kilo") // kilocode_change
+  .scriptName("chipmate") // chipmate_change
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")
@@ -70,26 +70,26 @@ let cli = yargs(args) // kilocode_change
     type: "boolean",
   })
   .middleware(async (opts) => {
-    if (opts.printLogs) process.env.KILO_PRINT_LOGS = "1"
-    if (opts.logLevel) process.env.KILO_LOG_LEVEL = opts.logLevel
+    if (opts.printLogs) process.env.CHIPMATE_PRINT_LOGS = "1"
+    if (opts.logLevel) process.env.CHIPMATE_LOG_LEVEL = opts.logLevel
     if (opts.pure) {
-      process.env.KILO_PURE = "1"
+      process.env.CHIPMATE_PURE = "1"
     }
 
     Heap.start()
 
     process.env.AGENT = "1"
     process.env.OPENCODE = "1"
-    process.env.KILO_PID = String(process.pid)
-    await KiloCli.bootstrap(opts) // kilocode_change - env tagging, telemetry init, legacy JSON-to-SQLite migration, and auth migration
-    // kilocode_change start - retain Kilo process/run correlation metadata in startup logs
+    process.env.CHIPMATE_PID = String(process.pid)
+    await ChipMateCli.bootstrap(opts) // chipmate_change - env tagging, telemetry init, legacy JSON-to-SQLite migration, and auth migration
+    // chipmate_change start - retain ChipMate process/run correlation metadata in startup logs
     Log.Default.info("opencode", {
       version: InstallationVersion,
       command: args[0] ?? "", // avoid persisting prompts, passwords, tokens, headers, or environment values
       process_role: metadata.processRole,
       run_id: metadata.runID,
     })
-    // kilocode_change end
+    // chipmate_change end
   })
   .usage("")
   .completion("completion", "generate shell completion script")
@@ -100,13 +100,13 @@ let cli = yargs(args) // kilocode_change
   .command(RunCommand)
   .command(GenerateCommand)
   .command(DebugCommand)
-  // kilocode_change - upstream account console intentionally not registered; KiloConsole is added by KiloCli.register
+  // chipmate_change - upstream account console intentionally not registered; ChipMateConsole is added by ChipMateCli.register
   .command(ProvidersCommand)
   .command(AgentCommand)
   .command(UpgradeCommand)
   .command(UninstallCommand)
   .command(ServeCommand)
-  // kilocode_change - upstream web command intentionally omitted
+  // chipmate_change - upstream web command intentionally omitted
   .command(ModelsCommand)
   .command(StatsCommand)
   .command(ExportCommand)
@@ -117,10 +117,10 @@ let cli = yargs(args) // kilocode_change
   .command(PluginCommand)
   .command(DbCommand)
 
-// kilocode_change start - register Kilo-specific commands after the upstream chain
-cli = KiloCli.register(cli)
+// chipmate_change start - register ChipMate-specific commands after the upstream chain
+cli = ChipMateCli.register(cli)
 cli = cli
-  // kilocode_change end
+  // chipmate_change end
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||
@@ -154,7 +154,7 @@ try {
   }
   process.exitCode = 1
 } finally {
-  await KiloCli.shutdown() // kilocode_change - telemetry/session-export shutdown + instance disposal
+  await ChipMateCli.shutdown() // chipmate_change - telemetry/session-export shutdown + instance disposal
 
   // Some subprocesses don't react properly to SIGTERM and similar signals.
   // Most notably, some docker-container-based MCP servers don't handle such signals unless

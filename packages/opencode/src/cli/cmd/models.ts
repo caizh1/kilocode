@@ -53,15 +53,15 @@ export const ModelsCommand = effectCmd({
       return
     }
 
-    // kilocode_change start
+    // chipmate_change start
     const ids = Object.keys(providers).sort((a, b) => {
-      const aIsKilo = a === "kilo" || a.startsWith("opencode")
-      const bIsKilo = b === "kilo" || b.startsWith("opencode")
-      if (aIsKilo && !bIsKilo) return -1
-      if (!aIsKilo && bIsKilo) return 1
+      const aIsChipMate = a === "chipmate" || a.startsWith("opencode")
+      const bIsChipMate = b === "chipmate" || b.startsWith("opencode")
+      if (aIsChipMate && !bIsChipMate) return -1
+      if (!aIsChipMate && bIsChipMate) return 1
       return a.localeCompare(b)
     })
-    // kilocode_change end
+    // chipmate_change end
 
     for (const providerID of ids) print(ProviderV2.ID.make(providerID), args.verbose)
   }),

@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { effectCmd } from "../../src/cli/effect-cmd"
 import { EffectBridge } from "../../src/effect/bridge"
 import { InstanceRef } from "../../src/effect/instance-ref"
-import { Instance } from "../../src/kilocode/instance"
+import { Instance } from "../../src/chipmate/instance"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 

@@ -1,29 +1,29 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // kilocode_change
+import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // chipmate_change
 import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
-import * as Config from "@/config/config" // kilocode_change
+import * as Config from "@/config/config" // chipmate_change
 import { InstanceState } from "@/effect/instance-state"
 import { Wildcard } from "@opencode-ai/core/util/wildcard"
 import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
-import z from "zod" // kilocode_change
-import { zod } from "@opencode-ai/core/effect-zod" // kilocode_change
+import z from "zod" // chipmate_change
+import { zod } from "@opencode-ai/core/effect-zod" // chipmate_change
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
-import { Database } from "@opencode-ai/core/database/database" // kilocode_change
+import { Database } from "@opencode-ai/core/database/database" // chipmate_change
 import { EventV2Bridge } from "@/event-v2-bridge"
-import { SessionID } from "@/session/schema" // kilocode_change - used by AllowEverythingInput
-// kilocode_change start
-import { ConfigProtection } from "@/kilocode/permission/config-paths"
-import { KiloHeadless } from "@/kilocode/permission/headless"
-import { drainCovered } from "@/kilocode/permission/drain"
-import { ReadPermission } from "@/kilocode/permission/read"
-import { AgentManagerPermission } from "@/kilocode/permission/agent-manager" // kilocode_change
-import { ExternalDirectoryPermission } from "@/kilocode/permission/external-directory"
-// kilocode_change end
+import { SessionID } from "@/session/schema" // chipmate_change - used by AllowEverythingInput
+// chipmate_change start
+import { ConfigProtection } from "@/chipmate/permission/config-paths"
+import { ChipMateHeadless } from "@/chipmate/permission/headless"
+import { drainCovered } from "@/chipmate/permission/drain"
+import { ReadPermission } from "@/chipmate/permission/read"
+import { AgentManagerPermission } from "@/chipmate/permission/agent-manager" // chipmate_change
+import { ExternalDirectoryPermission } from "@/chipmate/permission/external-directory"
+// chipmate_change end
 
 export const Event = PermissionV1.Event
-// kilocode_change start - upstream moved these types into PermissionV1; re-export them here so existing
-// Kilo callers that import off `Permission.*` keep working without a repo-wide rewrite
+// chipmate_change start - upstream moved these types into PermissionV1; re-export them here so existing
+// ChipMate callers that import off `Permission.*` keep working without a repo-wide rewrite
 export const Rule = PermissionV1.Rule
 export type Rule = PermissionV1.Rule
 export const Ruleset = PermissionV1.Ruleset
@@ -45,11 +45,11 @@ export type NotFoundError = PermissionV1.NotFoundError
 export type Error = PermissionV1.Error
 export const ReplyInput = PermissionV1.ReplyInput
 export type ReplyInput = PermissionV1.ReplyInput
-// Kilo extends upstream's AskInput with hardRuleset and a non-persistable manual confirmation.
+// ChipMate extends upstream's AskInput with hardRuleset and a non-persistable manual confirmation.
 export type AskInput = PermissionV1.AskInput & { hardRuleset?: PermissionV1.Ruleset; forceAsk?: boolean }
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start
+// chipmate_change start
 export const SaveAlwaysRulesInput = z.object({
   requestID: zod(PermissionV1.ID),
   approvedAlways: z.string().array().optional(),
@@ -61,43 +61,43 @@ export const AllowEverythingInput = z.object({
   requestID: zod(PermissionV1.ID).optional(),
   sessionID: zod(SessionID).optional(),
 })
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start - describe why a call was allowed so clients can explain auto-approval
+// chipmate_change start - describe why a call was allowed so clients can explain auto-approval
 export interface AskOutcome {
   /** true when the user was prompted and replied; false when a rule auto-approved. */
   manual: boolean
   /** The winning rule (carries an optional `source` marker set at ruleset-build time). */
   rule?: Rule
 }
-// kilocode_change end
+// chipmate_change end
 
 export interface Interface {
-  readonly ask: (input: AskInput) => Effect.Effect<AskOutcome, Error> // kilocode_change - was Effect<void>; returns the decision
+  readonly ask: (input: AskInput) => Effect.Effect<AskOutcome, Error> // chipmate_change - was Effect<void>; returns the decision
   readonly reply: (input: ReplyInput) => Effect.Effect<void, NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<Request>>
-  // kilocode_change start
+  // chipmate_change start
   readonly saveAlwaysRules: (input: z.infer<typeof SaveAlwaysRulesInput>) => Effect.Effect<void, NotFoundError>
   readonly allowEverything: (input: z.infer<typeof AllowEverythingInput>) => Effect.Effect<void>
   readonly pending: (id: string) => Effect.Effect<Request | undefined>
-  // kilocode_change end
+  // chipmate_change end
 }
 
 interface PendingEntry {
   info: Request
-  // kilocode_change start
+  // chipmate_change start
   ruleset: Ruleset
   hardRuleset?: Ruleset
   forceAsk?: boolean
   saved?: boolean
-  // kilocode_change end
+  // chipmate_change end
   deferred: Deferred.Deferred<void, RejectedError | CorrectedError>
 }
 
 interface State {
   pending: Map<PermissionV1.ID, PendingEntry>
   approved: Rule[]
-  session: Record<string, Ruleset> // kilocode_change
+  session: Record<string, Ruleset> // chipmate_change
 }
 
 export function evaluate(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule {
@@ -112,7 +112,7 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Permi
   )
 }
 
-// kilocode_change start
+// chipmate_change start
 export function resolve(permission: string, pattern: string, ruleset: Ruleset, ...overrides: Ruleset[]): Rule {
   const evalFn =
     permission === "external_directory"
@@ -123,8 +123,8 @@ export function resolve(permission: string, pattern: string, ruleset: Ruleset, .
     permission,
     pattern,
     ReadPermission.harden(permission, pattern, evalFn(permission, pattern, ruleset)),
-  ) // kilocode_change
-  const saved = AgentManagerPermission.harden(permission, pattern, evalFn(permission, pattern, ...overrides)) // kilocode_change
+  ) // chipmate_change
+  const saved = AgentManagerPermission.harden(permission, pattern, evalFn(permission, pattern, ...overrides)) // chipmate_change
   if (base.action === "deny") return base
   if (saved.action === "deny") return saved
   if (base.action === "ask") {
@@ -147,13 +147,13 @@ function subset(permission: string, ruleset: Ruleset) {
 function covered(entry: PendingEntry, approved: Ruleset, local: Ruleset) {
   if (entry.forceAsk) return false
   if (ConfigProtection.isRequest(entry.info)) return false
-  if (entry.info.metadata?.["skillShell"] === true) return false // kilocode_change - skill batch needs an explicit reply
+  if (entry.info.metadata?.["skillShell"] === true) return false // chipmate_change - skill batch needs an explicit reply
   return entry.info.patterns.every((pattern) => {
     if (veto(entry.info.permission, pattern, entry.hardRuleset)) return false
     return resolve(entry.info.permission, pattern, entry.ruleset, approved, local).action === "allow"
   })
 }
-// kilocode_change end
+// chipmate_change end
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
 
@@ -161,15 +161,15 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
-    const config = yield* Config.Service // kilocode_change
-    const database = yield* Database.Service // kilocode_change
+    const config = yield* Config.Service // chipmate_change
+    const database = yield* Database.Service // chipmate_change
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
         void ctx
         const state = {
           pending: new Map<PermissionV1.ID, PendingEntry>(),
-          approved: [] as Rule[], // kilocode_change - upstream dropped DB-seeded approvals; Kilo persists via config.updateGlobal
-          session: {} as Record<string, Ruleset>, // kilocode_change
+          approved: [] as Rule[], // chipmate_change - upstream dropped DB-seeded approvals; ChipMate persists via config.updateGlobal
+          session: {} as Record<string, Ruleset>, // chipmate_change
         }
 
         yield* Effect.addFinalizer(() =>
@@ -187,15 +187,15 @@ export const layer = Layer.effect(
 
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
-      // kilocode_change start
+      // chipmate_change start
       const { ruleset, hardRuleset, forceAsk: forcedByCaller, ...request } = input
       const s = yield* InstanceState.get(state)
       const local = s.session[request.sessionID] ?? []
-      // kilocode_change end
+      // chipmate_change end
       let needsAsk = false
-      let approvedRule: Rule | undefined // kilocode_change - remember the rule that auto-approved
+      let approvedRule: Rule | undefined // chipmate_change - remember the rule that auto-approved
 
-      // kilocode_change start - protect config access while honoring explicit global skill trust
+      // chipmate_change start - protect config access while honoring explicit global skill trust
       const isProtected = ConfigProtection.isRequest(request)
       const skill = ConfigProtection.globalSkillPattern(request)
       const trusted = skill
@@ -212,43 +212,43 @@ export const layer = Layer.effect(
             Effect.catch(() => Effect.succeed(false)),
           ))
         : false
-      // kilocode_change end
+      // chipmate_change end
 
-      const forceAsk = forcedByCaller || request.metadata?.["skillShell"] === true // kilocode_change
+      const forceAsk = forcedByCaller || request.metadata?.["skillShell"] === true // chipmate_change
       for (const pattern of request.patterns) {
-        const rule = resolve(request.permission, pattern, ruleset, approved, local) // kilocode_change — include session-scoped rules
+        const rule = resolve(request.permission, pattern, ruleset, approved, local) // chipmate_change — include session-scoped rules
         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
-        // kilocode_change start — saved/session approvals cannot override hard Ask/Plan denials
+        // chipmate_change start — saved/session approvals cannot override hard Ask/Plan denials
         if (veto(request.permission, pattern, hardRuleset)) {
           return yield* new DeniedError({ ruleset: subset(request.permission, hardRuleset ?? []) })
         }
-        // kilocode_change end
+        // chipmate_change end
         if (rule.action === "deny") {
-          // kilocode_change - carry the deciding rule (not just the permission subset) for provenance
+          // chipmate_change - carry the deciding rule (not just the permission subset) for provenance
           return yield* new DeniedError({ ruleset: rule })
         }
-        // kilocode_change start - skill shell forces a prompt instead of honoring an allow/auto-approve rule
+        // chipmate_change start - skill shell forces a prompt instead of honoring an allow/auto-approve rule
         if (forceAsk) {
           needsAsk = true
           continue
         }
-        // kilocode_change end
-        // kilocode_change start - override "allow" to "ask" for protected config paths
+        // chipmate_change end
+        // chipmate_change start - override "allow" to "ask" for protected config paths
         if (rule.action === "allow" && (!isProtected || trusted) && !forceAsk) {
           approvedRule = rule // remember the winning rule so callers can explain the auto-approval
           continue
         }
-        // kilocode_change end
+        // chipmate_change end
         needsAsk = true
       }
 
-      if (!needsAsk) return { manual: false, rule: approvedRule } // kilocode_change - report auto-approval
+      if (!needsAsk) return { manual: false, rule: approvedRule } // chipmate_change - report auto-approval
 
-      // kilocode_change start - headless subagent asks fail instead of queuing for a reply that never comes (#11903)
-      if (yield* KiloHeadless.denies(request.sessionID).pipe(Effect.provideService(Database.Service, database))) {
+      // chipmate_change start - headless subagent asks fail instead of queuing for a reply that never comes (#11903)
+      if (yield* ChipMateHeadless.denies(request.sessionID).pipe(Effect.provideService(Database.Service, database))) {
         return yield* new DeniedError({ ruleset: subset(request.permission, ruleset) })
       }
-      // kilocode_change end
+      // chipmate_change end
 
       const id = request.id ?? PermissionV1.ID.ascending()
       const info: PermissionV1.Request = {
@@ -256,7 +256,7 @@ export const layer = Layer.effect(
         sessionID: request.sessionID,
         permission: request.permission,
         patterns: request.patterns,
-        // kilocode_change start - disable persistence for protected config paths outside one exact global skill
+        // chipmate_change start - disable persistence for protected config paths outside one exact global skill
         metadata: {
           ...request.metadata,
           ...(skill ? { rules: [skill] } : {}),
@@ -264,16 +264,16 @@ export const layer = Layer.effect(
             ? { [ConfigProtection.DISABLE_ALWAYS_KEY]: true, [ConfigProtection.CONFIG_PROTECTED_KEY]: true }
             : {}),
         },
-        // kilocode_change end
-        always: skill ? [skill] : request.always, // kilocode_change - persist only the exact global skill subtree
+        // chipmate_change end
+        always: skill ? [skill] : request.always, // chipmate_change - persist only the exact global skill subtree
         tool: request.tool,
       }
       yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })
 
       const deferred = yield* Deferred.make<void, RejectedError | CorrectedError>()
-      pending.set(id, { info, ruleset, hardRuleset, forceAsk, deferred }) // kilocode_change
-      yield* events.publish(Event.Asked, info) // kilocode_change - was bus.publish
-      // kilocode_change start - was `return yield* Effect.ensuring(...)`; report the manual decision to callers
+      pending.set(id, { info, ruleset, hardRuleset, forceAsk, deferred }) // chipmate_change
+      yield* events.publish(Event.Asked, info) // chipmate_change - was bus.publish
+      // chipmate_change start - was `return yield* Effect.ensuring(...)`; report the manual decision to callers
       yield* Effect.ensuring(
         Deferred.await(deferred),
         Effect.sync(() => {
@@ -281,7 +281,7 @@ export const layer = Layer.effect(
         }),
       )
       return { manual: true } // the user was prompted and replied
-      // kilocode_change end
+      // chipmate_change end
     })
 
     const reply = Effect.fn("Permission.reply")(function* (input: PermissionV1.ReplyInput) {
@@ -289,7 +289,7 @@ export const layer = Layer.effect(
       const existing = pending.get(input.requestID)
       if (!existing) return yield* new PermissionV1.NotFoundError({ requestID: input.requestID })
 
-      // kilocode_change start - skill-shell batches must be answered by a human; ignore machine approvals
+      // chipmate_change start - skill-shell batches must be answered by a human; ignore machine approvals
       // (auto-approve/YOLO clients omit `interactive`) so the prompt stays pending for a real decision.
       // Log rather than fail silently: a genuine human client sets `interactive`, so a refused reply here
       // means an auto-approver tried to answer — the request intentionally stays pending for a human.
@@ -299,7 +299,7 @@ export const layer = Layer.effect(
         })
         return
       }
-      // kilocode_change end
+      // chipmate_change end
 
       pending.delete(input.requestID)
       yield* events.publish(Event.Replied, {
@@ -332,12 +332,12 @@ export const layer = Layer.effect(
       yield* Deferred.succeed(existing.deferred, undefined)
       if (input.reply === "once") return
 
-      // kilocode_change start - downgrade "always" to "once" for protected config paths
+      // chipmate_change start - downgrade "always" to "once" for protected config paths
       if (ConfigProtection.isRequest(existing.info) && !ConfigProtection.isGlobalSkillRequest(existing.info)) return
-      // kilocode_change end
+      // chipmate_change end
 
       for (const pattern of existing.info.always) {
-        // kilocode_change start — saveAlwaysRules may have already persisted selected always-rules
+        // chipmate_change start — saveAlwaysRules may have already persisted selected always-rules
         if (!existing.saved) {
           approved.push({
             permission: existing.info.permission,
@@ -349,7 +349,7 @@ export const layer = Layer.effect(
 
       yield* drainCovered(pending as unknown as Map<string, PendingEntry>, approved, (data) =>
         Effect.asVoid(events.publish(Event.Replied, data)),
-      ) // kilocode_change - drain publishes replies through the same EventV2Bridge channel
+      ) // chipmate_change - drain publishes replies through the same EventV2Bridge channel
 
       if (!existing.saved) {
         const alwaysRules: Ruleset = existing.info.always.map((pattern) => ({
@@ -361,7 +361,7 @@ export const layer = Layer.effect(
           yield* config.updateGlobal({ permission: toConfig(alwaysRules) }, { dispose: false })
         }
       }
-      // kilocode_change end
+      // chipmate_change end
     })
 
     const list = Effect.fn("Permission.list")(function* () {
@@ -369,7 +369,7 @@ export const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.info)
     })
 
-    // kilocode_change start
+    // chipmate_change start
     const saveAlwaysRules = Effect.fn("Permission.saveAlwaysRules")(function* (
       input: z.infer<typeof SaveAlwaysRulesInput>,
     ) {
@@ -399,7 +399,7 @@ export const layer = Layer.effect(
         yield* config.updateGlobal({ permission: toConfig(newRules) }, { dispose: false })
       }
 
-      // kilocode_change - drain publishes replies through the same EventV2Bridge channel (was DeniedError)
+      // chipmate_change - drain publishes replies through the same EventV2Bridge channel (was DeniedError)
       yield* drainCovered(
         s.pending as unknown as Map<string, PendingEntry>,
         s.approved,
@@ -458,9 +458,9 @@ export const layer = Layer.effect(
       const s = yield* InstanceState.get(state)
       return s.pending.get(PermissionV1.ID.make(id))?.info
     })
-    // kilocode_change end
+    // chipmate_change end
 
-    return Service.of({ ask, reply, list, saveAlwaysRules, allowEverything, pending }) // kilocode_change
+    return Service.of({ ask, reply, list, saveAlwaysRules, allowEverything, pending }) // chipmate_change
   }),
 )
 
@@ -479,9 +479,9 @@ export function fromConfig(permission: ConfigPermissionV1.Info) {
       ruleset.push({ permission: key, action: value, pattern: "*" })
       continue
     }
-    if (value === null) continue // kilocode_change — null is a delete sentinel
+    if (value === null) continue // chipmate_change — null is a delete sentinel
     ruleset.push(
-      // kilocode_change start — filter out null entries (delete sentinels)
+      // chipmate_change start — filter out null entries (delete sentinels)
       ...Object.entries(value)
         .filter(([, action]) => action !== null)
         .map(([pattern, action]) => ({
@@ -489,7 +489,7 @@ export function fromConfig(permission: ConfigPermissionV1.Info) {
           pattern: expand(pattern),
           action: action as Action,
         })),
-      // kilocode_change end
+      // chipmate_change end
     )
   }
   return ruleset
@@ -511,9 +511,9 @@ export function disabled(tools: string[], ruleset: PermissionV1.Ruleset): Set<st
   )
 }
 
-export const defaultLayer: Layer.Layer<Service> = Layer.suspend(() => AppNodeBuilder.build(node)) // kilocode_change - build from the LayerNode graph
+export const defaultLayer: Layer.Layer<Service> = Layer.suspend(() => AppNodeBuilder.build(node)) // chipmate_change - build from the LayerNode graph
 
-// kilocode_change start — inverse of fromConfig: convert rules back to config format
+// chipmate_change start — inverse of fromConfig: convert rules back to config format
 const SCALAR_ONLY_PERMISSIONS = new Set(["todowrite", "todoread", "question", "webfetch", "websearch", "doom_loop"])
 
 export function toConfig(rules: Ruleset): ConfigPermissionV1.Info {
@@ -538,12 +538,12 @@ export function toConfig(rules: Ruleset): ConfigPermissionV1.Info {
   }
   return result
 }
-// kilocode_change end
+// chipmate_change end
 
 export const node = LayerNode.make({
   service: Service,
   layer,
-  deps: [EventV2Bridge.node, Config.node, Database.node], // kilocode_change
+  deps: [EventV2Bridge.node, Config.node, Database.node], // chipmate_change
 })
 
 export * as Permission from "."

@@ -49,7 +49,7 @@ function runAuth(scenario: ActiveScenario) {
     const result = yield* callAuthProbe(scenario, "missing")
     if (scenario.auth === "protected") {
       if (result.status !== 401) throw new Error(`auth expected 401, got ${result.status}`)
-      if (!scenario.validAuthProbe) return // kilocode_change - blocking routes skip the valid probe; a leaked valid request hangs final app disposal
+      if (!scenario.validAuthProbe) return // chipmate_change - blocking routes skip the valid probe; a leaked valid request hangs final app disposal
       const authed = yield* callAuthProbe(scenario, "valid")
       if (authed.status === 401) throw new Error("auth rejected valid credentials")
       return
@@ -127,7 +127,7 @@ function withContext<A, E>(
         const base: ScenarioContext = {
           directory: context.dir?.path,
           headers: (extra) => ({
-            ...(context.dir?.path ? { "x-kilo-directory": context.dir.path } : {}),
+            ...(context.dir?.path ? { "x-chipmate-directory": context.dir.path } : {}),
             ...extra,
           }),
           file: (name, content) =>
@@ -260,10 +260,10 @@ function fakeLlmConfig(url: string): Partial<ConfigV1.Info> {
 
 const resetState = Effect.promise(async () => {
   const modules = await runtime()
-  Flag.KILO_SERVER_PASSWORD = original.KILO_SERVER_PASSWORD
-  Flag.KILO_SERVER_USERNAME = original.KILO_SERVER_USERNAME
+  Flag.CHIPMATE_SERVER_PASSWORD = original.CHIPMATE_SERVER_PASSWORD
+  Flag.CHIPMATE_SERVER_USERNAME = original.CHIPMATE_SERVER_USERNAME
   await disposeApps()
   await modules.disposeAllInstances()
-  // kilocode_change - each exerciser process already owns an isolated DB; unlinking it between scenarios races async Kilo callbacks
+  // chipmate_change - each exerciser process already owns an isolated DB; unlinking it between scenarios races async ChipMate callbacks
   await Bun.sleep(25)
 })

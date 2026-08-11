@@ -22,9 +22,9 @@ const locationLayer = Layer.succeed(
     location({ directory: AbsolutePath.make("project"), workspaceID: WorkspaceV2.ID.make("wrk_test") }),
   ),
 )
-// kilocode_change start - keep concurrent tests isolated from process database migrations
+// chipmate_change start - keep concurrent tests isolated from process database migrations
 const database = Database.layerFromPath(":memory:")
-// kilocode_change end
+// chipmate_change end
 const Message = EventV2.define({
   type: "test.message",
   schema: {
@@ -83,13 +83,13 @@ const durableData = (sessionID: Session.ID, text: string) => ({
 
 const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, Location.node]), [
-    [Database.node, database], // kilocode_change - isolate concurrent event tests
+    [Database.node, database], // chipmate_change - isolate concurrent event tests
     [Location.node, locationLayer],
   ]),
 )
 const itWithoutLocation = testEffect(
   AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node]), [
-    [Database.node, database], // kilocode_change - isolate concurrent event tests
+    [Database.node, database], // chipmate_change - isolate concurrent event tests
   ]),
 )
 

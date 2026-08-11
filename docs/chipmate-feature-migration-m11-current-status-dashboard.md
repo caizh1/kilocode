@@ -47,14 +47,14 @@ It also does not migrate ChipMate contract/repair/gating behavior such as `nextT
 
 - `7` 每个里程碑完成后必须执行本阶段 `Review` checklist。
 - `8` 最终交付前必须执行 `M11: 最终迁移 Review`。
-- `9` Review 重点是确认迁移能力没有破坏 Kilo 原有 QA、代码理解、Document RAG、autocomplete、terminal、tool registry、VS Code extension 激活和打包能力。
-- `26` 每个里程碑完成后必须 review 是否影响 Kilo 原有能力。
+- `9` Review 重点是确认迁移能力没有破坏 ChipMate 原有 QA、代码理解、Document RAG、autocomplete、terminal、tool registry、VS Code extension 激活和打包能力。
+- `26` 每个里程碑完成后必须 review 是否影响 ChipMate 原有能力。
 - `40` M10: 做真实项目验收、QA 回归 review、VSIX 打包。
-- `41` M11: 做最终迁移 review，确认没有明显破坏 Kilo 原有能力的问题。
-- `59` 每个阶段完成后都必须 review 是否影响 Kilo 原有 QA、terminal、tool registry、VS Code extension 激活、settings、packaging。
+- `41` M11: 做最终迁移 review，确认没有明显破坏 ChipMate 原有能力的问题。
+- `59` 每个阶段完成后都必须 review 是否影响 ChipMate 原有 QA、terminal、tool registry、VS Code extension 激活、settings、packaging。
 - `633` Installed chat/runtime S1-S16, internal embedded C full source-backed skill run, and M11 no-regression review remain pending.
 - `650` Review 真实项目结果，确认至少一个内网嵌入式 C 项目完整跑通。
-- `654` 最终结论必须明确写出已迁移能力、未迁移能力、验证过的 Kilo 原有能力、已知风险。
+- `654` 最终结论必须明确写出已迁移能力、未迁移能力、验证过的 ChipMate 原有能力、已知风险。
 - `717` 每个里程碑完成后必须执行对应 review checklist。
 - `718` 最终交付前必须执行 M11 最终迁移 review。
 
@@ -63,12 +63,12 @@ It also does not migrate ChipMate contract/repair/gating behavior such as `nextT
 - `435` 安装 VSIX 做真实 chat/runtime S1-S16 smoke；这仍依赖可用 chat/autocomplete provider、目标工作区和人工/目标机执行，不能由 extension-host/command smoke 替代。
 - `518` Installed VS Code smoke S1-S16 not run in this session.
 - `519` Internal embedded C detailed-design end-to-end project validation not run in this session; QEMU UFS smoke above validates migrated artifact helpers on real source evidence, not the installed chat/skill pipeline.
-- `691` 打包验收: 安装 VSIX 后普通 Kilo QA、Word、Mermaid、artifact、Agent Terminal smoke 均通过。
+- `691` 打包验收: 安装 VSIX 后普通 ChipMate QA、Word、Mermaid、artifact、Agent Terminal smoke 均通过。
 
 ### Internal embedded C validation
 
 - `431` 在内网嵌入式 C 项目上测试详细设计文档生成。
-- `688` 详细设计: “为该嵌入式 C 模块生成源码驱动详细设计文档”，预期 Kilo 搜证据，生成 Markdown、图、Word。
+- `688` 详细设计: “为该嵌入式 C 模块生成源码驱动详细设计文档”，预期 ChipMate 搜证据，生成 Markdown、图、Word。
 
 ### Company Word template
 
@@ -87,11 +87,11 @@ It also does not migrate ChipMate contract/repair/gating behavior such as `nextT
 
 - `682` Word 模板: “用这个公司模板样式生成文档”，预期继承样式，不承诺任意占位符填充。
 
-## No-regression boundary for Kilo native capabilities
+## No-regression boundary for ChipMate native capabilities
 
 | Capability | Dashboard effect | Current M11 interpretation |
 |---|---|---|
-| Native Kilo QA | No runtime or prompt-path change | Still requires installed S1-S16 runtime evidence |
+| Native ChipMate QA | No runtime or prompt-path change | Still requires installed S1-S16 runtime evidence |
 | Code understanding | No runtime or tool-routing change | Final no-regression review remains open |
 | Document RAG | No provider or retrieval-path change | Readiness rerun is still not enough for final pass if provider is unavailable |
 | Autocomplete | No qwen autocomplete source change | S16 needs explicit product/user decision and read-only smoke evidence |

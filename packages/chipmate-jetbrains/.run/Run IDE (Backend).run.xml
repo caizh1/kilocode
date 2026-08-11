@@ -1,0 +1,28 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Run IDE (Backend)" type="GradleRunConfiguration" factoryName="Gradle">
+    <log_file alias="Backend ChipMate" path="$PROJECT_DIR$/packages/chipmate-jetbrains/.intellijPlatform/sandbox/chipmate.jetbrains/chipmate-backend/chipmate-dev.log.0" show_all="true" />
+    <ExternalSystemSettings>
+      <option name="executionName" />
+      <option name="externalProjectPath" value="$PROJECT_DIR$/packages/chipmate-jetbrains" />
+      <option name="externalSystemIdString" value="GRADLE" />
+      <option name="scriptParameters" value="--no-configuration-cache --purge-old-log-directories -Pchipmate.dev.log.level=debug -Pchipmate.dev.log.chat.content=off -Pchipmate.dev.log.chat.preview.max=160 -Pchipmate.splitModeServerPort=0 -Pchipmate.dev.storage.isolated=true" />
+      <option name="taskDescriptions">
+        <list />
+      </option>
+      <option name="taskNames">
+        <list>
+          <option value=":runIdeBackend" />
+        </list>
+      </option>
+      <option name="vmOptions" value="" />
+    </ExternalSystemSettings>
+    <ExternalSystemDebugServerProcess>true</ExternalSystemDebugServerProcess>
+    <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
+    <ExternalSystemDebugDisabled>false</ExternalSystemDebugDisabled>
+    <DebugAllEnabled>false</DebugAllEnabled>
+    <RunAsTest>false</RunAsTest>
+    <GradleProfilingDisabled>false</GradleProfilingDisabled>
+    <GradleCoverageDisabled>false</GradleCoverageDisabled>
+    <method v="2" />
+  </configuration>
+</component>

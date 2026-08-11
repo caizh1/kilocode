@@ -1,0 +1,18 @@
+{
+  "diagnostics": [
+    {
+      "code": "mermaid-render-failed",
+      "severity": "error",
+      "message": "null is not an object (evaluating 'body.ok')"
+    },
+    {
+      "code": "chrome-not-found",
+      "severity": "error",
+      "message": "Mermaid renderer executable was not found. Configure CHIPMATE_MERMAID_RENDER_ENDPOINT or install mmdc externally."
+    }
+  ],
+  "warnings": [
+    "mermaid-render-failed: null is not an object (evaluating 'body.ok')",
+    "chrome-not-found: Mermaid renderer executable was not found. Configure CHIPMATE_MERMAID_RENDER_ENDPOINT or install mmdc externally."
+  ]
+}

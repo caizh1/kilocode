@@ -12,14 +12,14 @@ Disposition: `PASS`
 ## Packaging
 
 - 扩展版本按本地升级规则从 0.0.41 更新到 0.0.42。
-- 从源码新鲜构建 `@kilocode/cli-darwin-arm64`、`@kilocode/cli-windows-x64-baseline` 与 `@kilocode/cli-linux-x64`。
+- 从源码新鲜构建 `@chipmate/cli-darwin-arm64`、`@chipmate/cli-windows-x64-baseline` 与 `@chipmate/cli-linux-x64`。
 - 内部 Linux x64 打包为显式目标；不带 `--targets` 的 `--internal-offline` 仍默认只构建 Windows baseline。
-- Linux 内部包为 no-audio，包含 `kilo`、`rg`、models snapshot、Tree-sitter、CodeGraph worker、LanceDB JS runtime、`lancedb-linux-x64-gnu` 原生模块和全部扩展运行 bundles，不含 FFmpeg 或 `dist/*.map`。
+- Linux 内部包为 no-audio，包含 `chipmate`、`rg`、models snapshot、Tree-sitter、CodeGraph worker、LanceDB JS runtime、`lancedb-linux-x64-gnu` 原生模块和全部扩展运行 bundles，不含 FFmpeg 或 `dist/*.map`。
 
 ## Native Linux Evidence
 
 - Environment: Colima/QEMU x86_64 Linux VM。
-- `kilo --version`: PASS，输出 `0.0.0-codex-v7-3-42-dev-202607120831`；全系统模拟冷启动 26.575 秒。
+- `chipmate --version`: PASS，输出 `0.0.0-codex-v7-3-42-dev-202607120831`；全系统模拟冷启动 26.575 秒。
 - `rg --version`: PASS，`ripgrep 15.1.0`。
 - LanceDB native dependency resolution: PASS；`ldd` 解析到 x86_64 glibc、libgcc、pthread、dl 与 math runtime。
 - macOS 构建阶段缺少 `patchelf` 的警告未影响产物；原生 x86_64 Linux 执行证明 ELF interpreter 与 glibc 依赖可用。

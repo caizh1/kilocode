@@ -1,0 +1,23 @@
+.gradle/
+build/
+.intellijPlatform/
+.ai/
+**/.chipmate/*
+!**/.chipmate/skills/
+!**/.chipmate/skills/**
+.classpath
+.project
+.settings/
+.kotlin/
+bin/
+**/.classpath
+**/.project
+**/.settings/
+**/.kotlin/
+**/bin/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Downloaded CLI artifacts
+**/cli-cache/
+chipmate-*.zip
+chipmate-*.tar.gz

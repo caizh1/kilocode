@@ -14,8 +14,8 @@ const hop = new Set([
 function sanitize(out: Headers) {
   for (const key of hop) out.delete(key)
   out.delete("accept-encoding")
-  out.delete("x-kilo-directory")
-  out.delete("x-kilo-workspace")
+  out.delete("x-chipmate-directory")
+  out.delete("x-chipmate-workspace")
 }
 
 export function headers(input: Request | HeadersInit | Record<string, string>, extra?: HeadersInit) {

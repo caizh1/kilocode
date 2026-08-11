@@ -1,0 +1,47 @@
+export const dict = {
+  "chipmate:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) Automatisch aanvullen",
+  "chipmate:autocomplete.statusBar.snoozed": "gesluimerd",
+  "chipmate:autocomplete.statusBar.warning": "$(warning) Automatisch aanvullen",
+  "chipmate:autocomplete.statusBar.tooltip.basic": "ChipMate automatisch aanvullen",
+  "chipmate:autocomplete.statusBar.tooltip.disabled": "ChipMate automatisch aanvullen (uitgeschakeld)",
+  "chipmate:autocomplete.statusBar.tooltip.noUsableProvider":
+    "**Geen model voor automatisch aanvullen geconfigureerd**\n\nVoeg een profiel toe met een van deze ondersteunde providers om automatisch aanvullen in te schakelen: {{providers}}.\n\n[Instellingen openen]({{command}})",
+  "chipmate:autocomplete.statusBar.tooltip.sessionTotal": "Totale sessiekosten:",
+  "chipmate:autocomplete.statusBar.tooltip.provider": "Aanbieder:",
+  "chipmate:autocomplete.statusBar.tooltip.model": "Model:",
+  "chipmate:autocomplete.statusBar.tooltip.profile": "Profiel: ",
+  "chipmate:autocomplete.statusBar.tooltip.defaultProfile": "Standaard",
+  "chipmate:autocomplete.statusBar.tooltip.completionSummary":
+    "{{count}} aanvullingen uitgevoerd tussen {{startTime}} en {{endTime}}, voor totale kosten van {{cost}}.",
+  "chipmate:autocomplete.statusBar.tooltip.providerInfo":
+    "Automatische aanvullingen geleverd door {{model}} via {{provider}}.",
+  "chipmate:autocomplete.statusBar.cost.zero": "$0.00",
+  "chipmate:autocomplete.statusBar.cost.lessThanCent": "<$0.01",
+  "chipmate:autocomplete.toggleMessage": "ChipMate automatisch aanvullen {{status}}",
+  "chipmate:autocomplete.progress.title": "ChipMate",
+  "chipmate:autocomplete.progress.analyzing": "Je code wordt geanalyseerd...",
+  "chipmate:autocomplete.progress.generating": "Voorgestelde bewerkingen worden gegenereerd...",
+  "chipmate:autocomplete.progress.processing": "Voorgestelde bewerkingen worden verwerkt...",
+  "chipmate:autocomplete.progress.showing": "Voorgestelde bewerkingen worden weergegeven...",
+  "chipmate:autocomplete.input.title": "ChipMate: Snelle taak",
+  "chipmate:autocomplete.input.placeholder": "bijv. 'refactor deze functie zodat deze efficiënter is'",
+  "chipmate:autocomplete.commands.generateSuggestions": "ChipMate: Voorgestelde bewerkingen genereren",
+  "chipmate:autocomplete.commands.displaySuggestions": "Voorgestelde bewerkingen weergeven",
+  "chipmate:autocomplete.commands.cancelSuggestions": "Voorgestelde bewerkingen annuleren",
+  "chipmate:autocomplete.commands.applyCurrentSuggestion": "Huidige voorgestelde bewerking toepassen",
+  "chipmate:autocomplete.commands.applyAllSuggestions": "Alle voorgestelde bewerkingen toepassen",
+  "chipmate:autocomplete.commands.category": "ChipMate",
+  "chipmate:autocomplete.codeAction.title": "ChipMate: Voorgestelde bewerkingen",
+  "chipmate:autocomplete.chatParticipant.fullName": "ChipMate-agent",
+  "chipmate:autocomplete.chatParticipant.name": "Assistent",
+  "chipmate:autocomplete.chatParticipant.description": "Ik kan helpen met snelle taken en voorgestelde bewerkingen.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.message":
+    "ChipMate automatisch aanvullen wordt geblokkeerd door een conflict met GitHub Copilot. Schakel de inline suggesties van Copilot uit om dit op te lossen.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableCopilot": "Copilot uitschakelen",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableInlineAssist": "Automatisch aanvullen uitschakelen",
+  "chipmate:autocomplete.creditsExhausted.message":
+    "ChipMate Autocomplete is gepauzeerd. Mogelijke oorzaken: je ChipMate-account heeft geen credits meer, of je geconfigureerde API-sleutel (BYOK) heeft de quotumlimiet bereikt. Voeg ChipMate-credits toe of controleer je API-sleutelconfiguratie om autocomplete te hervatten.",
+  "chipmate:autocomplete.creditsExhausted.addCredits": "Credits toevoegen",
+  "chipmate:autocomplete.authError.message":
+    "ChipMate Autocomplete is gepauzeerd vanwege een authenticatieprobleem. Mogelijke oorzaken: je bent niet aangemeld bij ChipMate, of je API-sleutel (BYOK) is ongeldig of ontbreekt. Meld je opnieuw aan of controleer de API-sleutelinstellingen van je provider.",
+}

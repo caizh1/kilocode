@@ -14,7 +14,7 @@ Last updated: `2026-07-14`
 
 按本文件从 `VA-00` 到 `VA-24` 逐项关闭 ChipMate 首页 Chrome 全屏视觉偏差，并以真实 macOS Google Chrome 截图完成桌面视觉签收。
 
-本文件是本轮首页视觉修复的唯一执行账本。它不替代 `docs/chipmate-skill-market-kilo-alignment-plan.md` 的产品与能力对齐记录，也不扩展到 Kilo VS Code Marketplace。
+本文件是本轮首页视觉修复的唯一执行账本。它不替代 `docs/chipmate-skill-market-chipmate-alignment-plan.md` 的产品与能力对齐记录，也不扩展到 ChipMate VS Code Marketplace。
 
 ## 2. 执行规则
 
@@ -31,8 +31,8 @@ Last updated: `2026-07-14`
 
 ## 3. Baseline
 
-- Repository: `/Users/archer/Work/kilocode`
-- Project: `/Users/archer/Work/kilocode/server/chipmate-word-render`
+- Repository: `/Users/archer/Work/chipmate`
+- Project: `/Users/archer/Work/chipmate/server/chipmate-word-render`
 - Branch: `codex/v7.3.42-dev`
 - Commit: `d567827207018deef65cf0af450cd9ecd7325835`
 - Worktree state: dirty; `server/chipmate-word-render/` currently appears as an untracked subtree in the parent repository.
@@ -177,7 +177,7 @@ Last updated: `2026-07-14`
 - 后端路由、TypeBox Schema、OpenAPI、数据库、生成客户端和生产目录数据保持不变。
 - 主要实现范围限制为 `apps/web/src/main.tsx`、`apps/web/src/styles.css`、现有 Web E2E 和 QA 文档。
 - 不新增字体、轮播依赖或临时占位图；继续使用现有空间背景、Phosphor 图标和 20 个分类 Skill 图标。
-- Word、Mermaid、health、packages、详情页、目录页和 Kilo VS Code Marketplace 保持兼容。
+- Word、Mermaid、health、packages、详情页、目录页和 ChipMate VS Code Marketplace 保持兼容。
 
 ## 6. Evidence Log
 
@@ -1349,7 +1349,7 @@ Last updated: `2026-07-14`
 
 ## 7. Decision Log
 
-- `D-001` — `2026-07-13`: Use this file as the single ledger for the Chrome fullscreen visual repair cycle; preserve the broader Kilo/Market alignment plan separately.
+- `D-001` — `2026-07-13`: Use this file as the single ledger for the Chrome fullscreen visual repair cycle; preserve the broader ChipMate/Market alignment plan separately.
 - `D-002` — `2026-07-13`: Preserve historical QA evidence, but reopen the current sign-off because the new fullscreen screenshot exposes open P1/P2 deviations.
 - `D-003` — `2026-07-13`: Treat physical screenshot pixels, CSS viewport pixels and DPR as separate measurements; do not resize the UI based only on the PNG dimensions.
 - `D-004` — `2026-07-13`: Keep theme and login controls as intentional product differences while aligning their scale and spacing.

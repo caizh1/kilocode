@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
-APP=kilo # kilocode_change
+APP=chipmate # chipmate_change
 
 MUTED='\033[0;2m'
 RED='\033[0;31m'
 ORANGE='\033[38;5;214m'
 NC='\033[0m' # No Color
 
-# kilocode_change start - usage text
+# chipmate_change start - usage text
 usage() {
     cat <<EOF
-Kilo Code Installer
+ChipMate Installer
 
 Usage: install [options]
 
@@ -21,12 +21,12 @@ Options:
         --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
 
 Examples:
-    curl -fsSL https://kilo.ai/cli/install | bash
-    curl -fsSL https://kilo.ai/cli/install | bash -s -- --version 1.0.180
-    ./install --binary /path/to/kilo
+    curl -fsSL https://chipmate.ai/cli/install | bash
+    curl -fsSL https://chipmate.ai/cli/install | bash -s -- --version 1.0.180
+    ./install --binary /path/to/chipmate
 EOF
 }
-# kilocode_change end
+# chipmate_change end
 
 requested_version=${VERSION:-}
 no_modify_path=false
@@ -67,7 +67,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-INSTALL_DIR=$HOME/.kilo/bin # kilocode_change
+INSTALL_DIR=$HOME/.chipmate/bin # chipmate_change
 mkdir -p "$INSTALL_DIR"
 
 # If --binary is provided, skip all download/detection logic
@@ -184,7 +184,7 @@ else
 
     if [ -z "$requested_version" ]; then
         # The npm latest tag tracks stable CLI releases independently of other GitHub release types.
-        if ! specific_version=$(curl -fsSL "https://registry.npmjs.org/-/package/%40kilocode%2Fcli/dist-tags" |
+        if ! specific_version=$(curl -fsSL "https://registry.npmjs.org/-/package/%40chipmate%2Fcli/dist-tags" |
             sed -n 's/.*"latest"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'); then
             echo -e "${RED}Failed to fetch version information${NC}"
             exit 1
@@ -193,18 +193,18 @@ else
             echo -e "${RED}Failed to fetch version information${NC}"
             exit 1
         fi
-        url="https://github.com/Kilo-Org/kilocode/releases/download/v${specific_version}/$filename"
+        url="https://github.com/ChipMate-Org/chipmate/releases/download/v${specific_version}/$filename"
     else
         # Strip leading 'v' if present
         requested_version="${requested_version#v}"
-        url="https://github.com/Kilo-Org/kilocode/releases/download/v${requested_version}/$filename"
+        url="https://github.com/ChipMate-Org/chipmate/releases/download/v${requested_version}/$filename"
         specific_version=$requested_version
 
         # Verify the release exists before downloading
-        http_status=$(curl -sI -o /dev/null -w "%{http_code}" "https://github.com/Kilo-Org/kilocode/releases/tag/v${requested_version}")
+        http_status=$(curl -sI -o /dev/null -w "%{http_code}" "https://github.com/ChipMate-Org/chipmate/releases/tag/v${requested_version}")
         if [ "$http_status" = "404" ]; then
             echo -e "${RED}Error: Release v${requested_version} not found${NC}"
-            echo -e "${MUTED}Available releases: https://github.com/Kilo-Org/kilocode/releases${NC}"
+            echo -e "${MUTED}Available releases: https://github.com/ChipMate-Org/chipmate/releases${NC}"
             exit 1
         fi
     fi
@@ -224,13 +224,13 @@ print_message() {
     echo -e "${color}${message}${NC}"
 }
 
-# kilocode_change start
+# chipmate_change start
 check_version() {
-    if command -v kilo >/dev/null 2>&1; then
-        kilo_path=$(which kilo)
+    if command -v chipmate >/dev/null 2>&1; then
+        chipmate_path=$(which chipmate)
 
         ## Check the installed version
-        installed_version=$(kilo --version 2>/dev/null || echo "")
+        installed_version=$(chipmate --version 2>/dev/null || echo "")
 
         if [[ "$installed_version" != "$specific_version" ]]; then
             print_message info "${MUTED}Installed version: ${NC}$installed_version."
@@ -240,7 +240,7 @@ check_version() {
         fi
     fi
 }
-# kilocode_change end
+# chipmate_change end
 
 unbuffered_sed() {
     if echo | sed -u -e "" >/dev/null 2>&1; then
@@ -283,7 +283,7 @@ download_with_progress() {
     fi
 
     local tmp_dir=${TMPDIR:-/tmp}
-    local basename="${tmp_dir}/kilo_install_$$" # kilocode_change
+    local basename="${tmp_dir}/chipmate_install_$$" # chipmate_change
     local tracefile="${basename}.trace"
 
     rm -f "$tracefile"
@@ -295,7 +295,7 @@ download_with_progress() {
     trap "trap - RETURN; rm -f \"$tracefile\"; printf '\033[?25h' >&4; exec 4>&-" RETURN
 
     (
-        curl --trace-ascii "$tracefile" -fsL -o "$output" "$url" # kilocode_change
+        curl --trace-ascii "$tracefile" -fsL -o "$output" "$url" # chipmate_change
     ) &
     local curl_pid=$!
 
@@ -333,15 +333,15 @@ download_with_progress() {
 }
 
 download_and_install() {
-    # kilocode_change start
-    print_message info "\n${MUTED}Installing ${NC}Kilo Code ${MUTED}version: ${NC}$specific_version"
-    local tmp_dir="${TMPDIR:-/tmp}/kilo_install_$$"
-    # kilocode_change end
+    # chipmate_change start
+    print_message info "\n${MUTED}Installing ${NC}ChipMate ${MUTED}version: ${NC}$specific_version"
+    local tmp_dir="${TMPDIR:-/tmp}/chipmate_install_$$"
+    # chipmate_change end
     mkdir -p "$tmp_dir"
 
     if [[ "$os" == "windows" ]] || ! [ -t 2 ] || ! download_with_progress "$url" "$tmp_dir/$filename"; then
         # Fallback to standard curl on Windows, non-TTY environments, or if custom progress fails
-        curl -f# -L -o "$tmp_dir/$filename" "$url" # kilocode_change
+        curl -f# -L -o "$tmp_dir/$filename" "$url" # chipmate_change
     fi
 
     if [ "$os" = "linux" ]; then
@@ -350,23 +350,23 @@ download_and_install() {
         unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
     fi
 
-    # kilocode_change start
-    mv "$tmp_dir/kilo" "$INSTALL_DIR"
+    # chipmate_change start
+    mv "$tmp_dir/chipmate" "$INSTALL_DIR"
     rm -rf "${INSTALL_DIR}/tree-sitter"
     if [ -d "$tmp_dir/tree-sitter" ]; then
         mv "$tmp_dir/tree-sitter" "$INSTALL_DIR"
     fi
-    chmod 755 "${INSTALL_DIR}/kilo"
-    # kilocode_change end
+    chmod 755 "${INSTALL_DIR}/chipmate"
+    # chipmate_change end
     rm -rf "$tmp_dir"
 }
 
 install_from_binary() {
-    # kilocode_change start
-    print_message info "\n${MUTED}Installing ${NC}Kilo Code ${MUTED}from: ${NC}$binary_path"
-    cp "$binary_path" "${INSTALL_DIR}/kilo"
-    chmod 755 "${INSTALL_DIR}/kilo"
-    # kilocode_change end
+    # chipmate_change start
+    print_message info "\n${MUTED}Installing ${NC}ChipMate ${MUTED}from: ${NC}$binary_path"
+    cp "$binary_path" "${INSTALL_DIR}/chipmate"
+    chmod 755 "${INSTALL_DIR}/chipmate"
+    # chipmate_change end
 }
 
 if [ -n "$binary_path" ]; then
@@ -384,9 +384,9 @@ add_to_path() {
     if grep -Fxq "$command" "$config_file"; then
         print_message info "Command already exists in $config_file, skipping write."
     elif [[ -w $config_file ]]; then
-        echo -e "\n# kilo" >> "$config_file" # kilocode_change
+        echo -e "\n# chipmate" >> "$config_file" # chipmate_change
         echo "$command" >> "$config_file"
-        print_message info "${MUTED}Successfully added ${NC}kilo ${MUTED}to \$PATH in ${NC}$config_file" # kilocode_change
+        print_message info "${MUTED}Successfully added ${NC}chipmate ${MUTED}to \$PATH in ${NC}$config_file" # chipmate_change
     else
         print_message warning "Manually add the directory to $config_file (or similar):"
         print_message info "  $command"
@@ -411,11 +411,11 @@ add_to_windows_path() {
 
     local ps_cmd
     ps_cmd=$(cat <<EOFPS
-\$kiloPath = '$win_install_dir_ps'
+\$chipmatePath = '$win_install_dir_ps'
 \$currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 \$pathParts = if ([string]::IsNullOrEmpty(\$currentPath)) { @() } else { \$currentPath -split ';' }
-if (\$pathParts -notcontains \$kiloPath) {
-    \$newPath = if ([string]::IsNullOrEmpty(\$currentPath)) { \$kiloPath } else { "\$currentPath;\$kiloPath" }
+if (\$pathParts -notcontains \$chipmatePath) {
+    \$newPath = if ([string]::IsNullOrEmpty(\$currentPath)) { \$chipmatePath } else { "\$currentPath;\$chipmatePath" }
     [Environment]::SetEnvironmentVariable('Path', \$newPath, 'User')
     Write-Output 'added'
 }
@@ -432,10 +432,10 @@ EOFPS
     fi
 
     if [[ "$ps_output" == *"added"* ]]; then
-        print_message info "${MUTED}Successfully added ${NC}kilo ${MUTED}to Windows user PATH${NC}"
+        print_message info "${MUTED}Successfully added ${NC}chipmate ${MUTED}to Windows user PATH${NC}"
     fi
 
-    # Also add to the current bash session so `kilo` works immediately
+    # Also add to the current bash session so `chipmate` works immediately
     # without the user needing to open a new terminal.
     if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
         export PATH="$INSTALL_DIR:$PATH"
@@ -524,9 +524,9 @@ if [ -n "${GITHUB_ACTIONS-}" ] && [ "${GITHUB_ACTIONS}" == "true" ]; then
     print_message info "Added $INSTALL_DIR to \$GITHUB_PATH"
 fi
 
-# kilocode_change start
+# chipmate_change start
 logo_supports() {
-    case "${KILO_UNICODE_LOGO:-}" in
+    case "${CHIPMATE_UNICODE_LOGO:-}" in
         1|true|TRUE|yes|YES|on|ON)
             return 0
         ;;
@@ -567,12 +567,12 @@ echo -e ""
 print_logo
 echo -e ""
 echo -e ""
-echo -e "${MUTED}Kilo includes free models so you can start immediately:${NC}"
+echo -e "${MUTED}ChipMate includes free models so you can start immediately:${NC}"
 echo -e ""
 echo -e "cd <project>  ${MUTED}# Open directory${NC}"
-echo -e "kilo          ${MUTED}# Run Kilo${NC}"
+echo -e "chipmate          ${MUTED}# Run ChipMate${NC}"
 echo -e ""
-echo -e "${MUTED}For more information visit ${NC}https://kilo.ai/docs"
+echo -e "${MUTED}For more information visit ${NC}https://chipmate.ai/docs"
 echo -e ""
 echo -e ""
-# kilocode_change end
+# chipmate_change end

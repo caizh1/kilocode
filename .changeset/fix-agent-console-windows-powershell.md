@@ -1,5 +1,5 @@
 ---
-"@kilocode/cli": patch
+"@chipmate/cli": patch
 "chipmate": patch
 ---
 

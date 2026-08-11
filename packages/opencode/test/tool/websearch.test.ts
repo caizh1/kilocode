@@ -15,17 +15,17 @@ describe("websearch provider", () => {
   })
 
   test("supports an operational override", () => {
-    const original = process.env.KILO_WEBSEARCH_PROVIDER
+    const original = process.env.CHIPMATE_WEBSEARCH_PROVIDER
 
     try {
-      process.env.KILO_WEBSEARCH_PROVIDER = "parallel"
+      process.env.CHIPMATE_WEBSEARCH_PROVIDER = "parallel"
       expect(selectWebSearchProvider(SESSION_ID)).toBe("parallel")
 
-      process.env.KILO_WEBSEARCH_PROVIDER = "exa"
+      process.env.CHIPMATE_WEBSEARCH_PROVIDER = "exa"
       expect(selectWebSearchProvider(SESSION_ID)).toBe("exa")
     } finally {
-      if (original === undefined) delete process.env.KILO_WEBSEARCH_PROVIDER
-      else process.env.KILO_WEBSEARCH_PROVIDER = original
+      if (original === undefined) delete process.env.CHIPMATE_WEBSEARCH_PROVIDER
+      else process.env.CHIPMATE_WEBSEARCH_PROVIDER = original
     }
   })
 
@@ -37,10 +37,10 @@ describe("websearch provider", () => {
     expect(selectWebSearchProvider(SESSION_ID, { exa: false, parallel: true })).toBe("parallel")
   })
 
-  test("is only enabled for kilo or explicit websearch provider flags", () => {
-    // kilocode_change
-    expect(webSearchEnabled(ProviderV2.ID.kilo, { exa: false, parallel: false })).toBe(true) // kilocode_change
-    expect(webSearchEnabled(ProviderV2.ID.opencode, { exa: false, parallel: false })).toBe(false) // kilocode_change
+  test("is only enabled for chipmate or explicit websearch provider flags", () => {
+    // chipmate_change
+    expect(webSearchEnabled(ProviderV2.ID.chipmate, { exa: false, parallel: false })).toBe(true) // chipmate_change
+    expect(webSearchEnabled(ProviderV2.ID.opencode, { exa: false, parallel: false })).toBe(false) // chipmate_change
     expect(webSearchEnabled(ProviderV2.ID.openai, { exa: false, parallel: false })).toBe(false)
     expect(webSearchEnabled(ProviderV2.ID.openai, { exa: true, parallel: false })).toBe(true)
     expect(webSearchEnabled(ProviderV2.ID.openai, { exa: false, parallel: true })).toBe(true)

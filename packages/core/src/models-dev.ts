@@ -8,7 +8,7 @@ import { Flock } from "./util/flock"
 import { Hash } from "./util/hash"
 import { FSUtil } from "./fs-util"
 import { InstallationChannel, InstallationVersion } from "./installation/version"
-import * as ModelsRefresh from "./kilocode/models-refresh" // kilocode_change
+import * as ModelsRefresh from "./chipmate/models-refresh" // chipmate_change
 import { EventV2 } from "./event"
 import { makeGlobalNode } from "./effect/app-node"
 import { httpClient } from "./effect/app-node-platform"
@@ -16,7 +16,7 @@ import { httpClient } from "./effect/app-node-platform"
 export const CatalogModelStatus = Schema.Literals(["alpha", "beta", "deprecated"])
 export type CatalogModelStatus = typeof CatalogModelStatus.Type
 
-const USER_AGENT = `opencode/${InstallationChannel}/${InstallationVersion}/${Flag.KILO_CLIENT}`
+const USER_AGENT = `opencode/${InstallationChannel}/${InstallationVersion}/${Flag.CHIPMATE_CLIENT}`
 
 const CostTier = Schema.Struct({
   input: Schema.Finite,
@@ -45,7 +45,7 @@ const Cost = Schema.Struct({
   ),
 })
 
-// kilocode_change start - models.dev reasoning_options (snatched from upstream
+// chipmate_change start - models.dev reasoning_options (snatched from upstream
 // v1.18.11, #36624): effort tiers, thinking toggles, and token budgets.
 const ReasoningOption = Schema.Union([
   Schema.Struct({
@@ -61,7 +61,7 @@ const ReasoningOption = Schema.Union([
     max: Schema.optional(Schema.Finite),
   }),
 ])
-// kilocode_change end
+// chipmate_change end
 
 export const Model = Schema.Struct({
   id: Schema.String,
@@ -70,7 +70,7 @@ export const Model = Schema.Struct({
   release_date: Schema.String,
   attachment: Schema.Boolean,
   reasoning: Schema.Boolean,
-  reasoning_options: Schema.optional(Schema.Array(ReasoningOption)), // kilocode_change
+  reasoning_options: Schema.optional(Schema.Array(ReasoningOption)), // chipmate_change
   temperature: Schema.Boolean,
   tool_call: Schema.Boolean,
   interleaved: Schema.optional(
@@ -93,13 +93,13 @@ export const Model = Schema.Struct({
       output: Schema.Array(Schema.Literals(["text", "audio", "image", "video", "pdf"])),
     }),
   ),
-  // kilocode_change start - preserve Kilo catalog metadata
+  // chipmate_change start - preserve ChipMate catalog metadata
   recommendedIndex: Schema.optional(Schema.Finite),
   prompt: Schema.optional(Schema.String),
   isFree: Schema.optional(Schema.Boolean),
   mayTrainOnYourPrompts: Schema.optional(Schema.Boolean),
   ai_sdk_provider: Schema.optional(Schema.String),
-  // kilocode_change end
+  // chipmate_change end
   experimental: Schema.optional(
     Schema.Struct({
       modes: Schema.optional(
@@ -128,7 +128,7 @@ export type Model = Schema.Schema.Type<typeof Model>
 export const Provider = Schema.Struct({
   api: Schema.optional(Schema.String),
   name: Schema.String,
-  description: Schema.optional(Schema.String), // kilocode_change
+  description: Schema.optional(Schema.String), // chipmate_change
   env: Schema.Array(Schema.String),
   id: Schema.String,
   npm: Schema.optional(Schema.String),
@@ -139,7 +139,7 @@ export type Provider = Schema.Schema.Type<typeof Provider>
 
 export const Event = ModelsDev.Event
 
-declare const KILO_MODELS_DEV: Record<string, Provider> | undefined
+declare const CHIPMATE_MODELS_DEV: Record<string, Provider> | undefined
 
 export interface Interface {
   readonly get: () => Effect.Effect<Record<string, Provider>>
@@ -163,7 +163,7 @@ const layer = Layer.effect(
       ),
     )
 
-    const source = Flag.KILO_MODELS_URL || "https://models.dev"
+    const source = Flag.CHIPMATE_MODELS_URL || "https://models.dev"
     const filepath = path.join(
       Global.Path.cache,
       source === "https://models.dev" ? "models.json" : `models-${Hash.fast(source)}.json`,
@@ -187,9 +187,9 @@ const layer = Layer.effect(
       )
     })
 
-    const loadFromDisk = fs.readJson(Flag.KILO_MODELS_PATH ?? filepath).pipe(
+    const loadFromDisk = fs.readJson(Flag.CHIPMATE_MODELS_PATH ?? filepath).pipe(
       Effect.catch((error) => {
-        if (Flag.KILO_MODELS_PATH === undefined && error._tag === "FileSystemError" && error.method === "readJson") {
+        if (Flag.CHIPMATE_MODELS_PATH === undefined && error._tag === "FileSystemError" && error.method === "readJson") {
           return fs.remove(filepath, { force: true }).pipe(Effect.ignore, Effect.as(undefined))
         }
         return Effect.succeed(undefined)
@@ -197,7 +197,7 @@ const layer = Layer.effect(
       Effect.map((v) => v as Record<string, Provider> | undefined),
     )
 
-    const loadSnapshot = Effect.sync(() => (typeof KILO_MODELS_DEV === "undefined" ? undefined : KILO_MODELS_DEV))
+    const loadSnapshot = Effect.sync(() => (typeof CHIPMATE_MODELS_DEV === "undefined" ? undefined : CHIPMATE_MODELS_DEV))
 
     const fetchAndWrite = Effect.fn("ModelsDev.fetchAndWrite")(function* () {
       const text = yield* fetchApi()
@@ -219,17 +219,17 @@ const layer = Layer.effect(
       if (fromDisk) return fromDisk
       const snapshot = yield* loadSnapshot
       if (snapshot) return snapshot
-      if (Flag.KILO_DISABLE_MODELS_FETCH) return {}
+      if (Flag.CHIPMATE_DISABLE_MODELS_FETCH) return {}
       // Flock is cross-process: concurrent opencode CLIs can race on this cache file.
       return yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Flock.effect(lockKey)
-          // kilocode_change start - re-read under the lock: a concurrent refresh
+          // chipmate_change start - re-read under the lock: a concurrent refresh
           // may already have recovered the corrupted cache while we waited, and
           // fetching again here would duplicate the network call.
           const rechecked = yield* loadFromDisk
           if (rechecked) return rechecked
-          // kilocode_change end
+          // chipmate_change end
           const text = yield* fetchAndWrite()
           return JSON.parse(text) as Record<string, Provider>
         }),
@@ -250,7 +250,7 @@ const layer = Layer.effect(
           if (!force && (yield* fresh())) return
           yield* fetchAndWrite()
           yield* invalidate
-          yield* ModelsRefresh.notify() // kilocode_change
+          yield* ModelsRefresh.notify() // chipmate_change
           yield* events.publish(Event.Refreshed, {})
         }),
       ).pipe(
@@ -259,7 +259,7 @@ const layer = Layer.effect(
       )
     })
 
-    if (!Flag.KILO_DISABLE_MODELS_FETCH && !process.argv.includes("--get-yargs-completions")) {
+    if (!Flag.CHIPMATE_DISABLE_MODELS_FETCH && !process.argv.includes("--get-yargs-completions")) {
       // Schedule.spaced runs the effect once, then waits between completions.
       yield* Effect.forkScoped(refresh().pipe(Effect.repeat(Schedule.spaced("60 minutes")), Effect.ignore))
     }

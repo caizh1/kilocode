@@ -1,0 +1,47 @@
+export const dict = {
+  "chipmate:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) Autofuldførelse",
+  "chipmate:autocomplete.statusBar.snoozed": "udsat",
+  "chipmate:autocomplete.statusBar.warning": "$(warning) Autofuldførelse",
+  "chipmate:autocomplete.statusBar.tooltip.basic": "ChipMate autofuldførelse",
+  "chipmate:autocomplete.statusBar.tooltip.disabled": "ChipMate autofuldførelse (deaktiveret)",
+  "chipmate:autocomplete.statusBar.tooltip.noUsableProvider":
+    "**Ingen autocomplete-model konfigureret**\n\nFor at aktivere autocomplete skal du tilføje en profil med en af disse understøttede udbydere: {{providers}}.\n\n[Åbn indstillinger]({{command}})",
+  "chipmate:autocomplete.statusBar.tooltip.sessionTotal": "Samlet sessionsomkostning:",
+  "chipmate:autocomplete.statusBar.tooltip.provider": "Udbyder:",
+  "chipmate:autocomplete.statusBar.tooltip.model": "Model:",
+  "chipmate:autocomplete.statusBar.tooltip.profile": "Profil: ",
+  "chipmate:autocomplete.statusBar.tooltip.defaultProfile": "Standard",
+  "chipmate:autocomplete.statusBar.tooltip.completionSummary":
+    "Udførte {{count}} fuldførelser mellem {{startTime}} og {{endTime}}, til en samlet pris på {{cost}}.",
+  "chipmate:autocomplete.statusBar.tooltip.providerInfo": "Autocomplete leveres af {{model}} via {{provider}}.",
+  "chipmate:autocomplete.statusBar.cost.zero": "$0.00",
+  "chipmate:autocomplete.statusBar.cost.lessThanCent": "<$0.01",
+  "chipmate:autocomplete.toggleMessage": "ChipMate autofuldførelse {{status}}",
+  "chipmate:autocomplete.progress.title": "ChipMate",
+  "chipmate:autocomplete.progress.analyzing": "Analyserer din kode...",
+  "chipmate:autocomplete.progress.generating": "Genererer foreslåede redigeringer...",
+  "chipmate:autocomplete.progress.processing": "Behandler foreslåede redigeringer...",
+  "chipmate:autocomplete.progress.showing": "Viser foreslåede redigeringer...",
+  "chipmate:autocomplete.input.title": "ChipMate: Hurtig opgave",
+  "chipmate:autocomplete.input.placeholder": "f.eks. 'refaktorer denne funktion, så den bliver mere effektiv'",
+  "chipmate:autocomplete.commands.generateSuggestions": "ChipMate: Generer foreslåede redigeringer",
+  "chipmate:autocomplete.commands.displaySuggestions": "Vis foreslåede redigeringer",
+  "chipmate:autocomplete.commands.cancelSuggestions": "Annuller foreslåede redigeringer",
+  "chipmate:autocomplete.commands.applyCurrentSuggestion": "Anvend aktuel foreslået redigering",
+  "chipmate:autocomplete.commands.applyAllSuggestions": "Anvend alle foreslåede redigeringer",
+  "chipmate:autocomplete.commands.category": "ChipMate",
+  "chipmate:autocomplete.codeAction.title": "ChipMate: Foreslåede redigeringer",
+  "chipmate:autocomplete.chatParticipant.fullName": "ChipMate-agent",
+  "chipmate:autocomplete.chatParticipant.name": "Agent",
+  "chipmate:autocomplete.chatParticipant.description":
+    "Jeg kan hjælpe dig med hurtige opgaver og foreslåede redigeringer.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.message":
+    "ChipMate autofuldførelse blokeres af en konflikt med GitHub Copilot. For at løse dette skal du deaktivere Copilots inline-forslag.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableCopilot": "Deaktiver Copilot",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableInlineAssist": "Deaktiver Autocomplete",
+  "chipmate:autocomplete.creditsExhausted.message":
+    "ChipMate autofuldførelse er sat på pause. Mulige årsager: din ChipMate-konto har ingen resterende credits, eller din konfigurerede API-nøgle (BYOK) har nået sin kvotegrænse. Tilføj ChipMate-credits eller kontroller din API-nøglekonfiguration for at genoptage autocomplete.",
+  "chipmate:autocomplete.creditsExhausted.addCredits": "Tilføj credits",
+  "chipmate:autocomplete.authError.message":
+    "ChipMate autofuldførelse er sat på pause på grund af et godkendelsesproblem. Mulige årsager: du er ikke logget ind på ChipMate, eller din API-nøgle (BYOK) er ugyldig eller mangler. Log ind igen, eller kontroller indstillingerne for udbyderens API-nøgle.",
+}

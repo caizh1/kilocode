@@ -1,16 +1,16 @@
 import type { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { FSUtil } from "@opencode-ai/core/fs-util"
-// kilocode_change start - use Kilo CLI branding
-// CLI entry point for `kilo run` and `kilo --mini`.
+// chipmate_change start - use ChipMate CLI branding
+// CLI entry point for `chipmate run` and `chipmate --mini`.
 //
 // Handles three modes:
 //   1. Non-interactive (default): sends a single prompt, streams events to
 //      stdout, and exits when the session goes idle.
-//   2. Interactive local (`kilo --mini`): boots the split-footer direct mode
+//   2. Interactive local (`chipmate --mini`): boots the split-footer direct mode
 //      with an in-process server (no external HTTP).
-//   3. Interactive attach (`kilo --mini --attach`): connects to a running
-//      kilo server and runs interactive mode against it.
-// kilocode_change end
+//   3. Interactive attach (`chipmate --mini --attach`): connects to a running
+//      chipmate server and runs interactive mode against it.
+// chipmate_change end
 //
 // Also supports `--command` for slash-command execution, `--format json` for
 // raw event streaming, `--continue` / `--session` for session resumption,
@@ -24,15 +24,15 @@ import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
-import type { KiloClient, Session, ToolPart } from "@kilocode/sdk/v2"
+import type { ChipMateClient, Session, ToolPart } from "@chipmate/sdk/v2"
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
-// kilocode_change start - Kilo implementations (createKiloClient, run-message,
-// cloud-session, run-auto, headless, KiloRun) are dynamically imported inside the
+// chipmate_change start - ChipMate implementations (createChipMateClient, run-message,
+// cloud-session, run-auto, headless, ChipMateRun) are dynamically imported inside the
 // handler so other CLI commands don't pay their module cost at startup.
-// kilocode_change end
+// chipmate_change end
 
-type ModelInput = Parameters<KiloClient["session"]["prompt"]>[0]["model"]
+type ModelInput = Parameters<ChipMateClient["session"]["prompt"]>[0]["model"]
 
 function pick(value: string | undefined): ModelInput | undefined {
   if (!value) return undefined
@@ -132,7 +132,7 @@ async function toolError(part: ToolPart) {
 
 export const RunCommand = effectCmd({
   command: "run [message..]",
-  describe: "run kilo with a message", // kilocode_change
+  describe: "run chipmate with a message", // chipmate_change
   // --attach connects to a remote server (no local instance needed); the
   // default path runs an in-process server and needs the project instance.
   instance: (args) => !args.attach,
@@ -165,12 +165,12 @@ export const RunCommand = effectCmd({
         describe: "fork the session before continuing (requires --continue or --session)",
         type: "boolean",
       })
-      // kilocode_change start - support cloud fork in run command
+      // chipmate_change start - support cloud fork in run command
       .option("cloud-fork", {
         type: "boolean",
         describe: "fetch session from cloud and continue locally (use with --session)",
       })
-      // kilocode_change end
+      // chipmate_change end
       .option("share", {
         type: "boolean",
         describe: "share the session",
@@ -202,17 +202,17 @@ export const RunCommand = effectCmd({
       })
       .option("attach", {
         type: "string",
-        describe: "attach to a running kilo server (e.g., http://localhost:4096)",
+        describe: "attach to a running chipmate server (e.g., http://localhost:4096)",
       })
       .option("password", {
         alias: ["p"],
         type: "string",
-        describe: "basic auth password (defaults to KILO_SERVER_PASSWORD)",
+        describe: "basic auth password (defaults to CHIPMATE_SERVER_PASSWORD)",
       })
       .option("username", {
         alias: ["u"],
         type: "string",
-        describe: "basic auth username (defaults to KILO_SERVER_USERNAME or 'kilo')", // kilocode_change
+        describe: "basic auth username (defaults to CHIPMATE_SERVER_USERNAME or 'chipmate')", // chipmate_change
       })
       .option("dir", {
         type: "string",
@@ -278,21 +278,21 @@ export const RunCommand = effectCmd({
     const { RuntimeFlags } = yield* Effect.promise(() => import("@/effect/runtime-flags"))
     const { InstanceRef } = yield* Effect.promise(() => import("@/effect/instance-ref"))
     const { ServerAuth } = yield* Effect.promise(() => import("@/server/auth"))
-    // kilocode_change start - lazy Kilo implementations (see top-of-file note)
-    const { createKiloClient } = yield* Effect.promise(() => import("@kilocode/sdk/v2"))
-    const { buildRunMessage } = yield* Effect.promise(() => import("@/kilocode/cli/cmd/run-message"))
-    const { importCloudSession, validateCloudFork } = yield* Effect.promise(() => import("@/kilocode/cloud-session"))
-    const { KiloRunAuto } = yield* Effect.promise(() => import("@/kilocode/cli/run-auto"))
-    const { KiloHeadless } = yield* Effect.promise(() => import("@/kilocode/permission/headless"))
-    const { KiloRun, KiloRunDaemon } = yield* Effect.promise(() => import("@/kilocode/cli/cmd/run"))
-    // kilocode_change end
+    // chipmate_change start - lazy ChipMate implementations (see top-of-file note)
+    const { createChipMateClient } = yield* Effect.promise(() => import("@chipmate/sdk/v2"))
+    const { buildRunMessage } = yield* Effect.promise(() => import("@/chipmate/cli/cmd/run-message"))
+    const { importCloudSession, validateCloudFork } = yield* Effect.promise(() => import("@/chipmate/cloud-session"))
+    const { ChipMateRunAuto } = yield* Effect.promise(() => import("@/chipmate/cli/run-auto"))
+    const { ChipMateHeadless } = yield* Effect.promise(() => import("@/chipmate/permission/headless"))
+    const { ChipMateRun, ChipMateRunDaemon } = yield* Effect.promise(() => import("@/chipmate/cli/cmd/run"))
+    // chipmate_change end
     const agentSvc = yield* Agent.Service
     const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef
     yield* Effect.promise(async () => {
       const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
-      const interactive = args.mini || args.interactive // kilocode_change - retain `kilo run --interactive`
-      const skipPermissions = args.yolo || args["dangerously-skip-permissions"] // kilocode_change - --auto is answered by the tracked-session block below
+      const interactive = args.mini || args.interactive // chipmate_change - retain `chipmate run --interactive`
+      const skipPermissions = args.yolo || args["dangerously-skip-permissions"] // chipmate_change - --auto is answered by the tracked-session block below
       const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
       const die = (message: string): never => {
         UI.error(message)
@@ -306,7 +306,7 @@ export const RunCommand = effectCmd({
         throw error
       }
 
-      let message = buildRunMessage(args.message, args["--"]) // kilocode_change
+      let message = buildRunMessage(args.message, args["--"]) // chipmate_change
 
       if (interactive && args.command) {
         die("--mini cannot be used with --command")
@@ -366,7 +366,7 @@ export const RunCommand = effectCmd({
         ? ServerAuth.headers({ password: args.password, username: args.username })
         : undefined
       const attachSDK = (dir?: string) => {
-        return createKiloClient({
+        return createChipMateClient({
           baseUrl: args.attach!,
           directory: dir,
           headers: attachHeaders,
@@ -432,7 +432,7 @@ export const RunCommand = effectCmd({
         }
       }
 
-      // kilocode_change start - defer stdin until endpoint-backed commands are classified
+      // chipmate_change start - defer stdin until endpoint-backed commands are classified
       const input = { initial: undefined as string | undefined, loaded: false }
       async function loadInput() {
         if (input.loaded) return
@@ -444,14 +444,14 @@ export const RunCommand = effectCmd({
         UI.error("You must provide a message or a command")
         process.exit(1)
       }
-      // kilocode_change end
+      // chipmate_change end
 
       if (args.fork && !args.continue && !args.session) {
         UI.error("--fork requires --continue or --session")
         process.exit(1)
       }
 
-      // kilocode_change start - validate cloud session imports before local lookup
+      // chipmate_change start - validate cloud session imports before local lookup
       const cloudForkError = validateCloudFork({
         cloudFork: args["cloud-fork"],
         fork: args.fork,
@@ -462,7 +462,7 @@ export const RunCommand = effectCmd({
         UI.error(cloudForkError)
         process.exit(1)
       }
-      // kilocode_change end
+      // chipmate_change end
 
       const rules: PermissionV1.Ruleset = interactive
         ? []
@@ -472,7 +472,7 @@ export const RunCommand = effectCmd({
               action: "deny",
               pattern: "*",
             },
-            // kilocode_change start - non-interactive runs cannot answer suggestions or take over a terminal
+            // chipmate_change start - non-interactive runs cannot answer suggestions or take over a terminal
             {
               permission: "suggest",
               action: "deny",
@@ -483,7 +483,7 @@ export const RunCommand = effectCmd({
               action: "deny",
               pattern: "*",
             },
-            // kilocode_change end
+            // chipmate_change end
             {
               permission: "plan_enter",
               action: "deny",
@@ -502,8 +502,8 @@ export const RunCommand = effectCmd({
         return message.slice(0, 50) + (message.length > 50 ? "..." : "")
       }
 
-      async function session(sdk: KiloClient): Promise<SessionInfo | undefined> {
-        // kilocode_change start - import cloud session before local lookup
+      async function session(sdk: ChipMateClient): Promise<SessionInfo | undefined> {
+        // chipmate_change start - import cloud session before local lookup
         if (args.session && args["cloud-fork"]) {
           const id = await importCloudSession(sdk, args.session).catch(() => undefined)
           if (!id) {
@@ -529,7 +529,7 @@ export const RunCommand = effectCmd({
             model: current.data.model,
           }
         }
-        // kilocode_change end
+        // chipmate_change end
 
         if (args.session) {
           const current = await sdk.session
@@ -614,7 +614,7 @@ export const RunCommand = effectCmd({
         }
       }
 
-      async function share(sdk: KiloClient, sessionID: string) {
+      async function share(sdk: ChipMateClient, sessionID: string) {
         const cfg = await sdk.config.get()
         if (!cfg.data) return
         if (cfg.data.share !== "auto" && !flags.autoShare && !args.share) return
@@ -630,7 +630,7 @@ export const RunCommand = effectCmd({
       }
 
       async function createFreshSession(
-        sdk: KiloClient,
+        sdk: ChipMateClient,
         input: { agent: string | undefined; model: ModelInput | undefined; variant: string | undefined },
       ): Promise<SessionInfo> {
         const result = await sdk.session.create({
@@ -657,7 +657,7 @@ export const RunCommand = effectCmd({
         }
       }
 
-      async function current(sdk: KiloClient): Promise<string> {
+      async function current(sdk: ChipMateClient): Promise<string> {
         if (!args.attach) {
           return directory ?? root
         }
@@ -700,7 +700,7 @@ export const RunCommand = effectCmd({
         return name
       }
 
-      async function attachAgent(sdk: KiloClient) {
+      async function attachAgent(sdk: ChipMateClient) {
         if (!args.agent) return undefined
         const name = args.agent
 
@@ -740,7 +740,7 @@ export const RunCommand = effectCmd({
         return name
       }
 
-      async function pickAgent(sdk: KiloClient) {
+      async function pickAgent(sdk: ChipMateClient) {
         if (!args.agent) return undefined
         if (args.attach) {
           return attachAgent(sdk)
@@ -749,15 +749,15 @@ export const RunCommand = effectCmd({
         return localAgent()
       }
 
-      async function execute(sdk: KiloClient) {
-        // kilocode_change start - preserve custom command precedence and avoid reading stdin for built-ins
+      async function execute(sdk: ChipMateClient) {
+        // chipmate_change start - preserve custom command precedence and avoid reading stdin for built-ins
         const deferred = Boolean(args.attach && args.session && !directory)
-        const initial = deferred ? undefined : await KiloRun.resolveBuiltin(sdk, args.command, directory)
+        const initial = deferred ? undefined : await ChipMateRun.resolveBuiltin(sdk, args.command, directory)
         if (!deferred) {
-          KiloRun.validateBuiltin({ command: initial, continue: args.continue, session: args.session })
+          ChipMateRun.validateBuiltin({ command: initial, continue: args.continue, session: args.session })
           if (!initial) await loadInput()
         }
-        // kilocode_change end
+        // chipmate_change end
 
         const sess = await session(sdk)
         if (!sess?.id) {
@@ -765,10 +765,10 @@ export const RunCommand = effectCmd({
           process.exit(1)
         }
         const sessionID = sess.id
-        // kilocode_change start - track Task children; plain headless runs deny subagent asks instead of hanging (#11903)
-        const tracked = KiloRunAuto.create(sessionID) // kilocode_change - named to avoid shadowing the `auto` flag
-        if (!args.attach && !args.auto && !skipPermissions) KiloHeadless.mark(sessionID) // kilocode_change - --yolo skips too
-        // kilocode_change end
+        // chipmate_change start - track Task children; plain headless runs deny subagent asks instead of hanging (#11903)
+        const tracked = ChipMateRunAuto.create(sessionID) // chipmate_change - named to avoid shadowing the `auto` flag
+        if (!args.attach && !args.auto && !skipPermissions) ChipMateHeadless.mark(sessionID) // chipmate_change - --yolo skips too
+        // chipmate_change end
 
         function emit(type: string, data: Record<string, unknown>) {
           if (args.format === "json") {
@@ -789,16 +789,16 @@ export const RunCommand = effectCmd({
         // to stdout/UI. `client` is passed explicitly because attach mode may
         // rebind the SDK to the session's directory after the subscription is
         // created, and replies issued from inside the loop must use that client.
-        async function loop(client: KiloClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
+        async function loop(client: ChipMateClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
           const toggles = new Map<string, boolean>()
-          const MAX_RETRIES = 3 // kilocode_change
-          let retries = 0 // kilocode_change
+          const MAX_RETRIES = 3 // chipmate_change
+          let retries = 0 // chipmate_change
           let error: string | undefined
-          let autoRejected = false // kilocode_change - plain headless auto-reject must fail the run
+          let autoRejected = false // chipmate_change - plain headless auto-reject must fail the run
 
-          // kilocode_change start - revert to upstream: consume native events without normalizing sync copies
+          // chipmate_change start - revert to upstream: consume native events without normalizing sync copies
           for await (const event of events.stream) {
-            // kilocode_change end
+            // chipmate_change end
 
             if (
               event.type === "message.updated" &&
@@ -815,9 +815,9 @@ export const RunCommand = effectCmd({
 
             if (event.type === "message.part.updated") {
               const part = event.properties.part
-              // kilocode_change start - track Task child sessions so permission replies can target them
-              KiloRunAuto.track(tracked, part)
-              // kilocode_change end
+              // chipmate_change start - track Task child sessions so permission replies can target them
+              ChipMateRunAuto.track(tracked, part)
+              // chipmate_change end
               if (part.sessionID !== sessionID) continue
 
               if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
@@ -885,13 +885,13 @@ export const RunCommand = effectCmd({
                 err = String(props.error.data.message)
               }
               error = error ? error + EOL + err : err
-              // kilocode_change start - stderr first so --format json still surfaces the diagnostic
+              // chipmate_change start - stderr first so --format json still surfaces the diagnostic
               UI.error(err)
               emit("error", { error: props.error })
-              // kilocode_change end
+              // chipmate_change end
             }
 
-            // kilocode_change start - reset retry budget only after resumed work becomes busy
+            // chipmate_change start - reset retry budget only after resumed work becomes busy
             if (
               event.type === "session.status" &&
               event.properties.sessionID === sessionID &&
@@ -899,7 +899,7 @@ export const RunCommand = effectCmd({
             ) {
               retries = 0
             }
-            // kilocode_change end
+            // chipmate_change end
 
             if (
               event.type === "session.status" &&
@@ -909,41 +909,41 @@ export const RunCommand = effectCmd({
               break
             }
 
-            // kilocode_change start - non-interactive runs dismiss suggestions so they don't block
+            // chipmate_change start - non-interactive runs dismiss suggestions so they don't block
             if (event.type === "suggestion.shown") {
               const suggestion = event.properties
-              if (suggestion.sessionID === sessionID || KiloRunAuto.allowed(tracked, suggestion.sessionID)) {
+              if (suggestion.sessionID === sessionID || ChipMateRunAuto.allowed(tracked, suggestion.sessionID)) {
                 await client.suggestion.dismiss({ requestID: suggestion.id }).catch(() => {})
               }
               continue
             }
-            // kilocode_change end
+            // chipmate_change end
 
             if (event.type === "permission.asked") {
               const permission = event.properties
-              // kilocode_change start - skill shell batches need an interactive human decision. The server ignores
+              // chipmate_change start - skill shell batches need an interactive human decision. The server ignores
               // non-interactive approvals, so headless runs must reject explicitly rather than leave them pending.
               if (permission.metadata?.["skillShell"] === true) {
                 await client.permission.reply({ requestID: permission.id, reply: "reject" })
                 continue
               }
-              // kilocode_change end
-              // kilocode_change start - approve root and tracked Task child permissions in auto mode
+              // chipmate_change end
+              // chipmate_change start - approve root and tracked Task child permissions in auto mode
               if (args.auto) {
-                if (!KiloRunAuto.allowed(tracked, permission.sessionID)) continue
+                if (!ChipMateRunAuto.allowed(tracked, permission.sessionID)) continue
                 await client.permission.reply({
                   requestID: permission.id,
                   reply: "once",
                 })
                 continue
               }
-              // kilocode_change end
+              // chipmate_change end
 
-              // kilocode_change start - answer tracked Task child asks too, so subagents don't hang (#11903)
+              // chipmate_change start - answer tracked Task child asks too, so subagents don't hang (#11903)
               // Covers daemon/attach modes where the server evaluates permissions in another
-              // process and the in-process KiloHeadless deny cannot apply.
+              // process and the in-process ChipMateHeadless deny cannot apply.
               if (permission.sessionID !== sessionID) {
-                if (!KiloRunAuto.allowed(tracked, permission.sessionID)) continue
+                if (!ChipMateRunAuto.allowed(tracked, permission.sessionID)) continue
                 if (skipPermissions) {
                   await client.permission.reply({
                     requestID: permission.id,
@@ -956,14 +956,14 @@ export const RunCommand = effectCmd({
                   UI.Style.TEXT_NORMAL +
                     `subagent permission requested: ${permission.permission} (${permission.patterns.join(", ")}); auto-rejecting`,
                 )
-                autoRejected = true // kilocode_change
+                autoRejected = true // chipmate_change
                 await client.permission.reply({
                   requestID: permission.id,
                   reply: "reject",
                 })
                 continue
               }
-              // kilocode_change end
+              // chipmate_change end
 
               if (permission.sessionID !== sessionID) continue
 
@@ -978,7 +978,7 @@ export const RunCommand = effectCmd({
                   UI.Style.TEXT_NORMAL +
                     `permission requested: ${permission.permission} (${permission.patterns.join(", ")}); auto-rejecting`,
                 )
-                autoRejected = true // kilocode_change
+                autoRejected = true // chipmate_change
                 await client.permission.reply({
                   requestID: permission.id,
                   reply: "reject",
@@ -986,7 +986,7 @@ export const RunCommand = effectCmd({
               }
             }
 
-            // kilocode_change start - bounded network retry handling
+            // chipmate_change start - bounded network retry handling
             if (event.type === "session.network.asked") {
               const request = event.properties
               if (request.sessionID !== sessionID) continue
@@ -1003,27 +1003,27 @@ export const RunCommand = effectCmd({
               await new Promise((resolve) => setTimeout(resolve, delay))
               await client.network.reply({ requestID: request.id })
             }
-            // kilocode_change end
+            // chipmate_change end
           }
-          // kilocode_change start - idle must not clear an auto-rejected headless run
+          // chipmate_change start - idle must not clear an auto-rejected headless run
           if (autoRejected) {
             const msg = "run ended with an auto-rejected permission; pass --auto for autonomous use"
             error = error ? error + EOL + msg : msg
             UI.error(msg)
             emit("error", { error: msg })
           }
-          // kilocode_change end
+          // chipmate_change end
           return error
         }
         const cwd = args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
         const client = args.attach ? attachSDK(cwd) : sdk
-        // kilocode_change start - classify deferred attach commands in the session directory
-        const builtin = deferred ? await KiloRun.resolveBuiltin(client, args.command, cwd) : initial
+        // chipmate_change start - classify deferred attach commands in the session directory
+        const builtin = deferred ? await ChipMateRun.resolveBuiltin(client, args.command, cwd) : initial
         if (deferred) {
-          KiloRun.validateBuiltin({ command: builtin, continue: args.continue, session: args.session })
+          ChipMateRun.validateBuiltin({ command: builtin, continue: args.continue, session: args.session })
           if (!builtin) await loadInput()
         }
-        // kilocode_change end
+        // chipmate_change end
 
         // Validate agent if specified
         const agent = await pickAgent(client)
@@ -1042,16 +1042,16 @@ export const RunCommand = effectCmd({
             if (error) process.exitCode = 1
           }
 
-          // kilocode_change start - handle built-in session commands
+          // chipmate_change start - handle built-in session commands
           if (builtin) {
-            const result = await KiloRun.runBuiltin(client, sessionID, builtin, args.model, sess.model, cwd)
+            const result = await ChipMateRun.runBuiltin(client, sessionID, builtin, args.model, sess.model, cwd)
             if (result.error) {
               if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
               process.exitCode = 1
             }
             return
           }
-          // kilocode_change end
+          // chipmate_change end
 
           if (args.command) {
             const result = await client.session.command({
@@ -1116,7 +1116,7 @@ export const RunCommand = effectCmd({
       }
 
       if (interactive && !args.attach && !args.session && !args.continue) {
-        await loadInput() // kilocode_change - interactive local mode still consumes its initial input
+        await loadInput() // chipmate_change - interactive local mode still consumes its initial input
         const model = pick(args.model)
         const { runInteractiveLocalMode } = await import("./run/runtime")
         const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1157,7 +1157,7 @@ export const RunCommand = effectCmd({
         return await execute(sdk)
       }
 
-      if (await KiloRunDaemon.attach({ directory, execute })) return // kilocode_change
+      if (await ChipMateRunDaemon.attach({ directory, execute })) return // chipmate_change
 
       const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
         const { Server } = await import("@/server/server")
@@ -1167,8 +1167,8 @@ export const RunCommand = effectCmd({
         if (auth) headers.set("Authorization", auth)
         return Server.Default().app.fetch(new Request(request, { headers }))
       }) as typeof globalThis.fetch
-      const sdk = createKiloClient({
-        baseUrl: "http://kilo.internal",
+      const sdk = createChipMateClient({
+        baseUrl: "http://chipmate.internal",
         fetch: fetchFn,
         directory,
       })
@@ -1203,8 +1203,8 @@ export async function runMini(input: MiniCommandInput) {
     continue: input.continue,
     session: input.session,
     fork: input.fork,
-    "cloud-fork": undefined, // kilocode_change
-    cloudFork: undefined, // kilocode_change
+    "cloud-fork": undefined, // chipmate_change
+    cloudFork: undefined, // chipmate_change
     share: undefined,
     model: input.model,
     agent: input.agent,

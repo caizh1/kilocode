@@ -1,31 +1,31 @@
 #!/usr/bin/env bun
 /**
- * Transform i18n translation files with Kilo branding
+ * Transform i18n translation files with ChipMate branding
  *
  * This script handles i18n files by:
  * 1. Taking upstream's version as the base (to get new translation keys)
- * 2. Applying intelligent string replacements for Kilo branding
- * 3. Preserving lines marked with `// kilocode_change`
+ * 2. Applying intelligent string replacements for ChipMate branding
+ * 3. Preserving lines marked with `// chipmate_change`
  *
  * String replacement rules:
- * - opencode.ai -> kilo.ai (domain)
- * - app.opencode.ai -> app.kilo.ai (app domain)
- * - OpenCode -> Kilo (product name in user-visible text)
- * - opencode upgrade -> kilo upgrade (CLI commands)
- * - npx opencode -> npx kilo (CLI invocation)
- * - anomalyco/opencode -> Kilo-Org/kilocode (GitHub repo)
+ * - opencode.ai -> chipmate.ai (domain)
+ * - app.opencode.ai -> app.chipmate.ai (app domain)
+ * - OpenCode -> ChipMate (product name in user-visible text)
+ * - opencode upgrade -> chipmate upgrade (CLI commands)
+ * - npx opencode -> npx chipmate (CLI invocation)
+ * - anomalyco/opencode -> ChipMate-Org/chipmate (GitHub repo)
  *
  * Preserved (not replaced):
  * - opencode.json (actual config filename)
  * - .opencode/ (actual directory name)
- * - Lines with `// kilocode_change`
+ * - Lines with `// chipmate_change`
  */
 
 import { $ } from "bun"
 import { Glob } from "bun"
 import { info, success, warn, debug } from "../utils/logger"
 import { defaultConfig } from "../utils/config"
-import { oursHasKilocodeChanges } from "../utils/git"
+import { oursHasChipMateChanges } from "../utils/git"
 
 export interface I18nTransformResult {
   file: string
@@ -52,61 +52,61 @@ const I18N_REPLACEMENTS: StringReplacement[] = [
   // GitHub repo references
   {
     pattern: /github\.com\/anomalyco\/opencode/g,
-    replacement: "github.com/Kilo-Org/kilocode",
+    replacement: "github.com/ChipMate-Org/chipmate",
     description: "GitHub URL",
   },
   {
     pattern: /anomalyco\/opencode/g,
-    replacement: "Kilo-Org/kilocode",
+    replacement: "ChipMate-Org/chipmate",
     description: "GitHub repo reference",
   },
 
   // Domain replacements (specific first)
   {
     pattern: /app\.opencode\.ai/g,
-    replacement: "app.kilo.ai",
+    replacement: "app.chipmate.ai",
     description: "App domain",
   },
   {
     pattern: /opencode\.ai(?!\/zen)/g,
-    replacement: "kilo.ai",
+    replacement: "chipmate.ai",
     description: "Main domain (excluding zen)",
   },
 
   // CLI commands (be careful with order)
   {
     pattern: /npx opencode(?!\w)/g,
-    replacement: "npx kilo",
+    replacement: "npx chipmate",
     description: "npx command",
   },
   {
     pattern: /bun add opencode(?!\w)/g,
-    replacement: "bun add kilo",
+    replacement: "bun add chipmate",
     description: "bun add command",
   },
   {
     pattern: /npm install opencode(?!\w)/g,
-    replacement: "npm install kilo",
+    replacement: "npm install chipmate",
     description: "npm install command",
   },
   {
     pattern: /opencode upgrade(?!\w)/g,
-    replacement: "kilo upgrade",
+    replacement: "chipmate upgrade",
     description: "upgrade command",
   },
   {
     pattern: /opencode dev(?!\w)/g,
-    replacement: "kilo dev",
+    replacement: "chipmate dev",
     description: "dev command",
   },
   {
     pattern: /opencode serve(?!\w)/g,
-    replacement: "kilo serve",
+    replacement: "chipmate serve",
     description: "serve command",
   },
   {
     pattern: /opencode auth(?!\w)/g,
-    replacement: "kilo auth",
+    replacement: "chipmate auth",
     description: "auth command",
   },
 
@@ -114,14 +114,14 @@ const I18N_REPLACEMENTS: StringReplacement[] = [
   // Only replace "OpenCode" when it's a standalone word (not part of opencode.json, etc.)
   {
     pattern: /\bOpenCode\b(?!\.json|\/| Zen)/g,
-    replacement: "Kilo",
+    replacement: "ChipMate",
     description: "Product name",
   },
 
   // Environment variables (exclude OPENCODE_API_KEY)
   {
     pattern: /\bOPENCODE_(?!API_KEY\b)([A-Z_]+)\b/g,
-    replacement: "KILO_$1",
+    replacement: "CHIPMATE_$1",
     description: "Environment variable",
   },
 ]
@@ -136,14 +136,14 @@ const PRESERVE_PATTERNS = [
 ]
 
 /**
- * Check if a line should be preserved (has kilocode_change marker)
+ * Check if a line should be preserved (has chipmate_change marker)
  */
 function shouldPreserveLine(line: string): boolean {
-  return line.includes("// kilocode_change")
+  return line.includes("// chipmate_change")
 }
 
 /**
- * Apply string replacements to content, preserving kilocode_change lines
+ * Apply string replacements to content, preserving chipmate_change lines
  */
 export function transformI18nContent(
   content: string,
@@ -155,7 +155,7 @@ export function transformI18nContent(
   let preservedCount = 0
 
   for (const line of lines) {
-    // Skip lines marked with kilocode_change
+    // Skip lines marked with chipmate_change
     if (shouldPreserveLine(line)) {
       transformedLines.push(line)
       preservedCount++
@@ -283,7 +283,7 @@ export async function transformAllI18n(options: I18nTransformOptions = {}): Prom
 
 /**
  * Transform i18n files that are in conflict during merge
- * Takes upstream version (theirs) and applies Kilo branding
+ * Takes upstream version (theirs) and applies ChipMate branding
  */
 export async function transformConflictedI18n(
   files: string[],
@@ -297,9 +297,9 @@ export async function transformConflictedI18n(
       continue
     }
 
-    // If our version has kilocode_change markers, flag for manual resolution
-    if (!options.dryRun && (await oursHasKilocodeChanges(file))) {
-      warn(`${file} has kilocode_change markers — skipping auto-transform, needs manual resolution`)
+    // If our version has chipmate_change markers, flag for manual resolution
+    if (!options.dryRun && (await oursHasChipMateChanges(file))) {
+      warn(`${file} has chipmate_change markers — skipping auto-transform, needs manual resolution`)
       results.push({ file, replacements: 0, preserved: 0, dryRun: false, flagged: true })
       continue
     }
@@ -310,14 +310,14 @@ export async function transformConflictedI18n(
       await $`git add ${file}`.quiet().nothrow()
     }
 
-    // Then apply Kilo branding transformations
+    // Then apply ChipMate branding transformations
     const result = await transformI18nFile(file, options)
     results.push(result)
 
     if (options.dryRun) {
       info(`[DRY-RUN] Would take upstream and transform ${file}: ${result.replacements} replacements`)
     } else if (result.replacements > 0) {
-      success(`Transformed ${file}: took upstream + ${result.replacements} Kilo branding replacements`)
+      success(`Transformed ${file}: took upstream + ${result.replacements} ChipMate branding replacements`)
     }
   }
 

@@ -10,7 +10,7 @@ import { Hash } from "@opencode-ai/core/util/hash"
 import { Plugin } from "../plugin"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
-import * as ModelsDev from "./models" // kilocode_change - assemble dynamic Kilo models around upstream core catalog
+import * as ModelsDev from "./models" // chipmate_change - assemble dynamic ChipMate models around upstream core catalog
 import { Auth } from "../auth"
 import { Env } from "../env"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
@@ -24,30 +24,30 @@ import { InstanceState } from "@/effect/instance-state"
 import { EffectPromise } from "@/effect/promise"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { isRecord } from "@/util/record"
-import { optional, optionalOmitUndefined } from "@opencode-ai/core/schema" // kilocode_change
+import { optional, optionalOmitUndefined } from "@opencode-ai/core/schema" // chipmate_change
 import { ProviderTransform } from "./transform"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ModelStatus } from "./model-status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-// kilocode_change start
+// chipmate_change start
 import {
-  KILO_BUNDLED_PROVIDERS,
-  kiloCustomLoaders,
-  KILO_MODEL_SCHEMA_EXTENSIONS,
-  patchModelsDevModel as patchKiloModel,
-  patchConfigModel as patchKiloConfigModel,
+  CHIPMATE_BUNDLED_PROVIDERS,
+  chipmateCustomLoaders,
+  CHIPMATE_MODEL_SCHEMA_EXTENSIONS,
+  patchModelsDevModel as patchChipMateModel,
+  patchConfigModel as patchChipMateConfigModel,
   customProviderVariants,
   patchCustomLoaderResult,
-  patchKiloProviderPrivacy,
-  kiloSmallModelPriority,
+  patchChipMateProviderPrivacy,
+  chipmateSmallModelPriority,
   buildTimeoutSignal,
   requestTimeout,
   wrapFirstByte,
-} from "@/kilocode/provider/provider"
-import { isInternalOffline } from "@/kilocode/internal-offline"
-import * as ModelsRefresh from "@/kilocode/provider/models-refresh"
-// kilocode_change end
+} from "@/chipmate/provider/provider"
+import { isInternalOffline } from "@/chipmate/internal-offline"
+import * as ModelsRefresh from "@/chipmate/provider/models-refresh"
+// chipmate_change end
 import { ProviderError } from "./error"
 
 const OPENAI_HEADER_TIMEOUT_DEFAULT = 10_000
@@ -149,7 +149,7 @@ const BUNDLED_PROVIDERS: Record<string, () => Promise<(opts: any) => BundledSDK>
   "@ai-sdk/github-copilot": () =>
     import("@opencode-ai/core/github-copilot/copilot-provider").then((m) => m.createOpenaiCompatible),
   "venice-ai-sdk-provider": () => import("venice-ai-sdk-provider").then((m) => m.createVenice),
-  ...KILO_BUNDLED_PROVIDERS, // kilocode_change
+  ...CHIPMATE_BUNDLED_PROVIDERS, // chipmate_change
 }
 
 type CustomModelLoader = (sdk: any, modelID: string, options?: Record<string, any>, model?: Model) => Promise<any>
@@ -248,7 +248,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
     azure: Effect.fnUntraced(function* (provider: Info) {
       const env = yield* dep.env()
       const auth = yield* dep.auth(provider.id)
-      // kilocode_change start - prefer explicit Azure endpoint over resource name to avoid conflicting SDK options
+      // chipmate_change start - prefer explicit Azure endpoint over resource name to avoid conflicting SDK options
       const endpoint = iife(() => {
         return [
           provider.options?.baseURL,
@@ -266,15 +266,15 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
               env["AZURE_OPENAI_RESOURCE_NAME"],
             ].find((name) => typeof name === "string" && name.trim() !== "")
           })
-      // kilocode_change end
+      // chipmate_change end
 
       if (!resource && !endpoint) {
-        // kilocode_change
+        // chipmate_change
         return {
           autoload: false,
           async getModel() {
             throw new Error(
-              "Azure resource name or endpoint is missing. Set AZURE_RESOURCE_NAME, AZURE_OPENAI_RESOURCE_NAME, AZURE_OPENAI_ENDPOINT, or reconnect the azure provider.", // kilocode_change
+              "Azure resource name or endpoint is missing. Set AZURE_RESOURCE_NAME, AZURE_OPENAI_RESOURCE_NAME, AZURE_OPENAI_ENDPOINT, or reconnect the azure provider.", // chipmate_change
             )
           },
         }
@@ -286,7 +286,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           return selectAzureLanguageModel(sdk, modelID, Boolean(options?.["useCompletionUrls"]))
         },
         options: {
-          ...(endpoint ? { baseURL: endpoint } : { resourceName: resource }), // kilocode_change
+          ...(endpoint ? { baseURL: endpoint } : { resourceName: resource }), // chipmate_change
         },
         vars(_options): Record<string, string> {
           if (resource) {
@@ -477,9 +477,9 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://kilo.ai/",
-            "X-Title": "Kilo Code", // kilocode_change
-            "X-Source": "kilo", // kilocode_change
+            "HTTP-Referer": "https://chipmate.ai/",
+            "X-Title": "ChipMate", // chipmate_change
+            "X-Source": "chipmate", // chipmate_change
           },
         },
       }),
@@ -488,8 +488,8 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://kilo.ai/",
-            "X-Title": "Kilo Code", // kilocode_change
+            "HTTP-Referer": "https://chipmate.ai/",
+            "X-Title": "ChipMate", // chipmate_change
           },
         },
       }),
@@ -498,9 +498,9 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: provider.source === "config",
         options: {
           headers: {
-            "HTTP-Referer": "https://kilo.ai/",
-            "X-Title": "Kilo Code", // kilocode_change
-            "X-BILLING-INVOKE-ORIGIN": "KiloCode", // kilocode_change
+            "HTTP-Referer": "https://chipmate.ai/",
+            "X-Title": "ChipMate", // chipmate_change
+            "X-BILLING-INVOKE-ORIGIN": "ChipMate", // chipmate_change
           },
         },
       }),
@@ -509,8 +509,8 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "http-referer": "https://kilo.ai/",
-            "x-title": "Kilo Code", // kilocode_change
+            "http-referer": "https://chipmate.ai/",
+            "x-title": "ChipMate", // chipmate_change
           },
         },
       }),
@@ -615,8 +615,8 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://kilo.ai/",
-            "X-Title": "Kilo Code", // kilocode_change
+            "HTTP-Referer": "https://chipmate.ai/",
+            "X-Title": "ChipMate", // chipmate_change
           },
         },
       }),
@@ -637,7 +637,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       const directory = yield* InstanceState.directory
 
       const aiGatewayHeaders = {
-        "User-Agent": `kilo/${InstallationVersion} gitlab-ai-provider/${GITLAB_PROVIDER_VERSION} (${os.platform()} ${os.release()}; ${os.arch()})`, // kilocode_change
+        "User-Agent": `chipmate/${InstallationVersion} gitlab-ai-provider/${GITLAB_PROVIDER_VERSION} (${os.platform()} ${os.release()}; ${os.arch()})`, // chipmate_change
         "anthropic-beta": "context-1m-2025-08-07",
         ...providerConfig?.options?.aiGatewayHeaders,
       }
@@ -815,7 +815,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       if (!apiToken) {
         throw new Error(
           "CLOUDFLARE_API_TOKEN (or CF_AIG_TOKEN) is required for Cloudflare AI Gateway. " +
-            "Set it via environment variable or run `kilo auth cloudflare-ai-gateway`.",
+            "Set it via environment variable or run `chipmate auth cloudflare-ai-gateway`.",
         )
       }
 
@@ -864,17 +864,17 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "X-Cerebras-3rd-Party-Integration": "Kilo Code", // kilocode_change
+            "X-Cerebras-3rd-Party-Integration": "ChipMate", // chipmate_change
           },
         },
       }),
-    kilo: () =>
+    chipmate: () =>
       Effect.succeed({
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://kilo.ai/",
-            "X-Title": "Kilo Code", // kilocode_change
+            "HTTP-Referer": "https://chipmate.ai/",
+            "X-Title": "ChipMate", // chipmate_change
           },
         },
       }),
@@ -901,7 +901,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           autoload: false,
           async getModel() {
             throw new Error(
-              `Snowflake Cortex: missing credentials (${missing}). Provide a bearer token (OAuth, JWT, or PAT) via env var, Kilo auth, or provider options.`, // kilocode_change
+              `Snowflake Cortex: missing credentials (${missing}). Provide a bearer token (OAuth, JWT, or PAT) via env var, ChipMate auth, or provider options.`, // chipmate_change
             )
           },
         }
@@ -1049,13 +1049,13 @@ const ProviderLimit = Schema.Struct({
   output: Schema.Finite,
 })
 
-// kilocode_change start
+// chipmate_change start
 const ProviderMetadata = Schema.Struct({
   noteKey: optionalOmitUndefined(Schema.String),
   icon: optionalOmitUndefined(Schema.String),
   priority: optionalOmitUndefined(Schema.Int),
 })
-// kilocode_change end
+// chipmate_change end
 
 export const Model = Schema.Struct({
   id: ModelV2.ID,
@@ -1071,18 +1071,18 @@ export const Model = Schema.Struct({
   headers: Schema.Record(Schema.String, Schema.String),
   release_date: Schema.String,
   variants: optional(Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Any))),
-  ...KILO_MODEL_SCHEMA_EXTENSIONS, // kilocode_change
+  ...CHIPMATE_MODEL_SCHEMA_EXTENSIONS, // chipmate_change
 }).annotate({ identifier: "Model" })
 export type Model = Types.DeepMutable<Schema.Schema.Type<typeof Model>>
 
 export const Info = Schema.Struct({
   id: ProviderV2.ID,
   name: Schema.String,
-  description: optionalOmitUndefined(Schema.String), // kilocode_change
+  description: optionalOmitUndefined(Schema.String), // chipmate_change
   source: Schema.Literals(["env", "config", "custom", "api"]),
   env: Schema.Array(Schema.String),
   key: optional(Schema.String),
-  metadata: optionalOmitUndefined(ProviderMetadata), // kilocode_change
+  metadata: optionalOmitUndefined(ProviderMetadata), // chipmate_change
   options: Schema.Record(Schema.String, Schema.Any),
   models: Schema.Record(Schema.String, Model),
 }).annotate({ identifier: "Provider" })
@@ -1094,7 +1094,7 @@ export const ListResult = Schema.Struct({
   all: Schema.Array(Info),
   default: DefaultModelIDs,
   connected: Schema.Array(Schema.String),
-  failed: Schema.Array(Schema.String), // kilocode_change
+  failed: Schema.Array(Schema.String), // chipmate_change
 })
 export type ListResult = Types.DeepMutable<Schema.Schema.Type<typeof ListResult>>
 
@@ -1122,7 +1122,7 @@ export class ModelNotFoundError extends Schema.TaggedErrorClass<ModelNotFoundErr
   providerID: ProviderV2.ID,
   modelID: ModelV2.ID,
   suggestions: Schema.optional(Schema.Array(Schema.String)),
-  modelsEmpty: Schema.optional(Schema.Boolean), // kilocode_change
+  modelsEmpty: Schema.optional(Schema.Boolean), // chipmate_change
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message() {
@@ -1276,12 +1276,12 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
     release_date: model.release_date ?? "",
     variants: {},
   }
-  Object.assign(base, patchKiloModel(provider.id, model)) // kilocode_change
-  const variants = ProviderTransform.reasoningVariants(model, base) ?? ProviderTransform.variants(base) // kilocode_change
+  Object.assign(base, patchChipMateModel(provider.id, model)) // chipmate_change
+  const variants = ProviderTransform.reasoningVariants(model, base) ?? ProviderTransform.variants(base) // chipmate_change
 
   return {
     ...base,
-    variants: mapValues(variants, (v) => v), // kilocode_change
+    variants: mapValues(variants, (v) => v), // chipmate_change
   }
 }
 
@@ -1313,7 +1313,7 @@ export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
     id: ProviderV2.ID.make(provider.id),
     source: "custom",
     name: provider.name,
-    description: provider.description, // kilocode_change
+    description: provider.description, // chipmate_change
     env: [...(provider.env ?? [])],
     options: {},
     models,
@@ -1404,12 +1404,12 @@ const layer = Layer.effect(
         const plugins = yield* plugin.list()
 
         // now read config providers - includes any modifications from plugin config() hook
-        // kilocode_change start - internal offline builds expose only configured OpenAI-compatible providers
+        // chipmate_change start - internal offline builds expose only configured OpenAI-compatible providers
         const offline = isInternalOffline()
         const configProviders = Object.entries(cfg.provider ?? {}).filter(
-          ([id, item]) => !offline || (item?.npm === "@ai-sdk/openai-compatible" && id !== "kilo" && id !== "apertis"),
+          ([id, item]) => !offline || (item?.npm === "@ai-sdk/openai-compatible" && id !== "chipmate" && id !== "apertis"),
         )
-        // kilocode_change end
+        // chipmate_change end
         const disabled = new Set(cfg.disabled_providers ?? [])
         const enabled = cfg.enabled_providers ? new Set(cfg.enabled_providers) : null
 
@@ -1448,7 +1448,7 @@ const layer = Layer.effect(
 
         // extend database from config
         for (const [providerID, provider] of configProviders) {
-          if (!provider) continue // kilocode_change - null entries are transient delete sentinels
+          if (!provider) continue // chipmate_change - null entries are transient delete sentinels
           const existing = database[providerID]
           const parsed: Info = {
             id: ProviderV2.ID.make(providerID),
@@ -1460,7 +1460,7 @@ const layer = Layer.effect(
           }
 
           for (const [modelID, model] of Object.entries(provider.models ?? {})) {
-            if (!model) continue // kilocode_change - null entries are transient delete sentinels
+            if (!model) continue // chipmate_change - null entries are transient delete sentinels
             const existingModel = parsed.models[model.id ?? modelID]
             const apiID = model.id ?? existingModel?.api.id ?? modelID
             const apiNpm =
@@ -1530,17 +1530,17 @@ const layer = Layer.effect(
               headers: mergeDeep(existingModel?.headers ?? {}, model.headers ?? {}),
               family: model.family ?? existingModel?.family ?? "",
               release_date: model.release_date ?? existingModel?.release_date ?? "",
-              // variants: {}, // kilocode_change, moved into patchKiloConfigModel
-              ...patchKiloConfigModel(model, existingModel), // kilocode_change
+              // variants: {}, // chipmate_change, moved into patchChipMateConfigModel
+              ...patchChipMateConfigModel(model, existingModel), // chipmate_change
             }
-            // kilocode_change start
+            // chipmate_change start
             const generated = Object.keys(model.variants ?? {}).length
               ? {}
               : customProviderVariants(parsedModel, model.provider?.npm ?? provider.npm, ProviderTransform.variants)
             const merged = mergeDeep(generated, model.variants ?? {})
-            // kilocode_change end
+            // chipmate_change end
             parsedModel.variants = mapValues(
-              pickBy(merged, (v): v is NonNullable<typeof v> => !!v && !v.disabled), // kilocode_change - drop null delete sentinels
+              pickBy(merged, (v): v is NonNullable<typeof v> => !!v && !v.disabled), // chipmate_change - drop null delete sentinels
               (v) => omit(v, ["disabled"]),
             )
             parsed.models[modelID] = parsedModel
@@ -1548,14 +1548,14 @@ const layer = Layer.effect(
           database[providerID] = parsed
         }
 
-        // kilocode_change start - load auths before env so OAuth plugins can override inherited credentials
+        // chipmate_change start - load auths before env so OAuth plugins can override inherited credentials
         const auths = yield* auth.all().pipe(Effect.orDie)
         // load env
         const envs = yield* env.all()
         for (const [id, provider] of Object.entries(database)) {
           const providerID = ProviderV2.ID.make(id)
           if (disabled.has(providerID)) continue
-          // kilocode_change start - prefer explicit OAuth auth over inherited env credentials
+          // chipmate_change start - prefer explicit OAuth auth over inherited env credentials
           if (
             auths[providerID]?.type === "oauth" &&
             plugins.some((x) => x.auth?.provider === providerID && x.auth.loader)
@@ -1563,7 +1563,7 @@ const layer = Layer.effect(
             continue
           }
           const apiKey = provider.env.map((item) => envs[item]).find(Boolean)
-          // kilocode_change end
+          // chipmate_change end
           if (!apiKey) continue
           mergeProvider(providerID, {
             source: "env",
@@ -1604,14 +1604,14 @@ const layer = Layer.effect(
           mergeProvider(providerID, patch)
         }
 
-        // kilocode_change start - resolve env once for patchCustomLoaderResult (azure env fallback)
-        const kiloEnv = yield* env.all()
-        // kilocode_change end
-        // kilocode_change start - omit public Kilo loaders from internal offline builds
-        const loaders = offline ? custom(dep) : { ...custom(dep), ...kiloCustomLoaders(dep) }
+        // chipmate_change start - resolve env once for patchCustomLoaderResult (azure env fallback)
+        const chipmateEnv = yield* env.all()
+        // chipmate_change end
+        // chipmate_change start - omit public ChipMate loaders from internal offline builds
+        const loaders = offline ? custom(dep) : { ...custom(dep), ...chipmateCustomLoaders(dep) }
         for (const [id, fn] of Object.entries(loaders)) {
-          // kilocode_change end
-          // kilocode_change
+          // chipmate_change end
+          // chipmate_change
           const providerID = ProviderV2.ID.make(id)
           if (disabled.has(providerID)) continue
           const data = database[providerID]
@@ -1619,7 +1619,7 @@ const layer = Layer.effect(
             continue
           }
           const result = yield* fn(data)
-          if (result) patchCustomLoaderResult(id, result, kiloEnv) // kilocode_change
+          if (result) patchCustomLoaderResult(id, result, chipmateEnv) // chipmate_change
           if (result && (result.autoload || providers[providerID])) {
             if (result.getModel) modelLoaders[providerID] = result.getModel
             if (result.vars) varsLoaders[providerID] = result.vars
@@ -1632,23 +1632,23 @@ const layer = Layer.effect(
 
         // load config - re-apply with updated data
         for (const [id, provider] of configProviders) {
-          if (!provider) continue // kilocode_change - null entries are transient delete sentinels
+          if (!provider) continue // chipmate_change - null entries are transient delete sentinels
           const providerID = ProviderV2.ID.make(id)
-          // kilocode_change start - keep OAuth plugin source when config and Codex auth coexist
+          // chipmate_change start - keep OAuth plugin source when config and Codex auth coexist
           const oauth =
             auths[providerID]?.type === "oauth" && plugins.some((x) => x.auth?.provider === providerID && x.auth.loader)
           const partial: Partial<Info> = oauth ? {} : { source: "config" }
           if (provider.env) partial.env = provider.env
-          // kilocode_change end
+          // chipmate_change end
           if (provider.name) partial.name = provider.name
           if (provider.options) partial.options = provider.options
           mergeProvider(providerID, partial)
         }
-        patchKiloProviderPrivacy(providers[ProviderV2.ID.make("kilo")], cfg) // kilocode_change
+        patchChipMateProviderPrivacy(providers[ProviderV2.ID.make("chipmate")], cfg) // chipmate_change
 
         const gitlab = ProviderV2.ID.make("gitlab")
         if (discoveryLoaders[gitlab] && providers[gitlab] && isProviderAllowed(gitlab)) {
-          // kilocode_change start - keep discovery failures visible instead of swallowing them
+          // chipmate_change start - keep discovery failures visible instead of swallowing them
           const discovered = yield* Effect.tryPromise(() => discoveryLoaders[gitlab]()).pipe(
             Effect.catch((err) =>
               Effect.logWarning("gitlab model discovery failed", { err }).pipe(Effect.as({} as Record<string, Model>)),
@@ -1657,7 +1657,7 @@ const layer = Layer.effect(
           for (const [modelID, model] of Object.entries(discovered)) {
             if (!providers[gitlab].models[modelID]) providers[gitlab].models[modelID] = model
           }
-          // kilocode_change end
+          // chipmate_change end
         }
 
         for (const [id, provider] of Object.entries(providers)) {
@@ -1697,7 +1697,7 @@ const layer = Layer.effect(
             if (configVariants && model.variants) {
               const merged = mergeDeep(model.variants, configVariants)
               model.variants = mapValues(
-                pickBy(merged, (v): v is NonNullable<typeof v> => !!v && !v.disabled), // kilocode_change - drop null delete sentinels
+                pickBy(merged, (v): v is NonNullable<typeof v> => !!v && !v.disabled), // chipmate_change - drop null delete sentinels
                 (v) => omit(v, ["disabled"]),
               )
             }
@@ -1719,7 +1719,7 @@ const layer = Layer.effect(
         }
       }),
     )
-    yield* ModelsRefresh.watch(state) // kilocode_change
+    yield* ModelsRefresh.watch(state) // chipmate_change
 
     const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
 
@@ -1797,12 +1797,12 @@ const layer = Layer.effect(
           const fetchFn = customFetch ?? fetch
           const opts = init ?? {}
           const chunkAbortCtl = typeof chunkTimeout === "number" && chunkTimeout > 0 ? new AbortController() : undefined
-          const timeout = buildTimeoutSignal(options) // kilocode_change - use cancellable timeout for connection phase
-          // kilocode_change start - extend the same deadline to the first response byte
+          const timeout = buildTimeoutSignal(options) // chipmate_change - use cancellable timeout for connection phase
+          // chipmate_change start - extend the same deadline to the first response byte
           const firstByteMs = requestTimeout(options)
           const firstByteCtl = firstByteMs === undefined ? undefined : new AbortController()
           const deadline = firstByteMs === undefined ? undefined : Date.now() + firstByteMs
-          // kilocode_change end
+          // chipmate_change end
           const headerTimeoutMs = headerTimeout === false ? undefined : headerTimeout
           const headerTimeoutCtl = typeof headerTimeoutMs === "number" ? timeoutController(headerTimeoutMs) : undefined
           const signals: AbortSignal[] = []
@@ -1810,13 +1810,13 @@ const layer = Layer.effect(
           if (opts.signal) signals.push(opts.signal)
           if (chunkAbortCtl) signals.push(chunkAbortCtl.signal)
           if (headerTimeoutCtl) signals.push(headerTimeoutCtl.signal)
-          if (timeout.signal) signals.push(timeout.signal) // kilocode_change
-          if (firstByteCtl) signals.push(firstByteCtl.signal) // kilocode_change
+          if (timeout.signal) signals.push(timeout.signal) // chipmate_change
+          if (firstByteCtl) signals.push(firstByteCtl.signal) // chipmate_change
 
           const combined = signals.length === 0 ? null : signals.length === 1 ? signals[0] : AbortSignal.any(signals)
           if (combined) opts.signal = combined
 
-          // kilocode_change start - clear connection-phase timeout once headers arrive
+          // chipmate_change start - clear connection-phase timeout once headers arrive
           try {
             const res = await fetchFn(input, {
               ...opts,
@@ -1824,17 +1824,17 @@ const layer = Layer.effect(
               timeout: false,
             }).finally(() => headerTimeoutCtl?.clear())
             timeout.clear()
-            // kilocode_change start - hand the remaining deadline to the first-byte guard
+            // chipmate_change start - hand the remaining deadline to the first-byte guard
             const remaining = deadline !== undefined ? deadline - Date.now() : undefined
             const live = remaining !== undefined && firstByteCtl ? wrapFirstByte(res, Math.max(remaining, 1), firstByteCtl) : res
             if (!chunkAbortCtl) return live
             return wrapSSE(live, chunkTimeout, chunkAbortCtl)
-            // kilocode_change end
+            // chipmate_change end
           } catch (err) {
             timeout.clear()
             throw err
           }
-          // kilocode_change end
+          // chipmate_change end
         }
 
         const bundledLoader = BUNDLED_PROVIDERS[model.api.npm]
@@ -1888,8 +1888,8 @@ const layer = Layer.effect(
           : fuzzysort
               .go(providerID, Object.keys({ ...s.catalog, ...s.providers }), { limit: 3, threshold: -10000 })
               .map((m) => m.target)
-        const empty = false // kilocode_change
-        return yield* new ModelNotFoundError({ providerID, modelID, suggestions, modelsEmpty: empty }) // kilocode_change
+        const empty = false // chipmate_change
+        return yield* new ModelNotFoundError({ providerID, modelID, suggestions, modelsEmpty: empty }) // chipmate_change
       }
 
       const info = provider.models[modelID]
@@ -1898,8 +1898,8 @@ const layer = Layer.effect(
         const suggestions = current.length
           ? current
           : modelSuggestions(s.catalog[providerID], modelID, runtimeFlags.enableExperimentalModels)
-        const empty = Object.keys(provider.models).length === 0 // kilocode_change
-        return yield* new ModelNotFoundError({ providerID, modelID, suggestions, modelsEmpty: empty }) // kilocode_change
+        const empty = Object.keys(provider.models).length === 0 // chipmate_change
+        return yield* new ModelNotFoundError({ providerID, modelID, suggestions, modelsEmpty: empty }) // chipmate_change
       }
       return info
     })
@@ -1979,15 +1979,15 @@ const layer = Layer.effect(
         return undefined
       }
 
-      // kilocode_change start - Kilo's auto model is an ID, while upstream priorities are model families.
-      const kiloPriority = kiloSmallModelPriority(providerID)
-      if (kiloPriority) {
-        for (const id of kiloPriority) {
+      // chipmate_change start - ChipMate's auto model is an ID, while upstream priorities are model families.
+      const chipmatePriority = chipmateSmallModelPriority(providerID)
+      if (chipmatePriority) {
+        for (const id of chipmatePriority) {
           const model = provider.models[id]
           if (model) return model
         }
       }
-      // kilocode_change end
+      // chipmate_change end
 
       const priority = providerID.startsWith("opencode")
         ? ["gpt-nano"]
@@ -2023,10 +2023,10 @@ const layer = Layer.effect(
         if (candidates[0]) return candidates[0]
       }
 
-      // kilocode_change start - fall back to kilo's auto small model
-      const kiloFallback = s.providers[ProviderV2.ID.make("kilo")]
-      if (kiloFallback?.models["kilo-auto/small"]) return kiloFallback.models["kilo-auto/small"]
-      // kilocode_change end
+      // chipmate_change start - fall back to chipmate's auto small model
+      const chipmateFallback = s.providers[ProviderV2.ID.make("chipmate")]
+      if (chipmateFallback?.models["chipmate-auto/small"]) return chipmateFallback.models["chipmate-auto/small"]
+      // chipmate_change end
 
       return undefined
     })

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Reset one file to the last merged upstream version after applying Kilo merge
+ * Reset one file to the last merged upstream version after applying ChipMate merge
  * branding transforms.
  *
  * Usage:

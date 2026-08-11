@@ -1,4 +1,4 @@
-import type { Message, Session, Part, SnapshotFileDiff, SessionStatus, Provider } from "@kilocode/sdk/v2"
+import type { Message, Session, Part, SnapshotFileDiff, SessionStatus, Provider } from "@chipmate/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 
@@ -41,24 +41,24 @@ export type NavigateToSessionFn = (sessionID: string) => void
 
 export type SessionHrefFn = (sessionID: string) => string
 
-// kilocode_change start
+// chipmate_change start
 export type OpenFileFn = (filePath: string, line?: number, column?: number) => void
 
 export type OpenDiffFn = (diff: {
   file: string
-  before?: string // kilocode_change - optional, kilo uses `patch`
-  after?: string // kilocode_change - optional, kilo uses `patch`
-  patch?: string // kilocode_change
+  before?: string // chipmate_change - optional, chipmate uses `patch`
+  after?: string // chipmate_change - optional, chipmate uses `patch`
+  patch?: string // chipmate_change
   additions: number
   deletions: number
 }) => void
 
 export type OpenUrlFn = (url: string) => void
 
-export type OpenContentFn = (content: string, language?: string) => void // kilocode_change
+export type OpenContentFn = (content: string, language?: string) => void // chipmate_change
 
-export type ValidateFilesFn = (paths: string[]) => Promise<string[]> // kilocode_change
-// kilocode_change end
+export type ValidateFilesFn = (paths: string[]) => Promise<string[]> // chipmate_change
+// chipmate_change end
 
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",
@@ -67,11 +67,11 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     directory: string
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
-    onOpenFile?: OpenFileFn // kilocode_change
-    onOpenDiff?: OpenDiffFn // kilocode_change
-    onOpenUrl?: OpenUrlFn // kilocode_change
-    onOpenContent?: OpenContentFn // kilocode_change
-    onValidateFiles?: ValidateFilesFn // kilocode_change
+    onOpenFile?: OpenFileFn // chipmate_change
+    onOpenDiff?: OpenDiffFn // chipmate_change
+    onOpenUrl?: OpenUrlFn // chipmate_change
+    onOpenContent?: OpenContentFn // chipmate_change
+    onValidateFiles?: ValidateFilesFn // chipmate_change
   }) => {
     return {
       get store() {
@@ -82,11 +82,11 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       },
       navigateToSession: props.onNavigateToSession,
       sessionHref: props.onSessionHref,
-      openFile: props.onOpenFile, // kilocode_change
-      openDiff: props.onOpenDiff, // kilocode_change
-      openUrl: props.onOpenUrl, // kilocode_change
-      openContent: props.onOpenContent, // kilocode_change
-      validateFiles: props.onValidateFiles, // kilocode_change
+      openFile: props.onOpenFile, // chipmate_change
+      openDiff: props.onOpenDiff, // chipmate_change
+      openUrl: props.onOpenUrl, // chipmate_change
+      openContent: props.onOpenContent, // chipmate_change
+      validateFiles: props.onValidateFiles, // chipmate_change
     }
   },
 })

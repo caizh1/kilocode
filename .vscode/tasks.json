@@ -30,7 +30,7 @@
         "reveal": "never"
       },
       "options": {
-        "cwd": "${workspaceFolder}/packages/kilo-vscode"
+        "cwd": "${workspaceFolder}/packages/chipmate-vscode"
       }
     },
     {
@@ -46,7 +46,7 @@
         "reveal": "never"
       },
       "options": {
-        "cwd": "${workspaceFolder}/packages/kilo-vscode"
+        "cwd": "${workspaceFolder}/packages/chipmate-vscode"
       }
     },
     {
@@ -61,7 +61,7 @@
         "reveal": "never"
       },
       "options": {
-        "cwd": "${workspaceFolder}/packages/kilo-vscode"
+        "cwd": "${workspaceFolder}/packages/chipmate-vscode"
       },
       "problemMatcher": []
     },
@@ -89,7 +89,7 @@
         "reveal": "silent"
       },
       "options": {
-        "cwd": "${workspaceFolder}/packages/kilo-vscode"
+        "cwd": "${workspaceFolder}/packages/chipmate-vscode"
       },
       "dependsOn": ["VSCode - Install"],
       "problemMatcher": ["$tsc", "$eslint-stylish"]
@@ -101,7 +101,7 @@
       "args": [
         "-e",
         "const fs = require(\"node:fs\"); const dir = process.argv[1]; if (!dir) { console.error(\"Isolated state path argument is required\"); process.exit(1); } fs.rmSync(dir, { recursive: true, force: true }); console.log(\"Cleared \" + dir)",
-        "${workspaceFolder}/.kilo-dev"
+        "${workspaceFolder}/.chipmate-dev"
       ],
       "presentation": {
         "reveal": "always"
@@ -130,7 +130,7 @@
       },
       "group": "build",
       "options": {
-        "cwd": "${workspaceFolder}/packages/kilo-vscode"
+        "cwd": "${workspaceFolder}/packages/chipmate-vscode"
       }
     },
     {
@@ -152,7 +152,7 @@
         "clear": false
       },
       "options": {
-        "cwd": "${workspaceFolder}/packages/kilo-vscode"
+        "cwd": "${workspaceFolder}/packages/chipmate-vscode"
       },
       "problemMatcher": []
     },
@@ -170,7 +170,7 @@
         "clear": false
       },
       "options": {
-        "cwd": "${workspaceFolder}/packages/kilo-vscode",
+        "cwd": "${workspaceFolder}/packages/chipmate-vscode",
         "env": {
           "VSCODE_EXEC_PATH": "${execPath}"
         }

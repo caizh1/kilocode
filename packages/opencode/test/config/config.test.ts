@@ -17,7 +17,7 @@ import { Account } from "../../src/account/account"
 import { AccessToken, AccountID, OrgID } from "../../src/account/schema"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Env } from "../../src/env"
-import { Git } from "../../src/git" // kilocode_change
+import { Git } from "../../src/git" // chipmate_change
 import {
   provideTmpdirInstance,
   TestInstance,
@@ -42,8 +42,8 @@ import { ConfigPluginV1 } from "@opencode-ai/core/v1/config/plugin"
 import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
-import { isIndexingPlugin } from "@kilocode/kilo-indexing/detect" // kilocode_change
-import { isAtomicChatPlugin } from "@/kilocode/atomic-chat-feature" // kilocode_change
+import { isIndexingPlugin } from "@chipmate/chipmate-indexing/detect" // chipmate_change
+import { isAtomicChatPlugin } from "@/chipmate/atomic-chat-feature" // chipmate_change
 
 const unexpectedHttp = HttpClient.make((request) =>
   Effect.die(`unexpected http request: ${request.method} ${request.url}`),
@@ -113,7 +113,7 @@ const layer = configLayer()
 const it = testEffect(layer)
 const configIt = (options?: Parameters<typeof configLayer>[0]) => testEffect(configLayer(options))
 
-const schemaConfig = (config: object) => ({ $schema: "https://app.kilo.ai/config.json", ...config }) // kilocode_change
+const schemaConfig = (config: object) => ({ $schema: "https://app.chipmate.ai/config.json", ...config }) // chipmate_change
 
 const provideCurrentInstance = <A, E, R>(effect: Effect.Effect<A, E, R>, ctx: InstanceContext) =>
   effect.pipe(Effect.provideService(InstanceRef, ctx))
@@ -132,9 +132,9 @@ const clearEffect = (wait = false) =>
     )
 const clear = (wait = false) => Effect.runPromise(clearEffect(wait))
 // Get managed config directory from environment (set in preload.ts)
-const managedConfigDir = process.env.KILO_TEST_MANAGED_CONFIG_DIR!
+const managedConfigDir = process.env.CHIPMATE_TEST_MANAGED_CONFIG_DIR!
 const originalTestToken = process.env.TEST_TOKEN
-const originalConsoleToken = process.env.KILO_CONSOLE_TOKEN
+const originalConsoleToken = process.env.CHIPMATE_CONSOLE_TOKEN
 
 beforeEach(async () => {
   await clear(true)
@@ -144,24 +144,24 @@ afterEach(async () => {
   await fs.rm(managedConfigDir, { force: true, recursive: true }).catch(() => {})
   if (originalTestToken === undefined) delete process.env.TEST_TOKEN
   else process.env.TEST_TOKEN = originalTestToken
-  if (originalConsoleToken === undefined) delete process.env.KILO_CONSOLE_TOKEN
-  else process.env.KILO_CONSOLE_TOKEN = originalConsoleToken
+  if (originalConsoleToken === undefined) delete process.env.CHIPMATE_CONSOLE_TOKEN
+  else process.env.CHIPMATE_CONSOLE_TOKEN = originalConsoleToken
   await clear(true)
 })
 
 const writeManagedSettingsEffect = (settings: object, filename?: string) =>
-  FSUtil.use.writeWithDirs(path.join(managedConfigDir, filename ?? "kilo.json"), JSON.stringify(settings)) // kilocode_change
+  FSUtil.use.writeWithDirs(path.join(managedConfigDir, filename ?? "chipmate.json"), JSON.stringify(settings)) // chipmate_change
 
-// kilocode_change start
-async function writeConfig(dir: string, config: object, name = "kilo.json") {
-  // kilocode_change end
+// chipmate_change start
+async function writeConfig(dir: string, config: object, name = "chipmate.json") {
+  // chipmate_change end
   await Filesystem.write(path.join(dir, name), JSON.stringify(config))
 }
 
 const writeConfigEffect = (
   dir: string,
   config: object,
-  name = "kilo.json", // kilocode_change
+  name = "chipmate.json", // chipmate_change
 ) => FSUtil.use.writeWithDirs(path.join(dir, name), JSON.stringify(config))
 
 const withInstanceDir = <A, E, R>(dir: string, effect: Effect.Effect<A, E, R>) =>
@@ -210,7 +210,7 @@ const withConfigTree = <A, E, R>(
       [
         input.global ? writeConfigEffect(global, schemaConfig(input.global)) : undefined,
         input.project ? writeConfigEffect(directory, schemaConfig(input.project)) : undefined,
-        input.local ? writeConfigEffect(path.join(directory, ".kilo"), schemaConfig(input.local)) : undefined, // kilocode_change
+        input.local ? writeConfigEffect(path.join(directory, ".chipmate"), schemaConfig(input.local)) : undefined, // chipmate_change
       ].filter((effect): effect is Effect.Effect<void, FSUtil.Error, FSUtil.Service> => effect !== undefined),
       { concurrency: "unbounded" },
     )
@@ -321,18 +321,18 @@ it.effect("creates global jsonc config with schema when no global configs exist"
     Effect.gen(function* () {
       yield* Config.use.get().pipe(provideInstanceEffect(dir))
 
-      const content = yield* FSUtil.use.readFileString(path.join(dir, "kilo.jsonc")) // kilocode_change
-      expect(content).toContain('"$schema": "https://app.kilo.ai/config.json"') // kilocode_change
+      const content = yield* FSUtil.use.readFileString(path.join(dir, "chipmate.jsonc")) // chipmate_change
+      expect(content).toContain('"$schema": "https://app.chipmate.ai/config.json"') // chipmate_change
     }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(LayerNode.compile(CrossSpawnSpawner.node))),
   ),
 )
 
-it.effect("does not create global config when KILO_CONFIG_DIR is set", () =>
+it.effect("does not create global config when CHIPMATE_CONFIG_DIR is set", () =>
   Effect.gen(function* () {
     const custom = yield* tmpdirScoped()
     yield* withGlobalConfig({}, ({ dir }) =>
       withProcessEnv(
-        "KILO_CONFIG_DIR",
+        "CHIPMATE_CONFIG_DIR",
         custom,
         Effect.gen(function* () {
           yield* Config.use.get().pipe(provideInstanceEffect(dir))
@@ -346,29 +346,29 @@ it.effect("does not create global config when KILO_CONFIG_DIR is set", () =>
 
 it.instance("loads JSON config file", () =>
   Effect.gen(function* () {
-    // kilocode_change start
+    // chipmate_change start
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json",
+      $schema: "https://app.chipmate.ai/config.json",
       model: "test/model",
       username: "testuser",
     })
-    // kilocode_change end
+    // chipmate_change end
     const config = yield* Config.use.get()
     expect(config.model).toBe("test/model")
     expect(config.username).toBe("testuser")
   }),
 )
 
-// kilocode_change start
-it.instance("preserves Kilo provider free model metadata", () =>
+// chipmate_change start
+it.instance("preserves ChipMate provider free model metadata", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json",
-      model: "kilo/free-e2e",
+      $schema: "https://app.chipmate.ai/config.json",
+      model: "chipmate/free-e2e",
       provider: {
-        kilo: {
+        chipmate: {
           models: {
             "free-e2e": {
               id: "free-e2e",
@@ -380,12 +380,12 @@ it.instance("preserves Kilo provider free model metadata", () =>
       },
     })
     const config = yield* Config.use.get()
-    const model = config.provider?.kilo?.models?.["free-e2e"]
+    const model = config.provider?.chipmate?.models?.["free-e2e"]
     expect(model?.isFree).toBe(true)
     expect(model?.ai_sdk_provider).toBe("openai-compatible")
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
 it.instance(
   "loads shell config field",
@@ -399,12 +399,12 @@ it.instance(
 it.instance("updates config and preserves empty shell sentinel", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    // kilocode_change - upstream hardcodes project config to config.json; Kilo writes to kilo.json
+    // chipmate_change - upstream hardcodes project config to config.json; ChipMate writes to chipmate.json
     yield* writeConfigEffect(test.directory, { $schema: "https://opencode.ai/config.json", shell: "bash" })
 
     yield* Config.Service.use((svc) => svc.update(ConfigParse.schema(ConfigV1.Info, { shell: "" }, "test:config")))
 
-    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "kilo.json")) // kilocode_change
+    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "chipmate.json")) // chipmate_change
     expect(writtenConfig).toMatchObject({ shell: "" })
   }),
 )
@@ -414,7 +414,7 @@ it.effect("updates global config and omits empty shell key in json", () =>
     Effect.gen(function* () {
       yield* Config.use.updateGlobal({ shell: "" })
 
-      const writtenConfig = yield* FSUtil.use.readJson(path.join(dir, "kilo.json")) // kilocode_change
+      const writtenConfig = yield* FSUtil.use.readJson(path.join(dir, "chipmate.json")) // chipmate_change
       expect(writtenConfig).not.toHaveProperty("shell")
     }),
   ),
@@ -491,15 +491,15 @@ it.instance("loads JSONC config file", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(
-      // kilocode_change start
-      path.join(test.directory, "kilo.jsonc"),
+      // chipmate_change start
+      path.join(test.directory, "chipmate.jsonc"),
       `{
         // This is a comment
-        "$schema": "https://app.kilo.ai/config.json",
+        "$schema": "https://app.chipmate.ai/config.json",
         "model": "test/model",
         "username": "testuser"
       }`,
-      // kilocode_change end
+      // chipmate_change end
     )
     const config = yield* Config.use.get()
     expect(config.model).toBe("test/model")
@@ -513,14 +513,14 @@ it.instance("jsonc overrides json in the same directory", () =>
     yield* writeConfigEffect(
       test.directory,
       {
-        $schema: "https://app.kilo.ai/config.json", // kilocode_change
+        $schema: "https://app.chipmate.ai/config.json", // chipmate_change
         model: "base",
         username: "base",
       },
-      "kilo.jsonc", // kilocode_change
+      "chipmate.jsonc", // chipmate_change
     )
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       model: "override",
     })
     const config = yield* Config.use.get()
@@ -529,16 +529,16 @@ it.instance("jsonc overrides json in the same directory", () =>
   }),
 )
 
-// kilocode_change start
-it.instance("prefers .kilo directory config over legacy .kilocode", () =>
+// chipmate_change start
+it.instance("prefers .chipmate directory config over legacy .chipmate", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    yield* writeConfigEffect(path.join(test.directory, ".kilocode"), {
-      $schema: "https://app.kilo.ai/config.json",
+    yield* writeConfigEffect(path.join(test.directory, ".chipmate"), {
+      $schema: "https://app.chipmate.ai/config.json",
       model: "legacy/model",
     })
-    yield* writeConfigEffect(path.join(test.directory, ".kilo"), {
-      $schema: "https://app.kilo.ai/config.json",
+    yield* writeConfigEffect(path.join(test.directory, ".chipmate"), {
+      $schema: "https://app.chipmate.ai/config.json",
       model: "new/model",
     })
 
@@ -546,9 +546,9 @@ it.instance("prefers .kilo directory config over legacy .kilocode", () =>
     expect(config.model).toBe("new/model")
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start - project config is untrusted: {env:} rejected; {file:} confined to the project root
+// chipmate_change start - project config is untrusted: {env:} rejected; {file:} confined to the project root
 it.instance("rejects environment variable substitution in project config", () =>
   withProcessEnv(
     "TEST_VAR",
@@ -556,7 +556,7 @@ it.instance("rejects environment variable substitution in project config", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       yield* writeConfigEffect(test.directory, {
-        $schema: "https://app.kilo.ai/config.json",
+        $schema: "https://app.chipmate.ai/config.json",
         username: "{env:TEST_VAR}",
       })
       const config = yield* Config.use.get()
@@ -571,14 +571,14 @@ it.instance("injects $schema into config without existing schema", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     // Config without $schema - should trigger auto-add
-    yield* FSUtil.use.writeWithDirs(path.join(test.directory, "kilo.json"), JSON.stringify({ username: "test-user" }))
+    yield* FSUtil.use.writeWithDirs(path.join(test.directory, "chipmate.json"), JSON.stringify({ username: "test-user" }))
     const config = yield* Config.use.get()
     expect(config.username).toBe("test-user")
-    expect(config.$schema).toBe("https://app.kilo.ai/config.json")
+    expect(config.$schema).toBe("https://app.chipmate.ai/config.json")
 
     // Read the file to verify $schema was injected
-    const content = yield* FSUtil.use.readFileString(path.join(test.directory, "kilo.json"))
-    expect(content).toContain('"$schema": "https://app.kilo.ai/config.json"')
+    const content = yield* FSUtil.use.readFileString(path.join(test.directory, "chipmate.json"))
+    expect(content).toContain('"$schema": "https://app.chipmate.ai/config.json"')
     const schemaIndex = content.indexOf('"$schema"')
     const usernameIndex = content.indexOf('"username"')
     expect(schemaIndex).toBeLessThan(usernameIndex)
@@ -590,16 +590,16 @@ it.instance("injects $schema into comment-first JSONC config", () =>
     const test = yield* TestInstance
     // Config with leading comment - regex-based injection would fail
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, "kilo.jsonc"),
+      path.join(test.directory, "chipmate.jsonc"),
       '// project config\n{\n  "model": "test/model"\n}\n',
     )
     const config = yield* Config.use.get()
     expect(config.model).toBe("test/model")
-    expect(config.$schema).toBe("https://app.kilo.ai/config.json")
+    expect(config.$schema).toBe("https://app.chipmate.ai/config.json")
 
     // Read the file to verify $schema was injected correctly
-    const content = yield* FSUtil.use.readFileString(path.join(test.directory, "kilo.jsonc"))
-    expect(content).toContain('"$schema": "https://app.kilo.ai/config.json"')
+    const content = yield* FSUtil.use.readFileString(path.join(test.directory, "chipmate.jsonc"))
+    expect(content).toContain('"$schema": "https://app.chipmate.ai/config.json"')
     expect(content).toContain("// project config")
     const schemaIndex = content.indexOf('"$schema"')
     const modelIndex = content.indexOf('"model"')
@@ -610,11 +610,11 @@ it.instance("injects $schema into comment-first JSONC config", () =>
 it.instance("does not write config when $schema already present", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    const filepath = path.join(test.directory, "kilo.json")
+    const filepath = path.join(test.directory, "chipmate.json")
     // Config already has $schema - should not rewrite file
     yield* FSUtil.use.writeWithDirs(
       filepath,
-      JSON.stringify({ $schema: "https://app.kilo.ai/config.json", username: "test-user" }),
+      JSON.stringify({ $schema: "https://app.chipmate.ai/config.json", username: "test-user" }),
     )
     const before = yield* Effect.promise(() => fs.stat(filepath))
 
@@ -631,7 +631,7 @@ it.instance("allows {file:} that stays inside the project root", () =>
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(path.join(test.directory, "included.txt"), "in-project")
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json",
+      $schema: "https://app.chipmate.ai/config.json",
       username: "{file:included.txt}",
     })
     const config = yield* Config.use.get()
@@ -643,7 +643,7 @@ it.instance("rejects {file:} that reads an absolute path from project config", (
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json",
+      $schema: "https://app.chipmate.ai/config.json",
       username: "{file:/etc/passwd}",
     })
     const config = yield* Config.use.get()
@@ -657,7 +657,7 @@ it.instance("rejects {file:} that escapes the project root with parent directori
     const outside = path.join(path.dirname(test.directory), "secret.txt")
     yield* FSUtil.use.writeWithDirs(outside, "outside-secret")
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json",
+      $schema: "https://app.chipmate.ai/config.json",
       username: "{file:../secret.txt}",
     })
     const config = yield* Config.use.get()
@@ -673,7 +673,7 @@ it.instance("rejects {file:} that escapes the project root through a symlink", (
     yield* FSUtil.use.writeWithDirs(outside, "outside-secret")
     yield* Effect.promise(() => fs.symlink(outside, link))
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json",
+      $schema: "https://app.chipmate.ai/config.json",
       username: "{file:secret-link}",
     })
     const config = yield* Config.use.get()
@@ -687,7 +687,7 @@ it.instance("blocks provider apiKey {file:} exfiltration that escapes the projec
     const outside = path.join(path.dirname(test.directory), "creds.txt")
     yield* FSUtil.use.writeWithDirs(outside, "leaked-credential")
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json",
+      $schema: "https://app.chipmate.ai/config.json",
       provider: {
         "openai-compatible": {
           options: { baseURL: "http://127.0.0.1:4444/v1", apiKey: "{file:../creds.txt}" },
@@ -706,7 +706,7 @@ it.instance("still allows global config to read absolute files", () =>
       const secret = path.join(dir, "secret.txt")
       yield* FSUtil.use.writeWithDirs(secret, "global-secret")
       yield* writeConfigEffect(dir, {
-        $schema: "https://app.kilo.ai/config.json",
+        $schema: "https://app.chipmate.ai/config.json",
         username: `{file:${secret}}`,
       })
       const config = yield* Config.use.get()
@@ -714,7 +714,7 @@ it.instance("still allows global config to read absolute files", () =>
     }),
   ),
 )
-// kilocode_change end
+// chipmate_change end
 
 const accountTokenIt = configIt({
   account: Layer.mock(Account.Service)({
@@ -745,7 +745,7 @@ const accountTokenIt = configIt({
     config: () =>
       Effect.succeed(
         Option.some({
-          provider: { opencode: { options: { apiKey: "{env:KILO_CONSOLE_TOKEN}" } } },
+          provider: { opencode: { options: { apiKey: "{env:CHIPMATE_CONSOLE_TOKEN}" } } },
         }),
       ),
     token: () => Effect.succeed(Option.some(AccessToken.make("st_test_token"))),
@@ -759,12 +759,12 @@ accountTokenIt.instance("resolves env templates in account config with account t
   }),
 )
 
-// kilocode_change start
+// chipmate_change start
 it.instance("validates config schema and reports warning on invalid fields", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json",
+      $schema: "https://app.chipmate.ai/config.json",
       invalid_field: "should cause error",
     })
     // invalid schema surfaces as warnings, not a throw
@@ -773,25 +773,25 @@ it.instance("validates config schema and reports warning on invalid fields", () 
     expect(issues.length).toBeGreaterThan(0)
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start
+// chipmate_change start
 it.instance("reports warning for invalid JSON", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    yield* FSUtil.use.writeWithDirs(path.join(test.directory, "kilo.json"), "{ invalid json }")
+    yield* FSUtil.use.writeWithDirs(path.join(test.directory, "chipmate.json"), "{ invalid json }")
     yield* Config.use.get()
     const issues = yield* Config.Service.use((svc) => svc.warnings())
     expect(issues.length).toBeGreaterThan(0)
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
 it.instance("handles agent configuration", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       agent: {
         test_agent: {
           model: "test/model",
@@ -815,7 +815,7 @@ it.instance("treats agent variant as model-scoped setting (not provider option)"
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       agent: {
         test_agent: {
           model: "openai/gpt-5.2",
@@ -839,7 +839,7 @@ it.instance("handles command configuration", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       command: {
         test_command: {
           template: "test template",
@@ -861,7 +861,7 @@ it.instance("migrates autoshare to share field", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       autoshare: true,
     })
     const config = yield* Config.use.get()
@@ -874,7 +874,7 @@ it.instance("migrates mode field to agent field", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       mode: {
         test_mode: {
           model: "test/model",
@@ -913,12 +913,12 @@ it.instance("accepts the deprecated reference field", () =>
   }),
 )
 
-// kilocode_change start
-it.instance("loads config from .kilo directory", () =>
+// chipmate_change start
+it.instance("loads config from .chipmate directory", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilo", "agent", "test.md"), // kilocode_change
+      path.join(test.directory, ".chipmate", "agent", "test.md"), // chipmate_change
       `---
 model: test/model
 ---
@@ -935,13 +935,13 @@ Test agent prompt`,
     )
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
 it.instance("agent markdown permission config preserves user key order", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilo", "agent", "ordered.md"), // kilocode_change
+      path.join(test.directory, ".chipmate", "agent", "ordered.md"), // chipmate_change
       `---
 permission:
   bash: allow
@@ -956,12 +956,12 @@ Ordered permissions`,
   }),
 )
 
-// kilocode_change start
-it.instance("loads agents from .kilo/agents (plural)", () =>
+// chipmate_change start
+it.instance("loads agents from .chipmate/agents (plural)", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilo", "agents", "helper.md"), // kilocode_change
+      path.join(test.directory, ".chipmate", "agents", "helper.md"), // chipmate_change
       `---
 model: test/model
 mode: subagent
@@ -970,7 +970,7 @@ Helper agent prompt`,
     )
 
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilo", "agents", "nested", "child.md"), // kilocode_change
+      path.join(test.directory, ".chipmate", "agents", "nested", "child.md"), // chipmate_change
       `---
 model: test/model
 mode: subagent
@@ -995,14 +995,14 @@ Nested agent prompt`,
     })
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start
-it.instance("loads commands from .kilo/command (singular)", () =>
+// chipmate_change start
+it.instance("loads commands from .chipmate/command (singular)", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilo", "command", "hello.md"), // kilocode_change
+      path.join(test.directory, ".chipmate", "command", "hello.md"), // chipmate_change
       `---
 description: Test command
 ---
@@ -1010,7 +1010,7 @@ Hello from singular command`,
     )
 
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilo", "command", "nested", "child.md"), // kilocode_change
+      path.join(test.directory, ".chipmate", "command", "nested", "child.md"), // chipmate_change
       `---
 description: Nested command
 ---
@@ -1030,14 +1030,14 @@ Nested command template`,
     })
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start
-it.instance("loads commands from .kilo/commands (plural)", () =>
+// chipmate_change start
+it.instance("loads commands from .chipmate/commands (plural)", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilo", "commands", "hello.md"), // kilocode_change
+      path.join(test.directory, ".chipmate", "commands", "hello.md"), // chipmate_change
       `---
 description: Test command
 ---
@@ -1045,7 +1045,7 @@ Hello from plural commands`,
     )
 
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilo", "commands", "nested", "child.md"), // kilocode_change
+      path.join(test.directory, ".chipmate", "commands", "nested", "child.md"), // chipmate_change
       `---
 description: Nested command
 ---
@@ -1065,21 +1065,21 @@ Nested command template`,
     })
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start
-it.instance("prefers .kilo commands over legacy .kilocode commands", () =>
+// chipmate_change start
+it.instance("prefers .chipmate commands over legacy .chipmate commands", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilocode", "command", "hello.md"),
+      path.join(test.directory, ".chipmate", "command", "hello.md"),
       `---
 description: Legacy command
 ---
 Hello from legacy command`,
     )
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilo", "command", "hello.md"),
+      path.join(test.directory, ".chipmate", "command", "hello.md"),
       `---
 description: New command
 ---
@@ -1093,7 +1093,7 @@ Hello from new command`,
     })
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
 it.instance("updates config and writes to file", () =>
   Effect.gen(function* () {
@@ -1103,7 +1103,7 @@ it.instance("updates config and writes to file", () =>
     )
 
     const writtenConfig = yield* FSUtil.use.readJson(
-      path.join(test.directory, ".kilo", "kilo.jsonc"), // kilocode_change
+      path.join(test.directory, ".chipmate", "chipmate.jsonc"), // chipmate_change
     )
     expect(writtenConfig).toMatchObject({ model: "updated/model" })
   }),
@@ -1116,7 +1116,7 @@ it.instance("gets config directories", () =>
   }),
 )
 
-it.effect("does not try to install dependencies in read-only KILO_CONFIG_DIR", () =>
+it.effect("does not try to install dependencies in read-only CHIPMATE_CONFIG_DIR", () =>
   Effect.gen(function* () {
     if (process.platform === "win32") return
 
@@ -1126,18 +1126,18 @@ it.effect("does not try to install dependencies in read-only KILO_CONFIG_DIR", (
     yield* FSUtil.use.chmod(readonly, 0o555)
     yield* Effect.addFinalizer(() => FSUtil.use.chmod(readonly, 0o755).pipe(Effect.ignore))
 
-    yield* withProcessEnv("KILO_CONFIG_DIR", readonly, Config.use.get().pipe(provideInstanceEffect(dir)))
+    yield* withProcessEnv("CHIPMATE_CONFIG_DIR", readonly, Config.use.get().pipe(provideInstanceEffect(dir)))
   }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(LayerNode.compile(CrossSpawnSpawner.node))),
 )
 
-it.effect("installs dependencies in writable KILO_CONFIG_DIR", () =>
+it.effect("installs dependencies in writable CHIPMATE_CONFIG_DIR", () =>
   Effect.gen(function* () {
     const dir = yield* tmpdirScoped()
     const configDir = path.join(dir, "configdir")
     yield* FSUtil.use.ensureDir(configDir)
 
     yield* withProcessEnv(
-      "KILO_CONFIG_DIR",
+      "CHIPMATE_CONFIG_DIR",
       configDir,
       Config.Service.use((svc) => svc.get().pipe(Effect.andThen(svc.waitForDependencies()))).pipe(
         provideInstanceEffect(dir),
@@ -1208,7 +1208,7 @@ it.effect("global config remains global when project config is disabled", () =>
       local: { model: "local/model" },
     },
     withProcessEnv(
-      "KILO_DISABLE_PROJECT_CONFIG",
+      "CHIPMATE_DISABLE_PROJECT_CONFIG",
       "true",
       Effect.gen(function* () {
         const config = yield* Config.use.get()
@@ -1223,7 +1223,7 @@ it.instance("does not error when only custom agent is a subagent", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".kilo", "agent", "helper.md"), // kilocode_change
+      path.join(test.directory, ".chipmate", "agent", "helper.md"), // chipmate_change
       `---
 model: test/model
 mode: subagent
@@ -1306,11 +1306,11 @@ it.effect("keeps plugin origins aligned with merged plugin list", () =>
       expect(names).not.toContain("shared-plugin@1.0.0")
       expect(names).toContain("global-only@1.0.0")
       expect(names).toContain("local-only@1.0.0")
-      // kilocode_change start - bundled plugins intentionally have no external plugin origins
+      // chipmate_change start - bundled plugins intentionally have no external plugin origins
       expect(origins.map((item) => item.spec)).toEqual(
         plugins.filter((item) => !isIndexingPlugin(item) && !isAtomicChatPlugin(item)),
       )
-      // kilocode_change end
+      // chipmate_change end
       expect(origins.find((item) => ConfigPlugin.pluginSpecifier(item.spec) === "shared-plugin@2.0.0")?.scope).toBe(
         "local",
       )
@@ -1324,7 +1324,7 @@ it.instance("migrates legacy tools config to permissions - allow", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       agent: { test: { tools: { bash: true, read: true } } },
     })
 
@@ -1340,7 +1340,7 @@ it.instance("migrates legacy tools config to permissions - deny", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       agent: { test: { tools: { bash: false, webfetch: false } } },
     })
 
@@ -1356,7 +1356,7 @@ it.instance("migrates legacy write tool to edit permission", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       agent: { test: { tools: { write: true } } },
     })
 
@@ -1366,13 +1366,13 @@ it.instance("migrates legacy write tool to edit permission", () =>
 )
 
 // Managed settings tests
-// kilocode_change - Note: preload.ts sets KILO_TEST_MANAGED_CONFIG which Global.Path.managedConfig uses
+// chipmate_change - Note: preload.ts sets CHIPMATE_TEST_MANAGED_CONFIG which Global.Path.managedConfig uses
 
 it.instance(
   "managed settings override user settings",
   Effect.gen(function* () {
     yield* writeManagedSettingsEffect({
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       model: "managed/model",
       share: "disabled",
     })
@@ -1389,7 +1389,7 @@ it.instance(
   "managed settings override project settings",
   Effect.gen(function* () {
     yield* writeManagedSettingsEffect({
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       autoupdate: false,
       disabled_providers: ["openai"],
     })
@@ -1424,7 +1424,7 @@ it.instance("migrates legacy edit tool to edit permission", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       agent: { test: { tools: { edit: false } } },
     })
 
@@ -1437,7 +1437,7 @@ it.instance("migrates legacy patch tool to edit permission", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       agent: { test: { tools: { patch: true } } },
     })
 
@@ -1450,7 +1450,7 @@ it.instance("migrates mixed legacy tools config", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       agent: { test: { tools: { bash: true, write: true, read: false, webfetch: true } } },
     })
 
@@ -1468,7 +1468,7 @@ it.instance("merges legacy tools with existing permission config", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       agent: { test: { permission: { glob: "allow" }, tools: { bash: true } } },
     })
 
@@ -1485,26 +1485,26 @@ it.instance("permission config preserves user key order", () =>
   // must not canonicalise known keys ahead of wildcard or custom keys.
   Effect.gen(function* () {
     const test = yield* TestInstance
-    // kilocode_change start — isolate from global config to prevent cross-test contamination
+    // chipmate_change start — isolate from global config to prevent cross-test contamination
     // (migrateBashPermission may write permission.bash to a global config file created by other
     // test files running in parallel, which mergeDeep then prepends to the project permission keys)
     const globalTmp = yield* tmpdirScoped()
     const prev = Global.Path.config
     ;(Global.Path as { config: string }).config = globalTmp
-    // kilocode_change end
+    // chipmate_change end
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
-        // kilocode_change start
+        // chipmate_change start
         ;(Global.Path as { config: string }).config = prev
         yield* Config.use.invalidate()
-        // kilocode_change end
+        // chipmate_change end
       }),
     )
     yield* Config.use.invalidate()
     yield* writeConfigEffect(
       test.directory,
       {
-        $schema: "https://app.kilo.ai/config.json", // kilocode_change
+        $schema: "https://app.chipmate.ai/config.json", // chipmate_change
         permission: {
           "*": "deny",
           edit: "ask",
@@ -1518,7 +1518,7 @@ it.instance("permission config preserves user key order", () =>
           "pr_comments_*": "allow",
         },
       },
-      "kilo.json", // kilocode_change
+      "chipmate.json", // chipmate_change
     )
 
     const config = yield* Config.use.get()
@@ -1562,12 +1562,12 @@ test("config parser preserves permission order while rejecting unknown top-level
 
 // MCP config merging tests
 
-// kilocode_change start - regression for `env` alias on local MCP entries
+// chipmate_change start - regression for `env` alias on local MCP entries
 it.instance("local mcp accepts `env` as an alias for `environment`", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json",
+      $schema: "https://app.chipmate.ai/config.json",
       mcp: {
         context7: {
           type: "local",
@@ -1591,7 +1591,7 @@ it.instance("local mcp prefers `environment` over `env` when both are present", 
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json",
+      $schema: "https://app.chipmate.ai/config.json",
       mcp: {
         context7: {
           type: "local",
@@ -1609,15 +1609,15 @@ it.instance("local mcp prefers `environment` over `env` when both are present", 
     })
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
 it.instance("project config can override MCP server enabled status", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    // kilocode_change - base config in .json, override in .jsonc (jsonc loads second and wins)
+    // chipmate_change - base config in .json, override in .jsonc (jsonc loads second and wins)
     // Simulates a base config (like from remote .well-known) with disabled MCP.
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       mcp: {
         jira: {
           type: "remote",
@@ -1635,7 +1635,7 @@ it.instance("project config can override MCP server enabled status", () =>
     yield* writeConfigEffect(
       test.directory,
       {
-        $schema: "https://app.kilo.ai/config.json", // kilocode_change
+        $schema: "https://app.chipmate.ai/config.json", // chipmate_change
         mcp: {
           jira: {
             type: "remote",
@@ -1644,7 +1644,7 @@ it.instance("project config can override MCP server enabled status", () =>
           },
         },
       },
-      "kilo.jsonc", // kilocode_change
+      "chipmate.jsonc", // chipmate_change
     )
 
     const config = yield* Config.use.get()
@@ -1664,10 +1664,10 @@ it.instance("project config can override MCP server enabled status", () =>
 it.instance("MCP config deep merges preserving base config properties", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    // kilocode_change - base config in .json, override in .jsonc (jsonc loads second and wins)
-    // kilocode_change - Base config with full MCP definition
+    // chipmate_change - base config in .json, override in .jsonc (jsonc loads second and wins)
+    // chipmate_change - Base config with full MCP definition
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       mcp: {
         myserver: {
           type: "remote",
@@ -1679,11 +1679,11 @@ it.instance("MCP config deep merges preserving base config properties", () =>
         },
       },
     })
-    // kilocode_change - Override just enables it, should preserve other properties
+    // chipmate_change - Override just enables it, should preserve other properties
     yield* writeConfigEffect(
       test.directory,
       {
-        $schema: "https://app.kilo.ai/config.json", // kilocode_change
+        $schema: "https://app.chipmate.ai/config.json", // chipmate_change
         mcp: {
           myserver: {
             type: "remote",
@@ -1692,7 +1692,7 @@ it.instance("MCP config deep merges preserving base config properties", () =>
           },
         },
       },
-      "kilo.jsonc", // kilocode_change
+      "chipmate.jsonc", // chipmate_change
     )
 
     const config = yield* Config.use.get()
@@ -1707,12 +1707,12 @@ it.instance("MCP config deep merges preserving base config properties", () =>
   }),
 )
 
-// kilocode_change start
-it.instance("local .kilo config can override MCP from project config", () =>
+// chipmate_change start
+it.instance("local .chipmate config can override MCP from project config", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://app.kilo.ai/config.json", // kilocode_change
+      $schema: "https://app.chipmate.ai/config.json", // chipmate_change
       mcp: {
         docs: {
           type: "remote",
@@ -1722,9 +1722,9 @@ it.instance("local .kilo config can override MCP from project config", () =>
       },
     })
     yield* writeConfigEffect(
-      path.join(test.directory, ".kilo"), // kilocode_change
+      path.join(test.directory, ".chipmate"), // chipmate_change
       {
-        $schema: "https://app.kilo.ai/config.json", // kilocode_change
+        $schema: "https://app.chipmate.ai/config.json", // chipmate_change
         mcp: {
           docs: {
             type: "remote",
@@ -1733,14 +1733,14 @@ it.instance("local .kilo config can override MCP from project config", () =>
           },
         },
       },
-      "kilo.json", // kilocode_change
+      "chipmate.json", // chipmate_change
     )
 
     const config = yield* Config.use.get()
     expect(config.mcp?.docs?.enabled).toBe(true)
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
 const remoteProjectOverride = wellKnown({
   config: {
@@ -1942,7 +1942,7 @@ loginPageWellKnown.it.instance(
 describe("resolvePluginSpec", () => {
   test("keeps package specs unchanged", async () => {
     await using tmp = await tmpdir()
-    const file = path.join(tmp.path, "kilo.json") // kilocode_change
+    const file = path.join(tmp.path, "chipmate.json") // chipmate_change
     expect(await ConfigPlugin.resolvePluginSpec("oh-my-opencode@2.4.3", file)).toBe("oh-my-opencode@2.4.3")
     expect(await ConfigPlugin.resolvePluginSpec("@scope/pkg", file)).toBe("@scope/pkg")
   })
@@ -1970,7 +1970,7 @@ describe("resolvePluginSpec", () => {
       },
     })
 
-    const file = path.join(tmp.path, "kilo.json") // kilocode_change
+    const file = path.join(tmp.path, "chipmate.json") // chipmate_change
     const hit = await ConfigPlugin.resolvePluginSpec("./plugin.ts", file)
     expect(ConfigPlugin.pluginSpecifier(hit)).toBe(pathToFileURL(path.join(tmp.path, "plugin.ts")).href)
   })
@@ -1989,7 +1989,7 @@ describe("resolvePluginSpec", () => {
       },
     })
 
-    const file = path.join(tmp.path, "kilo.json") // kilocode_change
+    const file = path.join(tmp.path, "chipmate.json") // chipmate_change
     const hit = await ConfigPlugin.resolvePluginSpec("./plugin", file)
     expect(ConfigPlugin.pluginSpecifier(hit)).toBe(pathToFileURL(path.join(tmp.path, "plugin")).href)
   })
@@ -2032,7 +2032,7 @@ describe("deduplicatePluginOrigins", () => {
   })
 
   test("keeps path plugins separate from package plugins", () => {
-    const plugins = ["oh-my-opencode@2.4.3", "file:///project/.kilo/plugin/oh-my-opencode.js"] // kilocode_change
+    const plugins = ["oh-my-opencode@2.4.3", "file:///project/.chipmate/plugin/oh-my-opencode.js"] // chipmate_change
 
     const result = dedupe(plugins)
 
@@ -2040,11 +2040,11 @@ describe("deduplicatePluginOrigins", () => {
   })
 
   test("deduplicates direct path plugins by exact spec", () => {
-    const plugins = ["file:///project/.kilo/plugin/demo.ts", "file:///project/.kilo/plugin/demo.ts"] // kilocode_change
+    const plugins = ["file:///project/.chipmate/plugin/demo.ts", "file:///project/.chipmate/plugin/demo.ts"] // chipmate_change
 
     const result = dedupe(plugins)
 
-    expect(result).toEqual(["file:///project/.kilo/plugin/demo.ts"]) // kilocode_change
+    expect(result).toEqual(["file:///project/.chipmate/plugin/demo.ts"]) // chipmate_change
   })
 
   test("preserves order of remaining plugins", () => {
@@ -2061,7 +2061,7 @@ describe("deduplicatePluginOrigins", () => {
       Effect.gen(function* () {
         const test = yield* TestInstance
         yield* FSUtil.use.writeWithDirs(
-          path.join(test.directory, ".kilo", "plugin", "my-plugin.js"), // kilocode_change
+          path.join(test.directory, ".chipmate", "plugin", "my-plugin.js"), // chipmate_change
           "export default {}",
         )
 
@@ -2073,11 +2073,11 @@ describe("deduplicatePluginOrigins", () => {
   )
 })
 
-describe("KILO_DISABLE_PROJECT_CONFIG", () => {
-  // kilocode_change start
+describe("CHIPMATE_DISABLE_PROJECT_CONFIG", () => {
+  // chipmate_change start
   it.instance("skips project config files when flag is set", () =>
     withProcessEnv(
-      "KILO_DISABLE_PROJECT_CONFIG",
+      "CHIPMATE_DISABLE_PROJECT_CONFIG",
       "true",
       Effect.gen(function* () {
         const test = yield* TestInstance
@@ -2089,14 +2089,14 @@ describe("KILO_DISABLE_PROJECT_CONFIG", () => {
     ),
   )
 
-  it.instance("skips project .kilo directory when flag is set", () =>
+  it.instance("skips project .chipmate directory when flag is set", () =>
     withProcessEnv(
-      "KILO_DISABLE_PROJECT_CONFIG",
+      "CHIPMATE_DISABLE_PROJECT_CONFIG",
       "true",
       Effect.gen(function* () {
         const test = yield* TestInstance
         yield* FSUtil.use.writeWithDirs(
-          path.join(test.directory, ".kilo", "command", "test-cmd.md"),
+          path.join(test.directory, ".chipmate", "command", "test-cmd.md"),
           "# Test Command\nThis is a test command.",
         )
         const directories = yield* Config.use.directories()
@@ -2104,11 +2104,11 @@ describe("KILO_DISABLE_PROJECT_CONFIG", () => {
       }),
     ),
   )
-  // kilocode_change end
+  // chipmate_change end
 
   it.instance("still loads global config when flag is set", () =>
     withProcessEnv(
-      "KILO_DISABLE_PROJECT_CONFIG",
+      "CHIPMATE_DISABLE_PROJECT_CONFIG",
       "true",
       Effect.gen(function* () {
         const config = yield* Config.use.get()
@@ -2122,7 +2122,7 @@ describe("KILO_DISABLE_PROJECT_CONFIG", () => {
     "skips relative instructions with warning when flag is set but no config dir",
     () =>
       withProcessEnvs(
-        { KILO_CONFIG_DIR: undefined, KILO_DISABLE_PROJECT_CONFIG: "true" },
+        { CHIPMATE_CONFIG_DIR: undefined, CHIPMATE_DISABLE_PROJECT_CONFIG: "true" },
         Effect.gen(function* () {
           const test = yield* TestInstance
           yield* FSUtil.use.writeWithDirs(path.join(test.directory, "CUSTOM.md"), "# Custom Instructions")
@@ -2135,18 +2135,18 @@ describe("KILO_DISABLE_PROJECT_CONFIG", () => {
   )
 
   it.instance(
-    "KILO_CONFIG_DIR still works when flag is set",
+    "CHIPMATE_CONFIG_DIR still works when flag is set",
     () =>
       Effect.gen(function* () {
         const configDir = yield* tmpdirScoped()
-        // kilocode_change start
+        // chipmate_change start
         yield* writeConfigEffect(configDir, {
-          $schema: "https://app.kilo.ai/config.json",
+          $schema: "https://app.chipmate.ai/config.json",
           model: "configdir/model",
         })
-        // kilocode_change end
+        // chipmate_change end
         yield* withProcessEnvs(
-          { KILO_DISABLE_PROJECT_CONFIG: "true", KILO_CONFIG_DIR: configDir },
+          { CHIPMATE_DISABLE_PROJECT_CONFIG: "true", CHIPMATE_CONFIG_DIR: configDir },
           Effect.gen(function* () {
             const config = yield* Config.use.get()
             expect(config.model).toBe("configdir/model")
@@ -2157,13 +2157,13 @@ describe("KILO_DISABLE_PROJECT_CONFIG", () => {
   )
 })
 
-// Regression for #28206: malformed KILO_PERMISSION JSON used to crash
+// Regression for #28206: malformed CHIPMATE_PERMISSION JSON used to crash
 // the app on startup with an unhandled SyntaxError. Loading the config with
 // an invalid JSON value in this env var should not throw.
-describe("KILO_PERMISSION env var", () => {
-  it.instance("does not crash when KILO_PERMISSION contains invalid JSON", () =>
+describe("CHIPMATE_PERMISSION env var", () => {
+  it.instance("does not crash when CHIPMATE_PERMISSION contains invalid JSON", () =>
     withProcessEnv(
-      "KILO_PERMISSION",
+      "CHIPMATE_PERMISSION",
       "{invalid",
       Effect.gen(function* () {
         const config = yield* Config.use.get()
@@ -2174,13 +2174,13 @@ describe("KILO_PERMISSION env var", () => {
   )
 })
 
-describe("KILO_CONFIG_CONTENT token substitution", () => {
-  it.instance("substitutes {env:} tokens in KILO_CONFIG_CONTENT", () =>
+describe("CHIPMATE_CONFIG_CONTENT token substitution", () => {
+  it.instance("substitutes {env:} tokens in CHIPMATE_CONFIG_CONTENT", () =>
     withProcessEnv(
       "TEST_CONFIG_VAR",
       "test_api_key_12345",
       withProcessEnv(
-        "KILO_CONFIG_CONTENT",
+        "CHIPMATE_CONFIG_CONTENT",
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
           username: "{env:TEST_CONFIG_VAR}",
@@ -2193,12 +2193,12 @@ describe("KILO_CONFIG_CONTENT token substitution", () => {
     ),
   )
 
-  it.instance("substitutes {file:} tokens in KILO_CONFIG_CONTENT", () =>
+  it.instance("substitutes {file:} tokens in CHIPMATE_CONFIG_CONTENT", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       yield* FSUtil.use.writeWithDirs(path.join(test.directory, "api_key.txt"), "secret_key_from_file")
       yield* withProcessEnv(
-        "KILO_CONFIG_CONTENT",
+        "CHIPMATE_CONFIG_CONTENT",
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
           username: "{file:./api_key.txt}",

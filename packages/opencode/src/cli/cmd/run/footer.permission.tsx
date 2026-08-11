@@ -14,7 +14,7 @@
 import type { TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
-import type { PermissionRequest } from "@kilocode/sdk/v2"
+import type { PermissionRequest } from "@chipmate/sdk/v2"
 import {
   createPermissionBodyState,
   permissionAlwaysLines,
@@ -100,7 +100,7 @@ export function RejectField(props: {
       minHeight={1}
       maxHeight={3}
       wrapMode="word"
-      placeholder={"Tell Kilo what to do differently" /* kilocode_change */}
+      placeholder={"Tell ChipMate what to do differently" /* chipmate_change */}
       placeholderColor={props.theme.muted}
       textColor={props.theme.text}
       focusedTextColor={props.theme.text}
@@ -141,8 +141,8 @@ export function RunPermissionBody(props: {
   const info = createMemo(() => permissionInfo(props.request))
   const ft = createMemo(() => toolFiletype(info().file))
   const narrow = createMemo(() => footerWidthPolicy(dims().width).dialog.narrow)
-  const skillShell = createMemo(() => props.request.metadata?.["skillShell"] === true) // kilocode_change
-  const opts = createMemo(() => permissionOptions(state().stage, skillShell())) // kilocode_change - skillShell-aware options
+  const skillShell = createMemo(() => props.request.metadata?.["skillShell"] === true) // chipmate_change
+  const opts = createMemo(() => permissionOptions(state().stage, skillShell())) // chipmate_change - skillShell-aware options
   const busy = createMemo(() => state().submitting)
   const title = createMemo(() => {
     if (state().stage === "always") {
@@ -166,7 +166,7 @@ export function RunPermissionBody(props: {
   })
 
   const shift = (dir: -1 | 1) => {
-    setState((prev) => permissionShift(prev, dir, skillShell())) // kilocode_change - skillShell-aware options
+    setState((prev) => permissionShift(prev, dir, skillShell())) // chipmate_change - skillShell-aware options
   }
 
   const submit = async (next: PermissionReply) => {
@@ -285,7 +285,7 @@ export function RunPermissionBody(props: {
           </Match>
           <Match when={state().stage === "reject"}>
             <box paddingLeft={1}>
-              <text fg={props.theme.muted}>{"Tell Kilo what to do differently" /* kilocode_change */}</text>
+              <text fg={props.theme.muted}>{"Tell ChipMate what to do differently" /* chipmate_change */}</text>
             </box>
           </Match>
         </Switch>

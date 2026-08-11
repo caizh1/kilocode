@@ -54,7 +54,7 @@ export const dict = {
 
   "dialog.usageExceeded.freeTier.title": "تم الوصول إلى الحد المجاني",
   "dialog.usageExceeded.freeTier.description":
-    "اشترك في Kilo Go للحصول على وصول موثوق إلى أفضل النماذج مفتوحة المصدر، ابتداءً من $5/شهر.",
+    "اشترك في ChipMate Go للحصول على وصول موثوق إلى أفضل النماذج مفتوحة المصدر، ابتداءً من $5/شهر.",
   "dialog.usageExceeded.freeTier.actionLabel": "اشترك",
   "dialog.usageExceeded.accountRateLimit.title": "تم الوصول إلى حد Go",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -105,7 +105,7 @@ export const dict = {
   "ui.textField.copied": "تم النسخ",
 
   "ui.imagePreview.alt": "معاينة الصورة",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "جارٍ عرض مخطط Mermaid...",
   "ui.mermaid.renderError": "فشل عرض Mermaid: {{message}}",
   "ui.mermaid.errorDefault": "تعذر عرض مخطط Mermaid.",
@@ -127,12 +127,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "محتوى قابل للتمرير",
 
   "ui.tool.read": "قراءة",
   "ui.tool.loaded": "تم التحميل",
-  "ui.tool.swePruned": "SWE-Pruner · تم الاحتفاظ بـ {{kept}} من {{total}} سطرًا", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · تم الاحتفاظ بـ {{kept}} من {{total}} سطرًا", // chipmate_change
   "ui.tool.list": "قائمة",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -168,7 +168,7 @@ export const dict = {
   "ui.message.collapse": "طي الرسالة",
   "ui.message.copy": "نسخ",
   "ui.message.copyMessage": "نسخ الرسالة",
-  "ui.message.deleteQueued": "حذف الرسالة من قائمة الانتظار", // kilocode_change
+  "ui.message.deleteQueued": "حذف الرسالة من قائمة الانتظار", // chipmate_change
   "ui.message.forkMessage": "تشعب إلى جلسة جديدة",
   "ui.message.revertMessage": "إعادة التعيين إلى هذه النقطة",
   "ui.message.copyResponse": "نسخ الرد",
@@ -184,9 +184,9 @@ export const dict = {
   "ui.patch.action.patched": "مصحح",
 
   "ui.question.subtitle.answered": "{{count}} أجيب",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(لا توجد إجابة)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(لم يتم الرد)",
   "ui.question.multiHint": "حدد كل ما ينطبق",
   "ui.question.singleHint": "حدد إجابة واحدة",

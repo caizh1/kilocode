@@ -10,38 +10,38 @@ import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
 
 const original = {
-  KILO_SERVER_PASSWORD: Flag.KILO_SERVER_PASSWORD,
-  KILO_SERVER_USERNAME: Flag.KILO_SERVER_USERNAME,
-  envPassword: process.env.KILO_SERVER_PASSWORD,
-  envUsername: process.env.KILO_SERVER_USERNAME,
+  CHIPMATE_SERVER_PASSWORD: Flag.CHIPMATE_SERVER_PASSWORD,
+  CHIPMATE_SERVER_USERNAME: Flag.CHIPMATE_SERVER_USERNAME,
+  envPassword: process.env.CHIPMATE_SERVER_PASSWORD,
+  envUsername: process.env.CHIPMATE_SERVER_USERNAME,
 }
 const auth = { username: "opencode", password: "listen-secret" }
 const testPty = process.platform === "win32" ? test.skip : test
 
 afterEach(async () => {
-  Flag.KILO_SERVER_PASSWORD = original.KILO_SERVER_PASSWORD
-  Flag.KILO_SERVER_USERNAME = original.KILO_SERVER_USERNAME
-  if (original.envPassword === undefined) delete process.env.KILO_SERVER_PASSWORD
-  else process.env.KILO_SERVER_PASSWORD = original.envPassword
-  if (original.envUsername === undefined) delete process.env.KILO_SERVER_USERNAME
-  else process.env.KILO_SERVER_USERNAME = original.envUsername
+  Flag.CHIPMATE_SERVER_PASSWORD = original.CHIPMATE_SERVER_PASSWORD
+  Flag.CHIPMATE_SERVER_USERNAME = original.CHIPMATE_SERVER_USERNAME
+  if (original.envPassword === undefined) delete process.env.CHIPMATE_SERVER_PASSWORD
+  else process.env.CHIPMATE_SERVER_PASSWORD = original.envPassword
+  if (original.envUsername === undefined) delete process.env.CHIPMATE_SERVER_USERNAME
+  else process.env.CHIPMATE_SERVER_USERNAME = original.envUsername
   await disposeAllInstances()
   await resetDatabase()
 })
 
 async function startListener() {
-  Flag.KILO_SERVER_PASSWORD = auth.password
-  Flag.KILO_SERVER_USERNAME = auth.username
-  process.env.KILO_SERVER_PASSWORD = auth.password
-  process.env.KILO_SERVER_USERNAME = auth.username
+  Flag.CHIPMATE_SERVER_PASSWORD = auth.password
+  Flag.CHIPMATE_SERVER_USERNAME = auth.username
+  process.env.CHIPMATE_SERVER_PASSWORD = auth.password
+  process.env.CHIPMATE_SERVER_USERNAME = auth.username
   return Server.listen({ hostname: "127.0.0.1", port: 0 })
 }
 
 async function startNoAuthListener() {
-  Flag.KILO_SERVER_PASSWORD = undefined
-  Flag.KILO_SERVER_USERNAME = auth.username
-  delete process.env.KILO_SERVER_PASSWORD
-  process.env.KILO_SERVER_USERNAME = auth.username
+  Flag.CHIPMATE_SERVER_PASSWORD = undefined
+  Flag.CHIPMATE_SERVER_USERNAME = auth.username
+  delete process.env.CHIPMATE_SERVER_PASSWORD
+  process.env.CHIPMATE_SERVER_USERNAME = auth.username
   return Server.listen({ hostname: "127.0.0.1", port: 0 })
 }
 
@@ -68,8 +68,8 @@ async function requestTicket(
     method: "POST",
     headers: {
       authorization: authorization(),
-      "x-kilo-directory": dir,
-      ...(options?.ticketHeader === false ? {} : { "x-kilo-ticket": "1" }),
+      "x-chipmate-directory": dir,
+      ...(options?.ticketHeader === false ? {} : { "x-chipmate-ticket": "1" }),
       ...(options?.origin ? { origin: options.origin } : {}),
     },
   })
@@ -88,7 +88,7 @@ async function createCat(listener: Awaited<ReturnType<typeof startListener>>, di
     method: "POST",
     headers: {
       authorization: authorization(),
-      "x-kilo-directory": dir,
+      "x-chipmate-directory": dir,
       "content-type": "application/json",
     },
     body: JSON.stringify({ command: "/bin/cat", title: "listen-smoke" }),
@@ -173,7 +173,7 @@ describe("HttpApi Server.listen", () => {
     let stopped = false
     try {
       const response = await fetch(new URL(PtyPaths.shells, listener.url), {
-        headers: { authorization: authorization(), "x-kilo-directory": tmp.path },
+        headers: { authorization: authorization(), "x-chipmate-directory": tmp.path },
       })
       expect(response.status).toBe(200)
       expect(await response.json()).toEqual(
@@ -293,15 +293,15 @@ describe("HttpApi Server.listen", () => {
       return true
     }) as typeof process.stderr.write
     try {
-      // kilocode_change start - use an authenticated local route instead of proxy-dependent status
-      Flag.KILO_SERVER_PASSWORD = auth.password
-      Flag.KILO_SERVER_USERNAME = auth.username
-      process.env.KILO_SERVER_PASSWORD = auth.password
-      process.env.KILO_SERVER_USERNAME = auth.username
+      // chipmate_change start - use an authenticated local route instead of proxy-dependent status
+      Flag.CHIPMATE_SERVER_PASSWORD = auth.password
+      Flag.CHIPMATE_SERVER_USERNAME = auth.username
+      process.env.CHIPMATE_SERVER_PASSWORD = auth.password
+      process.env.CHIPMATE_SERVER_USERNAME = auth.username
       const response = await Server.Default().app.request("/doc", {
         headers: { authorization: authorization() },
       })
-      // kilocode_change end
+      // chipmate_change end
       expect(response.status).toBe(200)
     } finally {
       process.stderr.write = original
@@ -337,13 +337,13 @@ describe("HttpApi Server.listen", () => {
         return { initialized, completed }
       },
     })
-    const previous = process.env.KILO_DISABLE_DEFAULT_PLUGINS
-    process.env.KILO_DISABLE_DEFAULT_PLUGINS = "1"
+    const previous = process.env.CHIPMATE_DISABLE_DEFAULT_PLUGINS
+    process.env.CHIPMATE_DISABLE_DEFAULT_PLUGINS = "1"
     let listener: Awaited<ReturnType<typeof startListener>> | undefined
     try {
       listener = await startListener()
       const response = await fetch(new URL("/config", listener.url), {
-        headers: { authorization: authorization(), "x-kilo-directory": tmp.path },
+        headers: { authorization: authorization(), "x-chipmate-directory": tmp.path },
       })
       expect(response.status).toBe(200)
       await withTimeout(
@@ -356,8 +356,8 @@ describe("HttpApi Server.listen", () => {
       expect(await Bun.file(tmp.extra.initialized).text()).toBe("initialized\n")
     } finally {
       if (listener) await stop(listener, "timed out cleaning up plugin client listener").catch(() => undefined)
-      if (previous === undefined) delete process.env.KILO_DISABLE_DEFAULT_PLUGINS
-      else process.env.KILO_DISABLE_DEFAULT_PLUGINS = previous
+      if (previous === undefined) delete process.env.CHIPMATE_DISABLE_DEFAULT_PLUGINS
+      else process.env.CHIPMATE_DISABLE_DEFAULT_PLUGINS = previous
     }
   })
 
@@ -400,7 +400,7 @@ describe("HttpApi Server.listen", () => {
       // and cannot find a PTY registered in a project directory.
       const ambiguous = await fetch(new URL(PtyPaths.connectToken.replace(":ptyID", info.id), listener.url), {
         method: "POST",
-        headers: { authorization: authorization(), "x-kilo-ticket": "1" },
+        headers: { authorization: authorization(), "x-chipmate-ticket": "1" },
       })
       expect(ambiguous.status).toBe(404)
 
@@ -411,7 +411,7 @@ describe("HttpApi Server.listen", () => {
         ),
         {
           method: "POST",
-          headers: { authorization: authorization(), "x-kilo-ticket": "1" },
+          headers: { authorization: authorization(), "x-chipmate-ticket": "1" },
         },
       )
       expect(directoryScoped.status).toBe(200)

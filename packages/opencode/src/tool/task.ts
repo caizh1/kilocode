@@ -10,20 +10,20 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
-import { Provider } from "@/provider/provider" // kilocode_change
-import { KiloTask } from "../kilocode/tool/task" // kilocode_change
-import { KiloTaskBackgroundProcess } from "../kilocode/tool/task-background-process" // kilocode_change
-import { KiloCostPropagation } from "../kilocode/session/cost-propagation" // kilocode_change
-import { KiloSessionProcessor } from "../kilocode/session/processor" // kilocode_change
-import { KiloSession } from "../kilocode/session" // kilocode_change
-import { resumeHint } from "../kilocode/task-resume" // kilocode_change
-import { errorMessage } from "@/util/error" // kilocode_change
+import { Provider } from "@/provider/provider" // chipmate_change
+import { ChipMateTask } from "../chipmate/tool/task" // chipmate_change
+import { ChipMateTaskBackgroundProcess } from "../chipmate/tool/task-background-process" // chipmate_change
+import { ChipMateCostPropagation } from "../chipmate/session/cost-propagation" // chipmate_change
+import { ChipMateSessionProcessor } from "../chipmate/session/processor" // chipmate_change
+import { ChipMateSession } from "../chipmate/session" // chipmate_change
+import { resumeHint } from "../chipmate/task-resume" // chipmate_change
+import { errorMessage } from "@/util/error" // chipmate_change
 import { Effect, Exit, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import * as SandboxPolicy from "@/kilocode/sandbox/policy" // kilocode_change
+import * as SandboxPolicy from "@/chipmate/sandbox/policy" // chipmate_change
 import { Database } from "@opencode-ai/core/database/database"
-import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
+import * as WorkflowGuard from "@/chipmate/skill/workflow-guard" // chipmate_change
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -78,15 +78,15 @@ function renderOutput(input: {
   text: string
 }) {
   const tag = input.state === "error" ? "task_error" : "task_result"
-  // kilocode_change start - surface the resumable task_id when a background subagent fails (#11620)
+  // chipmate_change start - surface the resumable task_id when a background subagent fails (#11620)
   const hint = resumeHint(input.sessionID)
   const body = input.state === "error" && !input.text.includes(hint) ? `${input.text}\n${hint}` : input.text
-  // kilocode_change end
+  // chipmate_change end
   return [
     `<task id="${input.sessionID}" state="${input.state}">`,
     ...(input.summary ? [`<summary>${input.summary}</summary>`] : []),
     `<${tag}>`,
-    body, // kilocode_change - was input.text
+    body, // chipmate_change - was input.text
     `</${tag}>`,
     "</task>",
   ].join("\n")
@@ -99,7 +99,7 @@ export const TaskTool = Tool.define(
     const background = yield* BackgroundJob.Service
     const config = yield* Config.Service
     const sessions = yield* Session.Service
-    const provider = yield* Provider.Service // kilocode_change
+    const provider = yield* Provider.Service // chipmate_change
     const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
@@ -108,14 +108,14 @@ export const TaskTool = Tool.define(
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
-      // kilocode_change start - isolate controller-owned source-backed work items in fresh child contexts
+      // chipmate_change start - isolate controller-owned source-backed work items in fresh child contexts
       if (WorkflowGuard.sourceBacked(ctx.sessionID, ctx.messages)) {
         const boundJobId = WorkflowGuard.job(ctx.sessionID, ctx.messages)
         const allowed =
           boundJobId && params.command
             ? yield* Effect.tryPromise({
             try: async () => {
-              const Job = await import("@/kilocode/source-backed-design/job")
+              const Job = await import("@/chipmate/source-backed-design/job")
               return Job.authorizeWorker({
                 command: params.command!,
                 sessionId: ctx.sessionID,
@@ -132,11 +132,11 @@ export const TaskTool = Tool.define(
             ),
           )
       }
-      // kilocode_change end
+      // chipmate_change end
       const cfg = yield* config.get()
       const runInBackground = params.background === true
       if (runInBackground && !flags.experimentalBackgroundSubagents) {
-        return yield* Effect.fail(new Error("Background subagents require KILO_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true"))
+        return yield* Effect.fail(new Error("Background subagents require CHIPMATE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true"))
       }
 
       if (!ctx.extra?.bypassAgentCheck) {
@@ -155,15 +155,15 @@ export const TaskTool = Tool.define(
       if (!next) {
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
       }
-      // kilocode_change start — reject primary agents; only subagent/all modes allowed
-      KiloTask.validate(
+      // chipmate_change start — reject primary agents; only subagent/all modes allowed
+      ChipMateTask.validate(
         next,
         params.subagent_type,
         ctx.extra?.ultraCouncilBaseline === true || ctx.extra?.ultraVerificationInternal === true,
       )
-      // kilocode_change end
+      // chipmate_change end
 
-      const canTask = KiloTask.nestedTask(next) // kilocode_change - only the internal Ultra Code author may delegate one level
+      const canTask = ChipMateTask.nestedTask(next) // chipmate_change - only the internal Ultra Code author may delegate one level
       const canTodo = next.permission.some((rule) => rule.permission === "todowrite")
 
       const session = params.task_id
@@ -172,13 +172,13 @@ export const TaskTool = Tool.define(
       if (session && session.parentID !== ctx.sessionID) {
         return yield* Effect.fail(
           new Error(`Cannot resume session ${params.task_id}: not a child of the current session`),
-        ) // kilocode_change - prevent cross-session task resume
+        ) // chipmate_change - prevent cross-session task resume
       }
       const parent = yield* sessions.get(ctx.sessionID)
-      // kilocode_change start — inherit edit/bash/MCP restrictions from calling agent
+      // chipmate_change start — inherit edit/bash/MCP restrictions from calling agent
       const caller = yield* agent.get(ctx.agent)
-      const rules = KiloTask.inherited({ caller, session: parent, mcp: cfg.mcp })
-      const childPermission = KiloTask.merge(
+      const rules = ChipMateTask.inherited({ caller, session: parent, mcp: cfg.mcp })
+      const childPermission = ChipMateTask.merge(
         deriveSubagentSessionPermission({
           parentSessionPermission: parent.permission ?? [],
           subagent: next,
@@ -188,36 +188,36 @@ export const TaskTool = Tool.define(
           pattern: "*",
           action: "deny" as const,
         })) ?? [],
-        KiloTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true, canTask, cfg.mcp),
+        ChipMateTask.permissions(rules, ctx.extra?.ultraCouncilReadOnly === true, canTask, cfg.mcp),
       )
-      // kilocode_change end
-      // kilocode_change start - refresh current parent restrictions when resuming an existing task session
+      // chipmate_change end
+      // chipmate_change start - refresh current parent restrictions when resuming an existing task session
       const fallback = SandboxPolicy.fallback(cfg)
       if (session) {
         yield* SandboxPolicy.inherit(ctx.sessionID, session.id, fallback)
-        const permission = KiloTask.merge(session.permission ?? [], childPermission)
+        const permission = ChipMateTask.merge(session.permission ?? [], childPermission)
         session.permission = permission
         yield* sessions.setPermission({ sessionID: session.id, permission })
       }
-      // kilocode_change end
-      const platform = KiloSession.resolvePlatform(ctx.sessionID) // kilocode_change - preserve parent attribution across task creation/resume
-      // kilocode_change start - create a child session with inherited Kilo restrictions
+      // chipmate_change end
+      const platform = ChipMateSession.resolvePlatform(ctx.sessionID) // chipmate_change - preserve parent attribution across task creation/resume
+      // chipmate_change start - create a child session with inherited ChipMate restrictions
       const nextSession =
         session ??
         (yield* sessions.create({
           parentID: ctx.sessionID,
           title: params.description + ` (@${next.name} subagent)`,
           agent: next.name,
-          platform, // kilocode_change
+          platform, // chipmate_change
           permission: childPermission,
         }))
-      // kilocode_change end
-      // kilocode_change start - rebuild in-memory ancestry and inherit confinement after creation/resume
-      KiloSession.register({ id: nextSession.id, parentID: ctx.sessionID, platform })
+      // chipmate_change end
+      // chipmate_change start - rebuild in-memory ancestry and inherit confinement after creation/resume
+      ChipMateSession.register({ id: nextSession.id, parentID: ctx.sessionID, platform })
       yield* SandboxPolicy.inherit(ctx.sessionID, nextSession.id, fallback).pipe(
         Effect.provideService(Config.Service, config),
       )
-      // kilocode_change end
+      // chipmate_change end
 
       const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
         Effect.provideService(Database.Service, database),
@@ -225,8 +225,8 @@ export const TaskTool = Tool.define(
       )
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
 
-      // kilocode_change start — prefer valid subagent overrides, safely inheriting when overrides go stale
-      const selected = yield* KiloTask.resolveModel({
+      // chipmate_change start — prefer valid subagent overrides, safely inheriting when overrides go stale
+      const selected = yield* ChipMateTask.resolveModel({
         name: next.name,
         agent: next,
         config: cfg,
@@ -235,17 +235,17 @@ export const TaskTool = Tool.define(
           providerID: msg.info.providerID,
         },
         variant: msg.info.variant,
-        workflow: KiloTask.workflow(ctx.extra), // kilocode_change
+        workflow: ChipMateTask.workflow(ctx.extra), // chipmate_change
         provider,
       })
       const model = selected.model
       const variant = selected.variant
-      // kilocode_change end
+      // chipmate_change end
       const metadata = {
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
         model,
-        variant, // kilocode_change
+        variant, // chipmate_change
         ...(runInBackground ? { background: true } : {}),
       }
 
@@ -260,7 +260,7 @@ export const TaskTool = Tool.define(
       const runTask = Effect.fn("TaskTool.runTask")(
         function* () {
           const parts = yield* ops.resolvePromptParts(params.prompt)
-          KiloSessionProcessor.markReviewTelemetry(parts, params.command) // kilocode_change - carry review command into child session telemetry
+          ChipMateSessionProcessor.markReviewTelemetry(parts, params.command) // chipmate_change - carry review command into child session telemetry
           const result = yield* ops.prompt({
             messageID: MessageID.ascending(),
             sessionID: nextSession.id,
@@ -268,32 +268,32 @@ export const TaskTool = Tool.define(
               modelID: model.modelID,
               providerID: model.providerID,
             },
-            variant, // kilocode_change
+            variant, // chipmate_change
             agent: next.name,
             tools: {
-              question: false, // kilocode_change - subagents cannot prompt the user directly
-              interactive_terminal: false, // kilocode_change - subagents cannot take over the user's terminal
+              question: false, // chipmate_change - subagents cannot prompt the user directly
+              interactive_terminal: false, // chipmate_change - subagents cannot take over the user's terminal
               ...(ctx.extra?.ultraCouncilReadOnly === true
-                ? KiloTask.disabled()
-                : {}), // kilocode_change - runtime-managed Ultra descendants cannot use mutating or human-driven tools
+                ? ChipMateTask.disabled()
+                : {}), // chipmate_change - runtime-managed Ultra descendants cannot use mutating or human-driven tools
               ...(canTodo ? {} : { todowrite: false }),
               ...(canTask ? {} : { task: false }),
               ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
             },
             parts,
           })
-          // kilocode_change start - expose terminal child assistant errors through the task tool boundary,
+          // chipmate_change start - expose terminal child assistant errors through the task tool boundary,
           // including the resumable task_id so the parent agent can continue the subagent (#11620)
           if (result.info.role === "assistant" && result.info.error) {
             return yield* Effect.fail(new Error(`${errorMessage(result.info.error)}\n${resumeHint(nextSession.id)}`))
           }
-          // kilocode_change end
+          // chipmate_change end
           return result.parts.findLast((item) => item.type === "text")?.text ?? ""
         },
-        Effect.ensuring(KiloTaskBackgroundProcess.finish(nextSession.id)),
-      ) // kilocode_change - transfer inherited processes when the child run ends
+        Effect.ensuring(ChipMateTaskBackgroundProcess.finish(nextSession.id)),
+      ) // chipmate_change - transfer inherited processes when the child run ends
 
-      // kilocode_change start - inject completed background task results into the parent session
+      // chipmate_change start - inject completed background task results into the parent session
       const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (
         state: "completed" | "error",
         text: string,
@@ -322,9 +322,9 @@ export const TaskTool = Tool.define(
           })
           .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
       })
-      // kilocode_change end
+      // chipmate_change end
 
-      // kilocode_change start - background tasks propagate only cost accrued by this invocation
+      // chipmate_change start - background tasks propagate only cost accrued by this invocation
       const notify = Effect.fn("TaskTool.notifyBackgroundResult")(function* (jobID: string) {
         yield* background.wait({ id: jobID }).pipe(
           Effect.flatMap((result) => {
@@ -338,24 +338,24 @@ export const TaskTool = Tool.define(
 
       const withCostPropagation = <A, E, R>(task: Effect.Effect<A, E, R>) =>
         Effect.acquireUseRelease(
-          KiloCostPropagation.childCost(sessions, nextSession.id),
+          ChipMateCostPropagation.childCost(sessions, nextSession.id),
           () => task,
           (costBefore) =>
             Effect.gen(function* () {
-              const costAfter = yield* KiloCostPropagation.childCost(sessions, nextSession.id)
-              yield* KiloCostPropagation.propagate(sessions, ctx.sessionID, ctx.messageID, costAfter - costBefore).pipe(
+              const costAfter = yield* ChipMateCostPropagation.childCost(sessions, nextSession.id)
+              yield* ChipMateCostPropagation.propagate(sessions, ctx.sessionID, ctx.messageID, costAfter - costBefore).pipe(
                 Effect.provideService(Database.Service, database),
               )
             }),
         )
 
       const backgroundRun = withCostPropagation(runTask().pipe(Effect.onInterrupt(() => ops.cancel(nextSession.id))))
-      // kilocode_change end
+      // chipmate_change end
 
       if (
         yield* background.extend({
           id: nextSession.id,
-          // kilocode_change - extended background work also propagates its cost
+          // chipmate_change - extended background work also propagates its cost
           run: withCostPropagation(runTask().pipe(Effect.onInterrupt(() => ops.cancel(nextSession.id)))),
         })
       ) {
@@ -377,7 +377,7 @@ export const TaskTool = Tool.define(
 
       const foregroundCost = runInBackground
         ? undefined
-        : yield* KiloCostPropagation.childCost(sessions, nextSession.id) // kilocode_change - snapshot before the foreground job starts
+        : yield* ChipMateCostPropagation.childCost(sessions, nextSession.id) // chipmate_change - snapshot before the foreground job starts
       const info = yield* background.start({
         id: nextSession.id,
         type: id,
@@ -390,7 +390,7 @@ export const TaskTool = Tool.define(
           }),
           notify(nextSession.id),
         ]),
-        // kilocode_change - only the initial-background start needs its own cost bracket; the
+        // chipmate_change - only the initial-background start needs its own cost bracket; the
         // foreground/promoted path below is already wrapped by the acquireUseRelease at the bottom of run()
         run: runInBackground ? backgroundRun : runTask().pipe(Effect.onInterrupt(() => ops.cancel(nextSession.id))),
       })
@@ -425,12 +425,12 @@ export const TaskTool = Tool.define(
       }
 
       return yield* Effect.acquireUseRelease(
-        // kilocode_change start - snapshot child cost so we propagate only the delta on resume (#6321)
+        // chipmate_change start - snapshot child cost so we propagate only the delta on resume (#6321)
         Effect.gen(function* () {
           ctx.abort.addEventListener("abort", onAbort)
-          return foregroundCost ?? (yield* KiloCostPropagation.childCost(sessions, nextSession.id))
+          return foregroundCost ?? (yield* ChipMateCostPropagation.childCost(sessions, nextSession.id))
         }),
-        // kilocode_change end
+        // chipmate_change end
         () =>
           Effect.gen(function* () {
             const result = yield* Effect.raceFirst(
@@ -440,12 +440,12 @@ export const TaskTool = Tool.define(
             if (result?.metadata?.background === true) return backgroundResult()
             if (result?.status === "error") return yield* Effect.fail(new Error(result.error ?? "Task failed"))
             if (result?.status === "cancelled") return yield* Effect.fail(new Error("Task cancelled"))
-            // kilocode_change start - expose a bounded tool trace only to the internal Ultra Code baseline
+            // chipmate_change start - expose a bounded tool trace only to the internal Ultra Code baseline
             const trace =
               ctx.extra?.ultraCouncilBaseline === true
-                ? KiloTask.trace(yield* sessions.messages({ sessionID: nextSession.id }))
+                ? ChipMateTask.trace(yield* sessions.messages({ sessionID: nextSession.id }))
                 : undefined
-            // kilocode_change end
+            // chipmate_change end
             return {
               title: params.description,
               metadata,
@@ -455,7 +455,7 @@ export const TaskTool = Tool.define(
               ].join("\n"),
             }
           }),
-        // kilocode_change start - propagate subagent cost delta to parent on every exit path (#6321)
+        // chipmate_change start - propagate subagent cost delta to parent on every exit path (#6321)
         (costBefore, exit) =>
           Effect.gen(function* () {
             if (Exit.hasInterrupts(exit))
@@ -464,10 +464,10 @@ export const TaskTool = Tool.define(
             Effect.ensuring(
               Effect.gen(function* () {
                 ctx.abort.removeEventListener("abort", onAbort)
-                const costAfter = yield* KiloCostPropagation.childCost(sessions, nextSession.id).pipe(
+                const costAfter = yield* ChipMateCostPropagation.childCost(sessions, nextSession.id).pipe(
                   Effect.catchTag("NotFoundError", () => Effect.succeed(costBefore)),
                 )
-                yield* KiloCostPropagation.propagate(
+                yield* ChipMateCostPropagation.propagate(
                   sessions,
                   ctx.sessionID,
                   ctx.messageID,
@@ -479,7 +479,7 @@ export const TaskTool = Tool.define(
               }),
             ),
           ),
-        // kilocode_change end
+        // chipmate_change end
       )
     })
 

@@ -1,2 +1,2 @@
-// kilocode_change - new file
-export { SuggestTool } from "../kilocode/suggestion/tool"
+// chipmate_change - new file
+export { SuggestTool } from "../chipmate/suggestion/tool"

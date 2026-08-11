@@ -4,7 +4,7 @@ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Provider } from "@/provider/provider"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
-import { Log } from "@opencode-ai/core/util/log" // kilocode_change
+import { Log } from "@opencode-ai/core/util/log" // chipmate_change
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
@@ -16,7 +16,7 @@ import { ProviderTransform } from "@/provider/transform"
 import { Config } from "@/config/config"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "./message-v2"
-import { usable } from "./overflow" // kilocode_change
+import { usable } from "./overflow" // chipmate_change
 import { Plugin } from "@/plugin"
 import { Permission } from "@/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -24,25 +24,25 @@ import { EventV2 } from "@opencode-ai/core/event"
 import { Wildcard } from "@/util/wildcard"
 import { SessionID } from "@/session/schema"
 import { Auth } from "@/auth"
-// kilocode_change start
+// chipmate_change start
 import { InstanceState } from "@/effect/instance-state"
-import { KiloSession } from "@/kilocode/session"
-import { KiloLLM } from "@/kilocode/session/llm"
-import { KiloSessionOverflow } from "@/kilocode/session/overflow"
-import { KiloToolSchema } from "@/kilocode/session/tool-schema"
-import { DSML } from "@/kilocode/session/dsml"
-import { SessionExport } from "@/kilocode/session-export"
-import { getActiveOrg } from "@/kilocode/session-export/eligibility"
-import { normalizeUsageForExport, observeFullStreamForExport } from "@/kilocode/session-export/llm"
-import { DocumentAgentScope } from "@/kilocode/document-agent/scope"
-// kilocode_change end
+import { ChipMateSession } from "@/chipmate/session"
+import { ChipMateLLM } from "@/chipmate/session/llm"
+import { ChipMateSessionOverflow } from "@/chipmate/session/overflow"
+import { ChipMateToolSchema } from "@/chipmate/session/tool-schema"
+import { DSML } from "@/chipmate/session/dsml"
+import { SessionExport } from "@/chipmate/session-export"
+import { getActiveOrg } from "@/chipmate/session-export/eligibility"
+import { normalizeUsageForExport, observeFullStreamForExport } from "@/chipmate/session-export/llm"
+import { DocumentAgentScope } from "@/chipmate/document-agent/scope"
+// chipmate_change end
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
 
-const log = Log.create({ service: "llm" }) // kilocode_change
+const log = Log.create({ service: "llm" }) // chipmate_change
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
@@ -59,8 +59,8 @@ export type StreamInput = {
   tools: Record<string, Tool>
   retries?: number
   toolChoice?: "auto" | "required" | "none"
-  preflight?: boolean // kilocode_change - enable proactive threshold compaction for normal session turns
-  reportedContextTokens?: number // kilocode_change - provider-reported context size from the last finished turn, source of truth for the output cap
+  preflight?: boolean // chipmate_change - enable proactive threshold compaction for normal session turns
+  reportedContextTokens?: number // chipmate_change - provider-reported context size from the last finished turn, source of truth for the output cap
 }
 
 export type StreamRequest = StreamInput & {
@@ -99,7 +99,7 @@ const live: Layer.Layer<
     const flags = yield* RuntimeFlags.Service
 
     const run = Effect.fn("LLM.run")(function* (input: StreamRequest) {
-      const l = log.clone().tag("providerID", input.model.providerID).tag("modelID", input.model.id) // kilocode_change
+      const l = log.clone().tag("providerID", input.model.providerID).tag("modelID", input.model.id) // chipmate_change
       yield* Effect.logInfo("stream", {
         providerID: input.model.providerID,
         modelID: input.model.id,
@@ -128,8 +128,8 @@ const live: Layer.Layer<
         isWorkflow,
       })
 
-      // kilocode_change start - compact at the configured threshold before contacting the provider
-      const tools = yield* Effect.promise(() => KiloToolSchema.sanitize(base.tools))
+      // chipmate_change start - compact at the configured threshold before contacting the provider
+      const tools = yield* Effect.promise(() => ChipMateToolSchema.sanitize(base.tools))
       const isOpenaiOauth = item.id === "openai" && info?.type === "oauth"
       const estimated: ModelMessage[] =
         isOpenaiOauth || isWorkflow
@@ -141,10 +141,10 @@ const live: Layer.Layer<
               ...base.messages,
             ]
           : base.messages
-      const preflight = input.preflight === true && KiloSessionOverflow.enabled({ cfg, model: input.model })
-      const cap = KiloLLM.needsEstimate({ model: input.model, configured: base.params.maxOutputTokens })
-      const usage = cap || preflight ? KiloSessionOverflow.measure({ messages: estimated, tools }) : undefined
-      const maxOutputTokens = KiloLLM.capOutputTokens({
+      const preflight = input.preflight === true && ChipMateSessionOverflow.enabled({ cfg, model: input.model })
+      const cap = ChipMateLLM.needsEstimate({ model: input.model, configured: base.params.maxOutputTokens })
+      const usage = cap || preflight ? ChipMateSessionOverflow.measure({ messages: estimated, tools }) : undefined
+      const maxOutputTokens = ChipMateLLM.capOutputTokens({
         model: input.model,
         messages: estimated,
         tools,
@@ -155,24 +155,24 @@ const live: Layer.Layer<
       if (
         preflight &&
         usage &&
-        KiloSessionOverflow.shouldCompact({
+        ChipMateSessionOverflow.shouldCompact({
           cfg,
           model: input.model,
-          usable: usable({ cfg, model: input.model, outputTokenMax: flags.outputTokenMax }), // kilocode_change
+          usable: usable({ cfg, model: input.model, outputTokenMax: flags.outputTokenMax }), // chipmate_change
           tokens: usage.normalized,
           continuation: usage.continuation,
         })
       ) {
-        return yield* Effect.fail(new KiloSessionOverflow.PreflightError())
+        return yield* Effect.fail(new ChipMateSessionOverflow.PreflightError())
       }
       const prepared = { ...base, tools, params: { ...base.params, maxOutputTokens } }
-      // kilocode_change end
-      // kilocode_change start - keep a trusted no-side-effect invalid executor only for targeted DSML repair
+      // chipmate_change end
+      // chipmate_change start - keep a trusted no-side-effect invalid executor only for targeted DSML repair
       const repair =
         input.agent.name !== DocumentAgentScope.AGENT &&
         DSML.enabled({ cfg, model: input.model, tools: prepared.tools, toolChoice: input.toolChoice })
       const runtime: Record<string, Tool> = repair ? { ...prepared.tools, invalid: DSML.invalid } : prepared.tools
-      // kilocode_change end
+      // chipmate_change end
 
       // Wire up toolExecutor for DWS workflow models so that tool calls
       // from the workflow service are executed via opencode's tool system
@@ -268,18 +268,18 @@ const live: Layer.Layer<
       }
 
       const instance = yield* InstanceState.context
-      // kilocode_change start - capture eligible session export request start
-      const isKilo = input.model.api.npm === "@kilocode/kilo-gateway"
+      // chipmate_change start - capture eligible session export request start
+      const isChipMate = input.model.api.npm === "@chipmate/chipmate-gateway"
       const exporting = SessionExport.enabled
-      const org = yield* exporting && isKilo && input.model.isFree === true
+      const org = yield* exporting && isChipMate && input.model.isFree === true
         ? Effect.promise(() => getActiveOrg())
         : Effect.succeed({ type: "unknown" as const })
       const started = Date.now()
-      const parent = input.parentSessionID ?? KiloSession.resolveParent(input.sessionID)
-      const found = KiloSession.resolveRoot(input.sessionID)
+      const parent = input.parentSessionID ?? ChipMateSession.resolveParent(input.sessionID)
+      const found = ChipMateSession.resolveRoot(input.sessionID)
       const root = parent ? (found === input.sessionID ? parent : found) : input.sessionID
       const exportable =
-        exporting && isKilo && input.model.isFree === true && org.type === "personal" && input.agent.name !== "title"
+        exporting && isChipMate && input.model.isFree === true && org.type === "personal" && input.agent.name !== "title"
       if (exportable) {
         SessionExport.beforeRequest({
           input: { model: input.model, org },
@@ -304,13 +304,13 @@ const live: Layer.Layer<
           },
         })
       }
-      // kilocode_change end
+      // chipmate_change end
 
       // Runtime seam: native is an opt-in adapter over @opencode-ai/llm. It
       // either returns a ready LLMEvent stream or a concrete fallback reason.
-      // kilocode_change start - targeted DSML repair requires the AI SDK stream middleware
+      // chipmate_change start - targeted DSML repair requires the AI SDK stream middleware
       if (flags.experimentalNativeLlm && !repair) {
-        // kilocode_change end
+        // chipmate_change end
         const native = LLMNativeRuntime.stream({
           model: input.model,
           provider: item,
@@ -379,12 +379,12 @@ const live: Layer.Layer<
         // Copilot returns the authoritative billed amount only in provider-specific response fields.
         includeRawChunks: input.model.providerID.includes("github-copilot"),
         async experimental_repairToolCall(failed) {
-          const lower = failed.toolCall.toolName.trim().toLowerCase() // kilocode_change
+          const lower = failed.toolCall.toolName.trim().toLowerCase() // chipmate_change
           if (lower !== failed.toolCall.toolName && prepared.tools[lower]) {
-            l.info("repairing tool call", { tool: failed.toolCall.toolName, repaired: lower }) // kilocode_change
+            l.info("repairing tool call", { tool: failed.toolCall.toolName, repaired: lower }) // chipmate_change
             return { ...failed.toolCall, toolName: lower }
           }
-          // kilocode_change start - a document-only model may hallucinate a hidden code tool. Convert it
+          // chipmate_change start - a document-only model may hallucinate a hidden code tool. Convert it
           // to the visible no-op scope guard so no code executes and the turn can recover without `invalid`.
           const guarded = DocumentAgentScope.repairUnavailableTool({
             agent: input.agent.name,
@@ -393,7 +393,7 @@ const live: Layer.Layer<
           })
           if (guarded) return { ...failed.toolCall, ...guarded }
           if (!repair) return null
-          // kilocode_change end
+          // chipmate_change end
           return {
             ...failed.toolCall,
             input: JSON.stringify({
@@ -407,17 +407,17 @@ const live: Layer.Layer<
         topP: prepared.params.topP,
         topK: prepared.params.topK,
         providerOptions: ProviderTransform.providerOptions(input.model, prepared.params.options),
-        // kilocode_change start - invalid remains executable for repair but hidden from the model
+        // chipmate_change start - invalid remains executable for repair but hidden from the model
         activeTools: Object.keys(runtime).filter((x) => x !== "invalid"),
         tools: runtime,
-        // kilocode_change end
+        // chipmate_change end
         toolChoice: input.toolChoice,
         maxOutputTokens: prepared.params.maxOutputTokens,
         abortSignal: input.abort,
-        ...KiloLLM.timeout({ options: prepared.params.options, fallback: item.options, log: l }), // kilocode_change
+        ...ChipMateLLM.timeout({ options: prepared.params.options, fallback: item.options, log: l }), // chipmate_change
         headers: prepared.headers,
         maxRetries: input.retries ?? 0,
-        allowSystemInMessages: true, // kilocode_change - system prompts are trusted and intentionally included in messages
+        allowSystemInMessages: true, // chipmate_change - system prompts are trusted and intentionally included in messages
         messages: prepared.messages,
         model: wrapLanguageModel({
           model: language,
@@ -436,15 +436,15 @@ const live: Layer.Layer<
                 return args.params
               },
             },
-            ...(repair ? [DSML.middleware({ tools: runtime, messages: prepared.messages })] : []), // kilocode_change
+            ...(repair ? [DSML.middleware({ tools: runtime, messages: prepared.messages })] : []), // chipmate_change
           ],
         }),
-        // kilocode_change start - disable AI SDK span recording (ai.* / gen_ai.*)
+        // chipmate_change start - disable AI SDK span recording (ai.* / gen_ai.*)
         experimental_telemetry: { isEnabled: false },
       })
-      // kilocode_change end
-      // kilocode_change start - capture eligible session export request completion off the stream path
-      // kilocode_change - keep model-visible tools separate from the DSML runtime-only invalid executor.
+      // chipmate_change end
+      // chipmate_change start - capture eligible session export request completion off the stream path
+      // chipmate_change - keep model-visible tools separate from the DSML runtime-only invalid executor.
       // Document Agent has no invalid executor and suppresses unavailable code previews.
       const visibleTools = Object.keys(prepared.tools)
       const runtimeTools = Object.keys(runtime)
@@ -465,7 +465,7 @@ const live: Layer.Layer<
           }),
         },
       }
-      // kilocode_change end
+      // chipmate_change end
     })
 
     const stream: Interface["stream"] = (input) =>
@@ -483,7 +483,7 @@ const live: Layer.Layer<
 
             // Adapter seam: both runtimes expose the same LLMEvent stream. Native
             // already returns one; AI SDK streams are converted here.
-            const state = LLMAISDK.adapterState(result.visibleTools, result.runtimeTools) // kilocode_change
+            const state = LLMAISDK.adapterState(result.visibleTools, result.runtimeTools) // chipmate_change
             return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
               e instanceof Error ? e : new Error(String(e)),
             ).pipe(
@@ -498,9 +498,9 @@ const live: Layer.Layer<
   }),
 )
 
-// kilocode_change start - session export stream observer
+// chipmate_change start - session export stream observer
 export { normalizeUsageForExport, observeFullStreamForExport }
-// kilocode_change end
+// chipmate_change end
 export const hasToolCalls = LLMRequestPrep.hasToolCalls
 
 export const node = LayerNode.make({

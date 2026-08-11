@@ -1,4 +1,4 @@
-# kilocode_change - new file
+# chipmate_change - new file
 name: test-jetbrains
 
 on:
@@ -27,15 +27,15 @@ jobs:
       - name: Detect JetBrains changes
         if: github.event_name != 'workflow_dispatch'
         id: filter
-        uses: Kilo-Org/paths-filter@668c092af3649c4b664c54e4b704aa46782f6f7c # v3
+        uses: ChipMate-Org/paths-filter@668c092af3649c4b664c54e4b704aa46782f6f7c # v3
         with:
           predicate-quantifier: every
           filters: |
             jetbrains:
               - '**'
               - '!.changeset/**'
-              - '!packages/kilo-vscode/**'
-              - '!packages/kilo-docs/**'
+              - '!packages/chipmate-vscode/**'
+              - '!packages/chipmate-docs/**'
 
   unit:
     name: jetbrains
@@ -72,7 +72,7 @@ jobs:
 
       - name: Run JetBrains unit tests
         run: bun script/test-ci.ts
-        working-directory: packages/kilo-jetbrains
+        working-directory: packages/chipmate-jetbrains
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -80,7 +80,7 @@ jobs:
         if: always()
         uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
         with:
-          report_paths: packages/kilo-jetbrains/.artifacts/unit/junit.xml
+          report_paths: packages/chipmate-jetbrains/.artifacts/unit/junit.xml
           check_name: "unit results (jetbrains)"
           detailed_summary: true
           include_time_in_summary: true
@@ -94,7 +94,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-          path: packages/kilo-jetbrains/.artifacts/unit/junit.xml
+          path: packages/chipmate-jetbrains/.artifacts/unit/junit.xml
 
   required:
     name: result

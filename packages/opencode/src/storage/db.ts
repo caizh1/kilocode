@@ -5,7 +5,7 @@ export * from "drizzle-orm"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LocalContext } from "@/util/local-context"
 import { Global } from "@opencode-ai/core/global"
-import { DbPreflight } from "@opencode-ai/core/kilocode/db-preflight" // kilocode_change
+import { DbPreflight } from "@opencode-ai/core/chipmate/db-preflight" // chipmate_change
 import * as Log from "@opencode-ai/core/util/log"
 import { NamedError } from "@opencode-ai/core/util/error"
 import path from "path"
@@ -15,9 +15,9 @@ import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { EffectBridge } from "@/effect/bridge"
 import { init } from "#db"
 import { Effect, Schema } from "effect"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // kilocode_change
+import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // chipmate_change
 
-declare const KILO_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
+declare const CHIPMATE_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
 
 export const NotFoundError = NamedError.create("NotFoundError", {
   message: Schema.String,
@@ -32,18 +32,18 @@ const readRuntimeFlags = () =>
 
 export function getChannelPath(flags: Pick<DatabaseFlags, "disableChannelDb"> = readRuntimeFlags()) {
   if (["latest", "beta", "prod"].includes(InstallationChannel) || flags.disableChannelDb)
-    return path.join(Global.Path.data, "kilo.db") // kilocode_change
+    return path.join(Global.Path.data, "chipmate.db") // chipmate_change
   const safe = InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
-  const next = path.join(Global.Path.data, `kilo-${safe}.db`) // kilocode_change
-  const prev = path.join(Global.Path.data, `opencode-${safe}.db`) // kilocode_change
-  if (!existsSync(next) && existsSync(prev)) return prev // kilocode_change
-  return next // kilocode_change
+  const next = path.join(Global.Path.data, `chipmate-${safe}.db`) // chipmate_change
+  const prev = path.join(Global.Path.data, `opencode-${safe}.db`) // chipmate_change
+  if (!existsSync(next) && existsSync(prev)) return prev // chipmate_change
+  return next // chipmate_change
 }
 
 export const getPath = (flags?: Pick<DatabaseFlags, "disableChannelDb">) => {
-  if (Flag.KILO_DB) {
-    if (Flag.KILO_DB === ":memory:" || path.isAbsolute(Flag.KILO_DB)) return Flag.KILO_DB
-    return path.join(Global.Path.data, Flag.KILO_DB)
+  if (Flag.CHIPMATE_DB) {
+    if (Flag.CHIPMATE_DB === ":memory:" || path.isAbsolute(Flag.CHIPMATE_DB)) return Flag.CHIPMATE_DB
+    return path.join(Global.Path.data, Flag.CHIPMATE_DB)
   }
   return getChannelPath(flags)
 }
@@ -104,7 +104,7 @@ export const Client = Object.assign(
     const dbPath = getPath(flags)
     log.info("opening database", { path: dbPath })
 
-    DbPreflight.assertWritable(dbPath) // kilocode_change - actionable error (and self-heal for kilo-owned files) instead of an opaque wal_checkpoint crash on read-only db files
+    DbPreflight.assertWritable(dbPath) // chipmate_change - actionable error (and self-heal for chipmate-owned files) instead of an opaque wal_checkpoint crash on read-only db files
     const db = init(dbPath)
 
     db.run("PRAGMA journal_mode = WAL")
@@ -116,13 +116,13 @@ export const Client = Object.assign(
 
     // Apply schema migrations
     const entries =
-      typeof KILO_MIGRATIONS !== "undefined"
-        ? KILO_MIGRATIONS
+      typeof CHIPMATE_MIGRATIONS !== "undefined"
+        ? CHIPMATE_MIGRATIONS
         : migrations(path.join(import.meta.dirname, "../../migration"))
     if (entries.length > 0) {
       log.info("applying migrations", {
         count: entries.length,
-        mode: typeof KILO_MIGRATIONS !== "undefined" ? "bundled" : "dev",
+        mode: typeof CHIPMATE_MIGRATIONS !== "undefined" ? "bundled" : "dev",
       })
       if (flags.skipMigrations) {
         for (const item of entries) {

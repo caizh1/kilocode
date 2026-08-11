@@ -13,13 +13,13 @@ import { ProviderTransform } from "@/provider/transform"
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
-import PROMPT_SCOUT from "@/kilocode/agent/scout.txt" // kilocode_change
+import PROMPT_SCOUT from "@/chipmate/agent/scout.txt" // chipmate_change
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@opencode-ai/core/global"
-import { KilocodePaths } from "@/kilocode/paths" // kilocode_change
+import { ChipMatePaths } from "@/chipmate/paths" // chipmate_change
 import path from "path"
 import { Plugin } from "@/plugin"
 import { Skill } from "../skill"
@@ -28,13 +28,13 @@ import { InstanceState } from "@/effect/instance-state"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { AbsolutePath, type DeepMutable } from "@opencode-ai/core/schema"
-// kilocode_change start
-import * as KiloAgent from "@/kilocode/agent"
+// chipmate_change start
+import * as ChipMateAgent from "@/chipmate/agent"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import * as AgentRequirements from "@/kilocode/agent-requirements"
-import * as KiloReference from "@/kilocode/reference"
+import * as AgentRequirements from "@/chipmate/agent-requirements"
+import * as ChipMateReference from "@/chipmate/reference"
 import { MCP } from "@/mcp"
-// kilocode_change end
+// chipmate_change end
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
@@ -42,16 +42,16 @@ import { Reference } from "@opencode-ai/core/reference"
 import { Location } from "@opencode-ai/core/location"
 import { PluginV2 } from "@opencode-ai/core/plugin"
 
-export type RequirementBlockedError = InstanceType<typeof AgentRequirements.BlockedError> // kilocode_change
+export type RequirementBlockedError = InstanceType<typeof AgentRequirements.BlockedError> // chipmate_change
 
 export const Info = Schema.Struct({
   name: Schema.String,
-  // kilocode_change start
+  // chipmate_change start
   displayName: Schema.optional(Schema.String),
   source: Schema.optional(Schema.String),
-  // kilocode_change end
+  // chipmate_change end
   description: Schema.optional(Schema.String),
-  deprecated: Schema.optional(Schema.Boolean), // kilocode_change
+  deprecated: Schema.optional(Schema.Boolean), // chipmate_change
   mode: Schema.Literals(["subagent", "primary", "all"]),
   native: Schema.optional(Schema.Boolean),
   hidden: Schema.optional(Schema.Boolean),
@@ -68,7 +68,7 @@ export const Info = Schema.Struct({
   variant: Schema.optional(Schema.String),
   prompt: Schema.optional(Schema.String),
   options: Schema.Record(Schema.String, Schema.Unknown),
-  requirements: Schema.optional(AgentRequirements.Requirements), // kilocode_change
+  requirements: Schema.optional(AgentRequirements.Requirements), // chipmate_change
   steps: Schema.optional(Schema.Finite),
 }).annotate({ identifier: "Agent" })
 export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
@@ -84,10 +84,10 @@ export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly defaultInfo: () => Effect.Effect<Info>
   readonly defaultAgent: () => Effect.Effect<string>
-  // kilocode_change start
+  // chipmate_change start
   readonly requirementStatus: (agent: string) => Effect.Effect<AgentRequirements.Result>
   readonly guardRequirements: (agent: Info) => Effect.Effect<void, RequirementBlockedError>
-  // kilocode_change end
+  // chipmate_change end
   readonly generate: (input: {
     description: string
     model?: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
@@ -101,7 +101,7 @@ export interface Interface {
   >
 }
 
-type State = Omit<Interface, "generate" | "requirementStatus" | "guardRequirements"> & { version: string } // kilocode_change
+type State = Omit<Interface, "generate" | "requirementStatus" | "guardRequirements"> & { version: string } // chipmate_change
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Agent") {}
 
@@ -114,21 +114,21 @@ const layer = Layer.effect(
     const auth = yield* Auth.Service
     const plugin = yield* Plugin.Service
     const skill = yield* Skill.Service
-    const mcp = yield* MCP.Service // kilocode_change
+    const mcp = yield* MCP.Service // chipmate_change
     const provider = yield* Provider.Service
-    const flags = yield* RuntimeFlags.Service // kilocode_change
+    const flags = yield* RuntimeFlags.Service // chipmate_change
     const locations = yield* LocationServiceMap.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Agent.state")(function* (ctx) {
         const cfg = yield* config.get()
         const skillDirs = yield* skill.dirs()
-        // kilocode_change start - include global config dirs so agents can read them without prompting
+        // chipmate_change start - include global config dirs so agents can read them without prompting
         const referenceDirs = yield* Effect.gen(function* () {
           if (Object.keys(cfg.references ?? cfg.reference ?? {}).length) {
             yield* (yield* PluginV2.Service).wait(PluginV2.ID.make("core/config-reference"))
           }
-          yield* KiloReference.sync({
+          yield* ChipMateReference.sync({
             references: cfg.references ?? cfg.reference ?? {},
             directory: ctx.directory,
             worktree: ctx.worktree,
@@ -140,31 +140,31 @@ const layer = Layer.effect(
           path.join(Global.Path.tmp, "*"),
           ...skillDirs.map((dir) => path.join(dir, "*")),
           path.join(Global.Path.config, "*"),
-          ...KilocodePaths.globalDirs().map((dir) => path.join(dir, "*")),
+          ...ChipMatePaths.globalDirs().map((dir) => path.join(dir, "*")),
           ...referenceDirs.map((dir) => path.join(dir, "*")),
         ]
-        // kilocode_change end
+        // chipmate_change end
         const readonlyExternalDirectory = {
           "*": "ask",
           ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
         } satisfies Record<string, "allow" | "ask" | "deny">
 
-        const baseDefaults = Permission.fromConfig({ // kilocode_change
+        const baseDefaults = Permission.fromConfig({ // chipmate_change
           "*": "allow",
           doom_loop: "ask",
           external_directory: {
             "*": "ask",
             ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
           },
-          suggest: "deny", // kilocode_change
+          suggest: "deny", // chipmate_change
           question: "deny",
-          interactive_terminal: "deny", // kilocode_change - human-driven tools are primary-agent only
+          interactive_terminal: "deny", // chipmate_change - human-driven tools are primary-agent only
           plan_enter: "deny",
           plan_exit: "deny",
-          // kilocode_change start
+          // chipmate_change start
           repo_clone: "deny",
           repo_overview: "deny",
-          // kilocode_change end
+          // chipmate_change end
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
           read: {
             "*": "allow",
@@ -174,10 +174,10 @@ const layer = Layer.effect(
           },
         })
 
-        // kilocode_change start - patch defaults with bash allowlist and recall permission
-        const kilo = KiloAgent.prepare(cfg)
-        const defaults = Permission.merge(baseDefaults, kilo.defaultsPatch)
-        // kilocode_change end
+        // chipmate_change start - patch defaults with bash allowlist and recall permission
+        const chipmate = ChipMateAgent.prepare(cfg)
+        const defaults = Permission.merge(baseDefaults, chipmate.defaultsPatch)
+        // chipmate_change end
 
         const user = Permission.fromConfig(cfg.permission ?? {})
 
@@ -190,10 +190,10 @@ const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 question: "allow",
-                // kilocode_change start
+                // chipmate_change start
                 interactive_terminal: "allow",
                 suggest: "allow",
-                // kilocode_change end
+                // chipmate_change end
                 plan_enter: "allow",
               }),
               user,
@@ -264,7 +264,7 @@ const layer = Layer.effect(
             mode: "subagent",
             native: true,
           },
-          // kilocode_change start - retain Kilo's opt-in repository research agent
+          // chipmate_change start - retain ChipMate's opt-in repository research agent
           ...(flags.experimentalScout
             ? {
                 scout: {
@@ -295,7 +295,7 @@ const layer = Layer.effect(
                 },
               }
             : {}),
-          // kilocode_change end
+          // chipmate_change end
           compaction: {
             name: "compaction",
             mode: "primary",
@@ -304,7 +304,7 @@ const layer = Layer.effect(
             prompt: PROMPT_COMPACTION,
             permission: Permission.merge(
               defaults,
-              user, // kilocode_change
+              user, // chipmate_change
               Permission.fromConfig({
                 "*": "deny",
               }),
@@ -320,7 +320,7 @@ const layer = Layer.effect(
             temperature: 0.5,
             permission: Permission.merge(
               defaults,
-              user, // kilocode_change
+              user, // chipmate_change
               Permission.fromConfig({
                 "*": "deny",
               }),
@@ -335,7 +335,7 @@ const layer = Layer.effect(
             hidden: true,
             permission: Permission.merge(
               defaults,
-              user, // kilocode_change
+              user, // chipmate_change
               Permission.fromConfig({
                 "*": "deny",
               }),
@@ -344,12 +344,12 @@ const layer = Layer.effect(
           },
         }
 
-        // kilocode_change start - rename build→code, add debug/orchestrator/ask, patch plan/explore
-        KiloAgent.patchAgents(agents, defaults, user, cfg, kilo, ctx.worktree, whitelistedDirs)
+        // chipmate_change start - rename build→code, add debug/orchestrator/ask, patch plan/explore
+        ChipMateAgent.patchAgents(agents, defaults, user, cfg, chipmate, ctx.worktree, whitelistedDirs)
 
-        const agentConfigs = KiloAgent.preprocessConfig(cfg.agent ?? {})
+        const agentConfigs = ChipMateAgent.preprocessConfig(cfg.agent ?? {})
         for (const [key, value] of Object.entries(agentConfigs)) {
-          // kilocode_change end
+          // chipmate_change end
           if (value.disable) {
             delete agents[key]
             continue
@@ -374,19 +374,19 @@ const layer = Layer.effect(
           item.hidden = value.hidden ?? item.hidden
           item.name = value.name ?? item.name
           item.steps = value.steps ?? item.steps
-          // kilocode_change start - carry metadata as typed fields, never as provider options
+          // chipmate_change start - carry metadata as typed fields, never as provider options
           item.displayName = value.displayName ?? item.displayName
           item.source = value.source ?? item.source
           item.requirements = value.requirements ?? item.requirements
-          // kilocode_change end
+          // chipmate_change end
           item.options = mergeDeep(item.options, value.options ?? {})
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
-          // kilocode_change start
-          KiloAgent.processConfigItem(item)
-          KiloAgent.hardenPlan(key, item, ctx.worktree, user, Permission.fromConfig(value.permission ?? {}))
+          // chipmate_change start
+          ChipMateAgent.processConfigItem(item)
+          ChipMateAgent.hardenPlan(key, item, ctx.worktree, user, Permission.fromConfig(value.permission ?? {}))
         }
 
-        function referencePrompt(reference: KiloReference.Resolved) {
+        function referencePrompt(reference: ChipMateReference.Resolved) {
           if (reference.kind === "local") {
             return [
               `You are configured reference @${reference.name}, a read-only research agent for external reference material.`,
@@ -410,13 +410,13 @@ const layer = Layer.effect(
             `Repository: ${reference.repository}`,
             ...(reference.branch ? [`Branch/ref: ${reference.branch}`] : []),
             `Cached directory: ${reference.path}`,
-            `Kilo materializes this configured repository before use. Do not call repo_clone for this reference.`,
+            `ChipMate materializes this configured repository before use. Do not call repo_clone for this reference.`,
             `Inspect the cached directory as the primary reference source. Prefer repo_overview with path ${JSON.stringify(reference.path)} before broader searches, then use Glob, Grep, and Read inside that directory. Do not edit files.`,
             `Return exact absolute file paths for findings whenever possible.`,
           ].join("\n\n")
         }
 
-        function referenceDescription(reference: KiloReference.Resolved) {
+        function referenceDescription(reference: ChipMateReference.Resolved) {
           if (reference.kind === "local") return `Scout reference for local directory ${reference.path}`
           if (reference.kind === "git") return `Scout reference for repository ${reference.repository}`
           return `Invalid Scout reference for repository ${reference.repository}`
@@ -424,7 +424,7 @@ const layer = Layer.effect(
 
         if (flags.experimentalScout) {
           const references = cfg.references ?? cfg.reference ?? {}
-          const resolvedReferences = KiloReference.resolveAll({
+          const resolvedReferences = ChipMateReference.resolveAll({
             references,
             directory: ctx.directory,
             worktree: ctx.worktree,
@@ -455,7 +455,7 @@ const layer = Layer.effect(
               native: false,
             }
           }
-        // kilocode_change end
+        // chipmate_change end
         }
 
         // Ensure Truncate.GLOB is allowed unless explicitly configured
@@ -474,10 +474,10 @@ const layer = Layer.effect(
           )
         }
 
-        KiloAgent.hardenSystemAgents(agents) // kilocode_change - keep system utility agents deny-only after config merges
+        ChipMateAgent.hardenSystemAgents(agents) // chipmate_change - keep system utility agents deny-only after config merges
 
         const get = Effect.fnUntraced(function* (agent: string) {
-          return agents[KiloAgent.resolveKey(agent)] // kilocode_change - treat "build" as "code"
+          return agents[ChipMateAgent.resolveKey(agent)] // chipmate_change - treat "build" as "code"
         })
 
         const list = Effect.fnUntraced(function* () {
@@ -486,7 +486,7 @@ const layer = Layer.effect(
             agents,
             values(),
             sortBy(
-              [(x) => (cfg.default_agent ? x.name === cfg.default_agent : x.name === "code"), "desc"], // kilocode_change - renamed from "build" to "code"
+              [(x) => (cfg.default_agent ? x.name === cfg.default_agent : x.name === "code"), "desc"], // chipmate_change - renamed from "build" to "code"
               [(x) => x.name, "asc"],
             ),
           )
@@ -495,19 +495,19 @@ const layer = Layer.effect(
         const defaultInfo = Effect.fnUntraced(function* () {
           const c = yield* config.get()
           if (c.default_agent) {
-            // kilocode_change start
-            const effective = KiloAgent.resolveKey(c.default_agent)
+            // chipmate_change start
+            const effective = ChipMateAgent.resolveKey(c.default_agent)
             const agent = agents[effective]
-            // kilocode_change end
+            // chipmate_change end
             if (!agent) throw new Error(`default agent "${c.default_agent}" not found`)
             if (agent.mode === "subagent") throw new Error(`default agent "${c.default_agent}" is a subagent`)
             if (agent.hidden === true) throw new Error(`default agent "${c.default_agent}" is hidden`)
             return agent
           }
-          // kilocode_change start - prefer "code" as default agent (key order changes after rename from "build")
+          // chipmate_change start - prefer "code" as default agent (key order changes after rename from "build")
           const code = agents.code
           if (code && code.mode !== "subagent" && code.hidden !== true) return code
-          // kilocode_change end
+          // chipmate_change end
           const visible = Object.values(agents).find((a) => a.mode !== "subagent" && a.hidden !== true)
           if (!visible) throw new Error("no primary visible agent found")
           return visible
@@ -518,7 +518,7 @@ const layer = Layer.effect(
         })
 
         return {
-          version: KiloAgent.cacheKey(cfg), // kilocode_change
+          version: ChipMateAgent.cacheKey(cfg), // chipmate_change
           get,
           list,
           defaultInfo,
@@ -527,11 +527,11 @@ const layer = Layer.effect(
       }),
     )
 
-    // kilocode_change start - rebuild cached agents when permission-relevant config changes
+    // chipmate_change start - rebuild cached agents when permission-relevant config changes
     const current = Effect.fnUntraced(function* <A>(select: (s: State) => Effect.Effect<A>) {
       const cfg = yield* config.get()
       const s = yield* InstanceState.get(state)
-      if (s.version === KiloAgent.cacheKey(cfg)) return yield* select(s)
+      if (s.version === ChipMateAgent.cacheKey(cfg)) return yield* select(s)
       yield* InstanceState.invalidate(state)
       return yield* select(yield* InstanceState.get(state))
     })
@@ -559,25 +559,25 @@ const layer = Layer.effect(
         agents: { get: (name) => current((s) => s.get(name)) },
       })
     })
-    // kilocode_change end
+    // chipmate_change end
 
     return Service.of({
       get: Effect.fn("Agent.get")(function* (agent: string) {
-        return yield* current((s) => s.get(agent)) // kilocode_change
+        return yield* current((s) => s.get(agent)) // chipmate_change
       }),
       list: Effect.fn("Agent.list")(function* () {
-        return yield* current((s) => s.list()) // kilocode_change
+        return yield* current((s) => s.list()) // chipmate_change
       }),
       defaultInfo: Effect.fn("Agent.defaultInfo")(function* () {
-        return yield* current((s) => s.defaultInfo()) // kilocode_change
+        return yield* current((s) => s.defaultInfo()) // chipmate_change
       }),
       defaultAgent: Effect.fn("Agent.defaultAgent")(function* () {
-        return yield* current((s) => s.defaultAgent()) // kilocode_change
+        return yield* current((s) => s.defaultAgent()) // chipmate_change
       }),
-      // kilocode_change start
+      // chipmate_change start
       requirementStatus,
       guardRequirements,
-      // kilocode_change end
+      // chipmate_change end
       generate: Effect.fn("Agent.generate")(function* (input: {
         description: string
         model?: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
@@ -596,9 +596,9 @@ const layer = Layer.effect(
         const isOpenaiOauth = model.providerID === "openai" && authInfo?.type === "oauth"
 
         const params = {
-          // kilocode_change start - enable telemetry with custom PostHog tracer
-          experimental_telemetry: KiloAgent.telemetryOptions(cfg),
-          // kilocode_change end
+          // chipmate_change start - enable telemetry with custom PostHog tracer
+          experimental_telemetry: ChipMateAgent.telemetryOptions(cfg),
+          // chipmate_change end
           temperature: 0.3,
           messages: [
             ...(isOpenaiOauth
@@ -653,7 +653,7 @@ const locationServiceMapNode = LayerNode.make({
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Config.node, Auth.node, Plugin.node, Skill.node, Provider.node, MCP.node, RuntimeFlags.node, locationServiceMapNode], // kilocode_change
+  deps: [Config.node, Auth.node, Plugin.node, Skill.node, Provider.node, MCP.node, RuntimeFlags.node, locationServiceMapNode], // chipmate_change
 })
 export const defaultLayer = Layer.suspend(() => AppNodeBuilder.build(node))
 

@@ -18,7 +18,7 @@ describe("opencode acp lifecycle subprocess", () => {
         const acp = yield* opencode.acp()
         acp.close()
 
-        const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(Duration.seconds(15))) // kilocode_change
+        const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(Duration.seconds(15))) // chipmate_change
         expect(code).toBe(0)
       }),
     60_000,
@@ -30,7 +30,7 @@ describe("opencode acp lifecycle subprocess", () => {
       Effect.gen(function* () {
         const acp = yield* createAcpClient(
           { opencode },
-          { KILO_CONFIG_CONTENT: JSON.stringify(verifierConfig(llm.url)) },
+          { CHIPMATE_CONFIG_CONTENT: JSON.stringify(verifierConfig(llm.url)) },
         )
         const initialized = yield* initialize(acp)
         expect(initialized.agentCapabilities?.sessionCapabilities?.close).toEqual({})
@@ -47,7 +47,7 @@ describe("opencode acp lifecycle subprocess", () => {
       Effect.gen(function* () {
         const acp = yield* createAcpClient(
           { opencode },
-          { KILO_CONFIG_CONTENT: JSON.stringify(verifierConfig(llm.url)) },
+          { CHIPMATE_CONFIG_CONTENT: JSON.stringify(verifierConfig(llm.url)) },
         )
         const initialized = yield* initialize(acp)
         expect(initialized.agentCapabilities?.loadSession).toBe(true)
@@ -71,7 +71,7 @@ describe("opencode acp lifecycle subprocess", () => {
       Effect.gen(function* () {
         const acp = yield* createAcpClient(
           { opencode },
-          { KILO_CONFIG_CONTENT: JSON.stringify(verifierConfig(llm.url)) },
+          { CHIPMATE_CONFIG_CONTENT: JSON.stringify(verifierConfig(llm.url)) },
         )
         yield* initialize(acp)
         const session = yield* newSession(acp, home)
@@ -99,7 +99,7 @@ describe("opencode acp lifecycle subprocess", () => {
       Effect.gen(function* () {
         const acp = yield* createAcpClient(
           { opencode },
-          { KILO_CONFIG_CONTENT: JSON.stringify(verifierConfig(llm.url)) },
+          { CHIPMATE_CONFIG_CONTENT: JSON.stringify(verifierConfig(llm.url)) },
         )
         yield* initialize(acp)
         const session = yield* newSession(acp, home)

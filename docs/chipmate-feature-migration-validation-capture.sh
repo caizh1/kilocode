@@ -135,7 +135,7 @@ Fill this file after installing the generated VSIX into the agreed VS Code profi
 | S1 | Native C QA | Ask for a C function call chain | Uses native code understanding; no Word/Mermaid/artifact tools | TODO |  |
 | S2 | Macro/register QA | Ask where a macro is defined and used | Uses native code/search tools only | TODO |  |
 | S3 | Document RAG | Ask about an indexed existing document | Uses `document_search`; no Word generation | TODO |  |
-| S4 | Artifact | Generate and list a report artifact | `.kilo/artifacts/.../artifact.json` exists and opens | TODO |  |
+| S4 | Artifact | Generate and list a report artifact | `.chipmate/artifacts/.../artifact.json` exists and opens | TODO |  |
 | S5 | Word create | Generate a module interface design Word | `.docx` artifact exists | TODO |  |
 | S6 | Word edit | Add an error-code table | New `.docx` artifact and source backup exist | TODO |  |
 | S7 | Word delete | Delete a chapter dry-run first | Impact is reported without writing until explicit apply | TODO |  |
@@ -254,7 +254,7 @@ with open(report_path, "w", encoding="utf-8") as f:
     for item in sample(high_risk):
         f.write(f"- `{item}`\n")
     f.write("\n## Review-required existing/offline dependency scan\n\n")
-    f.write("Poppler/pdftotext may be Kilo's pre-existing internal-offline document extraction helper, not a newly introduced Word/Mermaid renderer. Playwright may also be unrelated to this migration. Review and record the conclusion before checking M10 packaging items.\n\n")
+    f.write("Poppler/pdftotext may be ChipMate's pre-existing internal-offline document extraction helper, not a newly introduced Word/Mermaid renderer. Playwright may also be unrelated to this migration. Review and record the conclusion before checking M10 packaging items.\n\n")
     for item in sample(review_required):
         f.write(f"- `{item}`\n")
 
@@ -280,14 +280,14 @@ PY
 if [[ "$run_commands" -eq 1 ]]; then
   run_step C1 "opencode tool tests" "${REPO_ROOT}/packages/opencode" "bun run test"
   run_step C2 "opencode typecheck" "${REPO_ROOT}/packages/opencode" "bun run typecheck"
-  run_step C3 "VS Code extension unit tests" "${REPO_ROOT}/packages/kilo-vscode" "bun run test:unit"
-  run_step C4 "VS Code extension typecheck" "${REPO_ROOT}/packages/kilo-vscode" "bun run typecheck"
-  run_step C5 "VS Code extension lint" "${REPO_ROOT}/packages/kilo-vscode" "bun run lint"
-  run_step C6 "VS Code extension package build" "${REPO_ROOT}/packages/kilo-vscode" "bun run package"
+  run_step C3 "VS Code extension unit tests" "${REPO_ROOT}/packages/chipmate-vscode" "bun run test:unit"
+  run_step C4 "VS Code extension typecheck" "${REPO_ROOT}/packages/chipmate-vscode" "bun run typecheck"
+  run_step C5 "VS Code extension lint" "${REPO_ROOT}/packages/chipmate-vscode" "bun run lint"
+  run_step C6 "VS Code extension package build" "${REPO_ROOT}/packages/chipmate-vscode" "bun run package"
 fi
 
 if [[ "$run_package" -eq 1 ]]; then
-  run_step C7 "VSIX packaging" "${REPO_ROOT}/packages/kilo-vscode" "bun run package:internal-offline"
+  run_step C7 "VSIX packaging" "${REPO_ROOT}/packages/chipmate-vscode" "bun run package:internal-offline"
 fi
 
 if [[ "$prepare_smoke" -eq 1 ]]; then

@@ -56,16 +56,16 @@ updates, matching the `edt` dispatcher already defined at
 
 - Change the constructor to accept what it needs to save and report progress:
   `CustomProviderDialog(cs: CoroutineScope, directory: String, save: suspend (CustomProviderSaveDto) -> ProviderActionResultDto)`.
-  Pass `save = { service<KiloProviderService>().saveCustom(it) }` from `custom()` so
+  Pass `save = { service<ChipMateProviderService>().saveCustom(it) }` from `custom()` so
   the existing workspace-reload + profile-refresh side effects in
-  `KiloProviderService.action` still run.
+  `ChipMateProviderService.action` still run.
 - Add a `var outcome: ProviderSettingsDto? = null` the panel reads after a
   successful close, and a `saving` guard to block double-submit (Enter while
   in-flight).
 - Extend `doValidate()` to require at least one model:
   ```kotlin
   if (models.text.split(',').none { it.isNotBlank() })
-      return ValidationInfo(KiloBundle.message("settings.providers.customModelsRequired"), models)
+      return ValidationInfo(ChipMateBundle.message("settings.providers.customModelsRequired"), models)
   ```
 - Override `doOKAction()` instead of letting the platform close on OK:
   - Return early if `saving`. Run `doValidate()`; if non-null, let the platform show
@@ -88,7 +88,7 @@ Add a top-level `internal fun customSaveError(id: String, result: ProviderAction
 ```kotlin
 result.error?.let { return it }
 val present = result.state.providers.any { it.id == id }
-if (!present) return KiloBundle.message("settings.providers.customNotUsable")
+if (!present) return ChipMateBundle.message("settings.providers.customNotUsable")
 return null
 ```
 This is the safety net: even if validation passes, a provider that came back only in
@@ -103,7 +103,7 @@ apply the dialog's `outcome` to the panel (update `state`, `view.update(next)`,
 `launch()`, which also removes the `busy`-gated silent `return` at
 `ProvidersSettingsUi.kt:222`/`266`.
 
-### 2. `backend/.../provider/KiloBackendProviderSettingsManager.kt`
+### 2. `backend/.../provider/ChipMateBackendProviderSettingsManager.kt`
 
 Extend `validate()` (`:279-287`) to reject empty models so the API is safe even when
 called outside the JetBrains dialog:
@@ -113,7 +113,7 @@ if (input.models.isEmpty()) return "At least one model ID is required."
 This runs before any `patch`, so nothing is written to config on the empty-models
 path. No change needed to `buildCustomProviderPatch`.
 
-### 3. `frontend/.../resources/messages/KiloBundle.properties`
+### 3. `frontend/.../resources/messages/ChipMateBundle.properties`
 
 Add message keys near the existing custom-provider strings (`:470-477`):
 ```
@@ -126,7 +126,7 @@ settings.providers.customNotUsable=Provider saved but has no usable models. Chec
 Follow the JetBrains settings test pattern (fake-RPC frontend test + MockCliServer
 backend test). Do not mock the EDT or add test-only accessors.
 
-### Backend — `backend/.../provider/KiloBackendProviderSettingsManagerTest.kt`
+### Backend — `backend/.../provider/ChipMateBackendProviderSettingsManagerTest.kt`
 
 - `saveCustom` with empty `models` returns a non-null `error` and issues **no**
   `PATCH /global/config` (assert against `MockCliServer` recorded requests).
@@ -144,14 +144,14 @@ backend test). Do not mock the EDT or add test-only accessors.
 
 ## Verification
 
-From `packages/kilo-jetbrains/`:
+From `packages/chipmate-jetbrains/`:
 - `./gradlew typecheck`
 - `./gradlew test`
 
 ## Out of scope / follow-ups
 
 - Wiring the already-implemented `fetchCustomModels` RPC
-  (`KiloProviderService.fetchCustomModels`) into the dialog as a "Fetch models"
+  (`ChipMateProviderService.fetchCustomModels`) into the dialog as a "Fetch models"
   button. This would improve UX further but is not required to fix the silent
   failure; track separately.
 - Changing the CLI's zero-model drop in `packages/opencode/src/provider/provider.ts`

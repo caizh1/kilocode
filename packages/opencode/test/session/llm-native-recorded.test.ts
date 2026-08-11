@@ -27,9 +27,9 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { LayerNodePlatform } from "@opencode-ai/core/effect/app-node-platform"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "../fixtures/recordings")
-const KILO_FIXTURES_DIR = path.join(FIXTURES_DIR, "kilocode") // kilocode_change
+const CHIPMATE_FIXTURES_DIR = path.join(FIXTURES_DIR, "chipmate") // chipmate_change
 
-const zenURL = (connection: string) => `https://console.opencode.ai/proxy/connections/${connection}/v1` // kilocode_change
+const zenURL = (connection: string) => `https://console.opencode.ai/proxy/connections/${connection}/v1` // chipmate_change
 
 const replayOpenAIOAuth = {
   type: "oauth",
@@ -60,10 +60,10 @@ const cloneModel = (model: ModelsDev.Provider["models"][string]) => {
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- The config schema accepts the same model shape except object-valued experimental metadata.
   if (typeof experimental === "boolean") {
     // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- The fixture model already matches config input when experimental is boolean.
-    return cloned as NonNullable<NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]>["models"]>[string] // kilocode_change
+    return cloned as NonNullable<NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]>["models"]>[string] // chipmate_change
   }
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- Dropping non-boolean experimental metadata makes the fixture model match config input.
-  return rest as NonNullable<NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]>["models"]>[string] // kilocode_change
+  return rest as NonNullable<NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]>["models"]>[string] // chipmate_change
 }
 
 const envValue = (...names: string[]) => names.map((name) => process.env[name]).find(Boolean)
@@ -80,7 +80,7 @@ const recordOpenAIOAuth = (() => {
 })()
 
 function decodeRecordOpenAIOAuth() {
-  const value = process.env.KILO_RECORD_OPENAI_AUTH
+  const value = process.env.CHIPMATE_RECORD_OPENAI_AUTH
   if (!value) return undefined
   try {
     const auth = Option.getOrUndefined(decodeAuth(JSON.parse(value)))
@@ -121,7 +121,7 @@ const RECORDED_SCENARIOS = [
     cassette: "session/native-openai-tool-loop",
     protocol: "openai-responses",
     tags: ["opencode", "native", "tool-loop"],
-    canRecord: () => Boolean(envValue("KILO_RECORD_OPENAI_API_KEY", "OPENAI_API_KEY")),
+    canRecord: () => Boolean(envValue("CHIPMATE_RECORD_OPENAI_API_KEY", "OPENAI_API_KEY")),
     config: (model) =>
       providerConfig({
         providerID: ProviderV2.ID.openai,
@@ -131,7 +131,7 @@ const RECORDED_SCENARIOS = [
         api: "https://api.openai.com/v1",
         model,
         options: {
-          apiKey: envValue("KILO_RECORD_OPENAI_API_KEY", "OPENAI_API_KEY") ?? "fixture-openai-key",
+          apiKey: envValue("CHIPMATE_RECORD_OPENAI_API_KEY", "OPENAI_API_KEY") ?? "fixture-openai-key",
           baseURL: "https://api.openai.com/v1",
         },
       }),
@@ -161,24 +161,24 @@ const RECORDED_SCENARIOS = [
   },
   {
     id: "opencode-proxy",
-    name: "OpenCode proxy", // kilocode_change
+    name: "OpenCode proxy", // chipmate_change
     providerID: ProviderV2.ID.opencode,
     modelID: "gpt-5.2-codex",
     cassette: "session/native-zen-tool-loop",
     protocol: "openai-responses",
     tags: ["opencode", "zen", "native", "tool-loop"],
-    canRecord: () => Boolean(process.env.KILO_RECORD_CONSOLE_TOKEN && process.env.KILO_RECORD_ZEN_ORG_ID),
+    canRecord: () => Boolean(process.env.CHIPMATE_RECORD_CONSOLE_TOKEN && process.env.CHIPMATE_RECORD_ZEN_ORG_ID),
     config: (model) =>
       providerConfig({
         providerID: ProviderV2.ID.opencode,
         name: "OpenCode Zen",
-        env: ["KILO_CONSOLE_TOKEN"],
+        env: ["CHIPMATE_CONSOLE_TOKEN"],
         npm: "@ai-sdk/openai-compatible",
-        api: zenURL(process.env.KILO_RECORD_ZEN_CONNECTION ?? "fixture"),
+        api: zenURL(process.env.CHIPMATE_RECORD_ZEN_CONNECTION ?? "fixture"),
         model,
         options: {
-          apiKey: process.env.KILO_RECORD_CONSOLE_TOKEN ?? "fixture-console-token",
-          headers: { "x-org-id": process.env.KILO_RECORD_ZEN_ORG_ID ?? "fixture-org" },
+          apiKey: process.env.CHIPMATE_RECORD_CONSOLE_TOKEN ?? "fixture-console-token",
+          headers: { "x-org-id": process.env.CHIPMATE_RECORD_ZEN_ORG_ID ?? "fixture-org" },
         },
       }),
   },
@@ -190,7 +190,7 @@ const RECORDED_SCENARIOS = [
     cassette: "session/native-anthropic-tool-loop",
     protocol: "anthropic-messages",
     tags: ["opencode", "native", "tool-loop"],
-    canRecord: () => Boolean(envValue("KILO_RECORD_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")),
+    canRecord: () => Boolean(envValue("CHIPMATE_RECORD_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")),
     config: (model) =>
       providerConfig({
         providerID: ProviderV2.ID.anthropic,
@@ -200,7 +200,7 @@ const RECORDED_SCENARIOS = [
         api: "https://api.anthropic.com/v1",
         model,
         options: {
-          apiKey: envValue("KILO_RECORD_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY") ?? "fixture-anthropic-key",
+          apiKey: envValue("CHIPMATE_RECORD_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY") ?? "fixture-anthropic-key",
           baseURL: "https://api.anthropic.com/v1",
         },
       }),
@@ -209,7 +209,7 @@ const RECORDED_SCENARIOS = [
 
 const shouldRecord = process.env.RECORD === "true"
 const selectedScenarios = new Set(
-  (envValue("KILO_RECORDED_SCENARIO", "RECORDED_PROVIDER") ?? "")
+  (envValue("CHIPMATE_RECORDED_SCENARIO", "RECORDED_PROVIDER") ?? "")
     .split(",")
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean),
@@ -223,15 +223,15 @@ function isSelected(scenario: RecordedScenario) {
 }
 
 const canRun = (scenario: RecordedScenario) =>
-  // kilocode_change start
+  // chipmate_change start
   shouldRecord
     ? scenario.canRecord()
-    : HttpRecorderInternal.hasCassetteSync(scenario.cassette, { directory: KILO_FIXTURES_DIR })
-  // kilocode_change end
+    : HttpRecorderInternal.hasCassetteSync(scenario.cassette, { directory: CHIPMATE_FIXTURES_DIR })
+  // chipmate_change end
 
 const recordError = (scenario: RecordedScenario) =>
   scenario.id === "openai-oauth"
-    ? "Set KILO_RECORD_OPENAI_AUTH to an OAuth auth JSON object in the recording environment."
+    ? "Set CHIPMATE_RECORD_OPENAI_AUTH to an OAuth auth JSON object in the recording environment."
     : `Missing recording credentials for ${scenario.name}.`
 
 const redactRecordedBody = (body: string) =>
@@ -277,12 +277,12 @@ function recordedNativeLLMLayer(scenario: RecordedScenario) {
   }
   const recordedHttp = shouldRecord
     ? HttpRecorderInternal.cassetteLayer(scenario.cassette, {
-        directory: KILO_FIXTURES_DIR, // kilocode_change
+        directory: CHIPMATE_FIXTURES_DIR, // chipmate_change
         mode: "record",
         metadata,
         redactor: HttpRecorderInternal.Redactor.make(redact),
       })
-    : HttpRecorder.http(scenario.cassette, { directory: KILO_FIXTURES_DIR, metadata, redact }) // kilocode_change
+    : HttpRecorder.http(scenario.cassette, { directory: CHIPMATE_FIXTURES_DIR, metadata, redact }) // chipmate_change
   return AppNodeBuilder.build(LayerNode.group([Provider.node, LLM.node]), [
     [LayerNodePlatform.requestExecutor, RequestExecutor.layer.pipe(Layer.provide(recordedHttp))],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalNativeLlm: true })],
@@ -294,7 +294,7 @@ const writeConfig = (directory: string, scenario: RecordedScenario, model: Model
   Effect.promise(() =>
     Bun.write(
       path.join(directory, "opencode.json"),
-      JSON.stringify({ $schema: "https://app.kilo.ai/config.json", ...scenario.config(model) }), // kilocode_change
+      JSON.stringify({ $schema: "https://app.chipmate.ai/config.json", ...scenario.config(model) }), // chipmate_change
     ),
   )
 

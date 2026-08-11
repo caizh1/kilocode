@@ -1,6 +1,6 @@
 import path from "path"
 import { fileURLToPath } from "url"
-import { parseModelsSnapshot } from "../src/kilocode/provider/models-snapshot-shape" // kilocode_change
+import { parseModelsSnapshot } from "../src/chipmate/provider/models-snapshot-shape" // chipmate_change
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -8,8 +8,8 @@ const dir = path.resolve(__dirname, "..")
 
 process.chdir(dir)
 
-const modelsUrl = process.env.KILO_MODELS_URL || "https://models.dev"
-// kilocode_change start
+const modelsUrl = process.env.CHIPMATE_MODELS_URL || "https://models.dev"
+// chipmate_change start
 const cacheFile = path.resolve(dir, "node_modules/.cache/models-dev-api.json")
 const raw = await (async () => {
   if (process.env.MODELS_DEV_API_JSON) {
@@ -45,6 +45,15 @@ const raw = await (async () => {
     throw err
   }
 })()
-export const modelsData = JSON.stringify(parseModelsSnapshot(raw).data)
-// kilocode_change end
+const excluded = new Set(
+  (process.env.CHIPMATE_EXCLUDED_MODEL_PROVIDERS ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean),
+)
+const parsed = parseModelsSnapshot(raw).data
+export const modelsData = JSON.stringify(
+  Object.fromEntries(Object.entries(parsed).filter(([provider]) => !excluded.has(provider))),
+)
+// chipmate_change end
 console.log("Loaded models.dev snapshot")

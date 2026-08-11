@@ -53,7 +53,7 @@ export const dict = {
 
   "dialog.usageExceeded.freeTier.title": "無料制限に達しました",
   "dialog.usageExceeded.freeTier.description":
-    "Kilo Go にサブスクライブして、最高のオープンソースモデルに安定してアクセスできます。月額 $5 から。",
+    "ChipMate Go にサブスクライブして、最高のオープンソースモデルに安定してアクセスできます。月額 $5 から。",
   "dialog.usageExceeded.freeTier.actionLabel": "サブスクライブ",
   "dialog.usageExceeded.accountRateLimit.title": "Go の制限に達しました",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -104,7 +104,7 @@ export const dict = {
   "ui.textField.copied": "コピーしました",
 
   "ui.imagePreview.alt": "画像プレビュー",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Mermaid 図をレンダリング中...",
   "ui.mermaid.renderError": "Mermaid のレンダリングに失敗しました: {{message}}",
   "ui.mermaid.errorDefault": "Mermaid 図をレンダリングできません。",
@@ -126,12 +126,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "スクロール可能なコンテンツ",
 
   "ui.tool.read": "読み込み",
   "ui.tool.loaded": "読み込み済み",
-  "ui.tool.swePruned": "SWE-Pruner · {{total}} 行中 {{kept}} 行を保持", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · {{total}} 行中 {{kept}} 行を保持", // chipmate_change
   "ui.tool.list": "リスト",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -167,7 +167,7 @@ export const dict = {
   "ui.message.collapse": "メッセージを折りたたむ",
   "ui.message.copy": "コピー",
   "ui.message.copyMessage": "メッセージをコピー",
-  "ui.message.deleteQueued": "キュー内のメッセージを削除", // kilocode_change
+  "ui.message.deleteQueued": "キュー内のメッセージを削除", // chipmate_change
   "ui.message.forkMessage": "新しいセッションにフォーク",
   "ui.message.revertMessage": "この時点までリセット",
   "ui.message.copyResponse": "応答をコピー",
@@ -183,9 +183,9 @@ export const dict = {
   "ui.patch.action.patched": "パッチ適用済み",
 
   "ui.question.subtitle.answered": "{{count}}件回答済み",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(回答なし)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(未回答)",
   "ui.question.multiHint": "該当するものをすべて選択",
   "ui.question.singleHint": "1 つ選択",

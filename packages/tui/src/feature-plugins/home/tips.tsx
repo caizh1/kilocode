@@ -1,4 +1,4 @@
-import type { TuiPlugin, TuiPluginApi } from "@kilocode/plugin/tui"
+import type { TuiPlugin, TuiPluginApi } from "@chipmate/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, Show } from "solid-js"
 import { Tips } from "./tips-view"
@@ -44,7 +44,7 @@ const tui: TuiPlugin = async (api) => {
             (item) => item.id !== "opencode" || Object.values(item.models).some((model) => model.cost?.input !== 0),
           ),
         )
-        const show = createMemo(() => !hidden()) // kilocode_change - always show tips regardless of first-time status
+        const show = createMemo(() => !hidden()) // chipmate_change - always show tips regardless of first-time status
         return <View api={api} hidden={hidden()} show={show()} connected={connected()} />
       },
     },

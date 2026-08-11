@@ -1,5 +1,5 @@
 ---
-"@kilocode/kilo-indexing": patch
+"@chipmate/chipmate-indexing": patch
 "chipmate": patch
 ---
 

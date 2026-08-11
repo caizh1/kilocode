@@ -1,0 +1,18 @@
+{
+  "kind": "mermaid-diagram",
+  "title": "Word TOC 修复验收流程",
+  "createdAt": "2026-07-15T12:55:33.013Z",
+  "updatedAt": "2026-07-15T12:55:33.013Z",
+  "primaryFile": "word-native-toc-qa.mmd",
+  "derivedFiles": [
+    "mermaid-diagnostics.json"
+  ],
+  "sourceFiles": [],
+  "warnings": [
+    "mermaid-render-failed: null is not an object (evaluating 'body.ok')",
+    "chrome-not-found: Mermaid renderer executable was not found. Configure CHIPMATE_MERMAID_RENDER_ENDPOINT or install mmdc externally."
+  ],
+  "quality": {
+    "status": "failed"
+  }
+}

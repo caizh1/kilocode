@@ -6,9 +6,9 @@ import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./glob.txt"
 import * as Tool from "./tool"
-import * as WorkflowGuard from "@/kilocode/skill/workflow-guard" // kilocode_change
+import * as WorkflowGuard from "@/chipmate/skill/workflow-guard" // chipmate_change
 
-// kilocode_change start — support absolute glob patterns (e.g. ~/.config/kilo/command/*.md)
+// chipmate_change start — support absolute glob patterns (e.g. ~/.config/chipmate/command/*.md)
 function normalize(p: string) {
   return p.replaceAll("\\", "/")
 }
@@ -31,7 +31,7 @@ function prefix(pattern: string) {
   const value = index === -1 ? normalized : normalized.slice(0, index)
   return value.endsWith("/") ? value.slice(0, -1) : value
 }
-// kilocode_change end
+// chipmate_change end
 
 export const Parameters = Schema.Struct({
   pattern: Schema.String.annotate({ description: "The glob pattern to match files against" }),
@@ -51,7 +51,7 @@ export const GlobTool = Tool.define(
       execute: (params: { pattern: string; path?: string }, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const ins = yield* InstanceState.context
-          const absolute = split(params.pattern) // kilocode_change
+          const absolute = split(params.pattern) // chipmate_change
           yield* ctx.ask({
             permission: "glob",
             patterns: [params.pattern],
@@ -62,13 +62,13 @@ export const GlobTool = Tool.define(
             },
           })
 
-          // kilocode_change start
+          // chipmate_change start
           const base = absolute?.dir ?? params.path ?? ins.directory
           const search = path.isAbsolute(base) ? base : path.resolve(ins.directory, base)
           const probe = path.resolve(search, prefix(absolute?.pattern ?? params.pattern))
           const artifact = WorkflowGuard.artifact(ctx.sessionID, ctx.messages, ins.directory, probe)
           if (artifact) return yield* Effect.fail(new Error(artifact))
-          // kilocode_change end
+          // chipmate_change end
           const info = yield* fs.stat(search).pipe(Effect.catch(() => Effect.succeed(undefined)))
           if (info?.type === "File") {
             throw new Error(`glob path must be a directory: ${search}`)
@@ -79,16 +79,16 @@ export const GlobTool = Tool.define(
           })
 
           const limit = 100
-          // kilocode_change start - retain bounded-search metadata from Core ripgrep.
+          // chipmate_change start - retain bounded-search metadata from Core ripgrep.
           const result = yield* ripgrep.glob({
             cwd: search,
-            pattern: absolute?.pattern ?? params.pattern, // kilocode_change - absolute patterns are split into cwd + relative glob
+            pattern: absolute?.pattern ?? params.pattern, // chipmate_change - absolute patterns are split into cwd + relative glob
             limit,
-            signal: ctx.abort, // kilocode_change - stop ripgrep when the tool call is cancelled
+            signal: ctx.abort, // chipmate_change - stop ripgrep when the tool call is cancelled
           })
           const files = result.items
           const truncated = result.truncated
-          // kilocode_change end
+          // chipmate_change end
 
           const output = []
           if (files.length === 0) output.push("No files found")
@@ -100,7 +100,7 @@ export const GlobTool = Tool.define(
                 `(Results are truncated: showing first ${limit} results. Consider using a more specific path or pattern.)`,
               )
             }
-            if (result.partial) output.push("", "(Some discovered files could not be read.)") // kilocode_change
+            if (result.partial) output.push("", "(Some discovered files could not be read.)") // chipmate_change
           }
 
           return {

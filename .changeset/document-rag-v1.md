@@ -1,7 +1,7 @@
 ---
-"@kilocode/kilo-indexing": patch
-"@kilocode/cli": patch
-"@kilocode/sdk": patch
+"@chipmate/chipmate-indexing": patch
+"@chipmate/cli": patch
+"@chipmate/sdk": patch
 "chipmate": patch
 ---
 

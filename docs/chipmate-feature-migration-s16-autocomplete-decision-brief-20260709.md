@@ -8,9 +8,9 @@ This brief is read-only. It does not keep, revert, stage, commit, or otherwise m
 
 | File | Size | SHA256 |
 |---|---:|---|
-| `packages/kilo-vscode/src/services/qwen-autocomplete/smoke.ts` | `2973` | `e88d13e24bbc5b74261fe5b89b3dee9d41a511f4e55361d13296804f33e19376` |
-| `packages/kilo-vscode/src/services/qwen-autocomplete/index.ts` | `3300` | `888b5f9dc92f1ee9abb24f023d999bb4b394986f7d5ef2148199fc1d7b4d5e35` |
-| `packages/kilo-vscode/package.json` | `49636` | `416f7c9ba72ca9f1a9aa46ec931d2d1b2da1fb280cd570e22b4a07c79b35a672` |
+| `packages/chipmate-vscode/src/services/qwen-autocomplete/smoke.ts` | `2973` | `e88d13e24bbc5b74261fe5b89b3dee9d41a511f4e55361d13296804f33e19376` |
+| `packages/chipmate-vscode/src/services/qwen-autocomplete/index.ts` | `3300` | `888b5f9dc92f1ee9abb24f023d999bb4b394986f7d5ef2148199fc1d7b4d5e35` |
+| `packages/chipmate-vscode/package.json` | `49636` | `416f7c9ba72ca9f1a9aa46ec931d2d1b2da1fb280cd570e22b4a07c79b35a672` |
 
 ## Why S16 is still blocked
 

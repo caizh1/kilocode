@@ -362,7 +362,7 @@ def write_summary(output: Path, target: str, package_status: str, package_checks
             "",
             "## Boundary",
             "",
-            "This intake verifier is a guardrail for returned target-machine evidence. It does not replace manual M11 review and does not prove Kilo native QA preservation unless S1-S16 runtime evidence is present and passing.",
+            "This intake verifier is a guardrail for returned target-machine evidence. It does not replace manual M11 review and does not prove ChipMate native QA preservation unless S1-S16 runtime evidence is present and passing.",
             "Runtime evidence must also include `runtime-intake-summary.md` with final status `PASS`; a manually filled S1-S16 table alone is not sufficient.",
             "Full runtime evidence must also include a filled target evidence return template whose `Overall target status` is `PASS`.",
             "",

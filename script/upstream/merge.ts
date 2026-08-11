@@ -2,7 +2,7 @@
 /**
  * Upstream Merge Orchestration Script
  *
- * Automates the process of merging upstream opencode changes into Kilo.
+ * Automates the process of merging upstream opencode changes into ChipMate.
  *
  * Usage:
  *   bun run script/upstream/merge.ts [options]
@@ -178,13 +178,13 @@ function logWorktrees(refs: worktree.RefInfo, input: worktree.RefInput, baseName
   logger.divider()
   logger.info("Reference worktrees:")
   logger.info(`  opencode:   ${refs.opencode} (${input.tag}, ${input.upstream.slice(0, 8)})`)
-  logger.info(`  kilo-main:  ${refs.main} (${baseName}, ${input.base.slice(0, 8)})`)
+  logger.info(`  chipmate-main:  ${refs.main} (${baseName}, ${input.base.slice(0, 8)})`)
   logger.info(`  auto-merge: ${refs.auto} (${refs.branch}, ${refs.snapshot.slice(0, 8)})`)
   logger.info("")
   logger.info("Agent prompt:")
   logger.info("  Use these references while resolving the merge:")
   logger.info(`  - upstream opencode: ${refs.opencode}`)
-  logger.info(`  - Kilo base main: ${refs.main}`)
+  logger.info(`  - ChipMate base main: ${refs.main}`)
   logger.info(`  - automated merge snapshot: ${refs.auto}`)
 }
 
@@ -251,7 +251,7 @@ async function main() {
     logger.setVerbose(true)
   }
 
-  logger.header("Kilo Upstream Merge Tool")
+  logger.header("ChipMate Upstream Merge Tool")
 
   // Step 1: Validate environment
   logger.step(1, 8, "Validating environment...")
@@ -376,7 +376,7 @@ async function main() {
     conflictReport.recommendations.push(`${i18nCount} i18n files will be auto-transformed`)
   }
   if (keepOursCount > 0) {
-    conflictReport.recommendations.push(`${keepOursCount} files will keep Kilo's version`)
+    conflictReport.recommendations.push(`${keepOursCount} files will keep ChipMate's version`)
   }
   if (codemodCount > 0) {
     conflictReport.recommendations.push(`${codemodCount} files will be processed by codemods`)
@@ -411,7 +411,7 @@ async function main() {
   logger.step(5, 8, "Creating branches...")
 
   const author = options.author || (await getAuthor())
-  const kiloVersion = await version.getCurrentKiloVersion()
+  const chipmateVersion = await version.getCurrentChipMateVersion()
   const dirs = ["packages/ui/src/assets/icons/provider", "packages/ui/src/components/provider-icons"]
 
   logger.info("Resetting generated provider icons before checkout...")
@@ -425,18 +425,18 @@ async function main() {
   const backupBranch = await createBackupBranch(config.baseBranch)
   logger.info(`Created backup branch: ${backupBranch}`)
 
-  // Create Kilo merge branch
-  const kiloBranch = `${author}/kilo-opencode-${targetVersion.tag}`
-  const kiloBackup = await git.backupAndDeleteBranch(kiloBranch)
-  if (kiloBackup) {
-    logger.info(`Backed up existing branch to: ${kiloBackup}`)
+  // Create ChipMate merge branch
+  const chipmateBranch = `${author}/chipmate-opencode-${targetVersion.tag}`
+  const chipmateBackup = await git.backupAndDeleteBranch(chipmateBranch)
+  if (chipmateBackup) {
+    logger.info(`Backed up existing branch to: ${chipmateBackup}`)
   }
-  await git.createBranch(kiloBranch)
+  await git.createBranch(chipmateBranch)
 
   if (options.push) {
-    await git.push(config.originRemote, kiloBranch, true)
+    await git.push(config.originRemote, chipmateBranch, true)
   }
-  logger.info(`Created Kilo branch: ${kiloBranch}`)
+  logger.info(`Created ChipMate branch: ${chipmateBranch}`)
 
   // Create opencode compatibility branch from upstream commit
   const opencodeBranch = `${author}/opencode-${targetVersion.tag}`
@@ -458,36 +458,36 @@ async function main() {
   }
 
   // Step 6: Apply ALL transformations to opencode branch (pre-merge)
-  // This reduces conflicts by transforming upstream code to Kilo conventions BEFORE merging
+  // This reduces conflicts by transforming upstream code to ChipMate conventions BEFORE merging
   logger.step(6, 8, "Applying transformations to opencode branch (pre-merge)...")
 
-  logger.info("Removing files skipped in Kilo...")
+  logger.info("Removing files skipped in ChipMate...")
   const skips = await skipFiles({ dryRun: false, verbose: options.verbose, force: true })
   const count = skips.filter((r) => r.action === "removed").length
   if (count > 0) {
     logger.success(`Removed ${count} skipped file(s) from opencode branch`)
   }
 
-  // 6a. Transform package names (opencode-ai -> @kilocode/cli)
+  // 6a. Transform package names (opencode-ai -> @chipmate/cli)
   logger.info("Transforming package names...")
   const nameResults = await transformPackageNames({ dryRun: false, verbose: options.verbose })
   logger.success(`Transformed ${nameResults.length} files`)
 
-  // 6b. Preserve Kilo versions
-  logger.info("Preserving Kilo versions...")
+  // 6b. Preserve ChipMate versions
+  logger.info("Preserving ChipMate versions...")
   const versionResults = await preserveAllVersions({
     dryRun: false,
     verbose: options.verbose,
-    targetVersion: kiloVersion,
+    targetVersion: chipmateVersion,
   })
   logger.success(`Preserved versions in ${versionResults.length} files`)
 
-  // 6c. Transform i18n files (OpenCode -> Kilo branding)
+  // 6c. Transform i18n files (OpenCode -> ChipMate branding)
   logger.info("Transforming i18n files...")
   const i18nPreResults = await transformAllI18n({ dryRun: false, verbose: options.verbose })
   const i18nPreCount = i18nPreResults.filter((r) => r.replacements > 0).length
   if (i18nPreCount > 0) {
-    logger.success(`Transformed ${i18nPreCount} i18n files with Kilo branding`)
+    logger.success(`Transformed ${i18nPreCount} i18n files with ChipMate branding`)
   }
 
   // 6d. Transform branding-only files (take-theirs patterns)
@@ -495,10 +495,10 @@ async function main() {
   const brandingResults = await transformAllTakeTheirs({ dryRun: false, verbose: options.verbose })
   const brandingCount = brandingResults.filter((r) => r.action === "transformed" && r.replacements > 0).length
   if (brandingCount > 0) {
-    logger.success(`Transformed ${brandingCount} files with Kilo branding`)
+    logger.success(`Transformed ${brandingCount} files with ChipMate branding`)
   }
 
-  // 6f. Transform package.json files (names, deps, Kilo injections)
+  // 6f. Transform package.json files (names, deps, ChipMate injections)
   logger.info("Transforming package.json files...")
   const pkgPreResults = await transformAllPackageJson({ dryRun: false, verbose: options.verbose })
   const pkgPreCount = pkgPreResults.filter((r) => r.action === "transformed" && r.changes.length > 0).length
@@ -530,26 +530,26 @@ async function main() {
     logger.success(`Transformed ${webPreCount} web/docs files`)
   }
 
-  // 6j. Reset keep-ours files to Kilo's version
-  logger.info("Resetting Kilo-specific files...")
+  // 6j. Reset keep-ours files to ChipMate's version
+  logger.info("Resetting ChipMate-specific files...")
   const keepOursResults = await resetToOurs(config.keepOurs, { dryRun: false, verbose: options.verbose })
-  logger.success(`Reset ${keepOursResults.length} files to Kilo's version`)
+  logger.success(`Reset ${keepOursResults.length} files to ChipMate's version`)
 
   // 6k. Record the last merged upstream tag so future automation can find it
   // without walking ls-remote + isAncestor for every tag.
   const versionFile = await writeVersion(targetVersion.tag)
   logger.success(`Recorded ${targetVersion.tag} in ${versionFile.split("/").pop()}`)
 
-  // Clean untracked build artifacts from Kilo-specific directories.
+  // Clean untracked build artifacts from ChipMate-specific directories.
   // These packages don't exist in upstream, so their .gitignore files are absent
   // on the opencode branch. Artifacts like bin/, out/, .next/ etc. would otherwise
   // be picked up by the git add -A below.
-  logger.info("Cleaning Kilo-specific directory artifacts...")
-  await git.cleanDirectories(config.kiloDirectories)
+  logger.info("Cleaning ChipMate-specific directory artifacts...")
+  await git.cleanDirectories(config.chipmateDirectories)
 
   // Commit all transformations
   await git.stageAll()
-  const compatMessage = `refactor: kilo compat for ${targetVersion.tag}`
+  const compatMessage = `refactor: chipmate compat for ${targetVersion.tag}`
   if (prior) {
     const transformed = await git.writeTree()
     const tree = await git.overlayCompatTree({
@@ -567,13 +567,13 @@ async function main() {
   }
   logger.success("Committed pre-merge transformations")
 
-  // Step 7: Merge into Kilo branch
-  logger.step(7, 8, "Merging into Kilo branch...")
+  // Step 7: Merge into ChipMate branch
+  logger.step(7, 8, "Merging into ChipMate branch...")
 
-  await git.checkout(kiloBranch)
+  await git.checkout(chipmateBranch)
   if (prior) {
     const linked = await git.recordAncestor(targetVersion.commit, `merge: record upstream ${targetVersion.tag}`)
-    if (linked) logger.info(`Recorded upstream ${targetVersion.tag} as Kilo branch ancestry`)
+    if (linked) logger.info(`Recorded upstream ${targetVersion.tag} as ChipMate branch ancestry`)
   }
   const mergeResult = await git.merge(opencodeBranch)
 
@@ -591,10 +591,10 @@ async function main() {
     }
 
     // Since we applied all branding transforms pre-merge, remaining conflicts should be minimal.
-    // These are likely files with kilocode_change markers or actual logic differences.
+    // These are likely files with chipmate_change markers or actual logic differences.
 
-    // Step 7a: Skip files that shouldn't exist in Kilo
-    logger.info("Removing files that shouldn't exist in Kilo...")
+    // Step 7a: Skip files that shouldn't exist in ChipMate
+    logger.info("Removing files that shouldn't exist in ChipMate...")
     const skipResults = await skipFiles({ dryRun: false, verbose: options.verbose })
     const skippedCount = skipResults.filter((r) => r.action === "removed").length
     if (skippedCount > 0) {
@@ -602,16 +602,16 @@ async function main() {
     }
 
     // Step 7b: Auto-resolve keep-ours conflicts
-    logger.info("Keeping Kilo-specific files...")
+    logger.info("Keeping ChipMate-specific files...")
     const resolved = await keepOursFiles({ dryRun: false, verbose: options.verbose })
     const autoResolved = resolved.filter((r) => r.action === "kept")
     if (autoResolved.length > 0) {
-      logger.success(`Auto-resolved ${autoResolved.length} conflicts (kept Kilo's version)`)
+      logger.success(`Auto-resolved ${autoResolved.length} conflicts (kept ChipMate's version)`)
     }
 
     // Step 7c: Try to auto-resolve remaining conflicts with post-merge transforms
     // These handle edge cases where pre-merge transforms might have missed something.
-    // Files with kilocode_change markers are flagged for manual resolution instead.
+    // Files with chipmate_change markers are flagged for manual resolution instead.
     let conflictedFiles = await git.getConflictedFiles()
     const flaggedFiles: string[] = []
 
@@ -620,7 +620,7 @@ async function main() {
 
       // Step 7c-pre: syntax-aware resolution via mergiraf.
       // Handles the common pattern of neighbouring import additions around
-      // kilocode_change markers, plus JSON/YAML/TOML key merges and other
+      // chipmate_change markers, plus JSON/YAML/TOML key merges and other
       // structural conflicts. Presence is enforced at startup.
       logger.info("Running mergiraf on remaining conflicts...")
       const mgResult = await runMergiraf(conflictedFiles)
@@ -649,7 +649,7 @@ async function main() {
       }
       const i18nFlagged = i18nResults.filter((r) => r.flagged).map((r) => r.file)
       if (i18nFlagged.length > 0) {
-        logger.warn(`${i18nFlagged.length} i18n file(s) have kilocode_change markers — flagged for manual resolution`)
+        logger.warn(`${i18nFlagged.length} i18n file(s) have chipmate_change markers — flagged for manual resolution`)
         flaggedFiles.push(...i18nFlagged)
       }
 
@@ -667,7 +667,7 @@ async function main() {
         const takeFlagged = takeTheirsResults.filter((r) => r.action === "flagged").map((r) => r.file)
         if (takeFlagged.length > 0) {
           logger.warn(
-            `${takeFlagged.length} branding file(s) have kilocode_change markers — flagged for manual resolution`,
+            `${takeFlagged.length} branding file(s) have chipmate_change markers — flagged for manual resolution`,
           )
           flaggedFiles.push(...takeFlagged)
         }
@@ -687,7 +687,7 @@ async function main() {
         const pkgFlagged = pkgResults.filter((r) => r.action === "flagged").map((r) => r.file)
         if (pkgFlagged.length > 0) {
           logger.warn(
-            `${pkgFlagged.length} package.json file(s) have kilocode_change markers — flagged for manual resolution`,
+            `${pkgFlagged.length} package.json file(s) have chipmate_change markers — flagged for manual resolution`,
           )
           flaggedFiles.push(...pkgFlagged)
         }
@@ -707,7 +707,7 @@ async function main() {
         const scriptFlagged = scriptResults.filter((r) => r.action === "flagged").map((r) => r.file)
         if (scriptFlagged.length > 0) {
           logger.warn(
-            `${scriptFlagged.length} script file(s) have kilocode_change markers — flagged for manual resolution`,
+            `${scriptFlagged.length} script file(s) have chipmate_change markers — flagged for manual resolution`,
           )
           flaggedFiles.push(...scriptFlagged)
         }
@@ -727,7 +727,7 @@ async function main() {
         const extFlagged = extResults.filter((r) => r.action === "flagged").map((r) => r.file)
         if (extFlagged.length > 0) {
           logger.warn(
-            `${extFlagged.length} extension file(s) have kilocode_change markers — flagged for manual resolution`,
+            `${extFlagged.length} extension file(s) have chipmate_change markers — flagged for manual resolution`,
           )
           flaggedFiles.push(...extFlagged)
         }
@@ -747,7 +747,7 @@ async function main() {
         const webFlagged = webResults.filter((r) => r.action === "flagged").map((r) => r.file)
         if (webFlagged.length > 0) {
           logger.warn(
-            `${webFlagged.length} web/docs file(s) have kilocode_change markers — flagged for manual resolution`,
+            `${webFlagged.length} web/docs file(s) have chipmate_change markers — flagged for manual resolution`,
           )
           flaggedFiles.push(...webFlagged)
         }
@@ -787,13 +787,13 @@ async function main() {
 
     // Check remaining conflicts
     const remaining = await git.getConflictedFiles()
-    // Combine git-reported conflicts with files flagged due to kilocode_change markers
+    // Combine git-reported conflicts with files flagged due to chipmate_change markers
     const allManual = [...new Set([...remaining, ...flaggedFiles])]
     if (allManual.length > 0) {
       if (flaggedFiles.length > 0) {
-        logger.warn(`${flaggedFiles.length} file(s) were flagged because they contain kilocode_change markers:`)
+        logger.warn(`${flaggedFiles.length} file(s) were flagged because they contain chipmate_change markers:`)
         logger.list(flaggedFiles)
-        logger.info("  These files have intentional Kilo-specific changes. Keep our version or merge carefully.")
+        logger.info("  These files have intentional ChipMate-specific changes. Keep our version or merge carefully.")
         logger.info("")
       }
       if (remaining.length > 0) {
@@ -801,12 +801,12 @@ async function main() {
         logger.list(remaining)
       }
       logger.info("")
-      logger.info("These conflicts contain kilocode_change markers or actual code differences.")
+      logger.info("These conflicts contain chipmate_change markers or actual code differences.")
       logger.info("After resolving conflicts, run:")
       logger.info("  git add -A && git commit -m 'resolve merge conflicts'")
 
       // Save report before exiting so user has documentation
-      conflictReport.mergeBranch = kiloBranch
+      conflictReport.mergeBranch = chipmateBranch
       const reportPath = `upstream-merge-report-${targetVersion.version}.md`
       await report.saveReport(conflictReport, reportPath)
       logger.success(`Report saved to ${reportPath}`)
@@ -826,8 +826,8 @@ async function main() {
       logger.info("Next steps:")
       logger.info("  1. Resolve remaining conflicts manually")
       logger.info("  2. git add -A && git commit -m 'resolve merge conflicts'")
-      logger.info(`  3. git push ${config.originRemote} ${kiloBranch}`)
-      logger.info("  4. Create PR from " + kiloBranch + " to " + config.baseBranch)
+      logger.info(`  3. git push ${config.originRemote} ${chipmateBranch}`)
+      logger.info("  4. Create PR from " + chipmateBranch + " to " + config.baseBranch)
       logger.info("")
       logger.info("To rollback:")
       logger.info(`  git checkout ${config.baseBranch}`)
@@ -898,12 +898,12 @@ async function main() {
   }
 
   if (options.push) {
-    await git.push(config.originRemote, kiloBranch)
-    logger.success(`Pushed ${kiloBranch} to ${config.originRemote}`)
+    await git.push(config.originRemote, chipmateBranch)
+    logger.success(`Pushed ${chipmateBranch} to ${config.originRemote}`)
   }
 
   // Update merge branch in report
-  conflictReport.mergeBranch = kiloBranch
+  conflictReport.mergeBranch = chipmateBranch
 
   // Save final report
   const reportPath = `upstream-merge-report-${targetVersion.version}.md`
@@ -915,7 +915,7 @@ async function main() {
   logger.header("Merge Summary")
 
   logger.info(`Upstream version: ${targetVersion.tag}`)
-  logger.info(`Kilo branch: ${kiloBranch}`)
+  logger.info(`ChipMate branch: ${chipmateBranch}`)
   logger.info(`Opencode branch: ${opencodeBranch}`)
   logger.info(`Backup branch: ${backupBranch}`)
   logger.info(`Report: ${reportPath}`)
@@ -945,11 +945,11 @@ async function main() {
   if (remainingConflicts.length > 0) {
     logger.info("  1. Resolve remaining conflicts")
     logger.info("  2. git add -A && git commit -m 'resolve merge conflicts'")
-    logger.info(`  3. git push ${config.originRemote} ${kiloBranch}`)
-    logger.info("  4. Create PR from " + kiloBranch + " to " + config.baseBranch)
+    logger.info(`  3. git push ${config.originRemote} ${chipmateBranch}`)
+    logger.info("  4. Create PR from " + chipmateBranch + " to " + config.baseBranch)
   } else {
     logger.info("  1. Review changes")
-    logger.info("  2. Create PR from " + kiloBranch + " to " + config.baseBranch)
+    logger.info("  2. Create PR from " + chipmateBranch + " to " + config.baseBranch)
   }
 
   logger.info("")

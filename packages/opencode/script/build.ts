@@ -2,16 +2,16 @@
 
 import { $ } from "bun"
 import fs from "fs"
-import os from "os" // kilocode_change
+import os from "os" // chipmate_change
 import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
-import { createRequire } from "module" // kilocode_change
+import { createRequire } from "module" // chipmate_change
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const dir = path.resolve(__dirname, "..")
-const require = createRequire(import.meta.url) // kilocode_change
+const require = createRequire(import.meta.url) // chipmate_change
 
 process.chdir(dir)
 
@@ -19,20 +19,20 @@ const generated = await import("./generate.ts")
 
 import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
-// kilocode_change start
-import { stageBubblewrap } from "./kilocode/bubblewrap"
-import { LanceDBRuntime } from "../src/kilocode/lancedb"
-import { KiloSandboxWorker } from "./kilocode/kilo-sandbox-worker"
-import { KiloSandboxNetwork } from "./kilocode/kilo-sandbox-network"
-// kilocode_change end
+// chipmate_change start
+import { stageBubblewrap } from "./chipmate/bubblewrap"
+import { LanceDBRuntime } from "../src/chipmate/lancedb"
+import { ChipMateSandboxWorker } from "./chipmate/chipmate-sandbox-worker"
+import { ChipMateSandboxNetwork } from "./chipmate/chipmate-sandbox-network"
+// chipmate_change end
 
 const singleFlag = process.argv.includes("--single")
 const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
-// kilocode_change start - allow internal packaging to build an explicit target subset
+// chipmate_change start - allow internal packaging to build an explicit target subset
 const targetsArg =
-  process.argv.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length) ?? process.env.KILO_BUILD_TARGETS
+  process.argv.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length) ?? process.env.CHIPMATE_BUILD_TARGETS
 const requestedTargets = targetsArg
   ? new Set(
       targetsArg
@@ -41,16 +41,16 @@ const requestedTargets = targetsArg
         .filter(Boolean),
     )
   : undefined
-// kilocode_change end
+// chipmate_change end
 const plugin = createSolidTransformPlugin()
 
-// kilocode_change start - codebase indexing
+// chipmate_change start - codebase indexing
 function armPtyPlugin() {
   return {
-    name: "kilo-windows-arm64-pty",
+    name: "chipmate-windows-arm64-pty",
     setup(build: { onResolve: (opts: { filter: RegExp }, load: () => { path: string }) => void }) {
       build.onResolve({ filter: /^#pty$/ }, () => ({
-        path: path.resolve(dir, "src/kilocode/windows-arm64-pty.ts"),
+        path: path.resolve(dir, "src/chipmate/windows-arm64-pty.ts"),
       }))
     },
   }
@@ -114,8 +114,8 @@ async function copyTreeSitterWasms(outputDir: string) {
   console.log(`copied ${languageWasmFiles.length + 1} tree-sitter wasm files to ${targetDir}`)
 }
 
-// kilocode_change start
-async function isKiloConsoleUpToDate(app: string, out: string) {
+// chipmate_change start
+async function isChipMateConsoleUpToDate(app: string, out: string) {
   const indexHtml = path.join(out, "index.html")
   if (!fs.existsSync(indexHtml)) return false
   const outStat = await fs.promises.stat(indexHtml)
@@ -124,9 +124,9 @@ async function isKiloConsoleUpToDate(app: string, out: string) {
     path.join(app, "package.json"),
     path.join(app, "vite.config.ts"),
     path.join(app, "index.html"),
-    path.resolve(dir, "../kilo-web-ui/src"),
-    path.resolve(dir, "../kilo-indexing/src"),
-    path.resolve(dir, "../kilo-ui/src"),
+    path.resolve(dir, "../chipmate-web-ui/src"),
+    path.resolve(dir, "../chipmate-indexing/src"),
+    path.resolve(dir, "../chipmate-ui/src"),
     path.resolve(dir, "../ui/src"),
     path.resolve(dir, "../sdk/js/src"),
     path.resolve(dir, "../../bun.lock"),
@@ -147,38 +147,38 @@ async function isKiloConsoleUpToDate(app: string, out: string) {
   return true
 }
 
-async function buildKiloConsole() {
-  const app = path.resolve(dir, "../kilo-console")
+async function buildChipMateConsole() {
+  const app = path.resolve(dir, "../chipmate-console")
   const out = path.join(app, "dist")
-  if (await isKiloConsoleUpToDate(app, out)) {
-    console.log(`reusing existing Kilo Console build at ${out}`)
+  if (await isChipMateConsoleUpToDate(app, out)) {
+    console.log(`reusing existing ChipMate Console build at ${out}`)
     return out
   }
-  console.log("building Kilo Console")
+  console.log("building ChipMate Console")
   const proc = Bun.spawn([process.execPath, "run", "build"], {
     cwd: app,
-    env: { ...process.env, KILO_CONSOLE_BASE: "/console/" },
+    env: { ...process.env, CHIPMATE_CONSOLE_BASE: "/console/" },
     stdout: "inherit",
     stderr: "inherit",
     windowsHide: true,
   })
   const code = await proc.exited
-  if (code !== 0) throw new Error(`Kilo Console build failed with exit code ${code}`)
+  if (code !== 0) throw new Error(`ChipMate Console build failed with exit code ${code}`)
   return out
 }
-// kilocode_change end
+// chipmate_change end
 
-async function copyKiloConsole(input: string, outputDir: string) {
+async function copyChipMateConsole(input: string, outputDir: string) {
   const target = path.join(outputDir, "console")
   await fs.promises.rm(target, { recursive: true, force: true })
   await fs.promises.cp(input, target, { recursive: true })
-  console.log(`copied Kilo Console assets to ${target}`)
+  console.log(`copied ChipMate Console assets to ${target}`)
 }
 
-// kilocode_change start - build CodeGraph parser worker as a real sidecar file
+// chipmate_change start - build CodeGraph parser worker as a real sidecar file
 async function buildCodeGraphParserWorker(outputDir: string) {
   const result = await Bun.build({
-    entrypoints: ["../kilo-indexing/src/indexing/codegraph/parser/worker.ts"],
+    entrypoints: ["../chipmate-indexing/src/indexing/codegraph/parser/worker.ts"],
     outdir: outputDir,
     naming: {
       entry: "codegraph-parser-worker.mjs",
@@ -193,30 +193,30 @@ async function buildCodeGraphParserWorker(outputDir: string) {
   }
   console.log(`built CodeGraph parser worker at ${path.join(outputDir, "codegraph-parser-worker.mjs")}`)
 }
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start - validate compiled binaries load the sidecar models snapshot
+// chipmate_change start - validate compiled binaries load the sidecar models snapshot
 function smokeEnv(root: string) {
   const env = { ...process.env }
-  delete env.KILO_MODELS_PATH
-  delete env.KILO_MODELS_URL
-  delete env.KILO_CONFIG
-  delete env.KILO_CONFIG_DIR
+  delete env.CHIPMATE_MODELS_PATH
+  delete env.CHIPMATE_MODELS_URL
+  delete env.CHIPMATE_CONFIG
+  delete env.CHIPMATE_CONFIG_DIR
   return {
     ...env,
     XDG_DATA_HOME: path.join(root, "data"),
     XDG_CACHE_HOME: path.join(root, "cache"),
     XDG_CONFIG_HOME: path.join(root, "config"),
     XDG_STATE_HOME: path.join(root, "state"),
-    KILO_DISABLE_MODELS_FETCH: "1",
-    KILO_DISABLE_PROJECT_CONFIG: "1",
-    KILO_CONFIG_CONTENT: JSON.stringify({ enabled_providers: ["anthropic"] }),
+    CHIPMATE_DISABLE_MODELS_FETCH: "1",
+    CHIPMATE_DISABLE_PROJECT_CONFIG: "1",
+    CHIPMATE_CONFIG_CONTENT: JSON.stringify({ enabled_providers: ["anthropic"] }),
     ANTHROPIC_API_KEY: "dummy",
   }
 }
 
 async function smokeModels(binaryPath: string) {
-  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "kilo-models-"))
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "chipmate-models-"))
   try {
     const out = await $`${binaryPath} --pure models anthropic`.env(smokeEnv(root)).text()
     if (out.split(/\r?\n/).some((line) => line.startsWith("anthropic/"))) return
@@ -228,7 +228,7 @@ async function smokeModels(binaryPath: string) {
   }
 }
 
-// Kilo dropped the packages/app web UI. Kept here as a commented reference so future upstream merges
+// ChipMate dropped the packages/app web UI. Kept here as a commented reference so future upstream merges
 // can see the deliberate divergence rather than treating a re-add as a clean re-introduction.
 // const createEmbeddedWebUIBundle = async () => {
 //   console.log(`Building Web UI to embed in the binary`)
@@ -253,7 +253,7 @@ async function smokeModels(binaryPath: string) {
 //     `}`,
 //   ].join("\n")
 // }
-// kilocode_change end
+// chipmate_change end
 
 const allTargets: {
   os: string
@@ -315,10 +315,10 @@ const allTargets: {
     os: "win32",
     arch: "x64",
     avx2: false,
-  }, // kilocode_change
-] // kilocode_change
+  }, // chipmate_change
+] // chipmate_change
 
-// kilocode_change start - reuse target names for explicit internal package selection
+// chipmate_change start - reuse target names for explicit internal package selection
 function packageNameForTarget(item: (typeof allTargets)[number]) {
   return [
     pkg.name,
@@ -365,60 +365,60 @@ const targets = requestedTargets
 if (requestedTargets && targets.length === 0) {
   throw new Error(`No build targets matched --targets=${Array.from(requestedTargets).join(",")}`)
 }
-// kilocode_change end
-// kilocode_change start
+// chipmate_change end
+// chipmate_change start
 await $`rm -rf dist`
-const [kiloConsoleDist, kiloSandboxWorker, kiloSandboxNetwork] = await Promise.all([
-  buildKiloConsole(),
-  KiloSandboxWorker.bundle(),
-  KiloSandboxNetwork.bundle(),
+const [chipmateConsoleDist, chipmateSandboxWorker, chipmateSandboxNetwork] = await Promise.all([
+  buildChipMateConsole(),
+  ChipMateSandboxWorker.bundle(),
+  ChipMateSandboxNetwork.bundle(),
 ])
-// kilocode_change end
+// chipmate_change end
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {
-  // kilocode_change
+  // chipmate_change
   await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
   await $`bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
 }
 for (const item of targets) {
-  const name = packageNameForTarget(item) // kilocode_change
+  const name = packageNameForTarget(item) // chipmate_change
 
   console.log(`building ${name}`)
   await $`mkdir -p dist/${name}/bin`
-  // kilocode_change start
+  // chipmate_change start
   const bwrap =
-    item.os === "linux" && process.env.KILO_SKIP_BUNDLED_BWRAP !== "1"
+    item.os === "linux" && process.env.CHIPMATE_SKIP_BUNDLED_BWRAP !== "1"
       ? await stageBubblewrap(item.arch, path.resolve(dir, `dist/${name}/bin`))
       : undefined
-  // kilocode_change end
+  // chipmate_change end
 
   const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
-  const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js") // kilocode_change
+  const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js") // chipmate_change
   const parserWorker = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
   const workerPath = "./src/cli/tui/worker.ts"
-  const sessionExportWorkerPath = "./src/kilocode/session-export/worker.ts" // kilocode_change
-  const indexingProcessName = item.os === "win32" ? "kilo-indexer.exe" : "kilo-indexer" // kilocode_change
-  const codeGraphParserWorkerPath = "codegraph-parser-worker.mjs" // kilocode_change
-  const compileTarget = name.replace(pkg.name, "bun") as any // kilocode_change
+  const sessionExportWorkerPath = "./src/chipmate/session-export/worker.ts" // chipmate_change
+  const indexingProcessName = item.os === "win32" ? "chipmate-indexer.exe" : "chipmate-indexer" // chipmate_change
+  const codeGraphParserWorkerPath = "codegraph-parser-worker.mjs" // chipmate_change
+  const compileTarget = name.replace(pkg.name, "bun") as any // chipmate_change
 
   // Use platform-specific bunfs root path based on target OS
   const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
   const workerRelativePath = path.relative(dir, parserWorker).replaceAll("\\", "/")
 
-  // kilocode_change - fail when cross-compilation does not emit the CLI
+  // chipmate_change - fail when cross-compilation does not emit the CLI
   const result = await Bun.build({
-    conditions: ["bun", "node"], // kilocode_change - port anomalyco/opencode#30873; current form from #31566
+    conditions: ["bun", "node"], // chipmate_change - port anomalyco/opencode#30873; current form from #31566
     tsconfig: "./tsconfig.json",
     plugins: item.os === "win32" && item.arch === "arm64" ? [armPtyPlugin(), plugin] : [plugin],
-    // kilocode_change start - skip sourcemaps for release builds (each .js.map adds ~50 MB per target → ~600 MB total)
+    // chipmate_change start - skip sourcemaps for release builds (each .js.map adds ~50 MB per target → ~600 MB total)
     sourcemap: Script.release ? "none" : "external",
     external: ["node-gyp", ...LanceDBRuntime.external],
-    // kilocode_change end
+    // chipmate_change end
     format: "esm",
     minify: true,
-    // kilocode_change start - disable code-splitting to avoid a Bun 1.3.14 codegen bug.
+    // chipmate_change start - disable code-splitting to avoid a Bun 1.3.14 codegen bug.
     // With splitting:true Bun emits cross-chunk re-exports like `import{vn as G9}` whose
     // binding isn't top-level, so the compiled binary crashes at startup on the baseline
     // target: "SyntaxError: Exported binding 'G9' needs to refer to a top-level declared
@@ -426,47 +426,47 @@ for (const item of targets) {
     // in Bun#26089, post-1.3.14. Splitting only deduped shared code between the entrypoints;
     // turning it off inlines per entrypoint and produces a valid binary.
     splitting: false,
-    // kilocode_change end
+    // chipmate_change end
     compile: {
       autoloadBunfig: false,
       autoloadDotenv: false,
       autoloadTsconfig: true,
       autoloadPackageJson: true,
       target: compileTarget,
-      outfile: `dist/${name}/bin/kilo`, // kilocode_change
-      execArgv: [`--user-agent=kilo/${Script.version}`, "--use-system-ca", "--"], // kilocode_change
+      outfile: `dist/${name}/bin/chipmate`, // chipmate_change
+      execArgv: [`--user-agent=chipmate/${Script.version}`, "--use-system-ca", "--"], // chipmate_change
       windows: {},
     },
-    // kilocode_change start - packages/app was removed; no embedded web UI
+    // chipmate_change start - packages/app was removed; no embedded web UI
     files: {},
     entrypoints: ["./src/index.ts", parserWorker, workerPath, sessionExportWorkerPath],
-    // kilocode_change end
+    // chipmate_change end
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
-      KILO_VERSION: `'${Script.version}'`, // kilocode_change
-      KILO_MODELS_DEV: generated.modelsData,
+      CHIPMATE_VERSION: `'${Script.version}'`, // chipmate_change
+      CHIPMATE_MODELS_DEV: generated.modelsData,
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
-      KILO_WORKER_PATH: workerPath,
-      KILO_SESSION_EXPORT_WORKER_PATH: sessionExportWorkerPath, // kilocode_change
-      KILO_INDEXING_PROCESS_PATH: `'${indexingProcessName}'`, // kilocode_change
-      KILO_CODEGRAPH_WORKER_PATH: codeGraphParserWorkerPath, // kilocode_change
-      KILO_SANDBOX_MUTATION_WORKER_PATH: JSON.stringify(KiloSandboxWorker.filename),
-      KILO_SANDBOX_NETWORK_RELAY_PATH: item.os === "linux" ? JSON.stringify(KiloSandboxNetwork.relay) : "undefined",
-      KILO_SANDBOX_SECCOMP_PATH: item.os === "linux" ? JSON.stringify(KiloSandboxNetwork.seccomp) : "undefined",
-      KILO_CHANNEL: `'${Script.channel}'`,
-      KILO_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "", // kilocode_change
-      KILO_BUILD_KIND: Script.release ? `'release'` : `'source'`, // kilocode_change
-      // kilocode_change start
-      KILO_BWRAP_SHA256: bwrap ? `'${bwrap}'` : "undefined",
-      // kilocode_change end
+      CHIPMATE_WORKER_PATH: workerPath,
+      CHIPMATE_SESSION_EXPORT_WORKER_PATH: sessionExportWorkerPath, // chipmate_change
+      CHIPMATE_INDEXING_PROCESS_PATH: `'${indexingProcessName}'`, // chipmate_change
+      CHIPMATE_CODEGRAPH_WORKER_PATH: codeGraphParserWorkerPath, // chipmate_change
+      CHIPMATE_SANDBOX_MUTATION_WORKER_PATH: JSON.stringify(ChipMateSandboxWorker.filename),
+      CHIPMATE_SANDBOX_NETWORK_RELAY_PATH: item.os === "linux" ? JSON.stringify(ChipMateSandboxNetwork.relay) : "undefined",
+      CHIPMATE_SANDBOX_SECCOMP_PATH: item.os === "linux" ? JSON.stringify(ChipMateSandboxNetwork.seccomp) : "undefined",
+      CHIPMATE_CHANNEL: `'${Script.channel}'`,
+      CHIPMATE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "", // chipmate_change
+      CHIPMATE_BUILD_KIND: Script.release ? `'release'` : `'source'`, // chipmate_change
+      // chipmate_change start
+      CHIPMATE_BWRAP_SHA256: bwrap ? `'${bwrap}'` : "undefined",
+      // chipmate_change end
       ...(item.os === "linux" ? { "process.env.OPENTUI_LIBC": JSON.stringify(item.abi ?? "glibc") } : {}),
     },
   })
-  // kilocode_change start - Bun.build reports compilation errors in the result instead of throwing
+  // chipmate_change start - Bun.build reports compilation errors in the result instead of throwing
   if (!result.success) throw new AggregateError(result.logs, `Failed to build ${name}`)
-  // kilocode_change end
+  // chipmate_change end
 
-  // kilocode_change start - isolate indexing native allocations from the main CLI process
+  // chipmate_change start - isolate indexing native allocations from the main CLI process
   const indexing = await Bun.build({
     conditions: ["browser"],
     tsconfig: "./tsconfig.json",
@@ -483,29 +483,29 @@ for (const item of targets) {
       autoloadPackageJson: true,
       target: compileTarget,
       outfile: `dist/${name}/bin/${indexingProcessName}`,
-      execArgv: [`--user-agent=kilo/${Script.version}`, "--use-system-ca", "--"],
+      execArgv: [`--user-agent=chipmate/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
-    entrypoints: ["./src/kilocode/indexing-process.ts"],
+    entrypoints: ["./src/chipmate/indexing-process.ts"],
     define: {
-      KILO_CODEGRAPH_WORKER_PATH: `'${codeGraphParserWorkerPath}'`,
-      KILO_BUILD_KIND: Script.release ? `'release'` : `'source'`,
+      CHIPMATE_CODEGRAPH_WORKER_PATH: `'${codeGraphParserWorkerPath}'`,
+      CHIPMATE_BUILD_KIND: Script.release ? `'release'` : `'source'`,
     },
   })
   if (!indexing.success) throw new AggregateError(indexing.logs, `Failed to build ${indexingProcessName}`)
-  // kilocode_change end
+  // chipmate_change end
 
-  await Bun.write(path.resolve(dir, `dist/${name}/bin/models-snapshot.json`), generated.modelsData) // kilocode_change
-  await buildCodeGraphParserWorker(path.resolve(dir, `dist/${name}/bin`)) // kilocode_change
-  // kilocode_change start
+  await Bun.write(path.resolve(dir, `dist/${name}/bin/models-snapshot.json`), generated.modelsData) // chipmate_change
+  await buildCodeGraphParserWorker(path.resolve(dir, `dist/${name}/bin`)) // chipmate_change
+  // chipmate_change start
   await copyTreeSitterWasms(path.resolve(dir, `dist/${name}/bin`))
-  await copyKiloConsole(kiloConsoleDist, path.resolve(dir, `dist/${name}/bin`))
+  await copyChipMateConsole(chipmateConsoleDist, path.resolve(dir, `dist/${name}/bin`))
   if (item.os === "win32" && item.arch === "arm64") {
     await stageArmPty(path.resolve(dir, `dist/${name}/bin`))
   }
-  await KiloSandboxWorker.copy(kiloSandboxWorker, path.resolve(dir, `dist/${name}/bin`))
+  await ChipMateSandboxWorker.copy(chipmateSandboxWorker, path.resolve(dir, `dist/${name}/bin`))
   if (item.os === "linux") {
-    await KiloSandboxNetwork.copy(kiloSandboxNetwork, path.resolve(dir, `dist/${name}/bin`), item.arch)
+    await ChipMateSandboxNetwork.copy(chipmateSandboxNetwork, path.resolve(dir, `dist/${name}/bin`), item.arch)
   }
 
   if (item.os === "linux") {
@@ -519,39 +519,39 @@ for (const item of targets) {
     const interpreter = interpreters[key]
     if (interpreter) {
       try {
-        await $`patchelf --set-interpreter ${interpreter} dist/${name}/bin/kilo`
+        await $`patchelf --set-interpreter ${interpreter} dist/${name}/bin/chipmate`
         console.log(`patched interpreter for ${name} -> ${interpreter}`)
       } catch {
         console.warn(`patchelf not available, skipping interpreter fix for ${name}`)
       }
     }
   }
-  // kilocode_change end
+  // chipmate_change end
 
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/kilo` // kilocode_change
+    const binaryPath = `dist/${name}/bin/chipmate` // chipmate_change
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()
       console.log(`Smoke test passed: ${versionOutput.trim()}`)
-      // kilocode_change start
+      // chipmate_change start
       console.log(`Running smoke test: ${binaryPath} --pure models anthropic`)
       await smokeModels(binaryPath)
       console.log("Models snapshot smoke test passed")
-      await KiloSandboxWorker.smoke(binaryPath)
-      console.log("Kilo sandbox mutation worker smoke test passed")
-      // kilocode_change end
-      // kilocode_change start
+      await ChipMateSandboxWorker.smoke(binaryPath)
+      console.log("ChipMate sandbox mutation worker smoke test passed")
+      // chipmate_change end
+      // chipmate_change start
     } catch (e) {
       console.error(`Smoke test failed for ${name}:`, e)
       process.exit(1)
     }
   }
-  // kilocode_change end
+  // chipmate_change end
 
   await $`rm -rf ./dist/${name}/bin/tui`
-  // kilocode_change start
+  // chipmate_change start
   if (item.os === "linux") {
     const content = await Promise.all([
       Bun.file(path.resolve(dir, "../../LICENSE")).text(),
@@ -564,24 +564,24 @@ for (const item of targets) {
     ])
     await Bun.write(`dist/${name}/LICENSE`, content.join("\n\n---\n\n"))
   }
-  // kilocode_change end
+  // chipmate_change end
   await Bun.file(`dist/${name}/package.json`).write(
     JSON.stringify(
       {
         name,
         version: Script.version,
-        license: item.os === "linux" ? "SEE LICENSE IN LICENSE" : pkg.license, // kilocode_change
+        license: item.os === "linux" ? "SEE LICENSE IN LICENSE" : pkg.license, // chipmate_change
         preferUnplugged: true,
         os: [item.os],
         cpu: [item.arch],
-        // kilocode_change start
+        // chipmate_change start
         keywords: pkg.keywords,
         private: pkg.private,
         repository: {
           type: "git",
-          url: "https://github.com/Kilo-Org/kilocode",
+          url: "https://github.com/ChipMate-Org/chipmate",
         },
-        // kilocode_change end
+        // chipmate_change end
         ...(item.abi ? { libc: [item.abi] } : {}),
       },
       null,
@@ -592,24 +592,24 @@ for (const item of targets) {
 }
 
 if (Script.release) {
-  const archives: string[] = [] // kilocode_change
+  const archives: string[] = [] // chipmate_change
   for (const key of Object.keys(binaries)) {
-    const archive = key.replace(pkg.name, "kilo") // kilocode_change
+    const archive = key.replace(pkg.name, "chipmate") // chipmate_change
     if (key.includes("linux")) {
-      // kilocode_change start
+      // chipmate_change start
       const out = path.resolve("dist", `${archive}.tar.gz`)
       await $`tar -czf ${out} *`.cwd(`dist/${key}/bin`)
       archives.push(out)
-      // kilocode_change end
+      // chipmate_change end
     } else {
-      // kilocode_change start
+      // chipmate_change start
       const out = path.resolve("dist", `${archive}.zip`)
       await $`zip -r ${out} *`.cwd(`dist/${key}/bin`)
       archives.push(out)
-      // kilocode_change end
+      // chipmate_change end
     }
   }
-  await $`gh release upload v${Script.version} ${archives} --clobber` // kilocode_change
+  await $`gh release upload v${Script.version} ${archives} --clobber` // chipmate_change
 }
 
 export { binaries }

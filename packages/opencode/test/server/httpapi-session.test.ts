@@ -35,9 +35,9 @@ import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, provideInstanceEffect, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { TestLLMServer } from "../lib/llm-server"
 import { testProviderConfig } from "../lib/test-provider"
-import { pollWithTimeout, testEffect } from "../lib/effect" // kilocode_change
+import { pollWithTimeout, testEffect } from "../lib/effect" // chipmate_change
 
-const originalWorkspaces = Flag.KILO_EXPERIMENTAL_WORKSPACES
+const originalWorkspaces = Flag.CHIPMATE_EXPERIMENTAL_WORKSPACES
 const noopBootstrapLayer = Layer.succeed(
   InstanceBootstrapService.Service,
   InstanceBootstrapService.Service.of({ run: Effect.void }),
@@ -154,7 +154,7 @@ const insertLegacyAssistantMessage = (sessionID: SessionIDType, seq = 1, time = 
     return message
   })
 
-// kilocode_change start - released V2 clients persisted media-shaped tool content
+// chipmate_change start - released V2 clients persisted media-shaped tool content
 const insertLegacyToolMessage = (sessionID: SessionIDType) =>
   Effect.gen(function* () {
     const id = SessionMessage.ID.create()
@@ -191,7 +191,7 @@ const insertLegacyToolMessage = (sessionID: SessionIDType) =>
       .pipe(Effect.orDie)
     return id
   })
-// kilocode_change end
+// chipmate_change end
 
 const insertCorruptV2Message = (sessionID: SessionIDType, time = 1) =>
   Effect.gen(function* () {
@@ -267,7 +267,7 @@ function requestJson<T>(path: string, init?: RequestInit) {
 }
 
 afterEach(async () => {
-  Flag.KILO_EXPERIMENTAL_WORKSPACES = originalWorkspaces
+  Flag.CHIPMATE_EXPERIMENTAL_WORKSPACES = originalWorkspaces
   await disposeAllInstances()
   await resetDatabase()
 })
@@ -294,7 +294,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory }
+        const headers = { "x-chipmate-directory": test.directory }
         const missingSession = SessionID.descending()
         const missingSessionBody = {
           name: "NotFoundError",
@@ -359,7 +359,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory }
+        const headers = { "x-chipmate-directory": test.directory }
         const parent = yield* createSession({ title: "parent" })
         const child = yield* createSession({ title: "child", parentID: parent.id })
         const message = yield* createTextMessage(parent.id, "hello")
@@ -470,7 +470,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory }
+        const headers = { "x-chipmate-directory": test.directory }
         const session = yield* createSession({ title: "v2 cursor" })
         const firstMessage = yield* insertLegacyAssistantMessage(session.id, 1, 2)
         const secondMessage = yield* insertLegacyAssistantMessage(session.id, 2, 1)
@@ -559,7 +559,7 @@ describe("session HttpApi", () => {
     { git: true, config: { formatter: false, lsp: false } },
   )
 
-  // kilocode_change start - protect mixed-version session database compatibility
+  // chipmate_change start - protect mixed-version session database compatibility
   it.instance(
     "normalizes released tool content on paginated v2 message reads",
     () =>
@@ -568,7 +568,7 @@ describe("session HttpApi", () => {
         const session = yield* createSession({ title: "legacy tool content" })
         const id = yield* insertLegacyToolMessage(session.id)
         const response = yield* request(`/api/session/${session.id}/message`, {
-          headers: { "x-kilo-directory": test.directory },
+          headers: { "x-chipmate-directory": test.directory },
         })
         expect(response.status).toBe(200)
         const body = yield* json<{ data: SessionMessage.Message[] }>(response)
@@ -587,14 +587,14 @@ describe("session HttpApi", () => {
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
-  // kilocode_change end
+  // chipmate_change end
 
   it.instance(
     "returns v2 public not found errors for missing sessions",
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory }
+        const headers = { "x-chipmate-directory": test.directory }
         const missing = SessionID.descending()
         const expected = {
           _tag: "SessionNotFoundError",
@@ -634,7 +634,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory }
+        const headers = { "x-chipmate-directory": test.directory }
         const session = yield* createSession({ title: "v2 prompt recording" })
 
         const recordPrompt = () =>
@@ -709,7 +709,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory }
+        const headers = { "x-chipmate-directory": test.directory }
         const session = yield* createSession({ title: "v2 unavailable" })
 
         const compact = yield* request(`/api/session/${session.id}/compact`, { method: "POST", headers })
@@ -740,7 +740,7 @@ describe("session HttpApi", () => {
         yield* insertCorruptV2Message(session.id)
 
         const messages = yield* request(`/api/session/${session.id}/message`, {
-          headers: { "x-kilo-directory": test.directory },
+          headers: { "x-chipmate-directory": test.directory },
         })
         const messagesBody = yield* responseJson(messages)
         expect(messages.status).toBe(500)
@@ -752,7 +752,7 @@ describe("session HttpApi", () => {
         expect(JSON.stringify(messagesBody)).not.toContain("assistant")
 
         const context = yield* request(`/api/session/${session.id}/context`, {
-          headers: { "x-kilo-directory": test.directory },
+          headers: { "x-chipmate-directory": test.directory },
         })
         const contextBody = yield* responseJson(context)
         expect(context.status).toBe(500)
@@ -775,7 +775,7 @@ describe("session HttpApi", () => {
         yield* setLegacySummaryDiff(session.id)
 
         const response = yield* request(pathFor(SessionPaths.get, { sessionID: session.id }), {
-          headers: { "x-kilo-directory": test.directory },
+          headers: { "x-chipmate-directory": test.directory },
         })
 
         expect(response.status).toBe(200)
@@ -789,7 +789,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory, "content-type": "application/json" }
+        const headers = { "x-chipmate-directory": test.directory, "content-type": "application/json" }
 
         const createdEmpty = yield* requestJson<Session.Info>(SessionPaths.create, {
           method: "POST",
@@ -821,7 +821,7 @@ describe("session HttpApi", () => {
           pathFor(SessionPaths.fork, { sessionID: created.id }),
           {
             method: "POST",
-            headers: { "x-kilo-directory": test.directory },
+            headers: { "x-chipmate-directory": test.directory },
           },
         )
         expect(forkedWithoutContentType.id).not.toBe(created.id)
@@ -865,7 +865,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        Flag.KILO_EXPERIMENTAL_WORKSPACES = true
+        Flag.CHIPMATE_EXPERIMENTAL_WORKSPACES = true
         const project = yield* Project.use.fromDirectory(test.directory)
         const workspace = yield* createLocalWorkspace({
           projectID: project.project.id,
@@ -875,13 +875,13 @@ describe("session HttpApi", () => {
 
         const created = yield* requestJson<Session.Info>(`${SessionPaths.create}?workspace=${workspace.id}`, {
           method: "POST",
-          headers: { "x-kilo-directory": test.directory, "content-type": "application/json" },
+          headers: { "x-chipmate-directory": test.directory, "content-type": "application/json" },
           body: JSON.stringify({ title: "workspace session" }),
         })
         const messages = yield* request(
           `${pathFor(SessionPaths.messages, { sessionID: created.id })}?workspace=${workspace.id}`,
           {
-            headers: { "x-kilo-directory": test.directory },
+            headers: { "x-chipmate-directory": test.directory },
           },
         )
 
@@ -897,7 +897,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory, "content-type": "application/json" }
+        const headers = { "x-chipmate-directory": test.directory, "content-type": "application/json" }
         const session = yield* createSession({ title: "archived" })
         const body = JSON.stringify({ time: { archived: -1 } })
 
@@ -937,7 +937,7 @@ describe("session HttpApi", () => {
           path: "packages/opencode/src",
           directory: currentDir,
         })
-        const headers = { "x-kilo-directory": test.directory }
+        const headers = { "x-chipmate-directory": test.directory }
         const sessions = (yield* json<Session.Info[]>(
           yield* request(`${SessionPaths.list}?${query}`, { headers }),
         )).map((item) => item.id)
@@ -953,7 +953,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory }
+        const headers = { "x-chipmate-directory": test.directory }
         const session = yield* createSession({ title: "messages" })
         yield* createTextMessage(session.id, "first")
         yield* createTextMessage(session.id, "second")
@@ -973,7 +973,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory, "content-type": "application/json" }
+        const headers = { "x-chipmate-directory": test.directory, "content-type": "application/json" }
         const session = yield* createSession({ title: "messages" })
         const first = yield* createTextMessage(session.id, "first")
         const second = yield* createTextMessage(session.id, "second")
@@ -1013,7 +1013,7 @@ describe("session HttpApi", () => {
     { git: true, config: { formatter: false, lsp: false } },
   )
 
-  // kilocode_change start - deleting a prompt that already started is a successful no-op
+  // chipmate_change start - deleting a prompt that already started is a successful no-op
   it.live(
     "returns false when an active prompt wins the deletion race",
     () => {
@@ -1025,7 +1025,7 @@ describe("session HttpApi", () => {
         const dir = yield* tmpdirScoped({ git: true, config: testProviderConfig(llm.url) })
         const session = yield* createSession({ title: "Active delete race" }).pipe(provideInstanceEffect(dir))
         const messageID = MessageID.ascending()
-        const headers = { "x-kilo-directory": dir, "content-type": "application/json" }
+        const headers = { "x-chipmate-directory": dir, "content-type": "application/json" }
 
         const prompt = yield* request(pathFor(SessionPaths.promptAsync, { sessionID: session.id }), {
           method: "POST",
@@ -1068,16 +1068,16 @@ describe("session HttpApi", () => {
         Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node)),
       )
     },
-    30_000, // kilocode_change - windows CI needs headroom beyond 10s
+    30_000, // chipmate_change - windows CI needs headroom beyond 10s
   )
-  // kilocode_change end
+  // chipmate_change end
 
   it.instance(
     "rejects part updates whose path and body ids disagree",
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory, "content-type": "application/json" }
+        const headers = { "x-chipmate-directory": test.directory, "content-type": "application/json" }
         const session = yield* createSession({ title: "part mismatch" })
         const message = yield* createTextMessage(session.id, "first")
         const response = yield* request(
@@ -1103,7 +1103,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const headers = { "x-kilo-directory": test.directory, "content-type": "application/json" }
+        const headers = { "x-chipmate-directory": test.directory, "content-type": "application/json" }
         const session = yield* createSession({ title: "remaining" })
 
         expect(

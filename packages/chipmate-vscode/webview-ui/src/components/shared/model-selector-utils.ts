@@ -1,0 +1,113 @@
+import type { ModelSelection } from "../../types/messages"
+import type { EnrichedModel } from "../../context/provider"
+import {
+  CHIPMATE_AUTO_FREE_NAME,
+  CHIPMATE_AUTO_FREE_ID,
+  CHIPMATE_PROVIDER_ID as CHIPMATE_GATEWAY_ID,
+  PROVIDER_PRIORITY as PROVIDER_ORDER,
+  providerOrderIndex,
+} from "../../../../src/shared/provider-model"
+
+export { CHIPMATE_GATEWAY_ID, PROVIDER_ORDER }
+
+export const CHIPMATE_AUTO_SMALL_IDS = new Set(["chipmate-auto/small", "auto-small"])
+export const CHIPMATE_AUTO_EFFICIENT_ID = "chipmate-auto/efficient"
+const AUTO_FALLBACK = "Routes requests automatically."
+
+interface Choice {
+  id: string
+  name: string
+}
+
+export function isAuto(model: Pick<EnrichedModel, "providerID" | "id">): boolean {
+  return (
+    model.providerID === CHIPMATE_GATEWAY_ID && (model.id.startsWith("chipmate-auto/") || CHIPMATE_AUTO_SMALL_IDS.has(model.id))
+  )
+}
+
+export function isAutoEfficient(model: Pick<EnrichedModel, "providerID" | "id">): boolean {
+  return model.providerID === CHIPMATE_GATEWAY_ID && model.id === CHIPMATE_AUTO_EFFICIENT_ID
+}
+
+export function autoChoices(
+  model: Pick<EnrichedModel, "providerID" | "id" | "autoRouting">,
+  catalog: readonly Pick<EnrichedModel, "id" | "name">[] = [],
+): readonly Choice[] {
+  if (!isAutoEfficient(model)) return []
+  const ids = model.autoRouting?.models
+  if (!ids?.length) return []
+  const names = new Map(catalog.map((item) => [item.id, stripSubProviderPrefix(sanitizeName(item.name))]))
+  return ids.map((id) => ({ id, name: names.get(id) ?? id }))
+}
+
+export function autoSummary(model: Pick<EnrichedModel, "options">): string {
+  const raw = model.options?.description?.split(/\n\s*\n/)[0]
+  if (!raw) return AUTO_FALLBACK
+  return raw.replace(/\s+/g, " ").trim() || AUTO_FALLBACK
+}
+
+export function isSmall(model: Pick<EnrichedModel, "providerID" | "id">): boolean {
+  return model.providerID === CHIPMATE_GATEWAY_ID && CHIPMATE_AUTO_SMALL_IDS.has(model.id)
+}
+
+export function providerSortKey(providerID: string, order: readonly string[] = PROVIDER_ORDER): number {
+  return providerOrderIndex(providerID, order as typeof PROVIDER_ORDER)
+}
+
+export function isFree(model: Pick<EnrichedModel, "isFree">): boolean {
+  return model.isFree === true
+}
+
+export function isDataCollectedModel(model: Pick<EnrichedModel, "mayTrainOnYourPrompts">): boolean {
+  return model.mayTrainOnYourPrompts === true
+}
+
+export function hasByok(model: Pick<EnrichedModel, "hasUserByokAvailable">): boolean {
+  return model.hasUserByokAvailable === true
+}
+
+export function freeDataLabel(_free: string, data: string): string {
+  return data
+}
+
+// Strips trailing "(free)" parenthesized suffix from model display names, e.g.
+// "Llama 3 (free)" → "Llama 3". A separate "Free" label/tag is rendered
+// elsewhere, so preserve bare trailing "Free" words (e.g. "ChipMate Auto Free").
+export function sanitizeName(name: string): string {
+  const branded = name === "ChipMate Auto Free" ? CHIPMATE_AUTO_FREE_NAME : name
+  return branded.replace(/[\s:_-]*\(free\)\s*$/i, "").trim()
+}
+
+export function stripSubProviderPrefix(name: string): string {
+  const colon = name.indexOf(": ")
+  if (colon < 0) return name
+  const prefix = name.slice(0, colon)
+  if (prefix.toLowerCase() === CHIPMATE_GATEWAY_ID) return name
+  return name.slice(colon + 2)
+}
+
+export function buildTriggerLabel(
+  resolvedName: string | undefined,
+  providerID: string | undefined,
+  providerName: string | undefined,
+  raw: ModelSelection | null,
+  allowClear: boolean,
+  clearLabel: string,
+  hasProviders: boolean,
+  labels: { select: string; noProviders: string; notSet: string },
+  emptyLabel = "",
+): string {
+  if (resolvedName) {
+    const name = sanitizeName(resolvedName)
+    if (providerID === CHIPMATE_GATEWAY_ID) return stripSubProviderPrefix(name)
+    if (providerName) return `${providerName} / ${name}`
+    return name
+  }
+  if (raw?.providerID && raw?.modelID) {
+    if (raw.providerID === CHIPMATE_GATEWAY_ID && raw.modelID === CHIPMATE_AUTO_FREE_ID) return CHIPMATE_AUTO_FREE_NAME
+    return raw.providerID === CHIPMATE_GATEWAY_ID ? raw.modelID : `${raw.providerID} / ${raw.modelID}`
+  }
+  if (emptyLabel) return emptyLabel
+  if (allowClear) return clearLabel || labels.notSet
+  return hasProviders ? labels.select : labels.noProviders
+}

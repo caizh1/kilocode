@@ -1,4 +1,4 @@
-// kilocode_change - new file
+// chipmate_change - new file
 export const dict: Record<string, string> = {
   "ui.sessionReview.title": "Modifiche della sessione",
   "ui.sessionReview.title.git": "Modifiche Git",
@@ -56,7 +56,7 @@ export const dict: Record<string, string> = {
 
   "dialog.usageExceeded.freeTier.title": "Limite gratuito raggiunto",
   "dialog.usageExceeded.freeTier.description":
-    "Abbonati a Kilo Go per un accesso affidabile ai migliori modelli open source, a partire da $5 al mese.",
+    "Abbonati a ChipMate Go per un accesso affidabile ai migliori modelli open source, a partire da $5 al mese.",
   "dialog.usageExceeded.freeTier.actionLabel": "Abbonati",
   "dialog.usageExceeded.accountRateLimit.title": "Limite Go raggiunto",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -142,7 +142,7 @@ export const dict: Record<string, string> = {
 
   "ui.tool.read": "Leggi",
   "ui.tool.loaded": "Caricato",
-  "ui.tool.swePruned": "SWE-Pruner · {{kept}} di {{total}} righe mantenute", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · {{kept}} di {{total}} righe mantenute", // chipmate_change
   "ui.tool.list": "Elenco",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -181,7 +181,7 @@ export const dict: Record<string, string> = {
   "ui.message.collapse": "Comprimi messaggio",
   "ui.message.copy": "Copia",
   "ui.message.copyMessage": "Copia messaggio",
-  "ui.message.deleteQueued": "Elimina il messaggio in coda", // kilocode_change
+  "ui.message.deleteQueued": "Elimina il messaggio in coda", // chipmate_change
   "ui.message.copyResponse": "Copia risposta",
   "ui.message.copied": "Copiato",
   "ui.message.forkMessage": "Forka in una nuova sessione",
@@ -199,9 +199,9 @@ export const dict: Record<string, string> = {
   "ui.patch.action.patched": "Patch applicata",
 
   "ui.question.subtitle.answered": "{{count}} risposte",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(nessuna risposta)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(senza risposta)",
   "ui.question.multiHint": "Seleziona tutte le risposte applicabili",
   "ui.question.singleHint": "Seleziona una risposta",

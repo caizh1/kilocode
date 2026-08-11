@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Kilo-Org/kilocode.git",
+    "url": "git+https://github.com/ChipMate-Org/chipmate.git",
     "directory": "packages/ui"
   },
   "publishConfig": {
@@ -86,7 +86,7 @@
   },
   "dependencies": {
     "@kobalte/core": "catalog:",
-    "@kilocode/sdk": "workspace:*",
+    "@chipmate/sdk": "workspace:*",
     "@pierre/diffs": "catalog:",
     "@solid-primitives/event-listener": "2.4.5",
     "@solid-primitives/media": "2.3.3",

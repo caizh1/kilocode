@@ -7,18 +7,18 @@ on:
         required: true
         type: string
     secrets:
-      kilo-maintainer-app-id:
+      chipmate-maintainer-app-id:
         required: true
-      kilo-maintainer-app-secret:
+      chipmate-maintainer-app-secret:
         required: true
     outputs:
       is-member:
-        description: Whether the user is an org member or kilo-maintainer bot
+        description: Whether the user is an org member or chipmate-maintainer bot
         value: ${{ jobs.check.outputs['is-member'] }}
 
 jobs:
   check:
-    runs-on: blacksmith-2vcpu-ubuntu-2404 # kilocode_change
+    runs-on: blacksmith-2vcpu-ubuntu-2404 # chipmate_change
     outputs:
       is-member: ${{ steps.check.outputs['is-member'] }}
     steps:
@@ -26,20 +26,20 @@ jobs:
         id: apptoken
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ secrets['kilo-maintainer-app-id'] }}
-          private-key: ${{ secrets['kilo-maintainer-app-secret'] }}
+          app-id: ${{ secrets['chipmate-maintainer-app-id'] }}
+          private-key: ${{ secrets['chipmate-maintainer-app-secret'] }}
           owner: ${{ github.repository_owner }}
 
-      - name: Check if author is org member or kilo bot
+      - name: Check if author is org member or chipmate bot
         id: check
         env:
           GITHUB_TOKEN: ${{ steps.apptoken.outputs.token }}
           USERNAME: ${{ inputs.username }}
         run: |
-          if [[ "$USERNAME" == "kilo-maintainer[bot]" || "$USERNAME" == "kiloconnect[bot]" || "$USERNAME" == "kiloconnect-lite[bot]" ]]; then
+          if [[ "$USERNAME" == "chipmate-maintainer[bot]" || "$USERNAME" == "chipmateconnect[bot]" || "$USERNAME" == "chipmateconnect-lite[bot]" ]]; then
             echo "is-member=true" >> "$GITHUB_OUTPUT"
-            echo "User is a kilo bot"
-          elif gh api orgs/Kilo-Org/members/"$USERNAME" --silent 2>/dev/null; then
+            echo "User is a chipmate bot"
+          elif gh api orgs/ChipMate-Org/members/"$USERNAME" --silent 2>/dev/null; then
             echo "is-member=true" >> "$GITHUB_OUTPUT"
             echo "User is an org member"
           else

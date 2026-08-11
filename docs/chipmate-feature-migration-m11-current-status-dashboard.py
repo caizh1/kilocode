@@ -288,10 +288,10 @@ def render_dashboard(args: argparse.Namespace) -> str:
         lines.append(bullet_list(items))
         lines.append("\n")
 
-    lines.append("## No-regression boundary for Kilo native capabilities\n\n")
+    lines.append("## No-regression boundary for ChipMate native capabilities\n\n")
     lines.append("| Capability | Dashboard effect | Current M11 interpretation |\n")
     lines.append("|---|---|---|\n")
-    lines.append("| Native Kilo QA | No runtime or prompt-path change | Still requires installed S1-S16 runtime evidence |\n")
+    lines.append("| Native ChipMate QA | No runtime or prompt-path change | Still requires installed S1-S16 runtime evidence |\n")
     lines.append("| Code understanding | No runtime or tool-routing change | Final no-regression review remains open |\n")
     lines.append("| Document RAG | No provider or retrieval-path change | Readiness rerun is still not enough for final pass if provider is unavailable |\n")
     lines.append("| Autocomplete | No qwen autocomplete source change | S16 needs explicit product/user decision and read-only smoke evidence |\n")
@@ -359,7 +359,7 @@ def write_self_check(path: Path, dashboard_text: str) -> None:
         "`nextToolContract`",
         "`missingDeliverable`",
         "`validate_artifacts`",
-        "Native Kilo QA",
+        "Native ChipMate QA",
         "Document RAG",
         "Autocomplete",
         "VS Code activation/package",

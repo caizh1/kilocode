@@ -33,10 +33,10 @@ test("skips external tui plugins in pure mode", async () => {
     },
   })
 
-  const pure = process.env.KILO_PURE
-  const meta = process.env.KILO_PLUGIN_META_FILE
-  process.env.KILO_PURE = "1"
-  process.env.KILO_PLUGIN_META_FILE = tmp.extra.meta
+  const pure = process.env.CHIPMATE_PURE
+  const meta = process.env.CHIPMATE_PLUGIN_META_FILE
+  process.env.CHIPMATE_PURE = "1"
+  process.env.CHIPMATE_PLUGIN_META_FILE = tmp.extra.meta
 
   const config = createTuiResolvedConfig({
     plugin: [[tmp.extra.spec, { marker: tmp.extra.marker }]],
@@ -59,14 +59,14 @@ test("skips external tui plugins in pure mode", async () => {
     cwd.mockRestore()
     wait.mockRestore()
     if (pure === undefined) {
-      delete process.env.KILO_PURE
+      delete process.env.CHIPMATE_PURE
     } else {
-      process.env.KILO_PURE = pure
+      process.env.CHIPMATE_PURE = pure
     }
     if (meta === undefined) {
-      delete process.env.KILO_PLUGIN_META_FILE
+      delete process.env.CHIPMATE_PLUGIN_META_FILE
     } else {
-      process.env.KILO_PLUGIN_META_FILE = meta
+      process.env.CHIPMATE_PLUGIN_META_FILE = meta
     }
   }
 })

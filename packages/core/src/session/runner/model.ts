@@ -138,16 +138,16 @@ export const fromCatalogModel = (
       : produce(model, (draft) => {
           Object.assign(draft.request.body, credential.metadata)
         })
-  // kilocode_change start - Kilo Gateway consumes the migrated OAuth account as its organization route.
+  // chipmate_change start - ChipMate Gateway consumes the migrated OAuth account as its organization route.
   // Only the account id crosses into the request body; other oauth metadata stays out of provider requests.
   const resolved =
     credential?.type === "oauth" && credential.metadata?.accountID !== undefined
       ? produce(merged, (draft) => {
-          draft.request.body.kilocodeOrganizationId = String(credential.metadata!.accountID)
+          draft.request.body.chipmateOrganizationId = String(credential.metadata!.accountID)
           delete draft.request.body.accountID
         })
       : merged
-  // kilocode_change end
+  // chipmate_change end
   const key = apiKey(resolved, credential)
   if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/openai") {
     return Effect.succeed(

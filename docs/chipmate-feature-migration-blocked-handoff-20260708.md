@@ -1,6 +1,6 @@
 # ChipMate Feature Migration Blocked Handoff Audit
 
-This audit records the current blocking state for the ChipMate non-QA migration to Kilo-code.
+This audit records the current blocking state for the ChipMate non-QA migration to ChipMate-code.
 
 ## Status
 
@@ -16,15 +16,15 @@ This audit records the current blocking state for the ChipMate non-QA migration 
 
 | Artifact | Size | SHA256 |
 |---|---:|---|
-| `packages/kilo-vscode/out/chipmate-0.0.38-offline-handoff.tar.gz` | `317784738` | `97a70108ae648a1998168d679c3c65638ea7756926860fad113cd06c31d2dba5` |
-| `packages/kilo-vscode/out/chipmate-0.0.38-offline-target-verify-kit.tar.gz` | `32344` | `803c6a22129cc7fcbe9b9912a43a9ebab741a5b8502e26d6d3d0c9cb741f5471` |
-| `packages/kilo-vscode/out/chipmate-0.0.38-offline-delivery-set.tar.gz` | `317916299` | `83c8c27dbe058bd0d2bd5fe63f7bb17259c5dea1943ba18a81e83c142c736954` |
-| `packages/kilo-vscode/out/chipmate-0.0.38-offline-delivery-set.zip` | `317917776` | `d4014986abf84d5d3b4207996427f0bc655e473f9a36a9846790cbbc7b08cbb4` |
+| `packages/chipmate-vscode/out/chipmate-0.0.38-offline-handoff.tar.gz` | `317784738` | `97a70108ae648a1998168d679c3c65638ea7756926860fad113cd06c31d2dba5` |
+| `packages/chipmate-vscode/out/chipmate-0.0.38-offline-target-verify-kit.tar.gz` | `32344` | `803c6a22129cc7fcbe9b9912a43a9ebab741a5b8502e26d6d3d0c9cb741f5471` |
+| `packages/chipmate-vscode/out/chipmate-0.0.38-offline-delivery-set.tar.gz` | `317916299` | `83c8c27dbe058bd0d2bd5fe63f7bb17259c5dea1943ba18a81e83c142c736954` |
+| `packages/chipmate-vscode/out/chipmate-0.0.38-offline-delivery-set.zip` | `317917776` | `d4014986abf84d5d3b4207996427f0bc655e473f9a36a9846790cbbc7b08cbb4` |
 
 ## Proven current scope
 
 - Non-QA sidecar implementation, packaging, target-kit guardrails, marker-boundary scans, and evidence-shape verifiers are prepared.
-- QA was not migrated; Kilo native QA remains the intended path.
+- QA was not migrated; ChipMate native QA remains the intended path.
 - Old ChipMate document-contract repair/gating markers are excluded from runtime source, package runtime surfaces, and target-kit source-helper boundaries.
 - Target verify kit includes runtime S1-S16 intake, target evidence intake, return-pack helper, delivery-manifest return guardrails, and runner-generated runtime evidence skeleton support.
 - Source-checkout-only helpers, including S3 Document RAG readiness and S16 source guard, are intentionally not packaged in the standalone target kit.

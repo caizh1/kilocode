@@ -73,7 +73,7 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(result.promptCacheKey).toBeUndefined()
   })
 
-  // kilocode_change start
+  // chipmate_change start
   test("should set promptCacheKey for openai provider by default", () => {
     const openaiModel = {
       ...mockModel,
@@ -137,7 +137,7 @@ describe("ProviderTransform.options - setCacheKey", () => {
     })
     expect(result.promptCacheKey).toBeUndefined()
   })
-  // kilocode_change end
+  // chipmate_change end
 
   test("should set store=false for openai provider", () => {
     const openaiModel = {
@@ -1267,7 +1267,7 @@ describe("ProviderTransform.schema - gemini non-object properties removal", () =
     expect(result.properties.data.required).toEqual(["name"])
   })
 
-  // kilocode_change start
+  // chipmate_change start
   test("removes required from object array items with no properties", () => {
     const schema = {
       type: "object",
@@ -1288,9 +1288,9 @@ describe("ProviderTransform.schema - gemini non-object properties removal", () =
     expect(result.properties.issue_fields.items.required).toBeUndefined()
   })
 
-  test("sanitizes gemini schemas routed through the Kilo Gateway", () => {
+  test("sanitizes gemini schemas routed through the ChipMate Gateway", () => {
     const gatewayGeminiModel = {
-      providerID: "kilocode",
+      providerID: "chipmate",
       api: {
         id: "google/gemini-2.5-pro",
       },
@@ -1312,7 +1312,7 @@ describe("ProviderTransform.schema - gemini non-object properties removal", () =
 
     expect(result.properties.issue_fields.items.required).toBeUndefined()
   })
-  // kilocode_change end
+  // chipmate_change end
 
   test("does not affect non-gemini providers", () => {
     const openaiModel = {
@@ -3030,7 +3030,7 @@ describe("ProviderTransform.message - cache control on gateway", () => {
     })
   })
 
-  // kilocode_change start
+  // chipmate_change start
   test("openai gpt-5.6 applies promptCacheBreakpoint", () => {
     const model = createModel({
       providerID: "openai",
@@ -3128,13 +3128,13 @@ describe("ProviderTransform.message - cache control on gateway", () => {
     expect(result[1].content[1].providerOptions?.openai?.promptCacheBreakpoint).toBeUndefined()
   })
 
-  test("kilo gateway with openai gpt-5.6 applies caching options", () => {
+  test("chipmate gateway with openai gpt-5.6 applies caching options", () => {
     const model = createModel({
-      providerID: "kilo",
+      providerID: "chipmate",
       api: {
         id: "openai/gpt-5.6",
-        url: "https://api.kilo.ai/api/gateway",
-        npm: "@kilocode/kilo-gateway",
+        url: "https://api.chipmate.ai/api/gateway",
+        npm: "@chipmate/chipmate-gateway",
       },
       id: "openai/gpt-5.6",
     })
@@ -3194,7 +3194,7 @@ describe("ProviderTransform.message - cache control on gateway", () => {
     expect(result[0].providerOptions?.openai?.promptCacheBreakpoint).toBeUndefined()
     expect(result[1].providerOptions?.openai?.promptCacheBreakpoint).toBeUndefined()
   })
-  // kilocode_change end
+  // chipmate_change end
 })
 
 describe("ProviderTransform.temperature - Cohere North", () => {
@@ -3260,7 +3260,7 @@ describe("ProviderTransform.variants", () => {
     expect(result).toEqual({})
   })
 
-  // kilocode_change start - DeepSeek V4 required-tool compatibility
+  // chipmate_change start - DeepSeek V4 required-tool compatibility
   test("deepseek v4 exposes a non-thinking variant for required tool choice", () => {
     const model = createMockModel({
       id: "deepseek/deepseek-v4-flash",
@@ -3277,7 +3277,7 @@ describe("ProviderTransform.variants", () => {
     expect(result.thinking).toEqual({ thinking: { type: "enabled" } })
     expect(result.max).toEqual({ reasoningEffort: "max" })
   })
-  // kilocode_change end
+  // chipmate_change end
 
   test("minimax m3 using anthropic returns thinking toggles", () => {
     const model = createMockModel({
@@ -3312,7 +3312,7 @@ describe("ProviderTransform.variants", () => {
     })
   })
 
-  // kilocode_change start: minimax
+  // chipmate_change start: minimax
   test("minimax m2.7 direct anthropic provider returns instant/thinking toggle", () => {
     const model = createMockModel({
       id: "minimax/MiniMax-M2.7",
@@ -3330,14 +3330,14 @@ describe("ProviderTransform.variants", () => {
     })
   })
 
-  test("minimax via kilo gateway returns instant/thinking toggle", () => {
+  test("minimax via chipmate gateway returns instant/thinking toggle", () => {
     const model = createMockModel({
-      id: "kilo/minimax/minimax-m3",
-      providerID: "kilo",
+      id: "chipmate/minimax/minimax-m3",
+      providerID: "chipmate",
       api: {
         id: "minimax/minimax-m3",
-        url: "https://gateway.kilo.ai",
-        npm: "@kilocode/kilo-gateway",
+        url: "https://gateway.chipmate.ai",
+        npm: "@chipmate/chipmate-gateway",
       },
     })
     const result = ProviderTransform.variants(model)
@@ -3346,7 +3346,7 @@ describe("ProviderTransform.variants", () => {
       thinking: { reasoning: { enabled: true } },
     })
   })
-  // kilocode_change end
+  // chipmate_change end
 
   test("minimax m3 using anthropic returns thinking toggles", () => {
     const model = createMockModel({
@@ -3725,7 +3725,7 @@ describe("ProviderTransform.variants", () => {
       expect(Object.keys(result)).toEqual(["low", "medium", "high"])
     })
 
-    // kilocode_change start
+    // chipmate_change start
     test("mercury-2 returns OPENAI_EFFORTS with reasoning", () => {
       const model = createMockModel({
         id: "openrouter/inception/mercury-2",
@@ -3741,7 +3741,7 @@ describe("ProviderTransform.variants", () => {
       expect(result.low).toEqual({ reasoning: { effort: "low" } })
       expect(result.high).toEqual({ reasoning: { effort: "high" } })
     })
-    // kilocode_change end
+    // chipmate_change end
 
     test("grok-4 returns empty object", () => {
       const model = createMockModel({
@@ -3774,17 +3774,17 @@ describe("ProviderTransform.variants", () => {
     })
   })
 
-  // kilocode_change start
-  describe("@kilocode/kilo-gateway", () => {
+  // chipmate_change start
+  describe("@chipmate/chipmate-gateway", () => {
     test("claude models return empty variants (reasoning disabled)", () => {
       const model = createMockModel({
-        id: "kilo/anthropic/claude-sonnet-4",
-        providerID: "kilo",
+        id: "chipmate/anthropic/claude-sonnet-4",
+        providerID: "chipmate",
         capabilities: { reasoning: false },
         api: {
           id: "anthropic/claude-sonnet-4",
-          url: "https://gateway.kilo.ai",
-          npm: "@kilocode/kilo-gateway",
+          url: "https://gateway.chipmate.ai",
+          npm: "@chipmate/chipmate-gateway",
         },
       })
       const result = ProviderTransform.variants(model)
@@ -3793,13 +3793,13 @@ describe("ProviderTransform.variants", () => {
 
     test("anthropic models in api.id return empty variants (reasoning disabled)", () => {
       const model = createMockModel({
-        id: "kilo/anthropic/claude-opus-4",
-        providerID: "kilo",
+        id: "chipmate/anthropic/claude-opus-4",
+        providerID: "chipmate",
         capabilities: { reasoning: false },
         api: {
           id: "anthropic/claude-opus-4",
-          url: "https://gateway.kilo.ai",
-          npm: "@kilocode/kilo-gateway",
+          url: "https://gateway.chipmate.ai",
+          npm: "@chipmate/chipmate-gateway",
         },
       })
       const result = ProviderTransform.variants(model)
@@ -3808,12 +3808,12 @@ describe("ProviderTransform.variants", () => {
 
     test("gpt models return OPENAI_EFFORTS with reasoning", () => {
       const model = createMockModel({
-        id: "kilo/openai/gpt-5",
-        providerID: "kilo",
+        id: "chipmate/openai/gpt-5",
+        providerID: "chipmate",
         api: {
           id: "openai/gpt-5",
-          url: "https://gateway.kilo.ai",
-          npm: "@kilocode/kilo-gateway",
+          url: "https://gateway.chipmate.ai",
+          npm: "@chipmate/chipmate-gateway",
         },
       })
       const result = ProviderTransform.variants(model)
@@ -3823,12 +3823,12 @@ describe("ProviderTransform.variants", () => {
 
     test("gemini-3 models return OPENAI_EFFORTS with reasoning and encrypted content", () => {
       const model = createMockModel({
-        id: "kilo/google/gemini-3-pro",
-        providerID: "kilo",
+        id: "chipmate/google/gemini-3-pro",
+        providerID: "chipmate",
         api: {
           id: "google/gemini-3-pro",
-          url: "https://gateway.kilo.ai",
-          npm: "@kilocode/kilo-gateway",
+          url: "https://gateway.chipmate.ai",
+          npm: "@chipmate/chipmate-gateway",
         },
       })
       const result = ProviderTransform.variants(model)
@@ -3837,12 +3837,12 @@ describe("ProviderTransform.variants", () => {
 
     test("non-qualifying models return empty object", () => {
       const model = createMockModel({
-        id: "kilo/meta/llama-4",
-        providerID: "kilo",
+        id: "chipmate/meta/llama-4",
+        providerID: "chipmate",
         api: {
           id: "meta/llama-4",
-          url: "https://gateway.kilo.ai",
-          npm: "@kilocode/kilo-gateway",
+          url: "https://gateway.chipmate.ai",
+          npm: "@chipmate/chipmate-gateway",
         },
       })
       const result = ProviderTransform.variants(model)
@@ -3851,12 +3851,12 @@ describe("ProviderTransform.variants", () => {
 
     test("grok-3-mini returns low and high with reasoning", () => {
       const model = createMockModel({
-        id: "kilo/x-ai/grok-3-mini",
-        providerID: "kilo",
+        id: "chipmate/x-ai/grok-3-mini",
+        providerID: "chipmate",
         api: {
           id: "x-ai/grok-3-mini",
-          url: "https://gateway.kilo.ai",
-          npm: "@kilocode/kilo-gateway",
+          url: "https://gateway.chipmate.ai",
+          npm: "@chipmate/chipmate-gateway",
         },
       })
       const result = ProviderTransform.variants(model)
@@ -3867,12 +3867,12 @@ describe("ProviderTransform.variants", () => {
 
     test("codex models return OPENAI_EFFORTS with object-based reasoning format", () => {
       const model = createMockModel({
-        id: "kilo/openai/gpt-5.2-codex",
-        providerID: "kilo",
+        id: "chipmate/openai/gpt-5.2-codex",
+        providerID: "chipmate",
         api: {
           id: "openai/gpt-5.2-codex",
-          url: "https://gateway.kilo.ai",
-          npm: "@kilocode/kilo-gateway",
+          url: "https://gateway.chipmate.ai",
+          npm: "@chipmate/chipmate-gateway",
         },
       })
       const result = ProviderTransform.variants(model)
@@ -3882,20 +3882,20 @@ describe("ProviderTransform.variants", () => {
       expect(result.xhigh).toEqual({ reasoning: { effort: "xhigh" } })
     })
 
-    // kilocode_change start
-    test("mercury-2 uses server-provided variants from kilo gateway", () => {
+    // chipmate_change start
+    test("mercury-2 uses server-provided variants from chipmate gateway", () => {
       const serverVariants = {
         low: { reasoningEffort: "low" },
         medium: { reasoningEffort: "medium" },
         high: { reasoningEffort: "high" },
       }
       const model = createMockModel({
-        id: "kilo/inception/mercury-2",
-        providerID: "kilo",
+        id: "chipmate/inception/mercury-2",
+        providerID: "chipmate",
         api: {
           id: "inception/mercury-2",
-          url: "https://gateway.kilo.ai",
-          npm: "@kilocode/kilo-gateway",
+          url: "https://gateway.chipmate.ai",
+          npm: "@chipmate/chipmate-gateway",
         },
         variants: serverVariants,
       })
@@ -3903,9 +3903,9 @@ describe("ProviderTransform.variants", () => {
       expect(result).toEqual(serverVariants)
       expect(Object.keys(result)).toEqual(["low", "medium", "high"])
     })
-    // kilocode_change end
+    // chipmate_change end
   })
-  // kilocode_change end
+  // chipmate_change end
 
   describe("@ai-sdk/gateway", () => {
     test("anthropic sonnet 4.6 models return adaptive thinking options", () => {
@@ -4266,7 +4266,7 @@ describe("ProviderTransform.variants", () => {
     })
   })
 
-  // kilocode_change start
+  // chipmate_change start
   describe("@ai-sdk/azure", () => {
     test("gpt-5.4 includes xhigh", () => {
       const model = createMockModel({
@@ -4288,7 +4288,7 @@ describe("ProviderTransform.variants", () => {
       })
     })
   })
-  // kilocode_change end
+  // chipmate_change end
 
   describe("@ai-sdk/cerebras", () => {
     test("returns WIDELY_SUPPORTED_EFFORTS with reasoningEffort", () => {
@@ -4357,7 +4357,7 @@ describe("ProviderTransform.variants", () => {
       expect(result.high).toEqual({ reasoningEffort: "high" })
     })
 
-    // kilocode_change start
+    // chipmate_change start
     test("grok-4.5 uses standard reasoning efforts", () => {
       const model = createMockModel({
         id: "xai/grok-4.5",
@@ -4374,7 +4374,7 @@ describe("ProviderTransform.variants", () => {
       expect(Object.keys(result)).toEqual(["low", "medium", "high"])
       expect(result.medium).toEqual({ reasoningEffort: "medium" })
     })
-    // kilocode_change end
+    // chipmate_change end
   })
 
   describe("@ai-sdk/deepinfra", () => {
@@ -4411,7 +4411,7 @@ describe("ProviderTransform.variants", () => {
       expect(result.low).toEqual({ reasoningEffort: "low" })
       expect(result.high).toEqual({ reasoningEffort: "high" })
     })
-    // kilocode_change start
+    // chipmate_change start
     test("mercury-2 returns WIDELY_SUPPORTED_EFFORTS with reasoningEffort", () => {
       const model = createMockModel({
         id: "inception/mercury-2",
@@ -4427,7 +4427,7 @@ describe("ProviderTransform.variants", () => {
       expect(result.low).toEqual({ reasoningEffort: "low" })
       expect(result.high).toEqual({ reasoningEffort: "high" })
     })
-    // kilocode_change end
+    // chipmate_change end
 
     test("north-mini-code-1-0 returns only none and high", () => {
       const model = createMockModel({
@@ -4496,8 +4496,8 @@ describe("ProviderTransform.variants", () => {
     })
 
     for (const testCase of [
-      { id: "o3-deep-research", efforts: ["medium"] }, // kilocode_change - preserve helper exclusions on Azure
-      { id: "gpt-5-pro", efforts: ["high"] }, // kilocode_change - preserve helper exclusions on Azure
+      { id: "o3-deep-research", efforts: ["medium"] }, // chipmate_change - preserve helper exclusions on Azure
+      { id: "gpt-5-pro", efforts: ["high"] }, // chipmate_change - preserve helper exclusions on Azure
       { id: "gpt-5-1", efforts: ["none", "low", "medium", "high"] },
       { id: "gpt-5-4", efforts: ["none", "low", "medium", "high", "xhigh"] },
       { id: "gpt-5.4", efforts: ["none", "low", "medium", "high", "xhigh"] },
@@ -5187,17 +5187,17 @@ describe("ProviderTransform.variants", () => {
     }
   })
 
-  // kilocode_change start
+  // chipmate_change start
   describe("ProviderTransform.smallOptions", () => {
-    describe("@kilocode/kilo-gateway", () => {
+    describe("@chipmate/chipmate-gateway", () => {
       test("claude models use their default reasoning effort", () => {
         const model = createMockModel({
-          id: "kilo/anthropic/claude-sonnet-4",
-          providerID: "kilo",
+          id: "chipmate/anthropic/claude-sonnet-4",
+          providerID: "chipmate",
           api: {
             id: "anthropic/claude-sonnet-4",
-            url: "https://gateway.kilo.ai",
-            npm: "@kilocode/kilo-gateway",
+            url: "https://gateway.chipmate.ai",
+            npm: "@chipmate/chipmate-gateway",
           },
         })
         const result = ProviderTransform.smallOptions(model)
@@ -5206,12 +5206,12 @@ describe("ProviderTransform.variants", () => {
 
       test("non-claude models use their default reasoning effort", () => {
         const model = createMockModel({
-          id: "kilo/openai/gpt-4",
-          providerID: "kilo",
+          id: "chipmate/openai/gpt-4",
+          providerID: "chipmate",
           api: {
             id: "openai/gpt-4",
-            url: "https://gateway.kilo.ai",
-            npm: "@kilocode/kilo-gateway",
+            url: "https://gateway.chipmate.ai",
+            npm: "@chipmate/chipmate-gateway",
           },
         })
         const result = ProviderTransform.smallOptions(model)
@@ -5220,12 +5220,12 @@ describe("ProviderTransform.variants", () => {
 
       test("google models use their default reasoning effort", () => {
         const model = createMockModel({
-          id: "kilo/google/gemini-2.0-flash",
-          providerID: "kilo",
+          id: "chipmate/google/gemini-2.0-flash",
+          providerID: "chipmate",
           api: {
             id: "google/gemini-2.0-flash",
-            url: "https://gateway.kilo.ai",
-            npm: "@kilocode/kilo-gateway",
+            url: "https://gateway.chipmate.ai",
+            npm: "@chipmate/chipmate-gateway",
           },
         })
         const result = ProviderTransform.smallOptions(model)
@@ -5271,7 +5271,7 @@ describe("ProviderTransform.variants", () => {
       expect(result).toEqual({})
     })
   })
-  // kilocode_change end
+  // chipmate_change end
 
   describe("ai-gateway-provider (cloudflare-ai-gateway)", () => {
     const cfModel = (apiId: string, releaseDate = "2024-01-01") =>
@@ -5476,7 +5476,7 @@ describe("ProviderTransform.providerOptions - ai-gateway-provider", () => {
   })
 })
 
-// kilocode_change start - tests for reasoningSummary guard
+// chipmate_change start - tests for reasoningSummary guard
 describe("ProviderTransform.options - OpenAI Responses API params guard", () => {
   const sessionID = "test-session"
 
@@ -5545,9 +5545,9 @@ describe("ProviderTransform.options - OpenAI Responses API params guard", () => 
     expect(result.reasoningSummary).toBe("auto")
   })
 
-  test("includes reasoningSummary for @kilocode/kilo-gateway", () => {
+  test("includes reasoningSummary for @chipmate/chipmate-gateway", () => {
     const result = ProviderTransform.options({
-      model: gpt5Model("@kilocode/kilo-gateway", "kilo"),
+      model: gpt5Model("@chipmate/chipmate-gateway", "chipmate"),
       sessionID,
     })
     expect(result.reasoningSummary).toBe("auto")
@@ -5563,4 +5563,4 @@ describe("ProviderTransform.options - OpenAI Responses API params guard", () => 
     }
   })
 })
-// kilocode_change end
+// chipmate_change end

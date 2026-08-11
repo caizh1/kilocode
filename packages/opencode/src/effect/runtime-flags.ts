@@ -7,58 +7,58 @@ const positiveInteger = (name: string) =>
     Config.map((value) => (Number.isInteger(value) && value > 0 ? value : undefined)),
     Config.orElse(() => Config.succeed(undefined)),
   )
-const experimental = bool("KILO_EXPERIMENTAL")
+const experimental = bool("CHIPMATE_EXPERIMENTAL")
 const enabledByExperimental = (name: string) =>
   Config.all({ experimental, enabled: Config.boolean(name).pipe(Config.option) }).pipe(
     Config.map((flags) => Option.getOrElse(flags.enabled, () => flags.experimental)),
   )
 
 export class Service extends ConfigService.Service<Service>()("@opencode/RuntimeFlags", {
-  autoShare: bool("KILO_AUTO_SHARE"),
-  pure: bool("KILO_PURE"),
-  disableDefaultPlugins: bool("KILO_DISABLE_DEFAULT_PLUGINS"),
-  disableChannelDb: bool("KILO_DISABLE_CHANNEL_DB"), // kilocode_change
-  disableEmbeddedWebUi: bool("KILO_DISABLE_EMBEDDED_WEB_UI"),
-  disableExternalSkills: bool("KILO_DISABLE_EXTERNAL_SKILLS"),
-  disableSkillMarketTools: bool("KILO_DISABLE_SKILL_MARKET_TOOLS"), // kilocode_change
-  disableSkillShell: bool("KILO_DISABLE_SKILL_SHELL"), // kilocode_change - disable shell injection in skill bodies
-  disableLspDownload: bool("KILO_DISABLE_LSP_DOWNLOAD"),
-  skipMigrations: bool("KILO_SKIP_MIGRATIONS"), // kilocode_change
+  autoShare: bool("CHIPMATE_AUTO_SHARE"),
+  pure: bool("CHIPMATE_PURE"),
+  disableDefaultPlugins: bool("CHIPMATE_DISABLE_DEFAULT_PLUGINS"),
+  disableChannelDb: bool("CHIPMATE_DISABLE_CHANNEL_DB"), // chipmate_change
+  disableEmbeddedWebUi: bool("CHIPMATE_DISABLE_EMBEDDED_WEB_UI"),
+  disableExternalSkills: bool("CHIPMATE_DISABLE_EXTERNAL_SKILLS"),
+  disableSkillMarketTools: bool("CHIPMATE_DISABLE_SKILL_MARKET_TOOLS"), // chipmate_change
+  disableSkillShell: bool("CHIPMATE_DISABLE_SKILL_SHELL"), // chipmate_change - disable shell injection in skill bodies
+  disableLspDownload: bool("CHIPMATE_DISABLE_LSP_DOWNLOAD"),
+  skipMigrations: bool("CHIPMATE_SKIP_MIGRATIONS"), // chipmate_change
   disableClaudeCodePrompt: Config.all({
-    broad: bool("KILO_DISABLE_CLAUDE_CODE"),
-    direct: bool("KILO_DISABLE_CLAUDE_CODE_PROMPT"),
+    broad: bool("CHIPMATE_DISABLE_CLAUDE_CODE"),
+    direct: bool("CHIPMATE_DISABLE_CLAUDE_CODE_PROMPT"),
   }).pipe(Config.map((flags) => flags.broad || flags.direct)),
   disableClaudeCodeSkills: Config.all({
-    broad: bool("KILO_DISABLE_CLAUDE_CODE"),
-    direct: bool("KILO_DISABLE_CLAUDE_CODE_SKILLS"),
+    broad: bool("CHIPMATE_DISABLE_CLAUDE_CODE"),
+    direct: bool("CHIPMATE_DISABLE_CLAUDE_CODE_SKILLS"),
   }).pipe(Config.map((flags) => flags.broad || flags.direct)),
   enableExa: Config.all({
     experimental,
-    enabled: bool("KILO_ENABLE_EXA"),
-    legacy: bool("KILO_EXPERIMENTAL_EXA"),
+    enabled: bool("CHIPMATE_ENABLE_EXA"),
+    legacy: bool("CHIPMATE_EXPERIMENTAL_EXA"),
   }).pipe(Config.map((flags) => flags.experimental || flags.enabled || flags.legacy)),
   enableParallel: Config.all({
-    enabled: bool("KILO_ENABLE_PARALLEL"),
-    legacy: bool("KILO_EXPERIMENTAL_PARALLEL"),
+    enabled: bool("CHIPMATE_ENABLE_PARALLEL"),
+    legacy: bool("CHIPMATE_EXPERIMENTAL_PARALLEL"),
   }).pipe(Config.map((flags) => flags.enabled || flags.legacy)),
-  enableExperimentalModels: bool("KILO_ENABLE_EXPERIMENTAL_MODELS"),
-  enableQuestionTool: bool("KILO_ENABLE_QUESTION_TOOL"),
-  experimentalScout: enabledByExperimental("KILO_EXPERIMENTAL_SCOUT"), // kilocode_change
-  experimentalReferences: enabledByExperimental("KILO_EXPERIMENTAL_REFERENCES"),
-  experimentalBackgroundSubagents: enabledByExperimental("KILO_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
-  experimentalLspTy: bool("KILO_EXPERIMENTAL_LSP_TY"),
-  experimentalLspTool: enabledByExperimental("KILO_EXPERIMENTAL_LSP_TOOL"),
-  experimentalOxfmt: enabledByExperimental("KILO_EXPERIMENTAL_OXFMT"),
-  experimentalPlanMode: enabledByExperimental("KILO_EXPERIMENTAL_PLAN_MODE"),
-  experimentalEventSystem: enabledByExperimental("KILO_EXPERIMENTAL_EVENT_SYSTEM"),
-  experimentalSessionSwitcher: enabledByExperimental("KILO_EXPERIMENTAL_SESSION_SWITCHER"), // kilocode_change
-  experimentalWorkspaces: enabledByExperimental("KILO_EXPERIMENTAL_WORKSPACES"),
-  experimentalIconDiscovery: enabledByExperimental("KILO_EXPERIMENTAL_ICON_DISCOVERY"),
-  outputTokenMax: positiveInteger("KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
-  bashDefaultTimeoutMs: positiveInteger("KILO_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
-  experimentalNativeLlm: bool("KILO_EXPERIMENTAL_NATIVE_LLM"),
-  experimentalWebSockets: bool("KILO_EXPERIMENTAL_WEBSOCKETS"),
-  client: Config.string("KILO_CLIENT").pipe(Config.withDefault("cli")),
+  enableExperimentalModels: bool("CHIPMATE_ENABLE_EXPERIMENTAL_MODELS"),
+  enableQuestionTool: bool("CHIPMATE_ENABLE_QUESTION_TOOL"),
+  experimentalScout: enabledByExperimental("CHIPMATE_EXPERIMENTAL_SCOUT"), // chipmate_change
+  experimentalReferences: enabledByExperimental("CHIPMATE_EXPERIMENTAL_REFERENCES"),
+  experimentalBackgroundSubagents: enabledByExperimental("CHIPMATE_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
+  experimentalLspTy: bool("CHIPMATE_EXPERIMENTAL_LSP_TY"),
+  experimentalLspTool: enabledByExperimental("CHIPMATE_EXPERIMENTAL_LSP_TOOL"),
+  experimentalOxfmt: enabledByExperimental("CHIPMATE_EXPERIMENTAL_OXFMT"),
+  experimentalPlanMode: enabledByExperimental("CHIPMATE_EXPERIMENTAL_PLAN_MODE"),
+  experimentalEventSystem: enabledByExperimental("CHIPMATE_EXPERIMENTAL_EVENT_SYSTEM"),
+  experimentalSessionSwitcher: enabledByExperimental("CHIPMATE_EXPERIMENTAL_SESSION_SWITCHER"), // chipmate_change
+  experimentalWorkspaces: enabledByExperimental("CHIPMATE_EXPERIMENTAL_WORKSPACES"),
+  experimentalIconDiscovery: enabledByExperimental("CHIPMATE_EXPERIMENTAL_ICON_DISCOVERY"),
+  outputTokenMax: positiveInteger("CHIPMATE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
+  bashDefaultTimeoutMs: positiveInteger("CHIPMATE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
+  experimentalNativeLlm: bool("CHIPMATE_EXPERIMENTAL_NATIVE_LLM"),
+  experimentalWebSockets: bool("CHIPMATE_EXPERIMENTAL_WEBSOCKETS"),
+  client: Config.string("CHIPMATE_CLIENT").pipe(Config.withDefault("cli")),
 }) {}
 
 export type Info = Context.Service.Shape<typeof Service>

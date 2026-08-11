@@ -18,7 +18,7 @@ import { Api } from "./api"
 import { ServerAuth } from "./auth"
 import { handlers } from "./handlers"
 import { authorizationLayer } from "./middleware/authorization"
-import * as ReferenceReconciler from "./kilocode/reference-reconciler" // kilocode_change
+import * as ReferenceReconciler from "./chipmate/reference-reconciler" // chipmate_change
 import { schemaErrorLayer } from "./middleware/schema-error"
 import { PtyEnvironment } from "./pty-environment"
 import { layer as locationLayer } from "./location"
@@ -55,12 +55,12 @@ function makeRoutes<AuthError, AuthServices>(auth: Layer.Layer<ServerAuth.Config
   return HttpApiBuilder.layer(Api, { openapiPath: "/openapi.json" }).pipe(
     Layer.provide(handlers),
     Layer.provide(sessionLocationLayer),
-    Layer.provide(locationLayer), // kilocode_change - standalone server has no Kilo config reconciler
+    Layer.provide(locationLayer), // chipmate_change - standalone server has no ChipMate config reconciler
     Layer.provide(authorizationLayer),
     Layer.provide(schemaErrorLayer),
     Layer.provide(auth),
     Layer.provide(serviceLayer),
-    HttpRouter.provideRequest(ReferenceReconciler.noop), // kilocode_change - request-scoped; no Kilo reconciler outside the CLI
+    HttpRouter.provideRequest(ReferenceReconciler.noop), // chipmate_change - request-scoped; no ChipMate reconciler outside the CLI
   )
 }
 

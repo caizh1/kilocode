@@ -1,14 +1,14 @@
-// kilocode_change - new file
+// chipmate_change - new file
 import { Config } from "@/config/config"
 import { Auth } from "@/auth"
 import { ModelCache } from "./model-cache"
 import * as Core from "@opencode-ai/core/models-dev"
 import { Context, Effect, Layer } from "effect"
-import { AI_SDK_PROVIDERS, KILO_OPENROUTER_BASE, PROMPTS } from "@kilocode/kilo-gateway"
-import { overlay } from "@/kilocode/anaconda-desktop/provider"
-import { isInternalOffline } from "@/kilocode/internal-offline"
+import { AI_SDK_PROVIDERS, CHIPMATE_OPENROUTER_BASE, PROMPTS } from "@chipmate/chipmate-gateway"
+import { overlay } from "@/chipmate/anaconda-desktop/provider"
+import { isInternalOffline } from "@/chipmate/internal-offline"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // kilocode_change
+import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // chipmate_change
 
 export const Model = Core.Model
 export type Model = Core.Model
@@ -46,7 +46,7 @@ export const layer: Layer.Layer<Service, never, Core.Service | Config.Service | 
       const get = Effect.fn("ModelsDev.get")(function* () {
         const source = yield* core.get()
         const providers = overlay(source)
-        delete providers.kilo
+        delete providers.chipmate
 
         const cfg = yield* config.get()
         const disabled = new Set(cfg.disabled_providers ?? [])
@@ -57,7 +57,7 @@ export const layer: Layer.Layer<Service, never, Core.Service | Config.Service | 
               .filter(
                 ([id, item]) =>
                   item?.npm === "@ai-sdk/openai-compatible" &&
-                  id !== "kilo" &&
+                  id !== "chipmate" &&
                   id !== "apertis" &&
                   (!enabled || enabled.has(id)),
               )
@@ -67,7 +67,7 @@ export const layer: Layer.Layer<Service, never, Core.Service | Config.Service | 
           return Object.fromEntries(Object.entries(providers).filter(([id]) => custom.has(id)))
         }
 
-        const allowed = (!enabled || enabled.has("kilo")) && !disabled.has("kilo")
+        const allowed = (!enabled || enabled.has("chipmate")) && !disabled.has("chipmate")
         const apt = cfg.provider?.apertis?.options
         const aptURL = apt?.baseURL ?? "https://api.apertis.ai/v1"
         const aptOpts = apt?.baseURL ? { baseURL: apt.baseURL } : {}
@@ -92,24 +92,24 @@ export const layer: Layer.Layer<Service, never, Core.Service | Config.Service | 
           return providers
         }
 
-        const opts = cfg.provider?.kilo?.options
-        const info = yield* auth.get("kilo").pipe(Effect.catch(() => Effect.succeed(undefined)))
-        const org = opts?.kilocodeOrganizationId ?? (info?.type === "oauth" ? info.accountId : undefined)
+        const opts = cfg.provider?.chipmate?.options
+        const info = yield* auth.get("chipmate").pipe(Effect.catch(() => Effect.succeed(undefined)))
+        const org = opts?.chipmateOrganizationId ?? (info?.type === "oauth" ? info.accountId : undefined)
         const url = baseURL(opts?.baseURL, org)
         const fetch = {
           ...(url ? { baseURL: url } : {}),
-          ...(org ? { kilocodeOrganizationId: org } : {}),
+          ...(org ? { chipmateOrganizationId: org } : {}),
         }
-        const models = yield* cache.fetch("kilo", fetch).pipe(Effect.catch(() => Effect.succeed({})))
-        providers.kilo = {
-          id: "kilo",
-          name: "Kilo Gateway",
-          env: ["KILO_API_KEY"],
-          api: KILO_OPENROUTER_BASE.endsWith("/") ? KILO_OPENROUTER_BASE : `${KILO_OPENROUTER_BASE}/`,
-          npm: "@kilocode/kilo-gateway",
+        const models = yield* cache.fetch("chipmate", fetch).pipe(Effect.catch(() => Effect.succeed({})))
+        providers.chipmate = {
+          id: "chipmate",
+          name: "ChipMate Gateway",
+          env: ["CHIPMATE_API_KEY"],
+          api: CHIPMATE_OPENROUTER_BASE.endsWith("/") ? CHIPMATE_OPENROUTER_BASE : `${CHIPMATE_OPENROUTER_BASE}/`,
+          npm: "@chipmate/chipmate-gateway",
           models,
         }
-        if (Object.keys(models).length === 0) yield* cache.refresh("kilo", fetch).pipe(Effect.ignore, Effect.forkDetach)
+        if (Object.keys(models).length === 0) yield* cache.refresh("chipmate", fetch).pipe(Effect.ignore, Effect.forkDetach)
         yield* addApertis()
         return providers
       })
@@ -118,7 +118,7 @@ export const layer: Layer.Layer<Service, never, Core.Service | Config.Service | 
     }),
   )
 
-export const defaultLayer: Layer.Layer<Service> = Layer.suspend(() => AppNodeBuilder.build(node)) // kilocode_change - build from the LayerNode graph
+export const defaultLayer: Layer.Layer<Service> = Layer.suspend(() => AppNodeBuilder.build(node)) // chipmate_change - build from the LayerNode graph
 
 export const node = LayerNode.make({
   service: Service,

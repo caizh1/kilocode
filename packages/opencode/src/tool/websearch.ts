@@ -1,20 +1,20 @@
-import { Effect, Option, Schema } from "effect" // kilocode_change - Option added for kilo-exa transport dispatch
+import { Effect, Option, Schema } from "effect" // chipmate_change - Option added for chipmate-exa transport dispatch
 import { HttpClient } from "effect/unstable/http"
 import * as Tool from "./tool"
 import * as McpWebSearch from "./mcp-websearch"
-import * as KiloExa from "@/kilocode/tool/websearch-kilo-exa" // kilocode_change - Kilo-REST Exa transport
+import * as ChipMateExa from "@/chipmate/tool/websearch-chipmate-exa" // chipmate_change - ChipMate-REST Exa transport
 import DESCRIPTION from "./websearch.txt"
 import { checksum } from "@opencode-ai/core/util/encode"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { Auth } from "@/auth" // kilocode_change - source Kilo bearer for Kilo-REST transport
+import { Auth } from "@/auth" // chipmate_change - source ChipMate bearer for ChipMate-REST transport
 
-const MAX_RESULTS = 10 // kilocode_change - cap numResults across all transports
+const MAX_RESULTS = 10 // chipmate_change - cap numResults across all transports
 
 export const Parameters = Schema.Struct({
   query: Schema.String.annotate({ description: "Websearch query" }),
   numResults: Schema.optional(Schema.Number).annotate({
-    description: "Number of search results to return (default: 8, maximum: 10)", // kilocode_change - note MAX_RESULTS cap
+    description: "Number of search results to return (default: 8, maximum: 10)", // chipmate_change - note MAX_RESULTS cap
   }),
   livecrawl: Schema.optional(Schema.Literals(["fallback", "preferred"])).annotate({
     description:
@@ -28,12 +28,12 @@ export const Parameters = Schema.Struct({
   }),
 })
 
-const WebSearchProviderSchema = Schema.Literals(["exa", "parallel", "kilo-exa"]) // kilocode_change - kilo-exa env override
+const WebSearchProviderSchema = Schema.Literals(["exa", "parallel", "chipmate-exa"]) // chipmate_change - chipmate-exa env override
 export type WebSearchProvider = Schema.Schema.Type<typeof WebSearchProviderSchema>
 
 export function selectWebSearchProvider(sessionID: string, flags = { exa: false, parallel: false }): WebSearchProvider {
-  const override = process.env.KILO_WEBSEARCH_PROVIDER
-  if (override === "exa" || override === "parallel" || override === "kilo-exa") return override // kilocode_change - kilo-exa env override
+  const override = process.env.CHIPMATE_WEBSEARCH_PROVIDER
+  if (override === "exa" || override === "parallel" || override === "chipmate-exa") return override // chipmate_change - chipmate-exa env override
   if (flags.parallel) return "parallel"
   if (flags.exa) return "exa"
 
@@ -42,7 +42,7 @@ export function selectWebSearchProvider(sessionID: string, flags = { exa: false,
 
 export function webSearchProviderLabel(provider: unknown) {
   if (provider === "parallel") return "Parallel Web Search"
-  if (provider === "exa" || provider === "kilo-exa") return "Exa Web Search" // kilocode_change - kilo-exa shares label
+  if (provider === "exa" || provider === "chipmate-exa") return "Exa Web Search" // chipmate_change - chipmate-exa shares label
   return "Web Search"
 }
 
@@ -92,7 +92,7 @@ function callProvider(
     {
       query: params.query,
       type: params.type || "auto",
-      numResults: Math.min(params.numResults || 8, MAX_RESULTS), // kilocode_change - cap at MAX_RESULTS
+      numResults: Math.min(params.numResults || 8, MAX_RESULTS), // chipmate_change - cap at MAX_RESULTS
       livecrawl: params.livecrawl || "fallback",
       contextMaxCharacters: params.contextMaxCharacters,
     },
@@ -105,7 +105,7 @@ export const WebSearchTool = Tool.define(
   Effect.gen(function* () {
     const http = yield* HttpClient.HttpClient
     const flags = yield* RuntimeFlags.Service
-    const authSvc = yield* Auth.Service // kilocode_change - source Kilo bearer for Kilo-REST transport
+    const authSvc = yield* Auth.Service // chipmate_change - source ChipMate bearer for ChipMate-REST transport
 
     return {
       get description() {
@@ -119,36 +119,36 @@ export const WebSearchTool = Tool.define(
             parallel: flags.enableParallel,
           })
           const title = webSearchProviderLabel(provider)
-          // kilocode_change start - Kilo-REST Exa transport
+          // chipmate_change start - ChipMate-REST Exa transport
           // Precedence:
-          //   provider="kilo-exa"          -> kilo-rest  (auth required)
+          //   provider="chipmate-exa"          -> chipmate-rest  (auth required)
           //   provider="exa" + EXA_API_KEY -> mcp-exa-byok     (BYOK wins)
-          //   provider="exa" + Kilo auth   -> kilo-rest        (new default for authed users)
+          //   provider="exa" + ChipMate auth   -> chipmate-rest        (new default for authed users)
           //   provider="exa" + no auth     -> mcp-exa-unauth   (preserves current fallback)
           //   provider="parallel"          -> mcp-parallel     (unchanged)
-          const kiloToken = yield* Effect.gen(function* () {
-            if (provider !== "exa" && provider !== "kilo-exa") return undefined as string | undefined
-            const info = yield* authSvc.get("kilo")
+          const chipmateToken = yield* Effect.gen(function* () {
+            if (provider !== "exa" && provider !== "chipmate-exa") return undefined as string | undefined
+            const info = yield* authSvc.get("chipmate")
             if (!info) return undefined
             return info.type === "api" ? info.key : info.type === "oauth" ? info.access : undefined
           })
           const transport =
-            provider === "kilo-exa"
-              ? "kilo-rest"
+            provider === "chipmate-exa"
+              ? "chipmate-rest"
               : provider === "parallel"
                 ? "mcp-parallel"
                 : provider === "exa" && process.env.EXA_API_KEY
                   ? "mcp-exa-byok"
-                  : provider === "exa" && kiloToken
-                    ? "kilo-rest"
+                  : provider === "exa" && chipmateToken
+                    ? "chipmate-rest"
                     : "mcp-exa-unauth"
-          // kilocode_change end
-          // kilocode_change start - add transport to metadata
+          // chipmate_change end
+          // chipmate_change start - add transport to metadata
           yield* ctx.metadata({
             title: `${title} "${params.query}"`,
             metadata: { provider, transport },
           })
-          // kilocode_change end
+          // chipmate_change end
 
           yield* ctx.ask({
             permission: "websearch",
@@ -164,26 +164,26 @@ export const WebSearchTool = Tool.define(
             },
           })
 
-          // kilocode_change start - dispatch Kilo-REST transport
-          const result = yield* transport === "kilo-rest"
-            ? kiloToken
-              ? KiloExa.callKiloExa(
+          // chipmate_change start - dispatch ChipMate-REST transport
+          const result = yield* transport === "chipmate-rest"
+            ? chipmateToken
+              ? ChipMateExa.callChipMateExa(
                   http,
                   {
                     query: params.query,
                     type: params.type,
                     numResults: params.numResults,
                   },
-                  kiloToken,
+                  chipmateToken,
                 )
-              : Effect.die(new Error("KILO_WEBSEARCH_PROVIDER=kilo-exa requires Kilo auth; run `kilo auth login`"))
+              : Effect.die(new Error("CHIPMATE_WEBSEARCH_PROVIDER=chipmate-exa requires ChipMate auth; run `chipmate auth login`"))
             : callProvider(http, provider, params, ctx)
-          // kilocode_change end
+          // chipmate_change end
 
           return {
             output: result ?? "No search results found. Please try a different query.",
             title: `${title}: ${params.query}`,
-            metadata: { provider, transport }, // kilocode_change - add transport
+            metadata: { provider, transport }, // chipmate_change - add transport
           }
         }).pipe(Effect.orDie),
     }

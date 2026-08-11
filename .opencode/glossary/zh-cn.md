@@ -6,9 +6,9 @@
 
 ## Do Not Translate (Locale Additions)
 
-- `Kilo` (preserve casing in prose; keep `kilo` only when it is part of commands, package names, paths, or code)
-- `Kilo Zen`
-- `Kilo CLI`
+- `ChipMate` (preserve casing in prose; keep `chipmate` only when it is part of commands, package names, paths, or code)
+- `ChipMate Zen`
+- `ChipMate CLI`
 - `CLI`, `TUI`, `MCP`, `OAuth`
 - `Model Context Protocol` (prefer the English expansion when introducing `MCP`)
 

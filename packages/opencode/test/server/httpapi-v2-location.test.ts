@@ -10,7 +10,7 @@ const context = Context.empty() as Context.Context<unknown>
 
 function request(route: string, directory: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
-  headers.set("x-kilo-directory", directory)
+  headers.set("x-chipmate-directory", directory)
   return HttpApiApp.webHandler().handler(
     new Request(`http://localhost${route}`, {
       ...init,
@@ -78,17 +78,17 @@ afterEach(async () => {
 })
 
 describe("v2 location HttpApi", () => {
-  // kilocode_change start - malformed Kilo location headers are client errors
+  // chipmate_change start - malformed ChipMate location headers are client errors
   test("rejects malformed encoded directory headers", async () => {
     const response = await request("/api/location", "%E0%A4%A")
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({
       _tag: "InvalidRequestError",
-      field: "x-kilo-directory",
+      field: "x-chipmate-directory",
     })
   })
-  // kilocode_change end
+  // chipmate_change end
 
   test("decodes EventV2 location refs without resolved project metadata", () => {
     expect(
@@ -129,7 +129,7 @@ describe("v2 location HttpApi", () => {
     const created = await request("/session", publisher.path, { method: "POST" })
     expect(created.status).toBe(200)
 
-    // kilocode_change start - the native handler must encode Kilo events omitted from upstream's narrower manifest
+    // chipmate_change start - the native handler must encode ChipMate events omitted from upstream's narrower manifest
     const session = (await created.json()) as { id: string }
     expect(await readEventType(reader, "session.created")).toMatchObject({
       type: "session.created",
@@ -144,7 +144,7 @@ describe("v2 location HttpApi", () => {
       location: { directory: publisher.path },
       data: { sessionID: session.id, status: { type: "idle" } },
     })
-    // kilocode_change end
+    // chipmate_change end
     await reader.return(undefined)
   })
 })

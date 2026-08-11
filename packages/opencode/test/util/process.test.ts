@@ -69,17 +69,17 @@ describe("util.process", () => {
   })
 
   test("merges environment overrides", async () => {
-    const out = await Process.run(node('process.stdout.write(process.env.KILO_TEST ?? "")'), {
+    const out = await Process.run(node('process.stdout.write(process.env.CHIPMATE_TEST ?? "")'), {
       env: {
-        KILO_TEST: "set",
+        CHIPMATE_TEST: "set",
       },
     })
     expect(out.stdout.toString()).toBe("set")
   })
 
-  // kilocode_change start
+  // chipmate_change start
   test("can use a complete environment without inherited values", async () => {
-    const key = "KILO_TEST_INHERITED_ENV"
+    const key = "CHIPMATE_TEST_INHERITED_ENV"
     const saved = process.env[key]
     process.env[key] = "secret"
 
@@ -94,20 +94,20 @@ describe("util.process", () => {
       else process.env[key] = saved
     }
   })
-  // kilocode_change end
+  // chipmate_change end
 
   test("uses shell in run on Windows", async () => {
     if (process.platform !== "win32") return
 
-    const out = await Process.run(["set", "KILO_TEST_SHELL"], {
+    const out = await Process.run(["set", "CHIPMATE_TEST_SHELL"], {
       shell: true,
       env: {
-        KILO_TEST_SHELL: "ok",
+        CHIPMATE_TEST_SHELL: "ok",
       },
     })
 
     expect(out.code).toBe(0)
-    expect(out.stdout.toString()).toContain("KILO_TEST_SHELL=ok")
+    expect(out.stdout.toString()).toContain("CHIPMATE_TEST_SHELL=ok")
   })
 
   test("runs cmd scripts with spaces on Windows without shell", async () => {

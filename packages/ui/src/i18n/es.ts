@@ -54,7 +54,7 @@ export const dict = {
 
   "dialog.usageExceeded.freeTier.title": "Límite gratuito alcanzado",
   "dialog.usageExceeded.freeTier.description":
-    "Suscríbete a Kilo Go para acceso fiable a los mejores modelos de código abierto, desde $5/mes.",
+    "Suscríbete a ChipMate Go para acceso fiable a los mejores modelos de código abierto, desde $5/mes.",
   "dialog.usageExceeded.freeTier.actionLabel": "Suscribirse",
   "dialog.usageExceeded.accountRateLimit.title": "Límite de Go alcanzado",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -105,7 +105,7 @@ export const dict = {
   "ui.textField.copied": "Copiado",
 
   "ui.imagePreview.alt": "Vista previa de imagen",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Renderizando diagrama Mermaid...",
   "ui.mermaid.renderError": "Error al renderizar Mermaid: {{message}}",
   "ui.mermaid.errorDefault": "No se puede renderizar el diagrama Mermaid.",
@@ -127,12 +127,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "contenido desplazable",
 
   "ui.tool.read": "Leer",
   "ui.tool.loaded": "Cargado",
-  "ui.tool.swePruned": "SWE-Pruner · {{kept}} de {{total}} líneas conservadas", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · {{kept}} de {{total}} líneas conservadas", // chipmate_change
   "ui.tool.list": "Listar",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -168,7 +168,7 @@ export const dict = {
   "ui.message.collapse": "Colapsar mensaje",
   "ui.message.copy": "Copiar",
   "ui.message.copyMessage": "Copiar mensaje",
-  "ui.message.deleteQueued": "Eliminar mensaje en cola", // kilocode_change
+  "ui.message.deleteQueued": "Eliminar mensaje en cola", // chipmate_change
   "ui.message.forkMessage": "Bifurcar a nueva sesión",
   "ui.message.revertMessage": "Restablecer a este punto",
   "ui.message.copyResponse": "Copiar respuesta",
@@ -184,9 +184,9 @@ export const dict = {
   "ui.patch.action.patched": "Parcheado",
 
   "ui.question.subtitle.answered": "{{count}} respondidas",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(sin respuesta)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(no respondida)",
   "ui.question.multiHint": "Selecciona todas las que correspondan",
   "ui.question.singleHint": "Selecciona una respuesta",

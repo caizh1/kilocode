@@ -745,7 +745,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  // kilocode_change start - prevent a source-location context epoch after the session moves mid-load
+  // chipmate_change start - prevent a source-location context epoch after the session moves mid-load
   it.effect("does not create a source Location epoch after a concurrent Session move", () =>
     Effect.gen(function* () {
       yield* setup
@@ -778,7 +778,7 @@ describe("SessionRunnerLLM", () => {
       expect((yield* session.get(sessionID)).location.directory).toBe(AbsolutePath.make("/moved"))
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
 
   it.effect("reuses one durable baseline after the context producer changes", () =>
     Effect.gen(function* () {

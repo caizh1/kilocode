@@ -21,7 +21,7 @@ from pathlib import Path
 
 repo = Path(sys.argv[1])
 run_dir = Path(sys.argv[2])
-out_dir = repo / "packages/kilo-vscode/out"
+out_dir = repo / "packages/chipmate-vscode/out"
 
 patterns = [
     "nextToolContract",
@@ -43,7 +43,7 @@ patterns = [
 
 vsix_include_prefixes = (
     "extension/dist/",
-    "extension/.kilo/skills/",
+    "extension/.chipmate/skills/",
     "extension/package.json",
     "extension/extension.vsixmanifest",
 )
@@ -158,7 +158,7 @@ summary.write_text(
             "# Package Contract Marker Audit",
             "",
             f"- Status: `{status}`",
-            "- Scope: VSIX runtime surfaces (`extension/dist`, `extension/.kilo/skills`, package manifest), offline delivery manifests, and target-kit source-helper exclusion boundary.",
+            "- Scope: VSIX runtime surfaces (`extension/dist`, `extension/.chipmate/skills`, package manifest), offline delivery manifests, and target-kit source-helper exclusion boundary.",
             "- Excluded: historical docs/tests/readme/changelog/license files inside VSIX; target verification runbooks may document forbidden markers as guardrails and are not treated as product runtime surfaces.",
             f"- Matches file: `{matches_path.name}`",
             f"- Scanned surfaces file: `{scanned_path.name}`",

@@ -54,7 +54,7 @@ export function fileLogger(file = path.join(Global.Path.log, "opencode.log"), id
 const stderrLogger = Logger.make((options) => process.stderr.write(formatter().log(options) + "\n"))
 
 export function minimumLogLevel() {
-  const value = process.env.KILO_LOG_LEVEL?.toUpperCase()
+  const value = process.env.CHIPMATE_LOG_LEVEL?.toUpperCase()
   const levels = {
     DEBUG: "Debug",
     INFO: "Info",
@@ -65,7 +65,7 @@ export function minimumLogLevel() {
 }
 
 export function loggers() {
-  return process.env.KILO_PRINT_LOGS === "1" ? [fileLogger(), stderrLogger] : [fileLogger()]
+  return process.env.CHIPMATE_PRINT_LOGS === "1" ? [fileLogger(), stderrLogger] : [fileLogger()]
 }
 
 export * as Logging from "./logging"

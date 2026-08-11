@@ -1,40 +1,40 @@
-import { useTerminalDimensions } from "@opentui/solid" // kilocode_change
-import { createEffect, createMemo, createSignal, Show } from "solid-js" // kilocode_change
+import { useTerminalDimensions } from "@opentui/solid" // chipmate_change
+import { createEffect, createMemo, createSignal, Show } from "solid-js" // chipmate_change
 import { useLocal } from "../context/local"
 import { useSync } from "../context/sync"
-import { map, pipe, flatMap, entries, filter, sortBy, take, groupBy } from "remeda" // kilocode_change
+import { map, pipe, flatMap, entries, filter, sortBy, take, groupBy } from "remeda" // chipmate_change
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
 import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
 import { DialogVariant } from "./dialog-variant"
-import type { Model } from "@kilocode/sdk/v2" // kilocode_change
+import type { Model } from "@chipmate/sdk/v2" // chipmate_change
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
-import { ModelInfoPanel } from "@/kilocode/components/model-info-panel" // kilocode_change
-import { FreeModelDisclosure } from "@/kilocode/components/free-model-disclosure" // kilocode_change
+import { ModelInfoPanel } from "@/chipmate/components/model-info-panel" // chipmate_change
+import { FreeModelDisclosure } from "@/chipmate/components/free-model-disclosure" // chipmate_change
 
 export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
   const [query, setQuery] = createSignal("")
-  const dimensions = useTerminalDimensions() // kilocode_change
+  const dimensions = useTerminalDimensions() // chipmate_change
 
   const connected = useConnected()
   const providers = createDialogProviderOptions()
-  // kilocode_change start
-  // Memoize anything that iterates all Kilo models to avoid calculating it for
-  // each Kilo model and tanking the UI at a couple hundred models
-  const kiloRank = createMemo(() => {
-    const provider = sync.data.provider.find((provider) => provider.id === "kilo")
+  // chipmate_change start
+  // Memoize anything that iterates all ChipMate models to avoid calculating it for
+  // each ChipMate model and tanking the UI at a couple hundred models
+  const chipmateRank = createMemo(() => {
+    const provider = sync.data.provider.find((provider) => provider.id === "chipmate")
     const models = provider?.models ?? {}
     return new Map(Object.entries(models).map(([id, info]) => [id, info.recommendedIndex ?? Infinity] as const))
   })
-  // kilocode_change end
+  // chipmate_change end
 
   const showExtra = createMemo(() => connected() && !props.providerID)
 
-  // kilocode_change start
+  // chipmate_change start
   const wide = createMemo(() => dimensions().width >= 108)
   const [preview, setPreview] = createSignal<{
     model: Model
@@ -65,22 +65,22 @@ export function DialogModel(props: { providerID?: string }) {
 
   const footer = (providerID: string, model: Model) => {
     const labels = [
-      providerID === "kilo" && FreeModelDisclosure.hasByok(model) ? FreeModelDisclosure.byok : undefined,
-      providerID === "kilo" && FreeModelDisclosure.collectsData(model) ? FreeModelDisclosure.label : undefined,
+      providerID === "chipmate" && FreeModelDisclosure.hasByok(model) ? FreeModelDisclosure.byok : undefined,
+      providerID === "chipmate" && FreeModelDisclosure.collectsData(model) ? FreeModelDisclosure.label : undefined,
       model.cost?.input === 0 && providerID === "opencode" ? "Free" : undefined,
     ].filter((label) => label !== undefined)
     return labels.length > 0 ? labels.join(" · ") : undefined
   }
-  // kilocode_change end
+  // chipmate_change end
 
   const options = createMemo(() => {
     const needle = query().trim()
-    // kilocode_change: removed showSections guard — sections are always built; empty ones are hidden naturally
+    // chipmate_change: removed showSections guard — sections are always built; empty ones are hidden naturally
     const favorites = connected() ? local.model.favorite() : []
     const recents = local.model.recent()
 
     function toOptions(items: typeof favorites, category: string) {
-      if (!showExtra()) return [] // kilocode_change
+      if (!showExtra()) return [] // chipmate_change
       return items.flatMap((item) => {
         const provider = sync.data.provider.find((provider) => provider.id === item.providerID)
         if (!provider) return []
@@ -94,9 +94,9 @@ export function DialogModel(props: { providerID?: string }) {
             description: provider.name,
             category,
             disabled: provider.id === "opencode" && model.id.includes("-nano"),
-            footer: footer(provider.id, model), // kilocode_change
+            footer: footer(provider.id, model), // chipmate_change
             onSelect: () => {
-              onSelect(provider.id, model.id) // kilocode_change
+              onSelect(provider.id, model.id) // chipmate_change
             },
           },
         ]
@@ -130,21 +130,21 @@ export function DialogModel(props: { providerID?: string }) {
             description: favorites.some((item) => item.providerID === provider.id && item.modelID === model)
               ? "(Favorite)"
               : undefined,
-            // kilocode_change start
+            // chipmate_change start
             category: connected()
-              ? provider.id === "kilo" && info.recommendedIndex !== undefined
+              ? provider.id === "chipmate" && info.recommendedIndex !== undefined
                 ? "Recommended"
                 : provider.name
               : undefined,
-            // kilocode_change end
+            // chipmate_change end
             disabled: provider.id === "opencode" && model.includes("-nano"),
-            footer: footer(provider.id, info), // kilocode_change
+            footer: footer(provider.id, info), // chipmate_change
             onSelect() {
-              onSelect(provider.id, model) // kilocode_change
+              onSelect(provider.id, model) // chipmate_change
             },
           })),
           filter((option) => {
-            // kilocode_change start - only dedupe favorites/recents when those sections are visible
+            // chipmate_change start - only dedupe favorites/recents when those sections are visible
             if (showExtra()) {
               if (
                 favorites.some(
@@ -159,10 +159,10 @@ export function DialogModel(props: { providerID?: string }) {
               )
                 return false
             }
-            // kilocode_change end
+            // chipmate_change end
             return true
           }),
-          (options) => sortModelOptions(options, props.providerID !== undefined, kiloRank()), // kilocode_change
+          (options) => sortModelOptions(options, props.providerID !== undefined, chipmateRank()), // chipmate_change
         ),
       ),
     )
@@ -178,7 +178,7 @@ export function DialogModel(props: { providerID?: string }) {
         )
       : []
 
-    // kilocode_change start - Filter per-section to preserve group headers while typing
+    // chipmate_change start - Filter per-section to preserve group headers while typing
     if (needle) {
       const rank = <U extends { title: string; category?: string }>(items: U[]) =>
         fuzzysort.go(needle, items, { keys: ["title", "category"] }).map((x) => x.obj)
@@ -191,7 +191,7 @@ export function DialogModel(props: { providerID?: string }) {
       )
       return [...rank(favoriteOptions), ...rank(recentOptions), ...rankedProviders, ...rank(popularProviders)]
     }
-    // kilocode_change end
+    // chipmate_change end
 
     return [...favoriteOptions, ...recentOptions, ...providerOptions, ...popularProviders]
   })
@@ -221,7 +221,7 @@ export function DialogModel(props: { providerID?: string }) {
     dialog.clear()
   }
 
-  // kilocode_change start
+  // chipmate_change start
   return (
     <box flexDirection="row">
       <box flexGrow={1} flexShrink={1}>
@@ -254,7 +254,7 @@ export function DialogModel(props: { providerID?: string }) {
             if (!next) return
             setPreview(next)
           }}
-          // kilocode_change: removed flat={true} to keep section headers visible while filtering
+          // chipmate_change: removed flat={true} to keep section headers visible while filtering
           skipFilter={true}
           title={title()}
           current={local.model.current()}
@@ -265,7 +265,7 @@ export function DialogModel(props: { providerID?: string }) {
       </Show>
     </box>
   )
-  // kilocode_change end
+  // chipmate_change end
 }
 
 export function sortModelOptions<
@@ -273,29 +273,29 @@ export function sortModelOptions<
     footer?: string
     releaseDate: string | number
     title: string
-    value?: { providerID: string; modelID: string } // kilocode_change
+    value?: { providerID: string; modelID: string } // chipmate_change
   },
 >(
   options: T[],
   newestFirst: boolean,
-  rank: ReadonlyMap<string, number> = new Map(), // kilocode_change
+  rank: ReadonlyMap<string, number> = new Map(), // chipmate_change
 ) {
-  // kilocode_change start - Sort within Recommended / Kilo Gateway
+  // chipmate_change start - Sort within Recommended / ChipMate Gateway
   const recommended = (option: T) =>
-    option.value?.providerID === "kilo" ? (rank.get(option.value.modelID) ?? Infinity) : 0
-  // kilocode_change end
+    option.value?.providerID === "chipmate" ? (rank.get(option.value.modelID) ?? Infinity) : 0
+  // chipmate_change end
   if (newestFirst)
     return sortBy(
       options,
-      recommended, // kilocode_change
+      recommended, // chipmate_change
       [(option) => option.releaseDate, "desc"],
       (option) => option.title,
     )
   return sortBy(
     options,
-    recommended, // kilocode_change
+    recommended, // chipmate_change
     (option) => option.footer === undefined,
-    [(option) => option.releaseDate, "desc"], // kilocode_change - free model footers include Kilo disclosure labels
+    [(option) => option.releaseDate, "desc"], // chipmate_change - free model footers include ChipMate disclosure labels
     (option) => option.title,
   )
 }

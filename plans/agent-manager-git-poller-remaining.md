@@ -27,13 +27,13 @@ steady-state workload.
 
 Expected implementation files:
 
-- `packages/kilo-vscode/src/agent-manager/git-stats-snapshot.ts`
-- `packages/kilo-vscode/src/agent-manager/GitStatsPoller.ts`
-- `packages/kilo-vscode/src/agent-manager/project/pollers.ts`
-- `packages/kilo-vscode/src/agent-manager/AgentManagerProvider.ts`
-- `packages/kilo-vscode/src/KiloProvider.ts`
-- `packages/kilo-vscode/tests/unit/git-stats-snapshot.test.ts`
-- `packages/kilo-vscode/tests/unit/git-stats-poller.test.ts`
+- `packages/chipmate-vscode/src/agent-manager/git-stats-snapshot.ts`
+- `packages/chipmate-vscode/src/agent-manager/GitStatsPoller.ts`
+- `packages/chipmate-vscode/src/agent-manager/project/pollers.ts`
+- `packages/chipmate-vscode/src/agent-manager/AgentManagerProvider.ts`
+- `packages/chipmate-vscode/src/ChipMateProvider.ts`
+- `packages/chipmate-vscode/tests/unit/git-stats-snapshot.test.ts`
+- `packages/chipmate-vscode/tests/unit/git-stats-poller.test.ts`
 - `.changeset/calm-agent-manager-git-polling.md`
 - `plans/agent-manager-git-poller-optimization.md`
 - this handoff file
@@ -50,7 +50,7 @@ The latest minimized implementation passed:
 - webview TypeScript checking,
 - extension/webview bundling,
 - `knip`,
-- `check-kilocode-change`,
+- `check-chipmate-change`,
 - markdown table padding validation,
 - `git diff --check`.
 
@@ -70,7 +70,7 @@ The temporary file was removed and is not in the working tree.
 These measurements used read-only Git commands against the same linked
 worktrees. They did not change worktree contents or Git metadata.
 
-On 52 linked Kilo worktrees:
+On 52 linked ChipMate worktrees:
 
 - 32 were clean,
 - 20 were dirty,
@@ -105,7 +105,7 @@ with:
 - 16 intentionally dirty worktrees,
 - 24 clean worktrees,
 - a valid canonical Agent Manager project ID,
-- the bundled Kilo CLI,
+- the bundled ChipMate CLI,
 - all 40 worktree cards rendered in the Agent Manager DOM,
 - `wt-01` selected.
 
@@ -144,7 +144,7 @@ near idle in both runs, with approximately 0.72 seconds of script work over the
 
 Artifacts are temporary and currently live under:
 
-`/var/folders/6c/3j3r25ds6pd1dw3nlrfnvv280000gp/T/kilo/git-poller-profile.F0VLor`
+`/var/folders/6c/3j3r25ds6pd1dw3nlrfnvv280000gp/T/chipmate/git-poller-profile.F0VLor`
 
 Do not add those artifacts to Git.
 
@@ -211,7 +211,7 @@ scans as the dominant cost.
 ### 3. Review busy-session lifecycle
 
 `AgentManagerProvider` keeps a `busySessions` set so worktrees with actively
-working Kilo sessions remain hot. Session deletion and `session.error` events now
+working ChipMate sessions remain hot. Session deletion and `session.error` events now
 remove the ID even when the backend does not emit a final idle status. Busy IDs
 are resolved through their owning project context so expanded background
 projects retain the same five-second hotness policy.
@@ -250,7 +250,7 @@ Specific review points:
 
 ### 5. Final automated validation
 
-After the last code change, rerun from `packages/kilo-vscode/`:
+After the last code change, rerun from `packages/chipmate-vscode/`:
 
 - `bun run format`
 - `bun run lint`
@@ -259,7 +259,7 @@ After the last code change, rerun from `packages/kilo-vscode/`:
 - `bun run bundle`
 - focused Git poller/snapshot and Agent Manager architecture tests
 - `bun run knip`
-- `bun run check-kilocode-change`
+- `bun run check-chipmate-change`
 
 From repository root:
 
@@ -286,7 +286,7 @@ profile and compare it immediately afterward.
 
 The guard should include:
 
-- SHA-256 of `.kilo/agent-manager.json`,
+- SHA-256 of `.chipmate/agent-manager.json`,
 - SHA-256 of `.git/info/exclude`,
 - SHA-256 of every `.git/worktrees/*/gitdir`,
 - main checkout status and HEAD,

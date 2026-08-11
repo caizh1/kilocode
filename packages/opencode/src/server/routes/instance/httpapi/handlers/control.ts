@@ -1,22 +1,22 @@
 import { Auth } from "@/auth"
-import { MemoryDebug } from "@/kilocode/memory-debug" // kilocode_change
-import * as ProviderSave from "@/kilocode/server/provider-save-lifecycle" // kilocode_change
+import { MemoryDebug } from "@/chipmate/memory-debug" // chipmate_change
+import * as ProviderSave from "@/chipmate/server/provider-save-lifecycle" // chipmate_change
 import {
   invalidateAfterProviderAuthChange,
   invalidatePresence,
-} from "@/kilocode/server/provider-auth-lifecycle"
-// kilocode_change end
+} from "@/chipmate/server/provider-auth-lifecycle"
+// chipmate_change end
 import { Effect } from "effect"
-import { HttpServerRequest } from "effect/unstable/http" // kilocode_change
+import { HttpServerRequest } from "effect/unstable/http" // chipmate_change
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { RootHttpApi } from "../api"
 import { LogInput } from "../groups/control"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import { remove as removeAuth } from "@/kilocode/auth/remove" // kilocode_change
+import { remove as removeAuth } from "@/chipmate/auth/remove" // chipmate_change
 
 export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (handlers) =>
   Effect.gen(function* () {
-    // kilocode_change start - provider auth updates and memory diagnostics share the Kilo instance lifecycle
+    // chipmate_change start - provider auth updates and memory diagnostics share the ChipMate instance lifecycle
     const auth = yield* Auth.Service
 
     const authGet = Effect.fn("ControlHttpApi.authGet")(function* (ctx: { params: { providerID: ProviderV2.ID } }) {
@@ -30,7 +30,7 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
       // Do not log credentials, only provider hash + request operation.
       const request = yield* HttpServerRequest.HttpServerRequest
       const operation = MemoryDebug.operation(request.headers)
-      const defer = ProviderSave.deferred(request.headers) // kilocode_change
+      const defer = ProviderSave.deferred(request.headers) // chipmate_change
       const began = Date.now()
       yield* Effect.promise(() =>
         MemoryDebug.event({
@@ -40,7 +40,7 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
         }),
       )
       yield* auth.set(ctx.params.providerID, ctx.payload).pipe(Effect.orDie)
-      if (ctx.params.providerID === "kilo") yield* invalidatePresence()
+      if (ctx.params.providerID === "chipmate") yield* invalidatePresence()
       yield* invalidateAfterProviderAuthChange(ctx.params.providerID, { dispose: !defer })
       if (defer)
         yield* Effect.promise(() =>
@@ -65,7 +65,7 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
     }) {
       const request = yield* HttpServerRequest.HttpServerRequest
       const operation = MemoryDebug.operation(request.headers)
-      const defer = ProviderSave.deferred(request.headers) // kilocode_change
+      const defer = ProviderSave.deferred(request.headers) // chipmate_change
       const began = Date.now()
       yield* Effect.promise(() =>
         MemoryDebug.event({
@@ -75,7 +75,7 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
         }),
       )
       yield* removeAuth(ctx.params.providerID)
-      if (ctx.params.providerID === "kilo") yield* invalidatePresence()
+      if (ctx.params.providerID === "chipmate") yield* invalidatePresence()
       yield* invalidateAfterProviderAuthChange(ctx.params.providerID, { dispose: !defer })
       if (defer)
         yield* Effect.promise(() =>
@@ -94,7 +94,7 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
       )
       return true
     })
-    // kilocode_change end
+    // chipmate_change end
 
     const log = Effect.fn("ControlHttpApi.log")(function* (ctx: { payload: typeof LogInput.Type }) {
       const write =
@@ -109,12 +109,12 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
       return true
     })
 
-    // kilocode_change start - register Kilo auth inspection beside upstream auth writes
+    // chipmate_change start - register ChipMate auth inspection beside upstream auth writes
     return handlers
       .handle("authGet", authGet)
       .handle("authSet", authSet)
       .handle("authRemove", authRemove)
       .handle("log", log)
-    // kilocode_change end
+    // chipmate_change end
   }),
 )

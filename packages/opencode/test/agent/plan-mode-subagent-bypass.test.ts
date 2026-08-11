@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { deriveSubagentSessionPermission } from "../../src/agent/subagent-permissions"
 import { Permission } from "../../src/permission"
-import { KiloTask } from "../../src/kilocode/tool/task" // kilocode_change
+import { ChipMateTask } from "../../src/chipmate/tool/task" // chipmate_change
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(LayerNode.compile(Agent.node))
@@ -160,14 +160,14 @@ it.effect("subagent inherits parent session deny rules as hard runtime ceilings"
   }),
 )
 
-// kilocode_change start - preserve Plan mutation ceilings across Kilo task delegation
+// chipmate_change start - preserve Plan mutation ceilings across ChipMate task delegation
 it.instance("Plan delegation preserves notebook and process mutation ceilings", () =>
   Effect.gen(function* () {
     const caller = yield* Agent.use.get("plan")
     expect(caller).toBeDefined()
-    const rules = KiloTask.inherited({
+    const rules = ChipMateTask.inherited({
       caller: caller!,
-      session: { permission: [] } as unknown as Parameters<typeof KiloTask.inherited>[0]["session"],
+      session: { permission: [] } as unknown as Parameters<typeof ChipMateTask.inherited>[0]["session"],
       mcp: {},
     })
 
@@ -176,4 +176,4 @@ it.instance("Plan delegation preserves notebook and process mutation ceilings", 
     expect(Permission.evaluate("bash", "bun run server.ts", rules).action).toBe("deny")
   }),
 )
-// kilocode_change end
+// chipmate_change end

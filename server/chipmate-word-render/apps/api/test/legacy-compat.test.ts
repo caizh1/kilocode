@@ -60,7 +60,7 @@ async function fixture(seed = true): Promise<Fixture> {
     const bytes = await zip.generateAsync({ type: "nodebuffer" })
     await Promise.all([
       copyFile(skill, join(skills, "source-backed-detail-design.tar.gz")),
-      writeFile(join(packages, "kilo-vscode-linux-x64-baseline.vsix"), bytes),
+      writeFile(join(packages, "chipmate-vscode-linux-x64-baseline.vsix"), bytes),
     ])
     await writeFile(
       join(market, "skills.json"),
@@ -251,10 +251,10 @@ test("Fastify and the frozen Node server return equivalent legacy contracts", { 
       createHash("sha256").update(before.bytes).digest("hex"),
     )
 
-    const beforePackage = await digest(legacy.origin, "/packages/kilo-vscode-linux-x64-baseline.vsix")
-    const afterPackage = await digest(fastify.origin, "/packages/kilo-vscode-linux-x64-baseline.vsix")
+    const beforePackage = await digest(legacy.origin, "/packages/chipmate-vscode-linux-x64-baseline.vsix")
+    const afterPackage = await digest(fastify.origin, "/packages/chipmate-vscode-linux-x64-baseline.vsix")
     assert.deepEqual(afterPackage, beforePackage)
-    const bytes = await readFile(join(value.packages, "kilo-vscode-linux-x64-baseline.vsix"))
+    const bytes = await readFile(join(value.packages, "chipmate-vscode-linux-x64-baseline.vsix"))
     assert.equal(afterPackage.sha256, createHash("sha256").update(bytes).digest("hex"))
   } finally {
     await Promise.all([stop(legacy), stop(fastify), rm(value.dir, { recursive: true, force: true })])

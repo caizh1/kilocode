@@ -1,0 +1,348 @@
+/**
+ * Chat component styles
+ * Uses VS Code CSS variables for theming
+ *
+ * This file is the style entrypoint for chat-related webview styles.
+ */
+
+@import "./session-title-editor.css";
+@import "./task-header.css";
+@import "./search-menu.css";
+@import "./session-tabs.css";
+@import "./chat-layout.css";
+@import "./banners.css";
+@import "./session-actions.css";
+@import "./welcome.css";
+@import "./prompt-input.css";
+@import "./agent-requirements.css";
+@import "./prompt-dropdowns.css";
+@import "./model-selector.css";
+@import "./permission-dock.css";
+@import "./dialogs.css";
+@import "./history.css";
+@import "./notifications.css";
+@import "./tool-overrides.css";
+@import "./question-dock.css";
+@import "./plan-exit.css";
+@import "./suggest-bar.css";
+@import "./document-artifacts.css";
+@import "./settings.css";
+@import "./qa-liquid-glass.css";
+@import "./titanium-studio.css";
+@import "./qa-tool-call.css";
+@import "./high-contrast.css";
+
+/* Embedded Review Boundary */
+.chat-view .embedded-review-boundary {
+  box-sizing: border-box;
+  container: embedded-review-boundary / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(
+    calc(100% - var(--chat-gutter) - var(--chat-gutter) - var(--chat-scrollbar-width) - 8px),
+    var(--chat-readable-width)
+  );
+  margin: 12px auto 0;
+  padding: 12px;
+  color: var(--vscode-foreground);
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border, #6f7881) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(
+    in srgb,
+    var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #181b20)) 86%,
+    transparent
+  );
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--vscode-widget-shadow, #000) 30%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  backdrop-filter: blur(18px) saturate(120%);
+}
+
+.chat-view[data-ui="qa-shell"] .embedded-review-boundary {
+  width: min(calc(100% - 24px), var(--qa-composer-max-width));
+  max-width: none;
+  margin-top: 10px;
+}
+
+.chat-view .embedded-review-boundary + .prompt-input-container {
+  margin-top: 8px;
+}
+
+.embedded-review-boundary__header,
+.embedded-review-boundary__identity,
+.embedded-review-boundary__facts,
+.embedded-review-boundary__unsupported-header,
+.embedded-review-boundary__warning {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.embedded-review-boundary__header {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.embedded-review-boundary__identity {
+  flex: 1 1 auto;
+  gap: 8px;
+}
+
+.embedded-review-boundary__identity h2,
+.embedded-review-boundary__supported h3,
+.embedded-review-boundary__unsupported h3 {
+  margin: 0;
+  font-family: var(--vscode-font-family);
+}
+
+.embedded-review-boundary__identity h2 {
+  min-width: 0;
+  color: var(--vscode-foreground);
+  font-size: var(--chipmate-font-size-14);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.embedded-review-boundary__shield {
+  flex: 0 0 auto;
+  color: var(--vscode-foreground);
+}
+
+.embedded-review-boundary__experimental,
+.embedded-review-boundary__unsupported-header > span {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  color: var(--vscode-editorWarning-foreground, #d7a92c);
+  border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a92c) 42%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a92c) 10%, transparent);
+  font-size: var(--chipmate-font-size-11);
+  font-weight: var(--font-weight-medium, 500);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.embedded-review-boundary__toggle[data-component="icon-button"] {
+  flex: 0 0 28px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.embedded-review-boundary__toggle[data-component="icon-button"]:hover,
+.embedded-review-boundary__toggle[data-component="icon-button"]:focus-visible {
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-widget-border);
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.embedded-review-boundary__toggle [data-slot="icon-svg"] {
+  transition: transform 150ms ease;
+}
+
+.embedded-review-boundary__toggle--expanded [data-slot="icon-svg"] {
+  transform: rotate(180deg);
+}
+
+.embedded-review-boundary__summary,
+.embedded-review-boundary__unsupported > p {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--chipmate-font-size-12);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.embedded-review-boundary__facts {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.embedded-review-boundary__facts > span {
+  display: inline-flex;
+  flex: 1 1 108px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 8px;
+  color: var(--vscode-foreground);
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border, #6f7881) 68%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background, #20242a) 82%, transparent);
+  font-size: var(--chipmate-font-size-12);
+  line-height: 1.25;
+  text-align: center;
+}
+
+.embedded-review-boundary__facts [data-component="icon"] {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+}
+
+.embedded-review-boundary__details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border, #6f7881) 52%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background, #20242a) 72%, transparent);
+}
+
+.embedded-review-boundary__supported {
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.embedded-review-boundary__supported h3 {
+  color: var(--vscode-testing-iconPassed, #73c991);
+  font-size: var(--chipmate-font-size-12);
+  font-weight: 650;
+}
+
+.embedded-review-boundary__supported ul,
+.embedded-review-boundary__unsupported ul {
+  margin: 8px 0 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--chipmate-font-size-12);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.embedded-review-boundary__supported ul {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 24px;
+  row-gap: 5px;
+  padding-inline-start: 18px;
+}
+
+.embedded-review-boundary__unsupported {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a92c) 42%, transparent);
+  border-inline-start-width: 3px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a92c) 9%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a92c) 12%, transparent);
+}
+
+.embedded-review-boundary__unsupported-header {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.embedded-review-boundary__unsupported h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--vscode-editorWarning-foreground, #d7a92c);
+  font-size: var(--chipmate-font-size-13);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.embedded-review-boundary__unsupported h3 [data-component="icon"] {
+  flex: 0 0 auto;
+}
+
+.embedded-review-boundary__unsupported > p {
+  margin-top: 5px;
+}
+
+.embedded-review-boundary__unsupported ul {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px 12px;
+  padding-inline-start: 18px;
+}
+
+.embedded-review-boundary__unsupported li::marker {
+  color: var(--vscode-editorWarning-foreground, #d7a92c);
+}
+
+.embedded-review-boundary__warning {
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--vscode-editorWarning-foreground, #d7a92c);
+  border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a92c) 38%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a92c) 8%, transparent);
+  font-size: var(--chipmate-font-size-12);
+  font-weight: var(--font-weight-medium, 500);
+  line-height: 1.4;
+}
+
+.embedded-review-boundary__warning > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.embedded-review-boundary__warning [data-component="icon"] {
+  flex: 0 0 auto;
+}
+
+@container embedded-review-boundary (max-width: 340px) {
+  .embedded-review-boundary__facts > span {
+    flex-basis: calc(50% - 3px);
+  }
+
+  .embedded-review-boundary__unsupported ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container embedded-review-boundary (max-width: 250px) {
+  .embedded-review-boundary__identity {
+    flex-wrap: wrap;
+  }
+
+  .embedded-review-boundary__facts > span {
+    flex-basis: 100%;
+  }
+
+  .embedded-review-boundary__unsupported-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .embedded-review-boundary__unsupported ul {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .embedded-review-boundary__toggle [data-slot="icon-svg"] {
+    transition: none;
+  }
+}
+
+body.vscode-high-contrast .embedded-review-boundary,
+body.vscode-high-contrast-light .embedded-review-boundary {
+  border-color: var(--vscode-contrastBorder);
+  background: var(--vscode-editorWidget-background);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+body.vscode-high-contrast .embedded-review-boundary__details,
+body.vscode-high-contrast-light .embedded-review-boundary__details,
+body.vscode-high-contrast .embedded-review-boundary__unsupported,
+body.vscode-high-contrast-light .embedded-review-boundary__unsupported,
+body.vscode-high-contrast .embedded-review-boundary__warning,
+body.vscode-high-contrast-light .embedded-review-boundary__warning {
+  border-color: var(--vscode-contrastBorder);
+  background: var(--vscode-editorWidget-background);
+  box-shadow: none;
+}

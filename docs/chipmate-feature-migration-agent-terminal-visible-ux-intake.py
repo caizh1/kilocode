@@ -29,7 +29,7 @@ REQUIRED_PASS_STATUSES = [
     "Default-off prompt visible",
     "Workspace enable flow explicit",
     "Terminal pane opens after enable",
-    "Native Kilo terminal unaffected",
+    "Native ChipMate terminal unaffected",
     "Dangerous command confirmation visible",
     "No destructive command executed without confirmation",
     "Audit log or artifact path recorded",
@@ -193,7 +193,7 @@ def run_self_check(output: Path) -> int:
 
 - Installed VSIX profile: isolated-profile
 - VSIX version: 0.0.38
-- Workspace: /tmp/kilo-visible-ux
+- Workspace: /tmp/chipmate-visible-ux
 - Evidence date: 2026-07-09
 - Operator: validation-owner
 
@@ -203,7 +203,7 @@ def run_self_check(output: Path) -> int:
 - Default-off prompt visible: PASS
 - Workspace enable flow explicit: PASS
 - Terminal pane opens after enable: PASS
-- Native Kilo terminal unaffected: PASS
+- Native ChipMate terminal unaffected: PASS
 - Dangerous command confirmation visible: PASS
 - No destructive command executed without confirmation: PASS
 - Audit log or artifact path recorded: PASS
@@ -213,7 +213,7 @@ def run_self_check(output: Path) -> int:
 
 - Installed VSIX profile: <profile name/path>
 - VSIX version: 0.0.38
-- Workspace: /tmp/kilo-visible-ux
+- Workspace: /tmp/chipmate-visible-ux
 - Evidence date: 2026-07-09
 - Operator: validation-owner
 

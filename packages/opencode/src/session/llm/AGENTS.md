@@ -85,6 +85,6 @@ Both runtimes converge on the same `LLMEvent` stream consumed by the session pro
 Safety boundary:
 
 - AI SDK remains the default.
-- `KILO_EXPERIMENTAL_NATIVE_LLM=true` or the umbrella `KILO_EXPERIMENTAL=true` opts in. Native is not a global replacement.
+- `CHIPMATE_EXPERIMENTAL_NATIVE_LLM=true` or the umbrella `CHIPMATE_EXPERIMENTAL=true` opts in. Native is not a global replacement.
 - Native execution currently supports OpenAI, opencode-managed OpenAI-compatible, and Anthropic API-key paths backed by `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, or `@ai-sdk/anthropic` catalog entries.
 - Unsupported providers, OpenAI OAuth, and missing API-key cases fall back to AI SDK.

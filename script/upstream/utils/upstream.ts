@@ -201,9 +201,9 @@ export async function translate(file: string, text: string) {
 function workflow(file: string, text: string) {
   if (!workflows.includes(file)) return text
   return text
-    .replace(/github\.repository == 'anomalyco\/opencode'/g, "github.repository == 'Kilo-Org/kilocode'")
-    .replace(/github\.repository == "anomalyco\/opencode"/g, 'github.repository == "Kilo-Org/kilocode"')
-    .replace(/\bopencode-ai\b/g, "@kilocode/cli")
+    .replace(/github\.repository == 'anomalyco\/opencode'/g, "github.repository == 'ChipMate-Org/chipmate'")
+    .replace(/github\.repository == "anomalyco\/opencode"/g, 'github.repository == "ChipMate-Org/chipmate"')
+    .replace(/\bopencode-ai\b/g, "@chipmate/cli")
     .replace(
       /GH_REPO:\s*\$\{\{ \(github\.ref_name == 'beta' && 'anomalyco\/opencode-beta'\) \|\| github\.repository \}\}/g,
       "GH_REPO: ${{ github.repository }}",

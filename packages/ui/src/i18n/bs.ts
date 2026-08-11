@@ -58,7 +58,7 @@ export const dict = {
 
   "dialog.usageExceeded.freeTier.title": "Dostignut besplatan limit",
   "dialog.usageExceeded.freeTier.description":
-    "Pretplatite se na Kilo Go za pouzdan pristup najboljim open-source modelima, počevši od $5/mjesec.",
+    "Pretplatite se na ChipMate Go za pouzdan pristup najboljim open-source modelima, počevši od $5/mjesec.",
   "dialog.usageExceeded.freeTier.actionLabel": "Pretplati se",
   "dialog.usageExceeded.accountRateLimit.title": "Dostignut Go limit",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -109,7 +109,7 @@ export const dict = {
   "ui.textField.copied": "Kopirano",
 
   "ui.imagePreview.alt": "Pregled slike",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Renderovanje Mermaid dijagrama...",
   "ui.mermaid.renderError": "Renderovanje Mermaid dijagrama nije uspjelo: {{message}}",
   "ui.mermaid.errorDefault": "Nije moguće renderovati Mermaid dijagram.",
@@ -131,12 +131,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "sadržaj za pomjeranje",
 
   "ui.tool.read": "Čitanje",
   "ui.tool.loaded": "Učitano",
-  "ui.tool.swePruned": "SWE-Pruner · zadržano {{kept}} od {{total}} redova", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · zadržano {{kept}} od {{total}} redova", // chipmate_change
   "ui.tool.list": "Listanje",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -172,7 +172,7 @@ export const dict = {
   "ui.message.collapse": "Sažmi poruku",
   "ui.message.copy": "Kopiraj",
   "ui.message.copyMessage": "Kopiraj poruku",
-  "ui.message.deleteQueued": "Obriši poruku iz reda", // kilocode_change
+  "ui.message.deleteQueued": "Obriši poruku iz reda", // chipmate_change
   "ui.message.forkMessage": "Forkaj u novu sesiju",
   "ui.message.revertMessage": "Resetuj na ovu tačku",
   "ui.message.copyResponse": "Kopiraj odgovor",
@@ -188,9 +188,9 @@ export const dict = {
   "ui.patch.action.patched": "Primijenjeno",
 
   "ui.question.subtitle.answered": "{{count}} odgovoreno",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(nema odgovora)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(nije odgovoreno)",
   "ui.question.multiHint": "Odaberi sve što važi",
   "ui.question.singleHint": "Odaberi jedan odgovor",

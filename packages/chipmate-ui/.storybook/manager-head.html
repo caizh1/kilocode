@@ -1,0 +1,11 @@
+<style>
+  /* Hide Color Scheme toolbar when chipmate-vscode theme is active */
+  html[data-chipmate-theme="chipmate-vscode"] [aria-label^="Color Scheme"] {
+    display: none !important;
+  }
+
+  /* Hide VS Code Theme toolbar by default and when chipmate theme is active */
+  html:not([data-chipmate-theme="chipmate-vscode"]) [aria-label^="VSCode Theme"] {
+    display: none !important;
+  }
+</style>

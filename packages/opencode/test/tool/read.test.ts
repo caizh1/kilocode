@@ -37,7 +37,7 @@ const ctx = {
   sessionID: SessionID.make("ses_test"),
   messageID: MessageID.make("msg_test"),
   callID: "",
-  agent: "code", // kilocode_change
+  agent: "code", // chipmate_change
   abort: AbortSignal.any([]),
   messages: [],
   metadata: () => Effect.void,
@@ -99,15 +99,15 @@ const glob = (p: string) =>
 const githubBase = <A, E, R>(url: string, self: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
     Effect.sync(() => {
-      const previous = process.env.KILO_REPO_CLONE_GITHUB_BASE_URL
-      process.env.KILO_REPO_CLONE_GITHUB_BASE_URL = url
+      const previous = process.env.CHIPMATE_REPO_CLONE_GITHUB_BASE_URL
+      process.env.CHIPMATE_REPO_CLONE_GITHUB_BASE_URL = url
       return previous
     }),
     () => self,
     (previous) =>
       Effect.sync(() => {
-        if (previous) process.env.KILO_REPO_CLONE_GITHUB_BASE_URL = previous
-        else delete process.env.KILO_REPO_CLONE_GITHUB_BASE_URL
+        if (previous) process.env.CHIPMATE_REPO_CLONE_GITHUB_BASE_URL = previous
+        else delete process.env.CHIPMATE_REPO_CLONE_GITHUB_BASE_URL
       }),
   )
 const git = Effect.fn("ReadToolTest.git")(function* (cwd: string, args: string[]) {
@@ -270,9 +270,9 @@ describe("tool.read env file permissions", () => {
     ["environment.ts", false],
   ]
 
-  // kilocode_change start - renamed from "build" to "code"
+  // chipmate_change start - renamed from "build" to "code"
   for (const agentName of ["code", "plan"] as const) {
-    // kilocode_change end
+    // chipmate_change end
     describe(`agent=${agentName}`, () => {
       for (const [filename, shouldAsk] of cases) {
         it.live(`${filename} asks=${shouldAsk}`, () =>

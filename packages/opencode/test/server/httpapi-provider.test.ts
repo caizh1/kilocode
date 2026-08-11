@@ -6,7 +6,7 @@ import path from "path"
 import { resetDatabase } from "../fixture/db"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { preparePluginDependencies } from "../kilocode/plugin-dependencies" // kilocode_change
+import { preparePluginDependencies } from "../chipmate/plugin-dependencies" // chipmate_change
 import { httpApiLayer, request } from "./httpapi-layer"
 
 const testStateLayer = Layer.effectDiscard(
@@ -106,10 +106,10 @@ function requestCallback(input: { providerID: string; method: number; headers: H
 function writeProviderAuthPlugin(dir: string) {
   return Effect.gen(function* () {
     const fs = yield* FSUtil.Service
-    yield* Effect.promise(() => preparePluginDependencies(dir)) // kilocode_change
+    yield* Effect.promise(() => preparePluginDependencies(dir)) // chipmate_change
 
     yield* fs.writeWithDirs(
-      path.join(dir, ".kilo", "plugin", "provider-oauth-parity.ts"), // kilocode_change
+      path.join(dir, ".chipmate", "plugin", "provider-oauth-parity.ts"), // chipmate_change
       [
         "export default {",
         '  id: "test.provider-oauth-parity",',
@@ -141,10 +141,10 @@ function writeProviderAuthPlugin(dir: string) {
 function writeProviderAuthValidationPlugin(dir: string) {
   return Effect.gen(function* () {
     const fs = yield* FSUtil.Service
-    yield* Effect.promise(() => preparePluginDependencies(dir)) // kilocode_change
+    yield* Effect.promise(() => preparePluginDependencies(dir)) // chipmate_change
 
     yield* fs.writeWithDirs(
-      path.join(dir, ".kilo", "plugin", "provider-oauth-validation.ts"), // kilocode_change
+      path.join(dir, ".chipmate", "plugin", "provider-oauth-validation.ts"), // chipmate_change
       [
         "export default {",
         '  id: "test.provider-oauth-validation",',
@@ -183,10 +183,10 @@ function writeProviderAuthValidationPlugin(dir: string) {
 function writeFunctionOptionsPlugin(dir: string) {
   return Effect.gen(function* () {
     const fs = yield* FSUtil.Service
-    yield* Effect.promise(() => preparePluginDependencies(dir)) // kilocode_change
+    yield* Effect.promise(() => preparePluginDependencies(dir)) // chipmate_change
 
     yield* fs.writeWithDirs(
-      path.join(dir, ".kilo", "plugin", "provider-function-options.ts"), // kilocode_change
+      path.join(dir, ".chipmate", "plugin", "provider-function-options.ts"), // chipmate_change
       [
         "export default {",
         '  id: "test.provider-function-options",',
@@ -215,10 +215,10 @@ function writeFunctionOptionsPlugin(dir: string) {
 function writeProviderModelsMutationPlugin(dir: string) {
   return Effect.gen(function* () {
     const fs = yield* FSUtil.Service
-    yield* Effect.promise(() => preparePluginDependencies(dir)) // kilocode_change
+    yield* Effect.promise(() => preparePluginDependencies(dir)) // chipmate_change
 
     yield* fs.writeWithDirs(
-      path.join(dir, ".kilo", "plugin", "provider-models-mutation.ts"), // kilocode_change
+      path.join(dir, ".chipmate", "plugin", "provider-models-mutation.ts"), // chipmate_change
       [
         "export default {",
         '  id: "test.provider-models-mutation",',
@@ -266,7 +266,7 @@ describe("provider HttpApi", () => {
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory
       const response = yield* request("/api/provider/missing", {
-        headers: { "x-kilo-directory": directory },
+        headers: { "x-chipmate-directory": directory },
       })
 
       expect(response.status).toBe(404)
@@ -283,7 +283,7 @@ describe("provider HttpApi", () => {
     "serves OAuth authorize response shapes",
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory
-      const headers = { "x-kilo-directory": directory, "content-type": "application/json" }
+      const headers = { "x-chipmate-directory": directory, "content-type": "application/json" }
       const api = yield* requestAuthorize({
         providerID,
         method: 0,
@@ -318,7 +318,7 @@ describe("provider HttpApi", () => {
         providerID: "test-oauth-validation",
         method: 0,
         inputs: { token: "nope" },
-        headers: { "x-kilo-directory": directory, "content-type": "application/json" },
+        headers: { "x-chipmate-directory": directory, "content-type": "application/json" },
       })
 
       expect(response.status).toBe(400)
@@ -338,7 +338,7 @@ describe("provider HttpApi", () => {
       const response = yield* requestCallback({
         providerID,
         method: 0,
-        headers: { "x-kilo-directory": directory, "content-type": "application/json" },
+        headers: { "x-chipmate-directory": directory, "content-type": "application/json" },
       })
 
       expect(response.status).toBe(400)
@@ -356,12 +356,12 @@ describe("provider HttpApi", () => {
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory
       yield* setEnvScoped(
-        "KILO_AUTH_CONTENT",
+        "CHIPMATE_AUTH_CONTENT",
         JSON.stringify({
           google: { type: "oauth", refresh: "dummy", access: "dummy", expires: 9999999999999 },
         }),
       )
-      const headers = { "x-kilo-directory": directory }
+      const headers = { "x-chipmate-directory": directory }
       const providerResponse = yield* request("/provider", { headers })
       const configResponse = yield* request("/config/providers", { headers })
 
@@ -383,7 +383,7 @@ describe("provider HttpApi", () => {
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory
 
-      const headers = { "x-kilo-directory": directory }
+      const headers = { "x-chipmate-directory": directory }
       const providerResponse = yield* request("/provider", { headers })
       const configResponse = yield* request("/config/providers", { headers })
 

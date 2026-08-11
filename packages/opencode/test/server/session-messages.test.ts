@@ -28,15 +28,15 @@ const withoutWatcher = <A, E, R>(effect: Effect.Effect<A, E, R>) => {
   if (process.platform !== "win32") return effect
   return Effect.acquireUseRelease(
     Effect.sync(() => {
-      const previous = process.env.KILO_EXPERIMENTAL_DISABLE_FILEWATCHER
-      process.env.KILO_EXPERIMENTAL_DISABLE_FILEWATCHER = "true"
+      const previous = process.env.CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER
+      process.env.CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER = "true"
       return previous
     }),
     () => effect,
     (previous) =>
       Effect.sync(() => {
-        if (previous === undefined) delete process.env.KILO_EXPERIMENTAL_DISABLE_FILEWATCHER
-        else process.env.KILO_EXPERIMENTAL_DISABLE_FILEWATCHER = previous
+        if (previous === undefined) delete process.env.CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER
+        else process.env.CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER = previous
       }),
   )
 }

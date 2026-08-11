@@ -1,5 +1,5 @@
 import { useMarked } from "../context/marked"
-import { deferredHighlight, fnv1a } from "../context/marked" // kilocode_change
+import { deferredHighlight, fnv1a } from "../context/marked" // chipmate_change
 import { useI18n } from "../context/i18n"
 import DOMPurify from "dompurify"
 import morphdom from "morphdom"
@@ -26,10 +26,10 @@ import {
 } from "./markdown-worker"
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
-// kilocode_change start: Mermaid rendering and morphdom guards for highlighted blocks
-import { hasMermaid, preserveMermaid, renderMermaid, type MermaidLabels } from "../kilocode/markdown-mermaid"
-import { preserveStreamingHighlight } from "../kilocode/markdown-stream-highlight"
-// kilocode_change end
+// chipmate_change start: Mermaid rendering and morphdom guards for highlighted blocks
+import { hasMermaid, preserveMermaid, renderMermaid, type MermaidLabels } from "../chipmate/markdown-mermaid"
+import { preserveStreamingHighlight } from "../chipmate/markdown-stream-highlight"
+// chipmate_change end
 
 type Entry = {
   raw: string
@@ -43,7 +43,7 @@ type RenderedBlock =
       key: string
       mode: "code"
       raw: string
-      src: string // kilocode_change - Mermaid consumes delimiter-free source while raw preserves stream identity
+      src: string // chipmate_change - Mermaid consumes delimiter-free source while raw preserves stream identity
       hash: string
       language: string
       complete: boolean
@@ -377,7 +377,7 @@ export function Markdown(
           const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
 
           if (block.mode === "code") {
-            // kilocode_change start: mermaid blocks are rendered as diagrams by
+            // chipmate_change start: mermaid blocks are rendered as diagrams by
             // kickMermaid, not Shiki-highlighted by the worker. Return plain
             // text tokens so updateCodeBlock can emit a <pre data-lang="mermaid">
             // source block for renderMermaid to transform.
@@ -386,7 +386,7 @@ export function Markdown(
                 key: blockKey,
                 mode: block.mode,
                 raw: block.raw,
-                src: block.src, // kilocode_change
+                src: block.src, // chipmate_change
                 hash: String(block.raw.length),
                 complete: !!block.complete,
                 language: "mermaid",
@@ -395,7 +395,7 @@ export function Markdown(
                 unstable: [[block.src, ""] as MarkdownToken],
               }
             }
-            // kilocode_change end
+            // chipmate_change end
             const cached = completedCode.get(blockKey)
             if (block.complete && cached?.raw === block.raw) return cached
             const result = await code(block.src, block.language, blockKey, block.complete)
@@ -403,7 +403,7 @@ export function Markdown(
               key: blockKey,
               mode: block.mode,
               raw: block.raw,
-              src: block.src, // kilocode_change
+              src: block.src, // chipmate_change
               hash: String(block.raw.length),
               complete: !!block.complete,
               ...result,
@@ -449,14 +449,14 @@ export function Markdown(
   )
 
   let copyCleanup: (() => void) | undefined
-  // kilocode_change start: generation counter prevents stale deferredHighlight
+  // chipmate_change start: generation counter prevents stale deferredHighlight
   // callbacks from overwriting copyCleanup set by a newer render (issue #6221).
   const highlightState = { gen: 0, signal: { aborted: false } }
-  // kilocode_change end
+  // chipmate_change end
 
-  // kilocode_change start: Mermaid diagram rendering
+  // chipmate_change start: Mermaid diagram rendering
   const mermaidState = { gen: 0, signal: { aborted: false } }
-  // kilocode_change end
+  // chipmate_change end
 
   createEffect(() => {
     const container = root()
@@ -467,10 +467,10 @@ export function Markdown(
     if (isServer) return
     if (content.length === 0) {
       container.innerHTML = ""
-      // kilocode_change start: Mermaid diagram rendering
+      // chipmate_change start: Mermaid diagram rendering
       mermaidState.signal.aborted = true
       mermaidState.gen++
-      // kilocode_change end
+      // chipmate_change end
       return
     }
 
@@ -484,7 +484,7 @@ export function Markdown(
     })
     activeCodeKeys.clear()
     nextCodeKeys.forEach((key) => activeCodeKeys.add(key))
-    content.forEach((block, index) => updateBlock(container, index, block, labels, local.streaming ?? false)) // kilocode_change
+    content.forEach((block, index) => updateBlock(container, index, block, labels, local.streaming ?? false)) // chipmate_change
     while (container.children.length > content.length) container.lastElementChild?.remove()
     container
       .querySelectorAll<HTMLButtonElement>('[data-slot="markdown-copy-button"]')
@@ -495,7 +495,7 @@ export function Markdown(
         copied: i18n.t("ui.message.copied"),
       }))
 
-    // kilocode_change start: progressive Shiki highlighting for non-streaming
+    // chipmate_change start: progressive Shiki highlighting for non-streaming
     // "full" blocks and Mermaid diagram rendering. The parser emits plain
     // <pre><code data-lang="..."> blocks; deferredHighlight upgrades them
     // via setTimeout(0) so initial paint is instant. Mermaid blocks are
@@ -526,10 +526,10 @@ export function Markdown(
     }
     kickHighlight(container, labels)
     kickMermaid(container, local.streaming ?? false, mermaid)
-    // kilocode_change end
+    // chipmate_change end
   })
 
-  // kilocode_change start: progressive Shiki highlighting (issue #6221, PR #7102).
+  // chipmate_change start: progressive Shiki highlighting (issue #6221, PR #7102).
   // Parser emits plain <pre><code data-lang="..."> blocks; we upgrade them to
   // Shiki-highlighted <pre class="shiki"> here via setTimeout(0) so initial
   // paint is instant and session switches with many code blocks don't freeze.
@@ -550,9 +550,9 @@ export function Markdown(
       signal,
     )
   }
-  // kilocode_change end
+  // chipmate_change end
 
-  // kilocode_change start: Mermaid diagram rendering
+  // chipmate_change start: Mermaid diagram rendering
   function kickMermaid(container: HTMLDivElement, streaming: boolean, labels: MermaidLabels) {
     mermaidState.signal.aborted = true
     mermaidState.gen++
@@ -567,17 +567,17 @@ export function Markdown(
       console.warn("Mermaid render failed", err)
     })
   }
-  // kilocode_change end
+  // chipmate_change end
 
   onCleanup(() => {
-    // kilocode_change: cancel any in-flight deferredHighlight pass so its
+    // chipmate_change: cancel any in-flight deferredHighlight pass so its
     // completion callback doesn't touch the unmounted DOM.
     highlightState.signal.aborted = true
     highlightState.gen++
-    // kilocode_change start: Mermaid diagram rendering
+    // chipmate_change start: Mermaid diagram rendering
     mermaidState.signal.aborted = true
     mermaidState.gen++
-    // kilocode_change end
+    // chipmate_change end
     if (copyCleanup) copyCleanup()
     activeCodeKeys.forEach(disposeCode)
     completedCode.clear()
@@ -586,7 +586,7 @@ export function Markdown(
   return (
     <div
       data-component="markdown"
-      dir={"auto" /* kilocode_change */}
+      dir={"auto" /* chipmate_change */}
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
@@ -616,7 +616,7 @@ function pendingBlocks(
       key,
       mode: block.mode,
       raw: block.raw,
-      src: block.src, // kilocode_change
+      src: block.src, // chipmate_change
       hash: String(block.raw.length),
       language: block.language ?? "text",
       complete: !!block.complete,
@@ -636,7 +636,7 @@ function updateBlock(
   index: number,
   block: RenderedBlock,
   labels: CopyLabels,
-  streaming: boolean, // kilocode_change
+  streaming: boolean, // chipmate_change
 ) {
   const current = container.children[index]
   if (block.mode === "code") {
@@ -671,17 +671,17 @@ function updateBlock(
         fromEl.getAttribute("data-slot") === "markdown-copy-button" &&
         toEl.getAttribute("data-slot") === "markdown-copy-button"
       ) {
-        // kilocode_change start: preserve "copied" visual state across re-renders
+        // chipmate_change start: preserve "copied" visual state across re-renders
         if (fromEl.getAttribute("data-copied") === "true") setCopyState(toEl, labels, true)
-        // kilocode_change end
+        // chipmate_change end
         return false
       }
       if (fromEl.isEqualNode(toEl)) return false
-      // kilocode_change start: preserve rendered Mermaid diagrams across
+      // chipmate_change start: preserve rendered Mermaid diagrams across
       // morphdom refreshes so they do not flicker back to source code.
       if (preserveMermaid(fromEl, toEl)) return false
-      // kilocode_change end
-      // kilocode_change start: preserve Shiki-highlighted blocks — don't let
+      // chipmate_change end
+      // chipmate_change start: preserve Shiki-highlighted blocks — don't let
       // morphdom revert them to plain <pre><code> during streaming re-renders.
       // Compare data-source-hash (stored by deferredHighlight on the highlighted
       // <pre>) against a hash of the incoming code text to detect mid-stream
@@ -700,7 +700,7 @@ function updateBlock(
         if (fromHash === fnv1a(toCode)) return false
         if (preserveStreamingHighlight(fromEl, toEl, streaming)) return false
       }
-      // kilocode_change end
+      // chipmate_change end
       return true
     },
   })
@@ -720,7 +720,7 @@ function updateCodeBlock(
   next.dataset.markdownComplete = block.complete ? "true" : "false"
   next.style.display = "contents"
 
-  // kilocode_change start: mermaid blocks render as a source <pre> for
+  // chipmate_change start: mermaid blocks render as a source <pre> for
   // kickMermaid to transform into SVG diagrams, not as Shiki-highlighted code.
   if (block.language === "mermaid") {
     next.replaceChildren()
@@ -730,7 +730,7 @@ function updateCodeBlock(
     pre.setAttribute("dir", "auto")
     const codeElement = document.createElement("code")
     codeElement.setAttribute("data-lang", "mermaid")
-    codeElement.textContent = block.src // kilocode_change - Mermaid rejects fenced Markdown as diagram source
+    codeElement.textContent = block.src // chipmate_change - Mermaid rejects fenced Markdown as diagram source
     pre.appendChild(codeElement)
     wrapper.appendChild(pre)
     wrapper.appendChild(createCopyButton(labels))
@@ -739,7 +739,7 @@ function updateCodeBlock(
     else if (!current) container.appendChild(next)
     return
   }
-  // kilocode_change end
+  // chipmate_change end
 
   const code = existing?.querySelector("code")
   if (code instanceof HTMLElement) {
@@ -774,8 +774,8 @@ function updateCodeBlock(
   const wrapper = document.createElement("div")
   wrapper.setAttribute("data-component", "markdown-code")
   const pre = document.createElement("pre")
-  pre.className = "shiki Kilo"
-  pre.setAttribute("dir", "auto") // kilocode_change
+  pre.className = "shiki ChipMate"
+  pre.setAttribute("dir", "auto") // chipmate_change
   const codeElement = document.createElement("code")
   codeElement.className = `language-${block.language}`
   ;[...block.stable, ...block.unstable].map(createTokenSpan).forEach((span) => codeElement.appendChild(span))

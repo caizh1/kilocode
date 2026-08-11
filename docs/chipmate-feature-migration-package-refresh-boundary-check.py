@@ -23,10 +23,10 @@ DEFAULT_OUTPUT = (
 )
 
 ARTIFACTS = [
-    "packages/kilo-vscode/out/chipmate-0.0.38-offline-handoff.tar.gz",
-    "packages/kilo-vscode/out/chipmate-0.0.38-offline-delivery-set.tar.gz",
-    "packages/kilo-vscode/out/chipmate-0.0.38-offline-delivery-set.zip",
-    "packages/kilo-vscode/out/chipmate-0.0.38-offline-target-verify-kit.tar.gz",
+    "packages/chipmate-vscode/out/chipmate-0.0.38-offline-handoff.tar.gz",
+    "packages/chipmate-vscode/out/chipmate-0.0.38-offline-delivery-set.tar.gz",
+    "packages/chipmate-vscode/out/chipmate-0.0.38-offline-delivery-set.zip",
+    "packages/chipmate-vscode/out/chipmate-0.0.38-offline-target-verify-kit.tar.gz",
 ]
 
 LATEST_SOURCE_SIDE_NEEDLES = [

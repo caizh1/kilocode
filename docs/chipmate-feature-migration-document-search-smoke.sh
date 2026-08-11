@@ -21,8 +21,8 @@ import path from "node:path"
 import { spyOn } from "bun:test"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { WithInstance } from "@/project/with-instance"
-import { DocumentSearchTool } from "@/kilocode/tool/document-search"
-import { KiloIndexing } from "@/kilocode/indexing"
+import { DocumentSearchTool } from "@/chipmate/tool/document-search"
+import { ChipMateIndexing } from "@/chipmate/indexing"
 import { Agent } from "@/agent/agent"
 import { Truncate } from "@/tool/truncate"
 import { Tool } from "@/tool/tool"
@@ -52,7 +52,7 @@ async function main(): Promise<Summary> {
     directory: workspace,
     fn: async () => {
       const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
-      const search = spyOn(KiloIndexing, "searchDocuments").mockResolvedValue([
+      const search = spyOn(ChipMateIndexing, "searchDocuments").mockResolvedValue([
         {
           filePath: "docs/source-backed-detail-design-skill-contract.md",
           sourceRef: "docs/source-backed-detail-design-skill-contract.md#L1-L10",
@@ -142,7 +142,7 @@ try {
       `- Output contains document content: \`${summary.outputContainsContent ? "yes" : "no"}\``,
       "",
       "This proves the native `document_search` tool contract, permission path, path normalization, and evidence-pack formatting.",
-      "It uses a deterministic `KiloIndexing.searchDocuments` stub and does not prove installed chat/runtime S3 tool selection or live document-index recall.",
+      "It uses a deterministic `ChipMateIndexing.searchDocuments` stub and does not prove installed chat/runtime S3 tool selection or live document-index recall.",
       "",
     ].join("\n"),
     "utf8",

@@ -3,36 +3,36 @@
 </p>
 
 <p align="center">
-  <a href="https://kilo.ai"><img width="250" alt="Kilo Code logo" src="https://github.com/user-attachments/assets/bdb0c174-b9fd-40ad-a47b-f3aab9b54e8d" /></a>
+  <a href="https://chipmate.ai"><img width="250" alt="ChipMate logo" src="https://github.com/user-attachments/assets/bdb0c174-b9fd-40ad-a47b-f3aab9b54e8d" /></a>
 </p>
 
 <p align="center">VS Code、JetBrains、CLI で AI を使って開発するためのオープンソースのコーディングエージェント。</p>
 
 <p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=kilocode.Kilo-Code"><img src="https://raster.shields.io/badge/VS_Code_Marketplace-007ACC?style=flat&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace" height="20"></a>
-  <a href="https://www.npmjs.com/package/@kilocode/cli"><img alt="npm" src="https://raster.shields.io/npm/v/@kilocode/cli?style=flat" height="20" /></a>
-  <a href="https://x.com/kilocode"><img src="https://raster.shields.io/badge/kilocode-000000?style=flat&logo=x&logoColor=white" alt="X (Twitter)" height="20"></a>
-  <a href="https://blog.kilo.ai"><img src="https://raster.shields.io/badge/Blog-555?style=flat&logo=substack&logoColor=white" alt="Blog" height="20"></a>
-  <a href="https://kilo.ai/discord"><img src="https://raster.shields.io/badge/Join%20Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" height="20"></a>
-  <a href="https://www.reddit.com/r/kilocode/"><img src="https://raster.shields.io/badge/Join%20r%2Fkilocode-D84315?style=flat&logo=reddit&logoColor=white" alt="Reddit" height="20"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=chipmate.ChipMate-Code"><img src="https://raster.shields.io/badge/VS_Code_Marketplace-007ACC?style=flat&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace" height="20"></a>
+  <a href="https://www.npmjs.com/package/@chipmate/cli"><img alt="npm" src="https://raster.shields.io/npm/v/@chipmate/cli?style=flat" height="20" /></a>
+  <a href="https://x.com/chipmate"><img src="https://raster.shields.io/badge/chipmate-000000?style=flat&logo=x&logoColor=white" alt="X (Twitter)" height="20"></a>
+  <a href="https://blog.chipmate.ai"><img src="https://raster.shields.io/badge/Blog-555?style=flat&logo=substack&logoColor=white" alt="Blog" height="20"></a>
+  <a href="https://chipmate.ai/discord"><img src="https://raster.shields.io/badge/Join%20Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" height="20"></a>
+  <a href="https://www.reddit.com/r/chipmate/"><img src="https://raster.shields.io/badge/Join%20r%2Fchipmate-D84315?style=flat&logo=reddit&logoColor=white" alt="Reddit" height="20"></a>
 </p>
 
-![Kilo-in-VS-Code-and-CLI](https://github.com/user-attachments/assets/0536ca59-ed81-4512-9e05-d186187a1b52)
+![ChipMate-in-VS-Code-and-CLI](https://github.com/user-attachments/assets/0536ca59-ed81-4512-9e05-d186187a1b52)
 
 ---
 
-Kilo Code は、[VS Code](https://kilo.ai/landing/vs-code)、[JetBrains](https://kilo.ai/features/jetbrains-native)、[CLI](https://kilo.ai/cli) など、あなたが作業する場所で使える AI コーディングエージェントです。オープンソースで、透明な価格体系を採用しています。500 以上のモデルから選択し、タスクの途中で切り替え、追加料金なしでモデルプロバイダーの料金を支払います。開始に API キーは不要です。
+ChipMate は、[VS Code](https://chipmate.ai/landing/vs-code)、[JetBrains](https://chipmate.ai/features/jetbrains-native)、[CLI](https://chipmate.ai/cli) など、あなたが作業する場所で使える AI コーディングエージェントです。オープンソースで、透明な価格体系を採用しています。500 以上のモデルから選択し、タスクの途中で切り替え、追加料金なしでモデルプロバイダーの料金を支払います。開始に API キーは不要です。
 
 ### インストール
 
-Kilo を実行する場所を選んでください。
+ChipMate を実行する場所を選んでください。
 
 <details open>
 <summary><strong>VS Code</strong></summary>
 
 <br>
 
-[Kilo Code 拡張機能](vscode:extension/kilocode.kilo-code)を直接インストールするか、[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=kilocode.Kilo-Code) から入手してください。アカウントを作成すると、GPT-5.5、Claude Opus 4.7、Claude Sonnet 4.6、Gemini 3.1 Pro Preview を含む 500 以上のモデルを、すべてプロバイダー価格で利用できます。
+[ChipMate 拡張機能](vscode:extension/chipmate.chipmate-code)を直接インストールするか、[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=chipmate.ChipMate-Code) から入手してください。アカウントを作成すると、GPT-5.5、Claude Opus 4.7、Claude Sonnet 4.6、Gemini 3.1 Pro Preview を含む 500 以上のモデルを、すべてプロバイダー価格で利用できます。
 
 </details>
 
@@ -43,25 +43,25 @@ Kilo を実行する場所を選んでください。
 
 ```bash
 # npm
-npm install -g @kilocode/cli
+npm install -g @chipmate/cli
 
 # curl
-curl -fsSL https://kilo.ai/cli/install | bash
+curl -fsSL https://chipmate.ai/cli/install | bash
 
 # pnpm
-pnpm add -g @kilocode/cli
+pnpm add -g @chipmate/cli
 
 # bun
-bun add -g @kilocode/cli
+bun add -g @chipmate/cli
 
 # Homebrew (macOS / Linux)
-brew install Kilo-Org/tap/kilo
+brew install ChipMate-Org/tap/chipmate
 
 # Arch Linux (AUR)
-paru -S kilo-bin
+paru -S chipmate-bin
 ```
 
-その後、任意のプロジェクトディレクトリで `kilo` を実行して開始します。
+その後、任意のプロジェクトディレクトリで `chipmate` を実行して開始します。
 
 </details>
 
@@ -70,7 +70,7 @@ paru -S kilo-bin
 
 <br>
 
-JetBrains Marketplace から [Kilo Code プラグイン](https://plugins.jetbrains.com/plugin/28350-kilo-code)をインストールするか、任意の JetBrains IDE の `Settings → Plugins` で "Kilo Code" を検索してください。
+JetBrains Marketplace から [ChipMate プラグイン](https://plugins.jetbrains.com/plugin/28350-chipmate-code)をインストールするか、任意の JetBrains IDE の `Settings → Plugins` で "ChipMate" を検索してください。
 
 </details>
 
@@ -79,7 +79,7 @@ JetBrains Marketplace から [Kilo Code プラグイン](https://plugins.jetbrai
 
 <br>
 
-ローカルマシンなしで、Web から [app.kilo.ai/cloud](https://app.kilo.ai/cloud) で Kilo を実行できます。
+ローカルマシンなしで、Web から [app.chipmate.ai/cloud](https://app.chipmate.ai/cloud) で ChipMate を実行できます。
 
 </details>
 
@@ -88,39 +88,39 @@ JetBrains Marketplace から [Kilo Code プラグイン](https://plugins.jetbrai
 
 <br>
 
-[app.kilo.ai/code-reviews](https://app.kilo.ai/code-reviews) で pull request に自動 AI コードレビューを設定できます。
+[app.chipmate.ai/code-reviews](https://app.chipmate.ai/code-reviews) で pull request に自動 AI コードレビューを設定できます。
 
 </details>
 
 <details>
-<summary><strong>KiloClaw</strong></summary>
+<summary><strong>ChipMateClaw</strong></summary>
 
 <br>
 
-[app.kilo.ai/claw](https://app.kilo.ai/claw) で常時稼働する AI エージェントを起動できます。
+[app.chipmate.ai/claw](https://app.chipmate.ai/claw) で常時稼働する AI エージェントを起動できます。
 
 </details>
 
 <details>
 <summary>GitHub Releases から CLI をインストールする（バイナリ）</summary>
 
-[Releases ページ](https://github.com/Kilo-Org/kilocode/releases)から最新のバイナリをダウンロードしてください。
+[Releases ページ](https://github.com/ChipMate-Org/chipmate/releases)から最新のバイナリをダウンロードしてください。
 
 | プラットフォーム | アセット |
 |---|---|
-| Windows（ほとんどの PC） | `kilo-windows-x64.zip` |
-| macOS（Apple Silicon） | `kilo-darwin-arm64.zip` |
-| macOS（Intel） | `kilo-darwin-x64.zip` |
-| Linux x64 | `kilo-linux-x64.tar.gz` |
-| Linux ARM | `kilo-linux-arm64.tar.gz` |
+| Windows（ほとんどの PC） | `chipmate-windows-x64.zip` |
+| macOS（Apple Silicon） | `chipmate-darwin-arm64.zip` |
+| macOS（Intel） | `chipmate-darwin-x64.zip` |
+| Linux x64 | `chipmate-linux-x64.tar.gz` |
+| Linux ARM | `chipmate-linux-arm64.tar.gz` |
 
-注: `x64-baseline` は AVX のない古い CPU 向けの互換ビルドです。`musl` は Alpine や glibc のない最小 Docker イメージ向けの静的リンクビルドです。`kilo-vscode-*.vsix` は VS Code 拡張機能パッケージであり、CLI ではありません。`Source code` アーカイブはソースからビルドするためのものです。
+注: `x64-baseline` は AVX のない古い CPU 向けの互換ビルドです。`musl` は Alpine や glibc のない最小 Docker イメージ向けの静的リンクビルドです。`chipmate-vscode-*.vsix` は VS Code 拡張機能パッケージであり、CLI ではありません。`Source code` アーカイブはソースからビルドするためのものです。
 
 </details>
 
 ### Agents
 
-Kilo には、タスクに応じて切り替えられる特化型 agents が含まれています。独自のカスタム agents も作成できます。
+ChipMate には、タスクに応じて切り替えられる特化型 agents が含まれています。独自のカスタム agents も作成できます。
 
 - **Code** - デフォルト。自然言語からコードを実装、編集します。
 - **Plan** - コードを書く前にアーキテクチャを設計し、実装計画を作成します。
@@ -128,7 +128,7 @@ Kilo には、タスクに応じて切り替えられる特化型 agents が含�
 - **Debug** - 問題のトラブルシューティングと追跡を行います。
 - **Review** - 変更をレビューし、パフォーマンス、セキュリティ、スタイル、テストカバレッジの問題を検出します。
 
-[agents とカスタム agents](https://kilo.ai/docs/code-with-ai/agents/using-agents) について詳しく学べます。
+[agents とカスタム agents](https://chipmate.ai/docs/code-with-ai/agents/using-agents) について詳しく学べます。
 
 ### 機能
 
@@ -141,21 +141,21 @@ Kilo には、タスクに応じて切り替えられる特化型 agents が含�
 
 ### 自律モード（CI/CD）
 
-CI/CD パイプライン向けに、プロンプトなしで完全自律動作させるには `kilo run` に `--auto` を指定します。
+CI/CD パイプライン向けに、プロンプトなしで完全自律動作させるには `chipmate run` に `--auto` を指定します。
 
 ```bash
-kilo run --auto "run tests and fix any failures"
+chipmate run --auto "run tests and fix any failures"
 ```
 
 `--auto` はすべての権限プロンプトを無効にし、エージェントが確認なしで任意の操作を実行できるようにします。信頼できる環境でのみ使用してください。
 
 ### ドキュメント
 
-設定やその他の内容については、[ドキュメント](https://kilo.ai/docs)をご覧ください。
+設定やその他の内容については、[ドキュメント](https://chipmate.ai/docs)をご覧ください。
 
 ### コントリビューション
 
-開発者、ライター、その他すべての方からのコントリビューションを歓迎します。環境設定、コーディング標準、pull request の作成方法については [Contributing Guide](/CONTRIBUTING.md) から始めてください。VS Code 拡張機能と CLI のリリース手順は [RELEASING.md](../RELEASING.md)、JetBrains プラグインについては [packages/kilo-jetbrains/RELEASING.md](../packages/kilo-jetbrains/RELEASING.md) を参照してください。
+開発者、ライター、その他すべての方からのコントリビューションを歓迎します。環境設定、コーディング標準、pull request の作成方法については [Contributing Guide](/CONTRIBUTING.md) から始めてください。VS Code 拡張機能と CLI のリリース手順は [RELEASING.md](../RELEASING.md)、JetBrains プラグインについては [packages/chipmate-jetbrains/RELEASING.md](../packages/chipmate-jetbrains/RELEASING.md) を参照してください。
 
 参加する前に [Code of Conduct](/CODE_OF_CONDUCT.md) を確認してください。
 
@@ -166,12 +166,12 @@ MIT。帰属表示とライセンス通知を保持する限り、商用利用�
 ### FAQ
 
 <details>
-<summary>Kilo CLI はどこから来たのですか？</summary>
+<summary>ChipMate CLI はどこから来たのですか？</summary>
 
-Kilo CLI は [OpenCode](https://github.com/anomalyco/opencode) の fork であり、Kilo agentic engineering プラットフォーム内で動作するように強化されています。
+ChipMate CLI は [OpenCode](https://github.com/anomalyco/opencode) の fork であり、ChipMate agentic engineering プラットフォーム内で動作するように強化されています。
 
 </details>
 
 ---
 
-**コミュニティに参加** [Discord](https://kilo.ai/discord) | [X](https://x.com/kilocode) | [Reddit](https://www.reddit.com/r/kilocode/)
+**コミュニティに参加** [Discord](https://chipmate.ai/discord) | [X](https://x.com/chipmate) | [Reddit](https://www.reddit.com/r/chipmate/)

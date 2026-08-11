@@ -1,0 +1,47 @@
+export const dict = {
+  "chipmate:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) Completamento automatico",
+  "chipmate:autocomplete.statusBar.snoozed": "posticipato",
+  "chipmate:autocomplete.statusBar.warning": "$(warning) Completamento automatico",
+  "chipmate:autocomplete.statusBar.tooltip.basic": "Completamento automatico ChipMate",
+  "chipmate:autocomplete.statusBar.tooltip.disabled": "Completamento automatico ChipMate (disabilitato)",
+  "chipmate:autocomplete.statusBar.tooltip.noUsableProvider":
+    "**Nessun modello di completamento automatico configurato**\n\nPer abilitare il completamento automatico, aggiungi un profilo con uno di questi provider supportati: {{providers}}.\n\n[Apri impostazioni]({{command}})",
+  "chipmate:autocomplete.statusBar.tooltip.sessionTotal": "Costo totale della sessione:",
+  "chipmate:autocomplete.statusBar.tooltip.provider": "Fornitore:",
+  "chipmate:autocomplete.statusBar.tooltip.model": "Modello:",
+  "chipmate:autocomplete.statusBar.tooltip.profile": "Profilo: ",
+  "chipmate:autocomplete.statusBar.tooltip.defaultProfile": "Predefinito",
+  "chipmate:autocomplete.statusBar.tooltip.completionSummary":
+    "Eseguiti {{count}} completamenti tra {{startTime}} e {{endTime}}, per un costo totale di {{cost}}.",
+  "chipmate:autocomplete.statusBar.tooltip.providerInfo":
+    "Completamenti automatici forniti da {{model}} tramite {{provider}}.",
+  "chipmate:autocomplete.statusBar.cost.zero": "$0.00",
+  "chipmate:autocomplete.statusBar.cost.lessThanCent": "<$0.01",
+  "chipmate:autocomplete.toggleMessage": "Completamento automatico ChipMate {{status}}",
+  "chipmate:autocomplete.progress.title": "ChipMate",
+  "chipmate:autocomplete.progress.analyzing": "Analisi del codice in corso...",
+  "chipmate:autocomplete.progress.generating": "Generazione delle modifiche suggerite...",
+  "chipmate:autocomplete.progress.processing": "Elaborazione delle modifiche suggerite...",
+  "chipmate:autocomplete.progress.showing": "Visualizzazione delle modifiche suggerite...",
+  "chipmate:autocomplete.input.title": "ChipMate: attività rapida",
+  "chipmate:autocomplete.input.placeholder": "es. 'rifattorizza questa funzione per renderla più efficiente'",
+  "chipmate:autocomplete.commands.generateSuggestions": "ChipMate: genera modifiche suggerite",
+  "chipmate:autocomplete.commands.displaySuggestions": "Mostra modifiche suggerite",
+  "chipmate:autocomplete.commands.cancelSuggestions": "Annulla modifiche suggerite",
+  "chipmate:autocomplete.commands.applyCurrentSuggestion": "Applica la modifica suggerita corrente",
+  "chipmate:autocomplete.commands.applyAllSuggestions": "Applica tutte le modifiche suggerite",
+  "chipmate:autocomplete.commands.category": "ChipMate",
+  "chipmate:autocomplete.codeAction.title": "ChipMate: modifiche suggerite",
+  "chipmate:autocomplete.chatParticipant.fullName": "Agente ChipMate",
+  "chipmate:autocomplete.chatParticipant.name": "Agente",
+  "chipmate:autocomplete.chatParticipant.description": "Posso aiutarti con attività rapide e modifiche suggerite.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.message":
+    "Il completamento automatico di ChipMate è bloccato da un conflitto con GitHub Copilot. Per risolvere il problema, devi disabilitare i suggerimenti inline di Copilot.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableCopilot": "Disabilita Copilot",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableInlineAssist": "Disabilita completamento automatico",
+  "chipmate:autocomplete.creditsExhausted.message":
+    "Il completamento automatico di ChipMate è stato messo in pausa. Possibili cause: il tuo account ChipMate non ha crediti residui, oppure la chiave API configurata (BYOK) ha raggiunto il limite di quota. Aggiungi crediti ChipMate o controlla la configurazione della chiave API per riprendere il completamento automatico.",
+  "chipmate:autocomplete.creditsExhausted.addCredits": "Aggiungi crediti",
+  "chipmate:autocomplete.authError.message":
+    "Il completamento automatico di ChipMate è stato messo in pausa a causa di un problema di autenticazione. Possibili cause: non hai effettuato l’accesso a ChipMate, oppure la tua chiave API (BYOK) non è valida o manca. Accedi di nuovo o controlla le impostazioni della chiave API del provider.",
+}

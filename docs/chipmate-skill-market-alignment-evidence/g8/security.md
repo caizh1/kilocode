@@ -10,7 +10,7 @@ Status: PASS
 - Content: private keys and credential patterns, executable magic and dangerous binary extensions, malformed and oversized PNG dimensions, invalid UTF-8.
 - Markdown: script/iframe/object/embed/form/input/style/meta/link/svg/math elements, event handlers, `javascript:` and `data:text/html` URLs.
 - Identity: cookie writes require same Origin/Host and CSRF; server derives the pseudonymous user rather than trusting event input; non-owners cannot read publication runs, submit patches, unpublish, or view another author's funnel.
-- Deep links: Kilo accepts only the configured origin, strict route/token/run shapes, one-time intents, revision-pinned archives, and same-origin download URLs.
+- Deep links: ChipMate accepts only the configured origin, strict route/token/run shapes, one-time intents, revision-pinned archives, and same-origin download URLs.
 
 ## Commands and results
 

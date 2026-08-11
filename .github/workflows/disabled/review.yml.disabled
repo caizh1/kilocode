@@ -6,9 +6,9 @@ on:
 
 jobs:
   check-guidelines:
-    # kilocode_change start - disabled for kilo-cli fork (requires OpenCode install and API keys)
+    # chipmate_change start - disabled for chipmate-cli fork (requires OpenCode install and API keys)
     if: false
-    # kilocode_change end
+    # chipmate_change end
     # Original condition:
     # if: |
     #   github.event.issue.pull_request &&
@@ -51,7 +51,7 @@ jobs:
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          KILO_PERMISSION: '{ "bash": {  "*": "deny", "gh*": "allow", "gh pr review*": "deny" } }'
+          CHIPMATE_PERMISSION: '{ "bash": {  "*": "deny", "gh*": "allow", "gh pr review*": "deny" } }'
           PR_TITLE: ${{ steps.pr-details.outputs.title }}
         run: |
           PR_BODY=$(jq -r .body pr_data.json)

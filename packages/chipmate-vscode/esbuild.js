@@ -1,0 +1,419 @@
+const esbuild = require("esbuild")
+const path = require("path")
+const fs = require("fs")
+const { solidPlugin } = require("esbuild-plugin-solid")
+
+const production = process.argv.includes("--production")
+const watch = process.argv.includes("--watch")
+const internalOffline =
+  process.argv.includes("--internal-offline") ||
+  process.env.CHIPMATE_INTERNAL_OFFLINE === "1" ||
+  process.env.CHIPMATE_INTERNAL_OFFLINE === "1"
+
+const define = {
+  __CHIPMATE_INTERNAL_OFFLINE__: JSON.stringify(internalOffline),
+  __CHIPMATE_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL__: JSON.stringify(
+    process.env.CHIPMATE_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL || "",
+  ),
+  __CHIPMATE_INTERNAL_PROVIDER_API_BASE_URL__: JSON.stringify(process.env.CHIPMATE_INTERNAL_PROVIDER_API_BASE_URL || ""),
+  __CHIPMATE_INTERNAL_PROVIDER_CHAT_MODEL__: JSON.stringify(process.env.CHIPMATE_INTERNAL_PROVIDER_CHAT_MODEL || ""),
+}
+
+// VS Code 1.101+ runs Node 22 extension hosts where navigator is a global.
+// Keep the Node extension bundle on the pre-Node-22 server-side semantics while
+// leaving browser webviews free to use the real navigator object.
+const node = {
+  ...define,
+  navigator: "undefined",
+  "globalThis.navigator": "undefined",
+}
+
+/**
+ * Internal Windows builds only ship English fallback + Simplified Chinese.
+ * Keep the public import graph intact, but replace other locale modules with
+ * tiny empty dicts so they fall back to English at runtime and don't add bytes.
+ *
+ * @type {import('esbuild').Plugin}
+ */
+const internalLocalePrunePlugin = {
+  name: "internal-locale-prune",
+  setup(build) {
+    if (!internalOffline) return
+
+    const keep = new Set(["en", "zh"])
+    const filter = /(?:^@chipmate\/(?:chipmate-ui\/i18n|chipmate-i18n)\/|^\.{1,2}\/.*i18n\/)([a-z]+|zht)$/
+
+    build.onResolve({ filter }, (args) => {
+      const full = args.path.startsWith(".") ? path.join(args.resolveDir, args.path) : args.path
+      const normalized = full.replaceAll(path.sep, "/")
+      if (!normalized.includes("/i18n/") && !normalized.includes("chipmate-i18n/")) return
+      const match = normalized.match(/\/([a-z]+|zht)$/)
+      const locale = match?.[1]
+      if (!locale || keep.has(locale)) return
+      return { path: args.path, namespace: "internal-empty-i18n" }
+    })
+
+    build.onLoad({ filter: /.*/, namespace: "internal-empty-i18n" }, () => ({
+      contents: "export const dict = {}",
+      loader: "js",
+    }))
+  },
+}
+
+/**
+ * Force all solid-js imports (from chipmate-ui and the webview) to resolve to
+ * the **same** copy so SolidJS contexts are shared across packages.
+ * Without this, the monorepo hoists separate copies (pnpm vs bun) and
+ * createContext / useContext can't see each other.
+ *
+ * @type {import('esbuild').Plugin}
+ */
+const solidDedupePlugin = {
+  name: "solid-dedupe",
+  setup(build) {
+    // Resolve these bare specifiers to the chipmate-vscode-local copy
+    const solidRoot = path.dirname(require.resolve("solid-js/package.json"))
+    const aliases = {
+      "solid-js": path.join(solidRoot, "dist", "solid.js"),
+      "solid-js/web": path.join(solidRoot, "web", "dist", "web.js"),
+      "solid-js/store": path.join(solidRoot, "store", "dist", "store.js"),
+    }
+
+    build.onResolve({ filter: /^solid-js(\/web|\/store)?$/ }, (args) => {
+      const key = args.path
+      if (aliases[key]) {
+        return { path: aliases[key] }
+      }
+    })
+  },
+}
+
+/**
+ * @type {import('esbuild').Plugin}
+ */
+const esbuildProblemMatcherPlugin = {
+  name: "esbuild-problem-matcher",
+
+  setup(build) {
+    build.onStart(() => {
+      console.log("[watch] build started")
+    })
+    build.onEnd((result) => {
+      result.errors.forEach(({ text, location }) => {
+        console.error(`✘ [ERROR] ${text}`)
+        if (location) {
+          console.error(`    ${location.file}:${location.line}:${location.column}:`)
+        }
+      })
+      console.log("[watch] build finished")
+    })
+  },
+}
+
+/**
+ * Keep the WebAssembly runtime paired with the bundled web-tree-sitter JavaScript.
+ * The CLI's bin/tree-sitter runtime may use a different web-tree-sitter version.
+ *
+ * @type {import('esbuild').Plugin}
+ */
+const treeSitterRuntimePlugin = {
+  name: "tree-sitter-runtime",
+  setup(build) {
+    build.onEnd((result) => {
+      if (result.errors.length > 0) return
+      const source = require.resolve("web-tree-sitter/tree-sitter.wasm")
+      const target = path.join(__dirname, "dist", "tree-sitter.wasm")
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.copyFileSync(source, target)
+    })
+  },
+}
+
+/**
+ * Route the shared `@opencode-ai/ui/pierre/worker` module (and its relative
+ * variants) to the ChipMate implementation in `webview-ui/pierre-worker.ts`.
+ *
+ * The upstream module loads Pierre's Shiki worker via a Vite-only
+ * `?worker&url` import that esbuild can't resolve. The ChipMate replacement loads
+ * the worker from the bundled `dist/shiki-worker.js` asset instead, so syntax
+ * highlighting runs off the main thread. `@pierre/diffs/worker` (used by that
+ * replacement) is left alone.
+ *
+ * @type {import('esbuild').Plugin}
+ */
+const pierreWorkerAliasPlugin = {
+  name: "pierre-worker-alias",
+  setup(build) {
+    build.onResolve({ filter: /pierre\/worker$/ }, (args) => {
+      if (args.path.includes("@pierre")) return
+      return { path: path.join(__dirname, "webview-ui", "pierre-worker.ts") }
+    })
+  },
+}
+
+/**
+ * Replace the shared UI's Vite-only Markdown worker URL import with the
+ * webview-safe URI injected by the extension host.
+ *
+ * @type {import('esbuild').Plugin}
+ */
+const markdownWorkerUrlPlugin = {
+  name: "markdown-worker-url",
+  setup(build) {
+    build.onResolve({ filter: /markdown-shiki\.worker\.ts\?worker&url$/ }, () => ({
+      path: "markdown-shiki-worker-url",
+      namespace: "chipmate-worker-url",
+    }))
+    build.onLoad({ filter: /.*/, namespace: "chipmate-worker-url" }, () => ({
+      contents: "export default globalThis.CHIPMATE_MARKDOWN_SHIKI_WORKER_URI",
+      loader: "js",
+    }))
+  },
+}
+
+/**
+ * Resolve the synthetic `chipmate-shiki-worker` entry point to Pierre's Shiki worker
+ * so esbuild can bundle it (and its inlined oniguruma WebAssembly) into a single
+ * `dist/shiki-worker.js` asset loaded by `webview-ui/pierre-worker.ts`. Switch to
+ * `worker-portable.js` to drop WebAssembly and use the JS regex engine instead.
+ *
+ * @type {import('esbuild').Plugin}
+ */
+const shikiWorkerEntryPlugin = {
+  name: "shiki-worker-entry",
+  setup(build) {
+    build.onResolve({ filter: /^chipmate-shiki-worker$/ }, async () => {
+      const resolved = await build.resolve("@pierre/diffs/worker/worker.js", {
+        kind: "import-statement",
+        resolveDir: __dirname,
+      })
+      if (resolved.errors.length > 0) return { errors: resolved.errors }
+      return { path: resolved.path }
+    })
+  },
+}
+
+const svgSpritePlugin = {
+  name: "svg-sprite-inline",
+  setup(build) {
+    build.onLoad({ filter: /sprite\.svg$/ }, (args) => {
+      const content = require("fs").readFileSync(args.path, "utf8")
+      return {
+        contents: `
+          const svg = ${JSON.stringify(content)};
+          const inject = () => {
+            if (!document.getElementById("chipmate-sprite")) {
+              const el = document.createElement("div");
+              el.id = "chipmate-sprite";
+              el.style.display = "none";
+              el.innerHTML = svg;
+              document.body.appendChild(el);
+            }
+          };
+          if (document.body) inject();
+          else document.addEventListener("DOMContentLoaded", inject);
+          export default "";
+        `,
+        loader: "js",
+      }
+    })
+  },
+}
+
+const cssPackageResolvePlugin = {
+  name: "css-package-resolve",
+  setup(build) {
+    build.onResolve({ filter: /^@/, namespace: "file" }, (args) => {
+      if (args.kind === "import-rule") {
+        return build.resolve(args.path, {
+          kind: "import-statement",
+          resolveDir: args.resolveDir,
+        })
+      }
+    })
+  },
+}
+
+function createBrowserWebviewContext(entryPoint, outfile) {
+  return esbuild.context({
+    entryPoints: [entryPoint],
+    bundle: true,
+    format: "iife",
+    minify: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    platform: "browser",
+    outfile,
+    logLevel: "silent",
+    define,
+    loader: {
+      ".woff": "file",
+      ".woff2": "file",
+      ".ttf": "file",
+    },
+    plugins: [
+      solidDedupePlugin,
+      pierreWorkerAliasPlugin,
+      markdownWorkerUrlPlugin,
+      svgSpritePlugin,
+      cssPackageResolvePlugin,
+      internalLocalePrunePlugin,
+      solidPlugin(),
+      esbuildProblemMatcherPlugin,
+    ],
+  })
+}
+
+function removeMaps(dir) {
+  if (!fs.existsSync(dir)) return
+  for (const item of fs.readdirSync(dir)) {
+    const file = path.join(dir, item)
+    const stat = fs.statSync(file)
+    if (stat.isDirectory()) {
+      removeMaps(file)
+      continue
+    }
+    if (file.endsWith(".map")) fs.rmSync(file, { force: true })
+  }
+}
+
+// Bundle Pierre's Shiki worker into a single self-contained asset that the
+// webviews load off the main thread for syntax highlighting.
+function createShikiWorkerContext() {
+  return esbuild.context({
+    entryPoints: ["chipmate-shiki-worker"],
+    bundle: true,
+    format: "iife",
+    minify: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    platform: "browser",
+    outfile: "dist/shiki-worker.js",
+    logLevel: "silent",
+    define,
+    plugins: [shikiWorkerEntryPlugin, esbuildProblemMatcherPlugin],
+  })
+}
+
+function createMarkdownShikiWorkerContext() {
+  return esbuild.context({
+    entryPoints: [path.join(__dirname, "..", "ui", "src", "components", "markdown-shiki.worker.ts")],
+    bundle: true,
+    format: "esm",
+    minify: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    platform: "browser",
+    outfile: "dist/markdown-shiki-worker.js",
+    logLevel: "silent",
+    define,
+    plugins: [esbuildProblemMatcherPlugin],
+  })
+}
+
+async function main() {
+  // Build extension
+  const extensionCtx = await esbuild.context({
+    entryPoints: ["src/extension.ts"],
+    bundle: true,
+    format: "cjs",
+    // Identifier minification is disabled for the Node.js extension bundle because esbuild
+    // renames @aws-sdk/credential-providers re-exports and internal Symbols to the same
+    // short identifier in CJS mode, causing "J_ is not a function (J_ is a Symbol)" at
+    // runtime. Syntax and whitespace minification are kept; only identifier mangling is off.
+    minifyIdentifiers: false,
+    minifySyntax: production,
+    minifyWhitespace: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    platform: "node",
+    outfile: "dist/extension.js",
+    external: ["vscode"],
+    logLevel: "silent",
+    define: node,
+    plugins: [treeSitterRuntimePlugin, esbuildProblemMatcherPlugin],
+  })
+
+  // Build Agent Manager webview (SolidJS, shares components with sidebar)
+  const agentManagerCtx = await createBrowserWebviewContext(
+    "webview-ui/agent-manager/index.tsx",
+    "dist/agent-manager.js",
+  )
+
+  // Build Agent Console webview (standalone Agent/Shell hybrid terminal)
+  const agentConsoleCtx = await createBrowserWebviewContext(
+    "webview-ui/agent-console/index.tsx",
+    "dist/agent-console.js",
+  )
+
+  // Build ChipMateClaw webview (SolidJS, standalone chat panel)
+  const chipmateClawCtx = await createBrowserWebviewContext("webview-ui/chipmateclaw/index.tsx", "dist/chipmateclaw.js")
+
+  // Build Marketplace webview (SolidJS, standalone catalog panel)
+  const marketplaceCtx = await createBrowserWebviewContext("webview-ui/marketplace/index.tsx", "dist/marketplace.js")
+
+  // Build source-backed detailed design webview.
+  const designDocCtx = await createBrowserWebviewContext("webview-ui/design-doc/index.tsx", "dist/design-doc.js")
+
+  // Build Diff Viewer webview (SolidJS, reuses Agent Manager diff components)
+  const diffViewerCtx = await createBrowserWebviewContext("webview-ui/diff-viewer/index.tsx", "dist/diff-viewer.js")
+
+  // Build Diff Virtual webview (lightweight single-file diff for permission approval)
+  const diffVirtualCtx = await createBrowserWebviewContext("webview-ui/diff-virtual/index.tsx", "dist/diff-virtual.js")
+
+  // Build webview
+  const webviewCtx = await createBrowserWebviewContext("webview-ui/src/index.tsx", "dist/webview.js")
+
+  // Build the shared Shiki highlighting worker asset
+  const shikiWorkerCtx = await createShikiWorkerContext()
+  const markdownShikiWorkerCtx = await createMarkdownShikiWorkerContext()
+
+  if (watch) {
+    await Promise.all([
+      extensionCtx.watch(),
+      webviewCtx.watch(),
+      agentManagerCtx.watch(),
+      agentConsoleCtx.watch(),
+      diffViewerCtx.watch(),
+      diffVirtualCtx.watch(),
+      chipmateClawCtx.watch(),
+      marketplaceCtx.watch(),
+      designDocCtx.watch(),
+      shikiWorkerCtx.watch(),
+      markdownShikiWorkerCtx.watch(),
+    ])
+  } else {
+    await Promise.all([
+      extensionCtx.rebuild(),
+      webviewCtx.rebuild(),
+      agentManagerCtx.rebuild(),
+      agentConsoleCtx.rebuild(),
+      chipmateClawCtx.rebuild(),
+      marketplaceCtx.rebuild(),
+      designDocCtx.rebuild(),
+      diffViewerCtx.rebuild(),
+      diffVirtualCtx.rebuild(),
+      shikiWorkerCtx.rebuild(),
+      markdownShikiWorkerCtx.rebuild(),
+    ])
+    if (internalOffline) removeMaps(path.join(__dirname, "dist"))
+    await Promise.all([
+      extensionCtx.dispose(),
+      webviewCtx.dispose(),
+      agentManagerCtx.dispose(),
+      agentConsoleCtx.dispose(),
+      diffViewerCtx.dispose(),
+      diffVirtualCtx.dispose(),
+      chipmateClawCtx.dispose(),
+      marketplaceCtx.dispose(),
+      designDocCtx.dispose(),
+      shikiWorkerCtx.dispose(),
+      markdownShikiWorkerCtx.dispose(),
+    ])
+  }
+}
+
+main().catch((e) => {
+  console.error(e)
+  process.exit(1)
+})

@@ -46,7 +46,7 @@ scan also creates security-agent work.
 - Keep all child processes behind the existing shared `Semaphore` and abort
   controller.
 - Keep the implementation in the VS Code extension. Do not move polling back
-  to `kilo serve` because the local path intentionally avoids Bun child-process
+  to `chipmate serve` because the local path intentionally avoids Bun child-process
   memory growth on Windows.
 - Do not include the separate Git executable resolution / macOS double-exec
   work. That can land independently.
@@ -241,7 +241,7 @@ justify their compatibility and maintenance cost.
 
 ### 1. Add a polling snapshot module
 
-Create `packages/kilo-vscode/src/agent-manager/git-stats-snapshot.ts` as a
+Create `packages/chipmate-vscode/src/agent-manager/git-stats-snapshot.ts` as a
 VS Code-free module. Keep parsing, hashing, cache decisions, and aggregation out
 of `GitStatsPoller.ts` so the existing file does not grow into another mixed
 responsibility controller.
@@ -398,13 +398,13 @@ process reductions are not a substitute for that measurement.
 
 ## Verification
 
-From `packages/kilo-vscode/`:
+From `packages/chipmate-vscode/`:
 
 - `bun run test:unit -- --grep "GitStatsPoller|diffSummary|GitOps|parseWorktreeList"`
 - `bun run typecheck`
 - `bun run lint`
 - `bun run knip`
-- `bun run check-kilocode-change`
+- `bun run check-chipmate-change`
 
 Manually verify that Agent Manager stats update within one visible poll after
 editing, staging, committing, switching branches, and updating a local tracking

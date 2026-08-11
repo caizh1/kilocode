@@ -1,6 +1,6 @@
 ---
 description: git commit and push
-model: kilo/z-ai/glm-4.7
+model: chipmate/z-ai/glm-4.7
 subtask: true
 ---
 

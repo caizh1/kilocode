@@ -4,7 +4,7 @@ import { AgentV2 } from "@opencode-ai/core/agent"
 import { PluginV2 } from "@opencode-ai/core/plugin"
 import { PluginHost } from "@opencode-ai/core/plugin/host"
 import { PluginPromise } from "@opencode-ai/core/plugin/promise"
-import { define } from "@kilocode/plugin/v2/promise"
+import { define } from "@chipmate/plugin/v2/promise"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
 

@@ -89,9 +89,9 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
       data-component="select"
       data-trigger-style={local.triggerVariant}
       placement={local.triggerVariant === "settings" ? "bottom-end" : "bottom-start"}
-      overlap={local.triggerVariant === "settings"} // kilocode_change
-      fitViewport={local.triggerVariant === "settings"} // kilocode_change
-      overflowPadding={local.triggerVariant === "settings" ? 12 : undefined} // kilocode_change
+      overlap={local.triggerVariant === "settings"} // chipmate_change
+      fitViewport={local.triggerVariant === "settings"} // chipmate_change
+      overflowPadding={local.triggerVariant === "settings" ? 12 : undefined} // chipmate_change
       gutter={4}
       value={local.current}
       options={grouped()}

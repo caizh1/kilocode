@@ -257,9 +257,9 @@ describe("InstructionContext", () => {
 
   it.effect("honors the project instruction opt-out", () =>
     Effect.gen(function* () {
-      const previous = process.env.KILO_DISABLE_PROJECT_CONFIG
+      const previous = process.env.CHIPMATE_DISABLE_PROJECT_CONFIG
       let scanned = false
-      process.env.KILO_DISABLE_PROJECT_CONFIG = "1"
+      process.env.CHIPMATE_DISABLE_PROJECT_CONFIG = "1"
 
       yield* SystemContextRegistry.Service.pipe(
         Effect.flatMap((service) => service.load()),
@@ -280,8 +280,8 @@ describe("InstructionContext", () => {
         ),
         Effect.ensuring(
           Effect.sync(() => {
-            if (previous === undefined) delete process.env.KILO_DISABLE_PROJECT_CONFIG
-            else process.env.KILO_DISABLE_PROJECT_CONFIG = previous
+            if (previous === undefined) delete process.env.CHIPMATE_DISABLE_PROJECT_CONFIG
+            else process.env.CHIPMATE_DISABLE_PROJECT_CONFIG = previous
           }),
         ),
       )

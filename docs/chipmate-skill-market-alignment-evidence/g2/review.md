@@ -21,7 +21,7 @@ Status: `COMPLETE`
 - `server/chipmate-word-render/server.js`
 - `server/chipmate-word-render/README.md`
 - `docs/chipmate-skill-market-alignment-evidence/g2/review.md`
-- `docs/chipmate-skill-market-kilo-alignment-plan.md`
+- `docs/chipmate-skill-market-chipmate-alignment-plan.md`
 
 ## Design Summary
 
@@ -37,7 +37,7 @@ Status: `COMPLETE`
 - 旧/新服务真实启动为两个独立 HTTP 进程。
 - 对照覆盖：health、VSIX manifest、Skill catalog、market manifest、Skill 文件清单、Skill 归档、缺失归档、未知路由、Word 错误、Mermaid 错误、New API identity 错误、Skill 上传未授权、stars 未授权。
 - 动态 `generatedAt`、`elapsedMs` 和 origin 只在测试比较器中规范化；其余状态码、content-type 和 JSON 结构要求一致。
-- 真实 VSIX：`kilo-vscode-linux-x64-baseline.vsix`，manifest 必须发现 1 个包；旧/新服务流式下载后的 SHA-256 都必须等于 G0 的 `927b8575a392a87775d69fc4cbdbf9989a23b6f7ac3b5effaaf8eb4846f049b7`。
+- 真实 VSIX：`chipmate-vscode-linux-x64-baseline.vsix`，manifest 必须发现 1 个包；旧/新服务流式下载后的 SHA-256 都必须等于 G0 的 `927b8575a392a87775d69fc4cbdbf9989a23b6f7ac3b5effaaf8eb4846f049b7`。
 - 真实 Skill archive：`source-backed-detail-design.tar.gz`，catalog 必须发现 1 个 Skill，归档 SHA-256 必须一致。
 
 ## Commands Run
@@ -90,7 +90,7 @@ Status: `COMPLETE`
 
 - 当前 Fastify adapter 仍调用单体 `server.js` 的 request core；这是刻意的 G2 低风险兼容边界。后续模块拆分必须继续通过本黑盒门禁。
 - Dockerfile 已升级 Node 24，但当前 Docker daemon 不可用，尚无镜像构建或容器内运行证据。
-- aligned-v1 API、SQLite、Web 页面和 Kilo capability fallback 均未在 G2 实现。
+- aligned-v1 API、SQLite、Web 页面和 ChipMate capability fallback 均未在 G2 实现。
 
 ## Next Recommended Gate
 

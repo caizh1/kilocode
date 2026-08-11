@@ -53,7 +53,7 @@ export const dict = {
 
   "dialog.usageExceeded.freeTier.title": "Gratis grænse nået",
   "dialog.usageExceeded.freeTier.description":
-    "Abonnér på Kilo Go for pålidelig adgang til de bedste open source-modeller, fra $5/måned.",
+    "Abonnér på ChipMate Go for pålidelig adgang til de bedste open source-modeller, fra $5/måned.",
   "dialog.usageExceeded.freeTier.actionLabel": "Abonnér",
   "dialog.usageExceeded.accountRateLimit.title": "Go-grænse nået",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -104,7 +104,7 @@ export const dict = {
   "ui.textField.copied": "Kopieret",
 
   "ui.imagePreview.alt": "Billedforhåndsvisning",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Renderer Mermaid-diagram...",
   "ui.mermaid.renderError": "Mermaid-rendering mislykkedes: {{message}}",
   "ui.mermaid.errorDefault": "Kan ikke rendere Mermaid-diagram.",
@@ -126,12 +126,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "rulbart indhold",
 
   "ui.tool.read": "Læs",
   "ui.tool.loaded": "Indlæst",
-  "ui.tool.swePruned": "SWE-Pruner · {{kept}} af {{total}} linjer beholdt", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · {{kept}} af {{total}} linjer beholdt", // chipmate_change
   "ui.tool.list": "Liste",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -167,7 +167,7 @@ export const dict = {
   "ui.message.collapse": "Skjul besked",
   "ui.message.copy": "Kopier",
   "ui.message.copyMessage": "Kopier besked",
-  "ui.message.deleteQueued": "Slet besked i kø", // kilocode_change
+  "ui.message.deleteQueued": "Slet besked i kø", // chipmate_change
   "ui.message.forkMessage": "Forgren til ny session",
   "ui.message.revertMessage": "Nulstil til dette punkt",
   "ui.message.copyResponse": "Kopier svar",
@@ -183,9 +183,9 @@ export const dict = {
   "ui.patch.action.patched": "Patchet",
 
   "ui.question.subtitle.answered": "{{count}} besvaret",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(intet svar)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(ikke besvaret)",
   "ui.question.multiHint": "Vælg alle der gælder",
   "ui.question.singleHint": "Vælg ét svar",

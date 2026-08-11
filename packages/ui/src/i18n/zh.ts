@@ -57,7 +57,7 @@ export const dict = {
   "ui.sessionTurn.error.addCredits": "添加积分",
 
   "dialog.usageExceeded.freeTier.title": "免费额度已用完",
-  "dialog.usageExceeded.freeTier.description": "订阅 Kilo Go，可靠地使用最佳开源模型，每月 $5 起。",
+  "dialog.usageExceeded.freeTier.description": "订阅 ChipMate Go，可靠地使用最佳开源模型，每月 $5 起。",
   "dialog.usageExceeded.freeTier.actionLabel": "订阅",
   "dialog.usageExceeded.accountRateLimit.title": "Go 额度已用完",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -108,7 +108,7 @@ export const dict = {
   "ui.textField.copied": "已复制",
 
   "ui.imagePreview.alt": "图片预览",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "正在渲染 Mermaid 图表...",
   "ui.mermaid.renderError": "Mermaid 渲染失败：{{message}}",
   "ui.mermaid.errorDefault": "无法渲染 Mermaid 图表。",
@@ -130,12 +130,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "准备修复",
   "ui.mermaid.repairPrompt":
     "请修复下面的 Mermaid 语法错误，并保持图表原意不变。只返回一个有效的 Mermaid fenced code block，不要添加其他解释。\n\n解析错误：\n{{error}}\n\n源码：\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "可滚动内容",
 
   "ui.tool.read": "读取",
   "ui.tool.loaded": "已加载",
-  "ui.tool.swePruned": "SWE-Pruner · 保留 {{total}} 行中的 {{kept}} 行", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · 保留 {{total}} 行中的 {{kept}} 行", // chipmate_change
   "ui.tool.list": "列表",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -171,7 +171,7 @@ export const dict = {
   "ui.message.collapse": "收起消息",
   "ui.message.copy": "复制",
   "ui.message.copyMessage": "复制消息",
-  "ui.message.deleteQueued": "删除排队中的消息", // kilocode_change
+  "ui.message.deleteQueued": "删除排队中的消息", // chipmate_change
   "ui.message.forkMessage": "分叉到新会话",
   "ui.message.revertMessage": "重置到此点",
   "ui.message.copyResponse": "复制回复",
@@ -187,9 +187,9 @@ export const dict = {
   "ui.patch.action.patched": "已应用补丁",
 
   "ui.question.subtitle.answered": "{{count}} 已回答",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(无答案)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(未回答)",
   "ui.question.multiHint": "可多选",
   "ui.question.singleHint": "选择一个答案",

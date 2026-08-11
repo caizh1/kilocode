@@ -1,17 +1,17 @@
-// kilocode_change - new file
+// chipmate_change - new file
 import { Effect, Schema } from "effect"
 import { EffectBridge } from "../effect/bridge"
 import * as Tool from "./tool"
 import { Git } from "../git"
-import { Instance } from "../kilocode/instance"
+import { Instance } from "../chipmate/instance"
 import { Locale } from "../util/locale"
-import { Filesystem } from "../util/filesystem" // kilocode_change
-import { WorktreeFamily } from "../kilocode/worktree-family" // kilocode_change
-import { Session } from "../session/session" // kilocode_change
-import { SessionID } from "../session/schema" // kilocode_change
-import { RecallSearch } from "../kilocode/session/recall-search" // kilocode_change
-import { SessionTranscript } from "../kilocode/session/transcript" // kilocode_change
-import { KiloSessionPromptQueue } from "../kilocode/session/prompt-queue" // kilocode_change
+import { Filesystem } from "../util/filesystem" // chipmate_change
+import { WorktreeFamily } from "../chipmate/worktree-family" // chipmate_change
+import { Session } from "../session/session" // chipmate_change
+import { SessionID } from "../session/schema" // chipmate_change
+import { RecallSearch } from "../chipmate/session/recall-search" // chipmate_change
+import { SessionTranscript } from "../chipmate/session/transcript" // chipmate_change
+import { ChipMateSessionPromptQueue } from "../chipmate/session/prompt-queue" // chipmate_change
 import DESCRIPTION from "./recall.txt"
 
 const Parameters = Schema.Struct({
@@ -30,10 +30,10 @@ const Parameters = Schema.Struct({
 })
 
 export const RecallTool = Tool.define(
-  "kilo_local_recall",
+  "chipmate_local_recall",
   Effect.gen(function* () {
     const git = yield* Git.Service
-    const sessions = yield* Session.Service // kilocode_change
+    const sessions = yield* Session.Service // chipmate_change
     return {
       description: DESCRIPTION,
       parameters: Parameters,
@@ -69,8 +69,8 @@ async function search(
     },
   })
 
-  const dirs = await bridge.promise(WorktreeFamily.list().pipe(Effect.provideService(Git.Service, git))) // kilocode_change
-  const boundary = KiloSessionPromptQueue.active(ctx.sessionID) ?? RecallSearch.active(ctx.messages, ctx.messageID)
+  const dirs = await bridge.promise(WorktreeFamily.list().pipe(Effect.provideService(Git.Service, git))) // chipmate_change
+  const boundary = ChipMateSessionPromptQueue.active(ctx.sessionID) ?? RecallSearch.active(ctx.messages, ctx.messageID)
   const found = await bridge.promise(
     RecallSearch.search({
       query: params.query,
@@ -81,7 +81,7 @@ async function search(
       excludeSessionID: ctx.sessionID,
       excludeFromMessageID: boundary,
     }),
-  ) // kilocode_change
+  ) // chipmate_change
 
   const coverage = `Searched ${found.sessions} sessions and evaluated ${found.candidates} transcript candidates.`
   const query = RecallSearch.inert(params.query)
@@ -128,15 +128,15 @@ async function read(
   const session = await bridge.promise(sessions.get(SessionID.make(params.sessionID))).catch(() => {
     throw new Error("Session not found. Use search mode first to find valid session IDs.")
   })
-  const dirs = await bridge.promise(WorktreeFamily.list().pipe(Effect.provideService(Git.Service, git))) // kilocode_change
-  // kilocode_change start
+  const dirs = await bridge.promise(WorktreeFamily.list().pipe(Effect.provideService(Git.Service, git))) // chipmate_change
+  // chipmate_change start
   const dir = Filesystem.resolve(session.directory)
   if (!dirs.some((root) => Filesystem.contains(root, dir))) {
     throw new Error(
       `Session "${RecallSearch.inert(session.id)}" belongs to a different workspace and cannot be read from this directory.`,
     )
   }
-  // kilocode_change end
+  // chipmate_change end
 
   const cross = session.projectID !== Instance.project.id
   if (cross) {
@@ -153,7 +153,7 @@ async function read(
   }
 
   const msgs = await bridge.promise(sessions.messages({ sessionID: session.id }))
-  const boundary = KiloSessionPromptQueue.active(ctx.sessionID) ?? RecallSearch.active(ctx.messages, ctx.messageID)
+  const boundary = ChipMateSessionPromptQueue.active(ctx.sessionID) ?? RecallSearch.active(ctx.messages, ctx.messageID)
   const visible = session.id === ctx.sessionID ? RecallSearch.visible(msgs, boundary) : msgs
 
   return {

@@ -16,7 +16,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { AppProcess } from "@opencode-ai/core/process"
 import { InstanceState } from "@/effect/instance-state"
-import { WorktreeCleanup } from "@/kilocode/worktree-cleanup" // kilocode_change
+import { WorktreeCleanup } from "@/chipmate/worktree-cleanup" // chipmate_change
 import { WorktreeEvent } from "@opencode-ai/schema/worktree-event"
 
 export const Event = WorktreeEvent
@@ -366,7 +366,7 @@ const layer: Layer.Layer<
       )
     }
 
-    // kilocode_change start - use Kilo cleanup helper for slow Windows handle release
+    // chipmate_change start - use ChipMate cleanup helper for slow Windows handle release
     function cleanDirectory(target: string) {
       return Effect.tryPromise({
         try: () => WorktreeCleanup.removeDirectory(target),
@@ -374,7 +374,7 @@ const layer: Layer.Layer<
           new RemoveFailedError({ message: errorMessage(error) || "Failed to remove git worktree directory" }),
       })
     }
-    // kilocode_change end
+    // chipmate_change end
 
     const remove = Effect.fn("Worktree.remove")(function* (input: RemoveInput) {
       const ctx = yield* InstanceState.context
@@ -411,7 +411,7 @@ const layer: Layer.Layer<
         target: entry.path,
         git,
         stop: stopFsmonitor,
-      }) // kilocode_change
+      }) // chipmate_change
       if (removed.code !== 0) {
         const next = yield* git(["worktree", "list", "--porcelain"], { cwd: ctx.worktree })
         if (next.code !== 0) {

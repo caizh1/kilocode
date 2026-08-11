@@ -1,11 +1,11 @@
 import { createConnection } from "net"
 import { createServer } from "http"
 import { escapeHtml } from "@/util/html"
-import * as Log from "@opencode-ai/core/util/log" // kilocode_change
+import * as Log from "@opencode-ai/core/util/log" // chipmate_change
 import { OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH, parseRedirectUri } from "./oauth-provider"
-import * as KiloOAuthCallback from "../kilocode/mcp-oauth-callback" // kilocode_change
+import * as ChipMateOAuthCallback from "../chipmate/mcp-oauth-callback" // chipmate_change
 
-const log = Log.create({ service: "mcp.oauth-callback" }) // kilocode_change
+const log = Log.create({ service: "mcp.oauth-callback" }) // chipmate_change
 
 // Current callback server configuration (may differ from defaults if custom redirectUri is used)
 let currentPort = OAUTH_CALLBACK_PORT
@@ -14,9 +14,9 @@ let currentPath = OAUTH_CALLBACK_PATH
 const HTML_SUCCESS = `<!DOCTYPE html>
 <html>
 <head>
-  <!-- kilocode_change start -->
-  <title>Kilo - Authorization Successful</title>
-  <!-- kilocode_change end -->
+  <!-- chipmate_change start -->
+  <title>ChipMate - Authorization Successful</title>
+  <!-- chipmate_change end -->
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a2e; color: #eee; }
     .container { text-align: center; padding: 2rem; }
@@ -27,9 +27,9 @@ const HTML_SUCCESS = `<!DOCTYPE html>
 <body>
   <div class="container">
     <h1>Authorization Successful</h1>
-    <!-- kilocode_change start -->
-    <p>You can close this window and return to Kilo.</p>
-    <!-- kilocode_change end -->
+    <!-- chipmate_change start -->
+    <p>You can close this window and return to ChipMate.</p>
+    <!-- chipmate_change end -->
   </div>
   <script>setTimeout(() => window.close(), 2000);</script>
 </body>
@@ -38,9 +38,9 @@ const HTML_SUCCESS = `<!DOCTYPE html>
 const HTML_ERROR = (error: string) => `<!DOCTYPE html>
 <html>
 <head>
-  <!-- kilocode_change start -->
-  <title>Kilo - Authorization Failed</title>
-  <!-- kilocode_change end -->
+  <!-- chipmate_change start -->
+  <title>ChipMate - Authorization Failed</title>
+  <!-- chipmate_change end -->
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a2e; color: #eee; }
     .container { text-align: center; padding: 2rem; }
@@ -152,8 +152,8 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
 }
 
 export async function ensureRunning(redirectUri?: string): Promise<void> {
-  // kilocode_change start - delegate Kilo-specific callback binding from here because OAuth state lives in this module
-  await KiloOAuthCallback.ensureRunning({
+  // chipmate_change start - delegate ChipMate-specific callback binding from here because OAuth state lives in this module
+  await ChipMateOAuthCallback.ensureRunning({
     redirectUri,
     parse: parseRedirectUri,
     state: () => ({ server, port: currentPort, path: currentPath }),
@@ -167,7 +167,7 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
     info: (msg, data) => log.info(msg, data),
     error: (msg, data) => log.error(msg, data),
   })
-  // kilocode_change end
+  // chipmate_change end
 }
 
 export function waitForCallback(oauthState: string, mcpName?: string): Promise<string> {

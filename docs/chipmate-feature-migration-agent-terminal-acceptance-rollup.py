@@ -85,7 +85,7 @@ def main() -> int:
         ),
         "extensionHostSummaryExists": bool(extension_host_text),
         "extensionHostPass": "Exit code: 0" in extension_host_text and "3 passing" in extension_host_text,
-        "extensionHostKeepsNativeAndSidecar": "keeps native Kilo contributions present while adding sidecar document and Agent Terminal contributions" in extension_host_text,
+        "extensionHostKeepsNativeAndSidecar": "keeps native ChipMate contributions present while adding sidecar document and Agent Terminal contributions" in extension_host_text,
         "installedLinuxSummaryExists": bool(installed_linux_text),
         "installedLinuxPass": "Install exit code: 0" in installed_linux_text and "Test exit code: 0" in installed_linux_text and "2 passing" in installed_linux_text,
         "installedLinuxSafeSidecarCommands": "executes safe installed sidecar commands without replacing native commands" in installed_linux_text,

@@ -192,7 +192,7 @@ Affected schema:
 
 Change:
 
-- Spill oversized model-facing tool text into globally unique files under Kilo's shared tool-output directory.
+- Spill oversized model-facing tool text into globally unique files under ChipMate's shared tool-output directory.
 - Include the absolute file path in the bounded preview so ordinary `read`, `grep`, and `bash` operations can inspect it.
 
 Reason:
@@ -793,7 +793,7 @@ Change:
 - Retry Context Epoch preparation until stable after optimistic revision mismatches.
 - Clear the active Context Epoch when a Session moves so the destination initializes a complete baseline before promoting more input.
 - Fence Context Epoch initialization against the authoritative Session Location so a concurrent old-Location runner cannot recreate stale privileged context after a move.
-- Canonicalize ambient instruction traversal boundaries, honor `KILO_DISABLE_PROJECT_CONFIG`, and make non-empty aggregate updates explicitly supersede previously loaded instructions.
+- Canonicalize ambient instruction traversal boundaries, honor `CHIPMATE_DISABLE_PROJECT_CONFIG`, and make non-empty aggregate updates explicitly supersede previously loaded instructions.
 
 Compatibility:
 

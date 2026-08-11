@@ -4,9 +4,9 @@ set -euo pipefail
 EXPECTED_VERSION="0.0.38"
 EXPECTED_BUNDLE_SHA="97a70108ae648a1998168d679c3c65638ea7756926860fad113cd06c31d2dba5"
 EXPECTED_BUNDLE_SIZE="317784738"
-EXPECTED_LINUX_VSIX="kilo-vscode-linux-x64-baseline.vsix"
+EXPECTED_LINUX_VSIX="chipmate-vscode-linux-x64-baseline.vsix"
 EXPECTED_LINUX_SHA="95218162b0d0a09c6425c80a10e9745569c1b021edd9d666a5f43278d31458ad"
-EXPECTED_WINDOWS_VSIX="kilo-vscode-win32-x64-baseline.vsix"
+EXPECTED_WINDOWS_VSIX="chipmate-vscode-win32-x64-baseline.vsix"
 EXPECTED_WINDOWS_SHA="3c6b9943ecf8259379c6f75b1ff321bb83677c092aac3974584524fcd90e489d"
 
 usage() {
@@ -126,8 +126,8 @@ def verify(path: pathlib.Path, member: str, label: str) -> None:
             raise SystemExit(f"{label}: forbidden old ChipMate contract marker present: {name}")
     print(f"{label}: CLI marker boundary OK")
 
-verify(pathlib.Path(sys.argv[1]), "extension/bin/kilo", "linux")
-verify(pathlib.Path(sys.argv[2]), "extension/bin/kilo.exe", "windows")
+verify(pathlib.Path(sys.argv[1]), "extension/bin/chipmate", "linux")
+verify(pathlib.Path(sys.argv[2]), "extension/bin/chipmate.exe", "windows")
 PY
 
 grep -F "\"version\": \"${EXPECTED_VERSION}\"" "$WORK_DIR/OFFLINE_RELEASE_INDEX-chipmate-${EXPECTED_VERSION}.json" >/dev/null 2>&1 || fail "release index json does not contain expected version"

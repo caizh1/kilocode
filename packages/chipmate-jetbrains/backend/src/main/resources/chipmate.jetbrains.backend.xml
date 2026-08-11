@@ -1,0 +1,24 @@
+<idea-plugin>
+    <dependencies>
+        <module name="intellij.platform.backend"/>
+        <module name="intellij.platform.kernel.backend"/>
+        <module name="chipmate.jetbrains.shared"/>
+    </dependencies>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <platform.rpc.backend.remoteApiProvider implementation="ai.chipmate.backend.rpc.ChipMateAppRpcApiProvider"/>
+        <platform.rpc.backend.remoteApiProvider implementation="ai.chipmate.backend.rpc.ChipMateAgentBehaviorRpcApiProvider"/>
+        <platform.rpc.backend.remoteApiProvider implementation="ai.chipmate.backend.rpc.ChipMateProviderRpcApiProvider"/>
+        <platform.rpc.backend.remoteApiProvider implementation="ai.chipmate.backend.rpc.ChipMateProjectRpcApiProvider"/>
+        <platform.rpc.backend.remoteApiProvider implementation="ai.chipmate.backend.rpc.ChipMateSessionRpcApiProvider"/>
+        <platform.rpc.backend.remoteApiProvider implementation="ai.chipmate.backend.rpc.ChipMateMigrationRpcApiProvider"/>
+        <applicationService serviceImplementation="ai.chipmate.backend.migration.ChipMateBackendLegacyMigrationStoreService"/>
+    </extensions>
+
+    <applicationListeners>
+        <listener class="ai.chipmate.backend.plugin.ChipMateBackendAppLifecycleListener"
+                  topic="com.intellij.ide.AppLifecycleListener"/>
+        <listener class="ai.chipmate.backend.plugin.ChipMateBackendDynamicPluginListener"
+                  topic="com.intellij.ide.plugins.DynamicPluginListener"/>
+    </applicationListeners>
+</idea-plugin>

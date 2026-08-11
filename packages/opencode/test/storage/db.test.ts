@@ -12,8 +12,8 @@ describe("Database.getChannelPath", () => {
     Effect.gen(function* () {
       const flags = yield* RuntimeFlags.Service
       const expected = ["latest", "beta", "prod"].includes(InstallationChannel)
-        ? path.join(Global.Path.data, "kilo.db")
-        : path.join(Global.Path.data, `kilo-${InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")}.db`) // kilocode_change
+        ? path.join(Global.Path.data, "chipmate.db")
+        : path.join(Global.Path.data, `chipmate-${InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")}.db`) // chipmate_change
 
       expect(Database.getChannelPath(flags)).toBe(expected)
     }).pipe(Effect.provide(RuntimeFlags.layer())),
@@ -23,7 +23,7 @@ describe("Database.getChannelPath", () => {
     Effect.gen(function* () {
       const flags = yield* RuntimeFlags.Service
 
-      expect(Database.getChannelPath(flags)).toBe(path.join(Global.Path.data, "kilo.db"))
+      expect(Database.getChannelPath(flags)).toBe(path.join(Global.Path.data, "chipmate.db"))
     }).pipe(Effect.provide(RuntimeFlags.layer({ disableChannelDb: true }))),
   )
 

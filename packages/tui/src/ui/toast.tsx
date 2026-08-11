@@ -62,7 +62,7 @@ function init() {
       const toastOptions = { ...options, duration: options.duration ?? 5000 }
       setStore("currentToast", toastOptions)
       if (timeoutHandle) clearTimeout(timeoutHandle)
-      // kilocode_change start
+      // chipmate_change start
       timeoutHandle = null
       if (toastOptions.duration && toastOptions.duration > 0) {
         timeoutHandle = setTimeout(() => {
@@ -76,7 +76,7 @@ function init() {
       timeoutHandle = null
       setStore("currentToast", null)
     },
-    // kilocode_change end
+    // chipmate_change end
     error: (err: any) => {
       if (err instanceof Error)
         return toast.show({

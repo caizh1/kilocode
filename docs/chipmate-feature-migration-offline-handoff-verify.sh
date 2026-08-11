@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 RUN_STAMP="$(date +%Y%m%d-%H%M%S)"
 RUN_DIR="${VALIDATION_RUN_DIR:-${REPO_ROOT}/docs/chipmate-feature-migration-validation-runs/${RUN_STAMP}-offline-handoff-verify}"
-OUT_DIR="${OUT_DIR:-${REPO_ROOT}/packages/kilo-vscode/out}"
+OUT_DIR="${OUT_DIR:-${REPO_ROOT}/packages/chipmate-vscode/out}"
 VERSION="${CHIPMATE_OFFLINE_VERSION:-0.0.38}"
 
 SUMS_FILE="${OUT_DIR}/SHA256SUMS-chipmate-${VERSION}-offline.txt"
@@ -25,7 +25,7 @@ Usage:
 
 Environment:
   VALIDATION_RUN_DIR          Optional output directory.
-  OUT_DIR                     VSIX out directory. Defaults to packages/kilo-vscode/out.
+  OUT_DIR                     VSIX out directory. Defaults to packages/chipmate-vscode/out.
   CHIPMATE_OFFLINE_VERSION    Offline release version. Defaults to 0.0.38.
 
 Checks:

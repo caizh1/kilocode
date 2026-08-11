@@ -3,9 +3,9 @@ import { useRouteData } from "../../context/route"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
 import { SplitBorder } from "../../ui/border"
-import { Spinner } from "@tui/component/spinner" // kilocode_change
-import { useLocal } from "@tui/context/local" // kilocode_change
-import type { AssistantMessage } from "@kilocode/sdk/v2"
+import { Spinner } from "@tui/component/spinner" // chipmate_change
+import { useLocal } from "@tui/context/local" // chipmate_change
+import type { AssistantMessage } from "@chipmate/sdk/v2"
 import { Locale } from "../../util/locale"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useCommandShortcut, useOpencodeKeymap } from "../../keymap"
@@ -13,11 +13,11 @@ import { useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 export function SubagentFooter() {
   const route = useRouteData("session")
   const sync = useSync()
-  const local = useLocal() // kilocode_change
+  const local = useLocal() // chipmate_change
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
   const session = createMemo(() => sync.session.get(route.sessionID))
 
-  // kilocode_change start
+  // chipmate_change start
   const lastAssistant = createMemo(() => messages().findLast((m) => m.role === "assistant"))
 
   const isRunning = createMemo(() => {
@@ -29,7 +29,7 @@ export function SubagentFooter() {
   })
 
   const agentColor = createMemo(() => local.agent.color(lastAssistant()?.agent ?? ""))
-  // kilocode_change end
+  // chipmate_change end
 
   const subagentInfo = createMemo(() => {
     const s = session()
@@ -102,11 +102,11 @@ export function SubagentFooter() {
                 ({subagentInfo().index} of {subagentInfo().total})
               </text>
             </Show>
-            {/* kilocode_change start */}
+            {/* chipmate_change start */}
             <Show when={isRunning()}>
               <Spinner color={agentColor()} />
             </Show>
-            {/* kilocode_change end */}
+            {/* chipmate_change end */}
             <Show when={usage()}>
               {(item) => (
                 <text fg={theme.textMuted} wrapMode="none">

@@ -1,0 +1,47 @@
+export const dict = {
+  "chipmate:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) Autofullføring",
+  "chipmate:autocomplete.statusBar.snoozed": "utsatt",
+  "chipmate:autocomplete.statusBar.warning": "$(warning) Autofullføring",
+  "chipmate:autocomplete.statusBar.tooltip.basic": "ChipMate autofullføring",
+  "chipmate:autocomplete.statusBar.tooltip.disabled": "ChipMate autofullføring (deaktivert)",
+  "chipmate:autocomplete.statusBar.tooltip.noUsableProvider":
+    "**Ingen autofullføringsmodell konfigurert**\n\nFor å aktivere autofullføring, legg til en profil med en av disse støttede leverandørene: {{providers}}.\n\n[Åpne innstillinger]({{command}})",
+  "chipmate:autocomplete.statusBar.tooltip.sessionTotal": "Total kostnad for økten:",
+  "chipmate:autocomplete.statusBar.tooltip.provider": "Leverandør:",
+  "chipmate:autocomplete.statusBar.tooltip.model": "Modell:",
+  "chipmate:autocomplete.statusBar.tooltip.profile": "Profil: ",
+  "chipmate:autocomplete.statusBar.tooltip.defaultProfile": "Standard",
+  "chipmate:autocomplete.statusBar.tooltip.completionSummary":
+    "Utførte {{count}} fullføringer mellom {{startTime}} og {{endTime}}, til en total kostnad på {{cost}}.",
+  "chipmate:autocomplete.statusBar.tooltip.providerInfo": "Autofullføringer leveres av {{model}} via {{provider}}.",
+  "chipmate:autocomplete.statusBar.cost.zero": "$0.00",
+  "chipmate:autocomplete.statusBar.cost.lessThanCent": "<$0.01",
+  "chipmate:autocomplete.toggleMessage": "ChipMate autofullføring {{status}}",
+  "chipmate:autocomplete.progress.title": "ChipMate",
+  "chipmate:autocomplete.progress.analyzing": "Analyserer koden din...",
+  "chipmate:autocomplete.progress.generating": "Genererer foreslåtte redigeringer...",
+  "chipmate:autocomplete.progress.processing": "Behandler foreslåtte redigeringer...",
+  "chipmate:autocomplete.progress.showing": "Viser foreslåtte redigeringer...",
+  "chipmate:autocomplete.input.title": "ChipMate: Hurtig oppgave",
+  "chipmate:autocomplete.input.placeholder": "f.eks. 'refaktorer denne funksjonen så den blir mer effektiv'",
+  "chipmate:autocomplete.commands.generateSuggestions": "ChipMate: Generer foreslåtte redigeringer",
+  "chipmate:autocomplete.commands.displaySuggestions": "Vis foreslåtte redigeringer",
+  "chipmate:autocomplete.commands.cancelSuggestions": "Avbryt foreslåtte redigeringer",
+  "chipmate:autocomplete.commands.applyCurrentSuggestion": "Bruk gjeldende foreslåtte redigering",
+  "chipmate:autocomplete.commands.applyAllSuggestions": "Bruk alle foreslåtte redigeringer",
+  "chipmate:autocomplete.commands.category": "ChipMate",
+  "chipmate:autocomplete.codeAction.title": "ChipMate: Foreslåtte redigeringer",
+  "chipmate:autocomplete.chatParticipant.fullName": "ChipMate-agent",
+  "chipmate:autocomplete.chatParticipant.name": "Agent",
+  "chipmate:autocomplete.chatParticipant.description":
+    "Jeg kan hjelpe deg med hurtige oppgaver og foreslåtte redigeringer.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.message":
+    "ChipMate autofullføring blokkeres av en konflikt med GitHub Copilot. For å fikse dette må du deaktivere Copilots inline-forslag.",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableCopilot": "Deaktiver Copilot",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableInlineAssist": "Deaktiver autofullføring",
+  "chipmate:autocomplete.creditsExhausted.message":
+    "ChipMate autofullføring er satt på pause. Mulige årsaker: ChipMate-kontoen din har ingen gjenværende kreditter, eller den konfigurerte API-nøkkelen (BYOK) har nådd kvotegrensen. Legg til ChipMate-kreditter eller kontroller API-nøkkelkonfigurasjonen for å gjenoppta autofullføring.",
+  "chipmate:autocomplete.creditsExhausted.addCredits": "Legg til kreditter",
+  "chipmate:autocomplete.authError.message":
+    "ChipMate autofullføring er satt på pause på grunn av et autentiseringsproblem. Mulige årsaker: du er ikke logget på ChipMate, eller API-nøkkelen din (BYOK) er ugyldig eller mangler. Logg inn igjen eller kontroller innstillingene for leverandørens API-nøkkel.",
+}

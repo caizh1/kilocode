@@ -55,7 +55,7 @@ export const dict: Record<string, string> = {
 
   "dialog.usageExceeded.freeTier.title": "Free limit reached",
   "dialog.usageExceeded.freeTier.description":
-    "Subscribe to Kilo Go for reliable access to the best open-source models, starting at $5/month.",
+    "Subscribe to ChipMate Go for reliable access to the best open-source models, starting at $5/month.",
   "dialog.usageExceeded.freeTier.actionLabel": "Subscribe",
   "dialog.usageExceeded.accountRateLimit.title": "Go limit reached",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -111,7 +111,7 @@ export const dict: Record<string, string> = {
   "ui.textField.copied": "Copied",
 
   "ui.imagePreview.alt": "Image preview",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Rendering Mermaid diagram...",
   "ui.mermaid.renderError": "Mermaid render failed: {{message}}",
   "ui.mermaid.errorDefault": "Unable to render Mermaid diagram.",
@@ -133,12 +133,12 @@ export const dict: Record<string, string> = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "scrollable content",
 
   "ui.tool.read": "Read",
   "ui.tool.loaded": "Loaded",
-  "ui.tool.swePruned": "SWE-Pruner · kept {{kept}} of {{total}} lines", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · kept {{kept}} of {{total}} lines", // chipmate_change
   "ui.tool.list": "List",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -180,7 +180,7 @@ export const dict: Record<string, string> = {
   "ui.message.collapse": "Collapse message",
   "ui.message.copy": "Copy",
   "ui.message.copyMessage": "Copy message",
-  "ui.message.deleteQueued": "Delete queued message", // kilocode_change
+  "ui.message.deleteQueued": "Delete queued message", // chipmate_change
   "ui.message.forkMessage": "Fork to new session",
   "ui.message.revertMessage": "Revert to here",
   "ui.message.copyResponse": "Copy response",
@@ -197,9 +197,9 @@ export const dict: Record<string, string> = {
   "ui.patch.action.patched": "Patched",
 
   "ui.question.subtitle.answered": "{{count}} answered",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(no answer)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(not answered)",
   "ui.question.multiHint": "Select all answers that apply",
   "ui.question.singleHint": "Select one answer",

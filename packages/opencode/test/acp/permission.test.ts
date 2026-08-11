@@ -5,7 +5,7 @@ import type {
   RequestPermissionResponse,
   SessionUpdate,
 } from "@agentclientprotocol/sdk"
-import type { Event, KiloClient } from "@kilocode/sdk/v2"
+import type { Event, ChipMateClient } from "@chipmate/sdk/v2"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { createTwoFilesPatch } from "diff"
 import { Effect, ManagedRuntime } from "effect"
@@ -16,7 +16,7 @@ import { ACPEvent } from "@/acp/event"
 import { ACPSession } from "@/acp/session"
 
 type PermissionEvent = Extract<Event, { type: "permission.asked" }>
-type PermissionReplyParams = Parameters<KiloClient["permission"]["reply"]>[0]
+type PermissionReplyParams = Parameters<ChipMateClient["permission"]["reply"]>[0]
 type SessionUpdateParams = Parameters<AgentSideConnection["sessionUpdate"]>[0]
 const cleanupDirs: string[] = []
 
@@ -61,7 +61,7 @@ function createHarness(
     session: {
       message: () => Promise.resolve({ data: undefined }),
     },
-  } as unknown as KiloClient
+  } as unknown as ChipMateClient
   const connection = {
     requestPermission: (params: RequestPermissionRequest) => {
       requests.push(params)
@@ -180,11 +180,11 @@ describe("acp permissions", () => {
         { optionId: "reject", kind: "reject_once", name: "Reject" },
       ],
     })
-    // kilocode_change start - human selections are marked interactive
+    // chipmate_change start - human selections are marked interactive
     expect(harness.replies).toEqual([
       { requestID: "perm_1", reply: "once", directory: "/workspace", interactive: true },
     ])
-    // kilocode_change end
+    // chipmate_change end
   })
 
   it("uses permission metadata for non-shell titles", async () => {
@@ -333,7 +333,7 @@ describe("acp permissions", () => {
     })
   })
 
-  // kilocode_change start - skill shell batches surface their command list and cannot be persisted
+  // chipmate_change start - skill shell batches surface their command list and cannot be persisted
   it("forwards skill shell commands and omits the persist option", async () => {
     const harness = createHarness()
     await createSession(harness.session, "ses_a")
@@ -364,7 +364,7 @@ describe("acp permissions", () => {
     // the human selection is marked interactive so the server accepts the approval
     expect(harness.replies[0]).toMatchObject({ requestID: "perm_skill", reply: "once", interactive: true })
   })
-  // kilocode_change end
+  // chipmate_change end
 
   it("rejects non-selected outcomes", async () => {
     const harness = createHarness(() => Promise.resolve({ outcome: { outcome: "cancelled" } }))

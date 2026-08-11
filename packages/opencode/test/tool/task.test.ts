@@ -3,7 +3,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect" // kilocode_change - Cause for resume-hint coverage
+import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect" // chipmate_change - Cause for resume-hint coverage
 import { Agent } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -11,13 +11,13 @@ import { Config } from "@/config/config"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { Session } from "@/session/session"
-import { MessageV2 } from "@/session/message-v2" // kilocode_change
+import { MessageV2 } from "@/session/message-v2" // chipmate_change
 import type { SessionPrompt } from "../../src/session/prompt"
-import { MessageID, PartID, SessionID } from "../../src/session/schema" // kilocode_change - SessionID used by cost propagation tests
+import { MessageID, PartID, SessionID } from "../../src/session/schema" // chipmate_change - SessionID used by cost propagation tests
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
-import { Provider } from "../../src/provider/provider" // kilocode_change
-import { KiloSession } from "../../src/kilocode/session" // kilocode_change
+import { Provider } from "../../src/provider/provider" // chipmate_change
+import { ChipMateSession } from "../../src/chipmate/session" // chipmate_change
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
@@ -50,7 +50,7 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
       SessionStatus.node,
       Truncate.node,
       ToolRegistry.node,
-      Provider.node, // kilocode_change
+      Provider.node, // chipmate_change
       Database.node,
       RuntimeFlags.node,
       Ripgrep.node,
@@ -99,7 +99,7 @@ const seed = Effect.fn("TaskToolTest.seed")(function* (title = "Pinned") {
   return { chat, assistant }
 })
 
-// kilocode_change start - stub signature + prompt body extended to persist assistant cost for propagation tests
+// chipmate_change start - stub signature + prompt body extended to persist assistant cost for propagation tests
 function stubOps(opts?: {
   onPrompt?: (input: SessionPrompt.PromptInput) => void
   text?: string
@@ -120,7 +120,7 @@ function stubOps(opts?: {
       }),
   }
 }
-// kilocode_change end
+// chipmate_change end
 
 function reply(input: SessionPrompt.PromptInput, text: string): SessionV1.WithParts {
   const id = MessageID.ascending()
@@ -269,7 +269,7 @@ describe("tool.task", () => {
     }),
   )
 
-  // kilocode_change start - verify forked task children remain resumable
+  // chipmate_change start - verify forked task children remain resumable
   it.instance("execute resumes a cloned task session after the parent is forked", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
@@ -330,16 +330,16 @@ describe("tool.task", () => {
       expect((yield* sessions.get(SessionID.descending(id))).parentID).toBe(forked.id)
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
 
-  // kilocode_change start - resumed children rebuild parent platform attribution after restart
+  // chipmate_change start - resumed children rebuild parent platform attribution after restart
   it.instance("execute preserves platform attribution when resuming a task", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
-      KiloSession.setPlatformOverride(chat.id, "agent-manager")
+      ChipMateSession.setPlatformOverride(chat.id, "agent-manager")
       const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
-      KiloSession.clearPlatformOverride(child.id)
+      ChipMateSession.clearPlatformOverride(child.id)
       const tool = yield* TaskTool
       const def = yield* tool.init()
 
@@ -362,11 +362,11 @@ describe("tool.task", () => {
         },
       )
 
-      expect(KiloSession.resolvePlatform(child.id)).toBe("agent-manager")
-      expect(KiloSession.resolveRoot(child.id)).toBe(chat.id)
+      expect(ChipMateSession.resolvePlatform(child.id)).toBe("agent-manager")
+      expect(ChipMateSession.resolveRoot(child.id)).toBe(chat.id)
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
 
   it.instance("execute asks by default and skips checks when bypassed", () =>
     Effect.gen(function* () {
@@ -533,7 +533,7 @@ describe("tool.task", () => {
         const child = yield* sessions.get(result.metadata.sessionId)
         expect(child.parentID).toBe(chat.id)
         expect(child.agent).toBe("reviewer")
-        // kilocode_change start — use arrayContaining: Kilo appends inherited caller restrictions
+        // chipmate_change start — use arrayContaining: ChipMate appends inherited caller restrictions
         expect(child.permission).toEqual(
           expect.arrayContaining([
             {
@@ -558,12 +558,12 @@ describe("tool.task", () => {
             },
           ]),
         )
-        // kilocode_change end
+        // chipmate_change end
         expect(seen?.tools).toEqual({
-          question: false, // kilocode_change - subagents cannot prompt the user directly
-          interactive_terminal: false, // kilocode_change - subagents cannot take over the user's terminal
+          question: false, // chipmate_change - subagents cannot prompt the user directly
+          interactive_terminal: false, // chipmate_change - subagents cannot take over the user's terminal
           todowrite: false,
-          task: false, // kilocode_change - Kilo disallows nested subagents
+          task: false, // chipmate_change - ChipMate disallows nested subagents
           bash: false,
           read: false,
         })
@@ -580,13 +580,13 @@ describe("tool.task", () => {
         },
         experimental: {
           primary_tools: ["bash", "read"],
-          openTelemetry: true, // kilocode_change
+          openTelemetry: true, // chipmate_change
         },
       },
     },
   )
 
-  // kilocode_change start - terminal child assistant errors fail the task tool boundary
+  // chipmate_change start - terminal child assistant errors fail the task tool boundary
   it.instance("execute fails when child prompt returns assistant error", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
@@ -643,9 +643,9 @@ describe("tool.task", () => {
       expect(message).toContain("can be resumed")
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
 
-  // kilocode_change start - background subagent failures also surface the resumable task_id (#11620)
+  // chipmate_change start - background subagent failures also surface the resumable task_id (#11620)
   background.instance("background task failure injects a resumable task_id into the parent", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
@@ -700,7 +700,7 @@ describe("tool.task", () => {
       expect(text).toContain("can be resumed")
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
   it.instance("rejects background execution when the experiment is disabled", () =>
     Effect.gen(function* () {
       const { chat, assistant } = yield* seed()
@@ -910,7 +910,7 @@ describe("tool.task", () => {
     }),
   )
 
-  // kilocode_change start - completed background tasks propagate their invocation cost delta
+  // chipmate_change start - completed background tasks propagate their invocation cost delta
   background.instance("background tasks propagate child cost to the parent", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
@@ -943,9 +943,9 @@ describe("tool.task", () => {
       expect(parent.info.role === "assistant" ? parent.info.cost : 0).toBeCloseTo(0.2, 6)
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
 
-  // kilocode_change start - the background.extend() path must also propagate its run's cost delta (regression)
+  // chipmate_change start - the background.extend() path must also propagate its run's cost delta (regression)
   background.instance("extended background tasks propagate the extended run's cost to the parent", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
@@ -1013,7 +1013,7 @@ describe("tool.task", () => {
       expect(parent.info.role === "assistant" ? parent.info.cost : 0).toBeCloseTo(0.4, 6)
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
 
   background.instance("background tasks complete through the background job service", () =>
     Effect.gen(function* () {
@@ -1254,7 +1254,7 @@ describe("tool.task", () => {
   )
 })
 
-// kilocode_change start - subagent cost propagation coverage (#6321)
+// chipmate_change start - subagent cost propagation coverage (#6321)
 const assistantCost = Effect.fn("TaskToolTest.assistantCost")(function* (sessionID: string) {
   const sessions = yield* Session.Service
   const msgs = yield* sessions.messages({ sessionID: SessionID.make(sessionID) })
@@ -1463,4 +1463,4 @@ describe("tool.task cost propagation", () => {
     ),
   )
 })
-// kilocode_change end
+// chipmate_change end

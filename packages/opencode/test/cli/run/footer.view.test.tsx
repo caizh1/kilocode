@@ -4,7 +4,7 @@ import { BoxRenderable, RGBA, type RootRenderable } from "@opentui/core"
 import { testRender, useRenderer } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
-import type { QuestionRequest } from "@kilocode/sdk/v2"
+import type { QuestionRequest } from "@chipmate/sdk/v2"
 import { OpencodeKeymapProvider, registerOpencodeKeymap } from "@opencode-ai/tui/keymap"
 import {
   RUN_COMMAND_PANEL_ROWS,
@@ -835,7 +835,7 @@ test("direct footer slash autocomplete keeps a real skills command", async () =>
   }
 })
 
-// kilocode_change start - cover direct-mode Kilo skill picker transitions
+// chipmate_change start - cover direct-mode ChipMate skill picker transitions
 test("direct footer skill picker inserts an editable bound skill command", async () => {
   const submits: RunPrompt[] = []
   const app = await renderFooter({
@@ -902,7 +902,7 @@ test("direct footer clears the synthetic skills draft when the panel closes", as
     app.cleanup()
   }
 })
-// kilocode_change end
+// chipmate_change end
 
 test("direct footer shows editable prompts and additional queued work while running", async () => {
   const [state] = createSignal<FooterState>({
@@ -968,9 +968,9 @@ test("direct footer shows editable prompts and additional queued work while runn
           onRows={() => {}}
           onLayout={() => {}}
           onStatus={() => {}}
-          onTerminalWrite={async () => {}} // kilocode_change
-          onTerminalResize={async () => {}} // kilocode_change
-          onTerminalClose={async () => {}} // kilocode_change
+          onTerminalWrite={async () => {}} // chipmate_change
+          onTerminalResize={async () => {}} // chipmate_change
+          onTerminalClose={async () => {}} // chipmate_change
           onQueuedRemove={async () => true}
         />
       </OpencodeKeymapProvider>

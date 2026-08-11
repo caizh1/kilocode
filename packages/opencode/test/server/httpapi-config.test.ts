@@ -42,7 +42,7 @@ describe("config HttpApi", () => {
             method: "PATCH",
             headers: {
               "content-type": "application/json",
-              "x-kilo-directory": tmp.path,
+              "x-chipmate-directory": tmp.path,
             },
             body: JSON.stringify({ username: "patched-user", formatter: false, lsp: false }),
           }),
@@ -56,9 +56,9 @@ describe("config HttpApi", () => {
         lsp: false,
       })
       yield* Fiber.join(disposed)
-      // kilocode_change start
+      // chipmate_change start
       expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "opencode.json")).json())).toMatchObject({
-        // kilocode_change end
+        // chipmate_change end
         username: "patched-user",
         formatter: false,
         lsp: false,
@@ -89,7 +89,7 @@ describe("config HttpApi", () => {
         Promise.resolve(
           app().request("/config", {
             headers: {
-              "x-kilo-directory": tmp.path,
+              "x-chipmate-directory": tmp.path,
             },
           }),
         ),

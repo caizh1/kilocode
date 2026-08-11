@@ -7,7 +7,7 @@ import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
 import { Agent } from "@/agent/agent"
-import { format } from "@/kilocode/tool/tool" // kilocode_change
+import { format } from "@/chipmate/tool/tool" // chipmate_change
 
 interface Metadata {
   [key: string]: any
@@ -43,7 +43,7 @@ export type Context<M extends Metadata = Metadata> = {
   extra?: { [key: string]: unknown }
   messages: SessionV1.WithParts[]
   metadata(input: { title?: string; metadata?: M }): Effect.Effect<void>
-  // kilocode_change - Agent Console commands can require a non-persistable manual confirmation
+  // chipmate_change - Agent Console commands can require a non-persistable manual confirmation
   ask(input: Omit<PermissionV1.Request, "id" | "sessionID" | "tool"> & { forceAsk?: boolean }): Effect.Effect<void>
 }
 
@@ -120,7 +120,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
           ...(ctx.callID ? { "tool.call_id": ctx.callID } : {}),
         }
         return Effect.gen(function* () {
-          // kilocode_change start
+          // chipmate_change start
           const decoded = yield* decode(
             args,
             { errors: "all" },
@@ -133,7 +133,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
                 }),
             ),
           )
-          // kilocode_change end
+          // chipmate_change end
           const result = yield* execute(decoded as Schema.Schema.Type<Parameters>, ctx)
           if (result.metadata.truncated !== undefined) {
             return result

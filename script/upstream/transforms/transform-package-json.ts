@@ -1,21 +1,21 @@
 #!/usr/bin/env bun
 /**
- * Enhanced package.json transform with Kilo dependency injection
+ * Enhanced package.json transform with ChipMate dependency injection
  *
  * This script handles package.json conflicts by:
  * 1. Taking upstream's version (to get new dependencies)
- * 2. Transforming package names (opencode -> kilo)
- * 3. Injecting Kilo-specific dependencies
- * 4. Preserving Kilo's version number
+ * 2. Transforming package names (opencode -> chipmate)
+ * 3. Injecting ChipMate-specific dependencies
+ * 4. Preserving ChipMate's version number
  * 5. Preserving overrides and patchedDependencies
- * 6. Preserving Kilo's repository metadata
+ * 6. Preserving ChipMate's repository metadata
  * 7. Using "newest wins" strategy for dependency versions
  */
 
 import { $ } from "bun"
 import { info, success, warn, debug } from "../utils/logger"
 import { getCurrentVersion } from "./preserve-versions"
-import { oursHasKilocodeChanges } from "../utils/git"
+import { oursHasChipMateChanges } from "../utils/git"
 
 /**
  * Extract clean version string from a version specifier
@@ -131,7 +131,7 @@ export function fixPackageManager(
   const next = selectBunPackageManager(ours?.packageManager, pkg.packageManager)
   if (!next || pkg.packageManager === next) return
   const prior = typeof pkg.packageManager === "string" ? pkg.packageManager : "missing or invalid"
-  changes.push(`packageManager: ${prior} -> ${next} (preserved Kilo pin)`)
+  changes.push(`packageManager: ${prior} -> ${next} (preserved ChipMate pin)`)
   pkg.packageManager = next
 }
 
@@ -144,7 +144,7 @@ export function fixRepository(
   for (const key of ["repository", "homepage", "bugs"] as const) {
     if (ours[key] === undefined || JSON.stringify(pkg[key]) === JSON.stringify(ours[key])) continue
     pkg[key] = ours[key]
-    changes.push(`${key}: preserved Kilo metadata`)
+    changes.push(`${key}: preserved ChipMate metadata`)
   }
 }
 
@@ -166,7 +166,7 @@ export function assertBunPackageManager(current: unknown, base: unknown, upstrea
  * Merge two dependency objects using "newest wins" strategy
  * For non-comparable versions (URLs, catalog:, workspace:*), upstream (theirs) wins
  *
- * Key order preserves ours' order first (so kilo-only deps stay in their
+ * Key order preserves ours' order first (so chipmate-only deps stay in their
  * original position), then appends theirs-only keys at the end. This avoids
  * relocating existing keys, which would otherwise let git's textual merge
  * produce duplicate JSON keys (ours keeps the line in place, theirs appears
@@ -186,7 +186,7 @@ export function mergeWithNewestVersions(
       const theirVersion = theirs?.[name]
       if (theirVersion === undefined) {
         result[name] = ourVersion
-        changes.push(`${section}: preserved ${name}@${ourVersion} (kilo-only)`)
+        changes.push(`${section}: preserved ${name}@${ourVersion} (chipmate-only)`)
         continue
       }
       if (ourVersion === theirVersion) {
@@ -199,7 +199,7 @@ export function mergeWithNewestVersions(
         changes.push(`${section}: ${name} kept upstream ${theirVersion} (special format)`)
       } else if (cmp > 0) {
         result[name] = ourVersion
-        changes.push(`${section}: ${name} ${theirVersion} -> ${ourVersion} (kilo newer)`)
+        changes.push(`${section}: ${name} ${theirVersion} -> ${ourVersion} (chipmate newer)`)
       } else {
         result[name] = theirVersion
         if (cmp < 0) changes.push(`${section}: ${name} kept upstream ${theirVersion} (upstream newer)`)
@@ -245,46 +245,46 @@ export interface ReconcileOptions extends PackageJsonOptions {
 
 // Package name mappings
 const PACKAGE_NAME_MAP: Record<string, string> = {
-  "opencode-ai": "@kilocode/cli",
-  "@opencode-ai/cli": "@kilocode/cli",
-  "@opencode-ai/sdk": "@kilocode/sdk",
-  "@opencode-ai/plugin": "@kilocode/plugin",
+  "opencode-ai": "@chipmate/cli",
+  "@opencode-ai/cli": "@chipmate/cli",
+  "@opencode-ai/sdk": "@chipmate/sdk",
+  "@opencode-ai/plugin": "@chipmate/plugin",
 }
 
-// Kilo-specific dependencies to inject into specific packages
-// NOTE: When adding new Kilo-specific workspace dependencies (packages starting with @kilocode/kilo-*),
+// ChipMate-specific dependencies to inject into specific packages
+// NOTE: When adding new ChipMate-specific workspace dependencies (packages starting with @chipmate/chipmate-*),
 // add them here to prevent them from being removed during upstream merges
-const KILO_DEPENDENCIES: Record<string, Record<string, string>> = {
+const CHIPMATE_DEPENDENCIES: Record<string, Record<string, string>> = {
   // packages/opencode/package.json needs these
   "packages/opencode/package.json": {
-    "@kilocode/kilo-gateway": "workspace:*",
-    "@kilocode/kilo-telemetry": "workspace:*",
+    "@chipmate/chipmate-gateway": "workspace:*",
+    "@chipmate/chipmate-telemetry": "workspace:*",
   },
 }
 
-// Kilo-specific bin entries to set on specific packages
-const KILO_BIN: Record<string, Record<string, string>> = {
+// ChipMate-specific bin entries to set on specific packages
+const CHIPMATE_BIN: Record<string, Record<string, string>> = {
   "packages/opencode/package.json": {
-    kilo: "./bin/kilo",
-    kilocode: "./bin/kilo",
+    chipmate: "./bin/chipmate",
+    chipmate: "./bin/chipmate",
   },
 }
 
 // Packages that should have their name transformed
 const TRANSFORM_PACKAGE_NAMES: Record<string, string> = {
-  "package.json": "@kilocode/kilo",
-  "packages/opencode/package.json": "@kilocode/cli",
-  "packages/plugin/package.json": "@kilocode/plugin",
-  "packages/sdk/js/package.json": "@kilocode/sdk",
+  "package.json": "@chipmate/chipmate",
+  "packages/opencode/package.json": "@chipmate/cli",
+  "packages/plugin/package.json": "@chipmate/plugin",
+  "packages/sdk/js/package.json": "@chipmate/sdk",
 }
 
-// Kilo-specific scripts to preserve from the base branch per package.json.
+// ChipMate-specific scripts to preserve from the base branch per package.json.
 // Upstream's version wholesale-replaces the scripts block, so anything listed
 // here gets re-applied from ours after taking theirs.
 const PRESERVE_SCRIPTS: Record<string, string[]> = {
   "package.json": ["extension", "changeset", "changeset:version", "dev-setup", "postinstall", "dev:local"],
   "packages/opencode/package.json": ["test", "test:ci"],
-  // Upstream-shared packages where Kilo adds a JUnit test:ci script for CI.
+  // Upstream-shared packages where ChipMate adds a JUnit test:ci script for CI.
   // Without these entries every merge silently schedules zero tests for them.
   "packages/core/package.json": ["test:ci"],
   "packages/effect-drizzle-sqlite/package.json": ["test:ci"],
@@ -295,7 +295,7 @@ const PRESERVE_SCRIPTS: Record<string, string[]> = {
 }
 
 // Upstream-only trusted dependencies to delete per package.json. Trusted deps
-// get native lifecycle scripts run on install; Kilo keeps tree-sitter-powershell
+// get native lifecycle scripts run on install; ChipMate keeps tree-sitter-powershell
 // for its WASM grammar only and avoids a root node-gyp requirement, so
 // upstream's native-build trust must not come over.
 const DELETE_UPSTREAM_TRUSTED_DEPS: Record<string, string[]> = {
@@ -303,22 +303,22 @@ const DELETE_UPSTREAM_TRUSTED_DEPS: Record<string, string[]> = {
 }
 
 // Upstream-only scripts to delete per package.json. These reference packages
-// Kilo doesn't ship (desktop-electron, console/app, app) and would otherwise
+// ChipMate doesn't ship (desktop-electron, console/app, app) and would otherwise
 // reappear on every merge.
 const DELETE_UPSTREAM_SCRIPTS: Record<string, string[]> = {
   "package.json": ["dev:desktop", "dev:web", "dev:console"],
 }
 
 // Upstream-only catalog entries to delete per package.json. These are pulled
-// in by upstream features (e.g. desktop Sentry integration) that Kilo doesn't
+// in by upstream features (e.g. desktop Sentry integration) that ChipMate doesn't
 // ship, so they add install weight with zero consumers in our tree.
 const DELETE_UPSTREAM_CATALOG: Record<string, string[]> = {
   "package.json": ["@sentry/solid", "@sentry/vite-plugin"],
 }
 
 /**
- * Re-apply Kilo-specific scripts on top of the upstream-shaped scripts block,
- * and prune upstream-only scripts that target packages Kilo doesn't ship.
+ * Re-apply ChipMate-specific scripts on top of the upstream-shaped scripts block,
+ * and prune upstream-only scripts that target packages ChipMate doesn't ship.
  */
 export function fixScripts(
   pkg: Record<string, unknown>,
@@ -340,7 +340,7 @@ export function fixScripts(
   for (const name of DELETE_UPSTREAM_SCRIPTS[path] || []) {
     if (theirs[name]) {
       delete theirs[name]
-      changes.push(`scripts.${name}: removed (upstream-only, no Kilo target)`)
+      changes.push(`scripts.${name}: removed (upstream-only, no ChipMate target)`)
     }
   }
 
@@ -349,7 +349,7 @@ export function fixScripts(
 
 /**
  * Prune upstream-only trusted dependencies whose native lifecycle builds
- * conflict with Kilo's install policy.
+ * conflict with ChipMate's install policy.
  */
 export function fixTrustedDependencies(pkg: Record<string, unknown>, path: string, changes: string[]): void {
   const trusted = pkg.trustedDependencies as string[] | undefined
@@ -358,14 +358,14 @@ export function fixTrustedDependencies(pkg: Record<string, unknown>, path: strin
     const index = trusted.indexOf(name)
     if (index !== -1) {
       trusted.splice(index, 1)
-      changes.push(`trustedDependencies: removed ${name} (native build conflicts with Kilo install policy)`)
+      changes.push(`trustedDependencies: removed ${name} (native build conflicts with ChipMate install policy)`)
     }
   }
 }
 
 /**
- * Drop upstream patchedDependencies entries that conflict with Kilo's pins or
- * whose patch file did not come over. Kilo pins newer patched versions of some
+ * Drop upstream patchedDependencies entries that conflict with ChipMate's pins or
+ * whose patch file did not come over. ChipMate pins newer patched versions of some
  * packages (e.g. fff-bun, pacote, xai), and stale upstream entries for the
  * same package, or entries with a missing patch file, break bun install.
  */
@@ -381,7 +381,7 @@ export async function prunePatchedDependencies(
   for (const [key, patch] of Object.entries(patched)) {
     if (!(key in ourPatched) && ourPackages.has(key.replace(/@[^@]+$/, ""))) {
       delete patched[key]
-      changes.push(`patchedDependencies: dropped upstream ${key} (Kilo pins a different version)`)
+      changes.push(`patchedDependencies: dropped upstream ${key} (ChipMate pins a different version)`)
       continue
     }
     if (patch && !(await Bun.file(patch).exists())) {
@@ -392,7 +392,7 @@ export async function prunePatchedDependencies(
 }
 
 /**
- * Prune upstream-only catalog entries that have no consumers in Kilo.
+ * Prune upstream-only catalog entries that have no consumers in ChipMate.
  */
 export function fixCatalog(pkg: Record<string, unknown>, path: string, changes: string[]): void {
   const ws = pkg.workspaces as { catalog?: Record<string, string> } | undefined
@@ -401,7 +401,7 @@ export function fixCatalog(pkg: Record<string, unknown>, path: string, changes: 
   for (const name of DELETE_UPSTREAM_CATALOG[path] || []) {
     if (cat[name]) {
       delete cat[name]
-      changes.push(`workspaces.catalog.${name}: removed (upstream-only, no Kilo consumer)`)
+      changes.push(`workspaces.catalog.${name}: removed (upstream-only, no ChipMate consumer)`)
     }
   }
 }
@@ -467,14 +467,14 @@ export async function transformPackageJson(file: string, options: PackageJsonOpt
     return { file, action: "transformed", changes: [], dryRun: true }
   }
 
-  // If our version has kilocode_change markers, flag for manual resolution
-  if (await oursHasKilocodeChanges(file)) {
-    warn(`${file} has kilocode_change markers — skipping auto-transform, needs manual resolution`)
+  // If our version has chipmate_change markers, flag for manual resolution
+  if (await oursHasChipMateChanges(file)) {
+    warn(`${file} has chipmate_change markers — skipping auto-transform, needs manual resolution`)
     return { file, action: "flagged", changes: [], dryRun: false }
   }
 
   try {
-    // Save Kilo's version BEFORE taking theirs
+    // Save ChipMate's version BEFORE taking theirs
     let ourPkg: Record<string, unknown> | null = null
     try {
       const ourContent = await $`git show :2:${file}`.text() // :2: is "ours" in merge
@@ -511,12 +511,12 @@ export async function transformPackageJson(file: string, options: PackageJsonOpt
 
     fixPackageManager(pkg, relativePath, ourPkg, changes)
 
-    // 2. Preserve Kilo version if requested
+    // 2. Preserve ChipMate version if requested
     if (options.preserveVersion !== false) {
-      const kiloVersion = await getCurrentVersion()
-      if (pkg.version !== kiloVersion) {
-        changes.push(`version: ${pkg.version} -> ${kiloVersion}`)
-        pkg.version = kiloVersion
+      const chipmateVersion = await getCurrentVersion()
+      if (pkg.version !== chipmateVersion) {
+        changes.push(`version: ${pkg.version} -> ${chipmateVersion}`)
+        pkg.version = chipmateVersion
       }
     }
 
@@ -549,7 +549,7 @@ export async function transformPackageJson(file: string, options: PackageJsonOpt
         pkg.overrides = mergeWithNewestVersions(ourOverrides, pkg.overrides, changes, "overrides")
       }
 
-      // 5. Preserve patchedDependencies (Kilo-specific, upstream won't have these)
+      // 5. Preserve patchedDependencies (ChipMate-specific, upstream won't have these)
       const ourPatchedDeps = ourPkg.patchedDependencies as Record<string, string> | undefined
       if (ourPatchedDeps) {
         pkg.patchedDependencies = pkg.patchedDependencies || {}
@@ -562,21 +562,21 @@ export async function transformPackageJson(file: string, options: PackageJsonOpt
         }
       }
 
-      // 6. Preserve repository metadata so published packages keep Kilo links
+      // 6. Preserve repository metadata so published packages keep ChipMate links
       fixRepository(pkg, ourPkg, changes)
 
       fixMetadata(pkg, relativePath, ourPkg, changes)
 
       // 7. Handle workspaces for root package.json
-      // Kilo has removed hosted platform packages (console/*, slack, etc.)
-      // so we need to preserve Kilo's workspace configuration instead of taking upstream's
+      // ChipMate has removed hosted platform packages (console/*, slack, etc.)
+      // so we need to preserve ChipMate's workspace configuration instead of taking upstream's
       const ourWorkspaces = ourPkg.workspaces as { packages?: string[]; catalog?: Record<string, string> } | undefined
       const theirWorkspaces = pkg.workspaces as { packages?: string[]; catalog?: Record<string, string> } | undefined
 
       if (relativePath === "package.json" && ourWorkspaces?.packages) {
         pkg.workspaces = pkg.workspaces || {}
         pkg.workspaces.packages = ourWorkspaces.packages
-        changes.push(`workspaces.packages: preserved Kilo's workspace configuration`)
+        changes.push(`workspaces.packages: preserved ChipMate's workspace configuration`)
       }
 
       fixScripts(pkg, relativePath, ourPkg, changes)
@@ -596,7 +596,7 @@ export async function transformPackageJson(file: string, options: PackageJsonOpt
       fixTrustedDependencies(pkg, relativePath, changes)
     }
 
-    // 7. Transform dependency names (opencode -> kilo)
+    // 7. Transform dependency names (opencode -> chipmate)
     if (pkg.dependencies) {
       const { result, changes: depChanges } = transformDependencies(pkg.dependencies)
       pkg.dependencies = result
@@ -619,11 +619,11 @@ export async function transformPackageJson(file: string, options: PackageJsonOpt
       }
     }
 
-    // 8. Inject Kilo-specific dependencies
-    const kiloDeps = KILO_DEPENDENCIES[relativePath]
-    if (kiloDeps) {
+    // 8. Inject ChipMate-specific dependencies
+    const chipmateDeps = CHIPMATE_DEPENDENCIES[relativePath]
+    if (chipmateDeps) {
       pkg.dependencies = pkg.dependencies || {}
-      for (const [name, version] of Object.entries(kiloDeps)) {
+      for (const [name, version] of Object.entries(chipmateDeps)) {
         if (!pkg.dependencies[name]) {
           pkg.dependencies[name] = version
           changes.push(`injected: ${name}`)
@@ -631,11 +631,11 @@ export async function transformPackageJson(file: string, options: PackageJsonOpt
       }
     }
 
-    // 9. Set Kilo-specific bin entries
-    const kiloBin = KILO_BIN[relativePath]
-    if (kiloBin) {
-      pkg.bin = kiloBin
-      changes.push(`bin: set Kilo bin entries`)
+    // 9. Set ChipMate-specific bin entries
+    const chipmateBin = CHIPMATE_BIN[relativePath]
+    if (chipmateBin) {
+      pkg.bin = chipmateBin
+      changes.push(`bin: set ChipMate bin entries`)
     }
 
     // Write back with proper formatting
@@ -682,23 +682,23 @@ export async function transformConflictedPackageJson(
 }
 
 /**
- * Get Kilo's package.json from the base branch (main) for comparison
- * Used during pre-merge to compare upstream versions against Kilo's versions
+ * Get ChipMate's package.json from the base branch (main) for comparison
+ * Used during pre-merge to compare upstream versions against ChipMate's versions
  */
-async function getKiloPackageJson(path: string, baseBranch = "main"): Promise<Record<string, unknown> | null> {
+async function getChipMatePackageJson(path: string, baseBranch = "main"): Promise<Record<string, unknown> | null> {
   try {
     // Try to get the file from origin/main (or whatever base branch)
     const content = await $`git show origin/${baseBranch}:${path}`.text()
     return JSON.parse(content)
   } catch {
-    // File might not exist in Kilo
+    // File might not exist in ChipMate
     return null
   }
 }
 
 /**
  * Transform all package.json files (pre-merge, on opencode branch)
- * This function merges Kilo's versions with upstream, using "newest wins" strategy
+ * This function merges ChipMate's versions with upstream, using "newest wins" strategy
  */
 export async function transformAllPackageJson(options: PackageJsonOptions = {}): Promise<PackageJsonResult[]> {
   const { Glob } = await import("bun")
@@ -719,8 +719,8 @@ export async function transformAllPackageJson(options: PackageJsonOptions = {}):
       const pkg = JSON.parse(content) // This is upstream's version
       const changes: string[] = []
 
-      // Get Kilo's version from base branch for comparison
-      const kiloPkg = await getKiloPackageJson(path)
+      // Get ChipMate's version from base branch for comparison
+      const chipmatePkg = await getChipMatePackageJson(path)
 
       // 1. Transform package name if needed
       const newName = TRANSFORM_PACKAGE_NAMES[path]
@@ -729,52 +729,52 @@ export async function transformAllPackageJson(options: PackageJsonOptions = {}):
         pkg.name = newName
       }
 
-      fixPackageManager(pkg, path, kiloPkg, changes)
+      fixPackageManager(pkg, path, chipmatePkg, changes)
 
-      // 2. Preserve Kilo version if requested
+      // 2. Preserve ChipMate version if requested
       if (options.preserveVersion !== false) {
-        const kiloVersion = await getCurrentVersion()
-        if (pkg.version !== kiloVersion) {
-          changes.push(`version: ${pkg.version} -> ${kiloVersion}`)
-          pkg.version = kiloVersion
+        const chipmateVersion = await getCurrentVersion()
+        if (pkg.version !== chipmateVersion) {
+          changes.push(`version: ${pkg.version} -> ${chipmateVersion}`)
+          pkg.version = chipmateVersion
         }
       }
 
-      // 3. Merge dependencies with "newest wins" strategy (if Kilo has this file)
-      if (kiloPkg) {
+      // 3. Merge dependencies with "newest wins" strategy (if ChipMate has this file)
+      if (chipmatePkg) {
         pkg.dependencies = mergeWithNewestVersions(
-          kiloPkg.dependencies as Record<string, string> | undefined,
+          chipmatePkg.dependencies as Record<string, string> | undefined,
           pkg.dependencies,
           changes,
           "dependencies",
         )
 
         pkg.devDependencies = mergeWithNewestVersions(
-          kiloPkg.devDependencies as Record<string, string> | undefined,
+          chipmatePkg.devDependencies as Record<string, string> | undefined,
           pkg.devDependencies,
           changes,
           "devDependencies",
         )
 
         pkg.peerDependencies = mergeWithNewestVersions(
-          kiloPkg.peerDependencies as Record<string, string> | undefined,
+          chipmatePkg.peerDependencies as Record<string, string> | undefined,
           pkg.peerDependencies,
           changes,
           "peerDependencies",
         )
 
         // 4. Preserve/merge overrides
-        const kiloOverrides = kiloPkg.overrides as Record<string, string> | undefined
-        if (kiloOverrides || pkg.overrides) {
-          pkg.overrides = mergeWithNewestVersions(kiloOverrides, pkg.overrides, changes, "overrides")
+        const chipmateOverrides = chipmatePkg.overrides as Record<string, string> | undefined
+        if (chipmateOverrides || pkg.overrides) {
+          pkg.overrides = mergeWithNewestVersions(chipmateOverrides, pkg.overrides, changes, "overrides")
         }
 
-        // 5. Preserve patchedDependencies (Kilo-specific, upstream won't have these)
-        const kiloPatchedDeps = kiloPkg.patchedDependencies as Record<string, string> | undefined
-        if (kiloPatchedDeps) {
+        // 5. Preserve patchedDependencies (ChipMate-specific, upstream won't have these)
+        const chipmatePatchedDeps = chipmatePkg.patchedDependencies as Record<string, string> | undefined
+        if (chipmatePatchedDeps) {
           pkg.patchedDependencies = pkg.patchedDependencies || {}
-          await prunePatchedDependencies(pkg, kiloPkg, changes)
-          for (const [name, patch] of Object.entries(kiloPatchedDeps)) {
+          await prunePatchedDependencies(pkg, chipmatePkg, changes)
+          for (const [name, patch] of Object.entries(chipmatePatchedDeps)) {
             if (!pkg.patchedDependencies[name]) {
               pkg.patchedDependencies[name] = patch
               changes.push(`patchedDependencies: preserved ${name}`)
@@ -782,38 +782,38 @@ export async function transformAllPackageJson(options: PackageJsonOptions = {}):
           }
         }
 
-        // 6. Preserve repository (Kilo-specific, upstream doesn't have this)
-        const kiloRepo = kiloPkg.repository
-        if (kiloRepo && JSON.stringify(pkg.repository) !== JSON.stringify(kiloRepo)) {
-          pkg.repository = kiloRepo
-          changes.push(`repository: preserved Kilo's repository configuration`)
+        // 6. Preserve repository (ChipMate-specific, upstream doesn't have this)
+        const chipmateRepo = chipmatePkg.repository
+        if (chipmateRepo && JSON.stringify(pkg.repository) !== JSON.stringify(chipmateRepo)) {
+          pkg.repository = chipmateRepo
+          changes.push(`repository: preserved ChipMate's repository configuration`)
         }
 
-        fixMetadata(pkg, path, kiloPkg, changes)
+        fixMetadata(pkg, path, chipmatePkg, changes)
 
         // 7. Handle workspaces for root package.json
-        // Kilo has removed hosted platform packages (console/*, slack, etc.)
-        // so we need to preserve Kilo's workspace configuration instead of taking upstream's
-        const kiloWorkspaces = kiloPkg.workspaces as
+        // ChipMate has removed hosted platform packages (console/*, slack, etc.)
+        // so we need to preserve ChipMate's workspace configuration instead of taking upstream's
+        const chipmateWorkspaces = chipmatePkg.workspaces as
           | { packages?: string[]; catalog?: Record<string, string> }
           | undefined
         const upstreamWorkspaces = pkg.workspaces as
           | { packages?: string[]; catalog?: Record<string, string> }
           | undefined
 
-        if (path === "package.json" && kiloWorkspaces?.packages) {
+        if (path === "package.json" && chipmateWorkspaces?.packages) {
           pkg.workspaces = pkg.workspaces || {}
-          pkg.workspaces.packages = kiloWorkspaces.packages
-          changes.push(`workspaces.packages: preserved Kilo's workspace configuration`)
+          pkg.workspaces.packages = chipmateWorkspaces.packages
+          changes.push(`workspaces.packages: preserved ChipMate's workspace configuration`)
         }
 
-        fixScripts(pkg, path, kiloPkg, changes)
+        fixScripts(pkg, path, chipmatePkg, changes)
 
         // Merge catalog with "newest wins" strategy
-        if (kiloWorkspaces?.catalog || upstreamWorkspaces?.catalog) {
+        if (chipmateWorkspaces?.catalog || upstreamWorkspaces?.catalog) {
           pkg.workspaces = pkg.workspaces || {}
           pkg.workspaces.catalog = mergeWithNewestVersions(
-            kiloWorkspaces?.catalog,
+            chipmateWorkspaces?.catalog,
             upstreamWorkspaces?.catalog,
             changes,
             "workspaces.catalog",
@@ -824,7 +824,7 @@ export async function transformAllPackageJson(options: PackageJsonOptions = {}):
         fixTrustedDependencies(pkg, path, changes)
       }
 
-      // 7. Transform dependency names (opencode -> kilo)
+      // 7. Transform dependency names (opencode -> chipmate)
       if (pkg.dependencies) {
         const { result, changes: depChanges } = transformDependencies(pkg.dependencies)
         if (depChanges.length > 0) {
@@ -849,11 +849,11 @@ export async function transformAllPackageJson(options: PackageJsonOptions = {}):
         }
       }
 
-      // 8. Inject Kilo-specific dependencies
-      const kiloDeps = KILO_DEPENDENCIES[path]
-      if (kiloDeps) {
+      // 8. Inject ChipMate-specific dependencies
+      const chipmateDeps = CHIPMATE_DEPENDENCIES[path]
+      if (chipmateDeps) {
         pkg.dependencies = pkg.dependencies || {}
-        for (const [name, version] of Object.entries(kiloDeps)) {
+        for (const [name, version] of Object.entries(chipmateDeps)) {
           if (!pkg.dependencies[name]) {
             pkg.dependencies[name] = version
             changes.push(`injected: ${name}`)
@@ -861,11 +861,11 @@ export async function transformAllPackageJson(options: PackageJsonOptions = {}):
         }
       }
 
-      // 9. Set Kilo-specific bin entries
-      const kiloBin = KILO_BIN[path]
-      if (kiloBin) {
-        pkg.bin = kiloBin
-        changes.push(`bin: set Kilo bin entries`)
+      // 9. Set ChipMate-specific bin entries
+      const chipmateBin = CHIPMATE_BIN[path]
+      if (chipmateBin) {
+        pkg.bin = chipmateBin
+        changes.push(`bin: set ChipMate bin entries`)
       }
 
       if (changes.length > 0) {
@@ -902,7 +902,7 @@ export async function transformAllPackageJson(options: PackageJsonOptions = {}):
  *
  * Returns "skipped" if neither side touched the file (or both sides match) so
  * callers can avoid unnecessary churn. Returns "flagged" if ours has
- * kilocode_change markers (manual review needed).
+ * chipmate_change markers (manual review needed).
  */
 export async function reconcilePackageJsonFromRefs(
   file: string,
@@ -911,8 +911,8 @@ export async function reconcilePackageJsonFromRefs(
   const changes: string[] = []
   const dryRun = options.dryRun ?? false
 
-  if (await oursHasKilocodeChanges(file)) {
-    warn(`${file} has kilocode_change markers — skipping reconcile, needs manual resolution`)
+  if (await oursHasChipMateChanges(file)) {
+    warn(`${file} has chipmate_change markers — skipping reconcile, needs manual resolution`)
     return { file, action: "flagged", changes: [], dryRun }
   }
 
@@ -948,10 +948,10 @@ export async function reconcilePackageJsonFromRefs(
   fixPackageManager(pkg, relativePath, ourPkg, changes)
 
   if (options.preserveVersion !== false) {
-    const kiloVersion = await getCurrentVersion()
-    if (pkg.version !== kiloVersion) {
-      changes.push(`version: ${pkg.version} -> ${kiloVersion}`)
-      pkg.version = kiloVersion
+    const chipmateVersion = await getCurrentVersion()
+    if (pkg.version !== chipmateVersion) {
+      changes.push(`version: ${pkg.version} -> ${chipmateVersion}`)
+      pkg.version = chipmateVersion
     }
   }
 
@@ -1001,7 +1001,7 @@ export async function reconcilePackageJsonFromRefs(
     const ourRepo = ourPkg.repository
     if (ourRepo && JSON.stringify(pkg.repository) !== JSON.stringify(ourRepo)) {
       pkg.repository = ourRepo
-      changes.push(`repository: preserved Kilo's repository configuration`)
+      changes.push(`repository: preserved ChipMate's repository configuration`)
     }
 
     fixMetadata(pkg, relativePath, ourPkg, changes)
@@ -1012,7 +1012,7 @@ export async function reconcilePackageJsonFromRefs(
     if (relativePath === "package.json" && ourWs?.packages) {
       pkg.workspaces = (pkg.workspaces as Record<string, unknown>) || {}
       ;(pkg.workspaces as { packages: string[] }).packages = ourWs.packages
-      changes.push(`workspaces.packages: preserved Kilo's workspace configuration`)
+      changes.push(`workspaces.packages: preserved ChipMate's workspace configuration`)
     }
 
     fixScripts(pkg, relativePath, ourPkg, changes)
@@ -1051,11 +1051,11 @@ export async function reconcilePackageJsonFromRefs(
     }
   }
 
-  const kiloDeps = KILO_DEPENDENCIES[relativePath]
-  if (kiloDeps) {
+  const chipmateDeps = CHIPMATE_DEPENDENCIES[relativePath]
+  if (chipmateDeps) {
     pkg.dependencies = (pkg.dependencies as Record<string, string>) || {}
     const deps = pkg.dependencies as Record<string, string>
-    for (const [name, version] of Object.entries(kiloDeps)) {
+    for (const [name, version] of Object.entries(chipmateDeps)) {
       if (!deps[name]) {
         deps[name] = version
         changes.push(`injected: ${name}`)
@@ -1063,10 +1063,10 @@ export async function reconcilePackageJsonFromRefs(
     }
   }
 
-  const kiloBin = KILO_BIN[relativePath]
-  if (kiloBin) {
-    pkg.bin = kiloBin
-    changes.push(`bin: set Kilo bin entries`)
+  const chipmateBin = CHIPMATE_BIN[relativePath]
+  if (chipmateBin) {
+    pkg.bin = chipmateBin
+    changes.push(`bin: set ChipMate bin entries`)
   }
 
   if (dryRun) {
@@ -1096,7 +1096,7 @@ export async function reconcilePackageJsonFromRefs(
  */
 export async function reconcileAllPackageJson(options: ReconcileOptions): Promise<PackageJsonResult[]> {
   // Collect every package.json that differs in either direction so we cover
-  // upstream-only and kilo-only files alike.
+  // upstream-only and chipmate-only files alike.
   const diffOurs = await $`git diff --name-only ${options.oursRef} -- '*package.json'`.text()
   const diffTheirs = await $`git diff --name-only ${options.theirsRef} -- '*package.json'`.text()
   const candidates = new Set<string>()

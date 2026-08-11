@@ -3,13 +3,13 @@
  * Transform script files with GitHub API references
  *
  * This script handles script files that contain GitHub API references
- * by transforming them from anomalyco/opencode to Kilo-Org/kilocode.
+ * by transforming them from anomalyco/opencode to ChipMate-Org/chipmate.
  */
 
 import { $ } from "bun"
 import { info, success, warn, debug } from "../utils/logger"
 import { defaultConfig } from "../utils/config"
-import { oursHasKilocodeChanges } from "../utils/git"
+import { oursHasChipMateChanges } from "../utils/git"
 
 export interface ScriptTransformResult {
   file: string
@@ -34,57 +34,57 @@ const SCRIPT_REPLACEMENTS: ScriptReplacement[] = [
   // GitHub API URLs
   {
     pattern: /api\.github\.com\/repos\/anomalyco\/opencode/g,
-    replacement: "api.github.com/repos/Kilo-Org/kilocode",
+    replacement: "api.github.com/repos/ChipMate-Org/chipmate",
     description: "GitHub API URL",
   },
   {
     pattern: /\/repos\/anomalyco\/opencode/g,
-    replacement: "/repos/Kilo-Org/kilocode",
+    replacement: "/repos/ChipMate-Org/chipmate",
     description: "GitHub repos path",
   },
 
   // gh CLI commands
   {
     pattern: /gh api "\/repos\/anomalyco\/opencode/g,
-    replacement: 'gh api "/repos/Kilo-Org/kilocode',
+    replacement: 'gh api "/repos/ChipMate-Org/chipmate',
     description: "gh api command",
   },
 
   // Direct GitHub references
   {
     pattern: /github\.com\/anomalyco\/opencode/g,
-    replacement: "github.com/Kilo-Org/kilocode",
+    replacement: "github.com/ChipMate-Org/chipmate",
     description: "GitHub URL",
   },
   {
     pattern: /anomalyco\/opencode/g,
-    replacement: "Kilo-Org/kilocode",
+    replacement: "ChipMate-Org/chipmate",
     description: "GitHub repo reference",
   },
 
   // Release artifact names
   {
     pattern: /opencode-(linux|darwin|windows)-(arm64|x64)(-baseline)?(\.tar\.gz|\.zip)?/g,
-    replacement: "kilo-$1-$2$3$4",
+    replacement: "chipmate-$1-$2$3$4",
     description: "Release artifact name",
   },
 
   // Environment variables (exclude OPENCODE_API_KEY)
   {
     pattern: /\bOPENCODE_(?!API_KEY\b)([A-Z_]+)\b/g,
-    replacement: "KILO_$1",
+    replacement: "CHIPMATE_$1",
     description: "Environment variable",
   },
 
   // OpenCode branding in strings
   {
     pattern: /"OpenCode"/g,
-    replacement: '"Kilo"',
+    replacement: '"ChipMate"',
     description: "Product name in string",
   },
   {
     pattern: /'OpenCode'/g,
-    replacement: "'Kilo'",
+    replacement: "'ChipMate'",
     description: "Product name in single quotes",
   },
 ]
@@ -138,9 +138,9 @@ export async function transformScriptFile(
     return { file, action: "transformed", replacements: 0, dryRun: true }
   }
 
-  // If our version has kilocode_change markers, flag for manual resolution
-  if (await oursHasKilocodeChanges(file)) {
-    warn(`${file} has kilocode_change markers — skipping auto-transform, needs manual resolution`)
+  // If our version has chipmate_change markers, flag for manual resolution
+  if (await oursHasChipMateChanges(file)) {
+    warn(`${file} has chipmate_change markers — skipping auto-transform, needs manual resolution`)
     return { file, action: "flagged", replacements: 0, dryRun: false }
   }
 

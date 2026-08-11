@@ -41,7 +41,7 @@ describe("ZenmuxPlugin", () => {
       })
       yield* addPlugin()
       const result = required(yield* catalog.provider.get(ProviderV2.ID.make("zenmux")))
-      expect(result.request.headers).toEqual({ "HTTP-Referer": "https://kilo.ai/", "X-Title": "Kilo Code" })
+      expect(result.request.headers).toEqual({ "HTTP-Referer": "https://chipmate.ai/", "X-Title": "ChipMate" })
       expect(Object.keys(result.request.headers).sort()).toEqual(["HTTP-Referer", "X-Title"])
     }),
   )
@@ -63,8 +63,8 @@ describe("ZenmuxPlugin", () => {
 
       expect(required(yield* catalog.provider.get(ProviderV2.ID.make("zenmux"))).request.headers).toEqual({
         Existing: "value",
-        "HTTP-Referer": "https://kilo.ai/",
-        "X-Title": "Kilo Code",
+        "HTTP-Referer": "https://chipmate.ai/",
+        "X-Title": "ChipMate",
       })
     }),
   )

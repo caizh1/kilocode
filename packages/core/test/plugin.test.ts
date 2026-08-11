@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Fiber } from "effect"
-import { define } from "@kilocode/plugin/v2/effect"
+import { define } from "@chipmate/plugin/v2/effect"
 import { AgentV2 } from "@opencode-ai/core/agent"
 import { PluginV2 } from "@opencode-ai/core/plugin"
 import { testEffect } from "./lib/effect"

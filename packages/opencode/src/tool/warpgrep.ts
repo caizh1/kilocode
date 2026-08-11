@@ -1,27 +1,27 @@
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
-import { WarpGrepClient } from "@morphllm/morphsdk/tools/warp-grep/client" // kilocode_change
-import { Telemetry } from "@kilocode/kilo-telemetry" // kilocode_change
-import { Instance } from "../kilocode/instance" // kilocode_change
-import { EventV2Bridge } from "@/event-v2-bridge" // kilocode_change
-import { TuiEvent } from "@/server/tui-event" // kilocode_change
+import { WarpGrepClient } from "@morphllm/morphsdk/tools/warp-grep/client" // chipmate_change
+import { Telemetry } from "@chipmate/chipmate-telemetry" // chipmate_change
+import { Instance } from "../chipmate/instance" // chipmate_change
+import { EventV2Bridge } from "@/event-v2-bridge" // chipmate_change
+import { TuiEvent } from "@/server/tui-event" // chipmate_change
 import DESCRIPTION from "./warpgrep.txt"
 
-// FREE_PERIOD_TODO: Remove KILO_WARPGREP_PROXY_URL constant and the proxy
+// FREE_PERIOD_TODO: Remove CHIPMATE_WARPGREP_PROXY_URL constant and the proxy
 // fallback below. After the free period ends, require MORPH_API_KEY and
 // return an error when it is missing.
-const KILO_WARPGREP_PROXY_URL = "https://api.kilo.ai/api/gateway"
+const CHIPMATE_WARPGREP_PROXY_URL = "https://api.chipmate.ai/api/gateway"
 
 const Parameters = Schema.Struct({
   query: Schema.String.annotate({
-    description: "Search query describing what code you are looking for. Be specific and descriptive for best results.", // kilocode_change
+    description: "Search query describing what code you are looking for. Be specific and descriptive for best results.", // chipmate_change
   }),
 })
 
 export const CodebaseSearchTool = Tool.define(
   "codebase_search",
   Effect.gen(function* () {
-    const events = yield* EventV2Bridge.Service // kilocode_change
+    const events = yield* EventV2Bridge.Service // chipmate_change
     return {
       description: DESCRIPTION,
       parameters: Parameters,
@@ -33,15 +33,15 @@ export const CodebaseSearchTool = Tool.define(
             always: ["*"],
             metadata: { query: params.query },
           })
-          Telemetry.trackToolUsed("codebase_search", ctx.sessionID) // kilocode_change
+          Telemetry.trackToolUsed("codebase_search", ctx.sessionID) // chipmate_change
 
           const apiKey = process.env["MORPH_API_KEY"]
 
           // FREE_PERIOD_TODO: Remove proxy fallback — require apiKey, error if missing:
           //   if (!apiKey) return { title: ..., output: "Set MORPH_API_KEY to use codebase search.", metadata: {} }
           const client = new WarpGrepClient({
-            morphApiKey: apiKey ?? "kilo-free",
-            ...(apiKey ? {} : { morphApiUrl: KILO_WARPGREP_PROXY_URL }),
+            morphApiKey: apiKey ?? "chipmate-free",
+            ...(apiKey ? {} : { morphApiUrl: CHIPMATE_WARPGREP_PROXY_URL }),
             timeout: 60_000,
           })
 
@@ -57,11 +57,11 @@ export const CodebaseSearchTool = Tool.define(
             // from the proxy (401/402/429) will surface here. The message below
             // tells the user exactly what to do.
             const isAuthOrRateLimit =
-              result.error && /401|402|429|rate.limit|free.period|unauthorized/i.test(result.error) // kilocode_change
+              result.error && /401|402|429|rate.limit|free.period|unauthorized/i.test(result.error) // chipmate_change
             const apiKeyMsg =
               "Codebase search unavailable: free period ended. Set MORPH_API_KEY to continue. Get your key at https://www.morphllm.com/"
             if (isAuthOrRateLimit) {
-              // kilocode_change start - publish Kilo's toast through upstream EventV2
+              // chipmate_change start - publish ChipMate's toast through upstream EventV2
               yield* events
                 .publish(TuiEvent.ToastShow, {
                   title: "Codebase Search Unavailable",
@@ -70,7 +70,7 @@ export const CodebaseSearchTool = Tool.define(
                   duration: 10000,
                 })
                 .pipe(Effect.ignore)
-              // kilocode_change end
+              // chipmate_change end
             }
             return {
               title: `Codebase Search: ${params.query}`,
@@ -80,7 +80,7 @@ export const CodebaseSearchTool = Tool.define(
           }
 
           const MAX_OUTPUT_CHARS = 45_000
-          const fullOutput = result.contexts.map((c) => `### ${c.file}\n\`\`\`\n${c.content}\n\`\`\``).join("\n\n") // kilocode_change
+          const fullOutput = result.contexts.map((c) => `### ${c.file}\n\`\`\`\n${c.content}\n\`\`\``).join("\n\n") // chipmate_change
 
           let output: string
           if (fullOutput.length > MAX_OUTPUT_CHARS) {

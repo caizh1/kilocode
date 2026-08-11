@@ -1,8 +1,8 @@
 # ChipMate Word / Mermaid Render Server
 
-这是 Kilo Code 可使用的独立渲染与内网分发服务。它将需要桌面或 Linux 原生工具的工作放到一台 Docker 主机中执行，Kilo Code 扩展只通过 HTTP 调用服务，不在 VSIX 内捆绑 LibreOffice、Poppler 或 Chromium。
+这是 ChipMate 可使用的独立渲染与内网分发服务。它将需要桌面或 Linux 原生工具的工作放到一台 Docker 主机中执行，ChipMate 扩展只通过 HTTP 调用服务，不在 VSIX 内捆绑 LibreOffice、Poppler 或 Chromium。
 
-项目当前保留 `chipmate-word-render` 的镜像名、服务名和兼容 API，以保持与已有 ChipMate/Kilo Code 配置及离线部署脚本兼容；迁入 Kilo Code 并不意味着它已经改名或完成产品身份迁移。
+项目当前保留 `chipmate-word-render` 的镜像名、服务名和兼容 API，以保持与已有 ChipMate/ChipMate 配置及离线部署脚本兼容；迁入 ChipMate 并不意味着它已经改名或完成产品身份迁移。
 
 ## 作用与边界
 
@@ -18,7 +18,7 @@
 | VS Code 插件市场 | 结构校验、目录导入、Web 上传、手动 VSIX 下载、评价与聚合分析；不执行扩展代码。 | SQLite、Yauzl、本地可写卷、可选 New API |
 | Embedded Review 规则包 | 确定性解析团队编码规范 DOCX，保存不可变 RulePack 并发布当前版本。 | JSZip、本地可写卷、New API 身份 |
 
-它不是 Kilo Code 的主服务，也不会替代 `kilo serve`。它是扩展配置的远端渲染端点和内网文件服务。
+它不是 ChipMate 的主服务，也不会替代 `chipmate serve`。它是扩展配置的远端渲染端点和内网文件服务。
 
 ## 目录说明
 
@@ -47,7 +47,7 @@ server/chipmate-word-render/
 | `POST /render/mermaid` | 接收 `source`、可选 `filename`、`scale`（1–4）和 `timeoutMs`，返回裁剪后的 PNG 和尺寸信息。 |
 | `GET /packages/manifest.json` | 扫描包目录内的 VSIX，生成 schema v2 更新清单；按内部发行目标返回版本、SHA-256、大小、下载 URL 与 `latestByTarget`。 |
 | `GET /packages/<file>` | 下载包目录中的文件，路径越界会被拒绝。 |
-| `GET /marketplace/skills` | 返回 Kilo 兼容的 Skill Market 目录，下载链接被规范化为同源 URL。 |
+| `GET /marketplace/skills` | 返回 ChipMate 兼容的 Skill Market 目录，下载链接被规范化为同源 URL。 |
 | `GET /marketplace/manifest.json` | 返回 Skill Market 的概要与告警。 |
 | `GET /marketplace/skills/<id>.tar.gz` | 下载一个 skill 的归档，并增加下载计数。 |
 | `GET /marketplace/skills/<id>/files` | 返回 skill 的文件列表，供客户端安装流程使用。 |
@@ -84,7 +84,7 @@ Word 字段刷新以 `MacroExecutionMode=NEVER_EXECUTE` 和 `UpdateDocMode=NO_UP
 前置条件：Node.js 24 或更高版本；若要执行实际 Word/Mermaid 渲染，还需安装并能在 `PATH` 中找到 `soffice`（或 `libreoffice`）、`pdftoppm` 和 Chromium/Chrome。
 
 ```bash
-cd /Users/archer/Work/kilocode/server/chipmate-word-render
+cd /Users/archer/Work/chipmate/server/chipmate-word-render
 npm install
 npm run dev
 ```
@@ -115,7 +115,7 @@ Word 接口需要 Base64 编码的真实 `.docx`，示例负载为：
 Docker 镜像是服务的核心可交付物。Dockerfile 第一阶段安装完整 workspace 依赖、检查生成契约并构建 Web；第二阶段只安装运行依赖和系统渲染工具。Web 构建失败会直接终止镜像构建。以下命令从源码生成一个供离线 Linux Docker 主机导入的 `linux/amd64` 镜像归档及 SHA-256 文件：
 
 ```bash
-cd /Users/archer/Work/kilocode/server/chipmate-word-render
+cd /Users/archer/Work/chipmate/server/chipmate-word-render
 
 VERSION=$(node -p 'require("./package.json").version')
 IMAGE="chipmate-word-render:${VERSION}"
@@ -144,7 +144,7 @@ gzip -t "$ARCHIVE"
 
 ## 生成包含预置 skills 的完整离线交付包
 
-`build-offline-bundle.mjs` 会把已生成的 Docker 归档、安装脚本，以及 Kilo 仓库 `.kilo/skills/` 中的 `source-backed-detail-design` 和 `documents` 组合到 `out/chipmate-server-offline-<version>-linux-amd64.tar.gz`。脚本总是按当前 Docker 归档重新计算内外层校验文件，不会复制可能过期的旁车哈希。执行前必须已经完成上一节的镜像归档构建：
+`build-offline-bundle.mjs` 会把已生成的 Docker 归档、安装脚本，以及 ChipMate 仓库 `.chipmate/skills/` 中的 `source-backed-detail-design` 和 `documents` 组合到 `out/chipmate-server-offline-<version>-linux-amd64.tar.gz`。脚本总是按当前 Docker 归档重新计算内外层校验文件，不会复制可能过期的旁车哈希。执行前必须已经完成上一节的镜像归档构建：
 
 ```bash
 node build-offline-bundle.mjs
@@ -183,10 +183,10 @@ curl -fsS http://127.0.0.1:6001/health
 ```bash
 PORT=6001 \
 SERVICE_NAME=chipmate-word-render \
-PACKAGE_ROOT_ON_HOST=/srv/kilo/packages \
-SKILL_MARKET_ROOT_ON_HOST=/srv/kilo/skill-market \
-REVIEW_RULE_ROOT_ON_HOST=/srv/kilo/review-rules \
-BACKUP_ROOT_ON_HOST=/srv/kilo/backups \
+PACKAGE_ROOT_ON_HOST=/srv/chipmate/packages \
+SKILL_MARKET_ROOT_ON_HOST=/srv/chipmate/skill-market \
+REVIEW_RULE_ROOT_ON_HOST=/srv/chipmate/review-rules \
+BACKUP_ROOT_ON_HOST=/srv/chipmate/backups \
 ./install-render-server.sh ./chipmate-word-render-<version>-linux-amd64.docker.tar.gz
 ```
 
@@ -203,9 +203,9 @@ BACKUP_ROOT_ON_HOST=/srv/kilo/backups \
 
 只需把 `.vsix` 复制到 `drop/`。建议先复制为非 `.vsix` 临时文件，完成后原子重命名；删除 `drop/` 中的文件会自动下架该系统导入来源。无效文件保留在原位，具体结构告警可在 `/status` 查看。服务只做 ZIP/manifest/版本/体积等结构校验，不执行扩展，也不进行代码、签名或病毒审计。
 
-## Kilo Code 接入
+## ChipMate 接入
 
-部署成功后，将 Kilo Code 的如下设置指向服务基础地址，例如 `http://<server-ip>:6001`：
+部署成功后，将 ChipMate 的如下设置指向服务基础地址，例如 `http://<server-ip>:6001`：
 
 - `chipmate.v2.documents.wordRender.remoteEndpoint`
 - `chipmate.v2.documents.mermaidRender.remoteEndpoint`

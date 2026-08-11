@@ -21,7 +21,7 @@ Status: `COMPLETE`
 - `server/chipmate-word-render/package-lock.json`
 - `server/chipmate-word-render/Dockerfile`
 - `docs/chipmate-skill-market-alignment-evidence/g3/review.md`
-- `docs/chipmate-skill-market-kilo-alignment-plan.md`
+- `docs/chipmate-skill-market-chipmate-alignment-plan.md`
 
 ## Design Summary
 
@@ -60,12 +60,12 @@ Status: `COMPLETE`
 - `npx -y -p node@24 node --import tsx --test apps/api/test/*.test.ts packages/market-db/test/*.test.ts`
   - Result: PASS。
   - Evidence: Node 24.18.0 下 8 pass。
-- `bun run typecheck`（`packages/kilo-vscode`）
+- `bun run typecheck`（`packages/chipmate-vscode`）
   - Result: PASS。
   - Evidence: extension 和 webview TypeScript 通过。
 - `bun test tests/unit/marketplace-installer.test.ts`
   - Result: PASS。
-  - Evidence: 真实 Kilo `MarketplaceInstaller` 9 pass。
+  - Evidence: 真实 ChipMate `MarketplaceInstaller` 9 pass。
 - `node --input-type=module -e '<migration and Worker operation check>'`
   - Result: PASS。
   - Evidence: migrations `[1,2,3]`，8 个核心 Worker operation 全部存在。
@@ -80,7 +80,7 @@ Status: `COMPLETE`
 - release update 被 immutable trigger 拒绝：PASS。
 - Worker `legacy-latest` 原子导出：PASS。
 - Fastify production bootstrap 导入/导出：PASS。
-- 实际 Kilo `MarketplaceInstaller` 从生成目录读取 catalog、下载归档、tar staging 安装并找到根 `SKILL.md`：PASS。
+- 实际 ChipMate `MarketplaceInstaller` 从生成目录读取 catalog、下载归档、tar staging 安装并找到根 `SKILL.md`：PASS。
 - market DB 启动失败时 health 和 render endpoints 继续可用：PASS。
 
 ## Runtime Evidence

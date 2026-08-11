@@ -1,5 +1,5 @@
 import MarkdownShikiWorkerUrl from "./markdown-shiki.worker.ts?worker&url"
-import { KiloTheme } from "@opencode-ai/ui/context/marked" // kilocode_change - Kilo renamed the shared theme
+import { ChipMateTheme } from "@opencode-ai/ui/context/marked" // chipmate_change - ChipMate renamed the shared theme
 import {
   applyMarkdownWorkerResponse,
   shouldReleaseMarkdownWorkerState,
@@ -117,6 +117,6 @@ function getWorker() {
   }
   worker.onerror = (event) => fail(event.message || "Markdown highlighting worker failed")
   worker.onmessageerror = () => fail("Markdown worker response failed")
-  worker.postMessage({ type: "init", theme: KiloTheme } satisfies MarkdownWorkerRequest) // kilocode_change
+  worker.postMessage({ type: "init", theme: ChipMateTheme } satisfies MarkdownWorkerRequest) // chipmate_change
   return worker
 }

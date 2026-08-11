@@ -18,7 +18,7 @@ void mock.module("open", () => ({
     // Return a mock subprocess that emits an error if openShouldFail is true
     const subprocess = new EventEmitter()
     if (openShouldFail) {
-      // kilocode_change start - buffer the error until the consumer attaches
+      // chipmate_change start - buffer the error until the consumer attaches
       // its listener. Emitting on a timer races listener attachment on slow CI.
       const err = new Error("spawn xdg-open ENOENT")
       const originalOn = subprocess.on.bind(subprocess)
@@ -27,7 +27,7 @@ void mock.module("open", () => ({
         if (event === "error") queueMicrotask(() => (listener as (e: Error) => void).call(subprocess, err))
         return ret
       }
-      // kilocode_change end
+      // chipmate_change end
     }
     return subprocess
   },

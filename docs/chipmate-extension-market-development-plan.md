@@ -72,12 +72,12 @@
 ### G7：VS Code 入口
 
 - 改动摘要：现有 Marketplace Panel 在服务声明 `extensions` 能力时显示“在浏览器中打开 VS Code 插件市场”，打开配置市场源的 `/extensions?source=vscode`。
-- 测试结果：VS Code 类型检查、lint、10 个 Marketplace 单元测试、Knip 和 `check-kilocode-change` 全部通过。
+- 测试结果：VS Code 类型检查、lint、10 个 Marketplace 单元测试、Knip 和 `check-chipmate-change` 全部通过。
 - 已知限制：扩展内没有 VSIX 下载、安装、升级或安装状态追踪。
 
 ### G8：本地回归与视觉验收
 
-- 执行命令：`npm run check`、`npm run build`、`bash -n install-render-server.sh`、真实 Chrome Playwright、VS Code `typecheck`、`lint`、目标单测、`knip` 和 `check-kilocode-change`。
+- 执行命令：`npm run check`、`npm run build`、`bash -n install-render-server.sh`、真实 Chrome Playwright、VS Code `typecheck`、`lint`、目标单测、`knip` 和 `check-chipmate-change`。
 - 测试结果：服务端 API 26/26、Web 10/10、Contracts 4/4、Market DB 3/3、Skill Spec 11/11；真实 Chrome 5/5；VS Code Marketplace 10/10；生产构建成功。
 - 真实证据：`design-qa.md` 的“ChipMate VS Code 插件市场 Design QA”及 `server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/`；视口为 `1484×1060`、`1440×1024`、`1050×1024`，无 P0/P1/P2。
 - 回归结论：既有 `/health`、Word/Mermaid、packages manifest、Skill Market、旧客户端兼容链路测试通过。

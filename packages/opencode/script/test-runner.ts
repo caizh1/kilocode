@@ -1,4 +1,4 @@
-// kilocode_change - new file
+// chipmate_change - new file
 //
 // Custom test runner that executes each test file in its own isolated process.
 // Prevents cross-contamination between test files by ensuring separate PIDs,
@@ -7,10 +7,10 @@
 import os from "os"
 import path from "path"
 import fs from "fs/promises"
-import { TestProfile } from "./kilocode/test-profile"
-import { TestShard } from "./kilocode/test-shard"
-import { TestCli } from "./kilocode/test-cli"
-import { remove } from "../test/kilocode/cleanup"
+import { TestProfile } from "./chipmate/test-profile"
+import { TestShard } from "./chipmate/test-shard"
+import { TestCli } from "./chipmate/test-cli"
+import { remove } from "../test/chipmate/cleanup"
 
 const root = path.resolve(import.meta.dir, "..")
 const argv = process.argv.slice(2)
@@ -33,8 +33,8 @@ if (argv.includes("--help") || argv.includes("-h")) {
       "  --timeout <ms>       Per-test timeout passed to bun test (default: 60000)",
       "  --file-timeout <ms>  Per-file process timeout (default: 300000)",
       "  --retries <N>        Extra attempts for failing files (default: 1)",
-      "  --profile <name>     Run a curated test profile (env: KILO_TEST_PROFILE)",
-      "  --shard <N/M>        Run one balanced file shard (env: KILO_TEST_SHARD)",
+      "  --profile <name>     Run a curated test profile (env: CHIPMATE_TEST_PROFILE)",
+      "  --shard <N/M>        Run one balanced file shard (env: CHIPMATE_TEST_SHARD)",
       "  --bail               Stop on first failure",
       "  --dots               Show compact dot progress",
       "  --verbose            Show full output for every file",
@@ -71,23 +71,23 @@ const bail = argv.includes("--bail")
 const verbose = argv.includes("--verbose")
 const dots = !verbose && (ci || argv.includes("--dots"))
 // Cap concurrency at 4 even on bigger runners: the bottleneck is shared
-// resources (ports, global filesystem like ~/.local/share/kilo), not CPU.
+// resources (ports, global filesystem like ~/.local/share/chipmate), not CPU.
 // Eight parallel processes was triggering port/FS races, not going faster.
 const concurrency = opt("concurrency", Math.min(4, os.cpus().length))
 const timeout = opt("timeout", 60000)
 const deadline = opt("file-timeout", 300000)
 const retries = opt("retries", 1)
 const flag = text("profile")
-const env = process.env.KILO_TEST_PROFILE?.trim() || undefined
+const env = process.env.CHIPMATE_TEST_PROFILE?.trim() || undefined
 if (flag && env && flag !== env) {
-  console.error(`Conflicting test profiles: --profile=${flag}, KILO_TEST_PROFILE=${env}`)
+  console.error(`Conflicting test profiles: --profile=${flag}, CHIPMATE_TEST_PROFILE=${env}`)
   process.exit(2)
 }
 const profile = flag ?? env
 const shardFlag = text("shard")
-const shardEnv = process.env.KILO_TEST_SHARD?.trim() || undefined
+const shardEnv = process.env.CHIPMATE_TEST_SHARD?.trim() || undefined
 if (shardFlag && shardEnv && shardFlag !== shardEnv) {
-  console.error(`Conflicting test shards: --shard=${shardFlag}, KILO_TEST_SHARD=${shardEnv}`)
+  console.error(`Conflicting test shards: --shard=${shardFlag}, CHIPMATE_TEST_SHARD=${shardEnv}`)
   process.exit(2)
 }
 const parsed = TestShard.parse(shardFlag ?? shardEnv)
@@ -151,7 +151,7 @@ const matched =
         patterns.some((pattern) => file.includes(pattern) || path.join("test", file).includes(pattern)),
       )
     : selected
-const candidates = patterns.length > 0 && !profile ? matched : matched.filter((file) => !skipped.has(file)) // kilocode_change
+const candidates = patterns.length > 0 && !profile ? matched : matched.filter((file) => !skipped.has(file)) // chipmate_change
 if (shard && shard.total > candidates.length) {
   console.error(`Test shard count ${shard.total} exceeds selected file count ${candidates.length}`)
   process.exit(2)
@@ -187,7 +187,7 @@ type Proc = ReturnType<typeof Bun.spawn>
 
 const xmldir = ci ? path.join(os.tmpdir(), `opencode-junit-${process.pid}`) : ""
 if (ci) await fs.mkdir(xmldir, { recursive: true })
-// kilocode_change start
+// chipmate_change start
 const supplied = process.env[TestCli.ENV]
 const built = supplied
   ? { binary: supplied, dir: undefined }
@@ -197,7 +197,7 @@ async function cleanBinary() {
   if (!built.dir) return
   await fs.rm(built.dir, { recursive: true, force: true })
 }
-// kilocode_change end
+// chipmate_change end
 
 const counter = { done: 0 }
 const pad = String(files.length).length

@@ -3,10 +3,10 @@ import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
-import * as ProviderSave from "@/kilocode/server/provider-save-lifecycle" // kilocode_change
-import { disconnect } from "@/kilocode/server/sse" // kilocode_change
+import * as ProviderSave from "@/chipmate/server/provider-save-lifecycle" // chipmate_change
+import { disconnect } from "@/chipmate/server/sse" // chipmate_change
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
-import { MemoryDebug } from "@/kilocode/memory-debug" // kilocode_change
+import { MemoryDebug } from "@/chipmate/memory-debug" // chipmate_change
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Effect, Queue, Schema } from "effect"
 import * as Stream from "effect/Stream"
@@ -31,20 +31,20 @@ function parseBody(body: string) {
   } catch {
     return undefined
   }
-} // kilocode_change
+} // chipmate_change
 
-// kilocode_change start - indexing settings hot-reload without disposing all instances
+// chipmate_change start - indexing settings hot-reload without disposing all instances
 function isIndexingOnlyConfig(input: unknown): boolean {
   if (!input || typeof input !== "object" || Array.isArray(input)) return false
   const keys = Object.keys(input as Record<string, unknown>)
   return keys.length === 1 && keys[0] === "indexing"
 }
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start
+// chipmate_change start
 function eventResponse(request: HttpServerRequest.HttpServerRequest) {
   return Effect.gen(function* () {
-    // kilocode_change end
+    // chipmate_change end
     yield* Effect.logInfo("global event connected")
     const events = Stream.callback<GlobalBusEvent>((queue) => {
       const handler = (event: GlobalBusEvent) => Queue.offerUnsafe(queue, event)
@@ -64,11 +64,11 @@ function eventResponse(request: HttpServerRequest.HttpServerRequest) {
         Stream.map(eventData),
         Stream.pipeThroughChannel(Sse.encode()),
         Stream.encodeText,
-        // kilocode_change start - prevent disconnected SSE clients from retaining full diff payloads
+        // chipmate_change start - prevent disconnected SSE clients from retaining full diff payloads
         // Explicit interruption closes the stream scope, unregisters its GlobalBus listener, and
         // releases the unbounded callback queue even when transport cancellation is not propagated.
         Stream.interruptWhen(disconnect(request)),
-        // kilocode_change end
+        // chipmate_change end
         Stream.ensuring(Effect.logInfo("global event disconnected")),
       ),
       {
@@ -94,31 +94,31 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const event = Effect.fn("GlobalHttpApi.event")(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest // kilocode_change
-      return yield* eventResponse(request) // kilocode_change
+      const request = yield* HttpServerRequest.HttpServerRequest // chipmate_change
+      return yield* eventResponse(request) // chipmate_change
     })
 
     const configGet = Effect.fn("GlobalHttpApi.configGet")(function* () {
       return yield* config.getGlobal()
     })
 
-    // kilocode_change start - Kilo configuration saves own disposal and memory diagnostics
+    // chipmate_change start - ChipMate configuration saves own disposal and memory diagnostics
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
-      // kilocode_change start - correlate provider/settings saves without persisting request metadata
+      // chipmate_change start - correlate provider/settings saves without persisting request metadata
       const request = yield* HttpServerRequest.HttpServerRequest
       const operation = MemoryDebug.operation(request.headers)
-      const defer = ProviderSave.deferred(request.headers) // kilocode_change
+      const defer = ProviderSave.deferred(request.headers) // chipmate_change
       const keys = Object.keys(ctx.payload)
       const began = Date.now()
       yield* Effect.promise(() =>
         MemoryDebug.event({ name: "global.config.update.begin", operationId: operation, data: { keys } }),
       )
-      // kilocode_change end
-      // kilocode_change start - indexing settings are consumed by the indexing hot-reload path
+      // chipmate_change end
+      // chipmate_change start - indexing settings are consumed by the indexing hot-reload path
       const hot = isIndexingOnlyConfig(ctx.payload)
       const result = yield* config.updateGlobal(ctx.payload, ProviderSave.options(hot, defer))
-      // kilocode_change end
-      // kilocode_change start
+      // chipmate_change end
+      // chipmate_change start
       if (result.changed && defer) {
         yield* Effect.promise(() =>
           MemoryDebug.event({
@@ -147,8 +147,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
           }),
         )
       }
-      // kilocode_change end
-      // kilocode_change - result only records changed/hot flags, never config values
+      // chipmate_change end
+      // chipmate_change - result only records changed/hot flags, never config values
       yield* Effect.promise(() =>
         MemoryDebug.event({
           name: "global.config.update.end",
@@ -160,16 +160,16 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {
-      // kilocode_change start - explicit post-auth/provider disposal
+      // chipmate_change start - explicit post-auth/provider disposal
       const request = yield* HttpServerRequest.HttpServerRequest
       const operation = MemoryDebug.operation(request.headers)
       const began = Date.now()
       yield* Effect.promise(() =>
         MemoryDebug.event({ name: "global.dispose.begin", operationId: operation, data: { reason: "explicit" } }),
       )
-      // kilocode_change end
+      // chipmate_change end
       yield* disposeAllInstancesAndEmitGlobalDisposed()
-      // kilocode_change
+      // chipmate_change
       yield* Effect.promise(() =>
         MemoryDebug.event({
           name: "global.dispose.end",
@@ -179,7 +179,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       )
       return true
     })
-    // kilocode_change end
+    // chipmate_change end
 
     const upgrade = Effect.fn("GlobalHttpApi.upgrade")(function* (ctx: { payload: typeof GlobalUpgradeInput.Type }) {
       const method = yield* installation.method()

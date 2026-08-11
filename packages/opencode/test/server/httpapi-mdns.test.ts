@@ -26,22 +26,22 @@ void mock.module("bonjour-service", () => ({
 const { Server } = await import("../../src/server/server")
 
 const original = {
-  KILO_SERVER_PASSWORD: Flag.KILO_SERVER_PASSWORD,
-  KILO_SERVER_USERNAME: Flag.KILO_SERVER_USERNAME,
+  CHIPMATE_SERVER_PASSWORD: Flag.CHIPMATE_SERVER_PASSWORD,
+  CHIPMATE_SERVER_USERNAME: Flag.CHIPMATE_SERVER_USERNAME,
 }
 
 afterEach(async () => {
   events.length = 0
-  Flag.KILO_SERVER_PASSWORD = original.KILO_SERVER_PASSWORD
-  Flag.KILO_SERVER_USERNAME = original.KILO_SERVER_USERNAME
+  Flag.CHIPMATE_SERVER_PASSWORD = original.CHIPMATE_SERVER_PASSWORD
+  Flag.CHIPMATE_SERVER_USERNAME = original.CHIPMATE_SERVER_USERNAME
   await disposeAllInstances()
   await resetDatabase()
 })
 
 describe("HttpApi Server.listen mDNS", () => {
   test("skips publish for loopback hostnames", async () => {
-    Flag.KILO_SERVER_PASSWORD = "mdns-secret"
-    Flag.KILO_SERVER_USERNAME = "opencode"
+    Flag.CHIPMATE_SERVER_PASSWORD = "mdns-secret"
+    Flag.CHIPMATE_SERVER_USERNAME = "opencode"
     const listener = await Server.listen({ hostname: "127.0.0.1", port: 0, mdns: true })
     try {
       expect(events.filter((e) => e.kind === "publish")).toEqual([])
@@ -52,14 +52,14 @@ describe("HttpApi Server.listen mDNS", () => {
   })
 
   test("publishes for non-loopback hostnames and unpublishes on stop", async () => {
-    Flag.KILO_SERVER_PASSWORD = "mdns-secret"
-    Flag.KILO_SERVER_USERNAME = "opencode"
+    Flag.CHIPMATE_SERVER_PASSWORD = "mdns-secret"
+    Flag.CHIPMATE_SERVER_USERNAME = "opencode"
     const listener = await Server.listen({ hostname: "0.0.0.0", port: 0, mdns: true })
     try {
       const published = events.filter((e) => e.kind === "publish")
       expect(published.length).toBe(1)
       expect(published[0]!.port).toBe(listener.port)
-      expect(published[0]!.name).toBe(`kilo-${listener.port}`) // kilocode_change
+      expect(published[0]!.name).toBe(`chipmate-${listener.port}`) // chipmate_change
     } finally {
       await withTimeout(listener.stop(true), 10_000, "timed out stopping mdns listener")
     }
@@ -68,8 +68,8 @@ describe("HttpApi Server.listen mDNS", () => {
   })
 
   test("scope finalizer unpublishes even if stop() is not called for force-close", async () => {
-    Flag.KILO_SERVER_PASSWORD = "mdns-secret"
-    Flag.KILO_SERVER_USERNAME = "opencode"
+    Flag.CHIPMATE_SERVER_PASSWORD = "mdns-secret"
+    Flag.CHIPMATE_SERVER_USERNAME = "opencode"
     const listener = await Server.listen({ hostname: "0.0.0.0", port: 0, mdns: true })
     expect(events.filter((e) => e.kind === "publish").length).toBe(1)
     // Plain (graceful) stop without close=true should still unpublish.

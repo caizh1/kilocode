@@ -1,0 +1,47 @@
+export const dict = {
+  "chipmate:autocomplete.statusBar.enabled": "$(chipmate-v2-logo) オートコンプリート",
+  "chipmate:autocomplete.statusBar.snoozed": "一時停止中",
+  "chipmate:autocomplete.statusBar.warning": "$(warning) オートコンプリート",
+  "chipmate:autocomplete.statusBar.tooltip.basic": "ChipMate オートコンプリート",
+  "chipmate:autocomplete.statusBar.tooltip.disabled": "ChipMate オートコンプリート (無効)",
+  "chipmate:autocomplete.statusBar.tooltip.noUsableProvider":
+    "**オートコンプリートモデルが設定されていません**\n\nオートコンプリートを有効にするには、次の対応プロバイダーのいずれかを含むプロファイルを追加してください: {{providers}}。\n\n[設定を開く]({{command}})",
+  "chipmate:autocomplete.statusBar.tooltip.sessionTotal": "セッション合計コスト:",
+  "chipmate:autocomplete.statusBar.tooltip.provider": "プロバイダー:",
+  "chipmate:autocomplete.statusBar.tooltip.model": "モデル:",
+  "chipmate:autocomplete.statusBar.tooltip.profile": "プロファイル: ",
+  "chipmate:autocomplete.statusBar.tooltip.defaultProfile": "デフォルト",
+  "chipmate:autocomplete.statusBar.tooltip.completionSummary":
+    "{{startTime}} から {{endTime}} までに {{count}} 件の補完を実行し、合計コストは {{cost}} でした。",
+  "chipmate:autocomplete.statusBar.tooltip.providerInfo":
+    "オートコンプリートは {{provider}} 経由の {{model}} によって提供されています。",
+  "chipmate:autocomplete.statusBar.cost.zero": "$0.00",
+  "chipmate:autocomplete.statusBar.cost.lessThanCent": "<$0.01",
+  "chipmate:autocomplete.toggleMessage": "ChipMate オートコンプリート {{status}}",
+  "chipmate:autocomplete.progress.title": "ChipMate",
+  "chipmate:autocomplete.progress.analyzing": "コードを解析しています...",
+  "chipmate:autocomplete.progress.generating": "提案された編集を生成しています...",
+  "chipmate:autocomplete.progress.processing": "提案された編集を処理しています...",
+  "chipmate:autocomplete.progress.showing": "提案された編集を表示しています...",
+  "chipmate:autocomplete.input.title": "ChipMate: クイックタスク",
+  "chipmate:autocomplete.input.placeholder": "例: 'この関数をより効率的にリファクタリングする'",
+  "chipmate:autocomplete.commands.generateSuggestions": "ChipMate: 提案された編集を生成",
+  "chipmate:autocomplete.commands.displaySuggestions": "提案された編集を表示",
+  "chipmate:autocomplete.commands.cancelSuggestions": "提案された編集をキャンセル",
+  "chipmate:autocomplete.commands.applyCurrentSuggestion": "現在の提案された編集を適用",
+  "chipmate:autocomplete.commands.applyAllSuggestions": "すべての提案された編集を適用",
+  "chipmate:autocomplete.commands.category": "ChipMate",
+  "chipmate:autocomplete.codeAction.title": "ChipMate: 提案された編集",
+  "chipmate:autocomplete.chatParticipant.fullName": "ChipMate エージェント",
+  "chipmate:autocomplete.chatParticipant.name": "エージェント",
+  "chipmate:autocomplete.chatParticipant.description": "クイックタスクや提案された編集をお手伝いできます。",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.message":
+    "ChipMate オートコンプリートは GitHub Copilot との競合によりブロックされています。修正するには、Copilot のインライン提案を無効にする必要があります。",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableCopilot": "Copilot を無効化",
+  "chipmate:autocomplete.incompatibilityExtensionPopup.disableInlineAssist": "オートコンプリートを無効化",
+  "chipmate:autocomplete.creditsExhausted.message":
+    "ChipMate オートコンプリートは一時停止されました。考えられる原因: ChipMate アカウントに残りクレジットがない、または設定済みの API キー (BYOK) がクォータ上限に達しています。オートコンプリートを再開するには、ChipMate クレジットを追加するか API キー設定を確認してください。",
+  "chipmate:autocomplete.creditsExhausted.addCredits": "クレジットを追加",
+  "chipmate:autocomplete.authError.message":
+    "ChipMate オートコンプリートは認証の問題により一時停止されました。考えられる原因: ChipMate にサインインしていない、または API キー (BYOK) が無効または不足しています。再度サインインするか、プロバイダーの API キー設定を確認してください。",
+}

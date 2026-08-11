@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-// kilocode_change - new file
+// chipmate_change - new file
 
 /**
  * Prevents new service-local runtimes in shared Effect modules while the
- * remaining Kilo Promise facades are migrated away. It also prevents tests
+ * remaining ChipMate Promise facades are migrated away. It also prevents tests
  * from reaching through the global application runtime unless the integration
  * boundary is explicitly classified.
  *
@@ -30,43 +30,43 @@ const allow: Record<string, string> = {
 
 const testAllow: Record<string, { count: number; reason: string }> = {
   "preload.ts": { count: 2, reason: "global test-suite AppRuntime cleanup boundary" },
-  "kilocode/config-resilience.test.ts": { count: 4, reason: "existing runtime integration test" },
-  "kilocode/config-validation.test.ts": { count: 2, reason: "existing runtime integration test" },
-  "kilocode/cli-shutdown.test.ts": { count: 1, reason: "mocked runtime boundary for shutdown unit tests" },
-  "kilocode/plan-followup.test.ts": { count: 3, reason: "existing runtime integration test" },
-  "kilocode/session-compaction-chunks.test.ts": {
+  "chipmate/config-resilience.test.ts": { count: 4, reason: "existing runtime integration test" },
+  "chipmate/config-validation.test.ts": { count: 2, reason: "existing runtime integration test" },
+  "chipmate/cli-shutdown.test.ts": { count: 1, reason: "mocked runtime boundary for shutdown unit tests" },
+  "chipmate/plan-followup.test.ts": { count: 3, reason: "existing runtime integration test" },
+  "chipmate/session-compaction-chunks.test.ts": {
     count: 2,
     reason: "disk-backed instance integration test cleanup",
   },
-  "kilocode/session-fork-remap.test.ts": {
+  "chipmate/session-fork-remap.test.ts": {
     count: 2,
     reason: "disk-backed instance integration test cleanup",
   },
-  "kilocode/kilo-sessions.test.ts": {
+  "chipmate/chipmate-sessions.test.ts": {
     count: 29,
     reason:
       "K1 W1: real integration test for SessionStatus→detach→heartbeat-fence; " +
       "the test creates a session and sets its status via the global AppRuntime, " +
-      "then drives the module-level KiloSessions seams and verifies the fence. " +
+      "then drives the module-level ChipMateSessions seams and verifies the fence. " +
       "DEF-3 extends this with heartbeat attention-status coverage: the heartbeat " +
       "resolves pending question/permission from the global Question.Service and " +
       "Permission.Service, so a test can only assert it by raising and replying to " +
       "real requests through that same runtime. Scoped layers cannot express this — " +
       "the global-runtime coupling is exactly what is under test.",
   },
-  "kilocode/session/platform-attribution.test.ts": { count: 2, reason: "existing runtime integration test" },
-  "kilocode/session-prompt-queue.test.ts": { count: 6, reason: "prompt queue legacy instance bridge regression" },
-  "kilocode/session-prompt-steering.test.ts": {
+  "chipmate/session/platform-attribution.test.ts": { count: 2, reason: "existing runtime integration test" },
+  "chipmate/session-prompt-queue.test.ts": { count: 6, reason: "prompt queue legacy instance bridge regression" },
+  "chipmate/session-prompt-steering.test.ts": {
     count: 2,
     reason: "disk-backed prompt steering integration test cleanup",
   },
-  "server/experimental-session-list.test.ts": { count: 2, reason: "Kilo session list integration test" },
-  "kilocode/server/cloud-session-import.test.ts": { count: 5, reason: "full app cloud import transaction integration" },
-  "kilocode/server/listener-runtime.test.ts": { count: 4, reason: "listener and AppRuntime integration test" },
+  "server/experimental-session-list.test.ts": { count: 2, reason: "ChipMate session list integration test" },
+  "chipmate/server/cloud-session-import.test.ts": { count: 5, reason: "full app cloud import transaction integration" },
+  "chipmate/server/listener-runtime.test.ts": { count: 4, reason: "listener and AppRuntime integration test" },
   "tool/recall.test.ts": { count: 11, reason: "existing runtime integration test" },
 }
 
-const owned = (file: string) => file.startsWith("kilocode/") || file.startsWith("kilo-sessions/")
+const owned = (file: string) => file.startsWith("chipmate/") || file.startsWith("chipmate-sessions/")
 const hits: Array<{ file: string; line: number }> = []
 const glob = new Bun.Glob("**/*.ts")
 

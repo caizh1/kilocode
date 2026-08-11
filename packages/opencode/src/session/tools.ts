@@ -1,6 +1,6 @@
 import { Agent } from "@/agent/agent"
-import { KiloSessionPrompt } from "@/kilocode/session/prompt" // kilocode_change
-import { MemoryMarker } from "@/kilocode/memory/marker" // kilocode_change
+import { ChipMateSessionPrompt } from "@/chipmate/session/prompt" // chipmate_change
+import { MemoryMarker } from "@/chipmate/memory/marker" // chipmate_change
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
@@ -20,17 +20,17 @@ import { Session } from "./session"
 import { SessionProcessor } from "./processor"
 import { PartID } from "./schema"
 import { EffectBridge } from "@/effect/bridge"
-import * as SandboxPolicy from "@/kilocode/sandbox/policy" // kilocode_change
+import * as SandboxPolicy from "@/chipmate/sandbox/policy" // chipmate_change
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
-import { SkillMarketIntent } from "@/kilocode/skill-market/intent" // kilocode_change
-// kilocode_change start
-import { SwePruner } from "@/kilocode/swe-pruner"
+import { SkillMarketIntent } from "@/chipmate/skill-market/intent" // chipmate_change
+// chipmate_change start
+import { SwePruner } from "@/chipmate/swe-pruner"
 import { Config } from "@/config/config"
-import { EmbeddedReviewThinRuntime } from "@/kilocode/embedded-review/thin-runtime" // kilocode_change
-import { filter as filterSourceBackedDesignTools } from "@/kilocode/source-backed-design/visibility" // kilocode_change
-import { PermissionProvenance } from "@/kilocode/permission/provenance"
-// kilocode_change end
+import { EmbeddedReviewThinRuntime } from "@/chipmate/embedded-review/thin-runtime" // chipmate_change
+import { filter as filterSourceBackedDesignTools } from "@/chipmate/source-backed-design/visibility" // chipmate_change
+import { PermissionProvenance } from "@/chipmate/permission/provenance"
+// chipmate_change end
 import { isRecord } from "@/util/record"
 
 const MCP_RESOURCE_TOOLS = {
@@ -51,29 +51,29 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
-  processor: Pick<SessionProcessor.Handle, "message" | "metadata" | "completeToolCall"> // kilocode_change
+  processor: Pick<SessionProcessor.Handle, "message" | "metadata" | "completeToolCall"> // chipmate_change
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
-  memoryCache: MemoryMarker.Cache // kilocode_change
+  memoryCache: MemoryMarker.Cache // chipmate_change
 }) {
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
   const plugin = yield* Plugin.Service
   const permission = yield* Permission.Service
-  // kilocode_change start
+  // chipmate_change start
   const agents = yield* Agent.Service
   const sessions = yield* Session.Service
-  // kilocode_change end
+  // chipmate_change end
   const registry = yield* ToolRegistry.Service
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
-  // kilocode_change start - SWE-Pruner (experimental)
+  // chipmate_change start - SWE-Pruner (experimental)
   const config = yield* Config.Service
   const cfg = yield* config.get()
   const swe = SwePruner.enabled(cfg)
   const permissionOrigins = cfg.permission_origins
-  // kilocode_change end
+  // chipmate_change end
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
     sessionID: input.session.id,
@@ -83,10 +83,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
     agent: input.agent.name,
     messages: input.messages,
-    // kilocode_change start
+    // chipmate_change start
     metadata: (val) => input.processor.metadata(options.toolCallId, val),
     ask: (req) =>
-      KiloSessionPrompt.askPermission({
+      ChipMateSessionPrompt.askPermission({
         permission,
         agents,
         sessions,
@@ -133,16 +133,16 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         Effect.orDie,
       ),
   })
-  // kilocode_change end
+  // chipmate_change end
 
-  // kilocode_change start - Skill Market tools are absent from ordinary QA provider schemas
+  // chipmate_change start - Skill Market tools are absent from ordinary QA provider schemas
   const registered = yield* registry.tools({
     modelID: ModelV2.ID.make(input.model.api.id),
     providerID: input.model.providerID,
     family: input.model.family,
     agent: input.agent,
   })
-  // kilocode_change start - keep thin Embedded Review read-only while allowing model-led evidence retrieval
+  // chipmate_change start - keep thin Embedded Review read-only while allowing model-led evidence retrieval
   const embedded = EmbeddedReviewThinRuntime.active(input.session.id)
   const review = new Set(["read", "grep", "glob", "embedded_review_submit"])
   const visible = filterSourceBackedDesignTools({
@@ -154,14 +154,14 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     sessionID: input.session.id,
     messages: input.messages,
   })
-  // kilocode_change end
+  // chipmate_change end
   for (const item of visible) {
-    // kilocode_change end
-    // kilocode_change start - SWE-Pruner (experimental): advertise the focus parameter on prunable tools
+    // chipmate_change end
+    // chipmate_change start - SWE-Pruner (experimental): advertise the focus parameter on prunable tools
     const pruner = swe && SwePruner.prunable(item.id)
     const base = ToolJsonSchema.fromTool(item)
     const schema = ProviderTransform.schema(input.model, pruner ? SwePruner.extend(base) : base)
-    // kilocode_change end
+    // chipmate_change end
     tools[item.id] = tool({
       description: item.description,
       inputSchema: jsonSchema(schema),
@@ -174,13 +174,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
               { args },
             )
-            // kilocode_change start
+            // chipmate_change start
             let result = yield* SandboxPolicy.executeTool(ctx.sessionID, item, item.execute(args, ctx))
             // SWE-Pruner (experimental): prune the output when the model provided a focus question.
             // Runs before tool.execute.after so plugins observe the final output the model will
             // see; pruning is signalled to them via metadata.swePruner.
             if (pruner) result = yield* SwePruner.sweep({ tool: item.id, args, result, abort: ctx.abort })
-            // kilocode_change end
+            // chipmate_change end
             const output = {
               ...result,
               attachments: result.attachments?.map((attachment) => ({
@@ -190,8 +190,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 messageID: input.processor.message.id,
               })),
             }
-            // kilocode_change - mark successful targeted memory recalls for the assistant badge
-            if (item.id === "kilo_memory_recall") MemoryMarker.recall({ result: output, cache: input.memoryCache }) // kilocode_change
+            // chipmate_change - mark successful targeted memory recalls for the assistant badge
+            if (item.id === "chipmate_memory_recall") MemoryMarker.recall({ result: output, cache: input.memoryCache }) // chipmate_change
             yield* plugin.trigger(
               "tool.execute.after",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
@@ -207,7 +207,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
-  // kilocode_change - Embedded Review cannot expose external or mutating MCP tools
+  // chipmate_change - Embedded Review cannot expose external or mutating MCP tools
   const restricted = embedded || (yield* SandboxPolicy.networkRestricted(input.session.id))
   const hasMcpResourceServer = Object.values(yield* mcp.clients()).some(
     (client) => !!client.getServerCapabilities()?.resources,
@@ -460,9 +460,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
-  const mcpTools = restricted ? {} : yield* mcp.tools() // kilocode_change
+  const mcpTools = restricted ? {} : yield* mcp.tools() // chipmate_change
 
-  for (const [key, item] of Object.entries(mcpTools)) { // kilocode_change
+  for (const [key, item] of Object.entries(mcpTools)) { // chipmate_change
   const execute = item.execute
   if (!execute) continue
 
@@ -478,7 +478,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
           { args },
         )
-        // kilocode_change start
+        // chipmate_change start
         const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* SandboxPolicy.executeMcp(
           ctx.sessionID,
           item,
@@ -487,7 +487,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             return yield* Effect.promise(() => execute(args, opts))
           }),
         ).pipe(
-          // kilocode_change end
+          // chipmate_change end
           Effect.withSpan("Tool.execute", {
             attributes: {
               "tool.name": key,

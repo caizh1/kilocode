@@ -1,5 +1,5 @@
-import { KiloLogo } from "./kilo-logo" // kilocode_change
+import { ChipMateLogo } from "./chipmate-logo" // chipmate_change
 
 export function Logo() {
-  return <KiloLogo /> // kilocode_change
+  return <ChipMateLogo /> // chipmate_change
 }

@@ -14,23 +14,23 @@ const generated = await import("./generate.ts")
 
 await Bun.build({
   target: "node",
-  // kilocode_change start
+  // chipmate_change start
   entrypoints: [
     "./src/node.ts",
-    "../kilo-sandbox/src/kilo-sandbox-mutation-worker.ts",
-    "../kilo-sandbox/src/kilo-sandbox-network-relay.ts",
+    "../chipmate-sandbox/src/chipmate-sandbox-mutation-worker.ts",
+    "../chipmate-sandbox/src/chipmate-sandbox-network-relay.ts",
   ],
-  // kilocode_change end
+  // chipmate_change end
   outdir: "./dist/node",
   format: "esm",
   sourcemap: "linked",
   external: ["jsonc-parser", "@lydell/node-pty"],
   define: {
-    KILO_MODELS_DEV: generated.modelsData,
-    KILO_SANDBOX_MUTATION_WORKER_PATH: `'./kilo-sandbox-mutation-worker.js'`, // kilocode_change
-    KILO_SANDBOX_NETWORK_RELAY_PATH: `'./kilo-sandbox-network-relay.js'`, // kilocode_change
-    KILO_SANDBOX_SECCOMP_PATH: "undefined", // kilocode_change
-    KILO_CHANNEL: `'${Script.channel}'`,
+    CHIPMATE_MODELS_DEV: generated.modelsData,
+    CHIPMATE_SANDBOX_MUTATION_WORKER_PATH: `'./chipmate-sandbox-mutation-worker.js'`, // chipmate_change
+    CHIPMATE_SANDBOX_NETWORK_RELAY_PATH: `'./chipmate-sandbox-network-relay.js'`, // chipmate_change
+    CHIPMATE_SANDBOX_SECCOMP_PATH: "undefined", // chipmate_change
+    CHIPMATE_CHANNEL: `'${Script.channel}'`,
   },
   files: {
     "opencode-web-ui.gen.ts": "",

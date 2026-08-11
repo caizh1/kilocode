@@ -7,7 +7,7 @@
  * Usage:
  *   bun run script/upstream/analyze.ts --version v1.1.49
  *   bun run script/upstream/analyze.ts --commit abc123
- *   bun run script/upstream/analyze.ts --version v1.1.49 --base-branch catrielmuller/kilo-opencode-v1.1.44
+ *   bun run script/upstream/analyze.ts --version v1.1.49 --base-branch catrielmuller/chipmate-opencode-v1.1.44
  */
 
 import { $ } from "bun"
@@ -135,7 +135,7 @@ async function main() {
   for (const [rec, files] of byRec) {
     const label =
       rec === "keep-ours"
-        ? "Keep Kilo's"
+        ? "Keep ChipMate's"
         : rec === "codemod"
           ? "Auto-transform"
           : rec === "keep-theirs"
@@ -175,7 +175,7 @@ async function main() {
 
   const keepOursFiles = byRec.get("keep-ours") || []
   if (keepOursFiles.length > 0) {
-    conflictReport.recommendations.push(`${keepOursFiles.length} files will keep Kilo's version`)
+    conflictReport.recommendations.push(`${keepOursFiles.length} files will keep ChipMate's version`)
   }
 
   // Save report

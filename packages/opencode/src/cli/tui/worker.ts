@@ -10,17 +10,17 @@ import { Heap } from "@/cli/heap"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
-import { KiloLog } from "@/kilocode/log" // kilocode_change
-import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process" // kilocode_change
-import { createWorkerRemoteExit } from "@/kilocode/cli/cmd/tui/remote-exit-worker" // kilocode_change
-import { createWorkerShutdown } from "@/cli/tui/worker-shutdown" // kilocode_change
-import { KiloSessions } from "@/kilo-sessions/kilo-sessions" // kilocode_change
+import { ChipMateLog } from "@/chipmate/log" // chipmate_change
+import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process" // chipmate_change
+import { createWorkerRemoteExit } from "@/chipmate/cli/cmd/tui/remote-exit-worker" // chipmate_change
+import { createWorkerShutdown } from "@/cli/tui/worker-shutdown" // chipmate_change
+import { ChipMateSessions } from "@/chipmate-sessions/chipmate-sessions" // chipmate_change
 
-ensureProcessMetadata("worker") // kilocode_change - retain worker role and parent run correlation
-await KiloLog.init() // kilocode_change - keep compatibility logs off the TUI terminal
+ensureProcessMetadata("worker") // chipmate_change - retain worker role and parent run correlation
+await ChipMateLog.init() // chipmate_change - keep compatibility logs off the TUI terminal
 Heap.start()
 
-// kilocode_change start - keep upstream's keep-alive intent but never swallow the error silently
+// chipmate_change start - keep upstream's keep-alive intent but never swallow the error silently
 const onUnhandledRejection = (error: unknown) => {
   console.error("worker unhandledRejection", error)
 }
@@ -28,7 +28,7 @@ const onUnhandledRejection = (error: unknown) => {
 const onUncaughtException = (error: Error) => {
   console.error("worker uncaughtException", error)
 }
-// kilocode_change end
+// chipmate_change end
 
 process.on("unhandledRejection", onUnhandledRejection)
 process.on("uncaughtException", onUncaughtException)
@@ -39,10 +39,10 @@ GlobalBus.on("event", (event) => {
 })
 
 let server: Awaited<ReturnType<typeof Server.listen>> | undefined
-const remoteExit = createWorkerRemoteExit(Rpc.emit) // kilocode_change
-// kilocode_change start - drain ingest before dispose so GlobalBus/remote stay live
+const remoteExit = createWorkerRemoteExit(Rpc.emit) // chipmate_change
+// chipmate_change start - drain ingest before dispose so GlobalBus/remote stay live
 const runShutdown = createWorkerShutdown({
-  drain: () => KiloSessions.drainIngestForShutdown(),
+  drain: () => ChipMateSessions.drainIngestForShutdown(),
   dispose: () => InstanceRuntime.disposeAllInstances(),
   stopServer: async () => {
     if (server) await server.stop(true)
@@ -50,17 +50,17 @@ const runShutdown = createWorkerShutdown({
     process.off("uncaughtException", onUncaughtException)
   },
 })
-// kilocode_change end
+// chipmate_change end
 
 export const rpc = {
-  // kilocode_change start - worker lifecycle hooks for remote exit
+  // chipmate_change start - worker lifecycle hooks for remote exit
   tuiReady() {
     remoteExit.ready()
   },
   tuiGone() {
     remoteExit.gone()
   },
-  // kilocode_change end
+  // chipmate_change end
   async fetch(input: { url: string; method: string; headers: Record<string, string>; body?: string }) {
     const headers = { ...input.headers }
     const auth = ServerAuth.header()
@@ -103,13 +103,13 @@ export const rpc = {
     )
   },
   async shutdown() {
-    remoteExit.shutdown() // kilocode_change
-    await runShutdown() // kilocode_change - drain → dispose → stopServer
-    // kilocode_change start - Clear the Rpc message channel so the worker's event loop can drain and
+    remoteExit.shutdown() // chipmate_change
+    await runShutdown() // chipmate_change - drain → dispose → stopServer
+    // chipmate_change start - Clear the Rpc message channel so the worker's event loop can drain and
     // exit naturally. Without this, the active onmessage handle keeps the
     // worker alive even after all async work is done.
     onmessage = null
-    // kilocode_change end
+    // chipmate_change end
   },
 }
 

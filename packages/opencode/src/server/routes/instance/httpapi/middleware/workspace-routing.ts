@@ -6,7 +6,7 @@ import { Session } from "@/session/session"
 import { HttpApiProxy } from "./proxy"
 import * as Fence from "@/server/shared/fence"
 import { getWorkspaceRouteSessionID, isLocalWorkspaceRoute, workspaceProxyURL } from "@/server/shared/workspace-routing"
-import { forkTargetDirectory } from "@/kilocode/server/routes/fork-routing" // kilocode_change - fork honors explicit target directory
+import { forkTargetDirectory } from "@/chipmate/server/routes/fork-routing" // chipmate_change - fork honors explicit target directory
 import { NotFoundError } from "@/storage/storage"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Context, Data, Effect, Layer, Option, Schema } from "effect"
@@ -64,7 +64,7 @@ function requestURL(request: HttpServerRequest.HttpServerRequest): URL {
 }
 
 function configuredWorkspaceID(): WorkspaceV2.ID | undefined {
-  return Flag.KILO_WORKSPACE_ID ? WorkspaceV2.ID.make(Flag.KILO_WORKSPACE_ID) : undefined
+  return Flag.CHIPMATE_WORKSPACE_ID ? WorkspaceV2.ID.make(Flag.CHIPMATE_WORKSPACE_ID) : undefined
 }
 
 function selectedWorkspaceID(url: URL, sessionWorkspaceID?: WorkspaceV2.ID): WorkspaceV2.ID | undefined {
@@ -85,7 +85,7 @@ function selectedV2WorkspaceID(
 }
 
 function defaultDirectory(request: HttpServerRequest.HttpServerRequest, url: URL): string {
-  return url.searchParams.get("directory") || request.headers["x-kilo-directory"] || process.cwd()
+  return url.searchParams.get("directory") || request.headers["x-chipmate-directory"] || process.cwd()
 }
 
 function shouldStayOnControlPlane(request: HttpServerRequest.HttpServerRequest, url: URL): boolean {
@@ -179,13 +179,13 @@ function planRequest(
       return yield* planWorkspaceRequest(request, url, workspace)
     }
 
-    // kilocode_change start - a fork targeting an explicit directory (e.g. a worktree) must not inherit the source session's directory
+    // chipmate_change start - a fork targeting an explicit directory (e.g. a worktree) must not inherit the source session's directory
     const forkDirectory = forkTargetDirectory(request.method, url, request.headers as Record<string, string | undefined>)
     return RequestPlan.Local({
       directory: forkDirectory || session?.directory || defaultDirectory(request, url),
       workspaceID: envWorkspaceID ?? workspaceID,
     })
-    // kilocode_change end
+    // chipmate_change end
   })
 }
 

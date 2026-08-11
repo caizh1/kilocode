@@ -1,0 +1,6 @@
+export const dict = {
+  "server.processExited": "Процесс CLI завершился с кодом {{code}} до запуска сервера",
+  "server.startupTimeout": "Время ожидания запуска сервера истекло через {{seconds}} секунд",
+  "remote.connected": "ChipMate Remote: Подключено",
+  "remote.connecting": "ChipMate Remote: Подключение\u2026",
+} as const

@@ -1,32 +1,32 @@
-import { Effect, Schema, Scope } from "effect" // kilocode_change - stable object reads do not use Option
+import { Effect, Schema, Scope } from "effect" // chipmate_change - stable object reads do not use Option
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import * as path from "path"
-import { Readable } from "stream" // kilocode_change
+import { Readable } from "stream" // chipmate_change
 import { createInterface } from "readline"
 import * as Tool from "./tool"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { LSP } from "@/lsp/lsp"
 import DESCRIPTION from "./read.txt"
 import { InstanceState } from "@/effect/instance-state"
-import { Config } from "@/config/config" // kilocode_change - optional configured reference authorization
+import { Config } from "@/config/config" // chipmate_change - optional configured reference authorization
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
-// kilocode_change start
-import * as Encoding from "../kilocode/encoding"
-import { KiloReference } from "@/kilocode/reference/contains"
-import * as KiloConfiguredReference from "@/kilocode/reference"
-import { KiloReadObject } from "@/kilocode/tool/read-object"
-import * as Extract from "../kilocode/tool/read-extract"
-import * as TextStream from "../kilocode/text-stream"
-import * as WorkflowGuard from "@/kilocode/skill/workflow-guard"
-// kilocode_change end
+// chipmate_change start
+import * as Encoding from "../chipmate/encoding"
+import { ChipMateReference } from "@/chipmate/reference/contains"
+import * as ChipMateConfiguredReference from "@/chipmate/reference"
+import { ChipMateReadObject } from "@/chipmate/tool/read-object"
+import * as Extract from "../chipmate/tool/read-extract"
+import * as TextStream from "../chipmate/text-stream"
+import * as WorkflowGuard from "@/chipmate/skill/workflow-guard"
+// chipmate_change end
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
-// kilocode_change start - report the safe Unicode slice length
+// chipmate_change start - report the safe Unicode slice length
 const suffix = (length: number) => `... (line truncated to ${length} chars)`
-// kilocode_change end
+// chipmate_change end
 const MAX_BYTES = 50 * 1024
 const MAX_BYTES_LABEL = `${MAX_BYTES / 1024} KB`
 const SAMPLE_BYTES = 4096
@@ -85,7 +85,7 @@ export const ReadTool = Tool.define<
     const lsp = yield* LSP.Service
     const scope = yield* Scope.Scope
 
-    // kilocode_change start - authorize missing paths without enumerating sibling names
+    // chipmate_change start - authorize missing paths without enumerating sibling names
     const miss = Effect.fn("ReadTool.miss")(function* (filepath: string, worktree: string, ctx: Tool.Context) {
       const dir = path.dirname(filepath)
       const parent = yield* fs.realPath(dir).pipe(Effect.option)
@@ -99,7 +99,7 @@ export const ReadTool = Tool.define<
       })
       return yield* Effect.fail(new Error(`File not found: ${filepath}`))
     })
-    // kilocode_change end
+    // chipmate_change end
 
     const warm = Effect.fn("ReadTool.warm")(function* (filepath: string) {
       // LSP warm-up is optional; do not let a background defect fail an otherwise successful read.
@@ -122,9 +122,9 @@ export const ReadTool = Tool.define<
       ).pipe(Effect.map((items: string[]) => items.sort((a, b) => a.localeCompare(b))))
     })
 
-    // kilocode_change start - extracted formats and text consume the authorized open object
+    // chipmate_change start - extracted formats and text consume the authorized open object
     const lines = Effect.fn("ReadTool.lines")(
-      (file: KiloReadObject.File, opts: { limit: number; offset: number }, abort: AbortSignal) =>
+      (file: ChipMateReadObject.File, opts: { limit: number; offset: number }, abort: AbortSignal) =>
         Effect.tryPromise({
           try: async (signal) => {
             const combined = AbortSignal.any([abort, signal])
@@ -142,7 +142,7 @@ export const ReadTool = Tool.define<
           catch: (err) => (err instanceof Error ? err : new Error(String(err))),
         }),
     )
-    // kilocode_change end
+    // chipmate_change end
 
     const isBinaryFile = (filepath: string, bytes: Uint8Array) => {
       const ext = path.extname(filepath).toLowerCase()
@@ -180,10 +180,10 @@ export const ReadTool = Tool.define<
 
       if (bytes.length === 0) return false
 
-      // kilocode_change start - UTF-16/32 BOM: NUL bytes are legitimate, skip the NUL/control-char heuristic
+      // chipmate_change start - UTF-16/32 BOM: NUL bytes are legitimate, skip the NUL/control-char heuristic
       const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
       if (Encoding.hasUtf16Bom(buf, bytes.length) || Encoding.hasUtf32Bom(buf, bytes.length)) return false
-      // kilocode_change end
+      // chipmate_change end
 
       let nonPrintableCount = 0
       for (let i = 0; i < bytes.length; i++) {
@@ -210,22 +210,22 @@ export const ReadTool = Tool.define<
       }
       const requested = filepath
       const title = path.relative(instance.worktree, requested)
-      // kilocode_change start - keep resumed source-backed work on its canonical artifact
+      // chipmate_change start - keep resumed source-backed work on its canonical artifact
       const artifact = WorkflowGuard.artifact(ctx.sessionID, ctx.messages, instance.directory, requested)
       if (artifact) return yield* Effect.fail(new Error(artifact))
-      // kilocode_change end
-      // kilocode_change start - resolve V1 configured references without introducing a Core location-layer dependency
+      // chipmate_change end
+      // chipmate_change start - resolve V1 configured references without introducing a Core location-layer dependency
       const config = yield* Effect.serviceOption(Config.Service)
       const references =
         config._tag === "Some"
-          ? KiloConfiguredReference.resolveAll({
+          ? ChipMateConfiguredReference.resolveAll({
               references: (yield* config.value.get()).reference ?? {},
               directory: instance.directory,
               worktree: instance.worktree,
             })
           : []
-      // kilocode_change end
-      // kilocode_change start - fail before read authorization when the target is missing
+      // chipmate_change end
+      // chipmate_change start - fail before read authorization when the target is missing
       const info = yield* fs.stat(requested).pipe(
         Effect.catchIf(
           (err) => "reason" in err && err.reason._tag === "NotFound",
@@ -235,18 +235,18 @@ export const ReadTool = Tool.define<
       if (!info) {
         return yield* miss(requested, instance.worktree, ctx)
       }
-      // kilocode_change end
+      // chipmate_change end
 
-      // kilocode_change start - directory mentions expose only a bound listing, never child file bodies
+      // chipmate_change start - directory mentions expose only a bound listing, never child file bodies
       if (info.type === "Directory") {
         const resolved = yield* fs.realPath(requested)
         const target = process.platform === "win32" ? FSUtil.normalizePath(resolved) : resolved
         const explicit =
           typeof ctx.extra?.["referenceRoot"] === "string" &&
-          (yield* KiloReference.path(fs, ctx.extra["referenceRoot"], target))
+          (yield* ChipMateReference.path(fs, ctx.extra["referenceRoot"], target))
         const referenced =
           explicit ||
-          (yield* KiloReference.contains({ fs, references, target }))
+          (yield* ChipMateReference.contains({ fs, references, target }))
         yield* assertExternalDirectoryEffect(ctx, target, { bypass: referenced, kind: "directory" })
         yield* ctx.ask({
           permission: "read",
@@ -254,7 +254,7 @@ export const ReadTool = Tool.define<
           always: ["*"],
           metadata: {},
         })
-        // kilocode_change start - reject any canonical path change after permission approval
+        // chipmate_change start - reject any canonical path change after permission approval
         if (ctx.extra?.["denyDirectory"] === true) {
           // Re-resolve after permission approval to detect TOCTOU symlink swaps.
           // If the canonical target changed, the approved permission no longer
@@ -265,9 +265,9 @@ export const ReadTool = Tool.define<
             return yield* Effect.fail(new Error(`Directory attachments cannot be expanded: ${requested}`))
           }
         }
-        // kilocode_change end
+        // chipmate_change end
         const items = yield* list(target)
-        const limit = Math.max(1, params.limit ?? DEFAULT_READ_LIMIT) // kilocode_change - prevent zero-limit loops
+        const limit = Math.max(1, params.limit ?? DEFAULT_READ_LIMIT) // chipmate_change - prevent zero-limit loops
         const offset = params.offset || 1
         const start = offset - 1
         const sliced = items.slice(start, start + limit)
@@ -300,14 +300,14 @@ export const ReadTool = Tool.define<
           },
         }
       }
-      // kilocode_change start - authorize metadata, then bind every content read to the same reopened object
-      const file = yield* KiloReadObject.file(requested)
+      // chipmate_change start - authorize metadata, then bind every content read to the same reopened object
+      const file = yield* ChipMateReadObject.file(requested)
       const explicit =
         typeof ctx.extra?.["referenceRoot"] === "string" &&
-        (yield* KiloReference.path(fs, ctx.extra["referenceRoot"], file.target))
+        (yield* ChipMateReference.path(fs, ctx.extra["referenceRoot"], file.target))
       const referenced =
         explicit ||
-        (yield* KiloReference.contains({ fs, references, target: file.target }))
+        (yield* ChipMateReference.contains({ fs, references, target: file.target }))
       yield* assertExternalDirectoryEffect(ctx, file.target, { bypass: referenced, kind: "file" })
       yield* ctx.ask({
         permission: "read",
@@ -315,7 +315,7 @@ export const ReadTool = Tool.define<
         always: ["*"],
         metadata: {},
       })
-      return yield* KiloReadObject.use(file, (bound) =>
+      return yield* ChipMateReadObject.use(file, (bound) =>
         Effect.gen(function* () {
           const loaded =
             ctx.extra?.["includeInstructions"] === false
@@ -393,7 +393,7 @@ export const ReadTool = Tool.define<
           }
         }),
       )
-      // kilocode_change end
+      // chipmate_change end
     })
 
     return {
@@ -405,9 +405,9 @@ export const ReadTool = Tool.define<
   }),
 )
 
-// kilocode_change start - extracted formats use native readers; ordinary text is supplied by FSUtil above
+// chipmate_change start - extracted formats use native readers; ordinary text is supplied by FSUtil above
 async function collect(stream: Readable, opts: { limit: number; offset: number }) {
-  // kilocode_change end
+  // chipmate_change end
   const rl = createInterface({ input: stream, crlfDelay: Infinity })
   const start = opts.offset - 1
   const raw: string[] = []
@@ -423,10 +423,10 @@ async function collect(stream: Readable, opts: { limit: number; offset: number }
         more = true
         continue
       }
-      // kilocode_change start - keep truncated output valid Unicode
+      // chipmate_change start - keep truncated output valid Unicode
       const sliced = TextStream.safeSlice(text, MAX_LINE_LENGTH)
       const line = text.length > MAX_LINE_LENGTH ? sliced + suffix(sliced.length) : text
-      // kilocode_change end
+      // chipmate_change end
       const size = Buffer.byteLength(line, "utf-8") + (raw.length > 0 ? 1 : 0)
       if (bytes + size > MAX_BYTES) {
         cut = true

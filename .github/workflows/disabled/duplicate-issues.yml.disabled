@@ -38,14 +38,14 @@ jobs:
 
       - name: Install opencode
         if: steps.author.outputs.skip != 'true'
-        run: curl -fsSL https://kilo.ai/install | bash
+        run: curl -fsSL https://chipmate.ai/install | bash
 
       - name: Check duplicates and compliance
         if: steps.author.outputs.skip != 'true'
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          KILO_PERMISSION: |
+          CHIPMATE_PERMISSION: |
             {
               "bash": {
                 "*": "deny",
@@ -140,7 +140,7 @@ jobs:
           Remember: post at most ONE comment combining all findings. If everything is fine, post nothing."
 
   recheck-compliance:
-    if: github.event.action == 'edited' && contains(github.event.issue.labels.*.name, 'needs:compliance') # kilocode_change
+    if: github.event.action == 'edited' && contains(github.event.issue.labels.*.name, 'needs:compliance') # chipmate_change
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
@@ -172,14 +172,14 @@ jobs:
 
       - name: Install opencode
         if: steps.author.outputs.skip != 'true'
-        run: curl -fsSL https://kilo.ai/install | bash
+        run: curl -fsSL https://chipmate.ai/install | bash
 
       - name: Recheck compliance
         if: steps.author.outputs.skip != 'true'
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          KILO_PERMISSION: |
+          CHIPMATE_PERMISSION: |
             {
               "bash": {
                 "*": "deny",

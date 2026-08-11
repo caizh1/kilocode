@@ -42,7 +42,7 @@ export const FinishReason = Schema.Literals([
   "tool-calls",
   "content-filter",
   "error",
-  "other", // kilocode_change - preserve the AI SDK's unexpected provider finish reason
+  "other", // chipmate_change - preserve the AI SDK's unexpected provider finish reason
   "unknown",
 ])
 export type FinishReason = Schema.Schema.Type<typeof FinishReason>

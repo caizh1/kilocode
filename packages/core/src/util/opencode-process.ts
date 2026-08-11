@@ -1,12 +1,12 @@
-export const KILO_RUN_ID = "KILO_RUN_ID"
-export const KILO_PROCESS_ROLE = "KILO_PROCESS_ROLE"
+export const CHIPMATE_RUN_ID = "CHIPMATE_RUN_ID"
+export const CHIPMATE_PROCESS_ROLE = "CHIPMATE_PROCESS_ROLE"
 
 export function ensureRunID() {
-  return (process.env[KILO_RUN_ID] ??= crypto.randomUUID())
+  return (process.env[CHIPMATE_RUN_ID] ??= crypto.randomUUID())
 }
 
 export function ensureProcessRole(fallback: "main" | "worker") {
-  return (process.env[KILO_PROCESS_ROLE] ??= fallback)
+  return (process.env[CHIPMATE_PROCESS_ROLE] ??= fallback)
 }
 
 export function ensureProcessMetadata(fallback: "main" | "worker") {

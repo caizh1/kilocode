@@ -114,7 +114,7 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
     if (!run) return
     track("publication_ai_repair", {
       ...(run.skillId ? { skillId: run.skillId } : {}),
-      context: { action: "open-kilo" },
+      context: { action: "open-chipmate" },
     })
     const url = new URL("vscode://chipmate.chipmate/marketplace/repair")
     url.searchParams.set("origin", location.origin)
@@ -295,7 +295,7 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
               <Report run={run} />
               {run.status === "NEEDS_AI_CONFIRMATION" && (
                 <aside className="manual-repair" role="note">
-                  <strong>无法使用 Kilo 时的手工修复</strong>
+                  <strong>无法使用 ChipMate 时的手工修复</strong>
                   <ol>
                     <li>在本地副本中打开报告标明的文件，不要修改服务端上传快照。</li>
                     <li>按 issue code 和说明补足语义内容，并保留已规范化的 frontmatter。</li>

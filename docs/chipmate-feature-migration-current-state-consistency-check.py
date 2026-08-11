@@ -31,22 +31,22 @@ class ArtifactExpectation:
 
 ARTIFACTS = [
     ArtifactExpectation(
-        "packages/kilo-vscode/out/chipmate-0.0.38-offline-handoff.tar.gz",
+        "packages/chipmate-vscode/out/chipmate-0.0.38-offline-handoff.tar.gz",
         317784738,
         "97a70108ae648a1998168d679c3c65638ea7756926860fad113cd06c31d2dba5",
     ),
     ArtifactExpectation(
-        "packages/kilo-vscode/out/chipmate-0.0.38-offline-target-verify-kit.tar.gz",
+        "packages/chipmate-vscode/out/chipmate-0.0.38-offline-target-verify-kit.tar.gz",
         32344,
         "803c6a22129cc7fcbe9b9912a43a9ebab741a5b8502e26d6d3d0c9cb741f5471",
     ),
     ArtifactExpectation(
-        "packages/kilo-vscode/out/chipmate-0.0.38-offline-delivery-set.tar.gz",
+        "packages/chipmate-vscode/out/chipmate-0.0.38-offline-delivery-set.tar.gz",
         317916299,
         "83c8c27dbe058bd0d2bd5fe63f7bb17259c5dea1943ba18a81e83c142c736954",
     ),
     ArtifactExpectation(
-        "packages/kilo-vscode/out/chipmate-0.0.38-offline-delivery-set.zip",
+        "packages/chipmate-vscode/out/chipmate-0.0.38-offline-delivery-set.zip",
         317917776,
         "d4014986abf84d5d3b4207996427f0bc655e473f9a36a9846790cbbc7b08cbb4",
     ),
@@ -317,7 +317,7 @@ TARGET_KIT_FORBIDDEN_BASENAMES = [
 ]
 
 DELIVERY_MANIFEST_PATH = (
-    "packages/kilo-vscode/out/CHIPMATE_OFFLINE_DELIVERY_MANIFEST-0.0.38.json"
+    "packages/chipmate-vscode/out/CHIPMATE_OFFLINE_DELIVERY_MANIFEST-0.0.38.json"
 )
 
 REQUIRED_MANIFEST_FLAGS = [

@@ -120,8 +120,8 @@ describe("Project.fromDirectory", () => {
       expect(result.project.vcs).toBe("git")
       expect(result.project.worktree).toBe(tmp)
 
-      const kiloFile = path.join(tmp, ".git", "kilo")
-      expect(yield* Effect.promise(() => Bun.file(kiloFile).exists())).toBe(false)
+      const chipmateFile = path.join(tmp, ".git", "chipmate")
+      expect(yield* Effect.promise(() => Bun.file(chipmateFile).exists())).toBe(false)
     }),
   )
 
@@ -335,7 +335,7 @@ describe("Project.fromDirectory with worktrees", () => {
 
       expect(next.project.id).toBe(result.project.id)
 
-      const cache = path.join(tmp, ".git", "kilo")
+      const cache = path.join(tmp, ".git", "chipmate")
       const exists = yield* Effect.promise(() => Bun.file(cache).exists())
       expect(exists).toBe(true)
     }),
@@ -736,8 +736,8 @@ describe("Project.fromDirectory with bare repos", () => {
       expect(result.project.id).not.toBe(ProjectV2.ID.global)
       expect(result.project.worktree).toBe(worktreePath)
 
-      const correctCache = path.join(barePath, "kilo")
-      const wrongCache = path.join(parentDir, ".git", "kilo")
+      const correctCache = path.join(barePath, "chipmate")
+      const wrongCache = path.join(parentDir, ".git", "chipmate")
 
       expect(yield* Effect.promise(() => Bun.file(correctCache).exists())).toBe(true)
       expect(yield* Effect.promise(() => Bun.file(wrongCache).exists())).toBe(false)
@@ -771,9 +771,9 @@ describe("Project.fromDirectory with bare repos", () => {
 
       expect(result.project.id).not.toBe(next.project.id)
 
-      const cacheA = path.join(bareA, "kilo")
-      const cacheB = path.join(bareB, "kilo")
-      const wrongCache = path.join(parentDir, ".git", "kilo")
+      const cacheA = path.join(bareA, "chipmate")
+      const cacheB = path.join(bareB, "chipmate")
+      const wrongCache = path.join(parentDir, ".git", "chipmate")
 
       expect(yield* Effect.promise(() => Bun.file(cacheA).exists())).toBe(true)
       expect(yield* Effect.promise(() => Bun.file(cacheB).exists())).toBe(true)
@@ -801,7 +801,7 @@ describe("Project.fromDirectory with bare repos", () => {
       expect(result.project.id).not.toBe(ProjectV2.ID.global)
       expect(result.project.worktree).toBe(worktreePath)
 
-      const correctCache = path.join(barePath, "kilo")
+      const correctCache = path.join(barePath, "chipmate")
       expect(yield* Effect.promise(() => Bun.file(correctCache).exists())).toBe(true)
     }),
   )

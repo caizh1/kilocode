@@ -1,1 +1,1 @@
-export { Parameters, PlanExitTool } from "@/kilocode/tool/plan" // kilocode_change
+export { Parameters, PlanExitTool } from "@/chipmate/tool/plan" // chipmate_change

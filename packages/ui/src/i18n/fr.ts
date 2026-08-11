@@ -54,7 +54,7 @@ export const dict = {
 
   "dialog.usageExceeded.freeTier.title": "Limite gratuite atteinte",
   "dialog.usageExceeded.freeTier.description":
-    "Abonnez-vous à Kilo Go pour un accès fiable aux meilleurs modèles open source, à partir de $5/mois.",
+    "Abonnez-vous à ChipMate Go pour un accès fiable aux meilleurs modèles open source, à partir de $5/mois.",
   "dialog.usageExceeded.freeTier.actionLabel": "S'abonner",
   "dialog.usageExceeded.accountRateLimit.title": "Limite Go atteinte",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -105,7 +105,7 @@ export const dict = {
   "ui.textField.copied": "Copié",
 
   "ui.imagePreview.alt": "Aperçu de l'image",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Rendu du diagramme Mermaid...",
   "ui.mermaid.renderError": "Échec du rendu Mermaid : {{message}}",
   "ui.mermaid.errorDefault": "Impossible de rendre le diagramme Mermaid.",
@@ -127,12 +127,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "contenu défilable",
 
   "ui.tool.read": "Lire",
   "ui.tool.loaded": "Chargé",
-  "ui.tool.swePruned": "SWE-Pruner · {{kept}} lignes conservées sur {{total}}", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · {{kept}} lignes conservées sur {{total}}", // chipmate_change
   "ui.tool.list": "Lister",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -168,7 +168,7 @@ export const dict = {
   "ui.message.collapse": "Réduire le message",
   "ui.message.copy": "Copier",
   "ui.message.copyMessage": "Copier le message",
-  "ui.message.deleteQueued": "Supprimer le message en file d'attente", // kilocode_change
+  "ui.message.deleteQueued": "Supprimer le message en file d'attente", // chipmate_change
   "ui.message.forkMessage": "Bifurquer vers une nouvelle session",
   "ui.message.revertMessage": "Réinitialiser à ce point",
   "ui.message.copyResponse": "Copier la réponse",
@@ -184,9 +184,9 @@ export const dict = {
   "ui.patch.action.patched": "Corrigé",
 
   "ui.question.subtitle.answered": "{{count}} répondu(s)",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(pas de réponse)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(non répondu)",
   "ui.question.multiHint": "Sélectionnez tout ce qui s'applique",
   "ui.question.singleHint": "Sélectionnez une réponse",

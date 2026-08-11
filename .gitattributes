@@ -6,9 +6,9 @@
 *.mp4 filter=lfs diff=lfs merge=lfs -text
 
 # Visual regression baseline snapshots
-packages/kilo-ui/tests/**/*.png filter=lfs diff=lfs merge=lfs -text
-packages/kilo-vscode/tests/**/*.png filter=lfs diff=lfs merge=lfs -text
-packages/kilo-docs/public/img/screenshot-tests/**/*.png filter=lfs diff=lfs merge=lfs -text
+packages/chipmate-ui/tests/**/*.png filter=lfs diff=lfs merge=lfs -text
+packages/chipmate-vscode/tests/**/*.png filter=lfs diff=lfs merge=lfs -text
+packages/chipmate-docs/public/img/screenshot-tests/**/*.png filter=lfs diff=lfs merge=lfs -text
 
 # Hide most localization files by default in GitHub PR diffs. Show English as the source
 # language and German so reviewers can catch untranslated copy-pasted English strings.
@@ -28,13 +28,13 @@ packages/kilo-docs/public/img/screenshot-tests/**/*.png filter=lfs diff=lfs merg
 **/i18n/**/index.ts linguist-generated=false
 **/i18n/parity.test.ts linguist-generated=false
 **/i18n/**/parity.test.ts linguist-generated=false
-packages/kilo-i18n/src/*.ts linguist-generated=true
-packages/kilo-i18n/src/en.ts linguist-generated=false
-packages/kilo-i18n/src/de.ts linguist-generated=false
+packages/chipmate-i18n/src/*.ts linguist-generated=true
+packages/chipmate-i18n/src/en.ts linguist-generated=false
+packages/chipmate-i18n/src/de.ts linguist-generated=false
 
 # Auto-generated CLI reference docs
-packages/kilo-docs/markdoc/partials/cli-commands-table.md linguist-generated=true
-packages/kilo-docs/pages/code-with-ai/platforms/cli-reference.md linguist-generated=true
+packages/chipmate-docs/markdoc/partials/cli-commands-table.md linguist-generated=true
+packages/chipmate-docs/pages/code-with-ai/platforms/cli-reference.md linguist-generated=true
 
 # Upstream generated migration artifacts
 packages/core/migration/**/snapshot.json linguist-generated

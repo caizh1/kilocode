@@ -3,36 +3,36 @@
 </p>
 
 <p align="center">
-  <a href="https://kilo.ai"><img width="250" alt="Kilo Code logo" src="https://github.com/user-attachments/assets/bdb0c174-b9fd-40ad-a47b-f3aab9b54e8d" /></a>
+  <a href="https://chipmate.ai"><img width="250" alt="ChipMate logo" src="https://github.com/user-attachments/assets/bdb0c174-b9fd-40ad-a47b-f3aab9b54e8d" /></a>
 </p>
 
 <p align="center">Tác nhân lập trình mã nguồn mở để xây dựng với AI trong VS Code, JetBrains hoặc CLI.</p>
 
 <p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=kilocode.Kilo-Code"><img src="https://raster.shields.io/badge/VS_Code_Marketplace-007ACC?style=flat&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace" height="20"></a>
-  <a href="https://www.npmjs.com/package/@kilocode/cli"><img alt="npm" src="https://raster.shields.io/npm/v/@kilocode/cli?style=flat" height="20" /></a>
-  <a href="https://x.com/kilocode"><img src="https://raster.shields.io/badge/kilocode-000000?style=flat&logo=x&logoColor=white" alt="X (Twitter)" height="20"></a>
-  <a href="https://blog.kilo.ai"><img src="https://raster.shields.io/badge/Blog-555?style=flat&logo=substack&logoColor=white" alt="Blog" height="20"></a>
-  <a href="https://kilo.ai/discord"><img src="https://raster.shields.io/badge/Join%20Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" height="20"></a>
-  <a href="https://www.reddit.com/r/kilocode/"><img src="https://raster.shields.io/badge/Join%20r%2Fkilocode-D84315?style=flat&logo=reddit&logoColor=white" alt="Reddit" height="20"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=chipmate.ChipMate-Code"><img src="https://raster.shields.io/badge/VS_Code_Marketplace-007ACC?style=flat&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace" height="20"></a>
+  <a href="https://www.npmjs.com/package/@chipmate/cli"><img alt="npm" src="https://raster.shields.io/npm/v/@chipmate/cli?style=flat" height="20" /></a>
+  <a href="https://x.com/chipmate"><img src="https://raster.shields.io/badge/chipmate-000000?style=flat&logo=x&logoColor=white" alt="X (Twitter)" height="20"></a>
+  <a href="https://blog.chipmate.ai"><img src="https://raster.shields.io/badge/Blog-555?style=flat&logo=substack&logoColor=white" alt="Blog" height="20"></a>
+  <a href="https://chipmate.ai/discord"><img src="https://raster.shields.io/badge/Join%20Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" height="20"></a>
+  <a href="https://www.reddit.com/r/chipmate/"><img src="https://raster.shields.io/badge/Join%20r%2Fchipmate-D84315?style=flat&logo=reddit&logoColor=white" alt="Reddit" height="20"></a>
 </p>
 
-![Kilo-in-VS-Code-and-CLI](https://github.com/user-attachments/assets/0536ca59-ed81-4512-9e05-d186187a1b52)
+![ChipMate-in-VS-Code-and-CLI](https://github.com/user-attachments/assets/0536ca59-ed81-4512-9e05-d186187a1b52)
 
 ---
 
-Kilo Code là một tác nhân lập trình AI đồng hành với bạn ở mọi nơi bạn làm việc: [VS Code](https://kilo.ai/landing/vs-code), [JetBrains](https://kilo.ai/features/jetbrains-native) và [CLI](https://kilo.ai/cli). Dự án là mã nguồn mở với giá minh bạch. Bạn chọn trong hơn 500 mô hình, chuyển đổi giữa chúng giữa chừng một tác vụ và trả theo giá của nhà cung cấp mô hình, không có phụ phí. Không cần API key để bắt đầu.
+ChipMate là một tác nhân lập trình AI đồng hành với bạn ở mọi nơi bạn làm việc: [VS Code](https://chipmate.ai/landing/vs-code), [JetBrains](https://chipmate.ai/features/jetbrains-native) và [CLI](https://chipmate.ai/cli). Dự án là mã nguồn mở với giá minh bạch. Bạn chọn trong hơn 500 mô hình, chuyển đổi giữa chúng giữa chừng một tác vụ và trả theo giá của nhà cung cấp mô hình, không có phụ phí. Không cần API key để bắt đầu.
 
 ### Cài đặt
 
-Chọn nơi bạn muốn chạy Kilo.
+Chọn nơi bạn muốn chạy ChipMate.
 
 <details open>
 <summary><strong>VS Code</strong></summary>
 
 <br>
 
-Cài trực tiếp [tiện ích Kilo Code](vscode:extension/kilocode.kilo-code), hoặc tải từ [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=kilocode.Kilo-Code). Tạo tài khoản và bạn sẽ có quyền truy cập hơn 500 mô hình, bao gồm GPT-5.5, Claude Opus 4.7, Claude Sonnet 4.6 và Gemini 3.1 Pro Preview, tất cả theo giá của nhà cung cấp.
+Cài trực tiếp [tiện ích ChipMate](vscode:extension/chipmate.chipmate-code), hoặc tải từ [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=chipmate.ChipMate-Code). Tạo tài khoản và bạn sẽ có quyền truy cập hơn 500 mô hình, bao gồm GPT-5.5, Claude Opus 4.7, Claude Sonnet 4.6 và Gemini 3.1 Pro Preview, tất cả theo giá của nhà cung cấp.
 
 </details>
 
@@ -43,25 +43,25 @@ Cài trực tiếp [tiện ích Kilo Code](vscode:extension/kilocode.kilo-code),
 
 ```bash
 # npm
-npm install -g @kilocode/cli
+npm install -g @chipmate/cli
 
 # curl
-curl -fsSL https://kilo.ai/cli/install | bash
+curl -fsSL https://chipmate.ai/cli/install | bash
 
 # pnpm
-pnpm add -g @kilocode/cli
+pnpm add -g @chipmate/cli
 
 # bun
-bun add -g @kilocode/cli
+bun add -g @chipmate/cli
 
 # Homebrew (macOS / Linux)
-brew install Kilo-Org/tap/kilo
+brew install ChipMate-Org/tap/chipmate
 
 # Arch Linux (AUR)
-paru -S kilo-bin
+paru -S chipmate-bin
 ```
 
-Sau đó chạy `kilo` trong bất kỳ thư mục dự án nào để bắt đầu.
+Sau đó chạy `chipmate` trong bất kỳ thư mục dự án nào để bắt đầu.
 
 </details>
 
@@ -70,7 +70,7 @@ Sau đó chạy `kilo` trong bất kỳ thư mục dự án nào để bắt đ�
 
 <br>
 
-Cài [plugin Kilo Code](https://plugins.jetbrains.com/plugin/28350-kilo-code) từ JetBrains Marketplace, hoặc tìm "Kilo Code" trong `Settings → Plugins` bên trong bất kỳ JetBrains IDE nào.
+Cài [plugin ChipMate](https://plugins.jetbrains.com/plugin/28350-chipmate-code) từ JetBrains Marketplace, hoặc tìm "ChipMate" trong `Settings → Plugins` bên trong bất kỳ JetBrains IDE nào.
 
 </details>
 
@@ -79,7 +79,7 @@ Cài [plugin Kilo Code](https://plugins.jetbrains.com/plugin/28350-kilo-code) t�
 
 <br>
 
-Chạy Kilo từ web, không cần máy cục bộ, tại [app.kilo.ai/cloud](https://app.kilo.ai/cloud).
+Chạy ChipMate từ web, không cần máy cục bộ, tại [app.chipmate.ai/cloud](https://app.chipmate.ai/cloud).
 
 </details>
 
@@ -88,39 +88,39 @@ Chạy Kilo từ web, không cần máy cục bộ, tại [app.kilo.ai/cloud](ht
 
 <br>
 
-Thiết lập review code tự động bằng AI cho pull request của bạn tại [app.kilo.ai/code-reviews](https://app.kilo.ai/code-reviews).
+Thiết lập review code tự động bằng AI cho pull request của bạn tại [app.chipmate.ai/code-reviews](https://app.chipmate.ai/code-reviews).
 
 </details>
 
 <details>
-<summary><strong>KiloClaw</strong></summary>
+<summary><strong>ChipMateClaw</strong></summary>
 
 <br>
 
-Khởi chạy AI agent luôn hoạt động của bạn tại [app.kilo.ai/claw](https://app.kilo.ai/claw).
+Khởi chạy AI agent luôn hoạt động của bạn tại [app.chipmate.ai/claw](https://app.chipmate.ai/claw).
 
 </details>
 
 <details>
 <summary>Cài CLI từ GitHub Releases (binary)</summary>
 
-Tải binary mới nhất từ [trang Releases](https://github.com/Kilo-Org/kilocode/releases).
+Tải binary mới nhất từ [trang Releases](https://github.com/ChipMate-Org/chipmate/releases).
 
 | Nền tảng | Asset |
 |---|---|
-| Windows (hầu hết PC) | `kilo-windows-x64.zip` |
-| macOS (Apple Silicon) | `kilo-darwin-arm64.zip` |
-| macOS (Intel) | `kilo-darwin-x64.zip` |
-| Linux x64 | `kilo-linux-x64.tar.gz` |
-| Linux ARM | `kilo-linux-arm64.tar.gz` |
+| Windows (hầu hết PC) | `chipmate-windows-x64.zip` |
+| macOS (Apple Silicon) | `chipmate-darwin-arm64.zip` |
+| macOS (Intel) | `chipmate-darwin-x64.zip` |
+| Linux x64 | `chipmate-linux-x64.tar.gz` |
+| Linux ARM | `chipmate-linux-arm64.tar.gz` |
 
-Ghi chú: `x64-baseline` là build tương thích cho CPU cũ không có AVX. `musl` là build liên kết tĩnh cho Alpine hoặc image Docker tối giản không có glibc. `kilo-vscode-*.vsix` là gói tiện ích VS Code, không phải CLI. Các archive `Source code` dùng để build từ mã nguồn.
+Ghi chú: `x64-baseline` là build tương thích cho CPU cũ không có AVX. `musl` là build liên kết tĩnh cho Alpine hoặc image Docker tối giản không có glibc. `chipmate-vscode-*.vsix` là gói tiện ích VS Code, không phải CLI. Các archive `Source code` dùng để build từ mã nguồn.
 
 </details>
 
 ### Agents
 
-Kilo đi kèm các agents chuyên biệt để bạn chuyển đổi tùy theo tác vụ. Bạn cũng có thể tạo agents tùy chỉnh của riêng mình.
+ChipMate đi kèm các agents chuyên biệt để bạn chuyển đổi tùy theo tác vụ. Bạn cũng có thể tạo agents tùy chỉnh của riêng mình.
 
 - **Code** - Mặc định. Triển khai và chỉnh sửa code từ ngôn ngữ tự nhiên.
 - **Plan** - Thiết kế kiến trúc và viết kế hoạch triển khai trước khi viết code.
@@ -128,7 +128,7 @@ Kilo đi kèm các agents chuyên biệt để bạn chuyển đổi tùy theo t
 - **Debug** - Khắc phục và truy vết sự cố.
 - **Review** - Review thay đổi của bạn và phát hiện vấn đề về hiệu năng, bảo mật, phong cách và độ phủ test.
 
-Tìm hiểu thêm về [agents và agents tùy chỉnh](https://kilo.ai/docs/code-with-ai/agents/using-agents).
+Tìm hiểu thêm về [agents và agents tùy chỉnh](https://chipmate.ai/docs/code-with-ai/agents/using-agents).
 
 ### Nó làm gì
 
@@ -141,21 +141,21 @@ Tìm hiểu thêm về [agents và agents tùy chỉnh](https://kilo.ai/docs/cod
 
 ### Chế độ tự động (CI/CD)
 
-Chạy `kilo run` với `--auto` để hoạt động hoàn toàn tự động không có prompts, dành cho pipeline CI/CD:
+Chạy `chipmate run` với `--auto` để hoạt động hoàn toàn tự động không có prompts, dành cho pipeline CI/CD:
 
 ```bash
-kilo run --auto "run tests and fix any failures"
+chipmate run --auto "run tests and fix any failures"
 ```
 
 `--auto` tắt mọi prompt xin quyền và cho phép agent thực hiện bất kỳ hành động nào mà không cần xác nhận. Chỉ dùng trong môi trường đáng tin cậy.
 
 ### Tài liệu
 
-Về cấu hình và mọi thứ khác, hãy xem [tài liệu](https://kilo.ai/docs).
+Về cấu hình và mọi thứ khác, hãy xem [tài liệu](https://chipmate.ai/docs).
 
 ### Đóng góp
 
-Chúng tôi chào đón đóng góp từ developer, writer và tất cả mọi người. Bắt đầu với [Contributing Guide](/CONTRIBUTING.md) để thiết lập môi trường, tiêu chuẩn code và cách mở pull request. Xem [RELEASING.md](../RELEASING.md) cho quy trình release tiện ích VS Code và CLI, và [packages/kilo-jetbrains/RELEASING.md](../packages/kilo-jetbrains/RELEASING.md) cho plugin JetBrains.
+Chúng tôi chào đón đóng góp từ developer, writer và tất cả mọi người. Bắt đầu với [Contributing Guide](/CONTRIBUTING.md) để thiết lập môi trường, tiêu chuẩn code và cách mở pull request. Xem [RELEASING.md](../RELEASING.md) cho quy trình release tiện ích VS Code và CLI, và [packages/chipmate-jetbrains/RELEASING.md](../packages/chipmate-jetbrains/RELEASING.md) cho plugin JetBrains.
 
 Vui lòng đọc [Code of Conduct](/CODE_OF_CONDUCT.md) trước khi tham gia.
 
@@ -166,12 +166,12 @@ MIT. Bạn có thể sử dụng, chỉnh sửa và phân phối code này, kể
 ### FAQ
 
 <details>
-<summary>Kilo CLI đến từ đâu?</summary>
+<summary>ChipMate CLI đến từ đâu?</summary>
 
-Kilo CLI là một fork của [OpenCode](https://github.com/anomalyco/opencode), được cải tiến để hoạt động trong nền tảng Kilo agentic engineering.
+ChipMate CLI là một fork của [OpenCode](https://github.com/anomalyco/opencode), được cải tiến để hoạt động trong nền tảng ChipMate agentic engineering.
 
 </details>
 
 ---
 
-**Tham gia cộng đồng** [Discord](https://kilo.ai/discord) | [X](https://x.com/kilocode) | [Reddit](https://www.reddit.com/r/kilocode/)
+**Tham gia cộng đồng** [Discord](https://chipmate.ai/discord) | [X](https://x.com/chipmate) | [Reddit](https://www.reddit.com/r/chipmate/)

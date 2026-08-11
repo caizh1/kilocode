@@ -26,8 +26,8 @@ function pagerCmd(): string[] {
     if (Filesystem.stat(lessOnPath)?.size) return [lessOnPath, ...lessOptions]
   }
 
-  if (Flag.KILO_GIT_BASH_PATH) {
-    const less = path.join(Flag.KILO_GIT_BASH_PATH, "..", "..", "usr", "bin", "less.exe")
+  if (Flag.CHIPMATE_GIT_BASH_PATH) {
+    const less = path.join(Flag.CHIPMATE_GIT_BASH_PATH, "..", "..", "usr", "bin", "less.exe")
     if (Filesystem.stat(less)?.size) return [less, ...lessOptions]
   }
 
@@ -83,7 +83,7 @@ export const SessionListCommand = effectCmd({
         choices: ["table", "json"],
         default: "table",
       })
-      // kilocode_change start
+      // chipmate_change start
       .option("all", {
         alias: "a",
         describe: "list sessions from all projects",
@@ -95,17 +95,17 @@ export const SessionListCommand = effectCmd({
         describe: "filter sessions by title",
         type: "string",
       }),
-  // kilocode_change end
+  // chipmate_change end
   handler: Effect.fn("Cli.session.list")(function* (args) {
-    // kilocode_change start
+    // chipmate_change start
     const sessions = args.all
       ? [...Session.listGlobal({ roots: true, limit: args.maxCount, search: args.search })]
       : yield* Session.Service.use((svc) => svc.list({ roots: true, limit: args.maxCount, search: args.search }))
-    // kilocode_change end
+    // chipmate_change end
 
     if (sessions.length === 0) return
 
-    // kilocode_change start
+    // chipmate_change start
     const output =
       args.format === "json"
         ? args.all
@@ -114,7 +114,7 @@ export const SessionListCommand = effectCmd({
         : args.all
           ? formatGlobalSessionTable(sessions as Session.GlobalInfo[])
           : formatSessionTable(sessions as Session.Info[])
-    // kilocode_change end
+    // chipmate_change end
 
     const shouldPaginate = process.stdout.isTTY && !args.maxCount && args.format === "table"
 
@@ -160,7 +160,7 @@ function formatSessionTable(sessions: Session.Info[]): string {
   return lines.join(EOL)
 }
 
-// kilocode_change start
+// chipmate_change start
 function formatSessionJSON(sessions: Session.Info[]): string {
   const jsonData = sessions.map((session) => ({
     id: session.id,
@@ -172,9 +172,9 @@ function formatSessionJSON(sessions: Session.Info[]): string {
   }))
   return JSON.stringify(jsonData, null, 2)
 }
-// kilocode_change end
+// chipmate_change end
 
-// kilocode_change start
+// chipmate_change start
 function formatGlobalSessionTable(sessions: Session.GlobalInfo[]): string {
   const lines: string[] = []
 
@@ -213,4 +213,4 @@ function formatGlobalSessionJSON(sessions: Session.GlobalInfo[]): string {
   }))
   return JSON.stringify(jsonData, null, 2)
 }
-// kilocode_change end
+// chipmate_change end

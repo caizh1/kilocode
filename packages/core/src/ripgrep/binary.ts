@@ -91,8 +91,8 @@ export namespace RipgrepBinary {
       return Service.of({
         filepath: yield* Effect.cached(
           Effect.gen(function* () {
-            // kilocode_change start - prefer the explicit VS Code bundle and avoid incompatible MSYS rg.exe on Windows
-            const configured = process.env.KILO_RIPGREP_PATH?.trim()
+            // chipmate_change start - prefer the explicit VS Code bundle and avoid incompatible MSYS rg.exe on Windows
+            const configured = process.env.CHIPMATE_RIPGREP_PATH?.trim()
             if (configured) {
               if (!path.isAbsolute(configured)) {
                 throw new Error(`configured ripgrep path must be absolute: ${configured}`)
@@ -105,7 +105,7 @@ export namespace RipgrepBinary {
 
             const system = yield* Effect.sync(() => (process.platform === "win32" ? undefined : which("rg")))
             if (system && (yield* fs.isFile(system).pipe(Effect.orDie))) return system
-            // kilocode_change end
+            // chipmate_change end
 
             const target = path.join(Global.Path.bin, `rg${process.platform === "win32" ? ".exe" : ""}`)
             if (yield* fs.isFile(target).pipe(Effect.orDie)) return target

@@ -1,16 +1,16 @@
-// kilocode_change - new file
+// chipmate_change - new file
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { KiloClient, type GlobalEvent } from "@kilocode/sdk/v2"
+import { ChipMateClient, type GlobalEvent } from "@chipmate/sdk/v2"
 import { createSessionTransport } from "@/cli/cmd/run/stream.transport"
 import type { FooterApi, FooterEvent, LocalReplayRow, RunFilePart, StreamCommit } from "@/cli/cmd/run/types"
 
 type SdkEvent = GlobalEvent["payload"]
 type EventStream = AsyncGenerator<SdkEvent, void, unknown>
-type GlobalEventStream = Awaited<ReturnType<KiloClient["global"]["event"]>>["stream"]
-type SessionMessage = NonNullable<Awaited<ReturnType<KiloClient["session"]["messages"]>>["data"]>[number]
-type SessionChild = NonNullable<Awaited<ReturnType<KiloClient["session"]["children"]>>["data"]>[number]
+type GlobalEventStream = Awaited<ReturnType<ChipMateClient["global"]["event"]>>["stream"]
+type SessionMessage = NonNullable<Awaited<ReturnType<ChipMateClient["session"]["messages"]>>["data"]>[number]
+type SessionChild = NonNullable<Awaited<ReturnType<ChipMateClient["session"]["children"]>>["data"]>[number]
 type SessionToolPart = Extract<SessionMessage["parts"][number], { type: "tool" }>
-type SessionStatusMap = NonNullable<Awaited<ReturnType<KiloClient["session"]["status"]>>["data"]>
+type SessionStatusMap = NonNullable<Awaited<ReturnType<ChipMateClient["session"]["status"]>>["data"]>
 type TextPart = Extract<SessionMessage["parts"][number], { type: "text" }>
 type ReasoningPart = Extract<SessionMessage["parts"][number], { type: "reasoning" }>
 
@@ -436,25 +436,25 @@ function sdk(
   input: {
     stream?: EventStream
     globalStream?: GlobalEventStream
-    globalEvent?: KiloClient["global"]["event"]
-    promptAsync?: KiloClient["session"]["promptAsync"]
-    status?: KiloClient["session"]["status"]
-    messages?: KiloClient["session"]["messages"]
-    children?: KiloClient["session"]["children"]
-    permissions?: KiloClient["permission"]["list"]
-    questions?: KiloClient["question"]["list"]
+    globalEvent?: ChipMateClient["global"]["event"]
+    promptAsync?: ChipMateClient["session"]["promptAsync"]
+    status?: ChipMateClient["session"]["status"]
+    messages?: ChipMateClient["session"]["messages"]
+    children?: ChipMateClient["session"]["children"]
+    permissions?: ChipMateClient["permission"]["list"]
+    questions?: ChipMateClient["question"]["list"]
   } = {},
 ) {
-  const client = new KiloClient()
+  const client = new ChipMateClient()
 
-  const globalEvent: KiloClient["global"]["event"] =
+  const globalEvent: ChipMateClient["global"]["event"] =
     input.globalEvent ?? (() => globalSse(input.globalStream ?? wrapGlobalStream(input.stream ?? emptyStream())))
-  const promptAsync: KiloClient["session"]["promptAsync"] = input.promptAsync ?? (() => ok(undefined))
-  const status: KiloClient["session"]["status"] = input.status ?? (() => ok({}))
-  const messages: KiloClient["session"]["messages"] = input.messages ?? (() => ok([]))
-  const children: KiloClient["session"]["children"] = input.children ?? (() => ok([]))
-  const permissions: KiloClient["permission"]["list"] = input.permissions ?? (() => ok([]))
-  const questions: KiloClient["question"]["list"] = input.questions ?? (() => ok([]))
+  const promptAsync: ChipMateClient["session"]["promptAsync"] = input.promptAsync ?? (() => ok(undefined))
+  const status: ChipMateClient["session"]["status"] = input.status ?? (() => ok({}))
+  const messages: ChipMateClient["session"]["messages"] = input.messages ?? (() => ok([]))
+  const children: ChipMateClient["session"]["children"] = input.children ?? (() => ok([]))
+  const permissions: ChipMateClient["permission"]["list"] = input.permissions ?? (() => ok([]))
+  const questions: ChipMateClient["question"]["list"] = input.questions ?? (() => ok([]))
 
   spyOn(client.global, "event").mockImplementation(globalEvent)
   spyOn(client.session, "promptAsync").mockImplementation(promptAsync)

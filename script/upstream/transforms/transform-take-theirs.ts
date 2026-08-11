@@ -1,20 +1,20 @@
 #!/usr/bin/env bun
 /**
- * Transform files by taking upstream version and applying Kilo branding
+ * Transform files by taking upstream version and applying ChipMate branding
  *
  * This script handles files that have only branding differences (no logic changes).
- * It takes the upstream version and applies Kilo branding transforms.
+ * It takes the upstream version and applies ChipMate branding transforms.
  *
  * Use this for:
- * - UI components with OpenCode -> Kilo branding
+ * - UI components with OpenCode -> ChipMate branding
  * - Config files with predictable patterns
- * - Files without kilocode_change logic blocks
+ * - Files without chipmate_change logic blocks
  */
 
 import { $ } from "bun"
 import { info, success, warn, debug } from "../utils/logger"
 import { defaultConfig } from "../utils/config"
-import { oursHasKilocodeChanges } from "../utils/git"
+import { oursHasChipMateChanges } from "../utils/git"
 
 export interface TakeTheirsResult {
   file: string
@@ -40,53 +40,53 @@ const BRANDING_REPLACEMENTS: BrandingReplacement[] = [
   // GitHub repo references
   {
     pattern: /github\.com\/anomalyco\/opencode/g,
-    replacement: "github.com/Kilo-Org/kilocode",
+    replacement: "github.com/ChipMate-Org/chipmate",
     description: "GitHub URL",
   },
   {
     pattern: /anomalyco\/opencode/g,
-    replacement: "Kilo-Org/kilocode",
+    replacement: "ChipMate-Org/chipmate",
     description: "GitHub repo reference",
   },
 
   // Domain replacements (specific first)
   {
     pattern: /app\.opencode\.ai/g,
-    replacement: "app.kilo.ai",
+    replacement: "app.chipmate.ai",
     description: "App domain",
   },
   {
     pattern: /opencode\.ai(?!\/zen)/g,
-    replacement: "kilo.ai",
+    replacement: "chipmate.ai",
     description: "Main domain (excluding zen)",
   },
 
   // CLI commands
   {
     pattern: /npx opencode(?!\w)/g,
-    replacement: "npx kilo",
+    replacement: "npx chipmate",
     description: "npx command",
   },
   {
     pattern: /bun add opencode(?!\w)/g,
-    replacement: "bun add kilo",
+    replacement: "bun add chipmate",
     description: "bun add command",
   },
   {
     pattern: /npm install opencode(?!\w)/g,
-    replacement: "npm install kilo",
+    replacement: "npm install chipmate",
     description: "npm install command",
   },
   {
     pattern: /opencode upgrade(?!\w)/g,
-    replacement: "kilo upgrade",
+    replacement: "chipmate upgrade",
     description: "upgrade command",
   },
 
   // Database filename
   {
     pattern: /opencode\.db/g,
-    replacement: "kilo.db",
+    replacement: "chipmate.db",
     description: "Database filename",
   },
 
@@ -94,34 +94,34 @@ const BRANDING_REPLACEMENTS: BrandingReplacement[] = [
   // Only replace "OpenCode" when it's a standalone word
   {
     pattern: /\bOpenCode\b(?!\.json|\/| Zen)/g,
-    replacement: "Kilo",
+    replacement: "ChipMate",
     description: "Product name",
   },
 
   // Environment variables (exclude OPENCODE_API_KEY)
   {
     pattern: /\bOPENCODE_(?!API_KEY\b)([A-Z_]+)\b/g,
-    replacement: "KILO_$1",
+    replacement: "CHIPMATE_$1",
     description: "Environment variable",
   },
   {
     pattern: /VITE_OPENCODE_/g,
-    replacement: "VITE_KILO_",
+    replacement: "VITE_CHIPMATE_",
     description: "Vite env var",
   },
   {
     pattern: /window\.__OPENCODE__/g,
-    replacement: "window.__KILO__",
+    replacement: "window.__CHIPMATE__",
     description: "Window global",
   },
   {
     pattern: /x-opencode-/g,
-    replacement: "x-kilo-",
+    replacement: "x-chipmate-",
     description: "HTTP header prefix",
   },
   {
     pattern: /_EXTENSION_OPENCODE_/g,
-    replacement: "_EXTENSION_KILO_",
+    replacement: "_EXTENSION_CHIPMATE_",
     description: "Extension env var",
   },
 ]
@@ -146,8 +146,8 @@ export function applyBrandingTransforms(content: string, verbose = false): { res
   let total = 0
 
   for (const line of lines) {
-    // Skip lines with kilocode_change marker (already customized)
-    if (line.includes("// kilocode_change")) {
+    // Skip lines with chipmate_change marker (already customized)
+    if (line.includes("// chipmate_change")) {
       transformed.push(line)
       continue
     }
@@ -187,9 +187,9 @@ export async function transformTakeTheirs(file: string, options: TakeTheirsOptio
     return { file, action: "transformed", replacements: 0, dryRun: true }
   }
 
-  // If our version has kilocode_change markers, flag for manual resolution
-  if (await oursHasKilocodeChanges(file)) {
-    warn(`${file} has kilocode_change markers — skipping auto-transform, needs manual resolution`)
+  // If our version has chipmate_change markers, flag for manual resolution
+  if (await oursHasChipMateChanges(file)) {
+    warn(`${file} has chipmate_change markers — skipping auto-transform, needs manual resolution`)
     return { file, action: "flagged", replacements: 0, dryRun: false }
   }
 

@@ -111,8 +111,8 @@ prepare() {
   extension="$(locate_extension || true)"
   [[ -n "${extension}" ]] || fail "installed extension directory not found"
   printf 'extension_path=%s\n' "${extension}" >>"${run}/environment.txt"
-  [[ -x "${extension}/bin/kilo" ]] || fail "bundled Linux CLI is missing or not executable"
-  file "${extension}/bin/kilo" | tee "${run}/cli-file.txt"
+  [[ -x "${extension}/bin/chipmate" ]] || fail "bundled Linux CLI is missing or not executable"
+  file "${extension}/bin/chipmate" | tee "${run}/cli-file.txt"
   grep -q 'ELF 64-bit.*x86-64' "${run}/cli-file.txt" || fail "bundled CLI is not Linux x86-64 ELF"
 
   write_steps "${run}"
@@ -157,7 +157,7 @@ audit() {
   [[ "${#logs[@]}" -gt 0 ]] || fail "no recent VS Code Extension Host logs found"
 
   grep -Ehi \
-    'qwen|autocomplete|provider-enter|config-read|prompt-built|request-start|response|return-items|Maximum call stack|unhandled|Starting new server instance|inline provider|/kilo/fim' \
+    'qwen|autocomplete|provider-enter|config-read|prompt-built|request-start|response|return-items|Maximum call stack|unhandled|Starting new server instance|inline provider|/chipmate/fim' \
     "${logs[@]}" >"${combined}" || true
 
   grep -Evi \
@@ -180,7 +180,7 @@ audit() {
   stack="$(count 'Maximum call stack size exceeded' "${safe}")"
   unhandled="$(count 'unhandled (exception|rejection)|UnhandledPromiseRejection' "${safe}")"
   auth="$(count 'authentication error|authentication warning|paused due to an authentication' "${safe}")"
-  classic="$(count '/kilo/fim([^[:alnum:]_-]|$)' "${safe}")"
+  classic="$(count '/chipmate/fim([^[:alnum:]_-]|$)' "${safe}")"
   duplicate="$(count 'duplicate.*inline provider|inline provider.*already registered' "${safe}")"
   starts="$(count 'Starting new server instance' "${safe}")"
   over=0
@@ -203,7 +203,7 @@ audit() {
     printf 'stack_overflow=%s\n' "${stack}"
     printf 'unhandled=%s\n' "${unhandled}"
     printf 'authentication_warning=%s\n' "${auth}"
-    printf 'classic_kilo_fim=%s\n' "${classic}"
+    printf 'classic_chipmate_fim=%s\n' "${classic}"
     printf 'duplicate_inline_provider=%s\n' "${duplicate}"
     printf 'server_start_attempts=%s\n' "${starts}"
     printf 'extension_host_logs_with_multiple_server_starts=%s\n' "${over}"

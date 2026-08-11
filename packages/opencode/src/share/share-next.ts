@@ -1,6 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
-import type * as SDK from "@kilocode/sdk/v2"
+import type * as SDK from "@chipmate/sdk/v2"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Effect, Exit, Layer, Option, Schema, Scope, Context, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
@@ -20,7 +20,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { EventV2 } from "@opencode-ai/core/event"
 
-const disabled = process.env["KILO_DISABLE_SHARE"] === "true" || process.env["KILO_DISABLE_SHARE"] === "1"
+const disabled = process.env["CHIPMATE_DISABLE_SHARE"] === "true" || process.env["CHIPMATE_DISABLE_SHARE"] === "1"
 
 export type Api = {
   create: string
@@ -91,7 +91,7 @@ function api(resource: string): Api {
   }
 }
 
-// kilocode_change start - preserve the share transport contract when stored legacy summary diffs omit file details
+// chipmate_change start - preserve the share transport contract when stored legacy summary diffs omit file details
 function transport(info: EventV2.Data<typeof Session.Event.Updated>["info"]): SDK.Session {
   const value = info as Session.Info
   return {
@@ -104,7 +104,7 @@ function transport(info: EventV2.Data<typeof Session.Event.Updated>["info"]): SD
       : undefined,
   }
 }
-// kilocode_change end
+// chipmate_change end
 
 const legacyApi = api("share")
 const consoleApi = api("shares")

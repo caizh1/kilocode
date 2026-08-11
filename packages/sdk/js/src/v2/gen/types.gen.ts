@@ -111,14 +111,14 @@ export type Event =
   | EventSuggestionShown
   | EventSuggestionAccepted
   | EventSuggestionDismissed
-  | EventKilocodeAgentManagerStart
-  | EventKilocodeAgentManagerRequested
-  | EventKilocodeAgentManagerCancelled
-  | EventKilocodeNotebookRequested
-  | EventKilocodeNotebookCancelled
-  | EventKilocodeSkillMarketRequested
-  | EventKilocodeSkillMarketCancelled
-  | EventKiloSessionsRemoteStatusChanged
+  | EventChipmateAgentManagerStart
+  | EventChipmateAgentManagerRequested
+  | EventChipmateAgentManagerCancelled
+  | EventChipmateNotebookRequested
+  | EventChipmateNotebookCancelled
+  | EventChipmateSkillMarketRequested
+  | EventChipmateSkillMarketCancelled
+  | EventChipmateSessionsRemoteStatusChanged
   | EventLspClientDiagnostics
   | EventMemoryStatus1
   | EventMemoryUpdated1
@@ -1342,14 +1342,14 @@ export type GlobalEvent = {
     | EventSuggestionShown
     | EventSuggestionAccepted
     | EventSuggestionDismissed
-    | EventKilocodeAgentManagerStart
-    | EventKilocodeAgentManagerRequested
-    | EventKilocodeAgentManagerCancelled
-    | EventKilocodeNotebookRequested
-    | EventKilocodeNotebookCancelled
-    | EventKilocodeSkillMarketRequested
-    | EventKilocodeSkillMarketCancelled
-    | EventKiloSessionsRemoteStatusChanged
+    | EventChipmateAgentManagerStart
+    | EventChipmateAgentManagerRequested
+    | EventChipmateAgentManagerCancelled
+    | EventChipmateNotebookRequested
+    | EventChipmateNotebookCancelled
+    | EventChipmateSkillMarketRequested
+    | EventChipmateSkillMarketCancelled
+    | EventChipmateSessionsRemoteStatusChanged
     | EventLspClientDiagnostics
     | EventMemoryStatus
     | EventMemoryUpdated
@@ -2366,7 +2366,7 @@ export type GlobalEvent = {
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
 
 /**
- * Server configuration for the kilo serve command
+ * Server configuration for the chipmate serve command
  */
 export type ServerConfig = {
   port?: number
@@ -2396,7 +2396,7 @@ export type DocumentIndexConfig = {
 export type IndexingConfig = {
   enabled?: boolean
   provider?:
-    | "kilo"
+    | "chipmate"
     | "openai"
     | "ollama"
     | "openai-compatible"
@@ -2410,7 +2410,7 @@ export type IndexingConfig = {
   dimension?: number | null
   dimensionMode?: "auto" | "fixed"
   vectorStore?: "lancedb" | "qdrant"
-  kilo?: {
+  chipmate?: {
     apiKey?: string
     baseUrl?: string
     organizationId?: string
@@ -2758,7 +2758,7 @@ export type Config = {
   indexing?: IndexingConfig
   console?: {
     /**
-     * Width of the Kilo Console project context sidebar in pixels
+     * Width of the ChipMate Console project context sidebar in pixels
      */
     context_sidebar_width?: number
     diff_style?: "unified" | "split"
@@ -4664,7 +4664,7 @@ export type DesignDocRetryWorkItemInput = {
   model?: DesignDocModelReference
 }
 
-export type KiloEmbeddingModelCatalog = {
+export type ChipMateEmbeddingModelCatalog = {
   defaultModel: string
   models: Array<{
     id: string
@@ -5061,7 +5061,7 @@ export type AnacondaDesktopOperationError = {
   message: string
 }
 
-export type KilocodeSessionImportResult = {
+export type ChipmateSessionImportResult = {
   ok: boolean
   id: string
   skipped?: boolean
@@ -5567,9 +5567,9 @@ export type EventSuggestionDismissed = {
   }
 }
 
-export type EventKilocodeAgentManagerStart = {
+export type EventChipmateAgentManagerStart = {
   id: string
-  type: "kilocode.agent_manager.start"
+  type: "chipmate.agent_manager.start"
   properties: {
     requestID: string
     sessionID: string
@@ -5589,15 +5589,15 @@ export type EventKilocodeAgentManagerStart = {
   }
 }
 
-export type EventKilocodeAgentManagerRequested = {
+export type EventChipmateAgentManagerRequested = {
   id: string
-  type: "kilocode.agent_manager.requested"
+  type: "chipmate.agent_manager.requested"
   properties: AgentManagerRequest
 }
 
-export type EventKilocodeAgentManagerCancelled = {
+export type EventChipmateAgentManagerCancelled = {
   id: string
-  type: "kilocode.agent_manager.cancelled"
+  type: "chipmate.agent_manager.cancelled"
   properties: {
     requestID: AgentManagerRequestId
     sessionID: string
@@ -5605,15 +5605,15 @@ export type EventKilocodeAgentManagerCancelled = {
   }
 }
 
-export type EventKilocodeNotebookRequested = {
+export type EventChipmateNotebookRequested = {
   id: string
-  type: "kilocode.notebook.requested"
+  type: "chipmate.notebook.requested"
   properties: NotebookRequest
 }
 
-export type EventKilocodeNotebookCancelled = {
+export type EventChipmateNotebookCancelled = {
   id: string
-  type: "kilocode.notebook.cancelled"
+  type: "chipmate.notebook.cancelled"
   properties: {
     requestID: NotebookRequestId
     sessionID: string
@@ -5621,15 +5621,15 @@ export type EventKilocodeNotebookCancelled = {
   }
 }
 
-export type EventKilocodeSkillMarketRequested = {
+export type EventChipmateSkillMarketRequested = {
   id: string
-  type: "kilocode.skill_market.requested"
+  type: "chipmate.skill_market.requested"
   properties: SkillMarketRequest
 }
 
-export type EventKilocodeSkillMarketCancelled = {
+export type EventChipmateSkillMarketCancelled = {
   id: string
-  type: "kilocode.skill_market.cancelled"
+  type: "chipmate.skill_market.cancelled"
   properties: {
     requestID: string
     sessionID: string
@@ -5637,9 +5637,9 @@ export type EventKilocodeSkillMarketCancelled = {
   }
 }
 
-export type EventKiloSessionsRemoteStatusChanged = {
+export type EventChipmateSessionsRemoteStatusChanged = {
   id: string
-  type: "kilo-sessions.remote-status-changed"
+  type: "chipmate-sessions.remote-status-changed"
   properties: {
     enabled: boolean
     connected: boolean
@@ -16607,9 +16607,9 @@ export type IndexingModelsError = IndexingModelsErrors[keyof IndexingModelsError
 
 export type IndexingModelsResponses = {
   /**
-   * Kilo embedding model catalog
+   * ChipMate embedding model catalog
    */
-  200: KiloEmbeddingModelCatalog
+  200: ChipMateEmbeddingModelCatalog
 }
 
 export type IndexingModelsResponse = IndexingModelsResponses[keyof IndexingModelsResponses]
@@ -16842,26 +16842,26 @@ export type InteractiveTerminalCloseResponses = {
 export type InteractiveTerminalCloseResponse =
   InteractiveTerminalCloseResponses[keyof InteractiveTerminalCloseResponses]
 
-export type KiloProfileData = {
+export type ChipmateProfileData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/profile"
+  url: "/chipmate/profile"
 }
 
-export type KiloProfileErrors = {
+export type ChipmateProfileErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloProfileError = KiloProfileErrors[keyof KiloProfileErrors]
+export type ChipmateProfileError = ChipmateProfileErrors[keyof ChipmateProfileErrors]
 
-export type KiloProfileResponses = {
+export type ChipmateProfileResponses = {
   /**
    * Profile data
    */
@@ -16880,7 +16880,7 @@ export type KiloProfileResponses = {
     balance: {
       balance: number
     } | null
-    kiloPass: {
+    chipmatePass: {
       currentPeriodBaseCreditsUsd: number
       currentPeriodUsageUsd: number
       currentPeriodBonusCreditsUsd: number
@@ -16890,30 +16890,30 @@ export type KiloProfileResponses = {
   }
 }
 
-export type KiloProfileResponse = KiloProfileResponses[keyof KiloProfileResponses]
+export type ChipmateProfileResponse = ChipmateProfileResponses[keyof ChipmateProfileResponses]
 
-export type KiloAuthStatusData = {
+export type ChipmateAuthStatusData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/auth-status"
+  url: "/chipmate/auth-status"
 }
 
-export type KiloAuthStatusErrors = {
+export type ChipmateAuthStatusErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloAuthStatusError = KiloAuthStatusErrors[keyof KiloAuthStatusErrors]
+export type ChipmateAuthStatusError = ChipmateAuthStatusErrors[keyof ChipmateAuthStatusErrors]
 
-export type KiloAuthStatusResponses = {
+export type ChipmateAuthStatusResponses = {
   /**
-   * Kilo authentication status
+   * ChipMate authentication status
    */
   200: {
     authenticated: boolean
@@ -16921,28 +16921,28 @@ export type KiloAuthStatusResponses = {
   }
 }
 
-export type KiloAuthStatusResponse = KiloAuthStatusResponses[keyof KiloAuthStatusResponses]
+export type ChipmateAuthStatusResponse = ChipmateAuthStatusResponses[keyof ChipmateAuthStatusResponses]
 
-export type KiloModesData = {
+export type ChipmateModesData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/modes"
+  url: "/chipmate/modes"
 }
 
-export type KiloModesErrors = {
+export type ChipmateModesErrors = {
   /**
    * Bad request
    */
   400: BadRequestError
 }
 
-export type KiloModesError = KiloModesErrors[keyof KiloModesErrors]
+export type ChipmateModesError = ChipmateModesErrors[keyof ChipmateModesErrors]
 
-export type KiloModesResponses = {
+export type ChipmateModesResponses = {
   /**
    * Organization modes list
    */
@@ -16975,9 +16975,9 @@ export type KiloModesResponses = {
   }
 }
 
-export type KiloModesResponse = KiloModesResponses[keyof KiloModesResponses]
+export type ChipmateModesResponse = ChipmateModesResponses[keyof ChipmateModesResponses]
 
-export type KiloFimData = {
+export type ChipmateFimData = {
   body?: {
     prefix: string
     suffix: string
@@ -16991,19 +16991,19 @@ export type KiloFimData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/fim"
+  url: "/chipmate/fim"
 }
 
-export type KiloFimErrors = {
+export type ChipmateFimErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloFimError = KiloFimErrors[keyof KiloFimErrors]
+export type ChipmateFimError = ChipmateFimErrors[keyof ChipmateFimErrors]
 
-export type KiloFimResponses = {
+export type ChipmateFimResponses = {
   /**
    * Streaming FIM completion response
    */
@@ -17022,9 +17022,9 @@ export type KiloFimResponses = {
   }
 }
 
-export type KiloFimResponse = KiloFimResponses[keyof KiloFimResponses]
+export type ChipmateFimResponse = ChipmateFimResponses[keyof ChipmateFimResponses]
 
-export type KiloQwenFimData = {
+export type ChipmateQwenFimData = {
   body?: {
     providerID: string
     modelID: string
@@ -17039,19 +17039,19 @@ export type KiloQwenFimData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/qwen-fim"
+  url: "/chipmate/qwen-fim"
 }
 
-export type KiloQwenFimErrors = {
+export type ChipmateQwenFimErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloQwenFimError = KiloQwenFimErrors[keyof KiloQwenFimErrors]
+export type ChipmateQwenFimError = ChipmateQwenFimErrors[keyof ChipmateQwenFimErrors]
 
-export type KiloQwenFimResponses = {
+export type ChipmateQwenFimResponses = {
   /**
    * Qwen FIM completion
    */
@@ -17060,9 +17060,9 @@ export type KiloQwenFimResponses = {
   }
 }
 
-export type KiloQwenFimResponse = KiloQwenFimResponses[keyof KiloQwenFimResponses]
+export type ChipmateQwenFimResponse = ChipmateQwenFimResponses[keyof ChipmateQwenFimResponses]
 
-export type KiloEditData = {
+export type ChipmateEditData = {
   body?: {
     provider?: string
     model?: string
@@ -17084,19 +17084,19 @@ export type KiloEditData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/edit"
+  url: "/chipmate/edit"
 }
 
-export type KiloEditErrors = {
+export type ChipmateEditErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloEditError = KiloEditErrors[keyof KiloEditErrors]
+export type ChipmateEditError = ChipmateEditErrors[keyof ChipmateEditErrors]
 
-export type KiloEditResponses = {
+export type ChipmateEditResponses = {
   /**
    * Next Edit completion
    */
@@ -17109,9 +17109,9 @@ export type KiloEditResponses = {
   }
 }
 
-export type KiloEditResponse = KiloEditResponses[keyof KiloEditResponses]
+export type ChipmateEditResponse = ChipmateEditResponses[keyof ChipmateEditResponses]
 
-export type KiloAudioTranscriptionsData = {
+export type ChipmateAudioTranscriptionsData = {
   body?: {
     model: string
     input_audio: {
@@ -17127,19 +17127,20 @@ export type KiloAudioTranscriptionsData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/audio/transcriptions"
+  url: "/chipmate/audio/transcriptions"
 }
 
-export type KiloAudioTranscriptionsErrors = {
+export type ChipmateAudioTranscriptionsErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloAudioTranscriptionsError = KiloAudioTranscriptionsErrors[keyof KiloAudioTranscriptionsErrors]
+export type ChipmateAudioTranscriptionsError =
+  ChipmateAudioTranscriptionsErrors[keyof ChipmateAudioTranscriptionsErrors]
 
-export type KiloAudioTranscriptionsResponses = {
+export type ChipmateAudioTranscriptionsResponses = {
   /**
    * Transcription response
    */
@@ -17149,28 +17150,29 @@ export type KiloAudioTranscriptionsResponses = {
   }
 }
 
-export type KiloAudioTranscriptionsResponse = KiloAudioTranscriptionsResponses[keyof KiloAudioTranscriptionsResponses]
+export type ChipmateAudioTranscriptionsResponse =
+  ChipmateAudioTranscriptionsResponses[keyof ChipmateAudioTranscriptionsResponses]
 
-export type KiloModelsImagesData = {
+export type ChipmateModelsImagesData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/models/images"
+  url: "/chipmate/models/images"
 }
 
-export type KiloModelsImagesErrors = {
+export type ChipmateModelsImagesErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloModelsImagesError = KiloModelsImagesErrors[keyof KiloModelsImagesErrors]
+export type ChipmateModelsImagesError = ChipmateModelsImagesErrors[keyof ChipmateModelsImagesErrors]
 
-export type KiloModelsImagesResponses = {
+export type ChipmateModelsImagesResponses = {
   /**
    * Image-capable model list
    */
@@ -17181,28 +17183,29 @@ export type KiloModelsImagesResponses = {
   }>
 }
 
-export type KiloModelsImagesResponse = KiloModelsImagesResponses[keyof KiloModelsImagesResponses]
+export type ChipmateModelsImagesResponse = ChipmateModelsImagesResponses[keyof ChipmateModelsImagesResponses]
 
-export type KiloModelsTranscriptionsData = {
+export type ChipmateModelsTranscriptionsData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/models/transcriptions"
+  url: "/chipmate/models/transcriptions"
 }
 
-export type KiloModelsTranscriptionsErrors = {
+export type ChipmateModelsTranscriptionsErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloModelsTranscriptionsError = KiloModelsTranscriptionsErrors[keyof KiloModelsTranscriptionsErrors]
+export type ChipmateModelsTranscriptionsError =
+  ChipmateModelsTranscriptionsErrors[keyof ChipmateModelsTranscriptionsErrors]
 
-export type KiloModelsTranscriptionsResponses = {
+export type ChipmateModelsTranscriptionsResponses = {
   /**
    * Speech-to-text model list
    */
@@ -17212,29 +17215,29 @@ export type KiloModelsTranscriptionsResponses = {
   }>
 }
 
-export type KiloModelsTranscriptionsResponse =
-  KiloModelsTranscriptionsResponses[keyof KiloModelsTranscriptionsResponses]
+export type ChipmateModelsTranscriptionsResponse =
+  ChipmateModelsTranscriptionsResponses[keyof ChipmateModelsTranscriptionsResponses]
 
-export type KiloNotificationsData = {
+export type ChipmateNotificationsData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/notifications"
+  url: "/chipmate/notifications"
 }
 
-export type KiloNotificationsErrors = {
+export type ChipmateNotificationsErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloNotificationsError = KiloNotificationsErrors[keyof KiloNotificationsErrors]
+export type ChipmateNotificationsError = ChipmateNotificationsErrors[keyof ChipmateNotificationsErrors]
 
-export type KiloNotificationsResponses = {
+export type ChipmateNotificationsResponses = {
   /**
    * Notifications list
    */
@@ -17251,9 +17254,9 @@ export type KiloNotificationsResponses = {
   }>
 }
 
-export type KiloNotificationsResponse = KiloNotificationsResponses[keyof KiloNotificationsResponses]
+export type ChipmateNotificationsResponse = ChipmateNotificationsResponses[keyof ChipmateNotificationsResponses]
 
-export type KiloOrganizationSetData = {
+export type ChipmateOrganizationSetData = {
   body?: {
     organizationId: string | null
   }
@@ -17262,38 +17265,38 @@ export type KiloOrganizationSetData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/organization"
+  url: "/chipmate/organization"
 }
 
-export type KiloOrganizationSetErrors = {
+export type ChipmateOrganizationSetErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloOrganizationSetError = KiloOrganizationSetErrors[keyof KiloOrganizationSetErrors]
+export type ChipmateOrganizationSetError = ChipmateOrganizationSetErrors[keyof ChipmateOrganizationSetErrors]
 
-export type KiloOrganizationSetResponses = {
+export type ChipmateOrganizationSetResponses = {
   /**
    * Organization updated successfully
    */
   200: boolean
 }
 
-export type KiloOrganizationSetResponse = KiloOrganizationSetResponses[keyof KiloOrganizationSetResponses]
+export type ChipmateOrganizationSetResponse = ChipmateOrganizationSetResponses[keyof ChipmateOrganizationSetResponses]
 
-export type KiloClawStatusData = {
+export type ChipmateClawStatusData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/claw/status"
+  url: "/chipmate/claw/status"
 }
 
-export type KiloClawStatusErrors = {
+export type ChipmateClawStatusErrors = {
   /**
    * Bad request
    */
@@ -17304,9 +17307,9 @@ export type KiloClawStatusErrors = {
   503: EffectHttpApiErrorServiceUnavailable
 }
 
-export type KiloClawStatusError = KiloClawStatusErrors[keyof KiloClawStatusErrors]
+export type ChipmateClawStatusError = ChipmateClawStatusErrors[keyof ChipmateClawStatusErrors]
 
-export type KiloClawStatusResponses = {
+export type ChipmateClawStatusResponses = {
   /**
    * Instance status
    */
@@ -17337,42 +17340,44 @@ export type KiloClawStatusResponses = {
   }
 }
 
-export type KiloClawStatusResponse = KiloClawStatusResponses[keyof KiloClawStatusResponses]
+export type ChipmateClawStatusResponse = ChipmateClawStatusResponses[keyof ChipmateClawStatusResponses]
 
-export type KiloClawChatCredentialsData = {
+export type ChipmateClawChatCredentialsData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/claw/chat-credentials"
+  url: "/chipmate/claw/chat-credentials"
 }
 
-export type KiloClawChatCredentialsErrors = {
+export type ChipmateClawChatCredentialsErrors = {
   /**
    * Bad request
    */
   400: BadRequestError
 }
 
-export type KiloClawChatCredentialsError = KiloClawChatCredentialsErrors[keyof KiloClawChatCredentialsErrors]
+export type ChipmateClawChatCredentialsError =
+  ChipmateClawChatCredentialsErrors[keyof ChipmateClawChatCredentialsErrors]
 
-export type KiloClawChatCredentialsResponses = {
+export type ChipmateClawChatCredentialsResponses = {
   /**
-   * Kilo Chat credentials or null
+   * ChipMate Chat credentials or null
    */
   200: {
     token: string
     expiresAt: string
-    kiloChatUrl: string
+    chipmateChatUrl: string
     eventServiceUrl: string
   } | null
 }
 
-export type KiloClawChatCredentialsResponse = KiloClawChatCredentialsResponses[keyof KiloClawChatCredentialsResponses]
+export type ChipmateClawChatCredentialsResponse =
+  ChipmateClawChatCredentialsResponses[keyof ChipmateClawChatCredentialsResponses]
 
-export type KiloCloudSessionsData = {
+export type ChipmateCloudSessionsData = {
   body?: never
   path?: never
   query?: {
@@ -17382,19 +17387,19 @@ export type KiloCloudSessionsData = {
     limit?: number
     gitUrl?: string
   }
-  url: "/kilo/cloud-sessions"
+  url: "/chipmate/cloud-sessions"
 }
 
-export type KiloCloudSessionsErrors = {
+export type ChipmateCloudSessionsErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KiloCloudSessionsError = KiloCloudSessionsErrors[keyof KiloCloudSessionsErrors]
+export type ChipmateCloudSessionsError = ChipmateCloudSessionsErrors[keyof ChipmateCloudSessionsErrors]
 
-export type KiloCloudSessionsResponses = {
+export type ChipmateCloudSessionsResponses = {
   /**
    * Cloud sessions list
    */
@@ -17410,9 +17415,9 @@ export type KiloCloudSessionsResponses = {
   }
 }
 
-export type KiloCloudSessionsResponse = KiloCloudSessionsResponses[keyof KiloCloudSessionsResponses]
+export type ChipmateCloudSessionsResponse = ChipmateCloudSessionsResponses[keyof ChipmateCloudSessionsResponses]
 
-export type KiloCloudSessionGetData = {
+export type ChipmateCloudSessionGetData = {
   body?: never
   path: {
     id: string
@@ -17421,10 +17426,10 @@ export type KiloCloudSessionGetData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/cloud/session/{id}"
+  url: "/chipmate/cloud/session/{id}"
 }
 
-export type KiloCloudSessionGetErrors = {
+export type ChipmateCloudSessionGetErrors = {
   /**
    * Bad request
    */
@@ -17435,9 +17440,9 @@ export type KiloCloudSessionGetErrors = {
   404: NotFoundError
 }
 
-export type KiloCloudSessionGetError = KiloCloudSessionGetErrors[keyof KiloCloudSessionGetErrors]
+export type ChipmateCloudSessionGetError = ChipmateCloudSessionGetErrors[keyof ChipmateCloudSessionGetErrors]
 
-export type KiloCloudSessionGetResponses = {
+export type ChipmateCloudSessionGetResponses = {
   /**
    * Cloud session data
    */
@@ -17470,9 +17475,9 @@ export type KiloCloudSessionGetResponses = {
   }
 }
 
-export type KiloCloudSessionGetResponse = KiloCloudSessionGetResponses[keyof KiloCloudSessionGetResponses]
+export type ChipmateCloudSessionGetResponse = ChipmateCloudSessionGetResponses[keyof ChipmateCloudSessionGetResponses]
 
-export type KiloCloudSessionImportData = {
+export type ChipmateCloudSessionImportData = {
   body?: {
     sessionId: string
   }
@@ -17481,10 +17486,10 @@ export type KiloCloudSessionImportData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilo/cloud/session/import"
+  url: "/chipmate/cloud/session/import"
 }
 
-export type KiloCloudSessionImportErrors = {
+export type ChipmateCloudSessionImportErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
@@ -17499,9 +17504,9 @@ export type KiloCloudSessionImportErrors = {
   500: CloudSessionImportError
 }
 
-export type KiloCloudSessionImportError = KiloCloudSessionImportErrors[keyof KiloCloudSessionImportErrors]
+export type ChipmateCloudSessionImportError = ChipmateCloudSessionImportErrors[keyof ChipmateCloudSessionImportErrors]
 
-export type KiloCloudSessionImportResponses = {
+export type ChipmateCloudSessionImportResponses = {
   /**
    * Imported session info
    */
@@ -17515,37 +17520,38 @@ export type KiloCloudSessionImportResponses = {
   }
 }
 
-export type KiloCloudSessionImportResponse = KiloCloudSessionImportResponses[keyof KiloCloudSessionImportResponses]
+export type ChipmateCloudSessionImportResponse =
+  ChipmateCloudSessionImportResponses[keyof ChipmateCloudSessionImportResponses]
 
-export type KilocodeHeapSnapshotData = {
+export type ChipmateHeapSnapshotData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/heap/snapshot"
+  url: "/chipmate/heap/snapshot"
 }
 
-export type KilocodeHeapSnapshotErrors = {
+export type ChipmateHeapSnapshotErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KilocodeHeapSnapshotError = KilocodeHeapSnapshotErrors[keyof KilocodeHeapSnapshotErrors]
+export type ChipmateHeapSnapshotError = ChipmateHeapSnapshotErrors[keyof ChipmateHeapSnapshotErrors]
 
-export type KilocodeHeapSnapshotResponses = {
+export type ChipmateHeapSnapshotResponses = {
   /**
    * Heap snapshot file path
    */
   200: string
 }
 
-export type KilocodeHeapSnapshotResponse = KilocodeHeapSnapshotResponses[keyof KilocodeHeapSnapshotResponses]
+export type ChipmateHeapSnapshotResponse = ChipmateHeapSnapshotResponses[keyof ChipmateHeapSnapshotResponses]
 
-export type KilocodeAgentRequirementsData = {
+export type ChipmateAgentRequirementsData = {
   body?: never
   path?: never
   query: {
@@ -17553,57 +17559,57 @@ export type KilocodeAgentRequirementsData = {
     workspace?: string
     agent: string
   }
-  url: "/kilocode/agent/requirements"
+  url: "/chipmate/agent/requirements"
 }
 
-export type KilocodeAgentRequirementsErrors = {
+export type ChipmateAgentRequirementsErrors = {
   /**
    * Bad request
    */
   400: BadRequestError
 }
 
-export type KilocodeAgentRequirementsError = KilocodeAgentRequirementsErrors[keyof KilocodeAgentRequirementsErrors]
+export type ChipmateAgentRequirementsError = ChipmateAgentRequirementsErrors[keyof ChipmateAgentRequirementsErrors]
 
-export type KilocodeAgentRequirementsResponses = {
+export type ChipmateAgentRequirementsResponses = {
   /**
    * Agent requirement status
    */
   200: AgentRequirementResult
 }
 
-export type KilocodeAgentRequirementsResponse =
-  KilocodeAgentRequirementsResponses[keyof KilocodeAgentRequirementsResponses]
+export type ChipmateAgentRequirementsResponse =
+  ChipmateAgentRequirementsResponses[keyof ChipmateAgentRequirementsResponses]
 
-export type KilocodeCommandFilesData = {
+export type ChipmateCommandFilesData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/command/files"
+  url: "/chipmate/command/files"
 }
 
-export type KilocodeCommandFilesErrors = {
+export type ChipmateCommandFilesErrors = {
   /**
    * Bad request
    */
   400: BadRequestError
 }
 
-export type KilocodeCommandFilesError = KilocodeCommandFilesErrors[keyof KilocodeCommandFilesErrors]
+export type ChipmateCommandFilesError = ChipmateCommandFilesErrors[keyof ChipmateCommandFilesErrors]
 
-export type KilocodeCommandFilesResponses = {
+export type ChipmateCommandFilesResponses = {
   /**
    * Command files
    */
   200: Array<CommandFile>
 }
 
-export type KilocodeCommandFilesResponse = KilocodeCommandFilesResponses[keyof KilocodeCommandFilesResponses]
+export type ChipmateCommandFilesResponse = ChipmateCommandFilesResponses[keyof ChipmateCommandFilesResponses]
 
-export type KilocodeRemoveCommandData = {
+export type ChipmateRemoveCommandData = {
   body?: {
     location: string
   }
@@ -17612,28 +17618,28 @@ export type KilocodeRemoveCommandData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/command/remove"
+  url: "/chipmate/command/remove"
 }
 
-export type KilocodeRemoveCommandErrors = {
+export type ChipmateRemoveCommandErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KilocodeRemoveCommandError = KilocodeRemoveCommandErrors[keyof KilocodeRemoveCommandErrors]
+export type ChipmateRemoveCommandError = ChipmateRemoveCommandErrors[keyof ChipmateRemoveCommandErrors]
 
-export type KilocodeRemoveCommandResponses = {
+export type ChipmateRemoveCommandResponses = {
   /**
    * Command removed
    */
   200: boolean
 }
 
-export type KilocodeRemoveCommandResponse = KilocodeRemoveCommandResponses[keyof KilocodeRemoveCommandResponses]
+export type ChipmateRemoveCommandResponse = ChipmateRemoveCommandResponses[keyof ChipmateRemoveCommandResponses]
 
-export type KilocodeRemoveSkillData = {
+export type ChipmateRemoveSkillData = {
   body?: {
     location: string
     scope?: "project" | "global"
@@ -17643,28 +17649,28 @@ export type KilocodeRemoveSkillData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/skill/remove"
+  url: "/chipmate/skill/remove"
 }
 
-export type KilocodeRemoveSkillErrors = {
+export type ChipmateRemoveSkillErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KilocodeRemoveSkillError = KilocodeRemoveSkillErrors[keyof KilocodeRemoveSkillErrors]
+export type ChipmateRemoveSkillError = ChipmateRemoveSkillErrors[keyof ChipmateRemoveSkillErrors]
 
-export type KilocodeRemoveSkillResponses = {
+export type ChipmateRemoveSkillResponses = {
   /**
    * Skill removed
    */
   200: boolean
 }
 
-export type KilocodeRemoveSkillResponse = KilocodeRemoveSkillResponses[keyof KilocodeRemoveSkillResponses]
+export type ChipmateRemoveSkillResponse = ChipmateRemoveSkillResponses[keyof ChipmateRemoveSkillResponses]
 
-export type KilocodeRefreshSkillsData = {
+export type ChipmateRefreshSkillsData = {
   body?: {
     scope: "project" | "global"
   }
@@ -17673,28 +17679,28 @@ export type KilocodeRefreshSkillsData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/skill/refresh"
+  url: "/chipmate/skill/refresh"
 }
 
-export type KilocodeRefreshSkillsErrors = {
+export type ChipmateRefreshSkillsErrors = {
   /**
    * Bad request
    */
   400: BadRequestError
 }
 
-export type KilocodeRefreshSkillsError = KilocodeRefreshSkillsErrors[keyof KilocodeRefreshSkillsErrors]
+export type ChipmateRefreshSkillsError = ChipmateRefreshSkillsErrors[keyof ChipmateRefreshSkillsErrors]
 
-export type KilocodeRefreshSkillsResponses = {
+export type ChipmateRefreshSkillsResponses = {
   /**
    * Skill cache refreshed
    */
   200: boolean
 }
 
-export type KilocodeRefreshSkillsResponse = KilocodeRefreshSkillsResponses[keyof KilocodeRefreshSkillsResponses]
+export type ChipmateRefreshSkillsResponse = ChipmateRefreshSkillsResponses[keyof ChipmateRefreshSkillsResponses]
 
-export type KilocodeRemoveAgentData = {
+export type ChipmateRemoveAgentData = {
   body?: {
     name: string
   }
@@ -17703,56 +17709,56 @@ export type KilocodeRemoveAgentData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/agent/remove"
+  url: "/chipmate/agent/remove"
 }
 
-export type KilocodeRemoveAgentErrors = {
+export type ChipmateRemoveAgentErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KilocodeRemoveAgentError = KilocodeRemoveAgentErrors[keyof KilocodeRemoveAgentErrors]
+export type ChipmateRemoveAgentError = ChipmateRemoveAgentErrors[keyof ChipmateRemoveAgentErrors]
 
-export type KilocodeRemoveAgentResponses = {
+export type ChipmateRemoveAgentResponses = {
   /**
    * Agent removed
    */
   200: boolean
 }
 
-export type KilocodeRemoveAgentResponse = KilocodeRemoveAgentResponses[keyof KilocodeRemoveAgentResponses]
+export type ChipmateRemoveAgentResponse = ChipmateRemoveAgentResponses[keyof ChipmateRemoveAgentResponses]
 
-export type KilocodeNotebookListData = {
+export type ChipmateNotebookListData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/notebook"
+  url: "/chipmate/notebook"
 }
 
-export type KilocodeNotebookListErrors = {
+export type ChipmateNotebookListErrors = {
   /**
    * Bad request
    */
   400: BadRequestError
 }
 
-export type KilocodeNotebookListError = KilocodeNotebookListErrors[keyof KilocodeNotebookListErrors]
+export type ChipmateNotebookListError = ChipmateNotebookListErrors[keyof ChipmateNotebookListErrors]
 
-export type KilocodeNotebookListResponses = {
+export type ChipmateNotebookListResponses = {
   /**
    * Pending notebook host requests
    */
   200: Array<NotebookRequest>
 }
 
-export type KilocodeNotebookListResponse = KilocodeNotebookListResponses[keyof KilocodeNotebookListResponses]
+export type ChipmateNotebookListResponse = ChipmateNotebookListResponses[keyof ChipmateNotebookListResponses]
 
-export type KilocodeNotebookReplyData = {
+export type ChipmateNotebookReplyData = {
   body?: {
     result: NotebookResult
   }
@@ -17763,10 +17769,10 @@ export type KilocodeNotebookReplyData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/notebook/{requestID}/reply"
+  url: "/chipmate/notebook/{requestID}/reply"
 }
 
-export type KilocodeNotebookReplyErrors = {
+export type ChipmateNotebookReplyErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
@@ -17777,18 +17783,18 @@ export type KilocodeNotebookReplyErrors = {
   404: NotFoundError
 }
 
-export type KilocodeNotebookReplyError = KilocodeNotebookReplyErrors[keyof KilocodeNotebookReplyErrors]
+export type ChipmateNotebookReplyError = ChipmateNotebookReplyErrors[keyof ChipmateNotebookReplyErrors]
 
-export type KilocodeNotebookReplyResponses = {
+export type ChipmateNotebookReplyResponses = {
   /**
    * Notebook reply accepted
    */
   200: boolean
 }
 
-export type KilocodeNotebookReplyResponse = KilocodeNotebookReplyResponses[keyof KilocodeNotebookReplyResponses]
+export type ChipmateNotebookReplyResponse = ChipmateNotebookReplyResponses[keyof ChipmateNotebookReplyResponses]
 
-export type KilocodeNotebookRejectData = {
+export type ChipmateNotebookRejectData = {
   body?: {
     error: NotebookFailure
   }
@@ -17799,10 +17805,10 @@ export type KilocodeNotebookRejectData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/notebook/{requestID}/reject"
+  url: "/chipmate/notebook/{requestID}/reject"
 }
 
-export type KilocodeNotebookRejectErrors = {
+export type ChipmateNotebookRejectErrors = {
   /**
    * Bad request
    */
@@ -17813,47 +17819,47 @@ export type KilocodeNotebookRejectErrors = {
   404: NotFoundError
 }
 
-export type KilocodeNotebookRejectError = KilocodeNotebookRejectErrors[keyof KilocodeNotebookRejectErrors]
+export type ChipmateNotebookRejectError = ChipmateNotebookRejectErrors[keyof ChipmateNotebookRejectErrors]
 
-export type KilocodeNotebookRejectResponses = {
+export type ChipmateNotebookRejectResponses = {
   /**
    * Notebook rejection accepted
    */
   200: boolean
 }
 
-export type KilocodeNotebookRejectResponse = KilocodeNotebookRejectResponses[keyof KilocodeNotebookRejectResponses]
+export type ChipmateNotebookRejectResponse = ChipmateNotebookRejectResponses[keyof ChipmateNotebookRejectResponses]
 
-export type KilocodeAgentManagerListData = {
+export type ChipmateAgentManagerListData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/agent-manager"
+  url: "/chipmate/agent-manager"
 }
 
-export type KilocodeAgentManagerListErrors = {
+export type ChipmateAgentManagerListErrors = {
   /**
    * Bad request
    */
   400: BadRequestError
 }
 
-export type KilocodeAgentManagerListError = KilocodeAgentManagerListErrors[keyof KilocodeAgentManagerListErrors]
+export type ChipmateAgentManagerListError = ChipmateAgentManagerListErrors[keyof ChipmateAgentManagerListErrors]
 
-export type KilocodeAgentManagerListResponses = {
+export type ChipmateAgentManagerListResponses = {
   /**
    * Pending Agent Manager host requests
    */
   200: Array<AgentManagerRequest>
 }
 
-export type KilocodeAgentManagerListResponse =
-  KilocodeAgentManagerListResponses[keyof KilocodeAgentManagerListResponses]
+export type ChipmateAgentManagerListResponse =
+  ChipmateAgentManagerListResponses[keyof ChipmateAgentManagerListResponses]
 
-export type KilocodeAgentManagerReplyData = {
+export type ChipmateAgentManagerReplyData = {
   body?: {
     result: AgentManagerResult
   }
@@ -17864,10 +17870,10 @@ export type KilocodeAgentManagerReplyData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/agent-manager/{requestID}/reply"
+  url: "/chipmate/agent-manager/{requestID}/reply"
 }
 
-export type KilocodeAgentManagerReplyErrors = {
+export type ChipmateAgentManagerReplyErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
@@ -17878,19 +17884,19 @@ export type KilocodeAgentManagerReplyErrors = {
   404: NotFoundError
 }
 
-export type KilocodeAgentManagerReplyError = KilocodeAgentManagerReplyErrors[keyof KilocodeAgentManagerReplyErrors]
+export type ChipmateAgentManagerReplyError = ChipmateAgentManagerReplyErrors[keyof ChipmateAgentManagerReplyErrors]
 
-export type KilocodeAgentManagerReplyResponses = {
+export type ChipmateAgentManagerReplyResponses = {
   /**
    * Agent Manager reply accepted
    */
   200: boolean
 }
 
-export type KilocodeAgentManagerReplyResponse =
-  KilocodeAgentManagerReplyResponses[keyof KilocodeAgentManagerReplyResponses]
+export type ChipmateAgentManagerReplyResponse =
+  ChipmateAgentManagerReplyResponses[keyof ChipmateAgentManagerReplyResponses]
 
-export type KilocodeAgentManagerRejectData = {
+export type ChipmateAgentManagerRejectData = {
   body?: {
     error: AgentManagerFailure
   }
@@ -17901,10 +17907,10 @@ export type KilocodeAgentManagerRejectData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/agent-manager/{requestID}/reject"
+  url: "/chipmate/agent-manager/{requestID}/reject"
 }
 
-export type KilocodeAgentManagerRejectErrors = {
+export type ChipmateAgentManagerRejectErrors = {
   /**
    * Bad request
    */
@@ -17915,47 +17921,47 @@ export type KilocodeAgentManagerRejectErrors = {
   404: NotFoundError
 }
 
-export type KilocodeAgentManagerRejectError = KilocodeAgentManagerRejectErrors[keyof KilocodeAgentManagerRejectErrors]
+export type ChipmateAgentManagerRejectError = ChipmateAgentManagerRejectErrors[keyof ChipmateAgentManagerRejectErrors]
 
-export type KilocodeAgentManagerRejectResponses = {
+export type ChipmateAgentManagerRejectResponses = {
   /**
    * Agent Manager rejection accepted
    */
   200: boolean
 }
 
-export type KilocodeAgentManagerRejectResponse =
-  KilocodeAgentManagerRejectResponses[keyof KilocodeAgentManagerRejectResponses]
+export type ChipmateAgentManagerRejectResponse =
+  ChipmateAgentManagerRejectResponses[keyof ChipmateAgentManagerRejectResponses]
 
-export type KilocodeSkillMarketListData = {
+export type ChipmateSkillMarketListData = {
   body?: never
   path?: never
   query?: {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/skill-market"
+  url: "/chipmate/skill-market"
 }
 
-export type KilocodeSkillMarketListErrors = {
+export type ChipmateSkillMarketListErrors = {
   /**
    * Bad request
    */
   400: BadRequestError
 }
 
-export type KilocodeSkillMarketListError = KilocodeSkillMarketListErrors[keyof KilocodeSkillMarketListErrors]
+export type ChipmateSkillMarketListError = ChipmateSkillMarketListErrors[keyof ChipmateSkillMarketListErrors]
 
-export type KilocodeSkillMarketListResponses = {
+export type ChipmateSkillMarketListResponses = {
   /**
    * Pending Skill Market host requests
    */
   200: Array<SkillMarketRequest>
 }
 
-export type KilocodeSkillMarketListResponse = KilocodeSkillMarketListResponses[keyof KilocodeSkillMarketListResponses]
+export type ChipmateSkillMarketListResponse = ChipmateSkillMarketListResponses[keyof ChipmateSkillMarketListResponses]
 
-export type KilocodeSkillMarketReplyData = {
+export type ChipmateSkillMarketReplyData = {
   body?: {
     result: SkillMarketResult
   }
@@ -17966,10 +17972,10 @@ export type KilocodeSkillMarketReplyData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/skill-market/{requestID}/reply"
+  url: "/chipmate/skill-market/{requestID}/reply"
 }
 
-export type KilocodeSkillMarketReplyErrors = {
+export type ChipmateSkillMarketReplyErrors = {
   /**
    * Bad request
    */
@@ -17980,19 +17986,19 @@ export type KilocodeSkillMarketReplyErrors = {
   404: NotFoundError
 }
 
-export type KilocodeSkillMarketReplyError = KilocodeSkillMarketReplyErrors[keyof KilocodeSkillMarketReplyErrors]
+export type ChipmateSkillMarketReplyError = ChipmateSkillMarketReplyErrors[keyof ChipmateSkillMarketReplyErrors]
 
-export type KilocodeSkillMarketReplyResponses = {
+export type ChipmateSkillMarketReplyResponses = {
   /**
    * Skill Market reply accepted
    */
   200: boolean
 }
 
-export type KilocodeSkillMarketReplyResponse =
-  KilocodeSkillMarketReplyResponses[keyof KilocodeSkillMarketReplyResponses]
+export type ChipmateSkillMarketReplyResponse =
+  ChipmateSkillMarketReplyResponses[keyof ChipmateSkillMarketReplyResponses]
 
-export type KilocodeSkillMarketRejectData = {
+export type ChipmateSkillMarketRejectData = {
   body?: {
     error: SkillMarketFailure
   }
@@ -18003,10 +18009,10 @@ export type KilocodeSkillMarketRejectData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/skill-market/{requestID}/reject"
+  url: "/chipmate/skill-market/{requestID}/reject"
 }
 
-export type KilocodeSkillMarketRejectErrors = {
+export type ChipmateSkillMarketRejectErrors = {
   /**
    * Bad request
    */
@@ -18017,19 +18023,19 @@ export type KilocodeSkillMarketRejectErrors = {
   404: NotFoundError
 }
 
-export type KilocodeSkillMarketRejectError = KilocodeSkillMarketRejectErrors[keyof KilocodeSkillMarketRejectErrors]
+export type ChipmateSkillMarketRejectError = ChipmateSkillMarketRejectErrors[keyof ChipmateSkillMarketRejectErrors]
 
-export type KilocodeSkillMarketRejectResponses = {
+export type ChipmateSkillMarketRejectResponses = {
   /**
    * Skill Market rejection accepted
    */
   200: boolean
 }
 
-export type KilocodeSkillMarketRejectResponse =
-  KilocodeSkillMarketRejectResponses[keyof KilocodeSkillMarketRejectResponses]
+export type ChipmateSkillMarketRejectResponse =
+  ChipmateSkillMarketRejectResponses[keyof ChipmateSkillMarketRejectResponses]
 
-export type KilocodeSessionModelUsageData = {
+export type ChipmateSessionModelUsageData = {
   body?: never
   path: {
     sessionID: string
@@ -18041,7 +18047,7 @@ export type KilocodeSessionModelUsageData = {
   url: "/session/{sessionID}/model-usage"
 }
 
-export type KilocodeSessionModelUsageErrors = {
+export type ChipmateSessionModelUsageErrors = {
   /**
    * Bad request
    */
@@ -18052,9 +18058,9 @@ export type KilocodeSessionModelUsageErrors = {
   404: NotFoundError
 }
 
-export type KilocodeSessionModelUsageError = KilocodeSessionModelUsageErrors[keyof KilocodeSessionModelUsageErrors]
+export type ChipmateSessionModelUsageError = ChipmateSessionModelUsageErrors[keyof ChipmateSessionModelUsageErrors]
 
-export type KilocodeSessionModelUsageResponses = {
+export type ChipmateSessionModelUsageResponses = {
   /**
    * Model usage for a session tree
    */
@@ -18091,8 +18097,8 @@ export type KilocodeSessionModelUsageResponses = {
   }
 }
 
-export type KilocodeSessionModelUsageResponse =
-  KilocodeSessionModelUsageResponses[keyof KilocodeSessionModelUsageResponses]
+export type ChipmateSessionModelUsageResponse =
+  ChipmateSessionModelUsageResponses[keyof ChipmateSessionModelUsageResponses]
 
 export type AnacondaDesktopStatusData = {
   body?: never
@@ -18101,7 +18107,7 @@ export type AnacondaDesktopStatusData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/anaconda-desktop/status"
+  url: "/chipmate/anaconda-desktop/status"
 }
 
 export type AnacondaDesktopStatusErrors = {
@@ -18129,7 +18135,7 @@ export type AnacondaDesktopOpenData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/anaconda-desktop/open"
+  url: "/chipmate/anaconda-desktop/open"
 }
 
 export type AnacondaDesktopOpenErrors = {
@@ -18167,7 +18173,7 @@ export type AnacondaDesktopSyncData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/anaconda-desktop/sync"
+  url: "/chipmate/anaconda-desktop/sync"
 }
 
 export type AnacondaDesktopSyncErrors = {
@@ -18506,7 +18512,7 @@ export type SandboxToggleResponses = {
 
 export type SandboxToggleResponse = SandboxToggleResponses[keyof SandboxToggleResponses]
 
-export type KilocodeSessionImportProjectData = {
+export type ChipmateSessionImportProjectData = {
   body?: {
     id: string
     worktree: string
@@ -18527,30 +18533,30 @@ export type KilocodeSessionImportProjectData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/session-import/project"
+  url: "/chipmate/session-import/project"
 }
 
-export type KilocodeSessionImportProjectErrors = {
+export type ChipmateSessionImportProjectErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KilocodeSessionImportProjectError =
-  KilocodeSessionImportProjectErrors[keyof KilocodeSessionImportProjectErrors]
+export type ChipmateSessionImportProjectError =
+  ChipmateSessionImportProjectErrors[keyof ChipmateSessionImportProjectErrors]
 
-export type KilocodeSessionImportProjectResponses = {
+export type ChipmateSessionImportProjectResponses = {
   /**
    * Project import result
    */
-  200: KilocodeSessionImportResult
+  200: ChipmateSessionImportResult
 }
 
-export type KilocodeSessionImportProjectResponse =
-  KilocodeSessionImportProjectResponses[keyof KilocodeSessionImportProjectResponses]
+export type ChipmateSessionImportProjectResponse =
+  ChipmateSessionImportProjectResponses[keyof ChipmateSessionImportProjectResponses]
 
-export type KilocodeSessionImportSessionData = {
+export type ChipmateSessionImportSessionData = {
   body?: {
     id: string
     projectID: string
@@ -18590,30 +18596,30 @@ export type KilocodeSessionImportSessionData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/session-import/session"
+  url: "/chipmate/session-import/session"
 }
 
-export type KilocodeSessionImportSessionErrors = {
+export type ChipmateSessionImportSessionErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KilocodeSessionImportSessionError =
-  KilocodeSessionImportSessionErrors[keyof KilocodeSessionImportSessionErrors]
+export type ChipmateSessionImportSessionError =
+  ChipmateSessionImportSessionErrors[keyof ChipmateSessionImportSessionErrors]
 
-export type KilocodeSessionImportSessionResponses = {
+export type ChipmateSessionImportSessionResponses = {
   /**
    * Session import result
    */
-  200: KilocodeSessionImportResult
+  200: ChipmateSessionImportResult
 }
 
-export type KilocodeSessionImportSessionResponse =
-  KilocodeSessionImportSessionResponses[keyof KilocodeSessionImportSessionResponses]
+export type ChipmateSessionImportSessionResponse =
+  ChipmateSessionImportSessionResponses[keyof ChipmateSessionImportSessionResponses]
 
-export type KilocodeSessionImportMessageData = {
+export type ChipmateSessionImportMessageData = {
   body?: {
     id: string
     sessionID: string
@@ -18670,30 +18676,30 @@ export type KilocodeSessionImportMessageData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/session-import/message"
+  url: "/chipmate/session-import/message"
 }
 
-export type KilocodeSessionImportMessageErrors = {
+export type ChipmateSessionImportMessageErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KilocodeSessionImportMessageError =
-  KilocodeSessionImportMessageErrors[keyof KilocodeSessionImportMessageErrors]
+export type ChipmateSessionImportMessageError =
+  ChipmateSessionImportMessageErrors[keyof ChipmateSessionImportMessageErrors]
 
-export type KilocodeSessionImportMessageResponses = {
+export type ChipmateSessionImportMessageResponses = {
   /**
    * Message import result
    */
-  200: KilocodeSessionImportResult
+  200: ChipmateSessionImportResult
 }
 
-export type KilocodeSessionImportMessageResponse =
-  KilocodeSessionImportMessageResponses[keyof KilocodeSessionImportMessageResponses]
+export type ChipmateSessionImportMessageResponse =
+  ChipmateSessionImportMessageResponses[keyof ChipmateSessionImportMessageResponses]
 
-export type KilocodeSessionImportPartData = {
+export type ChipmateSessionImportPartData = {
   body?: {
     id: string
     messageID: string
@@ -18789,27 +18795,27 @@ export type KilocodeSessionImportPartData = {
     directory?: string
     workspace?: string
   }
-  url: "/kilocode/session-import/part"
+  url: "/chipmate/session-import/part"
 }
 
-export type KilocodeSessionImportPartErrors = {
+export type ChipmateSessionImportPartErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type KilocodeSessionImportPartError = KilocodeSessionImportPartErrors[keyof KilocodeSessionImportPartErrors]
+export type ChipmateSessionImportPartError = ChipmateSessionImportPartErrors[keyof ChipmateSessionImportPartErrors]
 
-export type KilocodeSessionImportPartResponses = {
+export type ChipmateSessionImportPartResponses = {
   /**
    * Part import result
    */
-  200: KilocodeSessionImportResult
+  200: ChipmateSessionImportResult
 }
 
-export type KilocodeSessionImportPartResponse =
-  KilocodeSessionImportPartResponses[keyof KilocodeSessionImportPartResponses]
+export type ChipmateSessionImportPartResponse =
+  ChipmateSessionImportPartResponses[keyof ChipmateSessionImportPartResponses]
 
 export type SuggestionListData = {
   body?: never

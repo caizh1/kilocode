@@ -13,7 +13,7 @@ import { readSkillArchive, validateSkillArchive } from "@chipmate/skill-spec"
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(here, "../../../../..")
 const archive = resolve(repo, "docs/chipmate-skill-market-alignment-evidence/g0/source-backed-detail-design.tar.gz")
-const source = resolve(repo, ".kilo/skills/source-backed-detail-design")
+const source = resolve(repo, ".chipmate/skills/source-backed-detail-design")
 
 test("database schema uses ordered migrations", () => {
   assert.equal(MARKET_DB_SCHEMA_VERSION, 9)
@@ -284,7 +284,7 @@ test("worker validates, repairs, publishes, deduplicates, versions, and unpublis
   await mkdir(source, { recursive: true })
   await writeFile(
     join(source, "skill.md"),
-    "---\n# retained comment\nname: New Skill\ndescription: First release\nversion: 9.9.9\nlicense: Apache-2.0\ncompatibility: Kilo or Codex\nallowed-tools: Read Bash\nx-vendor-mode: careful\n---\n\n# New Skill\n\nFirst body.\n",
+    "---\n# retained comment\nname: New Skill\ndescription: First release\nversion: 9.9.9\nlicense: Apache-2.0\ncompatibility: ChipMate or Codex\nallowed-tools: Read Bash\nx-vendor-mode: careful\n---\n\n# New Skill\n\nFirst body.\n",
   )
   await writeFile(
     join(source, "skill.json"),

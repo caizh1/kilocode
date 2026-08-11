@@ -54,7 +54,7 @@ export const openapi = {
   info: {
     title: "ChipMate Skill Market API",
     version: "1.0.0",
-    description: "Shared aligned-v1 contract for the Web market and Kilo Marketplace.",
+    description: "Shared aligned-v1 contract for the Web market and ChipMate Marketplace.",
   },
   servers: [{ url: "/" }],
   tags: [

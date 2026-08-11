@@ -1,0 +1,241 @@
+<idea-plugin>
+    <dependencies>
+        <module name="intellij.platform.frontend"/>
+        <module name="chipmate.jetbrains.shared"/>
+    </dependencies>
+
+    <resource-bundle>messages.ChipMateBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="ai.chipmate.client.migration.ChipMateMigrationService"/>
+        <applicationService serviceImplementation="ai.chipmate.client.autocomplete.ChipMateAutocompleteSettingsService"/>
+        <customPasteProvider implementation="ai.chipmate.client.session.ui.prompt.PromptAttachmentPasteProvider"/>
+
+        <notificationGroup id="ChipMate"
+                           displayType="BALLOON"
+                           bundle="messages.ChipMateBundle"
+                           key="notification.group.chipmate"/>
+
+        <toolWindow id="ChipMate"
+                    anchor="left"
+                    icon="/icons/chipmate.svg"
+                    factoryClass="ai.chipmate.client.ChipMateToolWindowFactory"/>
+
+        <fileEditorProvider id="ChipMateVfsEditor" implementation="ai.chipmate.client.vfs.ChipMateFileEditorProvider"/>
+
+        <applicationConfigurable
+                parentId="tools"
+                id="ai.chipmate.jetbrains.settings"
+                instance="ai.chipmate.client.settings.ChipMateSettingsConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.chipmate.displayName"/>
+
+        <applicationConfigurable
+                parentId="ai.chipmate.jetbrains.settings"
+                id="ai.chipmate.jetbrains.settings.profile"
+                groupWeight="5"
+                instance="ai.chipmate.client.settings.profile.UserProfileConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.profile.displayName"/>
+
+        <applicationConfigurable
+                parentId="ai.chipmate.jetbrains.settings"
+                id="ai.chipmate.jetbrains.settings.models"
+                groupWeight="4"
+                instance="ai.chipmate.client.settings.models.ModelsConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.models.displayName"/>
+
+        <applicationConfigurable
+                parentId="ai.chipmate.jetbrains.settings"
+                id="ai.chipmate.jetbrains.settings.providers"
+                groupWeight="2"
+                instance="ai.chipmate.client.settings.providers.ProvidersConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.providers.displayName"/>
+
+        <applicationConfigurable
+                parentId="ai.chipmate.jetbrains.settings"
+                id="ai.chipmate.jetbrains.settings.agentBehavior"
+                groupWeight="1"
+                instance="ai.chipmate.client.settings.agents.AgentBehaviorConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.agentBehavior.displayName"/>
+
+        <applicationConfigurable
+                parentId="ai.chipmate.jetbrains.settings"
+                id="ai.chipmate.jetbrains.settings.context"
+                groupWeight="-1"
+                instance="ai.chipmate.client.settings.context.ContextConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.context.displayName"/>
+
+        <applicationConfigurable
+                parentId="ai.chipmate.jetbrains.settings"
+                id="ai.chipmate.jetbrains.settings.autoApprove"
+                groupWeight="0"
+                instance="ai.chipmate.client.settings.autoapprove.AutoApproveConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.autoApprove.displayName"/>
+
+        <applicationConfigurable
+                parentId="ai.chipmate.jetbrains.settings.agentBehavior"
+                id="ai.chipmate.jetbrains.settings.agentBehavior.agents"
+                instance="ai.chipmate.client.settings.agents.AgentsConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.agentBehavior.agents.displayName"/>
+
+        <applicationConfigurable
+                parentId="ai.chipmate.jetbrains.settings.agentBehavior"
+                id="ai.chipmate.jetbrains.settings.agentBehavior.mcp"
+                instance="ai.chipmate.client.settings.agents.McpConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.agentBehavior.mcp.displayName"/>
+
+        <applicationConfigurable
+                parentId="ai.chipmate.jetbrains.settings.agentBehavior"
+                id="ai.chipmate.jetbrains.settings.agentBehavior.skills"
+                instance="ai.chipmate.client.settings.agents.SkillsConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.agentBehavior.skills.displayName"/>
+
+        <applicationConfigurable
+                parentId="ai.chipmate.jetbrains.settings.agentBehavior"
+                id="ai.chipmate.jetbrains.settings.agentBehavior.rules"
+                instance="ai.chipmate.client.settings.rules.RulesConfigurable"
+                bundle="messages.ChipMateBundle"
+                key="settings.agentBehavior.rules.displayName"/>
+
+        <registryKey key="chipmate.session.condense"
+                     description="Enable event condensing in the session update queue (merges redundant snapshots before model delivery)."
+                     defaultValue="true"
+                     restartRequired="false"
+                     overrides="false"/>
+        <registryKey key="chipmate.session.flushMs"
+                     description="Session update queue flush cadence in milliseconds."
+                     defaultValue="150"
+                     restartRequired="false"
+                     overrides="false"/>
+        <registryKey key="chipmate.session.inactive.disposeTimeoutMs"
+                     description="Milliseconds before hidden session UI is disposed after switching away."
+                     defaultValue="180000"
+                     restartRequired="false"
+                     overrides="false"/>
+        <registryKey key="chipmate.session.validateRoots"
+                     description="Treat settled (non-streaming) transcript turns as Swing validate roots so their internal repaints do not relayout the whole transcript."
+                     defaultValue="true"
+                     restartRequired="false"
+                     overrides="false"/>
+    </extensions>
+
+    <applicationListeners>
+        <listener class="ai.chipmate.client.plugin.ChipMateFrontendDynamicPluginListener"
+                  topic="com.intellij.ide.plugins.DynamicPluginListener"/>
+    </applicationListeners>
+
+    <actions>
+        <action id="ChipMate.Restart"
+                class="ai.chipmate.client.actions.RestartChipMateAction"/>
+
+        <action id="ChipMate.Reinstall"
+                class="ai.chipmate.client.actions.ReinstallChipMateAction"/>
+
+        <action id="ChipMate.CoreInfo"
+                class="ai.chipmate.client.actions.CoreInfoAction"/>
+
+        <action id="ChipMate.OpenSettings"
+                class="ai.chipmate.client.actions.OpenSettingsAction"/>
+
+        <action id="ChipMate.OpenLocalConfig"
+                class="ai.chipmate.client.actions.OpenLocalConfigAction"/>
+
+        <action id="ChipMate.OpenGlobalConfig"
+                class="ai.chipmate.client.actions.OpenGlobalConfigAction"/>
+
+        <action id="ChipMate.ForceMigration"
+                class="ai.chipmate.client.actions.ForceMigrationAction"/>
+
+        <group id="ChipMate.CliGroup" text="Core" popup="true">
+            <reference ref="ChipMate.Restart"/>
+            <reference ref="ChipMate.Reinstall"/>
+            <separator/>
+            <reference ref="ChipMate.CoreInfo"/>
+        </group>
+
+        <group id="ChipMate.OpenConfigGroup" text="Config Files" popup="true">
+            <reference ref="ChipMate.OpenLocalConfig"/>
+            <reference ref="ChipMate.OpenGlobalConfig"/>
+            <separator/>
+            <reference ref="ChipMate.ForceMigration"/>
+        </group>
+
+        <group id="ChipMate.SettingsGroup">
+            <reference ref="ChipMate.OpenSettings"/>
+            <separator/>
+            <reference ref="ChipMate.OpenConfigGroup"/>
+            <separator/>
+            <reference ref="ChipMate.CliGroup"/>
+        </group>
+
+        <action id="ChipMate.Settings"
+                class="ai.chipmate.client.actions.ChipMateSettingsAction"
+                icon="AllIcons.General.GearPlain"/>
+
+        <action id="ChipMate.NewSession"
+                class="ai.chipmate.client.actions.NewSessionAction"/>
+
+        <action id="ChipMate.History"
+                class="ai.chipmate.client.actions.HistoryAction"/>
+
+        <!-- Declarative toolbar group for the ChipMate tool window title bar -->
+        <group id="ChipMate.ToolWindowToolbar">
+            <reference ref="ChipMate.NewSession"/>
+            <reference ref="ChipMate.History"/>
+            <reference ref="ChipMate.Settings"/>
+        </group>
+
+        <action id="ChipMate.SendPrompt"
+                class="ai.chipmate.client.actions.SendPromptAction"
+                text="Send Prompt"
+                description="Send the current ChipMate prompt">
+            <keyboard-shortcut keymap="$default"
+                               first-keystroke="ENTER"/>
+            <keyboard-shortcut keymap="Mac OS X 10.5+"
+                               first-keystroke="meta ENTER"/>
+            <keyboard-shortcut keymap="$default"
+                               first-keystroke="control ENTER"/>
+        </action>
+
+        <action id="ChipMate.StopSession"
+                class="ai.chipmate.client.actions.StopSessionAction"
+                text="Stop Session"
+                description="Stop the current ChipMate session">
+            <keyboard-shortcut keymap="$default"
+                               first-keystroke="alt S"/>
+        </action>
+
+        <action id="ChipMate.Session.Open"
+                class="ai.chipmate.client.actions.OpenSessionAction">
+            <keyboard-shortcut keymap="$default" first-keystroke="ENTER"/>
+        </action>
+
+        <action id="ChipMate.Session.Rename"
+                class="ai.chipmate.client.actions.RenameSessionAction"
+                use-shortcut-of="RenameElement"/>
+
+        <action id="ChipMate.Session.Delete"
+                class="ai.chipmate.client.actions.DeleteSessionAction"
+                use-shortcut-of="$Delete"/>
+
+        <group id="ChipMate.History.ContextMenu">
+            <reference ref="ChipMate.Session.Open"/>
+            <separator/>
+            <reference ref="ChipMate.Session.Rename"/>
+            <reference ref="ChipMate.Session.Delete"/>
+        </group>
+
+        <group id="ChipMate.Session.ContextMenu">
+            <reference ref="$Copy"/>
+        </group>
+    </actions>
+</idea-plugin>

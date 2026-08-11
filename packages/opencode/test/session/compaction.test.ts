@@ -11,7 +11,7 @@ import { LLM } from "../../src/session/llm"
 import { SessionCompaction } from "../../src/session/compaction"
 import { Token } from "@/util/token"
 import { Plugin } from "../../src/plugin"
-import { Snapshot } from "@/snapshot" // kilocode_change
+import { Snapshot } from "@/snapshot" // chipmate_change
 import { provideTmpdirInstance, TestInstance } from "../fixture/fixture"
 import { Session as SessionNs } from "@/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
@@ -204,7 +204,7 @@ function fake(
       return msg
     },
     updateToolCall: Effect.fn("TestSessionProcessor.updateToolCall")(() => Effect.succeed(undefined)),
-    metadata: Effect.fn("TestSessionProcessor.metadata")(() => Effect.void), // kilocode_change
+    metadata: Effect.fn("TestSessionProcessor.metadata")(() => Effect.void), // chipmate_change
     completeToolCall: Effect.fn("TestSessionProcessor.completeToolCall")(() => Effect.void),
     process: Effect.fn("TestSessionProcessor.process")(() => Effect.succeed(result)),
   } satisfies SessionProcessorModule.SessionProcessor.Handle
@@ -252,8 +252,8 @@ type CompactionProcessOptions = {
   plugin?: Layer.Layer<Plugin.Service>
   provider?: ReturnType<typeof wide>
   config?: Layer.Layer<Config.Service>
-  flags?: Partial<RuntimeFlags.Info> // kilocode_change
-  snapshot?: Layer.Layer<Snapshot.Service> // kilocode_change
+  flags?: Partial<RuntimeFlags.Info> // chipmate_change
+  snapshot?: Layer.Layer<Snapshot.Service> // chipmate_change
 }
 
 function withCompaction(options?: CompactionProcessOptions) {
@@ -263,9 +263,9 @@ function withCompaction(options?: CompactionProcessOptions) {
 function compactionProcessLayer(options?: CompactionProcessOptions) {
   const replacements: LayerNode.Replacements = [
     [Provider.node, (options?.provider ?? wide()).layer],
-    [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true, ...options?.flags })], // kilocode_change
+    [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true, ...options?.flags })], // chipmate_change
     [SessionSummary.node, summary],
-    ...(options?.snapshot ? ([[Snapshot.node, options.snapshot]] as const) : []), // kilocode_change
+    ...(options?.snapshot ? ([[Snapshot.node, options.snapshot]] as const) : []), // chipmate_change
   ]
   if (!options?.llm) {
     return AppNodeBuilder.build(compactionTestNode, [
@@ -283,7 +283,7 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
   ])
 }
 
-// kilocode_change start - keep retry-backoff cancellation tests independent of git snapshot cleanup latency
+// chipmate_change start - keep retry-backoff cancellation tests independent of git snapshot cleanup latency
 const snap = Layer.succeed(
   Snapshot.Service,
   Snapshot.Service.of({
@@ -298,7 +298,7 @@ const snap = Layer.succeed(
     diffFile: () => Effect.succeed(undefined),
   }),
 )
-// kilocode_change end
+// chipmate_change end
 
 function createSummaryCompaction(sessionID: SessionID) {
   return SessionCompaction.use.create({ sessionID, agent: "build", model: ref, auto: false })
@@ -969,7 +969,7 @@ describe("session.compaction.process", () => {
     }).pipe(withCompaction({ config: cfg({ tail_turns: 2, preserve_recent_tokens: 10_000 }) })),
   )
 
-  // kilocode_change start - configured output ceiling controls automatic tail budgeting
+  // chipmate_change start - configured output ceiling controls automatic tail budgeting
   itCompaction.instance(
     "uses the configured output token ceiling for retained tail budgeting",
     Effect.gen(function* () {
@@ -1001,7 +1001,7 @@ describe("session.compaction.process", () => {
       }),
     ),
   )
-  // kilocode_change end
+  // chipmate_change end
 
   itCompaction.instance(
     "shrinks retained tail to fit preserve token budget",
@@ -1298,9 +1298,9 @@ describe("session.compaction.process", () => {
         if (Exit.isFailure(exit)) {
           expect(Cause.hasInterrupts(exit.cause)).toBe(true)
         }
-      }).pipe(withCompaction({ llm: stub.llmLayer, snapshot: snap })) // kilocode_change
+      }).pipe(withCompaction({ llm: stub.llmLayer, snapshot: snap })) // chipmate_change
     },
-    { timeout: 10_000 }, // kilocode_change - snapshot is isolated above
+    { timeout: 10_000 }, // chipmate_change - snapshot is isolated above
   )
 
   itCompaction.instance(
@@ -1322,7 +1322,7 @@ describe("session.compaction.process", () => {
             })
             .pipe(Effect.forkChild)
 
-          // kilocode_change start - Effect 4.x timeout throws TimeoutError on the error
+          // chipmate_change start - Effect 4.x timeout throws TimeoutError on the error
           // channel; on loaded Windows CI runners the fiber may not reach the trigger or
           // terminate within the inner deadlines. Swallow the ready timeout and remove the
           // Fiber.await timeout since Fiber.interrupt already waits for termination.
@@ -1332,15 +1332,15 @@ describe("session.compaction.process", () => {
           )
           yield* Fiber.interrupt(fiber)
           const exit = yield* Fiber.await(fiber)
-          // kilocode_change end
+          // chipmate_change end
           const all = yield* ssn.messages({ sessionID: session.id })
 
           expect(Exit.isFailure(exit)).toBe(true)
           if (Exit.isFailure(exit)) expect(Cause.hasInterrupts(exit.cause)).toBe(true)
           expect(all.some((msg) => msg.info.role === "assistant" && msg.info.summary)).toBe(false)
-        }).pipe(withCompaction({ plugin: plugin(ready), snapshot: snap })) // kilocode_change - avoid git snapshot startup
+        }).pipe(withCompaction({ plugin: plugin(ready), snapshot: snap })) // chipmate_change - avoid git snapshot startup
       }),
-    {}, // kilocode_change - isolate cancellation from git setup
+    {}, // chipmate_change - isolate cancellation from git setup
   )
 
   itCompaction.instance(
@@ -1809,7 +1809,7 @@ describe("SessionNs.getUsage", () => {
     expect(result.cost).toBe(0.9 + 0.4)
   })
 
-  // kilocode_change start - Test for OpenRouter provider cost
+  // chipmate_change start - Test for OpenRouter provider cost
   test("uses openrouter provider cost when available", () => {
     const model = createModel({
       context: 100_000,
@@ -1884,7 +1884,7 @@ describe("SessionNs.getUsage", () => {
     expect(result.cost).toBe(3 + 1.5)
   })
 
-  test("uses upstreamInferenceCost for Kilo provider", () => {
+  test("uses upstreamInferenceCost for ChipMate provider", () => {
     const model = createModel({
       context: 100_000,
       output: 32_000,
@@ -1894,7 +1894,7 @@ describe("SessionNs.getUsage", () => {
         cache: { read: 0.3, write: 3.75 },
       },
     })
-    const provider = { id: "kilo" } as Provider.Info
+    const provider = { id: "chipmate" } as Provider.Info
     const result = SessionNs.getUsage({
       model,
       provider,
@@ -1911,7 +1911,7 @@ describe("SessionNs.getUsage", () => {
       },
     })
 
-    // Should use upstreamInferenceCost for Kilo provider (BYOK)
+    // Should use upstreamInferenceCost for ChipMate provider (BYOK)
     expect(result.cost).toBe(0.2)
   })
 
@@ -1975,7 +1975,7 @@ describe("SessionNs.getUsage", () => {
     expect(result.cost).toBe(0.3)
   })
 
-  test("uses regular cost when upstreamInferenceCost is missing for Kilo", () => {
+  test("uses regular cost when upstreamInferenceCost is missing for ChipMate", () => {
     const model = createModel({
       context: 100_000,
       output: 32_000,
@@ -1985,7 +1985,7 @@ describe("SessionNs.getUsage", () => {
         cache: { read: 0.3, write: 3.75 },
       },
     })
-    const provider = { id: "kilo" } as Provider.Info
+    const provider = { id: "chipmate" } as Provider.Info
     const result = SessionNs.getUsage({
       model,
       provider,
@@ -2000,13 +2000,13 @@ describe("SessionNs.getUsage", () => {
       },
     })
 
-    // When upstream cost is missing for Kilo, fall back to regular cost field
+    // When upstream cost is missing for ChipMate, fall back to regular cost field
     expect(result.cost).toBe(0.01)
   })
 
   // Tests for Anthropic Messages / OpenAI Responses / Vercel AI Gateway cost extraction
-  // live in test/kilocode/provider-cost.test.ts (kilocode_change).
-  // kilocode_change end
+  // live in test/chipmate/provider-cost.test.ts (chipmate_change).
+  // chipmate_change end
 
   test.each(["@ai-sdk/anthropic", "@ai-sdk/amazon-bedrock", "@ai-sdk/google-vertex/anthropic"])(
     "computes total from components for %s models",

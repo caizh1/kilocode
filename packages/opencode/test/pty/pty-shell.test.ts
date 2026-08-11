@@ -6,7 +6,7 @@ import { PtyPreparation } from "../../src/pty-preparation"
 import { Pty } from "@opencode-ai/core/pty"
 import { Shell } from "@opencode-ai/core/shell"
 import { testEffect } from "../lib/effect"
-import { KiloPtySelfCommand } from "../../src/kilocode/pty/self-command"
+import { ChipMatePtySelfCommand } from "../../src/chipmate/pty/self-command"
 
 Shell.preferred.reset()
 
@@ -97,17 +97,17 @@ describe("pty environment preparation", () => {
       expect(prepared.env.INPUT).toBe("plugin")
       expect(prepared.env.FROM_PLUGIN).toBe("plugin")
       expect(prepared.env.TERM).toBe("xterm-256color")
-      expect(prepared.env.KILO_TERMINAL).toBe("1")
+      expect(prepared.env.CHIPMATE_TERMINAL).toBe("1")
     }),
   )
 
-  test("marks only explicit bare Kilo commands as trusted self commands", () => {
-    const cmd = { command: "/extension/bin/kilo", args: [], cwd: "/repo" }
-    expect(KiloPtySelfCommand.resolve({ command: "kilo", cwd: "/work" }, cmd)).toMatchObject({
+  test("marks only explicit bare ChipMate commands as trusted self commands", () => {
+    const cmd = { command: "/extension/bin/chipmate", args: [], cwd: "/repo" }
+    expect(ChipMatePtySelfCommand.resolve({ command: "chipmate", cwd: "/work" }, cmd)).toMatchObject({
       command: cmd.command,
       self: true,
     })
-    expect(KiloPtySelfCommand.resolve({ command: "/extension/bin/kilo", cwd: "/work" }, cmd).self).toBeUndefined()
-    expect(KiloPtySelfCommand.resolve({ command: "sh", cwd: "/work" }, cmd).self).toBeUndefined()
+    expect(ChipMatePtySelfCommand.resolve({ command: "/extension/bin/chipmate", cwd: "/work" }, cmd).self).toBeUndefined()
+    expect(ChipMatePtySelfCommand.resolve({ command: "sh", cwd: "/work" }, cmd).self).toBeUndefined()
   })
 })

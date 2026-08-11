@@ -24,14 +24,14 @@ const locationLayer = Layer.succeed(
   Location.Service,
   Location.Service.of(location({ directory: AbsolutePath.make(import.meta.dir) })),
 )
-// kilocode_change - Catalog pulls Credential, which imports Global.data/auth.json on startup, so
+// chipmate_change - Catalog pulls Credential, which imports Global.data/auth.json on startup, so
 // without this the suite reads the developer's real credential store.
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "kilo-modelsdev-test-"))
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "chipmate-modelsdev-test-"))
 const globalLayer = Global.layerWith({ data: dataDir })
 afterAll(() => fs.rmSync(dataDir, { recursive: true, force: true }))
 const layer = AppNodeBuilder.build(LayerNode.group([Catalog.node, Integration.node, EventV2.node]), [
   [Location.node, locationLayer],
-  [Global.node, globalLayer], // kilocode_change
+  [Global.node, globalLayer], // chipmate_change
 ])
 const it = testEffect(layer)
 
@@ -137,11 +137,11 @@ describe("ModelsDevPlugin", () => {
     Effect.acquireUseRelease(
       Effect.sync(() => {
         const previous = {
-          path: Flag.KILO_MODELS_PATH,
-          disabled: Flag.KILO_DISABLE_MODELS_FETCH,
+          path: Flag.CHIPMATE_MODELS_PATH,
+          disabled: Flag.CHIPMATE_DISABLE_MODELS_FETCH,
         }
-        Flag.KILO_MODELS_PATH = path.join(import.meta.dir, "fixtures", "models-dev.json")
-        Flag.KILO_DISABLE_MODELS_FETCH = true
+        Flag.CHIPMATE_MODELS_PATH = path.join(import.meta.dir, "fixtures", "models-dev.json")
+        Flag.CHIPMATE_DISABLE_MODELS_FETCH = true
         return previous
       }),
       () =>
@@ -171,8 +171,8 @@ describe("ModelsDevPlugin", () => {
         }).pipe(Effect.provide(AppNodeBuilder.build(ModelsDev.node))),
       (previous) =>
         Effect.sync(() => {
-          Flag.KILO_MODELS_PATH = previous.path
-          Flag.KILO_DISABLE_MODELS_FETCH = previous.disabled
+          Flag.CHIPMATE_MODELS_PATH = previous.path
+          Flag.CHIPMATE_DISABLE_MODELS_FETCH = previous.disabled
         }),
     ),
   )

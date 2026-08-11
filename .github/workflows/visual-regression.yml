@@ -1,4 +1,4 @@
-# kilocode_change - new file
+# chipmate_change - new file
 name: Visual Regression Tests
 
 on:
@@ -12,7 +12,7 @@ permissions:
 jobs:
   check-paths:
     name: Check changed paths
-    runs-on: ubuntu-latest # kilocode_change
+    runs-on: ubuntu-latest # chipmate_change
     outputs:
       matched: ${{ steps.filter.outputs.matched }}
       can_autocommit: ${{ steps.autocommit-check.outputs.can_autocommit }}
@@ -27,7 +27,7 @@ jobs:
           matched=false
           while IFS= read -r file; do
             case "$file" in
-              packages/kilo-ui/*|packages/ui/*|packages/util/*|packages/sdk/js/*|packages/kilo-vscode/webview-ui/*|packages/kilo-vscode/.storybook/*|packages/kilo-vscode/tests/visual-regression*|packages/kilo-vscode/tests/permission-dock-dropdown*|packages/kilo-vscode/tests/accessibility*|packages/kilo-docs/public/img/screenshot-tests/*|.github/actions/setup-bun/*|.github/workflows/visual-regression.yml)
+              packages/chipmate-ui/*|packages/ui/*|packages/util/*|packages/sdk/js/*|packages/chipmate-vscode/webview-ui/*|packages/chipmate-vscode/.storybook/*|packages/chipmate-vscode/tests/visual-regression*|packages/chipmate-vscode/tests/permission-dock-dropdown*|packages/chipmate-vscode/tests/accessibility*|packages/chipmate-docs/public/img/screenshot-tests/*|.github/actions/setup-bun/*|.github/workflows/visual-regression.yml)
                 matched=true
                 break
                 ;;
@@ -46,8 +46,8 @@ jobs:
       - name: Check baseline auto-commit permissions
         id: autocommit-check
         env:
-          MAINTAINER_APP_ID: ${{ secrets.KILO_MAINTAINER_APP_ID }}
-          MAINTAINER_APP_SECRET: ${{ secrets.KILO_MAINTAINER_APP_SECRET }}
+          MAINTAINER_APP_ID: ${{ secrets.CHIPMATE_MAINTAINER_APP_ID }}
+          MAINTAINER_APP_SECRET: ${{ secrets.CHIPMATE_MAINTAINER_APP_SECRET }}
         run: |
           if [ "${{ steps.fork-check.outputs.is_fork }}" != "true" ] && [ -n "$MAINTAINER_APP_ID" ] && [ -n "$MAINTAINER_APP_SECRET" ]; then
             echo "can_autocommit=true" >> "$GITHUB_OUTPUT"
@@ -58,7 +58,7 @@ jobs:
   visual-regression:
     needs: check-paths
     if: needs.check-paths.outputs.matched == 'true'
-    name: Visual Regression (kilo-ui) # kilocode_change
+    name: Visual Regression (chipmate-ui) # chipmate_change
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
 
@@ -83,7 +83,7 @@ jobs:
         id: check-baseline-commit
         run: |
           COMMIT_MSG=$(git log -1 --format=%s)
-          if [ "$COMMIT_MSG" = "chore: update visual regression baselines" ] || [ "$COMMIT_MSG" = "chore: update kilo-vscode visual regression baselines" ]; then
+          if [ "$COMMIT_MSG" = "chore: update visual regression baselines" ] || [ "$COMMIT_MSG" = "chore: update chipmate-vscode visual regression baselines" ]; then
             echo "is_baseline_update=true" >> "$GITHUB_OUTPUT"
             echo "HEAD commit is a baseline update commit — will not auto-commit again."
           else
@@ -91,39 +91,39 @@ jobs:
           fi
 
       - name: Setup Bun
-        uses: ./.github/actions/setup-bun # kilocode_change
+        uses: ./.github/actions/setup-bun # chipmate_change
 
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ hashFiles('packages/kilo-ui/package.json') }}
+          key: playwright-${{ hashFiles('packages/chipmate-ui/package.json') }}
 
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: bunx playwright install chromium
-        working-directory: packages/kilo-ui
+        working-directory: packages/chipmate-ui
 
       - name: Install Playwright system deps
         run: bunx playwright install-deps chromium
-        working-directory: packages/kilo-ui
+        working-directory: packages/chipmate-ui
 
       - name: Cache Storybook build
         id: storybook-cache
         uses: actions/cache@v5
         with:
-          path: packages/kilo-ui/storybook-static
-          key: storybook-${{ hashFiles('packages/kilo-ui/src/**', 'packages/kilo-ui/.storybook/**', 'packages/ui/src/**', 'packages/kilo-ui/package.json') }}
+          path: packages/chipmate-ui/storybook-static
+          key: storybook-${{ hashFiles('packages/chipmate-ui/src/**', 'packages/chipmate-ui/.storybook/**', 'packages/ui/src/**', 'packages/chipmate-ui/package.json') }}
 
       - name: Build Storybook
         if: steps.storybook-cache.outputs.cache-hit != 'true'
         run: bun run build-storybook
-        working-directory: packages/kilo-ui
+        working-directory: packages/chipmate-ui
 
       - name: Generate baselines for new/missing stories
         run: bun run test:visual:update
-        working-directory: packages/kilo-ui
+        working-directory: packages/chipmate-ui
         env:
           CI: true
           PLAYWRIGHT_WORKERS: "4"
@@ -135,7 +135,7 @@ jobs:
             const idx = JSON.parse(fs.readFileSync('storybook-static/index.json', 'utf8'));
             const stories = Object.values(idx.entries || idx.stories || {}).filter(s => s.id && !s.id.endsWith('--docs'));
             const expected = new Set(stories.map(s => { const [c,v] = s.id.split('--'); return c + '/' + v + '-chromium-linux.png'; }));
-            const dir = '../kilo-docs/public/img/screenshot-tests/kilo-ui/visual-regression';
+            const dir = '../chipmate-docs/public/img/screenshot-tests/chipmate-ui/visual-regression';
             if (!fs.existsSync(dir)) process.exit(0);
             for (const component of fs.readdirSync(dir)) {
               const cdir = path.join(dir, component);
@@ -146,18 +146,18 @@ jobs:
               }
             }
           "
-        working-directory: packages/kilo-ui
+        working-directory: packages/chipmate-ui
 
       - name: Check for baseline changes (read-only PRs)
         if: needs.check-paths.outputs.can_autocommit != 'true'
         run: |
-          git add packages/kilo-docs/public/img/screenshot-tests/kilo-ui/
+          git add packages/chipmate-docs/public/img/screenshot-tests/chipmate-ui/
           if git diff --cached --quiet; then
             echo "No visual regression detected."
           else
             echo "::error::Visual regression detected. Screenshot baselines have changed."
             echo "::error::Since this PR cannot receive baseline commits automatically, updated screenshots cannot be committed."
-            echo "::error::Please ask a Kilo developer for help updating the screenshots."
+            echo "::error::Please ask a ChipMate developer for help updating the screenshots."
             git diff --cached --stat
             exit 1
           fi
@@ -165,7 +165,7 @@ jobs:
       - name: Fail if baselines still changing after auto-update
         if: needs.check-paths.outputs.can_autocommit == 'true' && steps.check-baseline-commit.outputs.is_baseline_update == 'true'
         run: |
-          git add packages/kilo-docs/public/img/screenshot-tests/kilo-ui/
+          git add packages/chipmate-docs/public/img/screenshot-tests/chipmate-ui/
           if git diff --cached --quiet; then
             echo "Baselines are stable after auto-update."
           else
@@ -180,7 +180,7 @@ jobs:
         if: needs.check-paths.outputs.can_autocommit == 'true' && steps.check-baseline-commit.outputs.is_baseline_update != 'true'
         id: baseline-changes
         run: |
-          git add packages/kilo-docs/public/img/screenshot-tests/kilo-ui/
+          git add packages/chipmate-docs/public/img/screenshot-tests/chipmate-ui/
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -191,8 +191,8 @@ jobs:
         if: steps.baseline-changes.outputs.changed == 'true'
         uses: ./.github/actions/setup-git-committer
         with:
-          kilo-maintainer-app-id: ${{ secrets.KILO_MAINTAINER_APP_ID }}
-          kilo-maintainer-app-secret: ${{ secrets.KILO_MAINTAINER_APP_SECRET }}
+          chipmate-maintainer-app-id: ${{ secrets.CHIPMATE_MAINTAINER_APP_ID }}
+          chipmate-maintainer-app-secret: ${{ secrets.CHIPMATE_MAINTAINER_APP_SECRET }}
 
       - name: Commit and push new baselines (if any)
         if: steps.baseline-changes.outputs.changed == 'true'
@@ -214,13 +214,13 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: visual-regression-results
-          path: packages/kilo-ui/test-results/
+          path: packages/chipmate-ui/test-results/
           retention-days: 7
 
   visual-regression-vscode:
     needs: check-paths
     if: needs.check-paths.outputs.matched == 'true'
-    name: Visual Regression (kilo-vscode webview) # kilocode_change
+    name: Visual Regression (chipmate-vscode webview) # chipmate_change
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     env:
@@ -247,7 +247,7 @@ jobs:
         id: check-baseline-commit-vscode
         run: |
           COMMIT_MSG=$(git log -1 --format=%s)
-          if [ "$COMMIT_MSG" = "chore: update visual regression baselines" ] || [ "$COMMIT_MSG" = "chore: update kilo-vscode visual regression baselines" ]; then
+          if [ "$COMMIT_MSG" = "chore: update visual regression baselines" ] || [ "$COMMIT_MSG" = "chore: update chipmate-vscode visual regression baselines" ]; then
             echo "is_baseline_update=true" >> "$GITHUB_OUTPUT"
             echo "HEAD commit is a baseline update commit — will not auto-commit again."
           else
@@ -255,41 +255,41 @@ jobs:
           fi
 
       - name: Setup Bun
-        uses: ./.github/actions/setup-bun # kilocode_change
+        uses: ./.github/actions/setup-bun # chipmate_change
 
       - name: Cache Playwright browsers
         id: playwright-cache-vscode
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-vscode-${{ hashFiles('packages/kilo-vscode/package.json') }}
+          key: playwright-vscode-${{ hashFiles('packages/chipmate-vscode/package.json') }}
 
       - name: Install Playwright browsers
         if: steps.playwright-cache-vscode.outputs.cache-hit != 'true'
         run: bunx playwright install chromium
-        working-directory: packages/kilo-vscode
+        working-directory: packages/chipmate-vscode
 
       - name: Install Playwright system deps
         run: bunx playwright install-deps chromium
-        working-directory: packages/kilo-vscode
+        working-directory: packages/chipmate-vscode
 
       - name: Cache Storybook build
         id: storybook-cache-vscode
         uses: actions/cache@v5
         with:
-          path: packages/kilo-vscode/storybook-static
-          key: storybook-vscode-${{ hashFiles('packages/kilo-vscode/webview-ui/src/**', 'packages/kilo-vscode/.storybook/**', 'packages/kilo-ui/src/**', 'packages/ui/src/**', 'packages/kilo-vscode/package.json') }}
+          path: packages/chipmate-vscode/storybook-static
+          key: storybook-vscode-${{ hashFiles('packages/chipmate-vscode/webview-ui/src/**', 'packages/chipmate-vscode/.storybook/**', 'packages/chipmate-ui/src/**', 'packages/ui/src/**', 'packages/chipmate-vscode/package.json') }}
 
       - name: Build Storybook
         if: steps.storybook-cache-vscode.outputs.cache-hit != 'true'
         run: bun run build-storybook
-        working-directory: packages/kilo-vscode
+        working-directory: packages/chipmate-vscode
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Generate baselines and enforce webview accessibility checks
         run: bun run test:visual:update
-        working-directory: packages/kilo-vscode
+        working-directory: packages/chipmate-vscode
         env:
           CI: true
           PLAYWRIGHT_WORKERS: "4"
@@ -302,7 +302,7 @@ jobs:
             const idx = JSON.parse(fs.readFileSync('storybook-static/index.json', 'utf8'));
             const stories = Object.values(idx.entries || idx.stories || {}).filter(s => s.id && !s.id.endsWith('--docs'));
             const expected = new Set(stories.map(s => { const [c,v] = s.id.split('--'); return c + '/' + v + '-chromium-linux.png'; }));
-            const dir = '../kilo-docs/public/img/screenshot-tests/kilo-vscode/visual-regression';
+            const dir = '../chipmate-docs/public/img/screenshot-tests/chipmate-vscode/visual-regression';
             if (!fs.existsSync(dir)) process.exit(0);
             for (const component of fs.readdirSync(dir)) {
               const cdir = path.join(dir, component);
@@ -313,7 +313,7 @@ jobs:
               }
             }
           "
-        working-directory: packages/kilo-vscode
+        working-directory: packages/chipmate-vscode
 
       - name: Remove stale baselines for permission-dock-dropdown tests
         run: |
@@ -331,7 +331,7 @@ jobs:
                 if (file) expected.add(file.replace(/\.png$/, '-chromium-linux.png'));
               }
             }
-            const dir = '../kilo-docs/public/img/screenshot-tests/kilo-vscode/permission-dock-dropdown';
+            const dir = '../chipmate-docs/public/img/screenshot-tests/chipmate-vscode/permission-dock-dropdown';
             if (!fs.existsSync(dir)) process.exit(0);
             for (const file of fs.readdirSync(dir)) {
               if (file.endsWith('.png') && !expected.has(file)) {
@@ -340,18 +340,18 @@ jobs:
               }
             }
           "
-        working-directory: packages/kilo-vscode
+        working-directory: packages/chipmate-vscode
 
       - name: Check for baseline changes (read-only PRs)
         if: needs.check-paths.outputs.can_autocommit != 'true'
         run: |
-          git add packages/kilo-docs/public/img/screenshot-tests/kilo-vscode/
+          git add packages/chipmate-docs/public/img/screenshot-tests/chipmate-vscode/
           if git diff --cached --quiet; then
             echo "No visual regression detected."
           else
             echo "::error::Visual regression detected. Screenshot baselines have changed."
             echo "::error::Since this PR cannot receive baseline commits automatically, updated screenshots cannot be committed."
-            echo "::error::Please ask a Kilo developer for help updating the screenshots."
+            echo "::error::Please ask a ChipMate developer for help updating the screenshots."
             git diff --cached --stat
             exit 1
           fi
@@ -359,7 +359,7 @@ jobs:
       - name: Fail if baselines still changing after auto-update
         if: needs.check-paths.outputs.can_autocommit == 'true' && steps.check-baseline-commit-vscode.outputs.is_baseline_update == 'true'
         run: |
-          git add packages/kilo-docs/public/img/screenshot-tests/kilo-vscode/
+          git add packages/chipmate-docs/public/img/screenshot-tests/chipmate-vscode/
           if git diff --cached --quiet; then
             echo "Baselines are stable after auto-update."
           else
@@ -374,7 +374,7 @@ jobs:
         if: needs.check-paths.outputs.can_autocommit == 'true' && steps.check-baseline-commit-vscode.outputs.is_baseline_update != 'true'
         id: baseline-changes-vscode
         run: |
-          git add packages/kilo-docs/public/img/screenshot-tests/kilo-vscode/
+          git add packages/chipmate-docs/public/img/screenshot-tests/chipmate-vscode/
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -385,14 +385,14 @@ jobs:
         if: steps.baseline-changes-vscode.outputs.changed == 'true'
         uses: ./.github/actions/setup-git-committer
         with:
-          kilo-maintainer-app-id: ${{ secrets.KILO_MAINTAINER_APP_ID }}
-          kilo-maintainer-app-secret: ${{ secrets.KILO_MAINTAINER_APP_SECRET }}
+          chipmate-maintainer-app-id: ${{ secrets.CHIPMATE_MAINTAINER_APP_ID }}
+          chipmate-maintainer-app-secret: ${{ secrets.CHIPMATE_MAINTAINER_APP_SECRET }}
 
       - name: Commit and push new baselines (if any)
         if: steps.baseline-changes-vscode.outputs.changed == 'true'
         id: commit-baselines-vscode
         run: |
-          git commit -m "chore: update kilo-vscode visual regression baselines"
+          git commit -m "chore: update chipmate-vscode visual regression baselines"
           git lfs push --all origin
           git push --no-verify origin "HEAD:${GITHUB_HEAD_REF}"
           echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -408,5 +408,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: visual-regression-vscode-results
-          path: packages/kilo-vscode/test-results/
+          path: packages/chipmate-vscode/test-results/
           retention-days: 7

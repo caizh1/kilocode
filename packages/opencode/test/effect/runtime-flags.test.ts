@@ -23,18 +23,18 @@ describe("RuntimeFlags", () => {
       const flags = yield* readFlags.pipe(
         Effect.provide(
           fromConfig({
-            KILO_PURE: "true",
-            KILO_DISABLE_DEFAULT_PLUGINS: "true",
-            KILO_AUTO_SHARE: "true",
-            KILO_DISABLE_EMBEDDED_WEB_UI: "true",
-            KILO_DISABLE_EXTERNAL_SKILLS: "true",
-            KILO_DISABLE_LSP_DOWNLOAD: "true",
-            KILO_EXPERIMENTAL: "true",
-            KILO_ENABLE_EXA: "true",
-            KILO_ENABLE_PARALLEL: "true",
-            KILO_ENABLE_EXPERIMENTAL_MODELS: "true",
-            KILO_ENABLE_QUESTION_TOOL: "true",
-            KILO_CLIENT: "desktop",
+            CHIPMATE_PURE: "true",
+            CHIPMATE_DISABLE_DEFAULT_PLUGINS: "true",
+            CHIPMATE_AUTO_SHARE: "true",
+            CHIPMATE_DISABLE_EMBEDDED_WEB_UI: "true",
+            CHIPMATE_DISABLE_EXTERNAL_SKILLS: "true",
+            CHIPMATE_DISABLE_LSP_DOWNLOAD: "true",
+            CHIPMATE_EXPERIMENTAL: "true",
+            CHIPMATE_ENABLE_EXA: "true",
+            CHIPMATE_ENABLE_PARALLEL: "true",
+            CHIPMATE_ENABLE_EXPERIMENTAL_MODELS: "true",
+            CHIPMATE_ENABLE_QUESTION_TOOL: "true",
+            CHIPMATE_CLIENT: "desktop",
           }),
         ),
       )
@@ -65,12 +65,12 @@ describe("RuntimeFlags", () => {
     }),
   )
 
-  it.effect("layer parses KILO_EXPERIMENTAL_LSP_TY", () =>
+  it.effect("layer parses CHIPMATE_EXPERIMENTAL_LSP_TY", () =>
     Effect.gen(function* () {
       const flags = yield* readFlags.pipe(
         Effect.provide(
           fromConfig({
-            KILO_EXPERIMENTAL_LSP_TY: "true",
+            CHIPMATE_EXPERIMENTAL_LSP_TY: "true",
           }),
         ),
       )
@@ -81,8 +81,8 @@ describe("RuntimeFlags", () => {
 
   it.effect("enables native LLM via dedicated flag only", () =>
     Effect.gen(function* () {
-      const explicit = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_EXPERIMENTAL_NATIVE_LLM: "true" })))
-      const umbrella = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_EXPERIMENTAL: "true" })))
+      const explicit = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_EXPERIMENTAL_NATIVE_LLM: "true" })))
+      const umbrella = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_EXPERIMENTAL: "true" })))
 
       expect(explicit.experimentalNativeLlm).toBe(true)
       expect(umbrella.experimentalNativeLlm).toBe(false)
@@ -91,8 +91,8 @@ describe("RuntimeFlags", () => {
 
   it.effect("enables WebSockets via dedicated flag only", () =>
     Effect.gen(function* () {
-      const explicit = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_EXPERIMENTAL_WEBSOCKETS: "true" })))
-      const umbrella = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_EXPERIMENTAL: "true" })))
+      const explicit = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_EXPERIMENTAL_WEBSOCKETS: "true" })))
+      const umbrella = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_EXPERIMENTAL: "true" })))
 
       expect(explicit.experimentalWebSockets).toBe(true)
       expect(umbrella.experimentalWebSockets).toBe(false)
@@ -139,9 +139,9 @@ describe("RuntimeFlags", () => {
     }),
   )
 
-  it.effect("disableExternalSkills reads KILO_DISABLE_EXTERNAL_SKILLS", () =>
+  it.effect("disableExternalSkills reads CHIPMATE_DISABLE_EXTERNAL_SKILLS", () =>
     Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_DISABLE_EXTERNAL_SKILLS: "true" })))
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_DISABLE_EXTERNAL_SKILLS: "true" })))
 
       expect(flags.disableExternalSkills).toBe(true)
     }),
@@ -155,9 +155,9 @@ describe("RuntimeFlags", () => {
     }),
   )
 
-  it.effect("disableLspDownload reads KILO_DISABLE_LSP_DOWNLOAD", () =>
+  it.effect("disableLspDownload reads CHIPMATE_DISABLE_LSP_DOWNLOAD", () =>
     Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_DISABLE_LSP_DOWNLOAD: "true" })))
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_DISABLE_LSP_DOWNLOAD: "true" })))
 
       expect(flags.disableLspDownload).toBe(true)
     }),
@@ -171,45 +171,45 @@ describe("RuntimeFlags", () => {
     }),
   )
 
-  it.effect("disableClaudeCodePrompt reads KILO_DISABLE_CLAUDE_CODE_PROMPT", () =>
+  it.effect("disableClaudeCodePrompt reads CHIPMATE_DISABLE_CLAUDE_CODE_PROMPT", () =>
     Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_DISABLE_CLAUDE_CODE_PROMPT: "true" })))
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_DISABLE_CLAUDE_CODE_PROMPT: "true" })))
 
       expect(flags.disableClaudeCodePrompt).toBe(true)
     }),
   )
 
-  it.effect("disableClaudeCodePrompt inherits KILO_DISABLE_CLAUDE_CODE", () =>
+  it.effect("disableClaudeCodePrompt inherits CHIPMATE_DISABLE_CLAUDE_CODE", () =>
     Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_DISABLE_CLAUDE_CODE: "true" })))
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_DISABLE_CLAUDE_CODE: "true" })))
 
       expect(flags.disableClaudeCodePrompt).toBe(true)
     }),
   )
 
-  it.effect("experimentalIconDiscovery reads KILO_EXPERIMENTAL_ICON_DISCOVERY", () =>
+  it.effect("experimentalIconDiscovery reads CHIPMATE_EXPERIMENTAL_ICON_DISCOVERY", () =>
     Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_EXPERIMENTAL_ICON_DISCOVERY: "true" })))
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_EXPERIMENTAL_ICON_DISCOVERY: "true" })))
 
       expect(flags.experimentalIconDiscovery).toBe(true)
     }),
   )
 
-  it.effect("experimentalIconDiscovery inherits KILO_EXPERIMENTAL", () =>
+  it.effect("experimentalIconDiscovery inherits CHIPMATE_EXPERIMENTAL", () =>
     Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_EXPERIMENTAL: "true" })))
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_EXPERIMENTAL: "true" })))
 
       expect(flags.experimentalIconDiscovery).toBe(true)
     }),
   )
 
-  it.effect("specific experimental flags override KILO_EXPERIMENTAL", () =>
+  it.effect("specific experimental flags override CHIPMATE_EXPERIMENTAL", () =>
     Effect.gen(function* () {
       const flags = yield* readFlags.pipe(
         Effect.provide(
           fromConfig({
-            KILO_EXPERIMENTAL: "true",
-            KILO_EXPERIMENTAL_ICON_DISCOVERY: "false",
+            CHIPMATE_EXPERIMENTAL: "true",
+            CHIPMATE_EXPERIMENTAL_ICON_DISCOVERY: "false",
           }),
         ),
       )
@@ -226,12 +226,12 @@ describe("RuntimeFlags", () => {
     }),
   )
 
-  it.effect("experimentalOxfmt is enabled by KILO_EXPERIMENTAL_OXFMT", () =>
+  it.effect("experimentalOxfmt is enabled by CHIPMATE_EXPERIMENTAL_OXFMT", () =>
     Effect.gen(function* () {
       const flags = yield* readFlags.pipe(
         Effect.provide(
           fromConfig({
-            KILO_EXPERIMENTAL_OXFMT: "true",
+            CHIPMATE_EXPERIMENTAL_OXFMT: "true",
           }),
         ),
       )
@@ -240,12 +240,12 @@ describe("RuntimeFlags", () => {
     }),
   )
 
-  it.effect("experimentalOxfmt inherits KILO_EXPERIMENTAL", () =>
+  it.effect("experimentalOxfmt inherits CHIPMATE_EXPERIMENTAL", () =>
     Effect.gen(function* () {
       const flags = yield* readFlags.pipe(
         Effect.provide(
           fromConfig({
-            KILO_EXPERIMENTAL: "true",
+            CHIPMATE_EXPERIMENTAL: "true",
           }),
         ),
       )
@@ -258,19 +258,19 @@ describe("RuntimeFlags", () => {
     { name: "absent", config: {}, expected: undefined },
     {
       name: "valid positive integer",
-      config: { KILO_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "1234" },
+      config: { CHIPMATE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "1234" },
       expected: 1234,
     },
     {
       name: "invalid string",
-      config: { KILO_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "nope" },
+      config: { CHIPMATE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "nope" },
       expected: undefined,
     },
-    { name: "zero", config: { KILO_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "0" }, expected: undefined },
-    { name: "negative", config: { KILO_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "-1" }, expected: undefined },
+    { name: "zero", config: { CHIPMATE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "0" }, expected: undefined },
+    { name: "negative", config: { CHIPMATE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "-1" }, expected: undefined },
     {
       name: "non-integer",
-      config: { KILO_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "1.5" },
+      config: { CHIPMATE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "1.5" },
       expected: undefined,
     },
   ]) {
@@ -287,19 +287,19 @@ describe("RuntimeFlags", () => {
     { name: "absent", config: {}, expected: undefined },
     {
       name: "valid positive integer",
-      config: { KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "1234" },
+      config: { CHIPMATE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "1234" },
       expected: 1234,
     },
     {
       name: "invalid string",
-      config: { KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "nope" },
+      config: { CHIPMATE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "nope" },
       expected: undefined,
     },
-    { name: "zero", config: { KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "0" }, expected: undefined },
-    { name: "negative", config: { KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "-1" }, expected: undefined },
+    { name: "zero", config: { CHIPMATE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "0" }, expected: undefined },
+    { name: "negative", config: { CHIPMATE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "-1" }, expected: undefined },
     {
       name: "non-integer",
-      config: { KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "1.5" },
+      config: { CHIPMATE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "1.5" },
       expected: undefined,
     },
   ]) {
@@ -319,14 +319,14 @@ describe("RuntimeFlags", () => {
         Effect.provide(
           ConfigProvider.layer(
             ConfigProvider.fromUnknown({
-              KILO_PURE: "true",
-              KILO_DISABLE_DEFAULT_PLUGINS: "true",
-              KILO_DISABLE_EXTERNAL_SKILLS: "true",
-              KILO_DISABLE_LSP_DOWNLOAD: "true",
-              KILO_EXPERIMENTAL: "true",
-              KILO_ENABLE_EXA: "true",
-              KILO_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "1234",
-              KILO_CLIENT: "desktop",
+              CHIPMATE_PURE: "true",
+              CHIPMATE_DISABLE_DEFAULT_PLUGINS: "true",
+              CHIPMATE_DISABLE_EXTERNAL_SKILLS: "true",
+              CHIPMATE_DISABLE_LSP_DOWNLOAD: "true",
+              CHIPMATE_EXPERIMENTAL: "true",
+              CHIPMATE_ENABLE_EXA: "true",
+              CHIPMATE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "1234",
+              CHIPMATE_CLIENT: "desktop",
             }),
           ),
         ),
@@ -356,17 +356,17 @@ describe("RuntimeFlags", () => {
     }),
   )
 
-  it.effect("disableClaudeCodeSkills reads KILO_DISABLE_CLAUDE_CODE_SKILLS", () =>
+  it.effect("disableClaudeCodeSkills reads CHIPMATE_DISABLE_CLAUDE_CODE_SKILLS", () =>
     Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_DISABLE_CLAUDE_CODE_SKILLS: "true" })))
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_DISABLE_CLAUDE_CODE_SKILLS: "true" })))
 
       expect(flags.disableClaudeCodeSkills).toBe(true)
     }),
   )
 
-  it.effect("disableClaudeCodeSkills inherits KILO_DISABLE_CLAUDE_CODE", () =>
+  it.effect("disableClaudeCodeSkills inherits CHIPMATE_DISABLE_CLAUDE_CODE", () =>
     Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ KILO_DISABLE_CLAUDE_CODE: "true" })))
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ CHIPMATE_DISABLE_CLAUDE_CODE: "true" })))
 
       expect(flags.disableClaudeCodeSkills).toBe(true)
     }),

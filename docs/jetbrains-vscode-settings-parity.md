@@ -2,7 +2,7 @@
 
 ## How parity works here
 
-Both clients edit the **same shared `kilo.json`** through the CLI. So any setting whose
+Both clients edit the **same shared `chipmate.json`** through the CLI. So any setting whose
 behavior lives entirely in the CLI is an "easy win" for JetBrains: the CLI already does the
 work, JetBrains just needs a UI row that writes the config key. No CLI changes, no new feature.
 
@@ -12,11 +12,11 @@ The lift for most easy wins is:
 
 1. Add a new `Configurable` page (using existing `settings/base/` primitives —
    `BaseSettingsUi`, `SettingsRow`, `SettingsToggle`, `SettingsListPanel`), register it in
-   `kilo.jetbrains.frontend.xml`.
-2. Extend the `buildConfigPatch` allowlist in `KiloCliDataParser.kt` (currently only
+   `chipmate.jetbrains.frontend.xml`.
+2. Extend the `buildConfigPatch` allowlist in `ChipMateCliDataParser.kt` (currently only
    `model`, `small_model`, `subagent_model`, `subagent_variant`, `default_agent`) and add
    boolean/number JSON serialization — it currently only emits strings.
-3. Add localized labels to `KiloBundle.properties`.
+3. Add localized labels to `ChipMateBundle.properties`.
 
 No CLI/SDK change and no new runtime feature.
 
@@ -57,7 +57,7 @@ No CLI/SDK change and no new runtime feature.
 | Per-tool toggles | `tools.<name>` | bool | Experimental |
 
 **Claude Code compatibility**: lives under "Agent Behavior" in VS Code, but in JetBrains the
-entire backend (`KiloClaudeCompatSettings` + RPC getter/setter + spawn-env wiring) already
+entire backend (`ChipMateClaudeCompatSettings` + RPC getter/setter + spawn-env wiring) already
 exists with no UI. Exposing it is the single lowest-effort item — just a checkbox bound to the
 existing RPC, no config plumbing.
 
@@ -79,7 +79,7 @@ seeded with Tier 1 behavioral settings, plus wire the already-built **Claude Cod
 toggle. This closes most of the non-feature gap with:
 
 - zero CLI/SDK changes,
-- one allowlist extension in `KiloCliDataParser.buildConfigPatch` (add keys + boolean/number serialization),
+- one allowlist extension in `ChipMateCliDataParser.buildConfigPatch` (add keys + boolean/number serialization),
 - reuse of existing `settings/base/` UI primitives and test patterns (`FakeAppRpcApi`
   frontend test + `MockCliServer` backend body assertion).
 

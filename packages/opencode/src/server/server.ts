@@ -1,7 +1,7 @@
 import "./init-projectors"
 
 import { NodeHttpServer } from "@effect/platform-node"
-import { serverUrls } from "@/kilocode/cli/server-urls" // kilocode_change
+import { serverUrls } from "@/chipmate/cli/server-urls" // chipmate_change
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
@@ -14,7 +14,7 @@ import { WebSocketTracker } from "./routes/instance/httpapi/websocket-tracker"
 import { PublicApi } from "./routes/instance/httpapi/public"
 import type { CorsOptions } from "@opencode-ai/server/cors"
 import { lazy } from "@/util/lazy"
-import * as KiloListener from "@/kilocode/server/listener" // kilocode_change
+import * as ChipMateListener from "@/chipmate/server/listener" // chipmate_change
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -23,13 +23,13 @@ export type Listener = {
   hostname: string
   port: number
   url: URL
-  // kilocode_change start
+  // chipmate_change start
   urls: {
     local: string
     network?: string
     bind: string
   }
-  // kilocode_change end
+  // chipmate_change end
   stop: (close?: boolean) => Promise<void>
 }
 
@@ -85,7 +85,7 @@ export async function listen(opts: ListenOptions): Promise<Listener> {
     hostname: listener.hostname,
     port: listener.port,
     url: listener.url,
-    urls: listener.urls, // kilocode_change
+    urls: listener.urls, // chipmate_change
     stop: (close?: boolean) => Effect.runPromiseExit(listener.stop(close)).then(() => undefined),
   }
 }
@@ -102,14 +102,14 @@ const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unkno
       hostname: opts.hostname,
       port: address.port,
       url: listenerUrl,
-      urls: serverUrls(opts.hostname, address.port), // kilocode_change
+      urls: serverUrls(opts.hostname, address.port), // chipmate_change
       stop: yield* makeStop(state, unpublishMdns, listenerUrl),
     }
   },
 )
 
 function listenerLayer(opts: ListenOptions, port: number) {
-  return HttpRouter.serve(HttpApiApp.createListenerRoutes(opts), { // kilocode_change
+  return HttpRouter.serve(HttpApiApp.createListenerRoutes(opts), { // chipmate_change
     middleware: disposeMiddleware,
     disableLogger: true,
     disableListenLog: true,
@@ -134,7 +134,7 @@ function startWithPortFallback(opts: ListenOptions) {
 
 function startListener(opts: ListenOptions, port: number) {
   const scope = Scope.makeUnsafe()
-  return KiloListener.build(listenerLayer(opts, port), scope).pipe( // kilocode_change
+  return ChipMateListener.build(listenerLayer(opts, port), scope).pipe( // chipmate_change
     Effect.provide(HttpApiApp.context),
     Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
     Effect.map(

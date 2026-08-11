@@ -1,4 +1,4 @@
-import type { Message, Session, Part, SnapshotFileDiff, SessionStatus, Provider } from "@kilocode/sdk/v2"
+import type { Message, Session, Part, SnapshotFileDiff, SessionStatus, Provider } from "@chipmate/sdk/v2"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 

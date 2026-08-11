@@ -1,4 +1,4 @@
-import type { ReferenceGitSource, ReferenceLocalSource } from "@kilocode/sdk/v2/types"
+import type { ReferenceGitSource, ReferenceLocalSource } from "@chipmate/sdk/v2/types"
 import type { Hooks } from "./registration.js"
 
 export interface ReferenceDraft {

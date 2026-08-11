@@ -12,12 +12,12 @@ import {
   selectBunPackageManager,
 } from "./transform-package-json"
 
-test("fixScripts preserves Kilo-only root scripts from base", () => {
+test("fixScripts preserves ChipMate-only root scripts from base", () => {
   const ours = {
     scripts: {
-      "dev-setup": "kilo dev-setup",
+      "dev-setup": "chipmate dev-setup",
       postinstall: "bun run --cwd packages/opencode fix-node-pty && bun run script/setup-git.ts",
-      extension: "bun --cwd packages/kilo-vscode script/launch.ts",
+      extension: "bun --cwd packages/chipmate-vscode script/launch.ts",
     },
   }
   const pkg: Record<string, unknown> = {
@@ -33,11 +33,11 @@ test("fixScripts preserves Kilo-only root scripts from base", () => {
   expect(changes.some((c) => c.includes("dev-setup"))).toBe(true)
 })
 
-test("fixRepository preserves Kilo package links", () => {
+test("fixRepository preserves ChipMate package links", () => {
   const ours = {
-    repository: { url: "https://github.com/Kilo-Org/kilocode.git" },
-    homepage: "https://github.com/Kilo-Org/kilocode/tree/main/packages/example",
-    bugs: "https://github.com/Kilo-Org/kilocode/issues",
+    repository: { url: "https://github.com/ChipMate-Org/chipmate.git" },
+    homepage: "https://github.com/ChipMate-Org/chipmate/tree/main/packages/example",
+    bugs: "https://github.com/ChipMate-Org/chipmate/issues",
   }
   const pkg: Record<string, unknown> = {
     repository: { url: "https://example.com/upstream.git" },
@@ -52,9 +52,9 @@ test("fixRepository preserves Kilo package links", () => {
   expect(pkg.homepage).toBe(ours.homepage)
   expect(pkg.bugs).toBe(ours.bugs)
   expect(changes).toEqual([
-    "repository: preserved Kilo metadata",
-    "homepage: preserved Kilo metadata",
-    "bugs: preserved Kilo metadata",
+    "repository: preserved ChipMate metadata",
+    "homepage: preserved ChipMate metadata",
+    "bugs: preserved ChipMate metadata",
   ])
 })
 
@@ -108,7 +108,7 @@ test("fixScripts preserves dev:local and shared-package test:ci scripts", () => 
   }
 })
 
-test("fixTrustedDependencies removes native-build permissions against Kilo policy", () => {
+test("fixTrustedDependencies removes native-build permissions against ChipMate policy", () => {
   const pkg: Record<string, unknown> = { trustedDependencies: ["tree-sitter-powershell", "bun-pty"] }
   const changes: string[] = []
   fixTrustedDependencies(pkg, "package.json", changes)
@@ -172,7 +172,7 @@ test("fixCatalog is a no-op when catalog is absent", () => {
 })
 
 test("fixMetadata preserves opencode publish metadata from base", () => {
-  const ours = { keywords: ["cli", "kilo", "opencode"], private: false }
+  const ours = { keywords: ["cli", "chipmate", "opencode"], private: false }
   const pkg: Record<string, unknown> = { keywords: ["opencode"], private: true }
   const changes: string[] = []
   fixMetadata(pkg, "packages/opencode/package.json", ours, changes)
@@ -182,8 +182,8 @@ test("fixMetadata preserves opencode publish metadata from base", () => {
   expect(changes).toContain("private: preserved from base")
 })
 
-test("mergeWithNewestVersions preserves ours' key order so kilo-only deps don't relocate", () => {
-  // Regression: when ours has a kilo-only dep in the middle (e.g. rotating-file-stream
+test("mergeWithNewestVersions preserves ours' key order so chipmate-only deps don't relocate", () => {
+  // Regression: when ours has a chipmate-only dep in the middle (e.g. rotating-file-stream
   // alphabetically between npm-package-arg and semver) and theirs lacks it, the merge
   // result must keep that key in its original position. Previously this function
   // started from theirs' keys and appended ours-only keys at the end, causing git's
@@ -212,10 +212,10 @@ test("mergeWithNewestVersions appends theirs-only keys at the end", () => {
   expect(Object.keys(result)).toEqual(["a", "b", "c"])
 })
 
-test("selectBunPackageManager keeps the newer Bun version and prefers Kilo on ties", () => {
+test("selectBunPackageManager keeps the newer Bun version and prefers ChipMate on ties", () => {
   expect(selectBunPackageManager("bun@1.3.14", "bun@1.3.13")).toBe("bun@1.3.14")
   expect(selectBunPackageManager("bun@1.3.14", "bun@1.3.15")).toBe("bun@1.3.15")
-  expect(selectBunPackageManager("bun@1.3.14+kilo", "bun@1.3.14+upstream")).toBe("bun@1.3.14+kilo")
+  expect(selectBunPackageManager("bun@1.3.14+chipmate", "bun@1.3.14+upstream")).toBe("bun@1.3.14+chipmate")
 })
 
 test("selectBunPackageManager preserves valid versions over malformed values", () => {
@@ -230,15 +230,15 @@ test("fixPackageManager prevents root Bun downgrades", () => {
   const changes: string[] = []
   fixPackageManager(pkg, "package.json", ours, changes)
   expect(pkg.packageManager).toBe("bun@1.3.14")
-  expect(changes).toEqual(["packageManager: bun@1.3.13 -> bun@1.3.14 (preserved Kilo pin)"])
+  expect(changes).toEqual(["packageManager: bun@1.3.13 -> bun@1.3.14 (preserved ChipMate pin)"])
 })
 
-test("fixPackageManager restores a valid Kilo pin over malformed upstream", () => {
+test("fixPackageManager restores a valid ChipMate pin over malformed upstream", () => {
   const pkg: Record<string, unknown> = { packageManager: "bun@latest" }
   const changes: string[] = []
   fixPackageManager(pkg, "package.json", { packageManager: "bun@1.3.14" }, changes)
   expect(pkg.packageManager).toBe("bun@1.3.14")
-  expect(changes).toEqual(["packageManager: bun@latest -> bun@1.3.14 (preserved Kilo pin)"])
+  expect(changes).toEqual(["packageManager: bun@latest -> bun@1.3.14 (preserved ChipMate pin)"])
 })
 
 test("fixPackageManager accepts upstream Bun upgrades", () => {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { fileURLToPath, pathToFileURL } from "url"
-import { Effect, Exit, Layer, Result, Schema } from "effect" // kilocode_change
+import { Effect, Exit, Layer, Result, Schema } from "effect" // chipmate_change
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
@@ -17,19 +17,19 @@ import { InstanceState } from "@/effect/instance-state"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import * as SandboxNetwork from "@/kilocode/sandbox/network" // kilocode_change
-import { run as runSandbox, type Profile } from "@kilocode/sandbox" // kilocode_change
+import * as SandboxNetwork from "@/chipmate/sandbox/network" // chipmate_change
+import { run as runSandbox, type Profile } from "@chipmate/sandbox" // chipmate_change
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 
 const configLayer = TestConfig.layer({
-  directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".kilo")])), // kilocode_change
+  directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".chipmate")])), // chipmate_change
 })
 
 type RegistryLayerOptions = {
   flags?: Partial<RuntimeFlags.Info>
   plugin?: Layer.Layer<Plugin.Service>
-  config?: Parameters<typeof TestConfig.layer>[0] // kilocode_change
+  config?: Parameters<typeof TestConfig.layer>[0] // chipmate_change
 }
 
 // Fake Plugin.Service that returns a single plugin whose `tool` map contains
@@ -59,7 +59,7 @@ const brokenPluginLayer = Layer.succeed(
 const root = LayerNode.group([ToolRegistry.node, Agent.node])
 const registryLayer = (opts: RegistryLayerOptions = {}) => {
   const replacements = [
-    [Config.node, opts.config ? TestConfig.layer(opts.config) : configLayer], // kilocode_change
+    [Config.node, opts.config ? TestConfig.layer(opts.config) : configLayer], // chipmate_change
     [RuntimeFlags.node, RuntimeFlags.layer(opts.flags ?? {})],
   ] as const
   if (!opts.plugin) return LayerNode.compile(root, replacements)
@@ -67,9 +67,9 @@ const registryLayer = (opts: RegistryLayerOptions = {}) => {
 }
 
 const it = testEffect(registryLayer())
-const scout = testEffect(registryLayer({ flags: { experimentalScout: true } })) // kilocode_change
+const scout = testEffect(registryLayer({ flags: { experimentalScout: true } })) // chipmate_change
 const withBrokenPlugin = testEffect(registryLayer({ plugin: brokenPluginLayer }))
-// kilocode_change start
+// chipmate_change start
 const websearch = testEffect(
   registryLayer({
     config: {
@@ -82,13 +82,13 @@ const websearch = testEffect(
   }),
 )
 const sandboxed = testEffect(registryLayer({ flags: { experimentalLspTool: true } }))
-// kilocode_change end
+// chipmate_change end
 
 afterEach(async () => {
   await disposeAllInstances()
 })
 
-// kilocode_change start
+// chipmate_change start
 function sandboxProfile(): Profile {
   return {
     filesystem: { allowWrite: [], denyWrite: [], denyNames: [] },
@@ -96,10 +96,10 @@ function sandboxProfile(): Profile {
     environment: { deny: [], set: {} },
   }
 }
-// kilocode_change end
+// chipmate_change end
 
 describe("tool.registry", () => {
-  // kilocode_change start
+  // chipmate_change start
   it.instance("hides websearch for a third-party provider by default", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
@@ -160,7 +160,7 @@ describe("tool.registry", () => {
       expect(Exit.isFailure(denied)).toBe(true)
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
 
   it.instance("hides repo research tools unless experimental", () =>
     Effect.gen(function* () {
@@ -208,10 +208,10 @@ describe("tool.registry", () => {
     }),
   )
 
-  it.instance("loads tools from .kilo/tool (singular)" /* kilocode_change */, () =>
+  it.instance("loads tools from .chipmate/tool (singular)" /* chipmate_change */, () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const opencode = path.join(test.directory, ".kilo") // kilocode_change
+      const opencode = path.join(test.directory, ".chipmate") // chipmate_change
       const tool = path.join(opencode, "tool")
       yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
       yield* Effect.promise(() =>
@@ -235,10 +235,10 @@ describe("tool.registry", () => {
     }),
   )
 
-  it.instance("ignores non-tool exports in .kilo/tool files" /* kilocode_change */, () =>
+  it.instance("ignores non-tool exports in .chipmate/tool files" /* chipmate_change */, () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const tool = path.join(test.directory, ".kilo", "tool") // kilocode_change
+      const tool = path.join(test.directory, ".chipmate", "tool") // chipmate_change
       yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
       yield* Effect.promise(() =>
         Bun.write(
@@ -271,7 +271,7 @@ describe("tool.registry", () => {
   it.instance("tolerates a custom tool exporting null/undefined args (no-args fallback)", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const tool = path.join(test.directory, ".kilo", "tool") // kilocode_change
+      const tool = path.join(test.directory, ".chipmate", "tool") // chipmate_change
       yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
       yield* Effect.promise(() =>
         Bun.write(
@@ -313,10 +313,10 @@ describe("tool.registry", () => {
     }),
   )
 
-  it.instance("loads tools from .kilo/tools (plural)" /* kilocode_change */, () =>
+  it.instance("loads tools from .chipmate/tools (plural)" /* chipmate_change */, () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const opencode = path.join(test.directory, ".kilo") // kilocode_change
+      const opencode = path.join(test.directory, ".chipmate") // chipmate_change
       const tools = path.join(opencode, "tools")
       yield* Effect.promise(() => fs.mkdir(tools, { recursive: true }))
       yield* Effect.promise(() =>
@@ -343,7 +343,7 @@ describe("tool.registry", () => {
   it.instance("loads Zod-schema custom tools with JSON Schema and validation", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const customTools = path.join(test.directory, ".kilo", "tools") // kilocode_change
+      const customTools = path.join(test.directory, ".chipmate", "tools") // chipmate_change
       const pluginTool = pathToFileURL(path.resolve(import.meta.dir, "../../../plugin/src/tool.ts")).href
       yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
       yield* Effect.promise(() =>
@@ -396,9 +396,9 @@ describe("tool.registry", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const opencode = path.join(test.directory, ".kilo") // kilocode_change
+        const opencode = path.join(test.directory, ".chipmate") // chipmate_change
         const customTools = path.join(opencode, "tools")
-        const plugin = path.join(opencode, "node_modules", "@kilocode", "plugin") // kilocode_change
+        const plugin = path.join(opencode, "node_modules", "@chipmate", "plugin") // chipmate_change
         yield* Effect.promise(() => fs.mkdir(path.join(plugin, "dist"), { recursive: true }))
         yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
         yield* Effect.promise(() =>
@@ -410,7 +410,7 @@ describe("tool.registry", () => {
         yield* Effect.promise(() =>
           Bun.write(
             path.join(plugin, "package.json"),
-            JSON.stringify({ name: "@kilocode/plugin", type: "module", exports: { ".": "./dist/index.js" } }), // kilocode_change
+            JSON.stringify({ name: "@chipmate/plugin", type: "module", exports: { ".": "./dist/index.js" } }), // chipmate_change
           ),
         )
         yield* Effect.promise(() =>
@@ -430,7 +430,7 @@ describe("tool.registry", () => {
           Bun.write(
             path.join(customTools, "addition.ts"),
             [
-              'import { tool } from "@kilocode/plugin"', // kilocode_change
+              'import { tool } from "@chipmate/plugin"', // chipmate_change
               "export default tool({",
               "  description: 'Use this tool to add two numbers and return their sum.',",
               "  args: {",
@@ -461,7 +461,7 @@ describe("tool.registry", () => {
   it.instance("preserves attachments from structured custom tool results", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const customTools = path.join(test.directory, ".kilo", "tools") // kilocode_change
+      const customTools = path.join(test.directory, ".chipmate", "tools") // chipmate_change
       const pluginTool = pathToFileURL(path.resolve(import.meta.dir, "../../../plugin/src/tool.ts")).href
       yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
       yield* Effect.promise(() =>
@@ -506,7 +506,7 @@ describe("tool.registry", () => {
   it.instance("loads legacy JSON-schema-shaped custom tools with wire schema", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const tools = path.join(test.directory, ".kilo", "tools") // kilocode_change
+      const tools = path.join(test.directory, ".chipmate", "tools") // chipmate_change
       yield* Effect.promise(() => fs.mkdir(tools, { recursive: true }))
       yield* Effect.promise(() =>
         Bun.write(
@@ -538,7 +538,7 @@ describe("tool.registry", () => {
   it.instance("loads tools with external dependencies without crashing", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const opencode = path.join(test.directory, ".kilo") // kilocode_change
+      const opencode = path.join(test.directory, ".chipmate") // chipmate_change
       const tools = path.join(opencode, "tools")
       yield* Effect.promise(() => fs.mkdir(tools, { recursive: true }))
       yield* Effect.promise(() =>
@@ -547,7 +547,7 @@ describe("tool.registry", () => {
           JSON.stringify({
             name: "custom-tools",
             dependencies: {
-              "@kilocode/plugin": "^0.0.0",
+              "@chipmate/plugin": "^0.0.0",
               cowsay: "^1.6.0",
             },
           }),
@@ -562,7 +562,7 @@ describe("tool.registry", () => {
             packages: {
               "": {
                 dependencies: {
-                  "@kilocode/plugin": "^0.0.0",
+                  "@chipmate/plugin": "^0.0.0",
                   cowsay: "^1.6.0",
                 },
               },

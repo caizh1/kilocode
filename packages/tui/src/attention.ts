@@ -9,7 +9,7 @@ import type {
   TuiAttentionSoundName,
   TuiAttentionSoundPack,
   TuiAttentionSoundPackInfo,
-} from "@kilocode/plugin/tui"
+} from "@chipmate/plugin/tui"
 import { AttentionSoundName, type TuiConfig } from "./config"
 import { Schema } from "effect"
 import stripAnsi from "strip-ansi"
@@ -38,14 +38,14 @@ type TuiAttentionHost = TuiAttention & {
   dispose(): void
 }
 
-const DEFAULT_TITLE = "Kilo" // kilocode_change
-const DEFAULT_PACK_ID = "kilo.default" // kilocode_change
+const DEFAULT_TITLE = "ChipMate" // chipmate_change
+const DEFAULT_PACK_ID = "chipmate.default" // chipmate_change
 const KV_SOUND_PACK = "attention_sound_pack"
 const TITLE_LIMIT = 80
 const MESSAGE_LIMIT = 240
 const BUILTIN_PACK: RegisteredSoundPack = {
   id: DEFAULT_PACK_ID,
-  name: "Kilo Default", // kilocode_change
+  name: "ChipMate Default", // chipmate_change
   builtin: true,
   sounds: {
     default: defaultSoundPath,

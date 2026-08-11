@@ -1,16 +1,16 @@
-import { AllowEverythingPermission } from "@/kilocode/permission/allow-everything" // kilocode_change
+import { AllowEverythingPermission } from "@/chipmate/permission/allow-everything" // chipmate_change
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Permission } from "@/permission"
-// kilocode_change start
+// chipmate_change start
 import { SessionID } from "@/session/schema"
 import { Effect, Schema } from "effect"
-// kilocode_change end
+// chipmate_change end
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { PermissionNotFoundError } from "../errors"
-// kilocode_change start
+// chipmate_change start
 import { AllowEverythingBody, SaveAlwaysRulesBody } from "../groups/permission"
-// kilocode_change end
+// chipmate_change end
 
 export const permissionHandlers = HttpApiBuilder.group(InstanceHttpApi, "permission", (handlers) =>
   Effect.gen(function* () {
@@ -26,11 +26,11 @@ export const permissionHandlers = HttpApiBuilder.group(InstanceHttpApi, "permiss
     }) {
       yield* svc
         .reply({
-          // kilocode_change
+          // chipmate_change
           requestID: ctx.params.requestID,
           reply: ctx.payload.reply,
           message: ctx.payload.message,
-          interactive: ctx.payload.interactive, // kilocode_change
+          interactive: ctx.payload.interactive, // chipmate_change
         })
         .pipe(
           Effect.catchTag("Permission.NotFoundError", (error) =>
@@ -45,7 +45,7 @@ export const permissionHandlers = HttpApiBuilder.group(InstanceHttpApi, "permiss
       return true
     })
 
-    // kilocode_change start
+    // chipmate_change start
     const saveAlwaysRules = Effect.fn("PermissionHttpApi.saveAlwaysRules")(function* (ctx: {
       params: { requestID: PermissionV1.ID }
       payload: Schema.Schema.Type<typeof SaveAlwaysRulesBody>
@@ -84,6 +84,6 @@ export const permissionHandlers = HttpApiBuilder.group(InstanceHttpApi, "permiss
       .handle("reply", reply)
       .handle("saveAlwaysRules", saveAlwaysRules)
       .handle("allowEverything", allowEverything)
-    // kilocode_change end
+    // chipmate_change end
   }),
 )

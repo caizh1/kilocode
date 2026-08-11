@@ -66,8 +66,8 @@
   ol {
     margin-top: 8px;
     margin-bottom: 12px;
-    margin-inline-start: 0; /* kilocode_change */
-    padding-inline-start: 32px; /* kilocode_change */
+    margin-inline-start: 0; /* chipmate_change */
+    padding-inline-start: 32px; /* chipmate_change */
     list-style-position: outside;
   }
 
@@ -77,7 +77,7 @@
 
   ol {
     list-style-type: decimal;
-    padding-inline-start: 2.25rem; /* kilocode_change */
+    padding-inline-start: 2.25rem; /* chipmate_change */
   }
 
   li {
@@ -103,18 +103,18 @@
   li > ol {
     margin-top: 0.25rem;
     margin-bottom: 0.25rem;
-    padding-inline-start: 1rem; /* Minimal indent for nesting only */  /* kilocode_change */
+    padding-inline-start: 1rem; /* Minimal indent for nesting only */  /* chipmate_change */
   }
 
   li > ol {
-    padding-inline-start: 1.75rem; /* kilocode_change */
+    padding-inline-start: 1.75rem; /* chipmate_change */
   }
 
   /* Blockquotes */
   blockquote {
-    border-inline-start: 2px solid var(--border-weak-base); /* kilocode_change */
+    border-inline-start: 2px solid var(--border-weak-base); /* chipmate_change */
     margin: 1.5rem 0;
-    padding-inline-start: 0.5rem; /* kilocode_change */
+    padding-inline-start: 0.5rem; /* chipmate_change */
     color: var(--text-weak);
     font-style: normal;
   }
@@ -232,7 +232,7 @@
     /* background: var(--surface-base); */
     /* box-shadow: 0 0 0 0.5px var(--border-weak-base); */
 
-    /* kilocode_change start */
+    /* chipmate_change start */
     &.file-link {
       cursor: pointer;
       text-decoration-line: underline;
@@ -245,7 +245,7 @@
         text-decoration-style: solid;
       }
     }
-    /* kilocode_change end */
+    /* chipmate_change end */
   }
 
   /* Tables */
@@ -263,7 +263,7 @@
     /* Minimal borders for structure, matching TUI "lines" roughly but keeping it web-clean */
     border-bottom: 1px solid var(--border-weaker-base);
     padding: 12px;
-    text-align: start; /* kilocode_change */
+    text-align: start; /* chipmate_change */
     vertical-align: top;
   }
 

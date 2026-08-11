@@ -1,11 +1,11 @@
-// kilocode_change - new file
+// chipmate_change - new file
 /** @jsxImportSource @opentui/solid */
 import { Show, createEffect, createSignal, onCleanup } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { SplitBorder } from "../../ui/border"
 import { useSDK } from "../../context/sdk"
 import { useDialog } from "../../ui/dialog"
-import type { SessionNetworkWait } from "@kilocode/sdk/v2"
+import type { SessionNetworkWait } from "@chipmate/sdk/v2"
 import { useTuiConfig } from "../../config"
 import { useBindings } from "../../keymap"
 

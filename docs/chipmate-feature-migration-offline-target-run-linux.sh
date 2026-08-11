@@ -47,27 +47,27 @@ RUNNER_STATUS="PASS_PACKAGE_ONLY"
   fi
   echo
   echo "## Optional Word render availability"
-  if [[ -n "${KILO_WORD_RENDER_ENDPOINT:-}" ]]; then
-    echo "- KILO_WORD_RENDER_ENDPOINT: configured"
+  if [[ -n "${CHIPMATE_WORD_RENDER_ENDPOINT:-}" ]]; then
+    echo "- CHIPMATE_WORD_RENDER_ENDPOINT: configured"
   else
-    echo "- KILO_WORD_RENDER_ENDPOINT: not configured"
+    echo "- CHIPMATE_WORD_RENDER_ENDPOINT: not configured"
   fi
-  if [[ -n "${KILO_WORD_RENDER_SOFFICE:-}" ]]; then
-    if [[ -x "${KILO_WORD_RENDER_SOFFICE}" ]]; then
-      echo "- KILO_WORD_RENDER_SOFFICE: ${KILO_WORD_RENDER_SOFFICE}"
+  if [[ -n "${CHIPMATE_WORD_RENDER_SOFFICE:-}" ]]; then
+    if [[ -x "${CHIPMATE_WORD_RENDER_SOFFICE}" ]]; then
+      echo "- CHIPMATE_WORD_RENDER_SOFFICE: ${CHIPMATE_WORD_RENDER_SOFFICE}"
     else
-      echo "- KILO_WORD_RENDER_SOFFICE: configured but not executable: ${KILO_WORD_RENDER_SOFFICE}"
+      echo "- CHIPMATE_WORD_RENDER_SOFFICE: configured but not executable: ${CHIPMATE_WORD_RENDER_SOFFICE}"
     fi
   elif command -v soffice >/dev/null 2>&1; then
     echo "- soffice on PATH: $(command -v soffice)"
   else
     echo "- soffice: not configured and not found on PATH"
   fi
-  if [[ -n "${KILO_WORD_RENDER_PDFTOPPM:-}" ]]; then
-    if [[ -x "${KILO_WORD_RENDER_PDFTOPPM}" ]]; then
-      echo "- KILO_WORD_RENDER_PDFTOPPM: ${KILO_WORD_RENDER_PDFTOPPM}"
+  if [[ -n "${CHIPMATE_WORD_RENDER_PDFTOPPM:-}" ]]; then
+    if [[ -x "${CHIPMATE_WORD_RENDER_PDFTOPPM}" ]]; then
+      echo "- CHIPMATE_WORD_RENDER_PDFTOPPM: ${CHIPMATE_WORD_RENDER_PDFTOPPM}"
     else
-      echo "- KILO_WORD_RENDER_PDFTOPPM: configured but not executable: ${KILO_WORD_RENDER_PDFTOPPM}"
+      echo "- CHIPMATE_WORD_RENDER_PDFTOPPM: configured but not executable: ${CHIPMATE_WORD_RENDER_PDFTOPPM}"
     fi
   elif command -v pdftoppm >/dev/null 2>&1; then
     echo "- pdftoppm on PATH: $(command -v pdftoppm)"
@@ -199,7 +199,7 @@ cat > "$EVIDENCE_DIR/summary.md" <<EOF
 - Evidence return template: \`chipmate-feature-migration-target-evidence-return-template.md\`
 - Evidence return pack helper available in kit: \`chipmate-feature-migration-target-evidence-return-pack.py\`
 
-This runner verifies delivery/package integrity only when its status is \`PASS_PACKAGE_ONLY\`. It does not install VS Code, does not run S1-S16 runtime smoke, and does not prove Kilo native QA/no-regression acceptance.
+This runner verifies delivery/package integrity only when its status is \`PASS_PACKAGE_ONLY\`. It does not install VS Code, does not run S1-S16 runtime smoke, and does not prove ChipMate native QA/no-regression acceptance.
 EOF
 
 echo "${RUNNER_STATUS}: wrote $EVIDENCE_DIR/summary.md"

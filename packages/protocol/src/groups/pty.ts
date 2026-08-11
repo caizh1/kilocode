@@ -7,7 +7,7 @@ import { ForbiddenError, PtyNotFoundError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 export const PTY_CONNECT_TICKET_QUERY = "ticket"
-export const PTY_CONNECT_TOKEN_HEADER = "x-kilo-ticket"
+export const PTY_CONNECT_TOKEN_HEADER = "x-chipmate-ticket"
 export const PTY_CONNECT_TOKEN_HEADER_VALUE = "1"
 export const PTY_REPLAY_EXITED_QUERY = "replayExited"
 

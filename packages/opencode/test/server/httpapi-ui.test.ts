@@ -22,18 +22,18 @@ import { testEffect } from "../lib/effect"
 const testStateLayer = Layer.effectDiscard(
   Effect.gen(function* () {
     const original = {
-      KILO_SERVER_PASSWORD: Flag.KILO_SERVER_PASSWORD,
-      KILO_SERVER_USERNAME: Flag.KILO_SERVER_USERNAME,
-      envPassword: process.env.KILO_SERVER_PASSWORD,
-      envUsername: process.env.KILO_SERVER_USERNAME,
+      CHIPMATE_SERVER_PASSWORD: Flag.CHIPMATE_SERVER_PASSWORD,
+      CHIPMATE_SERVER_USERNAME: Flag.CHIPMATE_SERVER_USERNAME,
+      envPassword: process.env.CHIPMATE_SERVER_PASSWORD,
+      envUsername: process.env.CHIPMATE_SERVER_USERNAME,
     }
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
-        Flag.KILO_SERVER_PASSWORD = original.KILO_SERVER_PASSWORD
-        Flag.KILO_SERVER_USERNAME = original.KILO_SERVER_USERNAME
-        restoreEnv("KILO_SERVER_PASSWORD", original.envPassword)
-        restoreEnv("KILO_SERVER_USERNAME", original.envUsername)
+        Flag.CHIPMATE_SERVER_PASSWORD = original.CHIPMATE_SERVER_PASSWORD
+        Flag.CHIPMATE_SERVER_USERNAME = original.CHIPMATE_SERVER_USERNAME
+        restoreEnv("CHIPMATE_SERVER_PASSWORD", original.envPassword)
+        restoreEnv("CHIPMATE_SERVER_USERNAME", original.envUsername)
       }),
     )
   }),
@@ -61,15 +61,15 @@ function app(input?: { password?: string; username?: string }) {
   const handler = HttpRouter.toWebHandler(
     HttpApiApp.routes.pipe(
       Layer.provide(
-        // kilocode_change start - keep the filewatcher-disable flag visible (see httpapi-instance-route-auth.test.ts)
+        // chipmate_change start - keep the filewatcher-disable flag visible (see httpapi-instance-route-auth.test.ts)
         ConfigProvider.layer(
           ConfigProvider.fromUnknown({
-            KILO_SERVER_PASSWORD: input?.password,
-            KILO_SERVER_USERNAME: input?.username,
-            KILO_EXPERIMENTAL_DISABLE_FILEWATCHER: process.env.KILO_EXPERIMENTAL_DISABLE_FILEWATCHER ?? "true",
+            CHIPMATE_SERVER_PASSWORD: input?.password,
+            CHIPMATE_SERVER_USERNAME: input?.username,
+            CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER: process.env.CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER ?? "true",
           }),
         ),
-        // kilocode_change end
+        // chipmate_change end
       ),
     ),
     { disableLogger: true },
@@ -112,13 +112,13 @@ function uiApp(input?: {
         input?.client ?? httpClient(new Response("ui")),
         RuntimeFlags.layer({ disableEmbeddedWebUi: input?.disableEmbeddedWebUi ?? false }),
         HttpServer.layerServices,
-        // kilocode_change start - keep the filewatcher-disable flag visible (see httpapi-instance-route-auth.test.ts)
+        // chipmate_change start - keep the filewatcher-disable flag visible (see httpapi-instance-route-auth.test.ts)
         ConfigProvider.layer(
           ConfigProvider.fromUnknown({
-            KILO_EXPERIMENTAL_DISABLE_FILEWATCHER: process.env.KILO_EXPERIMENTAL_DISABLE_FILEWATCHER ?? "true",
+            CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER: process.env.CHIPMATE_EXPERIMENTAL_DISABLE_FILEWATCHER ?? "true",
           }),
         ),
-        // kilocode_change end
+        // chipmate_change end
       ]),
     ),
     { disableLogger: true },
@@ -196,7 +196,7 @@ function responseText(response: Response) {
 }
 
 describe("HttpApi UI fallback", () => {
-  // kilocode_change start - embedded UI is the only supported fallback; never proxy to app.opencode.ai
+  // chipmate_change start - embedded UI is the only supported fallback; never proxy to app.opencode.ai
   it.live("returns not found without proxying when embedded UI is disabled", () =>
     Effect.gen(function* () {
       let proxied = false
@@ -212,7 +212,7 @@ describe("HttpApi UI fallback", () => {
       expect(proxied).toBe(false)
     }),
   )
-  // kilocode_change end
+  // chipmate_change end
 
   it.live("serves embedded UI assets when Bun can read them but access reports missing", () =>
     Effect.gen(function* () {
@@ -284,7 +284,7 @@ describe("HttpApi UI fallback", () => {
     Effect.gen(function* () {
       const response = yield* uiApp({
         password: "secret",
-        username: "kilo", // kilocode_change
+        username: "chipmate", // chipmate_change
         disableEmbeddedWebUi: true,
       }).request("/")
 
@@ -295,47 +295,47 @@ describe("HttpApi UI fallback", () => {
 
   it.live("accepts auth token for the web UI", () =>
     Effect.gen(function* () {
-      let proxied = false // kilocode_change
+      let proxied = false // chipmate_change
       const response = yield* uiApp({
         password: "secret",
-        username: "kilo", // kilocode_change
+        username: "chipmate", // chipmate_change
         disableEmbeddedWebUi: true,
-        // kilocode_change start - authenticated requests still must not proxy when embedded UI is disabled
-        client: httpClient(new Response("<html>kilo</html>", { headers: { "content-type": "text/html" } }), () => {
+        // chipmate_change start - authenticated requests still must not proxy when embedded UI is disabled
+        client: httpClient(new Response("<html>chipmate</html>", { headers: { "content-type": "text/html" } }), () => {
           proxied = true
         }),
-        // kilocode_change end
-      }).request(`/?auth_token=${btoa("kilo:secret")}`)
+        // chipmate_change end
+      }).request(`/?auth_token=${btoa("chipmate:secret")}`)
 
-      // kilocode_change start
+      // chipmate_change start
       expect(response.status).toBe(404)
       expect(yield* Effect.promise(() => response.json())).toEqual({ error: "Not Found" })
       expect(proxied).toBe(false)
-      // kilocode_change end
+      // chipmate_change end
     }),
   )
 
   it.live("accepts basic auth for the web UI", () =>
     Effect.gen(function* () {
-      let proxied = false // kilocode_change
+      let proxied = false // chipmate_change
       const response = yield* uiApp({
         password: "secret",
-        username: "kilo", // kilocode_change
+        username: "chipmate", // chipmate_change
         disableEmbeddedWebUi: true,
-        // kilocode_change start
+        // chipmate_change start
         client: httpClient(new Response("ui"), () => {
           proxied = true
         }),
-        // kilocode_change end
+        // chipmate_change end
       }).request("/", {
-        headers: { authorization: `Basic ${btoa("kilo:secret")}` },
+        headers: { authorization: `Basic ${btoa("chipmate:secret")}` },
       })
 
-      // kilocode_change start
+      // chipmate_change start
       expect(response.status).toBe(404)
       expect(yield* Effect.promise(() => response.json())).toEqual({ error: "Not Found" })
       expect(proxied).toBe(false)
-      // kilocode_change end
+      // chipmate_change end
     }),
   )
 
@@ -349,7 +349,7 @@ describe("HttpApi UI fallback", () => {
         headers: { authorization: `Basic ${btoa("opencode:sec:ret")}` },
       })
 
-      expect(response.status).toBe(404) // kilocode_change - auth succeeds, but Kilo does not proxy a fallback UI
+      expect(response.status).toBe(404) // chipmate_change - auth succeeds, but ChipMate does not proxy a fallback UI
     }),
   )
 
@@ -363,7 +363,7 @@ describe("HttpApi UI fallback", () => {
       for (const path of ["/site.webmanifest", "/web-app-manifest-192x192.png", "/web-app-manifest-512x512.png"]) {
         const response = yield* uiApp({
           password: "secret",
-          username: "kilo", // kilocode_change
+          username: "chipmate", // chipmate_change
           disableEmbeddedWebUi: true,
           client: httpClient(new Response("ok")),
         }).request(path)
@@ -374,8 +374,8 @@ describe("HttpApi UI fallback", () => {
 
   it.live("allows web UI preflight without auth", () =>
     Effect.gen(function* () {
-      const response = yield* app({ password: "secret", username: "kilo" }).request("/", {
-        // kilocode_change
+      const response = yield* app({ password: "secret", username: "chipmate" }).request("/", {
+        // chipmate_change
         method: "OPTIONS",
         headers: {
           origin: "http://localhost:3000",

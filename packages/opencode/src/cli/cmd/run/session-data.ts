@@ -24,10 +24,10 @@
 //   `data.questions`. The footer shows whichever is first. When a reply
 //   event arrives, the queue entry is removed and the footer falls back
 //   to the next pending request or to the prompt view.
-import type { Event, Part, PermissionRequest, QuestionRequest, ToolPart } from "@kilocode/sdk/v2" // kilocode_change - revert to upstream native Event type
-import type { RunInteractiveTerminalSnapshot } from "@/kilocode/cli/cmd/run/types" // kilocode_change
+import type { Event, Part, PermissionRequest, QuestionRequest, ToolPart } from "@chipmate/sdk/v2" // chipmate_change - revert to upstream native Event type
+import type { RunInteractiveTerminalSnapshot } from "@/chipmate/cli/cmd/run/types" // chipmate_change
 import * as Locale from "@/util/locale"
-import { appendTerminalOutput } from "@/kilocode/interactive-terminal/output" // kilocode_change
+import { appendTerminalOutput } from "@/chipmate/interactive-terminal/output" // chipmate_change
 import { toolView } from "./tool"
 import type { FooterOutput, FooterPatch, FooterView, StreamCommit } from "./types"
 
@@ -80,7 +80,7 @@ export type SessionData = {
   shell: Map<string, ShellCall>
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
-  terminal?: RunInteractiveTerminalSnapshot // kilocode_change
+  terminal?: RunInteractiveTerminalSnapshot // chipmate_change
   role: Map<string, MessageRole>
   msg: Map<string, string>
   part: Map<string, PartKind>
@@ -219,7 +219,7 @@ function out(data: SessionData, commits: SessionCommit[], footer?: FooterOutput)
   }
 }
 
-// kilocode_change start
+// chipmate_change start
 export function pickBlockerView(input: {
   permission?: PermissionRequest
   question?: QuestionRequest
@@ -228,7 +228,7 @@ export function pickBlockerView(input: {
   if (input.terminal) {
     return { type: "interactive_terminal", terminal: input.terminal }
   }
-// kilocode_change end
+// chipmate_change end
 
   if (input.permission) {
     return { type: "permission", request: input.permission }
@@ -242,11 +242,11 @@ export function pickBlockerView(input: {
 }
 
 export function blockerStatus(view: FooterView) {
-  // kilocode_change start
+  // chipmate_change start
   if (view.type === "interactive_terminal") {
     return "interactive terminal"
   }
-  // kilocode_change end
+  // chipmate_change end
 
   if (view.type === "permission") {
     return "awaiting permission"
@@ -261,7 +261,7 @@ export function blockerStatus(view: FooterView) {
 
 function pickSessionView(data: SessionData): FooterView {
   return pickBlockerView({
-    terminal: data.terminal, // kilocode_change
+    terminal: data.terminal, // chipmate_change
     permission: data.permissions[0],
     question: data.questions[0],
   })
@@ -1073,7 +1073,7 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
     return out(data, commits)
   }
 
-  // kilocode_change start - direct interactive mode terminal footer
+  // chipmate_change start - direct interactive mode terminal footer
   if (event.type === "interactive_terminal.updated") {
     if (event.properties.info.sessionID !== input.sessionID) {
       return out(data, commits)
@@ -1109,7 +1109,7 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
     data.terminal = undefined
     return queueOut(data, commits)
   }
-  // kilocode_change end
+  // chipmate_change end
 
   if (event.type === "permission.asked") {
     if (event.properties.sessionID !== input.sessionID) {

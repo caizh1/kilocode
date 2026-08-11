@@ -1,11 +1,11 @@
-import type { PluginContext } from "@kilocode/plugin/v2/effect"
+import type { PluginContext } from "@chipmate/plugin/v2/effect"
 import { AgentV2 } from "@opencode-ai/core/agent"
 import { Catalog } from "@opencode-ai/core/catalog"
 import { Credential } from "@opencode-ai/core/credential"
 import { Integration } from "@opencode-ai/core/integration"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import type { IntegrationEnvMethod, IntegrationKeyMethod, IntegrationOAuthMethod } from "@kilocode/sdk/v2/types"
+import type { IntegrationEnvMethod, IntegrationKeyMethod, IntegrationOAuthMethod } from "@chipmate/sdk/v2/types"
 import { Effect } from "effect"
 
 type Overrides = Partial<Omit<PluginContext, "options">>

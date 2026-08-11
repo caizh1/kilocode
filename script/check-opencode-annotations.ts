@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 
 /**
- * Verifies that every Kilo-specific change in shared upstream-owned source files
- * is annotated with a kilocode_change marker.
+ * Verifies that every ChipMate-specific change in shared upstream-owned source files
+ * is annotated with a chipmate_change marker.
  *
  * Usage:
  *   bun run script/check-opencode-annotations.ts                  # diff origin/main...HEAD
@@ -10,23 +10,23 @@
  *   bun run script/check-opencode-annotations.ts --worktree       # diff HEAD..worktree plus untracked files
  *
  * A line is "covered" if it:
- *   - contains a kilocode_change marker comment           (inline annotation)
- *   - falls inside a kilocode_change start/end block      (block annotation)
+ *   - contains a chipmate_change marker comment           (inline annotation)
+ *   - falls inside a chipmate_change start/end block      (block annotation)
  *   - is in a file whose first non-shebang non-empty line is (whole-file annotation)
- *     // kilocode_change - new file
+ *     // chipmate_change - new file
  *   - is empty / whitespace-only                          (skipped)
  *   - is itself a marker line                             (auto-covered)
  *
  * JS (//), JSX ({/ * ... * /}), YAML (#), TOML (#), and shell (#) comment styles are recognized.
  * Extensionless files with shebangs are treated as source files.
  *
- * Exempt paths (no markers needed — entirely Kilo-specific):
- *   - packages/opencode/src/kilocode/**
- *   - packages/opencode/test/kilocode/**
- *   - Any path containing "kilocode" in directory or filename
- *   - Any path with a directory starting with "kilo-" (e.g. kilo-sessions/)
+ * Exempt paths (no markers needed — entirely ChipMate-specific):
+ *   - packages/opencode/src/chipmate/**
+ *   - packages/opencode/test/chipmate/**
+ *   - Any path containing "chipmate" in directory or filename
+ *   - Any path with a directory starting with "chipmate-" (e.g. chipmate-sessions/)
  *   - script/upstream/**
- *   - Kilo-specific annotation checker support files
+ *   - ChipMate-specific annotation checker support files
  */
 
 import { spawnSync } from "node:child_process"
@@ -96,10 +96,17 @@ function lines(out: string) {
   return out ? out.split("\n").filter(Boolean) : []
 }
 
+function isLocalArtifact(file: string) {
+  const parts = file.replaceAll("\\", "/").split("/")
+  return parts.some((part) => part.startsWith(".qa-") || part === ".runtime")
+}
+
 function untracked(file?: string) {
   if (!worktree) return []
   const pathspec = file ? [file] : SCOPES
-  return lines(run("git", ["ls-files", "--others", "--exclude-standard", "--", ...pathspec]))
+  return lines(run("git", ["ls-files", "--others", "--exclude-standard", "--", ...pathspec])).filter(
+    (item) => !isLocalArtifact(item),
+  )
 }
 
 function changedFiles() {
@@ -121,7 +128,7 @@ function isUpstreamMerge() {
 
 function isExempt(file: string) {
   const norm = file.replaceAll("\\", "/").toLowerCase()
-  if (norm.split("/").some((part) => part.includes("kilocode") || part.startsWith("kilo-"))) return true
+  if (norm.split("/").some((part) => part.includes("chipmate") || part.startsWith("chipmate-"))) return true
   return EXEMPT_SCOPES.some((scope) => norm === scope || norm.startsWith(`${scope}/`))
 }
 
@@ -134,16 +141,16 @@ function isSource(file: string) {
   const ext = path.extname(file)
   if (SOURCE_EXTS.has(ext)) return true
   if (ext) return false
-  return content(file).startsWith("#!") // kilocode_change
+  return content(file).startsWith("#!") // chipmate_change
 }
 
 // Parses the unified=0 diff for `file` against the selected target and returns:
 //   - added: every added line number on the checked version
-//   - revert: true when the file's diff removes any kilocode_change marker.
-//     In that case the changes are reverting Kilo modifications back to the
+//   - revert: true when the file's diff removes any chipmate_change marker.
+//     In that case the changes are reverting ChipMate modifications back to the
 //     upstream baseline, so newly added lines (which are restoring upstream
 //     content) should not require a marker. Refs that depended on a removed
-//     Kilo construct (e.g. `unixSkip(` → `unix(`) often live in different
+//     ChipMate construct (e.g. `unixSkip(` → `unix(`) often live in different
 //     hunks than the marker itself, so we use file-level detection rather
 //     than hunk-level to avoid false positives on legitimate reverts.
 function addedLines(file: string): { added: Set<number>; revert: boolean } {
@@ -175,10 +182,12 @@ function addedLines(file: string): { added: Set<number>; revert: boolean } {
       const hl = all[j] ?? ""
       if (hl.startsWith("@@") || hl.startsWith("diff ")) break
       if (hl.startsWith("+") && !hl.startsWith("+++")) {
-        added.add(start + pos)
+        const number = start + pos
+        added.add(number)
         pos++
-      } else if (hl.startsWith("-") && !hl.startsWith("---") && hasMarker(hl.slice(1))) {
-        revert = true
+      } else if (hl.startsWith("-") && !hl.startsWith("---")) {
+        const line = hl.slice(1)
+        if (hasMarker(line)) revert = true
       }
       j++
     }
@@ -189,7 +198,7 @@ function addedLines(file: string): { added: Set<number>; revert: boolean } {
   return { added, revert }
 }
 
-// kilocode_change start
+// chipmate_change start
 function content(file: string) {
   const abs = path.join(ROOT, file)
   if (existsSync(abs)) return readFileSync(abs, "utf8")
@@ -200,10 +209,10 @@ function content(file: string) {
 
   return readFileSync(path.resolve(path.dirname(abs), target), "utf8")
 }
-// kilocode_change end
+// chipmate_change end
 
-// Matches the start of a kilocode_change marker in JS, JSX, YAML, TOML, and shell comments.
-const MARKER_PREFIX = /(?:\/\/|\{?\s*\/\*|#)\s*kilocode_change\b/
+// Matches the start of a chipmate_change marker in JS, JSX, YAML, TOML, and shell comments.
+const MARKER_PREFIX = /(?:\/\/|\{?\s*\/\*|#)\s*chipmate_change\b/
 
 function hasMarker(line: string) {
   return MARKER_PREFIX.test(line)
@@ -213,9 +222,9 @@ function coveredLines(text: string): { lines: string[]; covered: Set<number> } {
   const lines = text.split(/\r?\n/)
   const covered = new Set<number>()
 
-  // Whole-file annotation: first non-shebang non-empty line is a kilocode_change - new file marker.
+  // Whole-file annotation: first non-shebang non-empty line is a chipmate_change - new file marker.
   const first = lines.find((x) => x.trim() !== "" && !x.startsWith("#!"))
-  if (first?.match(/(?:\/\/|\{?\s*\/\*|#)\s*kilocode_change\s*-\s*new\s*file\b/)) {
+  if (first?.match(/(?:\/\/|\{?\s*\/\*|#)\s*chipmate_change\s*-\s*new\s*file\b/)) {
     for (let i = 1; i <= lines.length; i++) covered.add(i)
     return { lines, covered }
   }
@@ -225,13 +234,13 @@ function coveredLines(text: string): { lines: string[]; covered: Set<number> } {
     const n = i + 1
     const line = lines[i] ?? ""
 
-    if (line.match(/(?:\/\/|\{?\s*\/\*|#)\s*kilocode_change\s+start\b/)) {
+    if (line.match(/(?:\/\/|\{?\s*\/\*|#)\s*chipmate_change\s+start\b/)) {
       block = true
       covered.add(n)
       continue
     }
 
-    if (line.match(/(?:\/\/|\{?\s*\/\*|#)\s*kilocode_change\s+end\b/)) {
+    if (line.match(/(?:\/\/|\{?\s*\/\*|#)\s*chipmate_change\s+end\b/)) {
       covered.add(n)
       block = false
       continue
@@ -267,9 +276,9 @@ const violations: string[] = []
 for (const file of files) {
   const { added, revert } = addedLines(file)
   if (added.size === 0) continue
-  if (revert) continue // kilocode_change - file is reverting Kilo modifications back to upstream
+  if (revert) continue // chipmate_change - file is reverting ChipMate modifications back to upstream
 
-  const text = content(file) // kilocode_change
+  const text = content(file) // chipmate_change
   const { lines, covered } = coveredLines(text)
 
   for (const n of added) {
@@ -282,51 +291,51 @@ for (const file of files) {
 }
 
 if (violations.length === 0) {
-  console.log("All shared upstream changes are annotated with kilocode_change markers.")
+  console.log("All shared upstream changes are annotated with chipmate_change markers.")
   process.exit(0)
 }
 
 console.error(
   [
-    "Unannotated Kilo changes found in shared upstream files:",
+    "Unannotated ChipMate changes found in shared upstream files:",
     "",
     ...violations,
     "",
-    "Every Kilo-specific change in shared upstream source files must be annotated.",
+    "Every ChipMate-specific change in shared upstream source files must be annotated.",
     "",
     "Checked paths:",
     ...SCOPES.map((scope) => `  - ${scope}/**`),
     "",
     "Inline (single line):",
-    "  const url = Flag.KILO_MODELS_URL || 'https://models.dev' // kilocode_change",
+    "  const url = Flag.CHIPMATE_MODELS_URL || 'https://models.dev' // chipmate_change",
     "",
     "Block (multiple lines):",
-    "  // kilocode_change start",
+    "  // chipmate_change start",
     "  ...",
-    "  // kilocode_change end",
+    "  // chipmate_change end",
     "",
     "JSX/TSX (inside JSX templates):",
-    "  {/* kilocode_change */}",
-    "  {/* kilocode_change start */}",
+    "  {/* chipmate_change */}",
+    "  {/* chipmate_change start */}",
     "  ...",
-    "  {/* kilocode_change end */}",
+    "  {/* chipmate_change end */}",
     "",
     "YAML/TOML/shell:",
-    "  # kilocode_change",
-    "  # kilocode_change start",
+    "  # chipmate_change",
+    "  # chipmate_change start",
     "  ...",
-    "  # kilocode_change end",
+    "  # chipmate_change end",
     "",
     "New file:",
-    "  // kilocode_change - new file",
+    "  // chipmate_change - new file",
     "",
     "Exempt paths (no markers needed):",
-    "  - packages/opencode/src/kilocode/**",
-    "  - packages/opencode/test/kilocode/**",
-    "  - Any path containing 'kilocode' in the directory or filename",
-    "  - Any directory starting with 'kilo-' (e.g. kilo-sessions/)",
+    "  - packages/opencode/src/chipmate/**",
+    "  - packages/opencode/test/chipmate/**",
+    "  - Any path containing 'chipmate' in the directory or filename",
+    "  - Any directory starting with 'chipmate-' (e.g. chipmate-sessions/)",
     "  - script/upstream/**",
-    "  - Kilo-specific annotation checker support files",
+    "  - ChipMate-specific annotation checker support files",
     "",
     "See AGENTS.md for details.",
   ].join("\n"),

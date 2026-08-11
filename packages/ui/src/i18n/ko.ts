@@ -54,7 +54,7 @@ export const dict = {
 
   "dialog.usageExceeded.freeTier.title": "무료 한도에 도달했습니다",
   "dialog.usageExceeded.freeTier.description":
-    "Kilo Go를 구독하여 최고의 오픈 소스 모델에 안정적으로 액세스하세요. 월 $5부터 시작합니다.",
+    "ChipMate Go를 구독하여 최고의 오픈 소스 모델에 안정적으로 액세스하세요. 월 $5부터 시작합니다.",
   "dialog.usageExceeded.freeTier.actionLabel": "구독",
   "dialog.usageExceeded.accountRateLimit.title": "Go 한도에 도달했습니다",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -105,7 +105,7 @@ export const dict = {
   "ui.textField.copied": "복사됨",
 
   "ui.imagePreview.alt": "이미지 미리보기",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Mermaid 다이어그램 렌더링 중...",
   "ui.mermaid.renderError": "Mermaid 렌더링 실패: {{message}}",
   "ui.mermaid.errorDefault": "Mermaid 다이어그램을 렌더링할 수 없습니다.",
@@ -127,12 +127,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "스크롤 가능한 콘텐츠",
 
   "ui.tool.read": "읽기",
   "ui.tool.loaded": "로드됨",
-  "ui.tool.swePruned": "SWE-Pruner · {{total}}줄 중 {{kept}}줄 유지", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · {{total}}줄 중 {{kept}}줄 유지", // chipmate_change
   "ui.tool.list": "목록",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -168,7 +168,7 @@ export const dict = {
   "ui.message.collapse": "메시지 접기",
   "ui.message.copy": "복사",
   "ui.message.copyMessage": "메시지 복사",
-  "ui.message.deleteQueued": "대기 중인 메시지 삭제", // kilocode_change
+  "ui.message.deleteQueued": "대기 중인 메시지 삭제", // chipmate_change
   "ui.message.forkMessage": "새 세션으로 분기",
   "ui.message.revertMessage": "이 시점으로 초기화",
   "ui.message.copyResponse": "응답 복사",
@@ -184,9 +184,9 @@ export const dict = {
   "ui.patch.action.patched": "패치됨",
 
   "ui.question.subtitle.answered": "{{count}}개 답변됨",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(답변 없음)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(답변되지 않음)",
   "ui.question.multiHint": "해당하는 항목 모두 선택",
   "ui.question.singleHint": "하나의 답변을 선택",

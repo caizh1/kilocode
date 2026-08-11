@@ -517,7 +517,7 @@ describe("plugin.openai.ws-pool", () => {
     })
     const fetch = OpenAIWebSocketPool.createWebSocketFetch({
       url: server.url,
-      idleTimeout: 100, // kilocode_change - leave enough time for WebSocket callbacks on loaded CI runners
+      idleTimeout: 100, // chipmate_change - leave enough time for WebSocket callbacks on loaded CI runners
       streamRetries: 1,
     })
 
@@ -568,7 +568,7 @@ describe("plugin.openai.ws-pool", () => {
     })
     const fetch = OpenAIWebSocketPool.createWebSocketFetch({
       url: server.url,
-      idleTimeout: 100, // kilocode_change - leave enough time for WebSocket callbacks on loaded CI runners
+      idleTimeout: 100, // chipmate_change - leave enough time for WebSocket callbacks on loaded CI runners
       streamRetries: 1,
     })
 

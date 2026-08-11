@@ -3,11 +3,11 @@ import type {
   Event,
   EventMessagePartDelta,
   EventMessagePartUpdated,
-  KiloClient,
+  ChipMateClient,
   Part,
   SessionMessageResponse,
   ToolPart,
-} from "@kilocode/sdk/v2"
+} from "@chipmate/sdk/v2"
 import { Effect } from "effect"
 import { ACPSession } from "./session"
 import { ACPPermission } from "./permission"
@@ -30,7 +30,7 @@ type GlobalEventStream = {
   stream: AsyncIterable<GlobalEventEnvelope>
 }
 
-export function start(input: { sdk: KiloClient; connection: Connection; session: ACPSession.Interface }) {
+export function start(input: { sdk: ChipMateClient; connection: Connection; session: ACPSession.Interface }) {
   const subscription = new Subscription(input)
   subscription.start()
   return subscription
@@ -45,7 +45,7 @@ export class Subscription {
 
   constructor(
     private readonly input: {
-      sdk: KiloClient
+      sdk: ChipMateClient
       connection: Connection
       session: ACPSession.Interface
     },

@@ -44,7 +44,7 @@
 | `POST /auth/new-api/resolve-user` | JSON：`apiKey` | 200 `{ok:true,user}`；失败 `{ok:false,code}` | 只返回解析后的用户，不回传原始 key |
 | `GET /packages/manifest.json` | 无 | VSIX manifest，含版本、SHA-256、大小和下载 URL | 继续扫描 `/packages`；扩展 ID 可由环境变量覆盖 |
 | `GET /packages/<file>` | 同源相对文件名 | 文件流 | 拒绝路径越界，保留 403/404 语义 |
-| `GET /marketplace/skills` | 无 | Kilo 兼容 Skill 数组或 `{items}` 目录；只包含 latest | 新服务端的 legacy 适配层始终只返回 latest |
+| `GET /marketplace/skills` | 无 | ChipMate 兼容 Skill 数组或 `{items}` 目录；只包含 latest | 新服务端的 legacy 适配层始终只返回 latest |
 | `POST /marketplace/skills` | Bearer key；Skill 文件清单 | 201 新建或 200 更新；`ok`、`item`、`generatedSkillJson` | 保留旧上传入口和 key 解析 |
 | `GET /marketplace/skills/<archive>` | `<id>.tar.gz` | 归档文件流 | 同源归档下载、路径安全和下载计数语义不回归 |
 | `GET /marketplace/skills/<id>/files` | Skill ID | 200；`ok`、`id`、`files` | 供旧安装器检查文件清单 |
@@ -53,15 +53,15 @@
 
 通用错误继续返回结构化 `ok:false`、`code` 和/或 `issues[]`；未知路由继续返回 404。
 
-## Kilo Marketplace 当前契约
+## ChipMate Marketplace 当前契约
 
-- 配置名冻结：`kilo.marketplace.baseUrl`、`kilo.marketplace.skillsOnly`。
+- 配置名冻结：`chipmate.marketplace.baseUrl`、`chipmate.marketplace.skillsOnly`。
 - 扩展身份冻结：`publisher=chipmate`、`name=chipmate`、扩展 ID `chipmate.chipmate`。
 - `MarketplaceApiClient` 当前从 `<baseUrl>/skills` 读取 JSON/YAML 目录；`skillsOnly` 模式不请求 Agent/MCP。
 - 当前写接口为 `POST <baseUrl>/skills`、`POST <baseUrl>/skills/:id/stars`，身份解析为 `POST <serverBaseUrl>/auth/new-api/resolve-user`。
 - 当前安装器把归档下载到临时文件，在目标 scope 下建立 staging，解压后检查逃逸路径和根 `SKILL.md`，再通过同文件系统 `rename` 安装。
 - 当前安装器没有 revision、服务端 SHA-256、install intent 或 globalStorage 市场元数据；这些是 G5 的明确新增范围。
-- 当前 URI handler 只支持 `vscode://chipmate.chipmate/kilocode/s/<sessionId>`；尚不存在 Marketplace install 或 AI repair handler。
+- 当前 URI handler 只支持 `vscode://chipmate.chipmate/chipmate/s/<sessionId>`；尚不存在 Marketplace install 或 AI repair handler。
 - 当前 remote catalog 失败不得用本地 discovered skills 冒充远端条目；本地 Skill 只允许按 `localOnly/uploadable` 语义作为明确的本地候选展示。
 
 ## 真实夹具清单
@@ -72,15 +72,15 @@
 | DOCX | `ufs-query-module-interface.docx` | `ac47f5ceb5cdade7b7ffa34e25a171b952b14ccb7c6211ca42f0742a26c2ff6d` | Word 基线对比 |
 | DOCX | `ufs-task-module-interface.docx` | `5b17dee9267c237ee5abc6cbfbd27969a48cfe3f02595bd36af661c79cb0dad3` | 小文件 Word smoke |
 | Mermaid | `flowchart TD\nA[开始] --> B{校验}\nB --> | 通过 | C[发布]\nB --> | 失败 | D[修复]` | 内联确定性源 | Mermaid PNG smoke 和并发隔离 |
-| VSIX | `packages/kilo-vscode/out/kilo-vscode-linux-x64-baseline.vsix` | `927b8575a392a87775d69fc4cbdbf9989a23b6f7ac3b5effaaf8eb4846f049b7` | legacy package manifest 与下载 |
-| VSIX | `packages/kilo-vscode/out/kilo-vscode-win32-x64-baseline.vsix` | `59235913884c50167fb64b619e1769aa8e0c1314d1a3a869b481a038d4e3c2f5` | legacy package manifest 与下载 |
+| VSIX | `packages/chipmate-vscode/out/chipmate-vscode-linux-x64-baseline.vsix` | `927b8575a392a87775d69fc4cbdbf9989a23b6f7ac3b5effaaf8eb4846f049b7` | legacy package manifest 与下载 |
+| VSIX | `packages/chipmate-vscode/out/chipmate-vscode-win32-x64-baseline.vsix` | `59235913884c50167fb64b619e1769aa8e0c1314d1a3a869b481a038d4e3c2f5` | legacy package manifest 与下载 |
 | Skill archive | `source-backed-detail-design.tar.gz` | `46074240d4ef0a299557d8f05564df13b7b6843d4610de0a8e56c2c3b88ec36c` | 真实 catalog、下载、安装、发布和安全测试 |
 
-Skill 归档大小 23,519 bytes，包含单一根目录及根 `SKILL.md`。它由仓库现有 `.kilo/skills/source-backed-detail-design` 确定性生成，uid/gid/mtime 已归一化；`gzip -t`、`tar -tzf` 和 Apple xattr 字符串检查通过。
+Skill 归档大小 23,519 bytes，包含单一根目录及根 `SKILL.md`。它由仓库现有 `.chipmate/skills/source-backed-detail-design` 确定性生成，uid/gid/mtime 已归一化；`gzip -t`、`tar -tzf` 和 Apple xattr 字符串检查通过。
 
 ## G0 静态验证
 
 - `node --check server.js`：PASS。
 - `node --check build-offline-bundle.mjs`：PASS。
-- `bun run script/check-md-table-padding.ts docs/chipmate-skill-market-kilo-alignment-plan.md`：PASS。
+- `bun run script/check-md-table-padding.ts docs/chipmate-skill-market-chipmate-alignment-plan.md`：PASS。
 - Docker client 可见，但 daemon socket `/Users/archer/.colima/default/docker.sock` 不存在；Docker、Linux 和真实容器运行证据仍为 NOT_RUN。

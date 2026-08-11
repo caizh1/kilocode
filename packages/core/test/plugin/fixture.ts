@@ -22,9 +22,9 @@ import os from "node:os"
 import path from "node:path"
 import { tempLocationLayer } from "../fixture/location"
 
-// kilocode_change - Credential imports Global.data/auth.json on startup, so without this the suite
+// chipmate_change - Credential imports Global.data/auth.json on startup, so without this the suite
 // reads the developer's real credential store and its results depend on whether they are logged in.
-const globalLayer = Global.layerWith({ data: fs.mkdtempSync(path.join(os.tmpdir(), "kilo-plugin-test-")) })
+const globalLayer = Global.layerWith({ data: fs.mkdtempSync(path.join(os.tmpdir(), "chipmate-plugin-test-")) })
 
 const npmLayer = Layer.succeed(
   Npm.Service,
@@ -56,6 +56,6 @@ export const PluginTestLayer = AppNodeBuilder.build(
   [
     [Location.node, tempLocationLayer],
     [Npm.node, npmLayer],
-    [Global.node, globalLayer], // kilocode_change
+    [Global.node, globalLayer], // chipmate_change
   ],
 )

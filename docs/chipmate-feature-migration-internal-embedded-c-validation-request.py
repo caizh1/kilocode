@@ -2,7 +2,7 @@
 """Generate an internal embedded-C source-backed design validation request.
 
 This helper prepares a handoff document for the project owner who can run the
-installed Kilo/ChipMate VSIX against a representative internal embedded-C
+installed ChipMate/ChipMate VSIX against a representative internal embedded-C
 workspace.  It does not run the skill, does not inspect private source, and
 does not decide M11 acceptance.
 """
@@ -26,14 +26,14 @@ def write_request(output: Path, project_label: str, workspace_hint: str, module_
         "",
         "- Status: `REQUEST_PENDING_INTERNAL_PROJECT_EXECUTION`",
         "- Scope: S13 source-backed detail-design validation on a representative internal embedded-C module",
-        "- Runner: installed Kilo/ChipMate VSIX in the target VS Code profile",
+        "- Runner: installed ChipMate/ChipMate VSIX in the target VS Code profile",
         "",
         "## Required inputs from project owner",
         "",
         f"- Workspace path: `{workspace_hint}`",
         f"- Module/file/function focus: `{module_hint}`",
         "- Provider/auth profile that can run installed chat/tool flow",
-        "- Permission to create `.kilo/artifacts/...` outputs in the workspace",
+        "- Permission to create `.chipmate/artifacts/...` outputs in the workspace",
         "",
         "## Prompt to run",
         "",
@@ -48,9 +48,9 @@ def write_request(output: Path, project_label: str, workspace_hint: str, module_
         "- Generated detailed-design Markdown",
         "- Generated Mermaid/diagram sources and rendered images when configured",
         "- Generated Word `.docx` artifact when Word generation is requested",
-        "- Artifact manifest under `.kilo/artifacts/.../artifact.json`",
+        "- Artifact manifest under `.chipmate/artifacts/.../artifact.json`",
         "- Quality report or limitation notes, especially any missing evidence, unsupported renderer, or provider issue",
-        "- Confirmation that ordinary Kilo QA was not replaced or routed through Word/Mermaid/artifact tools",
+        "- Confirmation that ordinary ChipMate QA was not replaced or routed through Word/Mermaid/artifact tools",
         "",
         "## Acceptance criteria",
         "",
@@ -63,7 +63,7 @@ def write_request(output: Path, project_label: str, workspace_hint: str, module_
         "| Diagrams generated or renderer limitation recorded | PASS_WITH_LIMITS/PASS | Missing renderer may be a warning if diagram source exists. |",
         "| Word artifact generated or scoped limitation recorded | PASS_WITH_LIMITS/PASS | Word generation is generic Word capability only. |",
         "| Old document contract/repair/gating not triggered | PASS | No `nextToolContract`, `missingDeliverable`, `validate_artifacts`, missing-diagram auto-repair, or missing document contract planning. |",
-        "| Native Kilo QA preserved | PASS_WITH_REVIEW | Ordinary QA prompts must still use native Kilo code understanding, not the document-generation flow. |",
+        "| Native ChipMate QA preserved | PASS_WITH_REVIEW | Ordinary QA prompts must still use native ChipMate code understanding, not the document-generation flow. |",
         "",
         "## Explicit non-goals",
         "",

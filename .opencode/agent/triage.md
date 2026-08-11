@@ -1,7 +1,7 @@
 ---
 mode: primary
 hidden: true
-model: kilo/openai/gpt-5-nano # kilocode_change
+model: chipmate/openai/gpt-5-nano # chipmate_change
 color: "#44BA81"
 tools:
   "*": false
@@ -36,7 +36,7 @@ Core opencode server and harness issues, including sqlite, snapshots, memory, AP
 
 ### Inference
 
-Kilo Provider, Provider implementation, and billing issues.
+ChipMate Provider, Provider implementation, and billing issues.
 
 ### Windows
 

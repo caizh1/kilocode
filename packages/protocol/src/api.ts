@@ -38,7 +38,7 @@ const makeApiFromGroup = <
     .add(HealthGroup)
     .add(LocationGroup.middleware(locationMiddleware))
     .add(AgentGroup.middleware(locationMiddleware))
-    .add(makeSessionGroup(sessionLocationMiddleware, locationMiddleware)) // kilocode_change - provide configured location to session creation
+    .add(makeSessionGroup(sessionLocationMiddleware, locationMiddleware)) // chipmate_change - provide configured location to session creation
     .add(MessageGroup.middleware(sessionLocationMiddleware))
     .add(ModelGroup.middleware(locationMiddleware))
     .add(ProviderGroup.middleware(locationMiddleware))
@@ -55,7 +55,7 @@ const makeApiFromGroup = <
     .add(ProjectCopyGroup.middleware(locationMiddleware))
     .annotateMerge(
       OpenApi.annotations({
-        title: "Kilo HttpApi", // kilocode_change - public API grouping is Kilo-branded
+        title: "ChipMate HttpApi", // chipmate_change - public API grouping is ChipMate-branded
         version: "0.0.1",
         description: "Experimental HttpApi surface for selected instance routes.",
       }),

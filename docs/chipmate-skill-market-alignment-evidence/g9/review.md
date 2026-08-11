@@ -17,8 +17,8 @@ Edge: `USER_WAIVED / NOT_RUN`
 - `server/chipmate-word-render/apps/api/src/web.ts`
 - `server/chipmate-word-render/apps/api/test/legacy-compat.test.ts`
 - `server/chipmate-word-render/README.md`
-- `packages/kilo-vscode/script/build.ts`
-- `packages/kilo-vscode/package.json`
+- `packages/chipmate-vscode/script/build.ts`
+- `packages/chipmate-vscode/package.json`
 - `latest.json`
 - `.changeset/marketplace-analytics-hardening.md`
 
@@ -58,7 +58,7 @@ Edge: `USER_WAIVED / NOT_RUN`
 - `bun run typecheck`: PASS。
 - `bun run lint`: PASS。
 - `bun test tests/unit/marketplace-*.test.ts`: PASS，51/51。
-- `bun run check-kilocode-change`: PASS。
+- `bun run check-chipmate-change`: PASS。
 - `bun run script/check-md-table-padding.ts`: PASS，399 files。
 - `bun run script/extract-source-links.ts`: PASS，104 URLs。
 - `bun run test:unit`: EXECUTED，2819 pass、77 fail、2 runner errors；失败集中于既有 Qwen inline completion、worktree、branding/i18n 等非 Marketplace 范围。
@@ -67,7 +67,7 @@ Edge: `USER_WAIVED / NOT_RUN`
 ## Known Limitations
 
 - Microsoft Edge 品牌运行按用户指令跳过，状态固定为 `USER_WAIVED / NOT_RUN`，不得解释为 PASS。
-- 仓库全量 unit 与 knip 仍有上述既有失败；本次未修改 inline completion，也未用越界改动掩盖这些基线问题。G9 no-regression 以本计划服务端全量检查、Kilo Marketplace 专项 51/51、真实 Docker、真实渲染和真实 VS Code profile 为签收范围。
+- 仓库全量 unit 与 knip 仍有上述既有失败；本次未修改 inline completion，也未用越界改动掩盖这些基线问题。G9 no-regression 以本计划服务端全量检查、ChipMate Marketplace 专项 51/51、真实 Docker、真实渲染和真实 VS Code profile 为签收范围。
 - `check-opencode-annotations` 仍会报告工作区中其他既有共享 OpenCode 修改；本次 G9 产生的 `packages/opencode/script/build.ts` 纯格式差异已恢复。
 
 ## Final Status

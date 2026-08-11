@@ -16,7 +16,7 @@ import {
   WithParts,
 } from "@opencode-ai/core/v1/session"
 
-export { EditorContext } from "@/kilocode/editor-context" // kilocode_change
+export { EditorContext } from "@/chipmate/editor-context" // chipmate_change
 import { NamedError } from "@opencode-ai/core/util/error"
 import { APICallError, convertToModelMessages, LoadAPIKeyError, type ModelMessage, type UIMessage } from "ai"
 import { Database } from "@opencode-ai/core/database/database"
@@ -35,13 +35,13 @@ import { errorMessage } from "@/util/error"
 import { isMedia } from "@/util/media"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
-import { Snapshot } from "@/snapshot" // kilocode_change
-import { SessionNetwork } from "./network" // kilocode_change
-import { CodexAuthExpiredError } from "@/kilocode/provider/codex-refresh" // kilocode_change
-import { KiloSessionMessageOrder } from "@/kilocode/session/message-order" // kilocode_change
-import { KiloSessionMessageInfo } from "@/kilocode/session/message-info" // kilocode_change
-import { KiloPartLifecycle } from "@/kilocode/session/part-lifecycle" // kilocode_change
-import * as TextStream from "@/kilocode/text-stream" // kilocode_change
+import { Snapshot } from "@/snapshot" // chipmate_change
+import { SessionNetwork } from "./network" // chipmate_change
+import { CodexAuthExpiredError } from "@/chipmate/provider/codex-refresh" // chipmate_change
+import { ChipMateSessionMessageOrder } from "@/chipmate/session/message-order" // chipmate_change
+import { ChipMateSessionMessageInfo } from "@/chipmate/session/message-info" // chipmate_change
+import { ChipMatePartLifecycle } from "@/chipmate/session/part-lifecycle" // chipmate_change
+import * as TextStream from "@/chipmate/text-stream" // chipmate_change
 import { Effect, Schema } from "effect"
 
 /** Error shape thrown by Bun's fetch() when gzip/br decompression fails mid-stream */
@@ -54,7 +54,7 @@ interface FetchDecompressionError extends Error {
 export const SYNTHETIC_ATTACHMENT_PROMPT = "Attached media from tool result:"
 export { isMedia }
 
-// kilocode_change - upstream moved these message/part types to SessionV1; re-export them so the
+// chipmate_change - upstream moved these message/part types to SessionV1; re-export them so the
 // existing MessageV2.<Type> call sites keep resolving.
 export {
   APIError,
@@ -82,11 +82,11 @@ export {
 
 function truncateToolOutput(text: string, maxChars?: number) {
   if (!maxChars || text.length <= maxChars) return text
-  // kilocode_change start - avoid persisting malformed Unicode in compacted tool output
+  // chipmate_change start - avoid persisting malformed Unicode in compacted tool output
   const sliced = TextStream.safeSlice(text, maxChars)
   const omitted = text.length - sliced.length
   return `${sliced}\n[Tool output truncated for compaction: omitted ${omitted} chars]`
-  // kilocode_change end
+  // chipmate_change end
 }
 
 export const Event = {
@@ -114,7 +114,7 @@ export const cursor = {
   },
 }
 
-// kilocode_change start - strip bloated metadata fields from stored parts to prevent multi-MB payloads
+// chipmate_change start - strip bloated metadata fields from stored parts to prevent multi-MB payloads
 // This handles both legacy data that was stored with full file contents and keeps the API response lean.
 function stripPatch(value: unknown) {
   if (typeof value !== "string") return undefined
@@ -128,7 +128,7 @@ function withPatch(value: unknown) {
 }
 
 export function stripPartMetadata(part: Part): Part {
-  // kilocode_change - exported for testing
+  // chipmate_change - exported for testing
   if (part.type !== "tool") return part
   const { state } = part
   if (state.status !== "completed" && state.status !== "running") return part
@@ -183,7 +183,7 @@ export function stripPartMetadata(part: Part): Part {
 }
 
 export function stripMessageMetadata(info: Info): Info {
-  // kilocode_change - exported for testing
+  // chipmate_change - exported for testing
   // Strip oversized summary.diffs patches from user messages to limit SSE payload.
   // Small patches are preserved so the UI can render inline diffs.
   if (info.role !== "user") return info
@@ -199,11 +199,11 @@ export function stripMessageMetadata(info: Info): Info {
     },
   } as Info
 }
-// kilocode_change end
+// chipmate_change end
 
-  // kilocode_change start - apply stripping and persisted format hydration inside helpers so all read paths are covered
+  // chipmate_change start - apply stripping and persisted format hydration inside helpers so all read paths are covered
 const info = (row: typeof MessageTable.$inferSelect) =>
-  KiloSessionMessageInfo.hydrate(
+  ChipMateSessionMessageInfo.hydrate(
     stripMessageMetadata({
       ...row.data,
       id: row.id,
@@ -218,7 +218,7 @@ const part = (row: typeof PartTable.$inferSelect) =>
     sessionID: row.session_id,
     messageID: row.message_id,
   } as Part)
-// kilocode_change end
+// chipmate_change end
 
 const older = (row: Cursor) =>
   or(lt(MessageTable.time_created, row.time), and(eq(MessageTable.time_created, row.time), lt(MessageTable.id, row.id)))
@@ -331,8 +331,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
       }
       for (const part of msg.parts) {
         // User message parts should never be empty
-        // kilocode_change - transient progress belongs to the UI only and its local metadata is not valid provider metadata
-        if (part.type === "text" && !part.ignored && !KiloPartLifecycle.transient(part) && part.text !== "")
+        // chipmate_change - transient progress belongs to the UI only and its local metadata is not valid provider metadata
+        if (part.type === "text" && !part.ignored && !ChipMatePartLifecycle.transient(part) && part.text !== "")
           userMessage.parts.push({
             type: "text",
             text: part.text,
@@ -404,8 +404,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         return part.metadata?.anthropic?.signature != null
       })
       for (const part of msg.parts) {
-        // kilocode_change - ignored warnings and transient UI progress must stay out of future prompts
-        if (part.type === "text" && !part.ignored && !KiloPartLifecycle.transient(part)) {
+        // chipmate_change - ignored warnings and transient UI progress must stay out of future prompts
+        if (part.type === "text" && !part.ignored && !ChipMatePartLifecycle.transient(part)) {
           const text = part.text === "" && hasSignedReasoning ? " " : part.text
           assistantMessage.parts.push({
             type: "text",
@@ -423,13 +423,13 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             const outputText = part.state.time.compacted
               ? "[Old tool result content cleared]"
               : truncateToolOutput(part.state.output, options?.toolOutputMaxChars)
-            // kilocode_change start — do not replay send_file delivery attachments to the model;
+            // chipmate_change start — do not replay send_file delivery attachments to the model;
             // they are mobile delivery artifacts (up to 4 MiB base64), not model context.
             const attachments =
               part.state.time.compacted || options?.stripMedia || part.tool === "send_file"
                 ? []
                 : (part.state.attachments ?? [])
-            // kilocode_change end
+            // chipmate_change end
 
             // For providers that don't support media in tool results, extract media files
             // (images, PDFs) to be sent as a separate user message
@@ -635,7 +635,7 @@ export function parts(messageID: MessageID) {
       .orderBy(PartTable.id)
       .all()
       .pipe(Effect.orDie)
-    return rows.map(part) // kilocode_change - part() applies stripPartMetadata to cover all read paths
+    return rows.map(part) // chipmate_change - part() applies stripPartMetadata to cover all read paths
   })
 }
 
@@ -678,7 +678,7 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
       completed.add(msg.info.parentID)
   }
   result.reverse()
-  KiloSessionMessageOrder.annotate(result) // kilocode_change - preserve chronology before retained-tail projection
+  ChipMateSessionMessageOrder.annotate(result) // chipmate_change - preserve chronology before retained-tail projection
   const compactionIndex = result.findLastIndex(
     (msg) =>
       msg.info.role === "user" &&
@@ -759,18 +759,18 @@ export function fromError(
         },
         { cause: e },
       ).toObject()
-    case e instanceof CodexAuthExpiredError: // kilocode_change start
+    case e instanceof CodexAuthExpiredError: // chipmate_change start
       return new AuthError(
         {
           providerID: "openai",
           message: e.message,
         },
         { cause: e },
-      ).toObject() // kilocode_change end
-    case SessionNetwork.disconnected(e): // kilocode_change start
+      ).toObject() // chipmate_change end
+    case SessionNetwork.disconnected(e): // chipmate_change start
       return new APIError(
         {
-          message: SessionNetwork.message(e), // kilocode_change end
+          message: SessionNetwork.message(e), // chipmate_change end
           isRetryable: true,
           metadata: {
             code: (e as SystemError).code ?? "",

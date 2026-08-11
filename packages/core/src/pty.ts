@@ -8,11 +8,11 @@ import { Config } from "./config"
 import { EventV2 } from "./event"
 import { Location } from "./location"
 import { PtyID } from "./pty/schema"
-import { SessionSchema } from "./session/schema" // kilocode_change
+import { SessionSchema } from "./session/schema" // chipmate_change
 import { Shell } from "./shell"
 import { lazy } from "./util/lazy"
-import { KiloPtySelfCommand } from "./kilocode/pty-self-command" // kilocode_change
-import { KiloPtyTermination } from "./kilocode/pty/termination" // kilocode_change
+import { ChipMatePtySelfCommand } from "./chipmate/pty-self-command" // chipmate_change
+import { ChipMatePtyTermination } from "./chipmate/pty/termination" // chipmate_change
 
 const BUFFER_LIMIT = 1024 * 1024 * 2
 // Exited sessions stay observable (status, exit code, retained output) until removed explicitly.
@@ -37,10 +37,10 @@ type Active = {
   cursor: number
   subscribers: Map<object, Subscriber>
   listeners: Disp[]
-  stopping: boolean // kilocode_change
+  stopping: boolean // chipmate_change
 }
 
-// kilocode_change - the Kilo `sessionID` field now lives on the canonical shared schema (see
+// chipmate_change - the ChipMate `sessionID` field now lives on the canonical shared schema (see
 // packages/schema/src/pty.ts) so the generated SDK carries it; reuse that schema verbatim here.
 export const Info = Pty.Info
 export type Info = Types.DeepMutable<typeof Info.Type>
@@ -51,12 +51,12 @@ export type CreateInput = Types.DeepMutable<typeof CreateInput.Type>
 
 export const UpdateInput = Schema.Struct({
   ...Pty.UpdateInput.fields,
-  sessionID: Schema.optional(Schema.NullOr(SessionSchema.ID)), // kilocode_change
+  sessionID: Schema.optional(Schema.NullOr(SessionSchema.ID)), // chipmate_change
 })
 
 export type UpdateInput = Types.DeepMutable<typeof UpdateInput.Type>
 
-// kilocode_change - the shared events already carry Kilo's extended Info (see packages/schema/src/pty.ts),
+// chipmate_change - the shared events already carry ChipMate's extended Info (see packages/schema/src/pty.ts),
 // so reuse them verbatim instead of redefining pty.created/pty.updated here.
 export const Event = Pty.Event
 
@@ -68,7 +68,7 @@ export type AttachInput = {
   // Fired once when the session stops producing output: process exit (exitCode set), removal, or service teardown.
   readonly onEnd: (event: { exitCode?: number }) => void
   // Canonical routes can replay retained output after exit; legacy callers retain the former error.
-  readonly allowExited?: boolean // kilocode_change
+  readonly allowExited?: boolean // chipmate_change
 }
 
 export type Attachment = {
@@ -126,25 +126,25 @@ const layer = Layer.effect(
       session.subscribers.clear()
     }
 
-    // kilocode_change start - terminate the complete PTY tree before reporting removal.
+    // chipmate_change start - terminate the complete PTY tree before reporting removal.
     async function teardown(session: Active) {
       session.stopping = true
-      if (session.info.status === "running") await KiloPtyTermination.terminate(session.process)
+      if (session.info.status === "running") await ChipMatePtyTermination.terminate(session.process)
       for (const listener of session.listeners) listener.dispose()
       session.listeners.length = 0
       notifyEnd(session, session.info.status === "exited" ? { exitCode: session.info.exitCode } : {})
     }
-    // kilocode_change end
+    // chipmate_change end
 
     yield* Effect.addFinalizer(
       () =>
-        // kilocode_change start - wait for process-tree termination during async service teardown.
+        // chipmate_change start - wait for process-tree termination during async service teardown.
         Effect.promise(async () => {
           await Promise.all(Array.from(sessions.values()).map(teardown))
           sessions.clear()
           exitOrder.length = 0
         }),
-      // kilocode_change end
+      // chipmate_change end
     )
 
     const requireSession = Effect.fn("Pty.requireSession")(function* (id: PtyID) {
@@ -154,7 +154,7 @@ const layer = Layer.effect(
     })
 
     const removeSession = Effect.fnUntraced(function* (id: PtyID) {
-      // kilocode_change start - removal and its deleted event are one uninterruptible lifecycle transition.
+      // chipmate_change start - removal and its deleted event are one uninterruptible lifecycle transition.
       yield* Effect.gen(function* () {
         const session = sessions.get(id)
         if (!session) return
@@ -165,7 +165,7 @@ const layer = Layer.effect(
         if (index !== -1) exitOrder.splice(index, 1)
         yield* events.publish(Event.Deleted, { id: session.info.id })
       }).pipe(Effect.uninterruptible)
-      // kilocode_change end
+      // chipmate_change end
     })
 
     const remove = Effect.fn("Pty.remove")(function* (id: PtyID) {
@@ -183,8 +183,8 @@ const layer = Layer.effect(
 
     const create = Effect.fn("Pty.create")(function* (input: CreateInput) {
       const id = PtyID.ascending()
-      // kilocode_change start - resolve Kilo self-commands to the real binary, arguments, and project cwd
-      const resolved = KiloPtySelfCommand.resolve({
+      // chipmate_change start - resolve ChipMate self-commands to the real binary, arguments, and project cwd
+      const resolved = ChipMatePtySelfCommand.resolve({
         command: input.command,
         args: input.args ? [...input.args] : undefined,
         cwd: input.cwd,
@@ -194,19 +194,19 @@ const layer = Layer.effect(
       const base = resolved.args ?? []
       const args = implicit && Shell.login(command) ? [...base, "-l"] : [...base]
       const cwd = resolved.cwd || location.directory
-      // kilocode_change end
+      // chipmate_change end
       const env = {
         ...process.env,
         ...input.env,
         TERM: "xterm-256color",
-        KILO_TERMINAL: "1",
-        KILO_PTY_ID: id, // kilocode_change - let nested Kilo processes identify their parent terminal
+        CHIPMATE_TERMINAL: "1",
+        CHIPMATE_PTY_ID: id, // chipmate_change - let nested ChipMate processes identify their parent terminal
       } as Record<string, string>
-      // kilocode_change start - do not expose local server credentials to user terminals.
+      // chipmate_change start - do not expose local server credentials to user terminals.
       // node-pty inherits parent values for omitted keys, so empty tombstones are required.
-      env.KILO_SERVER_PASSWORD = ""
-      env.KILO_SERVER_USERNAME = ""
-      // kilocode_change end
+      env.CHIPMATE_SERVER_PASSWORD = ""
+      env.CHIPMATE_SERVER_USERNAME = ""
+      // chipmate_change end
       if (process.platform === "win32") {
         env.LC_ALL = "C.UTF-8"
         env.LC_CTYPE = "C.UTF-8"
@@ -214,7 +214,7 @@ const layer = Layer.effect(
       }
       yield* Effect.logInfo("creating session", { id, cmd: command, args, cwd })
       const { spawn } = yield* Effect.promise(() => pty())
-      // kilocode_change start - spawn with initial terminal dimensions
+      // chipmate_change start - spawn with initial terminal dimensions
       const proc = yield* Effect.sync(() =>
         spawn(command, args, {
           name: "xterm-256color",
@@ -224,7 +224,7 @@ const layer = Layer.effect(
           rows: input.size?.rows,
         }),
       )
-      // kilocode_change end
+      // chipmate_change end
       const info: Info = {
         id,
         title: input.title || `Terminal ${id.slice(-4)}`,
@@ -242,7 +242,7 @@ const layer = Layer.effect(
         cursor: 0,
         subscribers: new Map(),
         listeners: [],
-        stopping: false, // kilocode_change
+        stopping: false, // chipmate_change
       }
       sessions.set(id, session)
       session.listeners.push(
@@ -266,7 +266,7 @@ const layer = Layer.effect(
           session.bufferCursor += excess
         }),
         proc.onExit(({ exitCode }) => {
-          if (session.info.status === "exited" || session.stopping) return // kilocode_change
+          if (session.info.status === "exited" || session.stopping) return // chipmate_change
           session.info.status = "exited"
           session.info.exitCode = exitCode
           notifyEnd(session, { exitCode })
@@ -291,9 +291,9 @@ const layer = Layer.effect(
     const update = Effect.fn("Pty.update")(function* (id: PtyID, input: UpdateInput) {
       const session = yield* requireSession(id)
       if (input.title) session.info.title = input.title
-      // kilocode_change start - associate nested Kilo TUI terminals with the viewed session
+      // chipmate_change start - associate nested ChipMate TUI terminals with the viewed session
       if ("sessionID" in input) session.info.sessionID = input.sessionID ?? undefined
-      // kilocode_change end
+      // chipmate_change end
       if (input.size && session.info.status === "running") session.process.resize(input.size.cols, input.size.rows)
       yield* events.publish(Event.Updated, { info: session.info })
       return session.info
@@ -306,7 +306,7 @@ const layer = Layer.effect(
 
     const attach = Effect.fn("Pty.attach")(function* (id: PtyID, input: AttachInput) {
       const session = yield* requireSession(id)
-      if (session.info.status !== "running" && !input.allowExited) return yield* new ExitedError({ ptyID: id }) // kilocode_change
+      if (session.info.status !== "running" && !input.allowExited) return yield* new ExitedError({ ptyID: id }) // chipmate_change
       yield* Effect.logInfo("client attached to session", { id, directory: location.directory })
       const token = {}
       const subscriber: Subscriber = {
@@ -315,7 +315,7 @@ const layer = Layer.effect(
         active: false,
         detached: false,
         pending: [],
-        end: session.info.status === "exited" ? { exitCode: session.info.exitCode } : undefined, // kilocode_change
+        end: session.info.status === "exited" ? { exitCode: session.info.exitCode } : undefined, // chipmate_change
       }
       session.subscribers.set(token, subscriber)
       const start = session.bufferCursor

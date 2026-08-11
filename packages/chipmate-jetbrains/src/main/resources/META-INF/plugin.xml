@@ -1,0 +1,17 @@
+<idea-plugin>
+    <name>ChipMate</name>
+    <vendor url="https://chipmate.ai">ChipMate</vendor>
+
+    <description><![CDATA[
+        Open Source AI coding agent that generates code from natural language, automates tasks,
+        and runs terminal commands. Features inline autocomplete, browser automation, automated
+        refactoring, and custom modes for planning, coding, and debugging.
+        Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.
+    ]]></description>
+
+    <content>
+        <module name="chipmate.jetbrains.shared" loading="required"/>
+        <module name="chipmate.jetbrains.frontend"/>
+        <module name="chipmate.jetbrains.backend"/>
+    </content>
+</idea-plugin>

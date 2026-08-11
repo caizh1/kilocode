@@ -31,8 +31,8 @@ async function main() {
     [resolve(root, "apps/web/src/generated/market-client.ts"), generatedClient],
     ...(!local
       ? ([
-          [resolve(root, "../../packages/kilo-vscode/src/services/marketplace/generated/market-api.ts"), types],
-          [resolve(root, "../../packages/kilo-vscode/src/services/marketplace/generated/market-client.ts"), generatedClient],
+          [resolve(root, "../../packages/chipmate-vscode/src/services/marketplace/generated/market-api.ts"), types],
+          [resolve(root, "../../packages/chipmate-vscode/src/services/marketplace/generated/market-client.ts"), generatedClient],
         ] as Array<[string, string]>)
       : []),
   ])

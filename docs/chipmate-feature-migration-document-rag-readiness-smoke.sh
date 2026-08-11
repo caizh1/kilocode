@@ -6,8 +6,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
 RUN_DIR="${VALIDATION_RUN_DIR:-docs/chipmate-feature-migration-validation-runs/${STAMP}-document-rag-readiness-smoke}"
-SOURCE_DOC="${KILO_DOCUMENT_RAG_SMOKE_SOURCE:-docs/source-backed-detail-design-skill-contract.md}"
-TIMEOUT="${KILO_DOCUMENT_RAG_SMOKE_TIMEOUT:-${KILO_SMOKE_TIMEOUT:-180}}"
+SOURCE_DOC="${CHIPMATE_DOCUMENT_RAG_SMOKE_SOURCE:-docs/source-backed-detail-design-skill-contract.md}"
+TIMEOUT="${CHIPMATE_DOCUMENT_RAG_SMOKE_TIMEOUT:-${CHIPMATE_SMOKE_TIMEOUT:-180}}"
 
 if [[ "${RUN_DIR}" != /* ]]; then
   RUN_DIR="${REPO_ROOT}/${RUN_DIR}"
@@ -35,9 +35,9 @@ cp "${SOURCE_PATH}" "${WORKSPACE}/${DOC_REL}"
 
 cat > "${WORKSPACE}/.opencode/opencode.jsonc" <<JSON
 {
-  "\$schema": "https://app.kilo.ai/config.json",
+  "\$schema": "https://app.chipmate.ai/config.json",
   "provider": {
-    "kilo": {
+    "chipmate": {
       "options": {}
     }
   },
@@ -61,8 +61,8 @@ JSON
 
 set +e
 VALIDATION_RUN_DIR="${RUN_DIR}" \
-KILO_SMOKE_DOC_WORKSPACE="${WORKSPACE}" \
-KILO_SMOKE_TIMEOUT="${TIMEOUT}" \
+CHIPMATE_SMOKE_DOC_WORKSPACE="${WORKSPACE}" \
+CHIPMATE_SMOKE_TIMEOUT="${TIMEOUT}" \
 bash "${SCRIPT_DIR}/chipmate-feature-migration-runtime-smoke.sh" --ids S3
 SMOKE_EXIT=$?
 set -e

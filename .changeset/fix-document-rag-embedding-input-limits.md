@@ -1,5 +1,5 @@
 ---
-"@kilocode/kilo-indexing": patch
+"@chipmate/chipmate-indexing": patch
 ---
 
 在保留正常文档分块质量的同时，拆分异常超长单行，并在嵌入服务拒绝过长输入或批次时自动缩小失败范围后重试。

@@ -145,10 +145,10 @@ test("ChipMate installs the Worker-generated archive from the legacy catalog", {
     const item = catalog.items[0]
     if (!item) throw new Error("generated legacy catalog is empty")
     const installerModule = (await import(
-      pathToFileURL(resolve(repo, "packages/kilo-vscode/src/services/marketplace/installer.ts")).href
+      pathToFileURL(resolve(repo, "packages/chipmate-vscode/src/services/marketplace/installer.ts")).href
     )) as InstallerModule
     const pathsModule = (await import(
-      pathToFileURL(resolve(repo, "packages/kilo-vscode/src/services/marketplace/paths.ts")).href
+      pathToFileURL(resolve(repo, "packages/chipmate-vscode/src/services/marketplace/paths.ts")).href
     )) as PathsModule
     const installer = new installerModule.MarketplaceInstaller(new pathsModule.MarketplacePaths())
     const installed = await installer.installSkill(
@@ -165,7 +165,7 @@ test("ChipMate installs the Worker-generated archive from the legacy catalog", {
       "project",
       workspace,
     )
-    assert.equal(installed.success, true, installed.error ?? "actual Kilo installer failed")
+    assert.equal(installed.success, true, installed.error ?? "actual ChipMate installer failed")
     assert.match(await readFile(join(workspace, ".chipmate-v2", "skills", item.id, "SKILL.md"), "utf8"), /source-backed/i)
   } finally {
     if (server.child) await stop(server.child)

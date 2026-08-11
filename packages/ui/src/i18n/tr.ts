@@ -60,7 +60,7 @@ export const dict = {
 
   "dialog.usageExceeded.freeTier.title": "Ücretsiz sınıra ulaşıldı",
   "dialog.usageExceeded.freeTier.description":
-    "En iyi açık kaynak modellere güvenilir erişim için Kilo Go'ya abone olun. Aylık $5'tan başlar.",
+    "En iyi açık kaynak modellere güvenilir erişim için ChipMate Go'ya abone olun. Aylık $5'tan başlar.",
   "dialog.usageExceeded.freeTier.actionLabel": "Abone ol",
   "dialog.usageExceeded.accountRateLimit.title": "Go sınırına ulaşıldı",
   "dialog.usageExceeded.accountRateLimit.description":
@@ -111,7 +111,7 @@ export const dict = {
   "ui.textField.copied": "Kopyalandı",
 
   "ui.imagePreview.alt": "Görsel önizleme",
-  // kilocode_change start
+  // chipmate_change start
   "ui.mermaid.rendering": "Mermaid diyagramı işleniyor...",
   "ui.mermaid.renderError": "Mermaid işleme başarısız: {{message}}",
   "ui.mermaid.errorDefault": "Mermaid diyagramı işlenemiyor.",
@@ -133,12 +133,12 @@ export const dict = {
   "ui.mermaid.prepareRepair": "Prepare repair",
   "ui.mermaid.repairPrompt":
     "Fix the Mermaid syntax error below while preserving the diagram's meaning. Return exactly one valid fenced Mermaid block and no additional explanation.\n\nParser error:\n{{error}}\n\nSource:\n```mermaid\n{{source}}\n```",
-  // kilocode_change end
+  // chipmate_change end
   "ui.scrollView.ariaLabel": "kaydırılabilir içerik",
 
   "ui.tool.read": "Oku",
   "ui.tool.loaded": "Yüklendi",
-  "ui.tool.swePruned": "SWE-Pruner · {{total}} satırdan {{kept}} tanesi korundu", // kilocode_change
+  "ui.tool.swePruned": "SWE-Pruner · {{total}} satırdan {{kept}} tanesi korundu", // chipmate_change
   "ui.tool.list": "Listele",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -174,7 +174,7 @@ export const dict = {
   "ui.message.collapse": "Mesajı daralt",
   "ui.message.copy": "Kopyala",
   "ui.message.copyMessage": "Mesajı kopyala",
-  "ui.message.deleteQueued": "Kuyruktaki mesajı sil", // kilocode_change
+  "ui.message.deleteQueued": "Kuyruktaki mesajı sil", // chipmate_change
   "ui.message.forkMessage": "Yeni oturuma dallandır",
   "ui.message.revertMessage": "Bu noktaya sıfırla",
   "ui.message.revert": "Revert to here",
@@ -190,9 +190,9 @@ export const dict = {
   "ui.patch.action.patched": "Yamalandı",
 
   "ui.question.subtitle.answered": "{{count}} cevaplandı",
-  "ui.question.subtitle.dismissed": "{{count}} dismissed", // kilocode_change
+  "ui.question.subtitle.dismissed": "{{count}} dismissed", // chipmate_change
   "ui.question.answer.none": "(cevap yok)",
-  "ui.question.answer.dismissed": "Dismissed", // kilocode_change
+  "ui.question.answer.dismissed": "Dismissed", // chipmate_change
   "ui.question.review.notAnswered": "(cevaplanmadı)",
   "ui.question.multiHint": "Geçerli tüm cevapları seçin",
   "ui.question.singleHint": "Bir cevap seçin",

@@ -2,13 +2,13 @@ import { FinishReason, LLMEvent, ProviderMetadata, ToolResultValue } from "@open
 import { Effect, Schema } from "effect"
 import { type streamText } from "ai"
 import { errorMessage } from "@/util/error"
-import { KiloRoutedModel } from "@/kilocode/session/routed-model" // kilocode_change
-import { KiloResponseMetadata } from "@/kilocode/session/response-metadata" // kilocode_change
+import { ChipMateRoutedModel } from "@/chipmate/session/routed-model" // chipmate_change
+import { ChipMateResponseMetadata } from "@/chipmate/session/response-metadata" // chipmate_change
 
 type Result = Awaited<ReturnType<typeof streamText>>
 type AISDKEvent = Result["fullStream"] extends AsyncIterable<infer T> ? T : never
 
-// kilocode_change start - keep unavailable streamed previews hidden while allowing validated runtime-only repairs
+// chipmate_change start - keep unavailable streamed previews hidden while allowing validated runtime-only repairs
 export function adapterState(visibleTools?: Iterable<string>, runtimeTools?: Iterable<string>) {
   const visible = visibleTools ? new Set(visibleTools) : undefined
   return {
@@ -22,7 +22,7 @@ export function adapterState(visibleTools?: Iterable<string>, runtimeTools?: Ite
     visibleTools: visible,
     runtimeTools: runtimeTools ? new Set(runtimeTools) : visible ? new Set(visible) : undefined,
     suppressedTools: new Set<string>(),
-    // kilocode_change end
+    // chipmate_change end
     copilotTotalNanoAiu: undefined as number | undefined,
   }
 }
@@ -60,7 +60,7 @@ function usage(value: unknown) {
     cachedInputTokens?: number
     inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number }
     outputTokenDetails?: { reasoningTokens?: number }
-    raw?: Record<string, unknown> // kilocode_change - preserve provider billing details
+    raw?: Record<string, unknown> // chipmate_change - preserve provider billing details
   }
   const entries = Object.entries({
     inputTokens: item.inputTokens,
@@ -69,7 +69,7 @@ function usage(value: unknown) {
     reasoningTokens: item.outputTokenDetails?.reasoningTokens ?? item.reasoningTokens,
     cacheReadInputTokens: item.inputTokenDetails?.cacheReadTokens ?? item.cachedInputTokens,
     cacheWriteInputTokens: item.inputTokenDetails?.cacheWriteTokens,
-    providerMetadata: item.raw ? { aiSdk: item.raw } : undefined, // kilocode_change - retain Kilo billing details
+    providerMetadata: item.raw ? { aiSdk: item.raw } : undefined, // chipmate_change - retain ChipMate billing details
   }).filter((entry) => entry[1] !== undefined)
   return entries.length === 0 ? undefined : Object.fromEntries(entries)
 }
@@ -114,12 +114,12 @@ export function toLLMEvents(
             index: state.step++,
             reason: finishReason(event.finishReason),
             usage: usage(event.usage),
-            // kilocode_change start
-            providerMetadata: KiloResponseMetadata.write(
-              KiloRoutedModel.write(metadata, event.response?.modelId),
+            // chipmate_change start
+            providerMetadata: ChipMateResponseMetadata.write(
+              ChipMateRoutedModel.write(metadata, event.response?.modelId),
               event.response?.headers,
             ),
-            // kilocode_change end
+            // chipmate_change end
           }),
         ]
       })
@@ -135,7 +135,7 @@ export function toLLMEvents(
         ]
         // Reset so the adapter can be reused for a follow-up stream without leaking
         // counters or block IDs. adapterState() is the single source of truth for shape.
-        Object.assign(state, adapterState(state.visibleTools, state.runtimeTools)) // kilocode_change
+        Object.assign(state, adapterState(state.visibleTools, state.runtimeTools)) // chipmate_change
         return events
       })
 
@@ -205,12 +205,12 @@ export function toLLMEvents(
 
     case "tool-input-start":
       return Effect.sync(() => {
-        // kilocode_change start - providers stream the requested name before AI SDK validation
+        // chipmate_change start - providers stream the requested name before AI SDK validation
         if (state.visibleTools && !state.visibleTools.has(event.toolName)) {
           state.suppressedTools.add(event.id)
           return []
         }
-        // kilocode_change end
+        // chipmate_change end
         state.toolNames[event.id] = event.toolName
         return [
           LLMEvent.toolInputStart({
@@ -222,7 +222,7 @@ export function toLLMEvents(
       })
 
     case "tool-input-delta":
-      if (state.suppressedTools.has(event.id)) return Effect.succeed([]) // kilocode_change
+      if (state.suppressedTools.has(event.id)) return Effect.succeed([]) // chipmate_change
       return Effect.succeed([
         LLMEvent.toolInputDelta({
           id: event.id,
@@ -232,7 +232,7 @@ export function toLLMEvents(
       ])
 
     case "tool-input-end":
-      if (state.suppressedTools.has(event.id)) return Effect.succeed([]) // kilocode_change
+      if (state.suppressedTools.has(event.id)) return Effect.succeed([]) // chipmate_change
       return Effect.succeed([
         LLMEvent.toolInputEnd({
           id: event.id,
@@ -243,13 +243,13 @@ export function toLLMEvents(
 
     case "tool-call":
       return Effect.sync(() => {
-        // kilocode_change start - expose only the validated/repaired active tool, never the unavailable preview
+        // chipmate_change start - expose only the validated/repaired active tool, never the unavailable preview
         if (state.runtimeTools && !state.runtimeTools.has(event.toolName)) {
           state.suppressedTools.add(event.toolCallId)
           return []
         }
         state.suppressedTools.delete(event.toolCallId)
-        // kilocode_change end
+        // chipmate_change end
         state.toolNames[event.toolCallId] = event.toolName
         return [
           LLMEvent.toolCall({
@@ -264,9 +264,9 @@ export function toLLMEvents(
 
     case "tool-result":
       return Effect.sync(() => {
-        // kilocode_change start
+        // chipmate_change start
         if (state.suppressedTools.delete(event.toolCallId)) return []
-        // kilocode_change end
+        // chipmate_change end
         const name = state.toolNames[event.toolCallId] ?? "unknown"
         delete state.toolNames[event.toolCallId]
         return [
@@ -282,9 +282,9 @@ export function toLLMEvents(
 
     case "tool-error":
       return Effect.sync(() => {
-        // kilocode_change start
+        // chipmate_change start
         if (state.suppressedTools.delete(event.toolCallId)) return []
-        // kilocode_change end
+        // chipmate_change end
         const name = state.toolNames[event.toolCallId] ?? ("toolName" in event ? event.toolName : "unknown")
         delete state.toolNames[event.toolCallId]
         return [
