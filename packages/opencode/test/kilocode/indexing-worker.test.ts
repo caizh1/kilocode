@@ -1,7 +1,10 @@
-import { expect, test } from "bun:test"
+import { expect, spyOn, test } from "bun:test"
+import { CodeIndexManager } from "@kilocode/kilo-indexing/engine"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
+import { createIndexingHost } from "../../src/kilocode/indexing-host"
 import { IndexingWorker, indexingCommand } from "../../src/kilocode/indexing-worker-client"
+import type { Request } from "../../src/kilocode/indexing-worker-protocol"
 import { tmpdir } from "../fixture/fixture"
 
 test("allows a packaged native indexing sidecar to override the compiled default", () => {
@@ -9,6 +12,50 @@ test("allows a packaged native indexing sidecar to override the compiled default
 
   expect(indexingCommand(arm, String.raw`C:\extension\bin\kilo-arm64.exe`)).toEqual([arm])
   expect(indexingCommand("kilo-indexer-arm64.exe", String.raw`C:\extension\bin\kilo-arm64.exe`)).toEqual([arm])
+})
+
+test.serial("waits for manager shutdown before acknowledging indexing host disposal", async () => {
+  await using tmp = await tmpdir()
+  const started = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const original = CodeIndexManager.prototype.dispose
+  const dispose = spyOn(CodeIndexManager.prototype, "dispose").mockImplementation(async function (
+    this: CodeIndexManager,
+  ) {
+    started.resolve()
+    await release.promise
+    await original.call(this)
+  })
+  const host = createIndexingHost(() => {})
+
+  try {
+    await host.handle({
+      type: "request",
+      id: 0,
+      method: "init",
+      input: {
+        directory: tmp.path,
+        root: tmp.path,
+        config: { enabled: false, embedderProvider: "openai" },
+      },
+    } satisfies Request)
+
+    let completed = false
+    const closing = host.dispose().then(() => {
+      completed = true
+    })
+    await started.promise
+    await Bun.sleep(0)
+
+    expect(completed).toBe(false)
+
+    release.resolve()
+    await closing
+    expect(completed).toBe(true)
+  } finally {
+    release.resolve()
+    dispose.mockRestore()
+  }
 })
 
 test.serial("runs indexing engine requests in its isolated process", async () => {
@@ -154,6 +201,8 @@ test.serial("waits for the primary index instead of scanning a worktree independ
 
 test.serial("allows same-directory recreation while disposal is pending", async () => {
   await using tmp = await tmpdir()
+  const before = process.env.KILO_INDEXING_LOCK_RETRY_MS
+  process.env.KILO_INDEXING_LOCK_RETRY_MS = "10"
   const hooks = {
     status() {},
     telemetry() {},
@@ -162,19 +211,26 @@ test.serial("allows same-directory recreation while disposal is pending", async 
     failure() {},
   }
   const first = IndexingWorker.create(tmp.path, tmp.path, hooks)
-  await first.init({ enabled: false, embedderProvider: "openai" })
+  let second: IndexingWorker.Driver | undefined
 
-  const disposing = first.dispose()
-  const second = IndexingWorker.create(tmp.path, tmp.path, hooks)
-  const status = await second.init({ enabled: false, embedderProvider: "openai" })
-  await disposing
-  await second.dispose()
+  try {
+    await first.init({ enabled: false, embedderProvider: "openai" })
 
-  expect(second).not.toBe(first)
-  expect(status.state).not.toBe("Error")
-  expect(status.pipelines?.rag.state).toBe("Disabled")
-  expect(status.pipelines?.codeGraph.state).not.toBe("Disabled")
-})
+    const disposing = first.dispose()
+    second = IndexingWorker.create(tmp.path, tmp.path, hooks)
+    const status = await second.init({ enabled: false, embedderProvider: "openai" })
+    await disposing
+
+    expect(second).not.toBe(first)
+    expect(status.state).not.toBe("Error")
+    expect(status.pipelines?.rag.state).toBe("Disabled")
+    expect(status.pipelines?.codeGraph.state).not.toBe("Disabled")
+  } finally {
+    await first.dispose()
+    await second?.dispose()
+    restore("KILO_INDEXING_LOCK_RETRY_MS", before)
+  }
+}, 30_000)
 
 test.serial("releases enabled workers after provider initialization errors", async () => {
   await using tmp = await tmpdir()
@@ -240,9 +296,11 @@ test.serial("keeps the CLI process alive when the indexing process exceeds its R
   const before = {
     soft: process.env.KILO_INDEXING_SOFT_RSS_BYTES,
     hard: process.env.KILO_INDEXING_HARD_RSS_BYTES,
+    hardHold: process.env.KILO_INDEXING_HARD_HOLD_MS,
   }
   process.env.KILO_INDEXING_SOFT_RSS_BYTES = "1"
   process.env.KILO_INDEXING_HARD_RSS_BYTES = "1"
+  process.env.KILO_INDEXING_HARD_HOLD_MS = "1"
   const failure = Promise.withResolvers<unknown>()
   const engine = IndexingWorker.create(tmp.path, tmp.path, {
     status() {},
@@ -269,6 +327,7 @@ test.serial("keeps the CLI process alive when the indexing process exceeds its R
     await engine.dispose()
     restore("KILO_INDEXING_SOFT_RSS_BYTES", before.soft)
     restore("KILO_INDEXING_HARD_RSS_BYTES", before.hard)
+    restore("KILO_INDEXING_HARD_HOLD_MS", before.hardHold)
   }
 })
 
@@ -278,6 +337,7 @@ test.serial("requests a checkpointed rollover after sustained critical RSS", asy
     "KILO_INDEXING_SOFT_RSS_BYTES",
     "KILO_INDEXING_CRITICAL_RSS_BYTES",
     "KILO_INDEXING_HARD_RSS_BYTES",
+    "KILO_INDEXING_HARD_HOLD_MS",
     "KILO_INDEXING_RECOVERY_RSS_BYTES",
     "KILO_INDEXING_CRITICAL_HOLD_MS",
   ] as const
@@ -285,6 +345,7 @@ test.serial("requests a checkpointed rollover after sustained critical RSS", asy
   process.env.KILO_INDEXING_SOFT_RSS_BYTES = "1"
   process.env.KILO_INDEXING_CRITICAL_RSS_BYTES = "1"
   process.env.KILO_INDEXING_HARD_RSS_BYTES = String(1024 * 1024 * 1024)
+  process.env.KILO_INDEXING_HARD_HOLD_MS = "1"
   process.env.KILO_INDEXING_RECOVERY_RSS_BYTES = "1"
   process.env.KILO_INDEXING_CRITICAL_HOLD_MS = "1"
   const failure = Promise.withResolvers<unknown>()

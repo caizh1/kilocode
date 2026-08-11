@@ -61,6 +61,8 @@ export async function declareArtifact(input: {
   sourceFiles?: string[]
   warnings?: string[]
   qualityStatus?: ArtifactQualityStatus
+  /** Remove files declared by the previous manifest when they are absent from the replacement set. */
+  replaceDerivedFiles?: boolean
 }): Promise<DeclaredArtifact> {
   const now = new Date().toISOString()
   const workspace = Instance.directory
@@ -90,6 +92,16 @@ export async function declareArtifact(input: {
     quality: {
       status: input.qualityStatus ?? existing?.quality?.status ?? (warnings.length > 0 ? "warning" : "unknown"),
     },
+  }
+
+  if (input.replaceDerivedFiles && existing) {
+    const retained = new Set(manifest.derivedFiles)
+    for (const file of existing.derivedFiles) {
+      if (retained.has(file)) continue
+      const target = path.resolve(absoluteDir, file)
+      assertInside(absoluteDir, target, "derivedFile", workspace)
+      await fs.rm(target, { force: true })
+    }
   }
 
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8")

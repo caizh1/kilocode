@@ -108,6 +108,12 @@
         "icon": "$(organization)"
       },
       {
+        "command": "chipmate.v2.designDocOpen",
+        "title": "源码详细设计",
+        "category": "ChipMate",
+        "icon": "$(symbol-structure)"
+      },
+      {
         "command": "chipmate.v2.kiloClawOpen",
         "title": "ChipMateClaw",
         "category": "ChipMate",
@@ -425,6 +431,26 @@
         "icon": "$(comment-discussion)"
       },
       {
+        "command": "chipmate.v2.generateCommentsForSelectedFunctions",
+        "title": "为选中函数批量生成高可信注释",
+        "category": "ChipMate",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "chipmate.v2.applyCodeCommentPreview",
+        "title": "应用注释",
+        "category": "ChipMate",
+        "icon": "$(check)",
+        "enablement": "chipmate.v2.codeComments.previewPending"
+      },
+      {
+        "command": "chipmate.v2.discardCodeCommentPreview",
+        "title": "放弃预览",
+        "category": "ChipMate",
+        "icon": "$(close)",
+        "enablement": "chipmate.v2.codeComments.previewPending"
+      },
+      {
         "command": "chipmate.v2.addToContext",
         "title": "Add to Context",
         "category": "ChipMate"
@@ -509,6 +535,14 @@
     ],
     "menus": {
       "commandPalette": [
+        {
+          "command": "chipmate.v2.applyCodeCommentPreview",
+          "when": "false"
+        },
+        {
+          "command": "chipmate.v2.discardCodeCommentPreview",
+          "when": "false"
+        },
         {
           "command": "chipmate.v2.sidebarTitle.plusButtonClicked",
           "when": "false"
@@ -612,6 +646,16 @@
       ],
       "editor/title": [
         {
+          "command": "chipmate.v2.applyCodeCommentPreview",
+          "group": "navigation@100",
+          "when": "isInDiffEditor && resourceScheme == chipmate-code-comment-preview && chipmate.v2.codeComments.previewPending"
+        },
+        {
+          "command": "chipmate.v2.discardCodeCommentPreview",
+          "group": "navigation@101",
+          "when": "isInDiffEditor && resourceScheme == chipmate-code-comment-preview && chipmate.v2.codeComments.previewPending"
+        },
+        {
           "command": "chipmate.v2.openInTab",
           "group": "navigation",
           "when": "true"
@@ -653,7 +697,12 @@
         {
           "command": "chipmate.v2.generateCommentsForCurrentFunction",
           "group": "1_actions@0",
-          "when": "resourceLangId == c || resourceLangId == cpp"
+          "when": "(resourceLangId == c || resourceLangId == cpp) && !editorHasSelection"
+        },
+        {
+          "command": "chipmate.v2.generateCommentsForSelectedFunctions",
+          "group": "1_actions@0",
+          "when": "(resourceLangId == c || resourceLangId == cpp) && editorHasSelection"
         },
         {
           "command": "chipmate.v2.explainCode",
@@ -1077,7 +1126,7 @@
         },
         "chipmate.v2.updateCheck.maxDownloadBytes": {
           "type": "number",
-          "default": 268435456,
+          "default": 536870912,
           "minimum": 1,
           "description": "Maximum downloaded VSIX size in bytes for ChipMate update checks."
         },

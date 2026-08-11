@@ -29,8 +29,10 @@ import { KilocodeSystemPrompt } from "@/kilocode/system-prompt"
 import { KiloToolRegistry } from "@/kilocode/tool/registry"
 import * as WorkflowGuard from "@/kilocode/skill/workflow-guard"
 import CODE_SWITCH from "@/session/prompt/code-switch.txt"
+import { DocumentAgentScope } from "@/kilocode/document-agent/scope"
 
 export namespace KiloSessionPrompt {
+  const SOURCE_BACKED_STEP_LIMIT = 32
   const modes = ["ask", "plan", "architect"]
   type Intake = { cancelled: boolean; fiber?: Fiber.Fiber<unknown, unknown> }
   const intakes = new Map<SessionID, Set<Intake>>()
@@ -43,13 +45,34 @@ export namespace KiloSessionPrompt {
     skills?: string
   }) {
     const skills = input.skills ? [input.skills] : []
-    if (KilocodeSystemPrompt.appends(input.agent))
-      return [...input.env, ...input.instructions, ...skills, ...input.mem]
+    if (KilocodeSystemPrompt.appends(input.agent)) return [...input.env, ...input.instructions, ...skills, ...input.mem]
     return [...input.env, ...input.mem, ...input.instructions, ...skills]
   }
 
   export function syncSourceBackedWorkflow(sessionID: SessionID, messages: MessageV2.WithParts[]) {
     WorkflowGuard.sync(sessionID, messages)
+  }
+
+  export function armSourceBackedSkillCommand(input: {
+    sessionID: SessionID
+    name: string
+    source?: "command" | "mcp" | "skill"
+  }) {
+    WorkflowGuard.armCommand(input.sessionID, input.name, input.source)
+  }
+
+  export function disarmSourceBackedSkillCommand(sessionID: SessionID) {
+    WorkflowGuard.disarmCommand(sessionID)
+  }
+
+  export function sourceBackedStepLimit(
+    sessionID: SessionID,
+    messages: MessageV2.WithParts[],
+    configured?: number,
+  ) {
+    const current = configured ?? Infinity
+    if (!WorkflowGuard.sourceBacked(sessionID, messages)) return current
+    return Math.max(current, SOURCE_BACKED_STEP_LIMIT)
   }
 
   export function intake<A, E, R>(sessionID: SessionID, work: Effect.Effect<A, E, R>) {
@@ -223,9 +246,15 @@ export namespace KiloSessionPrompt {
 
   export function guardPermissions(input: {
     agent: { name: string; permission: Permission.Ruleset }
-    session: Pick<Session.Info, "permission">
+    session: Pick<Session.Info, "permission" | "metadata">
   }) {
     const rules = input.session.permission ?? []
+    if (input.agent.name === DocumentAgentScope.AGENT) {
+      return Permission.merge(
+        DocumentAgentScope.rules(input.session.metadata),
+        rules.filter((rule) => rule.action === "deny"),
+      )
+    }
     if (!modes.includes(mode(input.agent.name))) return rules
     return Permission.merge(
       rules,
@@ -234,14 +263,32 @@ export namespace KiloSessionPrompt {
     )
   }
 
-  export function hardPermissions(input: { agent: { name: string; permission: Permission.Ruleset } }) {
-    if (!modes.includes(mode(input.agent.name))) return
+  export function hardPermissions(input: {
+    agent: { name: string; permission: Permission.Ruleset }
+    session?: Pick<Session.Info, "metadata">
+  }) {
+    if (input.agent.name === DocumentAgentScope.AGENT) return DocumentAgentScope.rules(input.session?.metadata)
+    if (!modes.includes(mode(input.agent.name))) return undefined
     return input.agent.permission
   }
 
   export function mergeToolPermissions(input: { existing: Permission.Ruleset; toggles: Permission.Ruleset }) {
     const names = new Set(input.toggles.map((rule) => rule.permission))
     return [...input.existing.filter((rule) => !names.has(rule.permission)), ...input.toggles]
+  }
+
+  export function structuredOutputToolChoice(input: {
+    format: "text" | "json_schema"
+    model: { id: string; npm: string }
+    variant?: string
+    delegated?: boolean
+  }): "auto" | "required" | undefined {
+    if (input.format !== "json_schema" || input.delegated) return undefined
+    const modelID = input.model.id.toLowerCase()
+    const deepseekThinking =
+      input.model.npm === "@ai-sdk/openai-compatible" &&
+      (modelID.includes("deepseek-reasoner") || (modelID.includes("deepseek-v4") && input.variant !== "none"))
+    return deepseekThinking ? "auto" : "required"
   }
 
   export const askPermission = Effect.fn("KiloSessionPrompt.askPermission")(function* (input: {
@@ -266,9 +313,16 @@ export namespace KiloSessionPrompt {
     const taggedSession = PermissionProvenance.tagSession(session.permission ?? [])
     const ruleset = Permission.merge(
       taggedAgent,
-      guardPermissions({ agent: { name: agent.name, permission: taggedAgent }, session: { permission: taggedSession } }),
+      guardPermissions({
+        agent: { name: agent.name, permission: taggedAgent },
+        session: { permission: taggedSession, metadata: session.metadata },
+      }),
     )
-    const outcome = yield* input.permission.ask({ ...input.request, ruleset, hardRuleset: hardPermissions({ agent }) })
+    const outcome = yield* input.permission.ask({
+      ...input.request,
+      ruleset,
+      hardRuleset: hardPermissions({ agent, session }),
+    })
     if (outcome.manual) return { source: "manual" } satisfies PermissionProvenance.Approval
     return PermissionProvenance.classify({ rule: outcome.rule, agent: agent.name, origins: input.origins })
     // kilocode_change end

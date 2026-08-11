@@ -230,6 +230,7 @@ export class DocumentIndexService {
     let skipped = 0
     let errors = 0
     let chunks = 0
+    let unknownCachedChunks = 0
 
     try {
       this.setStatus(progress("Discovering document files...", 0, 0))
@@ -310,12 +311,15 @@ export class DocumentIndexService {
         }
         if (item.kind === "unchanged") {
           indexed += 1
+          const cachedChunks = this.cache.chunkCount(key)
+          if (cachedChunks === undefined) unknownCachedChunks += 1
+          else chunks += cachedChunks
           this.report(index + 1, files.length, `Document unchanged: ${path.basename(file.path)}`, skipped, errors)
           continue
         }
         const written = await this.upsert(file, item.hash, item.items, meta)
         if (this.disposed) return
-        this.cache.set(key, item.hash)
+        this.cache.set(key, item.hash, written)
         if ((index + 1) % 8 === 0 || Date.now() - checkpoint >= 2_000) {
           await this.cache.flush()
           if (this.disposed) return
@@ -341,7 +345,9 @@ export class DocumentIndexService {
         await this.cache.clear()
         throw new Error(`Document candidate indexing failed with ${errors} file error(s).`)
       }
-      await this.store.markIndexingComplete()
+      await this.store.markIndexingComplete({
+        allowEmpty: chunks === 0 && unknownCachedChunks === 0 && errors === 0,
+      })
       if (this.disposed) return
       this.setStatus({
         state: errors > 0 ? "Complete" : "Complete",
@@ -349,7 +355,9 @@ export class DocumentIndexService {
         processedFiles: files.length,
         totalFiles: files.length,
         percent: 100,
-        detail: `${indexed} indexed, ${skipped} skipped, ${errors} errors, ${chunks} chunks.`,
+        detail: `${indexed} indexed, ${skipped} skipped, ${errors} errors, ${chunks} chunks${
+          unknownCachedChunks > 0 ? ` plus ${unknownCachedChunks} legacy cached document counts unavailable` : ""
+        }.`,
         lastFullScanAt: new Date().toISOString(),
         errorCount: errors,
         staleCount: 0,
@@ -505,9 +513,13 @@ export class DocumentIndexService {
       written += points.length
     }
     if (this.disposed) return written
-    await this.store.activateFileGeneration?.(file.key, generation, "documents")
-    if (this.disposed) return written
-    await this.store.deleteInactiveFilePoints?.(file.key, generation)
+    if (this.store.finalizeFileGenerations) {
+      await this.store.finalizeFileGenerations([{ filePath: file.key, generation, runId: "documents" }])
+    } else {
+      await this.store.activateFileGeneration?.(file.key, generation, "documents")
+      if (this.disposed) return written
+      await this.store.deleteInactiveFilePoints?.(file.key, generation)
+    }
     return written
   }
 

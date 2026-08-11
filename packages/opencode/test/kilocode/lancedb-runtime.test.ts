@@ -67,7 +67,7 @@ describe("LanceDBRuntime", () => {
 
     await LanceDBRuntime.ensure("lancedb")
 
-    expect(add).toHaveBeenCalledWith("@lancedb/lancedb@0.26.2")
+    expect(add).toHaveBeenCalledWith("@lancedb/lancedb@0.33.0")
     expect(process.env[env]).toBe(entry)
   })
 
@@ -76,7 +76,7 @@ describe("LanceDBRuntime", () => {
     add.mockImplementationOnce(async () => ({ directory: "/tmp/kilo-cache", entrypoint: undefined }))
 
     await expect(LanceDBRuntime.ensure("lancedb")).rejects.toThrow(
-      "Failed to resolve @lancedb/lancedb@0.26.2 import entrypoint",
+      "Failed to resolve @lancedb/lancedb@0.33.0 import entrypoint",
     )
     expect(process.env[env]).toBeUndefined()
   })

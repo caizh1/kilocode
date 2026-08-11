@@ -4,6 +4,7 @@ import type { DocumentSearchResult } from "@kilocode/kilo-indexing/engine"
 import * as Tool from "@/tool/tool"
 import { KiloIndexing } from "@/kilocode/indexing"
 import { Instance } from "@/kilocode/instance"
+import { DocumentAgentScope } from "@/kilocode/document-agent/scope"
 
 import DESCRIPTION from "./document-search.txt"
 
@@ -54,10 +55,10 @@ export const DocumentSearchTool = Tool.define(
           MIN_MAX_PACK_CHARS,
           MAX_MAX_PACK_CHARS,
         )
-        if (!KiloIndexing.documentReady()) return unavailable(maxPackChars)
+        if (!KiloIndexing.documentReady()) return unavailable(maxPackChars, undefined, ctx.agent)
         const status = yield* Effect.promise(() => KiloIndexing.current())
         const state = status.pipelines?.documents.state
-        if (state === "Disabled" || state === "Error") return unavailable(maxPackChars, state)
+        if (state === "Disabled" || state === "Error") return unavailable(maxPackChars, state, ctx.agent)
 
         yield* ctx.ask({
           permission: "document_search",
@@ -86,7 +87,10 @@ export const DocumentSearchTool = Tool.define(
                 truncated: false,
                 maxPackChars,
               },
-              output: `No conclusive document results yet because the index is ${state.toLowerCase()}. Use Grep, Glob, and Read for this request; do not repeatedly retry document_search.`,
+              output:
+                ctx.agent === DocumentAgentScope.AGENT
+                  ? `No conclusive document results yet because the index is ${state.toLowerCase()}. Remain in document-only scope, report the evidence gap, and do not repeatedly retry document_search.`
+                  : `No conclusive document results yet because the index is ${state.toLowerCase()}. Use Grep, Glob, and Read for this request; do not repeatedly retry document_search.`,
             }
           }
           return {
@@ -121,7 +125,7 @@ export const DocumentSearchTool = Tool.define(
   }),
 )
 
-function unavailable(maxPackChars: number, state?: "Disabled" | "Error"): Tool.ExecuteResult<Meta> {
+function unavailable(maxPackChars: number, state?: "Disabled" | "Error", agent?: string): Tool.ExecuteResult<Meta> {
   const reason = state ? ` unavailable (${state})` : " not ready yet"
   return {
     title: "Document Search",
@@ -130,7 +134,10 @@ function unavailable(maxPackChars: number, state?: "Disabled" | "Error"): Tool.E
       truncated: false,
       maxPackChars,
     },
-    output: `Document index is${reason}. Use Grep, Glob, and Read for this request; do not repeatedly retry document_search until indexing status changes.`,
+    output:
+      agent === DocumentAgentScope.AGENT
+        ? `Document index is${reason}. Remain in document-only scope, report the evidence gap, and do not repeatedly retry document_search until indexing status changes.`
+        : `Document index is${reason}. Use Grep, Glob, and Read for this request; do not repeatedly retry document_search until indexing status changes.`,
   }
 }
 

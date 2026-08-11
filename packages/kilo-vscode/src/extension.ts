@@ -9,6 +9,7 @@ import { DiffVirtualProvider } from "./DiffVirtualProvider"
 import { SettingsEditorProvider } from "./SettingsEditorProvider"
 import { MarketplacePanelProvider } from "./MarketplacePanelProvider"
 import { AgentConsoleProvider } from "./agent-console/AgentConsoleProvider"
+import { DesignDocPanelProvider } from "./design-doc/DesignDocPanelProvider"
 import { MarketplaceNotifier } from "./services/marketplace/notifier"
 import { SubAgentViewerProvider } from "./SubAgentViewerProvider"
 import { EXTENSION_DISPLAY_NAME } from "./constants"
@@ -219,6 +220,9 @@ export function activate(source: vscode.ExtensionContext) {
   const kiloClawProvider = new KiloClawProvider(context.extensionUri, connectionService)
   context.subscriptions.push(kiloClawProvider)
 
+  const designDocProvider = new DesignDocPanelProvider(context.extensionUri, connectionService)
+  context.subscriptions.push(designDocProvider)
+
   // Create Agent Manager provider for editor panel
   const agentManagerHost = new VscodeHost(context.extensionUri, connectionService, context, remoteService)
   const agentManagerProvider = new AgentManagerProvider(agentManagerHost, connectionService)
@@ -296,6 +300,15 @@ export function activate(source: vscode.ExtensionContext) {
           return Promise.resolve()
         }
         kiloClawProvider.restorePanel(panel)
+        return Promise.resolve()
+      },
+    }),
+  )
+
+  context.subscriptions.push(
+    vscode.window.registerWebviewPanelSerializer(DesignDocPanelProvider.viewType, {
+      deserializeWebviewPanel(panel: vscode.WebviewPanel) {
+        designDocProvider.restorePanel(panel)
         return Promise.resolve()
       },
     }),
@@ -475,6 +488,9 @@ export function activate(source: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("chipmate.v2.agentManagerOpen", () => {
       agentManagerProvider.openPanel()
+    }),
+    vscode.commands.registerCommand("chipmate.v2.designDocOpen", () => {
+      designDocProvider.openPanel()
     }),
     vscode.commands.registerCommand("chipmate.v2.marketplaceButtonClicked", (directory?: string | null) => {
       marketplacePanelProvider.openPanel(directory)

@@ -89,10 +89,11 @@ it.instance(
       expect(sourceBacked!.location).toContain(path.join("builtin-skills", "source-backed-detail-design", "SKILL.md"))
       expect(sourceBacked!.content.startsWith("---\n")).toBe(true)
       expect(sourceBacked!.content).not.toMatch(/^<hr\s*\/?/i)
-      expect(sourceBacked!.content).toContain("SBDD_RULESET_REVISION=2026-07-source-semantic-v122")
-      expect(sourceBacked!.content).toContain("not a ChipMate runtime pipeline")
-      expect(sourceBacked!.content).toContain("Ordinary QA stays artifact-free")
-      expect(sourceBacked!.content).toContain("keeps its native routing/tool loop")
+      expect(sourceBacked!.content).toContain("SBDD_JOB_REVISION=2026-08-chunked-v1")
+      expect(sourceBacked!.content).toContain("source_backed_design_job")
+      expect(sourceBacked!.content).toContain("普通 QA、普通 Mermaid、普通 Word")
+      expect(sourceBacked!.content).toContain("不自动创建任务")
+      expect(sourceBacked!.content).toContain("以后恢复完整任务必须重新显式加载本 Skill")
       expect(existsSync(path.join(path.dirname(sourceBacked!.location), "references", "01-core-principles.md"))).toBe(
         true,
       )

@@ -63,6 +63,7 @@ export interface AgentRequirementResult {
       | "malformed_declaration"
       | "discovery_failed"
       | "mcp_status_failed"
+      | "feature_unavailable"
       | "scope_mismatch"
       | "request_failed"
     message: string

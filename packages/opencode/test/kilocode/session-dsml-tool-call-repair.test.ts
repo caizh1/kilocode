@@ -93,6 +93,16 @@ function retries(messages: SessionV1.WithParts[]) {
     )
 }
 
+function exposedToolNames(input: Record<string, unknown>) {
+  if (!Array.isArray(input.tools)) return []
+  return input.tools.flatMap((tool) => {
+    if (!tool || typeof tool !== "object") return []
+    const fn = "function" in tool ? tool.function : undefined
+    if (!fn || typeof fn !== "object" || !("name" in fn) || typeof fn.name !== "string") return []
+    return [fn.name]
+  })
+}
+
 const it = testEffect(Layer.mergeAll(TestLLMServer.layer, SessionPrompt.defaultLayer, Session.defaultLayer))
 
 it.instance(
@@ -127,7 +137,7 @@ it.instance(
 
       const inputs = yield* app.llm.inputs
       expect(inputs).toHaveLength(2)
-      expect(inputs.every((input) => !JSON.stringify(input.tools).includes("invalid"))).toBe(true)
+      expect(inputs.every((input) => !exposedToolNames(input).includes("invalid"))).toBe(true)
       expect(JSON.stringify(inputs[1]?.messages)).toContain("kilo_dsml_orphan_retry")
       expect(JSON.stringify(inputs[1]?.messages)).toContain("The arguments provided to the tool are invalid")
       expect(JSON.stringify(inputs[1]?.messages)).not.toContain(target)

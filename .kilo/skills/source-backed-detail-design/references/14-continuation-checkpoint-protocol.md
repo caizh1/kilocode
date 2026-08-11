@@ -1,5 +1,9 @@
 # 14 Continuation Checkpoint Protocol
 
+> 当前完整任务使用 `source_backed_design_job` 的原子 `job.json`、revision、租约和工作项恢复。模型不得继续执行本文件旧版手写 checkpoint/batch 计数协议。跨会话只在用户通过现有 `/source-backed-detail-design 继续` 显式加载 Skill 后调用 `resume`；新会话裸“继续”不得扫描任务。
+
+完整任务的每个工作项必须使用控制器返回的 `workItem.worker` 参数启动全新前台 `task`。根会话只负责 `resume/submit`，不得读取源码或编写工作项；隔离工作进程不得调用控制器。控制器每个用户回合最多接收三个正文包或五个图形包，达到预算后返回 `awaiting_continuation`。
+
 本 Skill 支持多 session 续作。普通 QA、单章节和明确的窄范围图片任务不创建续作文件；完整多子模块 Word 任务维护：
 
 - `resume-state.md`

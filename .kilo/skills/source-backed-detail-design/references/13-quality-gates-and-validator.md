@@ -1,5 +1,7 @@
 # 13 Review Checklist
 
+> 完整任务的确定性门禁由 `source_backed_design_job` 执行；本文件用于人工复核及窄范围交付，不得用人工自报状态覆盖控制器结果，也不得把这些规则注入普通 QA。
+
 For `SBDD_RULESET_REVISION=2026-07-source-semantic-v122`, only source-backed PNGs whose render result reports `wordFitStatus=readable` and `documentReady=true` pass figure review or image insertion. `split-required` remains evidence-only; readable replacement claims must follow `pendingSplitDetails.suggestedChildren`, keep the returned IDs and `splitFromDiagramId`, close the returned visible node/edge union, and produce a repair result whose `resolvedSplitDiagramIds` contains the parent. The readable child PNG set then satisfies the base slot; the parent PNG never enters Word. A split-required intermediate probe is evidence-only and does not become another required parent. The tool's calibrated minimum scale is `0.65`, matching the checks below.
 
 本文件只提供源码驱动详细设计的人工 review 建议。它不是 ChipMate 文档合同，不是自动修复流水线，不是缺失图表渲染计划，也不是 Kilo QA 的触发条件。

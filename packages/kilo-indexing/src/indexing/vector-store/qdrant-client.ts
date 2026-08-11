@@ -849,7 +849,7 @@ export class QdrantVectorStore implements IVectorStore {
    * Marks the indexing process as complete by storing metadata
    * Should be called after a successful full workspace scan or incremental scan
    */
-  async markIndexingComplete(): Promise<void> {
+  async markIndexingComplete(_options?: { allowEmpty?: boolean }): Promise<void> {
     try {
       await this.client.upsert(this.collectionName, {
         points: [

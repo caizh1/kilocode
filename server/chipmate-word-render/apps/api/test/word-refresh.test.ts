@@ -23,10 +23,22 @@ interface Verification {
   inspection: Inspection
 }
 
+interface TextQa {
+  ok: boolean
+  titlePresent: boolean
+  firstHeadingPresent: boolean
+  sentinelCount: number
+  matchedSentinelCount: number
+  diagnostics: string[]
+}
+
 const require = createRequire(import.meta.url)
 const legacy = require("../../../server.js") as {
   inspectWordDocx(bytes: Buffer): Promise<Inspection>
+  materializeTocPageNumbers(bytes: Buffer, pages: number[]): Promise<Buffer>
+  parsePdfOutlineXml(xml: string): Array<{ page: number; title: string }>
   verifyRefreshedWordDocx(source: Inspection, bytes: Buffer): Promise<Verification>
+  wordPdfTextQa(source: Inspection & { text: string }, result: { ok: boolean; stdout?: string; message?: string }): TextQa
 }
 
 const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -44,6 +56,10 @@ function paragraph(style: string, text: string, page?: number) {
   return `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r><w:t>${text}</w:t></w:r>${suffix}</w:p>`
 }
 
+function tocParagraph(style: string, text: string, bookmark: string, page = 1) {
+  return `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:hyperlink w:anchor="${bookmark}"><w:r><w:t>${text}</w:t></w:r></w:hyperlink><w:r><w:tab/></w:r><w:fldSimple w:instr=" PAGEREF ${bookmark} \\h "><w:r><w:t>${page}</w:t></w:r></w:fldSimple></w:p>`
+}
+
 async function fixture(
   opts: {
     pages?: boolean
@@ -54,6 +70,7 @@ async function fixture(
     headings?: boolean
     body?: boolean
     table?: boolean
+    pageFields?: boolean
   } = {},
 ) {
   const toc =
@@ -62,9 +79,12 @@ async function fixture(
       : opts.simpleField
         ? '<w:p><w:fldSimple w:instr="TOC \\o &quot;1-3&quot; \\h \\z \\u"><w:r><w:t>Update table of contents</w:t></w:r></w:fldSimple></w:p>'
         : '<w:p><w:r><w:instrText> TOC \\o "1-3" </w:instrText></w:r></w:p>'
-  const entries = opts.toc === false || opts.headings === false
-    ? ""
-    : [paragraph("TOC1", "一、总览", opts.pages ? 1 : undefined), paragraph("TOC2", "1.1 子模块", opts.pages ? 2 : undefined)].join("")
+  const entries =
+    opts.toc === false || opts.headings === false
+      ? ""
+      : opts.pageFields
+        ? [tocParagraph("TOC1", "一、总览", "_KiloToc1"), tocParagraph("TOC2", "1.1 子模块", "_KiloToc2")].join("")
+        : [paragraph("TOC1", "一、总览", opts.pages ? 1 : undefined), paragraph("TOC2", "1.1 子模块", opts.pages ? 2 : undefined)].join("")
   const drawings = Array.from({ length: opts.drawings ?? 2 }, () => "<w:p><w:r><w:drawing/></w:r></w:p>").join("")
   const body = opts.body === false ? "" : paragraph("Normal", "关键正文不得在刷新时丢失")
   const table = opts.table === false ? "" : `<w:tbl><w:tr><w:tc>${paragraph("Normal", "表格证据")}</w:tc></w:tr></w:tbl>`
@@ -124,4 +144,56 @@ test("Word refresh verification requires preserved semantics and numeric TOC pag
   const vacuous = await legacy.verifyRefreshedWordDocx(empty, await fixture({ headings: false }))
   assert.equal(vacuous.ok, false)
   assert.ok(vacuous.diagnostics.some((item) => item.includes("no Heading")))
+})
+
+test("PDF outline fallback materializes exact TOC pages without changing body content", async () => {
+  const sourceBytes = await fixture({ pageFields: true })
+  const source = await legacy.inspectWordDocx(sourceBytes)
+  const outline = legacy.parsePdfOutlineXml(
+    '<pdf2xml><outline><item page="7">1 一、总览</item><outline><item page="9">1.1 子模块</item></outline><item page="12">2 输入输出</item></outline></pdf2xml>',
+  )
+  assert.deepEqual(outline, [
+    { page: 7, title: "1 一、总览" },
+    { page: 9, title: "1.1 子模块" },
+    { page: 12, title: "2 输入输出" },
+  ])
+
+  const updatedBytes = await legacy.materializeTocPageNumbers(sourceBytes, outline.slice(0, 2).map((item) => item.page))
+  const updated = await legacy.inspectWordDocx(updatedBytes)
+  assert.deepEqual(updated.tocEntries.map((item) => item.page), [7, 9])
+  const verified = await legacy.verifyRefreshedWordDocx(source, updatedBytes)
+  assert.equal(verified.ok, true, verified.diagnostics.join("; "))
+})
+
+test("PDF text QA accepts visual line wraps and automatic TOC numbering", () => {
+  const source = {
+    valid: true,
+    hasToc: true,
+    headingCount: 1,
+    headings: ["阅读路径"],
+    titles: ["source/software/GreedyFTL-3.0.0/nvme 详细设计文档"],
+    drawingCount: 0,
+    tocEntryCount: 1,
+    tocPageNumberCount: 1,
+    titleCount: 1,
+    tocEntries: [{ text: "1 阅读路径", page: 2 }],
+    manifest: {
+      body: [{ kind: "body", text: "这是用于确认正文没有丢失的足够长文本" }],
+      tables: [],
+      images: [],
+      controls: [],
+      headers: [],
+      footers: [],
+    },
+    text: "source/software/GreedyFTL-3.0.0/nvme 详细设计文档\n阅读路径\n这是用于确认正文没有丢失的足够长文本",
+  }
+  const qa = legacy.wordPdfTextQa(source, {
+    ok: true,
+    stdout:
+      "source/software/GreedyFTL-3.0.0/\nnvme 详细设计文档\f1 阅读路径\n阅读 路径\n这是用于确认正文没有丢失的足够长文本\f",
+  })
+  assert.equal(qa.ok, true, qa.diagnostics.join("; "))
+  assert.equal(qa.titlePresent, true)
+  assert.equal(qa.firstHeadingPresent, true)
+  assert.equal(qa.matchedSentinelCount, qa.sentinelCount)
 })

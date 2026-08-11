@@ -15,6 +15,9 @@ import { useLanguage } from "../../context/language"
 import type { AgentInfo } from "../../types/messages"
 import { isEnterKeyCommitNotIme } from "../../utils/ime-enter"
 import { UltraModeDialog } from "./UltraModeDialog"
+import { DocumentModeDialog } from "./DocumentModeDialog"
+import { useIndexing } from "../../context/indexing"
+import { useVSCode } from "../../context/vscode"
 
 /** Format an agent for display. Uses displayName if available, otherwise title-cases the slug. */
 function formatAgentLabel(agent: AgentInfo): string {
@@ -31,6 +34,7 @@ const icons = {
   build: "code",
   code: "code",
   debug: "debug-alt",
+  document: "book",
   plan: "checklist",
   ultra: "sparkle",
 } as const
@@ -46,6 +50,8 @@ export interface ModeSwitcherBaseProps {
   value: string
   /** Called when the user picks an agent */
   onSelect: (name: string) => void
+  disabledReason?: (agent: AgentInfo) => string | undefined
+  onDisabledSelect?: (agent: AgentInfo, reason: string) => void
   /** Render inline instead of through a portal when nested in a dialog. */
   portal?: boolean
   /** Delay outside dismissal while the popover opens inside a dialog. */
@@ -72,6 +78,13 @@ export const ModeSwitcherBase: Component<ModeSwitcherBaseProps> = (props) => {
   const hasAgents = () => props.agents.length > 1
 
   function pick(name: string) {
+    const agent = props.agents.find((item) => item.name === name)
+    const reason = agent ? props.disabledReason?.(agent) : undefined
+    if (agent && reason) {
+      props.onDisabledSelect?.(agent, reason)
+      setOpen(false)
+      return
+    }
     props.onSelect(name)
     setOpen(false)
   }
@@ -180,9 +193,10 @@ export const ModeSwitcherBase: Component<ModeSwitcherBaseProps> = (props) => {
             <For each={props.agents}>
               {(agent, i) => (
                 <div
-                  class={`mode-switcher-item${agent.name === props.value ? " selected" : ""}`}
+                  class={`mode-switcher-item${agent.name === props.value ? " selected" : ""}${props.disabledReason?.(agent) ? " disabled" : ""}`}
                   role="option"
                   aria-selected={agent.name === props.value}
+                  aria-disabled={props.disabledReason?.(agent) ? "true" : undefined}
                   tabindex={focused() === i() ? 0 : -1}
                   data-autofocus={focused() === i() ? "" : undefined}
                   data-agent={agent.name.trim().toLowerCase()}
@@ -208,6 +222,9 @@ export const ModeSwitcherBase: Component<ModeSwitcherBaseProps> = (props) => {
                   <Show when={agent.description}>
                     <span class="mode-switcher-item-desc">{agent.description}</span>
                   </Show>
+                  <Show when={props.disabledReason?.(agent)} keyed>
+                    {(reason) => <span class="mode-switcher-item-disabled-reason">{reason}</span>}
+                  </Show>
                 </div>
               )}
             </For>
@@ -228,13 +245,16 @@ interface ModeSwitcherProps {
 
 export const ModeSwitcher: Component<ModeSwitcherProps> = (props) => {
   const session = useSession()
+  const indexing = useIndexing()
+  const vscode = useVSCode()
+  const language = useLanguage()
   const id = () => props.sessionID?.()
-  const [pending, setPending] = createSignal<string | undefined>()
+  const [pending, setPending] = createSignal<{ sessionID: string; agent: "document" | "ultra" } | undefined>()
 
   createEffect(
     on(id, (next) => {
       const origin = pending()
-      if (origin === undefined || origin === next) return
+      if (origin === undefined || origin.sessionID === next) return
       setPending(undefined)
     }),
   )
@@ -246,32 +266,49 @@ export const ModeSwitcher: Component<ModeSwitcherProps> = (props) => {
   const select = (name: string) => {
     const current = session.selectedAgent(id())
     const target = session.agents().find((agent) => agent.name === name)
-    if (current !== "ultra" && target?.name === "ultra" && target.native === true) {
-      setPending(id() ?? "")
+    if (
+      current !== target?.name &&
+      target?.native === true &&
+      (target.name === "ultra" || target.name === "document")
+    ) {
+      setPending({ sessionID: id() ?? "", agent: target.name })
       return
     }
     session.selectAgent(name, id())
     focus()
   }
 
-  const confirm = () => {
+  const disabledReason = (agent: AgentInfo): string | undefined => {
+    if (agent.name !== "document" || indexing.loading()) return undefined
+    if (indexing.pipelines().documents.state !== "Disabled") return undefined
+    return language.t("documentAgent.unavailable")
+  }
+
+  const confirm = (agent: "document" | "ultra") => {
     const origin = pending()
-    if (origin === undefined) return
+    if (origin === undefined || origin.agent !== agent) return
     const sid = id() ?? ""
-    const target = session.agents().find((agent) => agent.name === "ultra")
+    const target = session.agents().find((item) => item.name === agent)
     setPending(undefined)
-    if (origin !== sid || target?.native !== true) {
+    if (origin.sessionID !== sid || target?.native !== true) {
       focus()
       return
     }
-    session.selectAgent("ultra", id())
+    session.selectAgent(agent, id())
     focus()
   }
 
   return (
     <>
-      <ModeSwitcherBase agents={session.agents()} value={session.selectedAgent(id())} onSelect={select} />
-      <UltraModeDialog open={pending() !== undefined} onConfirm={confirm} />
+      <ModeSwitcherBase
+        agents={session.agents()}
+        value={session.selectedAgent(id())}
+        onSelect={select}
+        disabledReason={disabledReason}
+        onDisabledSelect={() => vscode.postMessage({ type: "openSettingsTab", tab: "indexing" })}
+      />
+      <UltraModeDialog open={pending()?.agent === "ultra"} onConfirm={() => confirm("ultra")} />
+      <DocumentModeDialog open={pending()?.agent === "document"} onConfirm={() => confirm("document")} />
     </>
   )
 }

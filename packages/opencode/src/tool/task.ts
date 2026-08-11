@@ -116,13 +116,29 @@ export const TaskTool = Tool.define(
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
-      // kilocode_change start - keep source-backed evidence and artifacts in the root session
+      // kilocode_change start - isolate controller-owned source-backed work items in fresh child contexts
       if (WorkflowGuard.sourceBacked(ctx.sessionID, ctx.messages)) {
-        return yield* Effect.fail(
-          new Error(
-            "Task is blocked for the active source-backed-detail-design workflow. Keep scope, evidence, prose, diagrams, and Word assembly in this root session; continue with native read, grep, and document tools.",
-          ),
-        )
+        const boundJobId = WorkflowGuard.job(ctx.sessionID, ctx.messages)
+        const allowed =
+          boundJobId && params.command
+            ? yield* Effect.tryPromise({
+            try: async () => {
+              const Job = await import("@/kilocode/source-backed-design/job")
+              return Job.authorizeWorker({
+                command: params.command!,
+                sessionId: ctx.sessionID,
+                boundJobId: boundJobId!,
+              })
+            },
+            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+              }).pipe(Effect.catch(() => Effect.succeed(false)))
+            : false
+        if (!allowed || params.background === true || params.task_id)
+          return yield* Effect.fail(
+            new Error(
+              "Task is restricted to the current controller-issued source-backed work item. Use the exact workItem.worker command and prompt in foreground mode; do not resume or create unrelated subagents.",
+            ),
+          )
       }
       // kilocode_change end
       const cfg = yield* config.get()

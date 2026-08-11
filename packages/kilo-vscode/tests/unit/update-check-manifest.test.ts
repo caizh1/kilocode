@@ -39,6 +39,6 @@ describe("update-check manifest contributions", () => {
       default: 900000,
     })
     expect(props["chipmate.v2.updateCheck.codeCliPath"]).toMatchObject({ type: "string", default: "code" })
-    expect(props["chipmate.v2.updateCheck.maxDownloadBytes"]).toMatchObject({ type: "number", default: 268435456 })
+    expect(props["chipmate.v2.updateCheck.maxDownloadBytes"]).toMatchObject({ type: "number", default: 536870912 })
   })
 })

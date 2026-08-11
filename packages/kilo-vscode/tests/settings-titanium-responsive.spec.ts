@@ -291,6 +291,38 @@ test("Light and High Contrast keep accessible material fallbacks", async ({ page
   expect(style.shadow).toBe("none")
 })
 
+test("scrolling Settings surfaces use static glass without flattening material", async ({ page }) => {
+  await load(page, 900)
+  await page.locator('[data-ui="settings-nav-item"][data-value="indexing"]').click()
+
+  const material = await page.locator("[data-ui='settings-shell']").evaluate((shell) => {
+    const style = (item: Element) => {
+      const css = getComputedStyle(item)
+      return {
+        blur: css.backdropFilter,
+        background: css.backgroundColor,
+        border: css.borderTopWidth,
+        shadow: css.boxShadow,
+      }
+    }
+    const content = shell.querySelector<HTMLElement>("[data-ui='settings-content']:not([hidden])")!
+    const cards = Array.from(content.querySelectorAll<HTMLElement>("[data-component='card']")).map(style)
+    return { content: style(content), cards }
+  })
+
+  expect(material.content.blur).toBe("none")
+  expect(material.content.background).not.toBe("rgba(0, 0, 0, 0)")
+  expect(material.content.border).toBe("1px")
+  expect(material.content.shadow).not.toBe("none")
+  expect(material.cards.length).toBeGreaterThan(0)
+  for (const card of material.cards) {
+    expect(card.blur).toBe("none")
+    expect(card.background).not.toBe("rgba(0, 0, 0, 0)")
+    expect(card.border).toBe("1px")
+    expect(card.shadow).not.toBe("none")
+  }
+})
+
 test("Light Settings locks navigation widths at every responsive boundary", async ({ page }) => {
   for (const width of [360, 480, 559, 560, 561, 719, 720, 721, 900, 1199, 1200, 1201, 1450]) {
     await load(page, width, "light-modern")

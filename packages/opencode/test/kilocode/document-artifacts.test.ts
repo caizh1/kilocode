@@ -142,4 +142,36 @@ describe("kilocode document artifacts", () => {
       ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
     )
   })
+
+  test("replacement manifests remove only stale declared derived files", async () => {
+    await Effect.runPromise(
+      provideTmpdirInstance(
+        (dir) =>
+          Effect.promise(() => within(async () => {
+            const artifact = await declareArtifact({
+              kind: "word-render",
+              taskSlug: "replace-render",
+              derivedFiles: ["rendered/page-001.png", "rendered/page-002.png"],
+            })
+            const first = path.join(dir, artifact.artifactDir, "rendered/page-001.png")
+            const stale = path.join(dir, artifact.artifactDir, "rendered/page-002.png")
+            const unrelated = path.join(dir, artifact.artifactDir, "rendered/preview.png")
+            await fs.mkdir(path.dirname(first), { recursive: true })
+            await Promise.all([fs.writeFile(first, "one"), fs.writeFile(stale, "two"), fs.writeFile(unrelated, "keep")])
+
+            await declareArtifact({
+              kind: "word-render",
+              artifactDir: artifact.artifactDir,
+              derivedFiles: ["rendered/page-001.png"],
+              replaceDerivedFiles: true,
+            })
+
+            expect(await fs.readFile(first, "utf8")).toBe("one")
+            expect(await fs.readFile(unrelated, "utf8")).toBe("keep")
+            expect(await Bun.file(stale).exists()).toBe(false)
+          })),
+        { git: true },
+      ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
+    )
+  })
 })

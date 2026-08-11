@@ -28,6 +28,8 @@ import { Identity } from "@kilocode/kilo-telemetry"
 import { KiloSession } from "@/kilocode/session"
 import { stripInternalOptions } from "@/kilocode/agent/options"
 import { KilocodeSystemPrompt } from "@/kilocode/system-prompt"
+import { DocumentAgentScope } from "@/kilocode/document-agent/scope"
+import { documentAgentHistory } from "@/kilocode/document-agent/history"
 // kilocode_change end
 
 type PrepareInput = {
@@ -71,7 +73,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   const system = [
     [
       // kilocode_change start - soul defines core identity and personality
-      ...(isOpenaiOauth ? [] : [SystemPrompt.soul()]),
+      ...(isOpenaiOauth || input.agent.name === DocumentAgentScope.AGENT ? [] : [SystemPrompt.soul()]),
       // kilocode_change end
       // kilocode_change start - brand only built-in prompts for the active product profile
       ...KilocodeSystemPrompt.provider({
@@ -124,7 +126,8 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   }
   if (isOpenaiOauth) {
     // kilocode_change start - prepend soul to instructions
-    options.instructions = SystemPrompt.soul() + "\n" + system.join("\n")
+    options.instructions =
+      (input.agent.name === DocumentAgentScope.AGENT ? "" : SystemPrompt.soul() + "\n") + system.join("\n")
     // kilocode_change end
   }
 
@@ -197,6 +200,12 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   // kilocode_change end
 
   const tools = resolveTools(input)
+  // kilocode_change start - switching an existing session to Document Agent must not replay hidden code/invalid tools
+  const preparedMessages =
+    input.agent.name === DocumentAgentScope.AGENT
+      ? documentAgentHistory(messages, new Set(Object.keys(tools)))
+      : messages
+  // kilocode_change end
   if (
     input.model.providerID.includes("github-copilot") &&
     Object.keys(tools).length === 0 &&
@@ -221,7 +230,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
 
   return {
     system,
-    messages,
+    messages: preparedMessages, // kilocode_change
     tools: Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b))),
     params,
     messageTransformOptions: options,

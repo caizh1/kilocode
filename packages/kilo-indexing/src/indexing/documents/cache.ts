@@ -5,10 +5,12 @@ import path from "path"
 type CacheFile = {
   meta: string
   hashes: Record<string, string>
+  chunks?: Record<string, number>
 }
 
 export class DocumentIndexCache {
   private hashes: Record<string, string> = {}
+  private chunks: Record<string, number> = {}
   private meta = ""
   private readonly file: string
 
@@ -27,11 +29,14 @@ export class DocumentIndexCache {
       const data = JSON.parse(raw) as unknown
       if (!valid(data) || data.meta !== meta) {
         this.hashes = {}
+        this.chunks = {}
         return
       }
       this.hashes = data.hashes
+      this.chunks = data.chunks ?? {}
     } catch {
       this.hashes = {}
+      this.chunks = {}
     }
   }
 
@@ -39,12 +44,20 @@ export class DocumentIndexCache {
     return this.hashes[this.relative(filePath)]
   }
 
-  set(filePath: string, hash: string): void {
-    this.hashes[this.relative(filePath)] = hash
+  chunkCount(filePath: string): number | undefined {
+    return this.chunks[this.relative(filePath)]
+  }
+
+  set(filePath: string, hash: string, chunks: number): void {
+    const key = this.relative(filePath)
+    this.hashes[key] = hash
+    this.chunks[key] = chunks
   }
 
   delete(filePath: string): void {
-    delete this.hashes[this.relative(filePath)]
+    const key = this.relative(filePath)
+    delete this.hashes[key]
+    delete this.chunks[key]
   }
 
   all(): Record<string, string> {
@@ -53,13 +66,14 @@ export class DocumentIndexCache {
 
   async clear(): Promise<void> {
     this.hashes = {}
+    this.chunks = {}
     await this.flush()
   }
 
   async flush(): Promise<void> {
     await fs.mkdir(path.dirname(this.file), { recursive: true })
     const tmp = `${this.file}.tmp`
-    await fs.writeFile(tmp, JSON.stringify({ meta: this.meta, hashes: this.hashes }), "utf8")
+    await fs.writeFile(tmp, JSON.stringify({ meta: this.meta, hashes: this.hashes, chunks: this.chunks }), "utf8")
     await fs.rename(tmp, this.file)
   }
 
@@ -76,5 +90,8 @@ function valid(input: unknown): input is CacheFile {
   const data = input as CacheFile
   if (typeof data.meta !== "string") return false
   if (!data.hashes || typeof data.hashes !== "object") return false
-  return Object.values(data.hashes).every((item) => typeof item === "string")
+  if (!Object.values(data.hashes).every((item) => typeof item === "string")) return false
+  if (data.chunks === undefined) return true
+  if (!data.chunks || typeof data.chunks !== "object") return false
+  return Object.values(data.chunks).every((item) => Number.isSafeInteger(item) && item >= 0)
 }

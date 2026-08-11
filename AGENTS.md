@@ -60,10 +60,12 @@
 - 用户只说“打包”且未限定平台时，默认构建 macOS Apple Silicon 和 `win32-x64-baseline`；用户限定版本、平台或包类型时严格缩小到该范围，不额外构建。
 - 每次都先全新构建目标 CLI，再从本次生成的 `packages/opencode/dist/@kilocode/cli-*` 打包；不得复用旧 VSIX、旧 CLI、旧 `bin/` 或历史包解压内容。
 - 生成目标版本的更新说明时，默认只描述相对同一产品发布序列中紧邻已发布版本的增量；例如 `1.0.11` 必须对比 `1.0.10`，不得因为源码版本、Git 标签或手边旧包停留在 `1.0.6` 就生成累计说明。前序版本必须从受保护发布清单和对应已发布产物确认；无法确认时报告阻塞，不得猜测。只有用户明确要求累计说明、跨 minor 汇总或指定其他基线时才允许扩大比较范围。
+- 每次发布 ChipMate 新版本时，必须先在 `packages/kilo-vscode/CHIPMATE_CHANGELOG.md` 新增该版本章节并保留全部既有版本记录，同时让 `packages/kilo-vscode/RELEASE_NOTES.md` 仅记录该版本相对紧邻已发布版本的增量；两者对应版本的正文必须一致，同版本所有平台必须使用同一份说明。VSIX 打包必须将完整 `CHIPMATE_CHANGELOG.md` 作为 VS Code Extensions 详情页的 changelog，并校验包内不含 Kilo 上游发行记录；不得覆盖、截断或漏掉历史版本。
 - 内网/离线默认值只能来自忽略的本地配置或当前进程环境。不得把私有 provider、模型或 endpoint 写入 tracked source、`package.json` 默认值、测试、README 或可提交文档；打包结束必须恢复 manifest。
 - 内网索引默认使用 `openai-compatible`、`qwen3-embedding-8b`、`dimensionMode: auto` 和 `lancedb`。向量服务的真实返回长度用于 LanceDB schema 和一致性校验；自动模式不发送 OpenAI `dimensions` 字段。
 - 当前内网还支持 `bge-m3`；该模型不接受 `dimensions` 请求字段。只有用户明确选择固定维度且目标服务确认支持时，才允许发送该字段。
 - 所有 Windows VSIX 都只交付纯 x64：构建时必须使用 `--windows-x64-only`，不得构建或打入 Windows ARM64/AArch64 CLI、Indexer、PTY、LanceDB 或其他架构 sidecar，并在归档审计中确认不存在 ARM/AArch64 资源。
+- 后续凡打包目标包含 Windows x64，都必须通过 `KILO_INTERNAL_LANCEDB_WIN32_X64_BINARY` 注入与当前 LanceDB 版本和 ABI 匹配、已经审计的 internal/local-only x64 原生二进制；打包前必须确认该变量指向真实文件，打包后必须核对包内 PE 架构、SHA-256 和文件大小。变量缺失、文件不可用、版本或 ABI 不匹配时必须停止打包并报告阻塞，禁止静默回退到上游完整 `@lancedb/lancedb-win32-x64-msvc` 二进制。
 - Windows 内网基线包默认无 FFmpeg、无 source map，保留 `en` fallback 与 `zh`，并包含离线 ripgrep、LanceDB、Tree-sitter、扩展运行时和 webview 资源；具体必需/禁止文件由打包脚本审计，不在本文件复制清单。
 - 从 macOS 生成供 Linux 解压的归档时必须去除 Apple xattr，并检查内外层归档不含 `com.apple`、`LIBARCHIVE.xattr`、`SCHILY.xattr`、AppleDouble 或 `__MACOSX` 元数据。
 

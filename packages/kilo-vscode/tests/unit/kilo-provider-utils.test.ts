@@ -173,6 +173,19 @@ describe("sessionToWebview", () => {
     }
     expect(sessionToWebview(session).revert).toMatchObject({ workspace: "snapshots-disabled" })
   })
+
+  it("defaults the document agent scope without exposing session metadata", () => {
+    const result = sessionToWebview(makeSession({ metadata: { private: "value" } }))
+
+    expect(result.documentAgentScope).toBe("documents")
+    expect(result).not.toHaveProperty("metadata")
+  })
+
+  it("reports the explicit read-only code scope", () => {
+    const result = sessionToWebview(makeSession({ metadata: { "kilo.documentAgent.scope": "documents_and_code" } }))
+
+    expect(result.documentAgentScope).toBe("documents_and_code")
+  })
 })
 
 describe("indexProvidersById", () => {

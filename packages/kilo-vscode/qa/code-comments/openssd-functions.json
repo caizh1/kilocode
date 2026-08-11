@@ -1,0 +1,29 @@
+[
+  {
+    "id": "openssd-001",
+    "file": "source/software/GreedyFTL-3.0.0/nvme/host_lld.c",
+    "name": "check_nvme_cc_en",
+    "marker": "check_nvme_cc_en()",
+    "language": "c",
+    "group": "ab",
+    "tags": ["MMIO", "寄存器", "简单"]
+  },
+  {
+    "id": "openssd-002",
+    "file": "source/software/GreedyFTL-3.0.0/data_buffer.c",
+    "name": "CheckDataBufHit",
+    "marker": "CheckDataBufHit(unsigned int reqSlotTag)",
+    "language": "c",
+    "group": "ab",
+    "tags": ["哈希链", "缓存", "中等"]
+  },
+  {
+    "id": "openssd-003",
+    "file": "source/software/GreedyFTL-3.0.0/request_schedule.c",
+    "name": "IssueNandReq",
+    "marker": "IssueNandReq(unsigned int chNo, unsigned int wayNo)",
+    "language": "c",
+    "group": "ab",
+    "tags": ["NAND", "状态机", "复杂"]
+  }
+]

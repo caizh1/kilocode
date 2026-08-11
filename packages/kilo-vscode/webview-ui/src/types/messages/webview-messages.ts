@@ -261,6 +261,12 @@ export interface RequestAgentsMessage {
   type: "requestAgents"
 }
 
+export interface SetDocumentAgentScopeMessage {
+  type: "setDocumentAgentScope"
+  sessionID: string
+  scope: "documents"
+}
+
 export interface RequestSkillsMessage {
   type: "requestSkills"
 }
@@ -1468,6 +1474,7 @@ export type WebviewMessage =
   | RequestProvidersMessage
   | CompactRequest
   | RequestAgentsMessage
+  | SetDocumentAgentScopeMessage
   | RequestSkillsMessage
   | RequestAgentRequirementsMessage
   | RequestCommandsMessage

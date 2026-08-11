@@ -32,6 +32,9 @@ import { UltraVerifyTool } from "./ultra-verify"
 import { UltraVerify } from "../agent/ultra-verify"
 import { ProductProfile } from "../product-profile"
 import { EmbeddedReviewSubmitTool } from "./embedded-review-submit"
+import { SourceBackedDesignJobTool } from "./source-backed-design-job"
+import { DocumentScopeTool } from "./document-scope"
+import { DocumentAgentScope } from "../document-agent/scope"
 
 const log = Log.create({ service: "kilocode-tool-registry" })
 type ConfigSource = Pick<Config.Interface, "get" | "getGlobal">
@@ -51,6 +54,7 @@ type Loaders = {
   document?: () => Promise<Pick<typeof import("@/kilocode/tool/document-search"), "DocumentSearchTool">>
   artifact?: () => Promise<Pick<typeof import("@/kilocode/tool/document-artifacts"), "DocumentArtifactTools">>
   word?: () => Promise<Pick<typeof import("@/kilocode/tool/word-documents"), "WordDocumentTools">>
+  excel?: () => Promise<Pick<typeof import("@/kilocode/tool/excel-workbook"), "ExcelWorkbookTools">>
   mermaid?: () => Promise<Pick<typeof import("@/kilocode/tool/mermaid-documents"), "MermaidDocumentTools">>
   plantuml?: () => Promise<Pick<typeof import("@/kilocode/tool/plantuml-diagram"), "PlantUmlDiagramTools">>
   plantumlSource?: () => Promise<Pick<typeof import("@/kilocode/tool/plantuml-source"), "ExtractPlantUmlSourceTool">>
@@ -136,6 +140,8 @@ export namespace KiloToolRegistry {
       const terminal = yield* InteractiveTerminalTool
       const consoleShell = yield* AgentConsoleShellTool
       const review = yield* EmbeddedReviewSubmitTool
+      const sourceBackedDesignJob = yield* SourceBackedDesignJobTool
+      const documentScope = yield* DocumentScopeTool
       const sessions = yield* KiloSessions.Service
       const notify = yield* NotifyUserTool.pipe(Effect.provideService(KiloSessions.Service, sessions))
       const markets = yield* SkillMarketTools.pipe(
@@ -154,6 +160,8 @@ export namespace KiloToolRegistry {
           terminal,
           consoleShell,
           review,
+          sourceBackedDesignJob,
+          documentScope,
           notify,
           markets,
         }
@@ -174,6 +182,8 @@ export namespace KiloToolRegistry {
         terminal,
         consoleShell,
         review,
+        sourceBackedDesignJob,
+        documentScope,
         notify,
         markets,
         ...tools,
@@ -196,6 +206,8 @@ export namespace KiloToolRegistry {
       terminal?: Tool.Info
       consoleShell?: Tool.Info
       review?: Tool.Info
+      sourceBackedDesignJob?: Tool.Info
+      documentScope?: Tool.Info
       notify: Tool.Info
       notebookRead?: Tool.Info
       notebookEdit?: Tool.Info
@@ -223,6 +235,8 @@ export namespace KiloToolRegistry {
         image: Tool.init(tools.image),
         notify: Tool.init(tools.notify),
         ...(tools.review ? { review: Tool.init(tools.review) } : {}),
+        ...(tools.sourceBackedDesignJob ? { sourceBackedDesignJob: Tool.init(tools.sourceBackedDesignJob) } : {}),
+        ...(tools.documentScope ? { documentScope: Tool.init(tools.documentScope) } : {}),
         ...(tools.consoleShell ? { consoleShell: Tool.init(tools.consoleShell) } : {}),
       })
       const terminal = tools.terminal ? yield* Tool.init(tools.terminal) : undefined
@@ -252,6 +266,7 @@ export namespace KiloToolRegistry {
       const document = yield* documentTool(deps, loaders, ready.document)
       const artifacts = yield* artifactTools(deps, loaders)
       const word = yield* wordTools(deps, loaders)
+      const excel = yield* excelTools(deps, loaders)
       const mermaid = yield* mermaidTools(deps, loaders)
       const plantuml = yield* plantumlTools(deps, loaders)
       const plantumlSource = yield* plantumlSourceTool(deps, loaders)
@@ -275,6 +290,7 @@ export namespace KiloToolRegistry {
         document,
         artifacts,
         word,
+        excel,
         mermaid,
         plantuml: [...plantuml, ...plantumlSource],
         ultra,
@@ -438,6 +454,27 @@ export namespace KiloToolRegistry {
     })
   }
 
+  function excelTools(deps: Deps, loaders: Loaders) {
+    return Effect.gen(function* () {
+      const excel = loaders.excel ?? (() => import("@/kilocode/tool/excel-workbook"))
+      const mod = yield* Effect.tryPromise(() => excel()).pipe(
+        Effect.catch((err) =>
+          Effect.sync(() => {
+            log.warn("Excel workbook tool unavailable", { err })
+            return undefined
+          }),
+        ),
+      )
+      if (!mod) return []
+
+      const infos = yield* mod.ExcelWorkbookTools.pipe(
+        Effect.provideService(Agent.Service, deps.agent),
+        Effect.provideService(Truncate.Service, deps.truncate),
+      )
+      return yield* Effect.all([Tool.init(infos.create)])
+    })
+  }
+
   function mermaidTools(deps: Deps, loaders: Loaders) {
     return Effect.gen(function* () {
       const mermaid = loaders.mermaid ?? (() => import("@/kilocode/tool/mermaid-documents"))
@@ -507,8 +544,12 @@ export namespace KiloToolRegistry {
   }
 
   /** Hide human-driven tools from agents that cannot interact with the user directly. */
-  export function available(tool: Tool.Def, agent: Agent.Info) {
+  export function available(
+    tool: Pick<Tool.Def, "id">,
+    agent: Pick<Agent.Info, "name" | "mode" | "native" | "options">,
+  ) {
     if (tool.id === "notify_user") return KiloSessions.remoteStatus().enabled
+    if (tool.id === DocumentAgentScope.TOOL) return agent.name === DocumentAgentScope.AGENT
     if (agent.name === "agent-console") return tool.id === "agent_console_shell"
     if (tool.id === "agent_console_shell") return false
     if (
@@ -538,6 +579,7 @@ export namespace KiloToolRegistry {
       document?: Tool.Def
       artifacts?: Tool.Def[]
       word?: Tool.Def[]
+      excel?: Tool.Def[]
       mermaid?: Tool.Def[]
       plantuml?: Tool.Def[]
       ultra?: Tool.Def[]
@@ -551,6 +593,8 @@ export namespace KiloToolRegistry {
       terminal?: Tool.Def
       consoleShell?: Tool.Def
       review?: Tool.Def
+      sourceBackedDesignJob?: Tool.Def
+      documentScope?: Tool.Def
       notify: Tool.Def
       notebookRead?: Tool.Def
       notebookEdit?: Tool.Def
@@ -574,10 +618,13 @@ export namespace KiloToolRegistry {
       ...(tools.document ? [tools.document] : []),
       ...(tools.artifacts ?? []),
       ...(tools.word ?? []),
+      ...(tools.excel ?? []),
       ...(tools.mermaid ?? []),
       ...(tools.plantuml ?? []),
       ...(tools.ultra ?? []),
       ...(tools.review ? [tools.review] : []),
+      ...(tools.sourceBackedDesignJob ? [tools.sourceBackedDesignJob] : []),
+      ...(internal() && ProductProfile.chipmate && tools.documentScope ? [tools.documentScope] : []),
       tools.memory,
       tools.save,
       tools.recall,

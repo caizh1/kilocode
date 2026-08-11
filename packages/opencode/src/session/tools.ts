@@ -28,6 +28,7 @@ import { SkillMarketIntent } from "@/kilocode/skill-market/intent" // kilocode_c
 import { SwePruner } from "@/kilocode/swe-pruner"
 import { Config } from "@/config/config"
 import { EmbeddedReviewThinRuntime } from "@/kilocode/embedded-review/thin-runtime" // kilocode_change
+import { filter as filterSourceBackedDesignTools } from "@/kilocode/source-backed-design/visibility" // kilocode_change
 // kilocode_change end
 
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
@@ -100,11 +101,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   // kilocode_change start - keep thin Embedded Review read-only while allowing model-led evidence retrieval
   const embedded = EmbeddedReviewThinRuntime.active(input.session.id)
   const review = new Set(["read", "grep", "glob", "embedded_review_submit"])
-  const visible = SkillMarketIntent.filter(registered, input.messages).filter((item) =>
-    embedded
-      ? !EmbeddedReviewThinRuntime.submitted(input.session.id) && review.has(item.id)
-      : !["embedded_review_packet", "embedded_review_submit"].includes(item.id),
-  )
+  const visible = filterSourceBackedDesignTools({
+    tools: SkillMarketIntent.filter(registered, input.messages).filter((item) =>
+      embedded
+        ? !EmbeddedReviewThinRuntime.submitted(input.session.id) && review.has(item.id)
+        : !["embedded_review_packet", "embedded_review_submit"].includes(item.id),
+    ),
+    sessionID: input.session.id,
+    messages: input.messages,
+  })
   // kilocode_change end
   for (const item of visible) {
     // kilocode_change end

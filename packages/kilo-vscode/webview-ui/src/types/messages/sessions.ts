@@ -45,6 +45,7 @@ export interface SessionInfo {
   title?: string
   createdAt: string
   updatedAt: string
+  documentAgentScope?: "documents" | "documents_and_code"
   revert?: {
     messageID: string
     partID?: string

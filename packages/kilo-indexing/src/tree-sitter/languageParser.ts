@@ -45,7 +45,7 @@ export function resolveModulePath(specifier: string): string | undefined {
   try {
     return require.resolve(specifier)
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -78,6 +78,7 @@ function resolveFromDirectories(file: string, dirs: string[]): string | undefine
     }
     return candidate
   }
+  return undefined
 }
 
 export function resolveCoreRuntimeWasmPath(sourceDirectory?: string): string | undefined {
@@ -123,7 +124,25 @@ async function loadLanguage(langName: string, sourceDirectory?: string) {
   }
 }
 
-let isParserInitialized = false
+let parserInitialization: Promise<void> | undefined
+
+function initializeParser(Parser: { init(options?: { locateFile(): string }): Promise<void> }, sourceDirectory?: string) {
+  if (parserInitialization) return parserInitialization
+  parserInitialization = (async () => {
+    const runtimeWasmPath = resolveCoreRuntimeWasmPath(sourceDirectory)
+    await (runtimeWasmPath
+      ? Parser.init({
+          locateFile() {
+            return runtimeWasmPath
+          },
+        })
+      : Parser.init())
+  })().catch((error) => {
+    parserInitialization = undefined
+    throw error
+  })
+  return parserInitialization
+}
 
 /*
 RATIONALE: Uses web-tree-sitter WASM modules instead of native node bindings
@@ -137,23 +156,13 @@ Sources:
 export async function loadRequiredLanguageParsers(filesToParse: string[], sourceDirectory?: string) {
   const { Parser, Query } = require("web-tree-sitter")
 
-  if (!isParserInitialized) {
-    try {
-      const runtimeWasmPath = resolveCoreRuntimeWasmPath(sourceDirectory)
-      await (runtimeWasmPath
-        ? Parser.init({
-            locateFile() {
-              return runtimeWasmPath
-            },
-          })
-        : Parser.init())
-      isParserInitialized = true
-    } catch (error) {
-      log.error("Failed to initialize tree-sitter parser", {
-        err: error instanceof Error ? error.message : String(error),
-      })
-      throw error
-    }
+  try {
+    await initializeParser(Parser, sourceDirectory)
+  } catch (error) {
+    log.error("Failed to initialize tree-sitter parser", {
+      err: error instanceof Error ? error.message : String(error),
+    })
+    throw error
   }
 
   const extensionsToLoad = new Set(filesToParse.map((file) => path.extname(file).toLowerCase().slice(1)))

@@ -67,7 +67,7 @@ export function parseCodeGraphFile(input: {
   const types = typeSymbols(input.content, masked, starts)
   const declarations = decls(input.content, masked, starts, functions, types)
   const globals = globalSymbols(input.content, masked, starts, functions, types)
-  const macros = macroSymbols(input.content, starts)
+  const macros = macroSymbols(input.content, masked, starts)
   const initializers = initSymbols(input.content, masked, starts)
   const labels = labelSymbols(input.content, functions)
   const registerMacroFamilies = regFamilies(input.filePath, macros)
@@ -80,7 +80,7 @@ export function parseCodeGraphFile(input: {
     filePath: input.filePath,
     fileHash: input.fileHash,
     language: lang(input.filePath),
-    includes: includeSymbols(input.content, starts),
+    includes: includeSymbols(input.content, masked, starts),
     macros,
     functions,
     declarations,
@@ -94,37 +94,40 @@ export function parseCodeGraphFile(input: {
   }
 }
 
-function includeSymbols(text: string, starts: number[]): CodeGraphInclude[] {
+function includeSymbols(original: string, masked: string, starts: number[]): CodeGraphInclude[] {
   const result: CodeGraphInclude[] = []
-  const pattern = /^\s*#\s*include\s+([<"])([^>"]+)[>"]/gm
+  const pattern = /^[^\S\r\n]*#[^\S\r\n]*include[^\S\r\n]+([<"])([^>"\r\n]+)[>"]/gm
   let match: RegExpExecArray | null
-  while ((match = pattern.exec(text))) {
+  while ((match = pattern.exec(original))) {
+    if (!activeDirective(masked, match)) continue
     const line = lineFor(starts, match.index)
     result.push({
       target: match[2].trim(),
       system: match[1] === "<",
       startLine: line,
       endLine: line,
-      shortSnippet: lineText(text, starts, line),
+      shortSnippet: lineText(original, starts, line),
     })
   }
   return result
 }
 
-function macroSymbols(text: string, starts: number[]): CodeGraphMacro[] {
+function macroSymbols(original: string, masked: string, starts: number[]): CodeGraphMacro[] {
   const result: CodeGraphMacro[] = []
-  const pattern = /^\s*#\s*define\s+([A-Za-z_]\w*)(?:\s*\(([^)]*)\))?/gm
+  const pattern = /^[^\S\r\n]*#[^\S\r\n]*define[^\S\r\n]+([A-Za-z_]\w*)(?:[^\S\r\n]*\(((?:[^)\r\n]|\\(?:\r\n|\n|\r))*)\))?/gm
   let match: RegExpExecArray | null
-  while ((match = pattern.exec(text))) {
+  while ((match = pattern.exec(original))) {
+    if (!activeDirective(masked, match)) continue
     const line = lineFor(starts, match.index)
     const macro: CodeGraphMacro = {
       kind: "macro",
       name: match[1],
       startLine: line,
       endLine: line,
-      shortSnippet: lineText(text, starts, line),
+      shortSnippet: lineText(original, starts, line),
     }
     const params = match[2]
+      ?.replace(/\\(?:\r\n|\n|\r)/g, " ")
       ?.split(",")
       .map((item) => item.trim())
       .filter(Boolean)
@@ -132,6 +135,11 @@ function macroSymbols(text: string, starts: number[]): CodeGraphMacro[] {
     result.push(macro)
   }
   return result
+}
+
+function activeDirective(masked: string, match: RegExpExecArray): boolean {
+  const hash = match[0].indexOf("#")
+  return hash >= 0 && masked[match.index + hash] === "#"
 }
 
 function funcs(file: string, original: string, masked: string, starts: number[]): CodeGraphFunction[] {

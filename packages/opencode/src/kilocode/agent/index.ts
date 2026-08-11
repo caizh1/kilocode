@@ -17,8 +17,10 @@ import PROMPT_ASK from "../../agent/prompt/ask.txt"
 import PROMPT_EXPLORE from "../../agent/prompt/explore.txt"
 import PROMPT_AGENT_CONSOLE from "./agent-console.txt"
 import PROMPT_ULTRA from "./ultra.txt"
+import PROMPT_DOCUMENT from "./document.txt"
 import { applyInternalIndexingDefaults, isInternalOffline } from "../internal-offline"
 import { ProductProfile } from "../product-profile"
+import { DocumentAgentScope } from "../document-agent/scope"
 
 export const bash: Record<string, "allow" | "ask" | "deny"> = {
   "*": "ask",
@@ -345,7 +347,9 @@ export function processConfigItem(item: {
   }
 }
 
-const locked = new Set(["compaction", "title", "summary"])
+export const DESIGN_DOC_WORKER = "design-doc-worker"
+export const DESIGN_DOC_STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
+const locked = new Set(["compaction", "title", "summary", DESIGN_DOC_WORKER])
 export const ULTRA_BASELINE = "ultra-code-baseline"
 export const ULTRA_SYNTH = "ultra-synthesizer"
 
@@ -353,6 +357,35 @@ function hardRules() {
   return Permission.fromConfig({
     "*": "deny",
   })
+}
+
+export function designDocWorkerRules() {
+  return Permission.fromConfig({
+    "*": "deny",
+    [DESIGN_DOC_STRUCTURED_OUTPUT_TOOL]: "allow",
+  })
+}
+
+function lockedRules(name: string) {
+  if (name === DocumentAgentScope.AGENT) return DocumentAgentScope.rules()
+  return name === DESIGN_DOC_WORKER ? designDocWorkerRules() : hardRules()
+}
+
+function documentAgentEnabled() {
+  return ProductProfile.chipmate && isInternalOffline()
+}
+
+function documentAgent(): AgentInfo {
+  return {
+    name: DocumentAgentScope.AGENT,
+    displayName: "Document RAG",
+    description: "只基于 Document RAG 作答，并在用户确认后按会话临时开放只读源码探索。",
+    prompt: PROMPT_DOCUMENT,
+    options: { id: DocumentAgentScope.AGENT },
+    permission: [...DocumentAgentScope.rules()],
+    mode: "primary",
+    native: true,
+  }
 }
 
 function agentConsole(): AgentInfo {
@@ -371,21 +404,41 @@ function agentConsole(): AgentInfo {
   }
 }
 
+function designDocWorker(): AgentInfo {
+  return {
+    name: DESIGN_DOC_WORKER,
+    description: "Hidden worker that converts a bounded source evidence pack into one atomic DesignDoc IR.",
+    prompt: [
+      "你只处理一个模块的一种原子设计产物。",
+      "只能使用输入 Evidence Pack 中的事实；没有证据时必须写入 unknowns，禁止补写或猜测源码行为。",
+      "不得规划其他任务、创建子 Agent、搜索或修改源码、渲染图、发布文档或判断整个 Job 完成。",
+      "最终只调用 StructuredOutput 一次并返回符合当前 Schema 的 IR。",
+    ].join("\n"),
+    options: { id: DESIGN_DOC_WORKER },
+    permission: designDocWorkerRules(),
+    mode: "subagent",
+    native: true,
+    hidden: true,
+  }
+}
+
 export function harden(item?: { name: string; permission: Permission.Ruleset }) {
   if (!item) return
-  if (!locked.has(item.name)) return
-  item.permission = hardRules()
+  if (!locked.has(item.name) && !(item.name === DocumentAgentScope.AGENT && documentAgentEnabled())) return
+  item.permission = [...lockedRules(item.name)]
 }
 
 export function hardenSystemAgents(agents: Record<string, AgentInfo>) {
   for (const [key, item] of Object.entries(agents)) {
-    if (locked.has(key)) {
-      item.permission = hardRules()
+    if (locked.has(key) || (key === DocumentAgentScope.AGENT && documentAgentEnabled())) {
+      item.permission = [...lockedRules(key)]
       continue
     }
     harden(item)
   }
   agents["agent-console"] = agentConsole()
+  agents[DESIGN_DOC_WORKER] = designDocWorker()
+  if (documentAgentEnabled()) agents[DocumentAgentScope.AGENT] = documentAgent()
   delete agents[ULTRA_BASELINE]
   delete agents[ULTRA_SYNTH]
   if (!ProductProfile.chipmate || !agents.ultra || !agents.code || !agents.ask) {
@@ -456,6 +509,8 @@ export function patchAgents(
   const internal = isInternalOffline()
 
   agents["agent-console"] = agentConsole()
+  agents[DESIGN_DOC_WORKER] = designDocWorker()
+  if (documentAgentEnabled()) agents[DocumentAgentScope.AGENT] = documentAgent()
 
   // Rename "build" → "code" for backward compatibility
   if (agents.build) {

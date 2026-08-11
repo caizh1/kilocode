@@ -1,0 +1,47 @@
+[
+	{
+		"id": "openssd-r2-001",
+		"file": "source/software/GreedyFTL-3.0.0/data_buffer.c",
+		"name": "AllocateTempDataBuf",
+		"marker": "AllocateTempDataBuf(unsigned int dieNo)",
+		"language": "c",
+		"group": "ab",
+		"tags": ["极简", "临时缓冲区", "映射"]
+	},
+	{
+		"id": "openssd-r2-002",
+		"file": "source/software/GreedyFTL-3.0.0/data_buffer.c",
+		"name": "UpdateDataBufEntryInfoBlockingReq",
+		"marker": "UpdateDataBufEntryInfoBlockingReq(unsigned int bufEntry, unsigned int reqSlotTag)",
+		"language": "c",
+		"group": "ab",
+		"tags": ["简单", "阻塞请求链", "链表"]
+	},
+	{
+		"id": "openssd-r2-003",
+		"file": "source/software/GreedyFTL-3.0.0/data_buffer.c",
+		"name": "AllocateDataBuf",
+		"marker": "AllocateDataBuf()",
+		"language": "c",
+		"group": "ab",
+		"tags": ["中等", "LRU", "哈希链"]
+	},
+	{
+		"id": "openssd-r2-004",
+		"file": "source/software/GreedyFTL-3.0.0/request_schedule.c",
+		"name": "CheckReqStatus",
+		"marker": "CheckReqStatus(unsigned int chNo, unsigned int wayNo)",
+		"language": "c",
+		"group": "ab",
+		"tags": ["复杂", "完成轮询", "状态机", "ECC"]
+	},
+	{
+		"id": "openssd-r2-005",
+		"file": "source/software/GreedyFTL-3.0.0/request_schedule.c",
+		"name": "ExecuteNandReq",
+		"marker": "ExecuteNandReq(unsigned int chNo, unsigned int wayNo, unsigned int reqStatus)",
+		"language": "c",
+		"group": "ab",
+		"tags": ["高复杂", "重试", "坏块", "状态机"]
+	}
+]

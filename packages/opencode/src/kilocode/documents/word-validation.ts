@@ -279,14 +279,22 @@ async function readPackage(bytes: Uint8Array, errors: WordDocumentDiagnostic[]):
 function parseXml(part: string, source: string) {
   const errors: WordDocumentDiagnostic[] = []
   const warnings: WordDocumentDiagnostic[] = []
+  const structural = validateXmlStructure(part, source)
+  if (structural) return { errors: [structural], warnings, doc: undefined }
   const parser = new DOMParser({
     locator: true,
     onError: (level, message, context) => {
+      const point = location(context?.locator)
+      const namespaces = namespaceDiagnosticsAt(part, source, point)
+      if (namespaces.length) {
+        errors.push(...namespaces)
+        return
+      }
       const diagnostic = {
         part,
         code: "xml-parse-error",
         message,
-        ...location(context?.locator),
+        ...point,
       }
       if (level === "warning" && message.includes("Unicode replacement character detected")) {
         warnings.push({ ...diagnostic, code: "xml-replacement-character" })
@@ -299,27 +307,25 @@ function parseXml(part: string, source: string) {
     try {
       return parser.parseFromString(source, "application/xml")
     } catch (err) {
-      if (!errors.length) {
-        const point = location((err as { locator?: unknown })?.locator)
-        const message = err instanceof Error ? err.message : String(err)
-        const prefixes = message.includes("NamespaceError") ? namespacePrefixesAt(source, point.line, point.column) : []
-        if (prefixes.length) {
-          errors.push(
-            ...prefixes.map((prefix) => ({
-              part,
-              code: "xml-namespace-prefix-undefined",
-              message: `Namespace prefix ${prefix} is not defined.`,
-              prefix,
-              ...point,
-            })),
-          )
-          return undefined
-        }
-        errors.push({ part, code: "xml-parse-error", message, ...point })
+      const point = location((err as { locator?: unknown })?.locator)
+      const namespaces = namespaceDiagnosticsAt(part, source, point)
+      if (namespaces.length) {
+        errors.splice(
+          0,
+          errors.length,
+          ...errors.filter((item) => item.code !== "xml-parse-error"),
+          ...namespaces,
+        )
+        return undefined
       }
+      if (!errors.length) errors.push({ part, code: "xml-parse-error", message: errorMessage(err), ...point })
       return undefined
     }
   })()
+  // xmldom may return a partially recovered tree after reporting a fatal error.
+  // Never traverse that tree: malformed recovery nodes are not a trustworthy
+  // OOXML input and some parser versions can expose cyclic child references.
+  if (errors.length) return { errors, warnings, doc: undefined }
   if (!doc?.documentElement) {
     if (!errors.length) errors.push({ part, code: "xml-root-missing", message: "XML part has no root element." })
     return { errors, warnings, doc }
@@ -353,6 +359,111 @@ function parseXml(part: string, source: string) {
     }
   }
   return { errors, warnings, doc }
+}
+
+function errorMessage(input: unknown): string {
+  if (input instanceof Error) return input.message
+  if (input && typeof input === "object" && typeof (input as { message?: unknown }).message === "string") {
+    return (input as { message: string }).message
+  }
+  try {
+    return String(input)
+  } catch {
+    return "Unknown XML parser error"
+  }
+}
+
+function namespaceDiagnosticsAt(
+  part: string,
+  source: string,
+  point: { line?: number; column?: number },
+): WordDocumentDiagnostic[] {
+  return namespacePrefixesAt(source, point.line, point.column).map((prefix) => ({
+    part,
+    code: "xml-namespace-prefix-undefined",
+    message: `Namespace prefix ${prefix} is not defined.`,
+    prefix,
+    ...point,
+  }))
+}
+
+function validateXmlStructure(part: string, source: string): WordDocumentDiagnostic | undefined {
+  const stack: Array<{ name: string; index: number }> = []
+  let cursor = 0
+  while (cursor < source.length) {
+    const start = source.indexOf("<", cursor)
+    if (start < 0) break
+    if (source.startsWith("<!--", start)) {
+      const end = source.indexOf("-->", start + 4)
+      if (end < 0) return structuralDiagnostic(part, source, start, "XML comment is not closed.")
+      cursor = end + 3
+      continue
+    }
+    if (source.startsWith("<![CDATA[", start)) {
+      const end = source.indexOf("]]>", start + 9)
+      if (end < 0) return structuralDiagnostic(part, source, start, "XML CDATA section is not closed.")
+      cursor = end + 3
+      continue
+    }
+    if (source.startsWith("<?", start)) {
+      const end = source.indexOf("?>", start + 2)
+      if (end < 0) return structuralDiagnostic(part, source, start, "XML processing instruction is not closed.")
+      cursor = end + 2
+      continue
+    }
+    const end = xmlTagEnd(source, start + 1)
+    if (end < 0) return structuralDiagnostic(part, source, start, "XML tag is not closed.")
+    const raw = source.slice(start + 1, end).trim()
+    cursor = end + 1
+    if (!raw || raw.startsWith("!")) continue
+    const closing = raw.startsWith("/")
+    const body = closing ? raw.slice(1).trimStart() : raw
+    const name = /^([A-Za-z_][A-Za-z0-9_.:-]*)/.exec(body)?.[1]
+    if (!name) return structuralDiagnostic(part, source, start, "XML tag name is invalid.")
+    if (closing) {
+      const current = stack.pop()
+      if (current?.name === name) continue
+      return structuralDiagnostic(
+        part,
+        source,
+        start,
+        current ? `XML closing tag ${name} does not match ${current.name}.` : `XML closing tag ${name} has no opener.`,
+      )
+    }
+    if (!/\/\s*$/.test(raw)) stack.push({ name, index: start })
+  }
+  const unclosed = stack.at(-1)
+  if (unclosed) return structuralDiagnostic(part, source, unclosed.index, `XML tag ${unclosed.name} is not closed.`)
+  return undefined
+}
+
+function xmlTagEnd(source: string, start: number): number {
+  let quote = ""
+  let brackets = 0
+  for (let index = start; index < source.length; index += 1) {
+    const character = source[index]!
+    if (quote) {
+      if (character === quote) quote = ""
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+      continue
+    }
+    if (character === "[") brackets += 1
+    if (character === "]" && brackets) brackets -= 1
+    if (character === ">" && !brackets) return index
+  }
+  return -1
+}
+
+function structuralDiagnostic(
+  part: string,
+  source: string,
+  index: number,
+  message: string,
+): WordDocumentDiagnostic {
+  return { part, code: "xml-parse-error", message, ...lineColumn(source, index) }
 }
 
 function validateRelationships(pkg: Package, docs: Map<string, Document>, errors: WordDocumentDiagnostic[]): void {

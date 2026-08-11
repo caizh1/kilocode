@@ -1,5 +1,7 @@
 # 12 Word Export Rules
 
+> 完整源码详设 Word 由 `source_backed_design_job` 在全部工作项通过后一次性组装、校验和渲染。模型不得在该任务中直接执行本文件旧版 fragment/edit/merge 流程。以下公共 Word 工具规则只适用于单章节、旧文档更新或其他明确的窄范围交付。
+
 ## 1. Kilo Word route
 
 When the user asks for Word output, generate the `.docx` with Kilo's generic Word tools. Use `create_word_document` for the initial working document and `apply_word_document_edits` for bounded non-image chapter batches. The tool-created working artifact is continuation evidence, not the final user deliverable. Do not introduce a task-specific Word pipeline, temporary JSON shell bridge, local Pandoc, local LibreOffice/soffice authoring, `pip install`, `npm install`, `python-docx`, or a standalone Python/Node DOCX script as the primary or fallback route. `08-word-export-input.md`, when used, is an auditable assembly draft, not the final export mechanism or tool payload.

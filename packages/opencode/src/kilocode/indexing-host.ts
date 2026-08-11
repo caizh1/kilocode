@@ -19,8 +19,12 @@ export function createIndexingHost(send: (message: Result | Event) => void) {
     progress = undefined
     telemetry = undefined
     await manager?.checkpoint()
-    manager?.dispose()
+    await manager?.dispose()
     manager = undefined
+  }
+
+  const checkpoint = async () => {
+    await manager?.checkpoint()
   }
 
   const init = async (request: Extract<Request, { method: "init" }>) => {
@@ -115,5 +119,5 @@ export function createIndexingHost(send: (message: Result | Event) => void) {
     manager?.setMemoryPressure(value)
   }
 
-  return { handle, dispose, pressure }
+  return { handle, dispose, checkpoint, pressure }
 }

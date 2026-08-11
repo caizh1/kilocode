@@ -210,6 +210,88 @@ test("QA 未完成消息不留下空的完成态分隔符", async ({ page }) => 
   await expect(page.locator('[data-slot="assistant-completion-inline"]')).toHaveCount(0)
 })
 
+test("Document RAG 的 qwen 覆盖态保留模型名称并让重置按钮同行", async ({ page }) => {
+  const story = "prompt-input--document-qwen-override-zh"
+
+  for (const width of COMPOSER_WIDTHS) {
+    await load(page, story, 1500)
+    await resizeComposer(page, width)
+
+    const selectors = page.locator('[data-ui="qa-composer-selectors"]')
+    const model = selectors.locator(".prompt-selector-trigger--model")
+    const reset = selectors.locator(".prompt-selector-reset")
+    await expect(selectors).toHaveAttribute("data-document-agent", "true")
+    await expect(model.locator(".model-selector-trigger-label")).toHaveText("myprovider / qwen3.6-27b")
+    await expect(model).toHaveAttribute("aria-label", /myprovider \/ qwen3\.6-27b/)
+    await expect(reset).toBeVisible()
+
+    const layout = await selectors.evaluate((root) => {
+      const rect = (element: Element) => {
+        const box = element.getBoundingClientRect()
+        return {
+          left: box.left,
+          top: box.top,
+          right: box.right,
+          bottom: box.bottom,
+          width: box.width,
+          height: box.height,
+        }
+      }
+      const shell = rect(root)
+      const controls = Array.from(root.querySelectorAll<HTMLButtonElement>("button"))
+        .map((button) => ({ button, box: rect(button) }))
+        .filter(({ box }) => box.width > 0 && box.height > 0)
+      const overlaps = controls.flatMap((first, index) =>
+        controls
+          .slice(index + 1)
+          .filter(
+            (second) =>
+              first.box.left < second.box.right &&
+              first.box.right > second.box.left &&
+              first.box.top < second.box.bottom &&
+              first.box.bottom > second.box.top,
+          ),
+      )
+      const model = root.querySelector<HTMLElement>(".prompt-selector-trigger--model")!
+      const reset = root.querySelector<HTMLElement>(".prompt-selector-reset")!
+      const label = root.querySelector<HTMLElement>(".model-selector-trigger-label")!
+      const modelBox = model.getBoundingClientRect()
+      const resetBox = reset.getBoundingClientRect()
+      return {
+        escaped: controls
+          .filter(
+            ({ box }) =>
+              box.left < shell.left - 1 ||
+              box.right > shell.right + 1 ||
+              box.top < shell.top - 1 ||
+              box.bottom > shell.bottom + 1,
+          )
+          .map(({ button, box }) => ({ className: button.className, ...box })),
+        overlaps: overlaps.length,
+        rowDrift: Math.abs(modelBox.top + modelBox.height / 2 - (resetBox.top + resetBox.height / 2)),
+        labelWidth: label.getBoundingClientRect().width,
+      }
+    })
+
+    expect(layout.escaped, `控件越过 Document 选择器边界：${width}px`).toEqual([])
+    expect(layout.overlaps, `Document 选择器控件重叠：${width}px`).toBe(0)
+    expect(layout.rowDrift, `模型与重置按钮不同行：${width}px`).toBeLessThanOrEqual(2)
+    expect(layout.labelWidth, `模型名称没有可读宽度：${width}px`).toBeGreaterThan(20)
+  }
+
+  for (const theme of ["light-modern", "hc-black"]) {
+    await load(page, story, 420, theme)
+    const model = page.locator(".prompt-selector-trigger--model")
+    await expect(model.locator(".model-selector-trigger-label")).toHaveText("myprovider / qwen3.6-27b")
+    await expect(page.locator(".prompt-selector-reset")).toBeVisible()
+  }
+
+  await load(page, story, 420)
+  await page.locator(".prompt-selector-trigger--model").click()
+  await expect(page.locator(".model-selector-search")).toBeVisible()
+  await expect(page.locator(".model-selector-item-name", { hasText: "qwen3.6-27b" })).toBeVisible()
+})
+
 test("QA composer keeps every dense control in bounds without overlap", async ({ page }) => {
   for (const width of COMPOSER_WIDTHS) {
     await load(page, "prompt-input--qa-all-controls-send", 1500)

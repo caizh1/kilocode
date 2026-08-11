@@ -100,10 +100,12 @@ describe("Code QA 注释 Diff 协议与确定性校验", () => {
     expect(await validateOnlyCommentInsertions(target(), result.value.proposals, candidate)).toBe(true)
   })
 
-  it("允许第一轮判断无需注释，并允许复核通过或否决", () => {
+  it("拒绝模型替用户决定无需注释，并允许复核通过或报告冲突", () => {
     expect(parseCommentQaResponse("结论：无需注释\n理解：现有实现已经直白，无需重复代码。", "primary")).toMatchObject({
-      ok: true,
-      value: { decision: "skip" },
+      ok: false,
+    })
+    expect(parseCommentQaResponse("结论：无需注释\n复核：候选没有必要。", "review")).toMatchObject({
+      ok: false,
     })
     expect(parseCommentQaResponse("结论：通过\n复核：候选事实与源码一致。", "review")).toMatchObject({
       ok: true,
@@ -117,7 +119,7 @@ describe("Code QA 注释 Diff 协议与确定性校验", () => {
 
   it("严格限制每轮结论类型、结论数量和 Diff 上限", () => {
     expect(parseCommentQaResponse("结论：通过\n复核：事实一致。", "primary")).toMatchObject({ ok: false })
-    expect(parseCommentQaResponse("结论：生成注释\n结论：无需注释\n理解：无法确定。", "primary")).toMatchObject({
+    expect(parseCommentQaResponse("结论：生成注释\n结论：生成注释\n理解：无法确定。", "primary")).toMatchObject({
       ok: false,
     })
     expect(parseCommentQaResponse("结论：生成注释\n理解：缺少候选补丁。", "primary")).toMatchObject({ ok: false })
@@ -148,9 +150,19 @@ describe("Code QA 注释 Diff 协议与确定性校验", () => {
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
 
-    expect(buildValidatedCommentCandidate(target(), parsed.value)).toMatchObject({
+    const result = buildValidatedCommentCandidate(target(), parsed.value)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reasons).toContain("Diff 没有新增注释")
+  })
+
+  it("拒绝只生成行内注释而没有函数说明", () => {
+    const candidate = source.replace("    if (!text) {", "    // 先拒绝空指针。\n    if (!text) {")
+    const result = parseCandidate(primary(candidate))
+
+    expect(result).toMatchObject({
       ok: false,
-      reasons: [expect.stringContaining("没有新增注释")],
+      reasons: [expect.stringContaining("必须生成一条函数说明")],
     })
   })
 
@@ -230,6 +242,10 @@ describe("Code QA 注释 Diff 协议与确定性校验", () => {
       "结论：生成注释",
       "理解：空指针保护值得说明。",
       "```diff",
+      "+/** 将有效文本转换为整数，空指针返回 -1。 */",
+      " static int parse_value(const char *text)",
+      "```",
+      "```diff",
       "+// 先拦截空指针，避免将其传给 atoi。",
       " if (!text) {",
       "```",
@@ -237,7 +253,7 @@ describe("Code QA 注释 Diff 协议与确定性校验", () => {
     const nestedResult = parseCandidate(nested)
     expect(nestedResult.ok).toBe(true)
     if (!nestedResult.ok) return
-    expect(nestedResult.value.proposals[0]?.indent).toBe("    ")
+    expect(nestedResult.value.proposals.find((proposal) => proposal.kind === "inline")?.indent).toBe("    ")
   })
 
   it("拒绝修改原代码的 Diff", () => {
@@ -285,5 +301,53 @@ describe("Code QA 注释 Diff 协议与确定性校验", () => {
 
     const docCandidate = blockCandidate.replace("/* 将", "/** 将")
     expect(parseCandidate(primary(docCandidate), target([], "block")).ok).toBe(false)
+  })
+
+  it("仅在用户选择修订时安全替换既有函数说明，不触碰函数代码", async () => {
+    const revisionSource = `// 旧说明只说进行了转换。\n${source}`
+    const current = target(["// 旧说明只说进行了转换。"], "line")
+    const currentTarget: FunctionTarget = {
+      ...current,
+      documentText: revisionSource,
+      startIndex: revisionSource.indexOf("static int"),
+      endIndex: revisionSource.indexOf("static int") + source.trimEnd().length,
+      startLine: 1,
+      endLine: 7,
+      existingFunctionHeader: {
+        startLine: 0,
+        endLine: 0,
+        text: "// 旧说明只说进行了转换。",
+        hash: "header-hash",
+        style: "line",
+      },
+      anchors: current.anchors.map((anchor) => ({ ...anchor, line: anchor.line + 1 })),
+    }
+    const parsed = parseCommentQaResponse(
+      [
+        "结论：生成注释",
+        "理解：函数还包含空指针返回约定，需要修订原说明。",
+        "```diff",
+        "+// 将有效文本转换为整数；空指针输入返回 -1。",
+        " static int parse_value(const char *text)",
+        "```",
+      ].join("\n"),
+      "primary",
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+
+    const result = buildValidatedCommentCandidate(currentTarget, parsed.value, "revise")
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.proposals[0]).toMatchObject({
+      kind: "functionHeader",
+      operation: "replace",
+      insertBeforeLine: 0,
+      replaceEndLine: 0,
+    })
+    const candidate = buildCommentedDocument(currentTarget, result.value.proposals)
+    expect(candidate).toBe(`// 将有效文本转换为整数；空指针输入返回 -1。\n${source}`)
+    expect(await validateOnlyCommentInsertions(currentTarget, result.value.proposals, candidate)).toBe(true)
   })
 })

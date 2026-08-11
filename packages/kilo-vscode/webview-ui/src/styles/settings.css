@@ -261,7 +261,7 @@
   box-shadow:
     inset 0 1px 0 var(--settings-glass-highlight),
     0 16px 42px var(--settings-glass-shadow);
-  backdrop-filter: blur(22px) saturate(1.14);
+  backdrop-filter: none;
 }
 
 .settings-shell .settings-page-header {
@@ -320,7 +320,7 @@
   box-shadow:
     inset 0 1px 0 var(--settings-glass-highlight),
     0 12px 30px color-mix(in srgb, var(--settings-glass-shadow) 75%, transparent);
-  backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: none;
 }
 
 .settings-shell [data-slot="settings-row"] {
@@ -812,7 +812,7 @@
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 12%, transparent),
     0 10px 26px color-mix(in srgb, var(--vscode-widget-shadow, #000) 18%, transparent);
-  backdrop-filter: blur(18px) saturate(1.08);
+  backdrop-filter: none;
 }
 
 .settings-shell .chipmate-update-notes-title {
@@ -897,7 +897,7 @@
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 11%, transparent),
     0 10px 24px color-mix(in srgb, var(--vscode-widget-shadow, #000) 16%, transparent);
-  backdrop-filter: blur(18px) saturate(1.06);
+  backdrop-filter: none;
 }
 
 .settings-shell .chipmate-update-error-detail > span {

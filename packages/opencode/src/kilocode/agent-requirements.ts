@@ -6,6 +6,9 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Cause, Effect, Exit, Schema } from "effect"
 import { ConfigAgentV1 } from "@opencode-ai/core/v1/config/agent"
+import { DocumentAgentScope } from "@/kilocode/document-agent/scope"
+import { applyInternalIndexingDefaults, isInternalOffline } from "@/kilocode/internal-offline"
+import { ProductProfile } from "@/kilocode/product-profile"
 
 export const VSCodeExtension = ConfigAgentV1.VSCodeExtension
 export type VSCodeExtension = ConfigAgentV1.VSCodeExtension
@@ -37,7 +40,13 @@ export const Result = Schema.Struct({
   vscode_extensions: Schema.Array(VSCodeExtension),
   error: Schema.optional(
     Schema.Struct({
-      code: Schema.Literals(["unknown_agent", "malformed_declaration", "discovery_failed", "mcp_status_failed"]),
+      code: Schema.Literals([
+        "unknown_agent",
+        "malformed_declaration",
+        "discovery_failed",
+        "mcp_status_failed",
+        "feature_unavailable",
+      ]),
       message: Schema.String,
     }),
   ),
@@ -66,6 +75,25 @@ type Services = {
 function enabled(cfg: Config.Info) {
   const experimental = cfg.experimental
   return experimental !== undefined && "agent_requirements" in experimental && experimental.agent_requirements === true
+}
+
+function documentUnavailable(cfg: Config.Info, name: string): Result | undefined {
+  if (name !== DocumentAgentScope.AGENT || !ProductProfile.chipmate || !isInternalOffline()) return undefined
+  const indexing = applyInternalIndexingDefaults(cfg.indexing, true)
+  if (indexing?.documents?.enabled === true) return undefined
+  return {
+    agent: name,
+    directory: "",
+    enabled: true,
+    state: "blocked",
+    skills: [],
+    mcps: [],
+    vscode_extensions: [],
+    error: {
+      code: "feature_unavailable",
+      message: "Document RAG 已关闭。请先在索引设置中启用 Document RAG。",
+    },
+  }
 }
 
 function ready(input: { agent: string; directory: string; enabled: boolean }): Result {
@@ -178,6 +206,8 @@ export const status = Effect.fn("AgentRequirements.status")(function* (
   input: Services & { name: string; directory: string },
 ) {
   const cfg = yield* input.config.get()
+  const unavailable = documentUnavailable(cfg, input.name)
+  if (unavailable) return { ...unavailable, directory: input.directory }
   const active = enabled(cfg)
   if (!active) return ready({ agent: input.name, directory: input.directory, enabled: false })
 
@@ -249,7 +279,10 @@ export const guard = Effect.fn("AgentRequirements.guard")(function* (
 
   return yield* Effect.fail(
     new BlockedError({
-      message: "Complete the required checks to use this agent first",
+      message:
+        result.agent === DocumentAgentScope.AGENT && result.error?.message
+          ? result.error.message
+          : "Complete the required checks to use this agent first",
       agent: result.agent,
       directory: result.directory,
       state,

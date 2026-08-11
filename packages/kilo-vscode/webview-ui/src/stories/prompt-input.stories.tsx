@@ -18,7 +18,8 @@ import { SessionContext } from "../context/session"
 import { ServerContext } from "../context/server"
 import { PromptInput } from "../components/chat/PromptInput"
 import { UltraModeDialog } from "../components/shared/UltraModeDialog"
-import type { AgentInfo, Config, IndexingStatus } from "../types/messages"
+import { DocumentModeDialog } from "../components/shared/DocumentModeDialog"
+import type { AgentInfo, Config, IndexingStatus, Provider } from "../types/messages"
 import { SandboxTooltipContent } from "../components/shared/SandboxButton"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Icon } from "@kilocode/kilo-ui/icon"
@@ -35,6 +36,14 @@ const agents = [
   },
   { name: "architect", description: "Plan and design before implementation", mode: "primary" as const },
 ]
+
+const documentAgent = {
+  name: "document",
+  displayName: "Document RAG",
+  description: "Search indexed documents",
+  mode: "primary" as const,
+  native: true,
+}
 
 const noop = () => {}
 
@@ -120,6 +129,33 @@ const longSelection = {
   modelID: "deepseek/deepseek-v4-flash-preview-ultra-long-model-name",
 }
 
+const documentQwenProviders: Record<string, Provider> = {
+  myprovider: {
+    id: "myprovider",
+    name: "myprovider",
+    source: "custom",
+    models: {
+      "qwen3.6-27b": {
+        id: "qwen3.6-27b",
+        name: "qwen3.6-27b",
+        limit: { context: 65_536, output: 8_192 },
+      },
+    },
+  },
+}
+
+const documentQwenConfig = {
+  provider: {
+    myprovider: {
+      name: "myprovider",
+      npm: "@ai-sdk/openai-compatible",
+      models: {
+        "qwen3.6-27b": { name: "qwen3.6-27b" },
+      },
+    },
+  },
+} as Config
+
 const speechServer = {
   connectionState: () => "connected" as const,
   serverInfo: () => undefined,
@@ -147,6 +183,9 @@ const PromptProviders: ParentComponent<{
   busy?: boolean
   none?: boolean
   autoFree?: boolean
+  documentQwen?: boolean
+  documentScope?: "documents" | "documents_and_code"
+  fullHeight?: boolean
   switchable?: boolean
   agents?: AgentInfo[]
   agent?: string
@@ -158,18 +197,23 @@ const PromptProviders: ParentComponent<{
   const [variant, setVariant] = createSignal(props.variant ?? "medium")
   const [sid, update] = createSignal("story-session-001")
   const [aborts, tally] = createSignal(0)
-  const [agent, setAgent] = createSignal(props.agent ?? "code")
+  const [agent, setAgent] = createSignal(props.agent ?? (props.documentQwen ? "document" : "code"))
   const [selects, count] = createSignal(0)
   const selected = () => {
     if (props.none) return null
     if (props.autoFree) return { providerID: "kilo", modelID: "kilo-auto/free" }
+    if (props.documentQwen) return { providerID: "myprovider", modelID: "qwen3.6-27b" }
     return props.longModel ? longSelection : { providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" }
   }
   const session = {
     ...base,
     currentSessionID: sid,
     setCurrentSessionID: update,
-    agents: () => props.agents ?? agents,
+    agents: () => props.agents ?? (props.documentQwen ? [...agents, documentAgent] : agents),
+    sessions: () =>
+      props.documentQwen || props.documentScope
+        ? [{ id: sid(), documentAgentScope: props.documentScope ?? ("documents" as const) }]
+        : base.sessions(),
     selectedAgent: agent,
     selectAgent: (name: string) => {
       count((value) => value + 1)
@@ -188,13 +232,24 @@ const PromptProviders: ParentComponent<{
     <StoryProviders
       noPadding
       locale={props.locale}
-      config={props.sandbox ? denseConfig : props.indexing ? indexingConfig : undefined}
+      config={
+        props.documentQwen
+          ? documentQwenConfig
+          : props.sandbox
+            ? denseConfig
+            : props.indexing
+              ? indexingConfig
+              : undefined
+      }
       features={props.sandbox ? { sandboxControls: true } : undefined}
       kiloAuth={props.speech}
+      providers={props.documentQwen ? documentQwenProviders : undefined}
+      connected={props.documentQwen ? ["myprovider"] : undefined}
     >
       <IndexFixture status={props.index}>
         {/* overflow:hidden prevents margin-collapse so top/bottom borders are captured in screenshots */}
         <div class="chat-view" data-ui="qa-shell" style={{ overflow: "hidden" }}>
+          {props.fullHeight ? <div aria-hidden="true" style={{ flex: "1 1 auto" }} /> : null}
           <div class="chat-input" data-ui="qa-dock">
             {props.speech ? (
               <ServerContext.Provider value={speechServer as any}>
@@ -265,6 +320,10 @@ const Prefill: ParentComponent<{ value: string }> = (props) => {
 
 const Frame: ParentComponent<{ width: number }> = (props) => (
   <div style={{ width: `min(${props.width}px, 100%)` }}>{props.children}</div>
+)
+
+const FullHeight: ParentComponent = (props) => (
+  <div style={{ display: "flex", "flex-direction": "column", height: "100vh" }}>{props.children}</div>
 )
 
 // ---------------------------------------------------------------------------
@@ -342,6 +401,53 @@ export const UltraConfirmation200: Story = {
     <PromptProviders locale="zh">
       <PromptInput />
       <UltraModeDialog open onConfirm={noop} />
+    </PromptProviders>
+  ),
+}
+
+export const DocumentSelection420: Story = {
+  name: "Document selection — 420px",
+  render: () => (
+    <PromptProviders agents={[...agents, documentAgent]} index={warning}>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const DocumentConfirmation420: Story = {
+  name: "Document confirmation — 420px",
+  render: () => (
+    <FullHeight>
+      <PromptProviders agents={[...agents, documentAgent]} agent="document" fullHeight locale="zh">
+        <PromptInput />
+        <DocumentModeDialog open onConfirm={noop} />
+      </PromptProviders>
+    </FullHeight>
+  ),
+}
+
+export const DocumentConfirmation200: Story = {
+  name: "Document confirmation — 200px",
+  render: () => (
+    <FullHeight>
+      <PromptProviders agents={[...agents, documentAgent]} agent="document" fullHeight locale="zh">
+        <PromptInput />
+        <DocumentModeDialog open onConfirm={noop} />
+      </PromptProviders>
+    </FullHeight>
+  ),
+}
+
+export const DocumentCodeScopeZh: Story = {
+  name: "Document · 文档 + 代码状态",
+  render: () => (
+    <PromptProviders
+      agents={[...agents, documentAgent]}
+      agent="document"
+      documentScope="documents_and_code"
+      locale="zh"
+    >
+      <PromptInput />
     </PromptProviders>
   ),
 }
@@ -502,6 +608,15 @@ export const WithModelOverride200: Story = {
   name: "With model override — 200px",
   render: () => (
     <PromptProviders modelOverride>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const DocumentQwenOverrideZh: Story = {
+  name: "Document RAG · qwen3.6-27b 覆盖态",
+  render: () => (
+    <PromptProviders documentQwen modelOverride locale="zh">
       <PromptInput />
     </PromptProviders>
   ),

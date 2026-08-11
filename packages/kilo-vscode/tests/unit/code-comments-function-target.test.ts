@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { resolveFunctionTarget } from "../../src/services/code-comments/function-target"
+import { resolveFunctionTarget, resolveFunctionTargetsInRange } from "../../src/services/code-comments/function-target"
 
 function resolve(source: string, marker: string, languageId: "c" | "cpp" = "cpp") {
   return resolveFunctionTarget({
@@ -11,6 +11,22 @@ function resolve(source: string, marker: string, languageId: "c" | "cpp" = "cpp"
     documentVersion: 7,
     documentText: source,
     cursorOffset: source.indexOf(marker),
+    eol: "\n",
+  })
+}
+
+function resolveRange(source: string, start: string, end: string, languageId: "c" | "cpp" = "cpp") {
+  const selectionStartOffset = source.indexOf(start)
+  return resolveFunctionTargetsInRange({
+    uri: `file:///repo/main.${languageId === "c" ? "c" : "cpp"}`,
+    filePath: `/repo/main.${languageId === "c" ? "c" : "cpp"}`,
+    relativePath: `main.${languageId === "c" ? "c" : "cpp"}`,
+    workspacePath: "/repo",
+    languageId,
+    documentVersion: 7,
+    documentText: source,
+    selectionStartOffset,
+    selectionEndOffset: source.indexOf(end, selectionStartOffset) + end.length,
     eol: "\n",
   })
 }
@@ -121,6 +137,60 @@ describe("高可信代码注释函数定位", () => {
     const target = await resolve(source, "return helper", "c")
 
     expect(target?.functionHeaderStyle).toBe("block")
+  })
+
+  it("识别与函数紧邻的既有函数说明，供用户显式选择修订", async () => {
+    const source = [
+      "// 返回旧值。",
+      "static int helper(void)",
+      "{",
+      "    return 1;",
+      "}",
+      "",
+    ].join("\n")
+
+    const target = await resolve(source, "return 1", "c")
+
+    expect(target?.existingFunctionHeader).toMatchObject({
+      startLine: 0,
+      endLine: 0,
+      text: "// 返回旧值。",
+      style: "line",
+    })
+  })
+
+  it("批量解析选区内相交的函数并保持源码顺序", async () => {
+    const source = [
+      "int first(void) { return 1; }",
+      "",
+      "int second(void) { return 2; }",
+      "",
+      "int third(void) { return 3; }",
+      "",
+    ].join("\n")
+
+    const targets = await resolveRange(source, "first", "return 2", "c")
+
+    expect(targets.map((target) => target.startLine)).toEqual([0, 2])
+    expect(targets.map((target) => target.anchors[0]?.targetLineText)).toEqual([
+      "int first(void) { return 1; }",
+      "int second(void) { return 2; }",
+    ])
+  })
+
+  it("不会把代码尾部的块注释误识别为可替换函数说明", async () => {
+    const source = [
+      "int state = 1; /* 状态说明。 */",
+      "int value(void)",
+      "{",
+      "    return state;",
+      "}",
+      "",
+    ].join("\n")
+
+    const target = await resolve(source, "return state", "c")
+
+    expect(target?.existingFunctionHeader).toBeUndefined()
   })
 
   it("拒绝只有声明、匿名 lambda 和语法缺失的函数", async () => {

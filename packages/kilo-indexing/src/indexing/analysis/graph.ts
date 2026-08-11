@@ -33,6 +33,7 @@ import type {
 } from "./types"
 
 const MAX_FUZZY_CANDIDATES = 5
+const headerExtensions = new Set([".h", ".hh", ".hpp"])
 
 const guidance =
   "Do not make code-level conclusions unless the answer is grounded in file path and line-number evidence returned by codebase_analysis."
@@ -438,21 +439,22 @@ function callRefs(
       const target = wantsCallees ? caller : callee
       if (!has(words, target) && !wantsSites) continue
       if (wantsSites && !has(words, caller) && !has(words, callee)) continue
-      const def = wantsCallees
-        ? funcs.find((item) => item.fn.name === callee)
-        : funcs.find((item) => item.fn.name === caller)
+      const resolution = wantsCallees
+        ? resolveCallee(graph, callee, funcs)
+        : { definition: { graph, fn }, ambiguous: false }
+      const reason = wantsCallers
+        ? "caller query matched callee at call site"
+        : wantsCallees
+          ? "callee query matched caller function at call site"
+          : "call site query matched graph call"
       const next = ranged(graph, call, diagnostics, "call", () =>
         ref({
           graph,
           kind: wantsCallers ? "caller" : wantsCallees ? "callee" : "call_site",
           range: call,
           rank: wantsCallers || wantsCallees ? 98 : 90,
-          reason: wantsCallers
-            ? "caller query matched callee at call site"
-            : wantsCallees
-              ? "callee query matched caller function at call site"
-              : "call site query matched graph call",
-          confidence: "high",
+          reason: resolution.ambiguous ? `${reason}; callee definition is ambiguous` : reason,
+          confidence: resolution.ambiguous ? "medium" : "high",
           displayName: `${caller} -> ${callee}`,
           callerName: caller,
           calleeName: callee,
@@ -462,12 +464,12 @@ function callRefs(
             startLine: call.startLine,
             endLine: call.endLine,
           },
-          functionDefinition: def
+          functionDefinition: resolution.definition
             ? {
-                filePath: def.graph.filePath,
-                startLine: def.fn.startLine,
-                endLine: def.fn.endLine,
-                symbolName: def.fn.name,
+                filePath: resolution.definition.graph.filePath,
+                startLine: resolution.definition.fn.startLine,
+                endLine: resolution.definition.fn.endLine,
+                symbolName: resolution.definition.fn.name,
               }
             : undefined,
         }),
@@ -476,6 +478,39 @@ function callRefs(
     }
   }
   return refs
+}
+
+function resolveCallee(
+  graph: CodeGraphFileGraph,
+  name: string,
+  funcs: FunctionEntry[],
+): { definition?: FunctionEntry; ambiguous: boolean } {
+  const local = funcs.filter((item) => item.graph.filePath === graph.filePath && item.fn.name === name)
+  if (local.length === 1) return { definition: local[0], ambiguous: false }
+  if (local.length > 1) return { ambiguous: true }
+
+  const included = funcs.filter(
+    (item) => item.fn.name === name && item.fn.isStatic && includedHeader(graph, item.graph.filePath),
+  )
+  if (included.length === 1) return { definition: included[0], ambiguous: false }
+  if (included.length > 1) return { ambiguous: true }
+
+  const external = funcs.filter((item) => item.fn.name === name && !item.fn.isStatic)
+  if (external.length === 1) return { definition: external[0], ambiguous: false }
+  return { ambiguous: external.length > 1 }
+}
+
+function includedHeader(graph: CodeGraphFileGraph, file: string): boolean {
+  if (!headerExtensions.has(path.extname(file).toLowerCase())) return false
+  const windows = process.platform === "win32" || graph.filePath.includes("\\") || file.includes("\\")
+  const candidate = path.posix.normalize(file.replaceAll("\\", "/"))
+  const parent = path.posix.dirname(path.posix.normalize(graph.filePath.replaceAll("\\", "/")))
+  return graph.includes.some((item) => {
+    if (item.system) return false
+    const target = path.posix.normalize(item.target.replaceAll("\\", "/"))
+    const relative = path.posix.normalize(path.posix.join(parent, target))
+    return windows ? candidate.toLowerCase() === relative.toLowerCase() : candidate === relative
+  })
 }
 
 function includeRefs(

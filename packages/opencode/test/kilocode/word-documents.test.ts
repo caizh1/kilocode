@@ -403,11 +403,17 @@ describe("kilocode Word documents", () => {
             expect(document).toContain('<w:footerReference w:type="default" r:id="rIdFooter"/>')
             expect(document).not.toContain('w:w="11906" w:h="16838"')
 
+            const eastAsiaFont =
+              process.platform === "darwin"
+                ? "Heiti SC"
+                : process.platform === "win32"
+                  ? "Microsoft YaHei"
+                  : "Noto Sans CJK SC"
             expect(styles).toContain(
-              '<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Microsoft YaHei"',
+              `<w:rFonts w:ascii="${eastAsiaFont}" w:hAnsi="${eastAsiaFont}" w:eastAsia="${eastAsiaFont}"`,
             )
             expect(styles).toContain(
-              '<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="Microsoft YaHei"',
+              `<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="${eastAsiaFont}"`,
             )
             expect(styles).toContain('<w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/>')
             expect(styles).toContain('<w:spacing w:before="320" w:after="160"/>')
@@ -460,6 +466,41 @@ describe("kilocode Word documents", () => {
           }),
         { git: true },
       ).pipe(Effect.scoped, Effect.provide(CrossSpawnSpawner.defaultLayer)),
+    )
+  })
+
+  test("未指定图片尺寸时按原始宽高比适配 Word 页面", async () => {
+    await Effect.runPromise(
+      provideTmpdirInstance((dir) =>
+        Effect.promise(async () => {
+          const image = new PhotonImage(new Uint8Array(4 * 1 * 4).fill(255), 4, 1)
+          try {
+            await fs.writeFile(path.join(dir, "wide.png"), image.get_bytes())
+          } finally {
+            image.free()
+          }
+          const created = await createWordDocument({
+            title: "图片宽高比",
+            sections: [
+              {
+                title: "图",
+                blocks: [{ type: "image", path: "wide.png", title: "四比一图片" }],
+              },
+            ],
+          })
+          const reader = new ZipReader(
+            new Uint8ArrayReader(new Uint8Array(await fs.readFile(path.join(dir, created.path)))),
+          )
+          const entries = await reader.getEntries()
+          const document = await entries
+            .find((entry) => entry.filename === "word/document.xml")!
+            .getData!(new TextWriter())
+          await reader.close()
+
+          expect(document).toContain('<wp:extent cx="5943600" cy="1485900"/>')
+          expect(document).not.toContain('<wp:extent cx="4572000" cy="2667000"/>')
+        }),
+      ),
     )
   })
 
@@ -1358,7 +1399,7 @@ describe("kilocode Word documents", () => {
               await server.stop()
             }
 
-            const tocEntry = '<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:r><w:t xml:space="preserve">Render</w:t></w:r></w:p>'
+            const tocEntry = '<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:hyperlink w:anchor="_KiloToc1" w:history="1"><w:r><w:t xml:space="preserve">Render</w:t></w:r></w:hyperlink><w:r><w:tab/></w:r><w:fldSimple w:instr=" PAGEREF _KiloToc1 \\h "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>'
             const refreshedEdit = await applyWordDocumentEdits({
               sourcePath: tocSource.path,
               outputFile: "renderable-refreshed.docx",
@@ -1368,10 +1409,7 @@ describe("kilocode Word documents", () => {
                   patch: {
                     part: "word/document.xml",
                     find: tocEntry,
-                    replace: tocEntry.replace(
-                      "</w:p>",
-                      '<w:r><w:tab/></w:r><w:r><w:t>1</w:t></w:r></w:p>',
-                    ),
+                    replace: tocEntry.replace("<w:t>1</w:t>", "<w:t>2</w:t>"),
                   },
                 },
               ],

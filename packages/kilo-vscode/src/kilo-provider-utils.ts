@@ -194,7 +194,11 @@ export async function runWithMessageConfirmation<T>(
   }
 }
 
-export function sessionToWebview(session: Pick<Session, "id" | "parentID" | "title" | "time" | "summary" | "revert">) {
+const DOCUMENT_AGENT_SCOPE_KEY = "kilo.documentAgent.scope"
+
+export function sessionToWebview(
+  session: Pick<Session, "id" | "parentID" | "title" | "time" | "summary" | "revert" | "metadata">,
+) {
   return {
     id: session.id,
     parentID: session.parentID ?? null,
@@ -206,6 +210,8 @@ export function sessionToWebview(session: Pick<Session, "id" | "parentID" | "tit
     // SolidJS store merge never clears the existing revert state.
     revert: session.revert ?? null,
     summary: session.summary ?? null,
+    documentAgentScope:
+      session.metadata?.[DOCUMENT_AGENT_SCOPE_KEY] === "documents_and_code" ? "documents_and_code" : "documents",
   }
 }
 

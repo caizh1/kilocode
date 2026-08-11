@@ -75,6 +75,45 @@ describe("C/C++ code graph parser", () => {
     expect(result.macros.every((item) => item.startLine > 0 && item.endLine >= item.startLine)).toBe(true)
   })
 
+  test("ignores preprocessor directives inside comments without changing real directive lines", () => {
+    const content = [
+      '#include "live.h"',
+      "#define LIVE_VALUE 1",
+      "/*",
+      '#include "commented.h"',
+      "#define COMMENTED_VALUE 1",
+      "*/",
+      'const char *raw = R"cfg(',
+      "#include <string-only.h>",
+      "#define STRING_ONLY_VALUE 1",
+      ')cfg";',
+      '#include "second.h" // trailing comment',
+      '#define LIVE_URL "https://example.com/device"',
+      "#define MULTI(a, \\",
+      "              b) ((a) + (b))",
+      "// #define LINE_COMMENTED_VALUE 1",
+      "",
+    ].join("\r\n")
+    const result = parseCodeGraphFile({
+      workspacePath: "/tmp/ws",
+      filePath: "src/directives.cpp",
+      content,
+      fileHash: "hash-directives",
+      updatedAt: "2026-06-10T00:00:00.000Z",
+    })
+
+    expect(result.includes.map((item) => item.target)).toEqual(["live.h", "second.h"])
+    expect(result.includes.map((item) => item.startLine)).toEqual([1, 11])
+    expect(result.macros.map((item) => item.name)).toEqual(["LIVE_VALUE", "LIVE_URL", "MULTI"])
+    expect(result.macros.map((item) => item.startLine)).toEqual([2, 12, 13])
+    expect(result.macros.find((item) => item.name === "MULTI")?.parameters).toEqual(["a", "b"])
+    expect(result.includes.map((item) => item.target)).not.toContain("commented.h")
+    expect(result.macros.map((item) => item.name)).not.toContain("COMMENTED_VALUE")
+    expect(result.macros.map((item) => item.name)).not.toContain("STRING_ONLY_VALUE")
+    expect(result.macros.map((item) => item.name)).not.toContain("LINE_COMMENTED_VALUE")
+    expect(result.macros.find((item) => item.name === "LIVE_URL")?.shortSnippet).toContain("https://")
+  })
+
   test("extracts functions, declarations, and masked call sites", () => {
     const result = graph()
 

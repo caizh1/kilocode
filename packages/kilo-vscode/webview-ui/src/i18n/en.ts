@@ -2184,4 +2184,20 @@ export const dict = {
   "agentConsole.permission.execute": "Execute",
   "agentConsole.permission.edit": "Edit",
   "agentConsole.permission.reject": "Reject",
+  "documentAgent.unavailable": "Document RAG is disabled. Open Indexing settings to enable it.",
+  "documentAgent.scope.documentsOnly": "Documents only",
+  "documentAgent.scope.documentsAndCode": "Documents + code",
+  "documentAgent.scope.disabledDescription":
+    "Code exploration is off. Explicitly ask the Agent to inspect code if you need it.",
+  "documentAgent.scope.enabledDescription": "Read-only code exploration is on. Click to return to documents only.",
+  "prompt.document.confirm.title": "Enter Document mode",
+  "prompt.document.confirm.description":
+    "By default, Document searches only Document RAG. Read-only code exploration opens only when you explicitly ask to inspect code.",
+  "prompt.document.confirm.flow.label":
+    "Documents only searches Document RAG by default. An explicit request to inspect code switches to Documents plus code with read-only code exploration.",
+  "prompt.document.confirm.documents.note": "Search Document RAG only",
+  "prompt.document.confirm.transition": "Explicitly ask\nto inspect code",
+  "prompt.document.confirm.code.note": "Document search + read-only code exploration",
+  "prompt.document.confirm.note": "The codebase will not be searched without an explicit request.",
+  "prompt.document.confirm.action": "Confirm and enter Document",
 }

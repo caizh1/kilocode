@@ -14,6 +14,7 @@ import { ensureFfmpegForTarget } from "./ffmpeg-helper"
 import { ensureRipgrepForTarget } from "./ripgrep-helper"
 import { copyLanceDBRuntime } from "./lancedb-helper"
 import { ensurePopplerForTarget } from "./poppler-helper"
+import { verifyLegacyUpdatePackageSize } from "./package-size"
 import {
   applyPackagedChipmateServer,
   resolvePackagedChipmateServer,
@@ -30,9 +31,15 @@ type Target = {
 }
 
 const packageJsonPath = join(import.meta.dir, "..", "package.json")
+const changelogPath = join(import.meta.dir, "..", "CHANGELOG.md")
+const chipmateChangelogPath = join(import.meta.dir, "..", "CHIPMATE_CHANGELOG.md")
 const releaseNotesPath = join(import.meta.dir, "..", "RELEASE_NOTES.md")
 const rootDir = join(import.meta.dir, "..", "..", "..")
 const cleanPackageJson = await Bun.file(packageJsonPath).text()
+const cleanChangelog = await Bun.file(changelogPath).text()
+const chipmateChangelog = await Bun.file(chipmateChangelogPath)
+  .text()
+  .catch(() => "")
 const packageJson = JSON.parse(cleanPackageJson)
 const version = process.env.KILO_VERSION ? process.env.KILO_VERSION : packageJson.version
 const prerelease = process.env.KILO_PRE_RELEASE === "true"
@@ -48,10 +55,28 @@ const requested = targetsArg
     )
   : undefined
 
-const releaseNotes = await Bun.file(releaseNotesPath).text().catch(() => "")
+const releaseNotes = await Bun.file(releaseNotesPath)
+  .text()
+  .catch(() => "")
 if (!releaseNotes.trim()) throw new Error("RELEASE_NOTES.md is required and must not be empty.")
 if (releaseNotes.split(/\r?\n/, 1)[0] !== `# ChipMate ${version}`) {
   throw new Error(`RELEASE_NOTES.md must start with "# ChipMate ${version}".`)
+}
+if (!chipmateChangelog.trim()) throw new Error("CHIPMATE_CHANGELOG.md is required and must not be empty.")
+if (chipmateChangelog.split(/\r?\n/, 1)[0] !== "# ChipMate 发行说明") {
+  throw new Error('CHIPMATE_CHANGELOG.md must start with "# ChipMate 发行说明".')
+}
+if (/^#\s+kilo-code\s*$|Kilo-Org\/kilocode/imu.test(chipmateChangelog)) {
+  throw new Error("CHIPMATE_CHANGELOG.md must not contain Kilo upstream release records.")
+}
+const changelogVersions = [...chipmateChangelog.matchAll(/^##\s+(\S+)\s*$/gmu)].map((match) => match[1])
+if (new Set(changelogVersions).size !== changelogVersions.length) {
+  throw new Error("CHIPMATE_CHANGELOG.md must contain only one section for each ChipMate version.")
+}
+const releaseNotesBody = releaseNotes.split(/\r?\n/).slice(1).join("\n").trim()
+const changelogBody = changelogVersion(chipmateChangelog, version)
+if (changelogBody !== releaseNotesBody) {
+  throw new Error(`CHIPMATE_CHANGELOG.md must contain the complete RELEASE_NOTES.md entry for ChipMate ${version}.`)
 }
 
 console.log(`Building VSCode extension version: ${version}${prerelease ? " (pre-release)" : ""}`)
@@ -170,6 +195,9 @@ await $`node ${join(import.meta.dir, "..", "esbuild.js")} ${esbuildArgs}`.env({
 removeMaps(distDir)
 
 try {
+  await Bun.write(changelogPath, chipmateChangelog)
+  console.log("Using the complete ChipMate release history for the packaged VS Code changelog.")
+
   if (hasLocalPackagedDefaults) {
     applyPackagedChipmateServer(packageJson, chipmate)
     applyIndexingDefaults(packageJson, indexing)
@@ -261,18 +289,23 @@ try {
       npm_config_ignore_scripts: "true",
     })
     await verifyPackageTarget(vsixPath, config.target)
-    await verifyReleaseNotes(vsixPath, version)
+    await verifyReleaseNotes(vsixPath, version, releaseNotes, chipmateChangelog)
     if (chipmate.baseUrl) await verifyChipmateServer(vsixPath, chipmate)
     if (config.internal) {
       await verifyInternalVsix(vsixPath, config)
       await verifyInternalModelsSnapshot(vsixPath)
       await verifyInternalMarketplaceManifest(vsixPath)
     }
+    verifyLegacyUpdatePackageSize(config.target, statSync(vsixPath).size)
     console.log(`  ✅ Created ${vsixPath}`)
   }
 } finally {
-  await restorePackagedManifest(packageJsonPath, cleanPackageJson)
-  console.log("Restored package.json after packaging.")
+  try {
+    await restorePackagedManifest(packageJsonPath, cleanPackageJson)
+  } finally {
+    await Bun.write(changelogPath, cleanChangelog)
+  }
+  console.log("Restored package.json and CHANGELOG.md after packaging.")
 }
 
 console.log("\n✨ All VSIX packages built successfully!")
@@ -491,6 +524,7 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     "extension/bin/tree-sitter/tree-sitter-cpp.wasm",
     "extension/bin/lancedb/node_modules/@lancedb/lancedb/dist/index.js",
     "extension/bin/lancedb/node_modules/@lancedb/lancedb/dist/native.js",
+    "extension/bin/lancedb/node_modules/@opentelemetry/api/build/src/index.js",
     "extension/bin/lancedb/node_modules/apache-arrow/Arrow.node.js",
     "extension/bin/lancedb/node_modules/flatbuffers/js/flatbuffers.js",
     "extension/bin/lancedb/node_modules/reflect-metadata/Reflect.js",
@@ -525,6 +559,8 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     "extension/dist/webview.js",
     "extension/dist/agent-manager.js",
     "extension/dist/agent-console.js",
+    "extension/dist/design-doc.js",
+    "extension/dist/design-doc.css",
     "extension/dist/diff-viewer.js",
     "extension/dist/diff-virtual.js",
   ]
@@ -575,7 +611,7 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
       file.endsWith(".map") ||
       file.startsWith("extension/qa/"),
   )
-  if (x64only) {
+  if (x64only && (config.vsceTarget ?? config.target) === "win32-x64") {
     forbidden.push(
       ...files.filter((file) => {
         if (!file.startsWith("extension/bin/")) return false
@@ -640,12 +676,33 @@ async function verifyPackageTarget(vsix: string, target: string): Promise<void> 
   }
 }
 
-async function verifyReleaseNotes(vsix: string, expected: string): Promise<void> {
+function changelogVersion(changelog: string, version: string): string | undefined {
+  const lines = changelog.split(/\r?\n/)
+  const start = lines.findIndex((line) => line.trim() === `## ${version}`)
+  if (start < 0) return undefined
+  const next = lines.findIndex((line, index) => index > start && /^##\s+\S/.test(line))
+  return lines
+    .slice(start + 1, next < 0 ? undefined : next)
+    .join("\n")
+    .trim()
+}
+
+async function verifyReleaseNotes(
+  vsix: string,
+  expected: string,
+  releaseNotes: string,
+  chipmateChangelog: string,
+): Promise<void> {
   const unzip = Bun.which("unzip")
   if (!unzip) throw new Error("Cannot verify packaged release notes because unzip is not available.")
-  const out = await $`${unzip} -p ${vsix} extension/RELEASE_NOTES.md`.quiet()
-  const title = out.text().match(/^\s*#\s+ChipMate\s+([^\s]+)\s*$/m)?.[1]
+  const notes = await $`${unzip} -p ${vsix} extension/RELEASE_NOTES.md`.quiet()
+  const changelog = await $`${unzip} -p ${vsix} extension/changelog.md`.quiet()
+  const title = notes.text().match(/^\s*#\s+ChipMate\s+([^\s]+)\s*$/m)?.[1]
   if (title !== expected) throw new Error(`Packaged RELEASE_NOTES.md does not match ChipMate ${expected}.`)
+  if (notes.text() !== releaseNotes) throw new Error("Packaged RELEASE_NOTES.md differs from the source release notes.")
+  if (changelog.text() !== chipmateChangelog) {
+    throw new Error("Packaged VS Code changelog must contain the complete ChipMate release history.")
+  }
 }
 
 async function verifyChipmateServer(vsix: string, expected: PackagedChipmateServerDefaults): Promise<void> {

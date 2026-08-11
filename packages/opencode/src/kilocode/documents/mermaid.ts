@@ -2,6 +2,7 @@ import { execFile } from "child_process"
 import { createHash } from "node:crypto"
 import fs from "fs/promises"
 import path from "path"
+import { DOMParser, type Element } from "@xmldom/xmldom"
 import { declareArtifact } from "@/kilocode/documents/artifacts"
 import { insertWordPngImage } from "@/kilocode/documents/word"
 import { Instance } from "@/kilocode/instance"
@@ -44,6 +45,8 @@ export type MermaidDiagnosticCode =
   | "mermaid-render-timeout"
   | "mermaid-render-remote-failed"
   | "mermaid-render-content-bounds-suspicious"
+  | "mermaid-render-label-collision"
+  | "mermaid-render-collision-check-unavailable"
   | "mermaid-render-image-processing-unavailable"
   | "png-invalid"
   | "artifact-write-failed"
@@ -59,6 +62,22 @@ export type MermaidRenderIssue = {
   severity?: string
   code?: string
   message?: string
+}
+
+export type MermaidWordFitFingerprint = {
+  diagramId?: string
+  splitFromDiagramId?: string
+  nodeIds: readonly string[]
+  edges: ReadonlyArray<{ from: string; to: string }>
+  nodeCount?: number
+  edgeCount?: number
+  labelCharacterCount?: number
+  longLabelCount?: number
+  longNodeLabelCount?: number
+  longEdgeLabelCount?: number
+  branchingNodeCount?: number
+  maxOutgoingEdges?: number
+  diagramType?: string
 }
 
 export type MermaidRenderBounds = {
@@ -92,6 +111,8 @@ export type ValidatedMermaidDiagramRequest = ValidatedMermaidDiagram & MermaidSe
 
 export type SaveMermaidArtifactInput = {
   source: string
+  /** Internal caller-owned artifact directory. Public Mermaid tools intentionally do not expose this. */
+  artifactDir?: string
   pngBase64?: string
   pngPath?: string
   title?: string
@@ -113,6 +134,8 @@ export type SavedMermaidArtifact = {
 
 export type RenderMermaidDiagramInput = {
   source: string
+  /** Internal caller-owned artifact directory. Public Mermaid tools intentionally do not expose this. */
+  artifactDir?: string
   title?: string
   taskSlug?: string
   sourceFile?: string
@@ -126,6 +149,29 @@ export type RenderMermaidDiagramInput = {
   semanticEvidencePath?: string
   semanticSessionId?: string
   allowSourceHashPlaceholder?: boolean
+}
+
+export type RenderMermaidPngInput = Pick<
+  RenderMermaidDiagramInput,
+  "source" | "remoteEndpoint" | "theme" | "background" | "scale" | "timeoutMs"
+>
+
+export type RenderedMermaidPng = {
+  rendered: boolean
+  png?: Uint8Array
+  diagnostics: MermaidDiagnostic[]
+  issues: MermaidRenderIssue[]
+  width?: number
+  height?: number
+  pixelWidth?: number
+  pixelHeight?: number
+  scale?: number
+  contentBounds?: MermaidRenderBounds
+  cropBounds?: MermaidRenderBounds
+  padding?: number
+  contentCropRatio?: number
+  elapsedMs?: number
+  renderer?: Record<string, unknown>
 }
 
 export type SourceBackedMermaidBatchInput = {
@@ -305,6 +351,20 @@ type PixelBounds = {
   height: number
 }
 
+type SvgMatrix = {
+  a: number
+  b: number
+  c: number
+  d: number
+  e: number
+  f: number
+}
+
+type SvgLabelBounds = PixelBounds & {
+  id: string
+  kind: "edge-label" | "node-label"
+}
+
 const DEFAULT_SCALE = 3
 const MIN_SCALE = 1
 const MAX_SCALE = 4
@@ -456,6 +516,7 @@ export async function saveMermaidArtifact(input: SaveMermaidArtifactInput): Prom
       kind: "mermaid-diagram",
       title: input.title ?? "Mermaid Diagram",
       taskSlug: input.taskSlug ?? "mermaid-diagram",
+      artifactDir: input.artifactDir,
       primaryFile: sourceFile,
       derivedFiles: [...(pngBytes ? [pngFile] : []), diagnosticsFile],
       warnings,
@@ -582,6 +643,92 @@ export async function renderMermaidDiagram(input: RenderMermaidDiagramInput): Pr
       semanticFingerprint: validation.semanticFingerprint,
     }
   }
+  const image = await renderMermaidImage(input)
+  const saved = await saveMermaidArtifact({
+    ...input,
+    pngBase64: image.pngBase64,
+    diagnostics: image.diagnostics,
+  })
+  const response = image.response
+  const local = image.local
+  const scale = image.scale
+  const width = response?.width ?? local?.width
+  const height = response?.height ?? local?.height
+  const renderIssues = response?.issues ?? local?.issues ?? []
+  const fit = mermaidWordFit({
+    width,
+    height,
+    status: validation.semanticStatus,
+    fingerprint: validation.semanticFingerprint,
+    issues: renderIssues,
+  })
+  return {
+    ...saved,
+    rendered: Boolean(saved.pngPath && !saved.diagnostics.some((item) => item.severity === "error")),
+    width,
+    height,
+    pixelWidth: response?.pixelWidth ?? local?.pixelWidth,
+    pixelHeight: response?.pixelHeight ?? local?.pixelHeight,
+    scale: response?.scale ?? local?.scale ?? scale,
+    contentBounds: response?.contentBounds ?? local?.contentBounds,
+    cropBounds: response?.cropBounds ?? local?.cropBounds,
+    padding: response?.padding ?? local?.padding,
+    contentCropRatio: response?.contentCropRatio ?? local?.contentCropRatio,
+    elapsedMs: response?.elapsedMs,
+    renderer: response?.renderer ?? local?.renderer,
+    issues: renderIssues,
+    semanticStatus: validation.semanticStatus,
+    sourceHash: validation.sourceHash,
+    claimCount: validation.claimCount,
+    validatedClaimCount: validation.validatedClaimCount,
+    semanticIssues: validation.issues,
+    semanticDiagnosticsPath: validation.diagnosticsPath,
+    semanticFingerprint: validation.semanticFingerprint,
+    ...fit,
+  }
+}
+
+export async function renderMermaidPng(input: RenderMermaidPngInput): Promise<RenderedMermaidPng> {
+  const validation = validateMermaidDiagram(input)
+  if (!validation.valid) {
+    return { rendered: false, diagnostics: validation.diagnostics, issues: [] }
+  }
+  const image = await renderMermaidImage(input)
+  const png = image.pngBase64 ? Buffer.from(image.pngBase64, "base64") : undefined
+  const validPng = png ? isPng(png) : false
+  if (png && !validPng) {
+    image.diagnostics.push({ code: "png-invalid", severity: "error", message: "Mermaid PNG payload is not a valid PNG." })
+  }
+  const response = image.response
+  const local = image.local
+  return {
+    rendered: validPng && !image.diagnostics.some((item) => item.severity === "error"),
+    png: validPng ? png : undefined,
+    diagnostics: image.diagnostics,
+    issues: response?.issues ?? local?.issues ?? [],
+    width: response?.width ?? local?.width,
+    height: response?.height ?? local?.height,
+    pixelWidth: response?.pixelWidth ?? local?.pixelWidth,
+    pixelHeight: response?.pixelHeight ?? local?.pixelHeight,
+    scale: response?.scale ?? local?.scale ?? image.scale,
+    contentBounds: response?.contentBounds ?? local?.contentBounds,
+    cropBounds: response?.cropBounds ?? local?.cropBounds,
+    padding: response?.padding ?? local?.padding,
+    contentCropRatio: response?.contentCropRatio ?? local?.contentCropRatio,
+    elapsedMs: response?.elapsedMs,
+    renderer: response?.renderer ?? local?.renderer,
+  }
+}
+
+type MermaidImage = {
+  pngBase64?: string
+  diagnostics: MermaidDiagnostic[]
+  response?: RemoteMermaidRenderResponse
+  local?: LocalMermaidRender
+  scale: number
+}
+
+async function renderMermaidImage(input: RenderMermaidPngInput): Promise<MermaidImage> {
   const timeoutMs = input.timeoutMs ?? 120_000
   const endpoint = input.remoteEndpoint?.trim() || process.env["KILO_MERMAID_RENDER_ENDPOINT"]?.trim()
   const scale = clampScale(input.scale)
@@ -609,8 +756,8 @@ export async function renderMermaidDiagram(input: RenderMermaidDiagramInput): Pr
           }),
         ),
       )
-    } catch (err) {
-      const remote = classifyRenderError(err)
+    } catch (error) {
+      const remote = classifyRenderError(error)
       local = await renderWithMmdc(input.source, background, scale, timeoutMs)
       if (local.pngBase64) {
         diagnostics.push({
@@ -630,39 +777,7 @@ export async function renderMermaidDiagram(input: RenderMermaidDiagramInput): Pr
     pngBase64 = local.pngBase64
     diagnostics.push(...local.diagnostics)
   }
-  const saved = await saveMermaidArtifact({ ...request, pngBase64, diagnostics })
-  const width = response?.width ?? local?.width
-  const height = response?.height ?? local?.height
-  const fit = mermaidWordFit({
-    width,
-    height,
-    status: validation.semanticStatus,
-    fingerprint: validation.semanticFingerprint,
-  })
-  return {
-    ...saved,
-    rendered: Boolean(saved.pngPath && !saved.diagnostics.some((item) => item.severity === "error")),
-    width,
-    height,
-    pixelWidth: response?.pixelWidth ?? local?.pixelWidth,
-    pixelHeight: response?.pixelHeight ?? local?.pixelHeight,
-    scale: response?.scale ?? local?.scale ?? scale,
-    contentBounds: response?.contentBounds ?? local?.contentBounds,
-    cropBounds: response?.cropBounds ?? local?.cropBounds,
-    padding: response?.padding ?? local?.padding,
-    contentCropRatio: response?.contentCropRatio ?? local?.contentCropRatio,
-    elapsedMs: response?.elapsedMs,
-    renderer: response?.renderer ?? local?.renderer,
-    issues: response?.issues ?? local?.issues ?? [],
-    semanticStatus: validation.semanticStatus,
-    sourceHash: validation.sourceHash,
-    claimCount: validation.claimCount,
-    validatedClaimCount: validation.validatedClaimCount,
-    semanticIssues: validation.issues,
-    semanticDiagnosticsPath: validation.diagnosticsPath,
-    semanticFingerprint: validation.semanticFingerprint,
-    ...fit,
-  }
+  return { pngBase64, diagnostics, response, local, scale }
 }
 
 export async function renderSourceBackedMermaidBatch(
@@ -868,7 +983,8 @@ export function mermaidWordFit(input: {
   width?: number
   height?: number
   status: MermaidSemanticStatus
-  fingerprint?: MermaidSemanticFingerprint
+  fingerprint?: MermaidWordFitFingerprint
+  issues?: readonly MermaidRenderIssue[]
 }) {
   if (input.status === "not-requested" || input.status === "invalid") return {}
   if (!input.width || !input.height) {
@@ -879,9 +995,23 @@ export function mermaidWordFit(input: {
     }
   }
   const scale = Math.min(1, WORD_WIDTH / input.width, WORD_HEIGHT / input.height)
-  const count = (input.fingerprint?.nodeIds.length ?? 0) + (input.fingerprint?.edges.length ?? 0)
+  const nodes = input.fingerprint?.nodeCount ?? input.fingerprint?.nodeIds.length ?? 0
+  const edges = input.fingerprint?.edgeCount ?? input.fingerprint?.edges.length ?? 0
+  const count = nodes + edges
   const density = count ? count / ((input.width * input.height) / 100_000) : 0
   const aspect = Math.max(input.width / input.height, input.height / input.width)
+  const longLabels = input.fingerprint?.longLabelCount ?? 0
+  const longEdges = input.fingerprint?.longEdgeLabelCount ?? 0
+  const branching = input.fingerprint?.branchingNodeCount ?? 0
+  const maxOutgoing = input.fingerprint?.maxOutgoingEdges ?? 0
+  const collisionIssues = (input.issues ?? []).filter(
+    (item) =>
+      item.severity === "error" &&
+      (item.code === "mermaid-render-label-collision" || item.code === "mermaid-render-collision-check-unavailable"),
+  )
+  const denseLongLabels = longLabels >= 10 && edges >= 8
+  const denseBranching = branching >= 3 && longEdges >= 6 && edges >= nodes + 2
+  const concentratedBranching = maxOutgoing >= 4 && longEdges >= 4
   const reasons = [
     ...(scale < WORD_MIN_SCALE
       ? [
@@ -896,6 +1026,15 @@ export function mermaidWordFit(input: {
     ...(aspect > WORD_MAX_ASPECT
       ? [`Aspect ratio ${aspect.toFixed(2)} is above ${WORD_MAX_ASPECT}; regroup or split disconnected flow families.`]
       : []),
+    ...(denseLongLabels || denseBranching || concentratedBranching
+      ? [
+          `Visual complexity (${nodes} nodes, ${edges} edges, ${longLabels} long labels, ${branching} branching nodes, max out-degree ${maxOutgoing}) is too dense for one Word figure; split it into focused figures without removing labels.`,
+        ]
+      : []),
+    ...collisionIssues.map(
+      (item) =>
+        `${item.code}: ${item.message ?? "Rendered Mermaid labels or nodes overlap; split or regroup the figure."}`,
+    ),
   ]
   return {
     wordFitScale: scale,
@@ -1022,6 +1161,240 @@ function remotePng(response: RemoteMermaidRenderResponse): string {
   throw new Error(detail ? `${reason}: ${detail}` : reason)
 }
 
+export function inspectMermaidSvgCollisions(source: string): MermaidRenderIssue[] {
+  const errors: string[] = []
+  const parser = new DOMParser({
+    onError: (level, message) => {
+      if (level !== "warning") errors.push(message)
+    },
+  })
+  const document = (() => {
+    try {
+      return parser.parseFromString(source, "image/svg+xml")
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error))
+    }
+  })()
+  const root = document?.documentElement
+  if (!root || root.localName !== "svg" || errors.length) {
+    return [
+      {
+        severity: "error",
+        code: "mermaid-render-collision-check-unavailable",
+        message: `Rendered Mermaid SVG could not be inspected for label collisions${errors.length ? `: ${errors.join("; ")}` : "."}`,
+      },
+    ]
+  }
+
+  const boxes = Array.from(document.getElementsByTagName("foreignObject")).flatMap((element, index) => {
+    const width = svgNumber(element.getAttribute("width"))
+    const height = svgNumber(element.getAttribute("height"))
+    if (width <= 0 || height <= 0) return []
+    const edge = closestSvgClass(element, "edgeLabel")
+    const node = closestSvgClass(element, "node")
+    if (!edge && !node) return []
+    const kind = edge ? ("edge-label" as const) : ("node-label" as const)
+    const owner = edge ? closestSvgAttribute(element, "data-id") : node
+    const id = owner?.getAttribute("data-id") || owner?.getAttribute("id") || `${kind}-${index}`
+    const labelBounds = transformedSvgBounds(element, {
+      x: svgNumber(element.getAttribute("x")),
+      y: svgNumber(element.getAttribute("y")),
+      width,
+      height,
+    })
+    const nodeBounds = kind === "node-label" && node ? svgNodeBounds(node) : undefined
+    const bounds = nodeBounds ?? labelBounds
+    const padding = kind === "node-label" && !nodeBounds ? 8 : 0
+    return [
+      {
+        id,
+        kind,
+        x: bounds.x - padding,
+        y: bounds.y - padding,
+        width: bounds.width + padding * 2,
+        height: bounds.height + padding * 2,
+      } satisfies SvgLabelBounds,
+    ]
+  })
+  const collisions: Array<{ left: SvgLabelBounds; right: SvgLabelBounds; ratio: number }> = []
+  for (let leftIndex = 0; leftIndex < boxes.length; leftIndex++) {
+    const left = boxes[leftIndex]!
+    for (let rightIndex = leftIndex + 1; rightIndex < boxes.length; rightIndex++) {
+      const right = boxes[rightIndex]!
+      const overlapWidth = Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x)
+      const overlapHeight = Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y)
+      if (overlapWidth < 4 || overlapHeight < 4) continue
+      const overlap = overlapWidth * overlapHeight
+      const ratio = overlap / Math.min(left.width * left.height, right.width * right.height)
+      if (ratio < 0.05) continue
+      collisions.push({ left, right, ratio })
+    }
+  }
+  if (!collisions.length) return []
+  const examples = collisions
+    .slice(0, 8)
+    .map(
+      ({ left, right, ratio }) =>
+        `${left.kind} ${left.id} overlaps ${right.kind} ${right.id} by ${(ratio * 100).toFixed(1)}%`,
+    )
+  return [
+    {
+      severity: "error",
+      code: "mermaid-render-label-collision",
+      message: `Rendered Mermaid SVG contains ${collisions.length} significant label/node collision(s): ${examples.join("; ")}.`,
+    },
+  ]
+}
+
+function svgNodeBounds(node: Element) {
+  const boxes: PixelBounds[] = []
+  for (const rect of Array.from(node.getElementsByTagName("rect"))) {
+    const width = svgNumber(rect.getAttribute("width"))
+    const height = svgNumber(rect.getAttribute("height"))
+    if (width > 0 && height > 0)
+      boxes.push(
+        transformedSvgBounds(rect, {
+          x: svgNumber(rect.getAttribute("x")),
+          y: svgNumber(rect.getAttribute("y")),
+          width,
+          height,
+        }),
+      )
+  }
+  for (const circle of Array.from(node.getElementsByTagName("circle"))) {
+    const radius = svgNumber(circle.getAttribute("r"))
+    if (radius > 0)
+      boxes.push(
+        transformedSvgBounds(circle, {
+          x: svgNumber(circle.getAttribute("cx")) - radius,
+          y: svgNumber(circle.getAttribute("cy")) - radius,
+          width: radius * 2,
+          height: radius * 2,
+        }),
+      )
+  }
+  for (const ellipse of Array.from(node.getElementsByTagName("ellipse"))) {
+    const radiusX = svgNumber(ellipse.getAttribute("rx"))
+    const radiusY = svgNumber(ellipse.getAttribute("ry"))
+    if (radiusX > 0 && radiusY > 0)
+      boxes.push(
+        transformedSvgBounds(ellipse, {
+          x: svgNumber(ellipse.getAttribute("cx")) - radiusX,
+          y: svgNumber(ellipse.getAttribute("cy")) - radiusY,
+          width: radiusX * 2,
+          height: radiusY * 2,
+        }),
+      )
+  }
+  for (const polygon of Array.from(node.getElementsByTagName("polygon"))) {
+    const points = [...(polygon.getAttribute("points") ?? "").matchAll(/(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/g)].map(
+      (match) => ({ x: Number(match[1]), y: Number(match[2]) }),
+    )
+    if (!points.length) continue
+    const x = Math.min(...points.map((point) => point.x))
+    const y = Math.min(...points.map((point) => point.y))
+    boxes.push(
+      transformedSvgBounds(polygon, {
+        x,
+        y,
+        width: Math.max(...points.map((point) => point.x)) - x,
+        height: Math.max(...points.map((point) => point.y)) - y,
+      }),
+    )
+  }
+  if (!boxes.length) return
+  const x = Math.min(...boxes.map((box) => box.x))
+  const y = Math.min(...boxes.map((box) => box.y))
+  const right = Math.max(...boxes.map((box) => box.x + box.width))
+  const bottom = Math.max(...boxes.map((box) => box.y + box.height))
+  return { x, y, width: right - x, height: bottom - y }
+}
+
+function closestSvgClass(element: Element, name: string) {
+  let current: Element | undefined = element
+  while (current) {
+    const classes = current.getAttribute("class")?.split(/\s+/) ?? []
+    if (classes.includes(name)) return current
+    current = svgParent(current)
+  }
+}
+
+function closestSvgAttribute(element: Element, name: string) {
+  let current: Element | undefined = element
+  while (current) {
+    if (current.hasAttribute(name)) return current
+    current = svgParent(current)
+  }
+}
+
+function svgParent(element: Element) {
+  const parent = element.parentNode
+  return parent?.nodeType === 1 ? (parent as Element) : undefined
+}
+
+function transformedSvgBounds(element: Element, bounds: PixelBounds): PixelBounds {
+  const chain: Element[] = []
+  let current: Element | undefined = element
+  while (current) {
+    chain.push(current)
+    current = svgParent(current)
+  }
+  const matrix = chain.toReversed().reduce((value, item) => multiplySvgMatrix(value, svgTransform(item)), svgIdentity())
+  const corners = [
+    svgPoint(matrix, bounds.x, bounds.y),
+    svgPoint(matrix, bounds.x + bounds.width, bounds.y),
+    svgPoint(matrix, bounds.x, bounds.y + bounds.height),
+    svgPoint(matrix, bounds.x + bounds.width, bounds.y + bounds.height),
+  ]
+  const x = Math.min(...corners.map((point) => point.x))
+  const y = Math.min(...corners.map((point) => point.y))
+  const right = Math.max(...corners.map((point) => point.x))
+  const bottom = Math.max(...corners.map((point) => point.y))
+  return { x, y, width: right - x, height: bottom - y }
+}
+
+function svgTransform(element: Element): SvgMatrix {
+  const source = element.getAttribute("transform") ?? ""
+  const matches = source.matchAll(/(matrix|translate|scale)\s*\(([^)]*)\)/g)
+  return [...matches].reduce((value, match) => {
+    const numbers = match[2]!.split(/[\s,]+/).filter(Boolean).map(Number)
+    const next = (() => {
+      if (match[1] === "matrix" && numbers.length >= 6)
+        return { a: numbers[0]!, b: numbers[1]!, c: numbers[2]!, d: numbers[3]!, e: numbers[4]!, f: numbers[5]! }
+      if (match[1] === "translate")
+        return { a: 1, b: 0, c: 0, d: 1, e: numbers[0] ?? 0, f: numbers[1] ?? 0 }
+      if (match[1] === "scale")
+        return { a: numbers[0] ?? 1, b: 0, c: 0, d: numbers[1] ?? numbers[0] ?? 1, e: 0, f: 0 }
+      return svgIdentity()
+    })()
+    return multiplySvgMatrix(value, next)
+  }, svgIdentity())
+}
+
+function svgIdentity(): SvgMatrix {
+  return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }
+}
+
+function multiplySvgMatrix(left: SvgMatrix, right: SvgMatrix): SvgMatrix {
+  return {
+    a: left.a * right.a + left.c * right.b,
+    b: left.b * right.a + left.d * right.b,
+    c: left.a * right.c + left.c * right.d,
+    d: left.b * right.c + left.d * right.d,
+    e: left.a * right.e + left.c * right.f + left.e,
+    f: left.b * right.e + left.d * right.f + left.f,
+  }
+}
+
+function svgPoint(matrix: SvgMatrix, x: number, y: number) {
+  return { x: matrix.a * x + matrix.c * y + matrix.e, y: matrix.b * x + matrix.d * y + matrix.f }
+}
+
+function svgNumber(value: string | null) {
+  const number = Number.parseFloat(value ?? "0")
+  return Number.isFinite(number) ? number : 0
+}
+
 async function renderWithMmdc(
   source: string,
   background: string,
@@ -1037,18 +1410,40 @@ async function renderWithMmdc(
     `mermaid-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   )
   const input = path.join(tmp, "diagram.mmd")
+  const svg = path.join(tmp, "diagram.svg")
   const output = path.join(tmp, "diagram.png")
   await fs.mkdir(tmp, { recursive: true })
   await fs.writeFile(input, source, "utf8")
   try {
-    await execFileWithTimeout(command, ["-i", input, "-o", output, "-b", background, "-s", String(scale)], timeoutMs)
+    const startedAt = Date.now()
+    await execFileWithTimeout(command, ["-i", input, "-o", svg, "-b", background, "-s", String(scale)], timeoutMs)
+    const svgSource = await fs.readFile(svg, "utf8")
+    const visualIssues = inspectMermaidSvgCollisions(svgSource)
+    const visualDiagnostics = visualIssues.map(
+      (issue): MermaidDiagnostic => ({
+        code:
+          issue.code === "mermaid-render-label-collision"
+            ? "mermaid-render-label-collision"
+            : "mermaid-render-collision-check-unavailable",
+        severity: "warning",
+        message: issue.message ?? "Mermaid SVG visual collision inspection failed.",
+      }),
+    )
+    const remaining = Math.max(1, timeoutMs - (Date.now() - startedAt))
+    await execFileWithTimeout(command, ["-i", input, "-o", output, "-b", background, "-s", String(scale)], remaining)
     const png = await fs.readFile(output)
     if (!isPng(png))
       return {
         diagnostics: [{ code: "png-invalid", severity: "error", message: "mmdc output is not a valid PNG." }],
         issues: [],
       }
-    return cropLocalPng(png, background, scale)
+    const result = await cropLocalPng(png, background, scale)
+    return {
+      ...result,
+      diagnostics: [...visualDiagnostics, ...result.diagnostics],
+      issues: [...visualIssues, ...result.issues],
+      renderer: { ...result.renderer, visualInspection: "svg-label-bounds" },
+    }
   } catch (err) {
     return { diagnostics: [classifyRenderError(err)], issues: [] }
   } finally {
@@ -1281,7 +1676,13 @@ function stripMermaidFrontMatter(source: string): string {
 function bracketBalance(source: string): { valid: boolean; message: string } {
   const pairs: Record<string, string> = { "(": ")", "[": "]", "{": "}" }
   const stack: string[] = []
+  let quoted = false
   for (const char of source) {
+    if (char === '"') {
+      quoted = !quoted
+      continue
+    }
+    if (quoted) continue
     if (pairs[char]) stack.push(pairs[char])
     if ((char === ")" || char === "]" || char === "}") && stack.pop() !== char)
       return { valid: false, message: `Unbalanced Mermaid bracket near "${char}".` }

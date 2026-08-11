@@ -271,4 +271,35 @@ describe("tool.document_search", () => {
       },
     })
   })
+
+  test("keeps the document agent in document-only mode when indexing is unavailable", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const ready = spyOn(KiloIndexing, "documentReady").mockReturnValue(false)
+        const search = spyOn(KiloIndexing, "searchDocuments").mockResolvedValue([])
+
+        try {
+          const tool = await initTool()
+          const result = await rt.runPromise(
+            tool.execute(
+              { query: "retention policy" },
+              {
+                ...baseCtx,
+                agent: "document",
+              },
+            ),
+          )
+
+          expect(result.output).toContain("Remain in document-only scope")
+          expect(result.output).not.toContain("Grep/Glob/Read")
+          expect(search).not.toHaveBeenCalled()
+        } finally {
+          ready.mockRestore()
+          search.mockRestore()
+        }
+      },
+    })
+  })
 })

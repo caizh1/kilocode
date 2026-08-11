@@ -73,6 +73,26 @@ import type {
   ConfigUpdateResponses,
   ConfigWarningsErrors,
   ConfigWarningsResponses,
+  DesignDocArtifactErrors,
+  DesignDocArtifactResponses,
+  DesignDocArtifactsErrors,
+  DesignDocArtifactsResponses,
+  DesignDocCancelErrors,
+  DesignDocCancelResponses,
+  DesignDocCreateErrors,
+  DesignDocCreateJobInput,
+  DesignDocCreateResponses,
+  DesignDocGetErrors,
+  DesignDocGetResponses,
+  DesignDocListErrors,
+  DesignDocListResponses,
+  DesignDocPauseErrors,
+  DesignDocPauseResponses,
+  DesignDocResumeErrors,
+  DesignDocResumeResponses,
+  DesignDocRetryErrors,
+  DesignDocRetryResponses,
+  DesignDocRetryWorkItemInput,
   EnhancePromptEnhanceErrors,
   EnhancePromptEnhanceResponses,
   EventSubscribeResponses,
@@ -6374,6 +6394,292 @@ export class CommitMessage extends HeyApiClient {
   }
 }
 
+export class DesignDoc extends HeyApiClient {
+  /**
+   * List DesignDoc Jobs
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<DesignDocListResponses, DesignDocListErrors, ThrowOnError>({
+      url: "/design-doc/jobs",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Create DesignDoc Job
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      designDocCreateJobInput?: DesignDocCreateJobInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "designDocCreateJobInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<DesignDocCreateResponses, DesignDocCreateErrors, ThrowOnError>({
+      url: "/design-doc/jobs",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get DesignDoc Job
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<DesignDocGetResponses, DesignDocGetErrors, ThrowOnError>({
+      url: "/design-doc/jobs/{jobID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List DesignDoc artifacts
+   */
+  public artifacts<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<DesignDocArtifactsResponses, DesignDocArtifactsErrors, ThrowOnError>({
+      url: "/design-doc/jobs/{jobID}/artifacts",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read a DesignDoc artifact
+   */
+  public artifact<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      artifactID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "path", key: "artifactID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<DesignDocArtifactResponses, DesignDocArtifactErrors, ThrowOnError>({
+      url: "/design-doc/jobs/{jobID}/artifacts/{artifactID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Pause DesignDoc Job
+   */
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<DesignDocPauseResponses, DesignDocPauseErrors, ThrowOnError>({
+      url: "/design-doc/jobs/{jobID}/pause",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Resume DesignDoc Job
+   */
+  public resume<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<DesignDocResumeResponses, DesignDocResumeErrors, ThrowOnError>({
+      url: "/design-doc/jobs/{jobID}/resume",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Cancel DesignDoc Job
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<DesignDocCancelResponses, DesignDocCancelErrors, ThrowOnError>({
+      url: "/design-doc/jobs/{jobID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Retry one DesignDoc WorkItem
+   */
+  public retry<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      workItemID: string
+      directory?: string
+      workspace?: string
+      designDocRetryWorkItemInput?: DesignDocRetryWorkItemInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "path", key: "workItemID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "designDocRetryWorkItemInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<DesignDocRetryResponses, DesignDocRetryErrors, ThrowOnError>({
+      url: "/design-doc/jobs/{jobID}/work-items/{workItemID}/retry",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class EnhancePrompt extends HeyApiClient {
   /**
    * Enhance prompt
@@ -10874,6 +11180,11 @@ export class KiloClient extends HeyApiClient {
   private _commitMessage?: CommitMessage
   get commitMessage(): CommitMessage {
     return (this._commitMessage ??= new CommitMessage({ client: this.client }))
+  }
+
+  private _designDoc?: DesignDoc
+  get designDoc(): DesignDoc {
+    return (this._designDoc ??= new DesignDoc({ client: this.client }))
   }
 
   private _enhancePrompt?: EnhancePrompt

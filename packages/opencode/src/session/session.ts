@@ -43,6 +43,7 @@ import * as SandboxPolicy from "@/kilocode/sandbox/policy"
 import { carryForkDiff } from "@/kilocode/session-portability/cumulative-diff" // kilocode_change
 import { BlockedError as AgentRequirementError } from "@/kilocode/agent-requirements"
 import { ProductProfile } from "@/kilocode/product-profile"
+import { DocumentAgentScope } from "@/kilocode/document-agent/scope"
 // kilocode_change end
 import { Effect, Layer, Option, Context, Schema, Types } from "effect"
 import { NonNegativeInt, optionalOmitUndefined } from "@opencode-ai/core/schema"
@@ -848,7 +849,7 @@ export const layer: Layer.Layer<
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
         title,
-        metadata: structuredClone(original.metadata),
+        metadata: DocumentAgentScope.forkMetadata(original.metadata), // kilocode_change - 派生会话默认恢复仅文档
         model, // kilocode_change - preserve the model + variant active at the fork point
         sourceID: input.sessionID, // kilocode_change - forks preserve initialized confinement
         sandboxFallback, // kilocode_change - seed confinement from the source session's original directory

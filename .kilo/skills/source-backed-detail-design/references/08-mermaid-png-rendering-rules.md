@@ -1,5 +1,7 @@
 # 08 Mermaid PNG Rendering Rules
 
+> 完整 Word 任务的 Mermaid 与 PNG 生命周期由 `source_backed_design_job` 独占。本文件以下直接调用、claim 和 batch 规则仅供窄范围源码图兼容使用；不得在控制器任务中自行调用公共 Mermaid 工具或恢复旧批次协议。
+
 `SBDD_RULESET_REVISION=2026-07-source-semantic-v122`. For source-backed renders, tool-returned `wordFitStatus` and `documentReady` are authoritative. A PNG with `wordFitStatus=split-required` or `documentReady=false` is evidence-only: it cannot count as a terminal base/focused figure or enter Word. New readable replacement claims use unique IDs plus `splitFromDiagramId` naming the oldest pending parent; their combined visible node/edge IDs must cover it before any other view. The next manifest must contain exactly the latest suggested child IDs and no unrelated item, so a repair cannot consume attempts by rerunning the original batch. Accept the replacement set only when the repair result lists that parent in `resolvedSplitDiagramIds`; use the readable child PNGs for Word. A split-required intermediate probe does not become another required parent. The tool's calibrated minimum scale is `0.65`, matching the arithmetic below.
 
 源码详设调用不得填写 `remoteEndpoint`、猜测公网或内网 URL、安装渲染器，或要求用户配置渲染服务。工具会确定性选择已配置的服务，并在失败时尝试当前环境已有的本地 `mmdc`；一次瞬时基础设施失败只写入 checkpoint，下一次“继续”重试，不得借此缩减图形矩阵或提前创建 Word。

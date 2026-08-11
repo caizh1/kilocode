@@ -36,6 +36,18 @@ describe("KiloCodeActionProvider", () => {
       expect(result[0]?.command?.command).toBe("chipmate.v2.generateCommentsForCurrentFunction")
     })
 
+    it("offers batch comments for a non-empty C/C++ selection", () => {
+      const result = provider.provideCodeActions(
+        { languageId: "c" } as never,
+        makeRange(false) as never,
+        makeContext(0) as never,
+      )
+
+      expect(result.map((action) => action.command?.command)).toContain(
+        "chipmate.v2.generateCommentsForSelectedFunctions",
+      )
+    })
+
     describe("non-empty range, no diagnostics", () => {
       it("returns Add, Explain, Improve actions", () => {
         const result = provider.provideCodeActions({} as never, makeRange(false) as never, makeContext(0) as never)

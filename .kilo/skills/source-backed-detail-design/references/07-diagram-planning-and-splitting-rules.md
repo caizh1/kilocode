@@ -1,5 +1,9 @@
 # 07 Diagram Planning and Splitting Rules
 
+> 完整 Word 任务由 `source_backed_design_job` 创建并校验 `DiagramSpec`、生成 Mermaid、拆图和渲染；模型不得执行本文件旧版批次编排。本文件以下手工规则只适用于用户明确要求的窄范围源码图，或用于理解图形语义与人工复核标准。
+
+控制器模式中的 DiagramSpec 节点使用 `kind` 字段，不使用旧的 `type` 字段；上游、下游和协作实现可以作为接口上下文证据，但整张图必须包含当前 DesignUnit 自有实现文件证据。
+
 For `SBDD_RULESET_REVISION=2026-07-source-semantic-v122`, the render tool's `wordFitStatus=readable` and `documentReady=true` are the only terminal Word-fit acceptance. `split-required` must be replaced by the exact deterministic focused-child groups returned in `pendingSplitDetails.suggestedChildren` before the next view; each replacement keeps its suggested Diagram ID and names the oldest pending parent in `splitFromDiagramId`, and their visible node/edge union must cover it. While that parent remains pending, the next manifest is repair-only and its ID set exactly equals the latest suggested child set; do not rerun the full batch. The repair result must list the parent in `resolvedSplitDiagramIds`; only the readable child PNG set satisfies the base slot. A split-required intermediate probe is evidence-only and does not become another required parent. The tool's calibrated minimum scale is `0.65`, matching the manual checks below.
 
 ## 1. 先计划后画图

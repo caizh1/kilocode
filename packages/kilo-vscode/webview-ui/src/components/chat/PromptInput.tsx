@@ -347,6 +347,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const vscode = useVSCode()
   const projectMemory = useMemory()
   const sid = () => session.currentSessionID() ?? props.pendingSessionID ?? session.draftSessionID() ?? undefined
+  const documentAgent = () => session.selectedAgent(sid()) === "document"
+  const documentScope = () => {
+    const id = sid()
+    if (!id) return "documents" as const
+    return session.sessions().find((item) => item.id === id)?.documentAgentScope ?? "documents"
+  }
+  const documentCodeEnabled = () => documentScope() === "documents_and_code"
+  const restoreDocumentOnly = () => {
+    const id = sid()
+    if (!id || !documentCodeEnabled()) return
+    vscode.postMessage({ type: "setDocumentAgentScope", sessionID: id, scope: "documents" })
+  }
   const ctx = () => {
     const id = props.boxId
     if (!id || !id.startsWith("agent-manager:")) return undefined
@@ -1775,8 +1787,38 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             )}
           </Show>
           <div class="prompt-input-hint" data-ui="qa-composer-footer">
-            <div class="prompt-input-hint-selectors" data-ui="qa-composer-selectors">
+            <div
+              class="prompt-input-hint-selectors"
+              data-ui="qa-composer-selectors"
+              data-document-agent={documentAgent() ? "true" : undefined}
+            >
               <ModeSwitcher sessionID={sid} />
+              <Show when={documentAgent()}>
+                <Tooltip
+                  value={
+                    documentCodeEnabled()
+                      ? language.t("documentAgent.scope.enabledDescription")
+                      : language.t("documentAgent.scope.disabledDescription")
+                  }
+                  placement="top"
+                >
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    class="document-agent-scope-button"
+                    data-scope={documentScope()}
+                    aria-pressed={documentCodeEnabled()}
+                    onClick={restoreDocumentOnly}
+                  >
+                    <span class="codicon codicon-book document-agent-scope-icon" aria-hidden="true" />
+                    <span>
+                      {documentCodeEnabled()
+                        ? language.t("documentAgent.scope.documentsAndCode")
+                        : language.t("documentAgent.scope.documentsOnly")}
+                    </span>
+                  </Button>
+                </Tooltip>
+              </Show>
               <ModelSelector sessionID={sid} />
               <ThinkingSelector sessionID={sid} />
               <Show when={session.hasModelOverride(sid())}>

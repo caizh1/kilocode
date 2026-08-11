@@ -12,10 +12,15 @@ export class KiloCodeActionProvider implements vscode.CodeActionProvider {
   ): vscode.CodeAction[] {
     const actions: vscode.CodeAction[] = []
     if (document.languageId === "c" || document.languageId === "cpp") {
-      const comments = new vscode.CodeAction("为当前函数生成高可信注释", vscode.CodeActionKind.RefactorRewrite)
+      const comments = new vscode.CodeAction(
+        range.isEmpty ? "为当前函数生成高可信注释" : "为选中函数批量生成高可信注释",
+        vscode.CodeActionKind.RefactorRewrite,
+      )
       comments.command = {
-        command: "chipmate.v2.generateCommentsForCurrentFunction",
-        title: "为当前函数生成高可信注释",
+        command: range.isEmpty
+          ? "chipmate.v2.generateCommentsForCurrentFunction"
+          : "chipmate.v2.generateCommentsForSelectedFunctions",
+        title: comments.title,
       }
       actions.push(comments)
     }

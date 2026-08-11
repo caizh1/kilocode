@@ -337,6 +337,26 @@ describe("CodeIndexServiceFactory", () => {
     }
   })
 
+  test("uses short isolated roots for default ChipMate code and document stores", () => {
+    const previous = process.env.KILO_PRODUCT_PROFILE
+    process.env.KILO_PRODUCT_PROFILE = "chipmate-v2"
+    try {
+      const factory = createFactory({
+        vectorStoreProvider: "lancedb",
+        lancedbVectorStoreDirectory: undefined,
+      })
+      const code = factory.createVectorStore() as unknown as { dbPath: string }
+      const documents = factory.createDocumentVectorStore() as unknown as { dbPath: string }
+
+      expect(code.dbPath).toContain(path.join(cacheDirectory, "c"))
+      expect(documents.dbPath).toContain(path.join(cacheDirectory, "d"))
+      expect(code.dbPath).not.toBe(documents.dbPath)
+    } finally {
+      if (previous === undefined) delete process.env.KILO_PRODUCT_PROFILE
+      else process.env.KILO_PRODUCT_PROFILE = previous
+    }
+  })
+
   test("passes configured dimension to Ollama embed requests", async () => {
     const fn = mock(() =>
       Promise.resolve({

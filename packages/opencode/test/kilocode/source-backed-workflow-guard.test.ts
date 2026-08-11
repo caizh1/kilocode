@@ -3,6 +3,8 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import * as Guard from "@/kilocode/skill/workflow-guard"
+import { KiloSessionPrompt } from "@/kilocode/session/prompt"
+import { SessionID } from "@/session/schema"
 
 const user = (id: string, text: string) => ({
   info: { id, role: "user" },
@@ -16,6 +18,17 @@ const declared = (id: string, root: string) => ({
       type: "tool",
       tool: "declare_artifact",
       state: { status: "completed", metadata: { artifactDir: root } },
+    },
+  ],
+})
+
+const controlled = (id: string, root: string, jobId: string) => ({
+  info: { id, role: "assistant" },
+  parts: [
+    {
+      type: "tool",
+      tool: "source_backed_design_job",
+      state: { status: "completed", metadata: { artifactDir: root, jobId, failed: false } },
     },
   ],
 })
@@ -75,6 +88,20 @@ describe("source-backed workflow guard", () => {
     expect(Guard.shell("s1", [...ordinary, user("u3", "继续")])).toBe(false)
   })
 
+  test("only raises the agent step limit for an exactly active source-backed workflow", () => {
+    const session = SessionID.make("ses_source_backed_steps")
+    const first = [user("u1", "生成完整详细设计")]
+    expect(KiloSessionPrompt.sourceBackedStepLimit(session, first as never, 4)).toBe(4)
+    expect(KiloSessionPrompt.sourceBackedStepLimit(session, first as never)).toBe(Infinity)
+
+    Guard.activate(session, "source-backed-detail-design", first)
+    expect(KiloSessionPrompt.sourceBackedStepLimit(session, first as never, 4)).toBe(32)
+    expect(KiloSessionPrompt.sourceBackedStepLimit(session, first as never, 48)).toBe(48)
+
+    const ordinary = [...first, user("u2", "解释这个函数")]
+    expect(KiloSessionPrompt.sourceBackedStepLimit(session, ordinary as never, 4)).toBe(4)
+  })
+
   test("recovers the loaded workflow and declared root without another skill call after a process restart", () => {
     const first = [user("u1", "生成完整详细设计")]
     Guard.activate("s1", "source-backed-detail-design", first)
@@ -87,6 +114,33 @@ describe("source-backed workflow guard", () => {
     expect(Guard.mutation("s1", continued, "/workspace", "/workspace/.kilo/artifacts/task-2/next.md")).toContain(
       ".kilo/artifacts/task-1",
     )
+  })
+
+  test("进程重启后从控制器输出恢复任务绑定，不扫描 artifact", () => {
+    const history = [
+      user("u1", "生成完整详细设计"),
+      loaded("a1"),
+      controlled("a2", ".chipmate-v2/artifacts/job-1", "job-1"),
+      user("u2", "继续"),
+    ]
+    Guard.reset()
+    Guard.sync("s1", history)
+    expect(Guard.sourceBacked("s1", history)).toBe(true)
+    expect(Guard.root("s1", history)).toBe(".chipmate-v2/artifacts/job-1")
+    expect(Guard.job("s1", history)).toBe("job-1")
+  })
+
+  test("显式 Skill 命令写入的 revision 标记可在新 CLI 进程中恢复同会话任务", () => {
+    const history = [
+      user("u1", "SBDD_JOB_REVISION=2026-08-chunked-v1\n生成完整详细设计"),
+      controlled("a1", ".chipmate-v2/artifacts/job-1", "job-1"),
+      user("u2", "继续"),
+    ]
+    Guard.reset()
+    Guard.sync("s1", history)
+    expect(Guard.sourceBacked("s1", history)).toBe(true)
+    expect(Guard.root("s1", history)).toBe(".chipmate-v2/artifacts/job-1")
+    expect(Guard.job("s1", history)).toBe("job-1")
   })
 
   test("keeps the restored root when a compacted tool window retains only the continuation user", () => {
@@ -179,6 +233,20 @@ describe("source-backed workflow guard", () => {
     expect(Guard.mutation("s1", messages, "/workspace", "/workspace/source.c")).toBeUndefined()
   })
 
+  test("delegates controller-owned diagram files to the job validator instead of the legacy stage gate", async () => {
+    const messages = [user("u1", "生成完整详细设计")]
+    Guard.activate("s1", "source-backed-detail-design", messages)
+    Guard.bind("s1", messages, { root: ".chipmate-v2/artifacts/job-1", jobId: "job-1" })
+    expect(
+      await Guard.stage(
+        "s1",
+        messages,
+        "/workspace",
+        "/workspace/.chipmate-v2/artifacts/job-1/04-diagrams/specs/unit-architecture.json",
+      ),
+    ).toBeUndefined()
+  })
+
   test("blocks diagram authoring until all separate prose topics are ready", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "sbdd-stage-"))
     const root = path.join(workspace, ".kilo/artifacts/task-1")
@@ -194,12 +262,7 @@ describe("source-backed workflow guard", () => {
     const first = [user("u1", "生成完整详细设计")]
     Guard.activate("s1", "source-backed-detail-design", first)
     Guard.declare("s1", first, ".kilo/artifacts/task-1")
-    const blocked = await Guard.stage(
-      "s1",
-      first,
-      workspace,
-      path.join(root, "04-diagrams/target-architecture.mmd"),
-    )
+    const blocked = await Guard.stage("s1", first, workspace, path.join(root, "04-diagrams/target-architecture.mmd"))
     expect(blocked).toContain("initial source-backed turn")
     const checkpoint = await Guard.checkpoint(
       "s1",
@@ -210,12 +273,7 @@ describe("source-backed workflow guard", () => {
     )
     expect(checkpoint).toContain("claims prose readiness")
 
-    const history = [
-      ...first,
-      loaded("a1"),
-      declared("a2", ".kilo/artifacts/task-1"),
-      user("u2", "继续"),
-    ]
+    const history = [...first, loaded("a1"), declared("a2", ".kilo/artifacts/task-1"), user("u2", "继续")]
     Guard.sync("s1", history)
     const incomplete = await Guard.stage(
       "s1",
@@ -259,21 +317,15 @@ describe("source-backed workflow guard", () => {
       "flow_family_id,owning_design_unit,entry_trigger,input_business_object,entry_step_ids,participating_units,decision_edge_ids,async_handoff_edge_ids,wait_retry_timeout_cancel_edge_ids,failure_recovery_cleanup_edge_ids,terminal_step_ids,state_data_resource_effects,evidence_ids,diagram_ids,status"
     await fs.writeFile(
       path.join(root, "03-control-flow-evidence/14-business-flow-family-census.csv"),
-      [
-        header,
-        "FLOW-1,target,TRIGGER-1,OBJECT-1,STEP-1,target,N/A,N/A,N/A,N/A,TERM-1,EFFECT-1,SRC-1,,covered",
-      ].join("\n"),
+      [header, "FLOW-1,target,TRIGGER-1,OBJECT-1,STEP-1,target,N/A,N/A,N/A,N/A,TERM-1,EFFECT-1,SRC-1,,covered"].join(
+        "\n",
+      ),
     )
 
     const first = [user("u1", "生成完整详细设计")]
     Guard.activate("s1", "source-backed-detail-design", first)
     Guard.declare("s1", first, ".kilo/artifacts/task-1")
-    const history = [
-      ...first,
-      loaded("a1"),
-      declared("a2", ".kilo/artifacts/task-1"),
-      user("u2", "继续"),
-    ]
+    const history = [...first, loaded("a1"), declared("a2", ".kilo/artifacts/task-1"), user("u2", "继续")]
     Guard.sync("s1", history)
     const target = path.join(root, "04-diagrams/target-architecture.mmd")
     const missing = await Guard.stage("s1", [user("u2", "继续")], workspace, target)

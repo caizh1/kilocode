@@ -1086,7 +1086,9 @@ export class CodeIndexOrchestrator {
         filesIndexed: summary.filesIndexed,
         filesDiscovered: summary.filesDiscovered,
       })
-      await this.vectorStore?.markIndexingComplete()
+      await this.vectorStore?.markIndexingComplete({
+        allowEmpty: summary.totalBlocks === 0 && summary.batchErrors === 0,
+      })
       log.info("vector index finalization complete", {
         visible: true,
         workspacePath: this.workspacePath,

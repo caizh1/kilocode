@@ -14,6 +14,7 @@ const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
 let pressure: IndexingPressure = process.env.KILO_INDEXING_FORCED_LOW === "1" ? "forced-low" : "normal"
 let recovered = 0
 let critical = 0
+let hard = 0
 let rolling = false
 host.pressure(pressure)
 const timer = setInterval(() => {
@@ -37,11 +38,18 @@ const timer = setInterval(() => {
       budget,
     },
   })
-  if (stat.rss >= budget.hard) {
+  if (stat.rss < budget.hard) {
+    hard = 0
+  } else if (stat.rss >= budget.hard + Math.max(256 * 1024 * 1024, Math.floor(budget.hard * 0.25))) {
+    process.stderr.write(`Indexing process exceeded RSS limit: ${stat.rss} >= ${budget.hard}\n`)
+    process.exit(86)
+  } else if (hard === 0) {
+    hard = Date.now()
+  } else if (Date.now() - hard >= positive(process.env.KILO_INDEXING_HARD_HOLD_MS, 5_000)) {
     process.stderr.write(`Indexing process exceeded RSS limit: ${stat.rss} >= ${budget.hard}\n`)
     process.exit(86)
   }
-  if (pressure === "forced-low" || stat.rss < budget.critical) {
+  if (stat.rss < budget.critical) {
     critical = 0
     return
   }
@@ -56,7 +64,7 @@ const timer = setInterval(() => {
     `Indexing process is rolling over under sustained memory pressure: ${stat.rss} >= ${budget.critical}\n`,
   )
   clearInterval(timer)
-  void host.dispose().finally(() => process.exit(87))
+  void host.checkpoint().finally(() => process.exit(87))
 }, 500)
 
 const stop = async () => {

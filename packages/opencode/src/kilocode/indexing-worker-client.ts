@@ -27,6 +27,10 @@ import {
 import type { IndexingWarning } from "./indexing-warning"
 import { selfEnv, userEnv } from "./product-env"
 
+const GRACEFUL_SHUTDOWN_MS = 10_000
+const PROCESS_EXIT_MS = 5_000
+const PROCESS_KILL_EXIT_MS = 2_000
+
 declare global {
   const KILO_INDEXING_PROCESS_PATH: string
 }
@@ -269,13 +273,13 @@ export namespace IndexingWorker {
             },
             true,
           ),
-          1_000,
+          GRACEFUL_SHUTDOWN_MS,
           "Indexing process shutdown timed out",
         ).catch(() => undefined)
         stdin.end()
-        await withTimeout(task.exited, 1_000, "Indexing process exit timed out").catch(async () => {
+        await withTimeout(task.exited, PROCESS_EXIT_MS, "Indexing process exit timed out").catch(async () => {
           task.kill()
-          await withTimeout(task.exited, 1_000, "Indexing process kill timed out").catch(() => undefined)
+          await withTimeout(task.exited, PROCESS_KILL_EXIT_MS, "Indexing process kill timed out").catch(() => undefined)
         })
         stopped = true
         lines.close()

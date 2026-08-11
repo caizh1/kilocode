@@ -88,6 +88,7 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { UltraVerify } from "@/kilocode/agent/ultra-verify" // kilocode_change
+import { DocumentAgentScope } from "@/kilocode/document-agent/scope" // kilocode_change
 import { RepositoryCache } from "@opencode-ai/core/repository-cache" // kilocode_change
 
 // @ts-ignore
@@ -1501,7 +1502,7 @@ export const layer = Layer.effect(
       const ctx = yield* InstanceState.context
       let structured: unknown
       let step = 0
-      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      let session = yield* sessions.get(sessionID).pipe(Effect.orDie) // kilocode_change - Document Agent 可在同一轮收紧或放开只读工具
       // kilocode_change start - recover an uninterrupted source-backed continuation before compacted tool context is built
       const history = yield* sessions.messages({ sessionID })
       KiloSessionPrompt.syncSourceBackedWorkflow(sessionID, history)
@@ -1668,7 +1669,8 @@ export const layer = Layer.effect(
         ) {
           break
         }
-        const maxSteps = agent.steps ?? Infinity
+        // kilocode_change - only the explicitly active chunked design workflow needs enough tool iterations per turn
+        const maxSteps = KiloSessionPrompt.sourceBackedStepLimit(sessionID, msgs, agent.steps)
         const isLastStep = step >= maxSteps
         msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
           Effect.provideService(RuntimeFlags.Service, flags),
@@ -1715,6 +1717,11 @@ export const layer = Layer.effect(
           const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
           const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
           const promptOps = yield* ops()
+
+          // kilocode_change start - Document Agent 的范围工具会在同一轮更新会话元数据；
+          // 只为该 Agent 重新读取，避免改变现有 QA/Code 流水线的热路径。
+          if (agent.name === DocumentAgentScope.AGENT) session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+          // kilocode_change end
 
           const tools = yield* SessionTools.resolve({
             agent,
@@ -1831,8 +1838,12 @@ export const layer = Layer.effect(
             messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
             tools: enabled, // kilocode_change
             model,
-            toolChoice:
-              format.type === "json_schema" && (!council || !UltraVerify.required(council)) ? "required" : undefined, // kilocode_change - DeepSeek thinking mode rejects required during Ultra verification
+            toolChoice: KiloSessionPrompt.structuredOutputToolChoice({
+              format: format.type,
+              model: { id: model.api.id, npm: model.api.npm },
+              variant: lastUser.model.variant,
+              delegated: !!council && UltraVerify.required(council),
+            }), // kilocode_change - DeepSeek thinking models accept auto but reject required tool choice
             // kilocode_change start - feed the provider-reported context size from the last finished
             // turn into the output-token cap, so image/vision input is measured by the provider
             // rather than by encoded payload bytes (see KiloLLM.capOutputTokens). Summary messages
@@ -2280,6 +2291,12 @@ export const layer = Layer.effect(
         { parts },
       )
 
+      // kilocode_change start - arm only the validated Skill command and clear it if prompt startup fails
+      KiloSessionPrompt.armSourceBackedSkillCommand({
+        sessionID: input.sessionID,
+        name: input.command,
+        source: cmd.source,
+      })
       const result = yield* prompt({
         sessionID: input.sessionID,
         messageID: input.messageID,
@@ -2287,8 +2304,11 @@ export const layer = Layer.effect(
         agent: userAgent,
         parts,
         variant: input.variant,
-        snapshotInitialization: input.snapshotInitialization, // kilocode_change
-      })
+        snapshotInitialization: input.snapshotInitialization,
+      }).pipe(
+        Effect.tapError(() => Effect.sync(() => KiloSessionPrompt.disarmSourceBackedSkillCommand(input.sessionID))),
+      )
+      // kilocode_change end
       yield* events.publish(Command.Event.Executed, {
         name: input.command,
         sessionID: input.sessionID,

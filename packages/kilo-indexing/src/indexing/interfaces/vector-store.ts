@@ -78,6 +78,13 @@ export interface IVectorStore {
   deleteInactiveFilePoints?(filePath: string, activeGeneration: string): Promise<void>
 
   /**
+   * Atomically activates fully written file generations and removes their predecessors.
+   */
+  finalizeFileGenerations?(
+    files: readonly { filePath: string; generation: string; runId: string }[],
+  ): Promise<void>
+
+  /**
    * Removes abandoned inactive points from the current workspace collection/table.
    */
   cleanupInactivePoints?(): Promise<VectorStoreCleanupStats>
@@ -113,7 +120,7 @@ export interface IVectorStore {
    * Marks the indexing process as complete by storing metadata
    * Should be called after a successful full workspace scan or incremental scan
    */
-  markIndexingComplete(): Promise<void>
+  markIndexingComplete(options?: { allowEmpty?: boolean }): Promise<void>
 
   /**
    * Marks the indexing process as incomplete by storing metadata

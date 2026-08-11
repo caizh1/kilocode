@@ -1,7 +1,7 @@
 import { buildCommentedDocument } from "./apply"
-import type { FunctionTarget, RawCommentProposal, ValidatedCommentResult } from "./types"
+import type { CommentMode, FunctionTarget, RawCommentProposal, ValidatedCommentResult } from "./types"
 
-const DECISION = /^\s*结论\s*[:：]\s*(生成注释|无需注释|通过|修订|存在冲突)\s*$/gm
+const DECISION = /^\s*结论\s*[:：]\s*(生成注释|通过|修订|存在冲突)\s*$/gm
 const DIFF_FENCE = /```(?:diff|patch)[ \t]*\r?\n([\s\S]*?)\r?\n```/gi
 const MAX_COMMENT_LENGTH = 1200
 const CODE_LIKE = [
@@ -14,7 +14,7 @@ const CODE_LIKE = [
   /^[A-Za-z_][\w.>\-]*\s*\([^)]*\)\s*;\s*$/,
 ]
 
-export type CommentQaDecision = "generate" | "skip" | "approve" | "revise" | "conflict"
+export type CommentQaDecision = "generate" | "approve" | "revise" | "conflict"
 
 export type CommentQaResponse = {
   decision: CommentQaDecision
@@ -35,8 +35,8 @@ export function parseCommentQaResponse(input: unknown, round: "primary" | "revie
   const decision = decisionValue(label)
   const allowed =
     round === "primary"
-      ? new Set<CommentQaDecision>(["generate", "skip"])
-      : new Set<CommentQaDecision>(["approve", "revise", "skip", "conflict"])
+      ? new Set<CommentQaDecision>(["generate"])
+      : new Set<CommentQaDecision>(["approve", "revise", "conflict"])
   if (!allowed.has(decision)) return { ok: false, reason: `${round} 阶段不接受“${label}”结论` }
 
   const fences = [...text.matchAll(DIFF_FENCE)]
@@ -60,14 +60,12 @@ export function parseCommentQaResponse(input: unknown, round: "primary" | "revie
 export function buildValidatedCommentCandidate(
   target: FunctionTarget,
   response: CommentQaResponse,
+  mode: CommentMode = "insert",
 ): CommentCandidateResult {
-  if (response.decision === "skip") {
-    return { ok: true, value: { status: "skip", summary: response.summary, proposals: [] } }
-  }
   if (response.decision !== "generate" && response.decision !== "revise") {
     return { ok: false, reasons: ["当前结论没有可验证的注释 Diff"] }
   }
-  const derived = deriveProposals(target, response.patch!)
+  const derived = deriveProposals(target, response.patch!, mode)
   if (!derived.ok) return derived
   return {
     ok: true,
@@ -83,6 +81,7 @@ export function buildValidatedCommentCandidate(
 function deriveProposals(
   target: FunctionTarget,
   patch: string,
+  mode: CommentMode,
 ): { ok: true; proposals: RawCommentProposal[] } | { ok: false; reasons: string[] } {
   const proposals: RawCommentProposal[] = []
   const reasons: string[] = []
@@ -108,7 +107,7 @@ function deriveProposals(
       additions = []
       return
     }
-    const proposal = proposalFromLines(target, anchor.line, additions, reasons)
+    const proposal = proposalFromLines(target, anchor.line, additions, reasons, mode)
     if (proposal) proposals.push(proposal)
     previousLine = anchor.line
     additions = []
@@ -147,7 +146,7 @@ function deriveProposals(
   }
   flush()
   if (files > 1) reasons.push("Diff 不能包含多个文件")
-  validateProposalSet(target, proposals, reasons)
+  validateProposalSet(target, proposals, reasons, mode)
   return reasons.length > 0 ? { ok: false, reasons: unique(reasons) } : { ok: true, proposals }
 }
 
@@ -173,6 +172,7 @@ function proposalFromLines(
   line: number,
   lines: string[],
   reasons: string[],
+  mode: CommentMode,
 ): RawCommentProposal | undefined {
   const anchor = target.anchors.find((item) => item.line === line)
   if (!anchor) {
@@ -184,10 +184,19 @@ function proposalFromLines(
     return
   }
   const commentText = normalizeCommentLines(lines)
+  const replacing = anchor.kind === "function" && mode === "revise"
+  if (replacing && !target.existingFunctionHeader) {
+    reasons.push("修订模式缺少可安全定位的既有函数说明")
+    return
+  }
+  const header = target.existingFunctionHeader
+  const indent = replacing ? (header!.text.match(/^\s*/)?.[0] ?? "") : anchor.indent
   return {
     kind: anchor.kind === "function" ? "functionHeader" : "inline",
-    insertBeforeLine: line,
-    indent: anchor.indent,
+    operation: replacing ? "replace" : "insert",
+    insertBeforeLine: replacing ? header!.startLine : line,
+    ...(replacing ? { replaceEndLine: header!.endLine } : {}),
+    indent,
     commentText,
     anchor: { targetLineText: anchor.targetLineText },
   }
@@ -199,45 +208,68 @@ function normalizeCommentLines(lines: string[]): string {
   return values.map((line, index) => (index > 0 && line.startsWith("*") ? ` ${line}` : line)).join("\n")
 }
 
-function validateProposalSet(target: FunctionTarget, proposals: RawCommentProposal[], reasons: string[]): void {
+function validateProposalSet(
+  target: FunctionTarget,
+  proposals: RawCommentProposal[],
+  reasons: string[],
+  mode: CommentMode,
+): void {
   if (proposals.length === 0) reasons.push("Diff 没有新增注释")
   if (proposals.length > 4) reasons.push("注释候选超过四条")
   const headers = proposals.filter((proposal) => proposal.kind === "functionHeader")
-  if (headers.length > 1) reasons.push("函数说明最多一条")
+  const headerCountReason = ["必须生成一条函数说明", "", "函数说明最多一条"][Math.min(headers.length, 2)]!
+  if (headerCountReason) reasons.push(headerCountReason)
   if (proposals.length - headers.length > 3) reasons.push("行内注释最多三条")
   const normalized: string[] = []
-  for (const proposal of proposals) {
-    if (proposal.kind === "functionHeader" && proposal.insertBeforeLine !== target.startLine) {
-      reasons.push("函数说明必须插在函数起始位置")
-    }
-    if (!containsChinese(proposal.commentText)) reasons.push("新增注释必须包含简体中文")
-    if (/\b(?:TODO|FIXME|XXX)\b/i.test(proposal.commentText)) reasons.push("新增注释不能包含 TODO/FIXME/XXX")
-    if (proposal.commentText.length > MAX_COMMENT_LENGTH) reasons.push("新增注释过长")
-    if (
-      !commentOnly(proposal.commentText, proposal.kind === "functionHeader" ? target.functionHeaderStyle : undefined)
-    ) {
-      reasons.push("Diff 的新增行并非允许的注释形式")
-    }
-    if (looksLikeCode(proposal.commentText)) reasons.push("新增注释正文看起来包含代码语句")
-    const value = normalizeComment(proposal.commentText)
-    if (normalized.some((item) => duplicate(item, value))) reasons.push("新增注释之间存在重复")
-    if (target.existingComments.some((item) => duplicate(normalizeComment(item), value))) {
-      reasons.push("新增注释与已有注释重复")
-    }
-    normalized.push(value)
-    const lines = target.documentText.split(/\r?\n/)
-    if (
-      lines[proposal.insertBeforeLine]?.trimEnd().endsWith("\\") ||
-      lines[proposal.insertBeforeLine - 1]?.trimEnd().endsWith("\\")
-    ) {
-      reasons.push("不能在宏续行边界插入注释")
-    }
+  const lines = target.documentText.split(/\r?\n/)
+  for (const proposal of proposals) validateProposal(target, proposal, mode, lines, normalized, reasons)
+}
+
+function validateProposal(
+  target: FunctionTarget,
+  proposal: RawCommentProposal,
+  mode: CommentMode,
+  lines: string[],
+  normalized: string[],
+  reasons: string[],
+): void {
+  if (proposal.kind === "functionHeader") {
+    const expectedLine = mode === "revise" ? target.existingFunctionHeader?.startLine : target.startLine
+    if (proposal.insertBeforeLine !== expectedLine) reasons.push("函数说明位置与目标不一致")
   }
+  if (!containsChinese(proposal.commentText)) reasons.push("新增注释必须包含简体中文")
+  if (/\b(?:TODO|FIXME|XXX)\b/i.test(proposal.commentText)) reasons.push("新增注释不能包含 TODO/FIXME/XXX")
+  if (proposal.commentText.length > MAX_COMMENT_LENGTH) reasons.push("新增注释过长")
+  if (!commentOnly(proposal.commentText, proposalHeaderStyle(target, proposal, mode))) {
+    reasons.push("Diff 的新增行并非允许的注释形式")
+  }
+  if (looksLikeCode(proposal.commentText)) reasons.push("新增注释正文看起来包含代码语句")
+  const value = normalizeComment(proposal.commentText)
+  if (normalized.some((item) => duplicate(item, value))) reasons.push("新增注释之间存在重复")
+  if (mode === "insert" && target.existingComments.some((item) => duplicate(normalizeComment(item), value))) {
+    reasons.push("新增注释与已有注释重复")
+  }
+  normalized.push(value)
+  if (
+    lines[proposal.insertBeforeLine]?.trimEnd().endsWith("\\") ||
+    lines[proposal.insertBeforeLine - 1]?.trimEnd().endsWith("\\")
+  ) {
+    reasons.push("不能在宏续行边界插入注释")
+  }
+}
+
+function proposalHeaderStyle(
+  target: FunctionTarget,
+  proposal: RawCommentProposal,
+  mode: CommentMode,
+): FunctionTarget["functionHeaderStyle"] | undefined {
+  if (proposal.kind !== "functionHeader") return
+  if (mode === "revise") return target.existingFunctionHeader?.style
+  return target.functionHeaderStyle
 }
 
 function decisionValue(input: string): CommentQaDecision {
   if (input === "生成注释") return "generate"
-  if (input === "无需注释") return "skip"
   if (input === "通过") return "approve"
   if (input === "修订") return "revise"
   return "conflict"

@@ -2095,4 +2095,19 @@ export const dict = {
   "agentConsole.permission.execute": "执行",
   "agentConsole.permission.edit": "修改",
   "agentConsole.permission.reject": "拒绝",
+  "documentAgent.unavailable": "Document RAG 已关闭。请打开索引设置后启用。",
+  "documentAgent.scope.documentsOnly": "仅文档",
+  "documentAgent.scope.documentsAndCode": "文档 + 代码",
+  "documentAgent.scope.disabledDescription": "代码探索已关闭。如需查看代码，请明确告诉 Agent。",
+  "documentAgent.scope.enabledDescription": "只读代码探索已开启。点击可恢复仅文档。",
+  "prompt.document.confirm.title": "进入 Document 模式",
+  "prompt.document.confirm.description":
+    "默认仅从 Document RAG 查询文档。只有当你明确要求查询代码时，才会开启只读代码探索。",
+  "prompt.document.confirm.flow.label":
+    "默认仅文档，只查询 Document RAG；明确要求查询代码后，切换到文档加代码并开启只读代码探索。",
+  "prompt.document.confirm.documents.note": "仅查询 Document RAG",
+  "prompt.document.confirm.transition": "明确要求\n查询代码",
+  "prompt.document.confirm.code.note": "文档检索 + 只读代码探索",
+  "prompt.document.confirm.note": "未收到明确要求，不会搜索代码库。",
+  "prompt.document.confirm.action": "确认并进入 Document",
 } satisfies Partial<Record<Keys, string>>

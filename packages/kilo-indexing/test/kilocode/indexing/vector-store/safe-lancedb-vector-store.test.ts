@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { randomUUID } from "crypto"
-import { mkdtemp, rm } from "fs/promises"
+import { createHash, randomUUID } from "crypto"
+import { mkdir, mkdtemp, rm, stat, writeFile } from "fs/promises"
 import { tmpdir } from "os"
 import path from "path"
 import { EmbeddingRuntimeStore } from "../../../../src/indexing/embedding-runtime-store"
@@ -14,6 +14,7 @@ import {
   loadActiveEmbeddingProfile,
   SafeLanceDBVectorStore,
 } from "../../../../src/indexing/vector-store/safe-lancedb-vector-store"
+import { legacySafeGenerationRoot } from "../../../../src/indexing/vector-store/lancedb-paths"
 
 function vector(seed: number, dimension = 64): number[] {
   return Array.from({ length: dimension }, (_, index) => Math.cos((index + 1) * seed) + seed * 0.013 + 0.021)
@@ -160,6 +161,326 @@ class ReadbackStore extends MemoryStore {
 }
 
 describe("SafeLanceDBVectorStore", () => {
+  test("uses compact unique generation identities for Windows path headroom", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-compact-generation-"))
+    const workspace = path.join(root, "workspace")
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    let generation = ""
+    const store = new SafeLanceDBVectorStore(workspace, root, profile("space-compact"), runtime, (value) => {
+      generation = value
+      return new MemoryStore()
+    })
+
+    try {
+      await store.initialize()
+      expect(generation).toMatch(/^[A-Za-z0-9_-]{8}$/)
+      expect(generation).toHaveLength(8)
+    } finally {
+      await store.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("preserves a previous-format incomplete candidate until compact promotion succeeds", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-legacy-candidate-"))
+    const workspace = path.join(root, "workspace")
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const hash = createHash("sha256").update(path.resolve(workspace)).digest("hex").slice(0, 24)
+    const generationRoot = path.join(root, "safe-generations", hash)
+    const legacyGeneration = "mr0d8q2w-0123456789ab"
+    const legacyDirectory = path.join(generationRoot, legacyGeneration)
+    await mkdir(legacyDirectory, { recursive: true })
+    await writeFile(
+      path.join(generationRoot, "candidate.json"),
+      `${JSON.stringify({
+        schema: 1,
+        generation: legacyGeneration,
+        createdAt: new Date().toISOString(),
+        profile: profile("space-legacy-candidate"),
+      })}\n`,
+    )
+    let resumedGeneration = ""
+    const store = new SafeLanceDBVectorStore(
+      workspace,
+      root,
+      profile("space-legacy-candidate"),
+      runtime,
+      (generation) => {
+        resumedGeneration = generation
+        return new MemoryStore()
+      },
+    )
+
+    try {
+      expect(await store.initialize()).toBe(true)
+      expect(resumedGeneration).not.toBe(legacyGeneration)
+      expect(resumedGeneration).toMatch(/^[A-Za-z0-9_-]{8}$/)
+      expect(
+        await stat(legacyDirectory)
+          .then(() => true)
+          .catch(() => false),
+      ).toBe(true)
+      await store.markIndexingComplete({ allowEmpty: true })
+      expect(
+        await stat(legacyDirectory)
+          .then(() => true)
+          .catch(() => false),
+      ).toBe(false)
+    } finally {
+      await store.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("reuses a readable legacy active generation while its write path remains within budget", async () => {
+    const root = await mkdtemp(path.join(process.platform === "win32" ? tmpdir() : "/tmp", "safe-legacy-active-"))
+    const workspace = path.join(root, "workspace-with-a-long-name")
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const current = profile("space-legacy-active")
+    const hash = createHash("sha256").update(path.resolve(workspace)).digest("hex").slice(0, 24)
+    const generationRoot = path.join(root, "safe-generations", hash)
+    const legacyGeneration = `${Date.now()}-${randomUUID()}`
+    const existing = point("src/existing.c", 31)
+    existing.payload.active = true
+    const fallback = new MemoryStore()
+    await fallback.upsertPoints([existing])
+    await fallback.markIndexingComplete()
+    const stores = new Map<string, MemoryStore>([[legacyGeneration, fallback]])
+    const make = (generation: string) => {
+      const store = stores.get(generation) ?? new MemoryStore()
+      stores.set(generation, store)
+      return store
+    }
+    await mkdir(generationRoot, { recursive: true })
+    await writeFile(
+      path.join(generationRoot, "active.json"),
+      JSON.stringify({
+        schema: 1,
+        generation: legacyGeneration,
+        promotedAt: new Date().toISOString(),
+        profile: current,
+      }),
+    )
+    const store = new SafeLanceDBVectorStore(workspace, root, current, runtime, make)
+
+    try {
+      expect(await store.initialize()).toBe(false)
+      expect(store.getLastCompatibilityDecision()).toEqual({
+        action: "reuse",
+        reason: "validated active generation",
+        created: false,
+      })
+      expect((await store.search(existing.vector, "src/existing.c", 0, 5))[0]?.id).toBe(existing.id)
+    } finally {
+      await store.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("reuses a readable generation created by the previous compact format", async () => {
+    const root = await mkdtemp(path.join(process.platform === "win32" ? tmpdir() : "/tmp", "safe-previous-active-"))
+    const workspace = path.join(root, "workspace")
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const current = profile("space-previous-compact-active")
+    const hash = createHash("sha256").update(path.resolve(workspace)).digest("hex").slice(0, 24)
+    const generationRoot = path.join(root, "safe-generations", hash)
+    const previousGeneration = "mr0d8q2w-0123456789ab"
+    const existing = point("src/existing.c", 33)
+    existing.payload.active = true
+    const active = new MemoryStore()
+    await active.upsertPoints([existing])
+    await active.markIndexingComplete()
+    const generations: string[] = []
+    await mkdir(generationRoot, { recursive: true })
+    await writeFile(
+      path.join(generationRoot, "active.json"),
+      JSON.stringify({
+        schema: 1,
+        generation: previousGeneration,
+        promotedAt: new Date().toISOString(),
+        profile: current,
+      }),
+    )
+    const store = new SafeLanceDBVectorStore(workspace, root, current, runtime, (generation) => {
+      generations.push(generation)
+      return active
+    })
+
+    try {
+      expect(await store.initialize()).toBe(false)
+      expect(generations).toEqual([previousGeneration])
+      expect(store.getLastCompatibilityDecision()).toEqual({
+        action: "reuse",
+        reason: "validated active generation",
+        created: false,
+      })
+      expect((await store.search(existing.vector, "src/existing.c", 0, 5))[0]?.id).toBe(existing.id)
+    } finally {
+      await store.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("migrates a readable previous-format generation when its transaction path is too long", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-long-previous-active-"))
+    const workspace = path.join(root, "workspace")
+    const base = path.join(root, "x".repeat(30))
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const current = profile("space-long-previous-active")
+    const hash = createHash("sha256").update(path.resolve(workspace)).digest("hex").slice(0, 24)
+    const generationRoot = path.join(base, "safe-generations", hash)
+    const previousGeneration = "mr0d8q2w-0123456789ab"
+    const active = new MemoryStore()
+    await active.markIndexingComplete()
+    let replacement = ""
+    await mkdir(generationRoot, { recursive: true })
+    await writeFile(
+      path.join(generationRoot, "active.json"),
+      JSON.stringify({
+        schema: 1,
+        generation: previousGeneration,
+        promotedAt: new Date().toISOString(),
+        profile: current,
+      }),
+    )
+    const store = new SafeLanceDBVectorStore(workspace, base, current, runtime, (generation) => {
+      if (generation === previousGeneration) return active
+      replacement = generation
+      return new MemoryStore()
+    })
+
+    try {
+      expect(await store.initialize()).toBe(true)
+      expect(replacement).toMatch(/^[A-Za-z0-9_-]{8}$/)
+      expect(store.getLastCompatibilityDecision()).toEqual({
+        action: "rebuild",
+        reason: "legacy active generation requires compact-path migration",
+        created: true,
+      })
+    } finally {
+      await store.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("keeps a cross-root legacy generation until compact promotion succeeds", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-cross-root-"))
+    const workspace = path.join(root, "workspace")
+    const currentBase = path.join(root, "n")
+    const legacyBase = path.join(root, "x".repeat(40))
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const current = profile("space-cross-root")
+    const legacyRoot = legacySafeGenerationRoot(workspace, legacyBase)
+    const legacyGeneration = "mr0d8q2w-0123456789ab"
+    const active = new MemoryStore()
+    await active.markIndexingComplete()
+    await mkdir(legacyRoot, { recursive: true })
+    await writeFile(
+      path.join(legacyRoot, "active.json"),
+      JSON.stringify({
+        schema: 1,
+        generation: legacyGeneration,
+        promotedAt: new Date().toISOString(),
+        profile: current,
+      }),
+    )
+    const store = new SafeLanceDBVectorStore(
+      workspace,
+      currentBase,
+      current,
+      runtime,
+      (generation) => (generation === legacyGeneration ? active : new MemoryStore()),
+      [legacyBase],
+    )
+    const save = runtime.save.bind(runtime)
+
+    try {
+      expect(await store.initialize()).toBe(true)
+      expect(await stat(legacyRoot).then(() => true)).toBe(true)
+      runtime.save = () => Promise.reject(new Error("runtime persistence failed"))
+      await expect(store.markIndexingComplete({ allowEmpty: true })).rejects.toThrow("runtime persistence failed")
+      expect(await stat(legacyRoot).then(() => true)).toBe(true)
+
+      runtime.save = save
+      await store.markIndexingComplete({ allowEmpty: true })
+      expect(
+        await stat(legacyRoot)
+          .then(() => true)
+          .catch(() => false),
+      ).toBe(false)
+    } finally {
+      await store.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("rebuilds when a legacy active generation is already too long to reopen", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-unreadable-legacy-active-"))
+    const workspace = path.join(root, "workspace")
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const current = profile("space-unreadable-legacy-active")
+    const hash = createHash("sha256").update(path.resolve(workspace)).digest("hex").slice(0, 24)
+    const generationRoot = path.join(root, "safe-generations", hash)
+    const legacyGeneration = `${Date.now()}-${randomUUID()}`
+    await mkdir(generationRoot, { recursive: true })
+    await writeFile(
+      path.join(generationRoot, "active.json"),
+      JSON.stringify({
+        schema: 1,
+        generation: legacyGeneration,
+        promotedAt: new Date().toISOString(),
+        profile: current,
+      }),
+    )
+    let compactGeneration = ""
+    const store = new SafeLanceDBVectorStore(workspace, root, current, runtime, (generation) => {
+      if (generation === legacyGeneration) return new MemoryStore()
+      compactGeneration = generation
+      return new MemoryStore()
+    })
+
+    try {
+      expect(await store.initialize()).toBe(true)
+      expect(compactGeneration).toMatch(/^[A-Za-z0-9_-]{8}$/)
+      expect(store.getLastCompatibilityDecision()).toMatchObject({
+        action: "rebuild",
+        reason: "legacy active generation requires compact-path migration",
+      })
+    } finally {
+      await store.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("promotes an explicitly validated empty candidate for document-only workspaces", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-empty-"))
+    const workspace = path.join(root, "workspace")
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const stores = new Map<string, MemoryStore>()
+    const make = (generation: string) => {
+      const store = stores.get(generation) ?? new MemoryStore()
+      stores.set(generation, store)
+      return store
+    }
+    const store = new SafeLanceDBVectorStore(workspace, root, profile("space-empty"), runtime, make)
+
+    try {
+      await store.initialize()
+      await expect(store.markIndexingComplete()).rejects.toThrow("contains no validated source vectors")
+      expect([...stores.values()].every((item) => !item.complete)).toBe(true)
+      await store.markIndexingComplete({ allowEmpty: true })
+      await store.close()
+
+      const reopened = new SafeLanceDBVectorStore(workspace, root, profile("space-empty"), runtime, make)
+      expect(await reopened.initialize()).toBe(false)
+      expect(await reopened.collectionExists()).toBe(true)
+      expect(await reopened.search(vector(1), undefined, 0, 5)).toEqual([])
+      await reopened.close()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("allows duplicate vectors for chunks with distinct source locations", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-duplicates-"))
     const workspace = path.join(root, "workspace")
@@ -235,6 +556,80 @@ describe("SafeLanceDBVectorStore", () => {
       expect(await reopened.hasIndexedData()).toBe(true)
       expect((await reopened.search(item.vector, "src/a.c", 0, 5))[0]?.id).toBe(item.id)
       await reopened.close()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("resumes a compatible incomplete candidate after a worker exit", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-resume-"))
+    const workspace = path.join(root, "workspace")
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const stores = new Map<string, MemoryStore>()
+    const make = (generation: string) => {
+      const store = stores.get(generation) ?? new MemoryStore()
+      stores.set(generation, store)
+      return store
+    }
+    const first = new SafeLanceDBVectorStore(workspace, root, profile("space-resume"), runtime, make)
+    const before = point("src/before.c", 12)
+
+    try {
+      expect(await first.initialize()).toBe(true)
+      await first.markIndexingIncomplete()
+      await first.upsertPoints([before])
+      await first.activateFileGeneration?.("src/before.c", "generation-12", "run")
+      await first.close()
+
+      const resumed = new SafeLanceDBVectorStore(workspace, root, profile("space-resume"), runtime, make)
+      expect(await resumed.initialize()).toBe(false)
+      expect(resumed.getLastCompatibilityDecision()).toEqual({
+        action: "rebuild",
+        reason: "resumed incomplete candidate",
+        created: false,
+      })
+
+      const after = point("src/after.c", 13)
+      await resumed.upsertPoints([after])
+      await resumed.activateFileGeneration?.("src/after.c", "generation-13", "run")
+      await resumed.markIndexingComplete()
+
+      expect((await resumed.search(before.vector, "src/before.c", 0, 5))[0]?.id).toBe(before.id)
+      expect((await resumed.search(after.vector, "src/after.c", 0, 5))[0]?.id).toBe(after.id)
+      await resumed.close()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("promotes a resumed candidate when every file was already checkpointed", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "safe-lancedb-resume-complete-"))
+    const workspace = path.join(root, "workspace")
+    const runtime = new EmbeddingRuntimeStore(root, workspace)
+    const stores = new Map<string, MemoryStore>()
+    const make = (generation: string) => {
+      const store = stores.get(generation) ?? new MemoryStore()
+      stores.set(generation, store)
+      return store
+    }
+    const first = new SafeLanceDBVectorStore(workspace, root, profile("space-resume-complete"), runtime, make)
+    const item = point("src/checkpointed.c", 14)
+
+    try {
+      expect(await first.initialize()).toBe(true)
+      await first.markIndexingIncomplete()
+      await first.upsertPoints([item])
+      await first.finalizeFileGenerations([
+        { filePath: "src/checkpointed.c", generation: "generation-14", runId: "run" },
+      ])
+
+      const resumed = new SafeLanceDBVectorStore(workspace, root, profile("space-resume-complete"), runtime, make)
+      expect(await resumed.initialize()).toBe(false)
+      await resumed.markIndexingComplete()
+
+      expect(await resumed.hasIndexedData()).toBe(true)
+      expect((await resumed.search(item.vector, "src/checkpointed.c", 0, 5))[0]?.id).toBe(item.id)
+      await resumed.close()
     } finally {
       await rm(root, { recursive: true, force: true })
     }

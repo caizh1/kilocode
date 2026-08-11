@@ -827,6 +827,68 @@ body:has(.chat-view[data-ui="qa-shell"]),
   justify-content: start;
 }
 
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]
+  > :is(.prompt-selector-trigger--mode, :has(.prompt-selector-trigger--mode)) {
+  grid-area: mode;
+}
+
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]
+  > :is(.document-agent-scope-button, :has(.document-agent-scope-button)) {
+  grid-area: scope;
+}
+
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]
+  > :is(.prompt-selector-trigger--model, :has(.prompt-selector-trigger--model)) {
+  grid-area: model;
+}
+
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]
+  > :is(.prompt-selector-trigger--thinking, :has(.prompt-selector-trigger--thinking)) {
+  grid-area: thinking;
+}
+
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]
+  > :is(.prompt-selector-reset, :has(.prompt-selector-reset)) {
+  grid-area: reset;
+}
+
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"] {
+  grid-template-areas: "mode scope model thinking reset";
+  grid-template-columns:
+    minmax(62px, 0.82fr) minmax(64px, 0.82fr) minmax(84px, 1.36fr) minmax(58px, 0.86fr)
+    36px;
+}
+
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+    :has(.prompt-selector-reset)
+  ) {
+  grid-template-areas: "mode scope model thinking";
+  grid-template-columns: minmax(62px, 0.82fr) minmax(64px, 0.82fr) minmax(84px, 1.36fr) minmax(58px, 0.86fr);
+}
+
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+    :has(.prompt-selector-trigger--thinking)
+  ):has(.prompt-selector-reset) {
+  grid-template-areas: "mode scope model reset";
+  grid-template-columns: minmax(62px, 0.82fr) minmax(64px, 0.82fr) minmax(84px, 1.36fr) 36px;
+}
+
+.chat-view[data-ui="qa-shell"]
+  .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+    :has(.prompt-selector-trigger--thinking)
+  ):not(:has(.prompt-selector-reset)) {
+  grid-template-areas: "mode scope model";
+  grid-template-columns: minmax(62px, 0.82fr) minmax(64px, 0.82fr) minmax(84px, 1.36fr);
+}
+
 .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"] {
   width: 100%;
   min-width: 0;
@@ -1428,8 +1490,8 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
   border-radius: var(--titanium-radius-shell);
   background: var(--titanium-glass);
   box-shadow: var(--titanium-card-shadow);
-  backdrop-filter: var(--titanium-blur);
-  -webkit-backdrop-filter: var(--titanium-blur);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .settings-shell .settings-page-header {
@@ -1474,8 +1536,8 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
   box-shadow:
     inset 0 1px 0 var(--titanium-highlight),
     0 8px 22px rgba(0, 0, 0, 0.12);
-  backdrop-filter: var(--titanium-blur);
-  -webkit-backdrop-filter: var(--titanium-blur);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .settings-shell [data-slot="settings-row"] {
@@ -1834,6 +1896,36 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
     ):not(:has(.prompt-selector-reset)) {
     grid-template-columns: minmax(96px, 1fr) !important;
   }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"] {
+    grid-template-areas: "mode scope model thinking reset";
+    grid-template-columns: minmax(48px, 0.8fr) minmax(56px, 0.8fr) minmax(76px, 1.4fr) minmax(48px, 0.8fr) 36px !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-reset)
+    ) {
+    grid-template-areas: "mode scope model thinking";
+    grid-template-columns: minmax(48px, 0.8fr) minmax(56px, 0.8fr) minmax(76px, 1.4fr) minmax(48px, 0.8fr) !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-trigger--thinking)
+    ):has(.prompt-selector-reset) {
+    grid-template-areas: "mode scope model reset";
+    grid-template-columns: minmax(48px, 0.8fr) minmax(56px, 0.8fr) minmax(76px, 1.4fr) 36px !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-trigger--thinking)
+    ):not(:has(.prompt-selector-reset)) {
+    grid-template-areas: "mode scope model";
+    grid-template-columns: minmax(48px, 0.8fr) minmax(56px, 0.8fr) minmax(76px, 1.4fr) !important;
+  }
 }
 
 @container prompt-input (max-width: 300px) {
@@ -1987,6 +2079,50 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
     .prompt-input-utility-actions[data-ui="qa-utility-actions"] {
     grid-column: 2;
   }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]
+    > [data-component="tooltip-trigger"]:has(.prompt-selector-reset) {
+    display: flex;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"] {
+    grid-template-areas:
+      "mode scope scope"
+      "model thinking reset";
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-reset)
+    ) {
+    grid-template-areas:
+      "mode scope"
+      "model thinking";
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-trigger--thinking)
+    ):has(.prompt-selector-reset) {
+    grid-template-areas:
+      "mode scope scope"
+      "model model reset";
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px !important;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-trigger--thinking)
+    ):not(:has(.prompt-selector-reset)) {
+    grid-template-areas:
+      "mode scope"
+      "model model";
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
 }
 
 @container prompt-input (max-width: 220px) {
@@ -2054,6 +2190,41 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
     ):not(:has(.prompt-selector-reset)) {
     grid-template-columns: minmax(112px, 150px);
   }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:not(:has([data-ui="qa-indexing-actions"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"] {
+    grid-template-areas: "mode scope model thinking reset";
+    grid-template-columns: 78px 92px minmax(112px, 150px) 76px 36px;
+    width: max-content;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:not(:has([data-ui="qa-indexing-actions"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-reset)
+    ) {
+    grid-template-areas: "mode scope model thinking";
+    grid-template-columns: 78px 92px minmax(112px, 150px) 76px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:not(:has([data-ui="qa-indexing-actions"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-trigger--thinking)
+    ):has(.prompt-selector-reset) {
+    grid-template-areas: "mode scope model reset";
+    grid-template-columns: 78px 92px minmax(112px, 150px) 36px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:not(:has([data-ui="qa-indexing-actions"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-trigger--thinking)
+    ):not(:has(.prompt-selector-reset)) {
+    grid-template-areas: "mode scope model";
+    grid-template-columns: 78px 92px minmax(112px, 150px);
+  }
 }
 
 @container prompt-input (min-width: 760px) {
@@ -2090,6 +2261,27 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
       :has(.prompt-selector-trigger--thinking)
     ) {
     grid-template-columns: minmax(112px, 150px);
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:has([data-ui="qa-indexing-actions"]):not(
+      :has(.prompt-selector-reset)
+    ):not(:has([data-ui="qa-action-sandbox"])):not(:has([data-ui="qa-action-speech"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"] {
+    grid-template-areas: "mode scope model thinking";
+    grid-template-columns: 78px 92px minmax(112px, 150px) 76px;
+    width: max-content;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint[data-ui="qa-composer-footer"]:has([data-ui="qa-indexing-actions"]):not(
+      :has(.prompt-selector-reset)
+    ):not(:has([data-ui="qa-action-sandbox"])):not(:has([data-ui="qa-action-speech"]))
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-trigger--thinking)
+    ) {
+    grid-template-areas: "mode scope model";
+    grid-template-columns: 78px 92px minmax(112px, 150px);
   }
 }
 
@@ -2148,6 +2340,36 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
       :has(.prompt-selector-trigger--thinking)
     ):not(:has(.prompt-selector-reset)) {
     grid-template-columns: 124px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"] {
+    grid-template-areas: "mode scope model thinking reset";
+    grid-template-columns: 70px 86px 124px 68px 36px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-reset)
+    ) {
+    grid-template-areas: "mode scope model thinking";
+    grid-template-columns: 70px 86px 124px 68px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-trigger--thinking)
+    ):has(.prompt-selector-reset) {
+    grid-template-areas: "mode scope model reset";
+    grid-template-columns: 70px 86px 124px 36px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    .prompt-input-hint-selectors[data-ui="qa-composer-selectors"][data-document-agent="true"]:not(
+      :has(.prompt-selector-trigger--thinking)
+    ):not(:has(.prompt-selector-reset)) {
+    grid-template-areas: "mode scope model";
+    grid-template-columns: 70px 86px 124px;
   }
 }
 

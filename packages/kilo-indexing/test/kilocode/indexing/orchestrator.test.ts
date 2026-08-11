@@ -27,6 +27,7 @@ class Store {
   public clearCount = 0
   public closeCount = 0
   public completeCount = 0
+  public completeOptions: Array<{ allowEmpty?: boolean } | undefined> = []
   public deleteCount = 0
   public incompleteCount = 0
   public initializeCount = 0
@@ -69,8 +70,9 @@ class Store {
   async hasIndexedData(): Promise<boolean> {
     return this.existing
   }
-  async markIndexingComplete(): Promise<void> {
+  async markIndexingComplete(options?: { allowEmpty?: boolean }): Promise<void> {
     this.completeCount += 1
+    this.completeOptions.push(options)
   }
   async markIndexingIncomplete(): Promise<void> {
     this.incompleteCount += 1
@@ -502,6 +504,7 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(outcome).toEqual({ state: "completed", pipeline: "rag" })
     expect(state.state).toBe("Indexed")
     expect(store.completeCount).toBe(1)
+    expect(store.completeOptions).toEqual([{ allowEmpty: true }])
   })
 
   test("releases the workspace lock after a successful scan", async () => {

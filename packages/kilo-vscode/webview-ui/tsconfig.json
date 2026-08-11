@@ -17,6 +17,7 @@
     "agent-manager/**/*",
     "kiloclaw/**/*",
     "marketplace/**/*",
+    "design-doc/**/*",
     "diff-viewer/**/*",
     "diff-virtual/**/*"
   ]

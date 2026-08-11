@@ -9,6 +9,8 @@ import {
 } from "./session-runner"
 import type {
   CodeCommentRequest,
+  CodeCommentProgressEvent,
+  CommentMode,
   CommentGenerationResult,
   CommentStrategy,
   FunctionTarget,
@@ -34,17 +36,22 @@ export class CodeCommentOrchestrator {
     private readonly log: (message: string) => void,
   ) {}
 
-  async generate(request: CodeCommentRequest, token: vscode.CancellationToken): Promise<CommentGenerationResult> {
-    if (request.targets.length !== 1) throw new Error("V1 只支持一个函数目标")
+  async generate(
+    request: CodeCommentRequest,
+    token: vscode.CancellationToken,
+    report?: (event: CodeCommentProgressEvent) => void,
+  ): Promise<CommentGenerationResult> {
+    if (request.targets.length !== 1) throw new Error("单次代码注释生成只支持一个函数目标")
     const target = request.targets[0]!
+    report?.({ stage: "primary" })
     const primary = await this.run({ request, target, round: "primary", token })
     if ("reason" in primary) {
       if (request.strategy === "single-self-check" && primary.kind === "parse") {
-        return this.recoverSinglePass(request, target, token, [`primary: ${primary.reason}`])
+        return this.recoverSinglePass(request, target, token, [`primary: ${primary.reason}`], report)
       }
       return unresolved(target, request.strategy, 1, [`primary: ${primary.reason}`])
     }
-    const candidate = await validateCandidate(target, primary.response)
+    const candidate = await validateCandidate(target, primary.response, request.mode)
     if (!candidate.ok) {
       if (request.strategy === "single-self-check") {
         return this.recoverSinglePass(
@@ -52,6 +59,7 @@ export class CodeCommentOrchestrator {
           target,
           token,
           candidate.reasons.map((reason) => `primary: ${reason}`),
+          report,
         )
       }
       return unresolved(
@@ -65,6 +73,7 @@ export class CodeCommentOrchestrator {
       return completed(target, request.strategy, candidate.value, primary.output, 1, false)
     }
 
+    report?.({ stage: "review" })
     const review = await this.run({ request, target, round: "review", candidate: candidate.value, token })
     if ("reason" in review) return unresolved(target, request.strategy, 2, [`review: ${review.reason}`])
     if (review.response.decision === "conflict") {
@@ -74,7 +83,7 @@ export class CodeCommentOrchestrator {
       this.log(`stage=review decision=approve status=${candidate.value.status}`)
       return completed(target, request.strategy, candidate.value, review.output, 2, false)
     }
-    const reviewed = await validateCandidate(target, review.response)
+    const reviewed = await validateCandidate(target, review.response, request.mode)
     if (!reviewed.ok)
       return unresolved(
         target,
@@ -91,7 +100,9 @@ export class CodeCommentOrchestrator {
     target: FunctionTarget,
     token: vscode.CancellationToken,
     initialReasons: string[],
+    report?: (event: CodeCommentProgressEvent) => void,
   ): Promise<CommentGenerationResult> {
+    report?.({ stage: "recovery" })
     const recovery = await this.run({
       request,
       target,
@@ -103,7 +114,7 @@ export class CodeCommentOrchestrator {
     if ("reason" in recovery) {
       return unresolved(target, request.strategy, 2, [...initialReasons, `recovery: ${recovery.reason}`])
     }
-    const candidate = await validateCandidate(target, recovery.response)
+    const candidate = await validateCandidate(target, recovery.response, request.mode)
     if (!candidate.ok) {
       return unresolved(
         target,
@@ -130,6 +141,7 @@ export class CodeCommentOrchestrator {
         activeFile: input.target.filePath,
         prompt: buildCommentPrompt({
           target: input.target,
+          mode: input.request.mode,
           round: input.round,
           candidate: input.candidate,
           validationFeedback: input.validationFeedback,
@@ -162,9 +174,10 @@ export class CodeCommentOrchestrator {
 async function validateCandidate(
   target: FunctionTarget,
   response: CommentQaResponse,
+  mode: CommentMode = "insert",
 ): Promise<ReturnType<typeof buildValidatedCommentCandidate>> {
-  const result = buildValidatedCommentCandidate(target, response)
-  if (!result.ok || result.value.status === "skip") return result
+  const result = buildValidatedCommentCandidate(target, response, mode)
+  if (!result.ok) return result
   const candidate = buildCommentedDocument(target, result.value.proposals)
   if (!(await validateOnlyCommentInsertions(target, result.value.proposals, candidate))) {
     return { ok: false, reasons: ["候选未通过非注释 token 完全一致校验"] }
@@ -188,7 +201,6 @@ function completed(
     rounds,
     recovered,
   }
-  if (value.status === "skip") return { status: "skip", ...common, summary: value.summary }
   return { status: "ready", ...common, result: value }
 }
 

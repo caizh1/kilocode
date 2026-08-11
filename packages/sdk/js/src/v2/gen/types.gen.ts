@@ -34,6 +34,7 @@ export type Event =
   | EventMemoryStatus1
   | EventMemoryUpdated1
   | EventMemoryError1
+  | EventDesignDocJobUpdated
   | EventIndexingStatus
   | EventIndexingWarning
   | EventServerConnected
@@ -89,13 +90,13 @@ export type Event =
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventMessagePartDelta
+  | EventPermissionAsked
+  | EventPermissionReplied
   | EventSessionDiff
   | EventSessionError
   | EventModelsDevRefreshed
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
-  | EventPermissionAsked
-  | EventPermissionReplied
   | EventReferenceUpdated
   | EventIntegrationUpdated
   | EventPermissionV2Asked
@@ -458,6 +459,17 @@ export type SkillMarketRequest =
       operation: "purge"
       transactionId: string
     }
+
+export type DesignDocJobProgress = {
+  total: number
+  pending: number
+  running: number
+  passed: number
+  failed: number
+  blocked: number
+  cancelled: number
+  currentWorkItemID?: string
+}
 
 export type IndexingStatusState = "Disabled" | "In Progress" | "Complete" | "Error" | "Standby"
 
@@ -1261,6 +1273,7 @@ export type GlobalEvent = {
     | EventMemoryStatus
     | EventMemoryUpdated
     | EventMemoryError
+    | EventDesignDocJobUpdated
     | EventIndexingStatus
     | EventIndexingWarning
     | EventServerConnected
@@ -1316,13 +1329,13 @@ export type GlobalEvent = {
     | EventMcpToolsChanged
     | EventMcpBrowserOpenFailed
     | EventMessagePartDelta
+    | EventPermissionAsked
+    | EventPermissionReplied
     | EventSessionDiff
     | EventSessionError
     | EventModelsDevRefreshed
     | EventInstallationUpdated
     | EventInstallationUpdateAvailable
-    | EventPermissionAsked
-    | EventPermissionReplied
     | EventReferenceUpdated
     | EventIntegrationUpdated
     | EventPermissionV2Asked
@@ -3301,6 +3314,355 @@ export type TuiKeybindListResponse = {
   keybinds: Array<TuiKeybindInfo>
 }
 
+export type DesignDocModelReference = {
+  providerID: string
+  modelID: string
+  variant?: string
+}
+
+export type DesignDocCreateJobInput = {
+  targetPath: string
+  artifactType?:
+    | "topic"
+    | "product-section"
+    | "business-flow"
+    | "overview"
+    | "structure"
+    | "code-structure"
+    | "execution-flow"
+    | "sequence"
+    | "data-flow"
+    | "lifecycle"
+    | "error-flow"
+    | "review"
+  artifactTypes?: Array<
+    | "topic"
+    | "product-section"
+    | "business-flow"
+    | "overview"
+    | "structure"
+    | "code-structure"
+    | "execution-flow"
+    | "sequence"
+    | "data-flow"
+    | "lifecycle"
+    | "error-flow"
+    | "review"
+  >
+  recursive?: boolean
+  documentProfile?: "artifact-set" | "source-backed-full" | "product-detailed-design-v2"
+  outputFormats?: Array<"markdown" | "docx">
+  referenceInputs?: Array<{
+    path: string
+    kind: "requirement" | "architecture" | "interface" | "test"
+  }>
+  moduleHints?: Array<{
+    name: string
+    includePaths: Array<string>
+  }>
+  concurrency?: number
+  ownerSessionID?: string
+  model: DesignDocModelReference
+  modelFallbacks?: Array<{
+    fromAttempt: number
+    model: DesignDocModelReference
+  }>
+  timeoutMs?: number
+  maxAttempts?: number
+}
+
+export type DesignDocJobConfig = {
+  targetPath: string
+  artifactTypes: Array<
+    | "topic"
+    | "product-section"
+    | "business-flow"
+    | "overview"
+    | "structure"
+    | "code-structure"
+    | "execution-flow"
+    | "sequence"
+    | "data-flow"
+    | "lifecycle"
+    | "error-flow"
+    | "review"
+  >
+  languages: Array<"typescript" | "tsx" | "c">
+  concurrency: number
+  recursive: boolean
+  documentProfile?: "artifact-set" | "source-backed-full" | "product-detailed-design-v2"
+  outputFormats?: Array<"markdown" | "docx">
+  referenceInputs?: Array<{
+    path: string
+    kind: "requirement" | "architecture" | "interface" | "test"
+  }>
+  moduleHints?: Array<{
+    name: string
+    includePaths: Array<string>
+  }>
+  evidenceBudget: {
+    maxItems: number
+    maxPromptBytes: number
+    maxSnippetCharacters: number
+  }
+  atomicEvidenceBudget?: {
+    maxItems: number
+    maxPromptBytes: number
+    maxSnippetCharacters: number
+  }
+  retryPolicy: {
+    maxAttempts: number
+    timeoutMs: number
+    backoffMs: Array<number>
+    retryableCodes: Array<string>
+  }
+  modelPolicy: {
+    primary: DesignDocModelReference
+    fallbacks: Array<{
+      fromAttempt: number
+      model: DesignDocModelReference
+    }>
+    structuredOutput: "tool-json-schema"
+  }
+  renderer: "mermaid"
+}
+
+export type DesignDocWorkItemAttempt = {
+  number: number
+  kind: "generate" | "repair"
+  sessionID: string
+  model: DesignDocModelReference
+  status: "created" | "running" | "completed" | "error" | "interrupted"
+  repairedFromSessionID?: string
+  startedAt: number
+  completedAt?: number
+  cost?: number
+  tokens?: {
+    total?: number
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+}
+
+export type DesignDocEvidenceScope =
+  | {
+      kind: "source-files"
+      values: Array<string>
+      label: string
+    }
+  | {
+      kind: "source-symbol"
+      value: string
+      label: string
+    }
+  | {
+      kind: "source-symbols"
+      values: Array<string>
+      label: string
+    }
+  | {
+      kind: "topic-evidence"
+      values: Array<string>
+      label: string
+      coverageTotal: number
+      coverageSetHash: string
+    }
+  | {
+      kind: "behavior-refs"
+      values: Array<string>
+      path: string
+      label: string
+      coverageRole: "overview" | "detail"
+      coverageTotal: number
+      coverageSetHash: string
+    }
+
+export type DesignDocValidationIssue = {
+  severity: "error" | "warning"
+  code: string
+  message: string
+  jsonPath?: string
+  evidenceIDs: Array<string>
+  sourcePaths: Array<string>
+  retryable: boolean
+}
+
+export type DesignDocWorkItem = {
+  id: string
+  moduleID: string
+  artifactType:
+    | "topic"
+    | "product-section"
+    | "business-flow"
+    | "overview"
+    | "structure"
+    | "code-structure"
+    | "execution-flow"
+    | "sequence"
+    | "data-flow"
+    | "lifecycle"
+    | "error-flow"
+    | "review"
+  purpose?:
+    | {
+        kind: "artifact"
+      }
+    | {
+        kind: "topic"
+        topic:
+          | "positioning"
+          | "responsibilities"
+          | "boundaries"
+          | "inputs-outputs"
+          | "business-process"
+          | "core-models"
+          | "algorithms"
+          | "concurrency"
+          | "state-lifecycle"
+          | "error-recovery"
+          | "data-persistence"
+          | "configuration-startup"
+          | "observability-debugging"
+          | "constraints-risks"
+      }
+    | {
+        kind: "product-section"
+        section:
+          | "module-overview"
+          | "requirements"
+          | "overall-structure"
+          | "data-entities"
+          | "algorithms"
+          | "provided-interfaces"
+          | "required-interfaces"
+          | "internal-interfaces"
+          | "key-flows"
+          | "resource-performance"
+          | "dfx"
+          | "sfmea"
+          | "verification"
+      }
+    | {
+        kind: "diagram"
+        view: "architecture" | "business-flow" | "code-flow" | "state-machine" | "data-lifecycle"
+        role: "base" | "focused"
+        focusID?: string
+        topic?:
+          | "positioning"
+          | "responsibilities"
+          | "boundaries"
+          | "inputs-outputs"
+          | "business-process"
+          | "core-models"
+          | "algorithms"
+          | "concurrency"
+          | "state-lifecycle"
+          | "error-recovery"
+          | "data-persistence"
+          | "configuration-startup"
+          | "observability-debugging"
+          | "constraints-risks"
+      }
+    | {
+        kind: "review"
+      }
+  status: "pending" | "ready" | "running" | "validating" | "retryable" | "passed" | "failed" | "blocked" | "cancelled"
+  dependencies: Array<string>
+  attempts: Array<DesignDocWorkItemAttempt>
+  retryCursor?: number
+  modelOverride?: DesignDocModelReference
+  evidenceScope?: DesignDocEvidenceScope
+  evidencePackPath?: string
+  candidateArtifactPath?: string
+  candidateSourceSnapshotHash?: string
+  validationReportPath?: string
+  artifactIDs: Array<string>
+  failure?: DesignDocValidationIssue
+  createdAt: number
+  updatedAt: number
+}
+
+export type DesignDocArtifact = {
+  id: string
+  workItemID: string
+  kind: "manifest" | "evidence-pack" | "ir" | "validation-report" | "mermaid" | "render" | "quality-report" | "document"
+  path: string
+  mediaType: string
+  sha256: string
+  status: "candidate" | "passed" | "stale" | "failed"
+  createdAt: number
+}
+
+export type DesignDocJob = {
+  schemaVersion: 1
+  id: string
+  revision: number
+  status:
+    | "created"
+    | "discovering"
+    | "extracting"
+    | "running"
+    | "validating"
+    | "paused"
+    | "failed"
+    | "blocked"
+    | "assembling"
+    | "completed"
+    | "cancelled"
+  resumeFrom?:
+    | "created"
+    | "discovering"
+    | "extracting"
+    | "running"
+    | "validating"
+    | "paused"
+    | "failed"
+    | "blocked"
+    | "assembling"
+    | "completed"
+    | "cancelled"
+  workspace: string
+  ownerSessionID?: string
+  config: DesignDocJobConfig
+  moduleManifestPath?: string
+  workItems: Array<DesignDocWorkItem>
+  artifacts: Array<DesignDocArtifact>
+  progress: DesignDocJobProgress
+  lastError?: DesignDocValidationIssue
+  createdAt: number
+  updatedAt: number
+}
+
+export type DesignDocBadRequestError = {
+  code: string
+  message: string
+}
+
+export type DesignDocNotFoundError = {
+  code: string
+  message: string
+}
+
+export type DesignDocConflictError = {
+  code: string
+  message: string
+}
+
+export type DesignDocArtifactContent = {
+  artifact: DesignDocArtifact
+  encoding: "utf8" | "base64"
+  content: string
+}
+
+export type DesignDocRetryWorkItemInput = {
+  model?: DesignDocModelReference
+}
+
 export type KiloEmbeddingModelCatalog = {
   defaultModel: string
   models: Array<{
@@ -3368,7 +3730,7 @@ export type AgentRequirementResult = {
     id: string
   }>
   error?: {
-    code: "unknown_agent" | "malformed_declaration" | "discovery_failed" | "mcp_status_failed"
+    code: "unknown_agent" | "malformed_declaration" | "discovery_failed" | "mcp_status_failed" | "feature_unavailable"
     message: string
   }
 }
@@ -4143,6 +4505,30 @@ export type EventMemoryError = {
   }
 }
 
+export type EventDesignDocJobUpdated = {
+  id: string
+  type: "design_doc.job.updated"
+  properties: {
+    jobID: string
+    revision: number
+    status:
+      | "created"
+      | "discovering"
+      | "extracting"
+      | "running"
+      | "validating"
+      | "paused"
+      | "failed"
+      | "blocked"
+      | "assembling"
+      | "completed"
+      | "cancelled"
+    progress: DesignDocJobProgress
+    changedWorkItemID?: string
+    updatedAt: number
+  }
+}
+
 export type EventIndexingStatus = {
   id: string
   type: "indexing.status"
@@ -4899,6 +5285,35 @@ export type EventMessagePartDelta = {
   }
 }
 
+export type EventPermissionAsked = {
+  id: string
+  type: "permission.asked"
+  properties: {
+    id: string
+    sessionID: string
+    permission: string
+    patterns: Array<string>
+    metadata: {
+      [key: string]: unknown
+    }
+    always: Array<string>
+    tool?: {
+      messageID: string
+      callID: string
+    }
+  }
+}
+
+export type EventPermissionReplied = {
+  id: string
+  type: "permission.replied"
+  properties: {
+    sessionID: string
+    requestID: string
+    reply: "once" | "always" | "reject"
+  }
+}
+
 export type EventSessionDiff = {
   id: string
   type: "session.diff"
@@ -4947,35 +5362,6 @@ export type EventInstallationUpdateAvailable = {
   type: "installation.update-available"
   properties: {
     version: string
-  }
-}
-
-export type EventPermissionAsked = {
-  id: string
-  type: "permission.asked"
-  properties: {
-    id: string
-    sessionID: string
-    permission: string
-    patterns: Array<string>
-    metadata: {
-      [key: string]: unknown
-    }
-    always: Array<string>
-    tool?: {
-      messageID: string
-      callID: string
-    }
-  }
-}
-
-export type EventPermissionReplied = {
-  id: string
-  type: "permission.replied"
-  properties: {
-    sessionID: string
-    requestID: string
-    reply: "once" | "always" | "reject"
   }
 }
 
@@ -11817,6 +12203,346 @@ export type TuiKeybindListResponses = {
 }
 
 export type TuiKeybindListResponse2 = TuiKeybindListResponses[keyof TuiKeybindListResponses]
+
+export type DesignDocListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/design-doc/jobs"
+}
+
+export type DesignDocListErrors = {
+  /**
+   * DesignDocBadRequestError | InvalidRequestError
+   */
+  400: DesignDocBadRequestError | InvalidRequestError
+  /**
+   * DesignDocNotFoundError
+   */
+  404: DesignDocNotFoundError
+  /**
+   * DesignDocConflictError
+   */
+  409: DesignDocConflictError
+}
+
+export type DesignDocListError = DesignDocListErrors[keyof DesignDocListErrors]
+
+export type DesignDocListResponses = {
+  /**
+   * DesignDoc Jobs
+   */
+  200: Array<DesignDocJob>
+}
+
+export type DesignDocListResponse = DesignDocListResponses[keyof DesignDocListResponses]
+
+export type DesignDocCreateData = {
+  body?: DesignDocCreateJobInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/design-doc/jobs"
+}
+
+export type DesignDocCreateErrors = {
+  /**
+   * DesignDocBadRequestError | InvalidRequestError
+   */
+  400: DesignDocBadRequestError | InvalidRequestError
+  /**
+   * DesignDocNotFoundError
+   */
+  404: DesignDocNotFoundError
+  /**
+   * DesignDocConflictError
+   */
+  409: DesignDocConflictError
+}
+
+export type DesignDocCreateError = DesignDocCreateErrors[keyof DesignDocCreateErrors]
+
+export type DesignDocCreateResponses = {
+  /**
+   * Created DesignDoc Job
+   */
+  202: DesignDocJob
+}
+
+export type DesignDocCreateResponse = DesignDocCreateResponses[keyof DesignDocCreateResponses]
+
+export type DesignDocGetData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/design-doc/jobs/{jobID}"
+}
+
+export type DesignDocGetErrors = {
+  /**
+   * DesignDocBadRequestError | InvalidRequestError
+   */
+  400: DesignDocBadRequestError | InvalidRequestError
+  /**
+   * DesignDocNotFoundError
+   */
+  404: DesignDocNotFoundError
+  /**
+   * DesignDocConflictError
+   */
+  409: DesignDocConflictError
+}
+
+export type DesignDocGetError = DesignDocGetErrors[keyof DesignDocGetErrors]
+
+export type DesignDocGetResponses = {
+  /**
+   * DesignDoc Job
+   */
+  200: DesignDocJob
+}
+
+export type DesignDocGetResponse = DesignDocGetResponses[keyof DesignDocGetResponses]
+
+export type DesignDocArtifactsData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/design-doc/jobs/{jobID}/artifacts"
+}
+
+export type DesignDocArtifactsErrors = {
+  /**
+   * DesignDocBadRequestError | InvalidRequestError
+   */
+  400: DesignDocBadRequestError | InvalidRequestError
+  /**
+   * DesignDocNotFoundError
+   */
+  404: DesignDocNotFoundError
+  /**
+   * DesignDocConflictError
+   */
+  409: DesignDocConflictError
+}
+
+export type DesignDocArtifactsError = DesignDocArtifactsErrors[keyof DesignDocArtifactsErrors]
+
+export type DesignDocArtifactsResponses = {
+  /**
+   * DesignDoc artifacts
+   */
+  200: Array<DesignDocArtifact>
+}
+
+export type DesignDocArtifactsResponse = DesignDocArtifactsResponses[keyof DesignDocArtifactsResponses]
+
+export type DesignDocArtifactData = {
+  body?: never
+  path: {
+    jobID: string
+    artifactID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/design-doc/jobs/{jobID}/artifacts/{artifactID}"
+}
+
+export type DesignDocArtifactErrors = {
+  /**
+   * DesignDocBadRequestError | InvalidRequestError
+   */
+  400: DesignDocBadRequestError | InvalidRequestError
+  /**
+   * DesignDocNotFoundError
+   */
+  404: DesignDocNotFoundError
+  /**
+   * DesignDocConflictError
+   */
+  409: DesignDocConflictError
+}
+
+export type DesignDocArtifactError = DesignDocArtifactErrors[keyof DesignDocArtifactErrors]
+
+export type DesignDocArtifactResponses = {
+  /**
+   * DesignDoc artifact content
+   */
+  200: DesignDocArtifactContent
+}
+
+export type DesignDocArtifactResponse = DesignDocArtifactResponses[keyof DesignDocArtifactResponses]
+
+export type DesignDocPauseData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/design-doc/jobs/{jobID}/pause"
+}
+
+export type DesignDocPauseErrors = {
+  /**
+   * DesignDocBadRequestError | InvalidRequestError
+   */
+  400: DesignDocBadRequestError | InvalidRequestError
+  /**
+   * DesignDocNotFoundError
+   */
+  404: DesignDocNotFoundError
+  /**
+   * DesignDocConflictError
+   */
+  409: DesignDocConflictError
+}
+
+export type DesignDocPauseError = DesignDocPauseErrors[keyof DesignDocPauseErrors]
+
+export type DesignDocPauseResponses = {
+  /**
+   * Paused DesignDoc Job
+   */
+  200: DesignDocJob
+}
+
+export type DesignDocPauseResponse = DesignDocPauseResponses[keyof DesignDocPauseResponses]
+
+export type DesignDocResumeData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/design-doc/jobs/{jobID}/resume"
+}
+
+export type DesignDocResumeErrors = {
+  /**
+   * DesignDocBadRequestError | InvalidRequestError
+   */
+  400: DesignDocBadRequestError | InvalidRequestError
+  /**
+   * DesignDocNotFoundError
+   */
+  404: DesignDocNotFoundError
+  /**
+   * DesignDocConflictError
+   */
+  409: DesignDocConflictError
+}
+
+export type DesignDocResumeError = DesignDocResumeErrors[keyof DesignDocResumeErrors]
+
+export type DesignDocResumeResponses = {
+  /**
+   * Resumed DesignDoc Job
+   */
+  202: DesignDocJob
+}
+
+export type DesignDocResumeResponse = DesignDocResumeResponses[keyof DesignDocResumeResponses]
+
+export type DesignDocCancelData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/design-doc/jobs/{jobID}/cancel"
+}
+
+export type DesignDocCancelErrors = {
+  /**
+   * DesignDocBadRequestError | InvalidRequestError
+   */
+  400: DesignDocBadRequestError | InvalidRequestError
+  /**
+   * DesignDocNotFoundError
+   */
+  404: DesignDocNotFoundError
+  /**
+   * DesignDocConflictError
+   */
+  409: DesignDocConflictError
+}
+
+export type DesignDocCancelError = DesignDocCancelErrors[keyof DesignDocCancelErrors]
+
+export type DesignDocCancelResponses = {
+  /**
+   * Cancelled DesignDoc Job
+   */
+  200: DesignDocJob
+}
+
+export type DesignDocCancelResponse = DesignDocCancelResponses[keyof DesignDocCancelResponses]
+
+export type DesignDocRetryData = {
+  body?: DesignDocRetryWorkItemInput
+  path: {
+    jobID: string
+    workItemID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/design-doc/jobs/{jobID}/work-items/{workItemID}/retry"
+}
+
+export type DesignDocRetryErrors = {
+  /**
+   * DesignDocBadRequestError | InvalidRequestError
+   */
+  400: DesignDocBadRequestError | InvalidRequestError
+  /**
+   * DesignDocNotFoundError
+   */
+  404: DesignDocNotFoundError
+  /**
+   * DesignDocConflictError
+   */
+  409: DesignDocConflictError
+}
+
+export type DesignDocRetryError = DesignDocRetryErrors[keyof DesignDocRetryErrors]
+
+export type DesignDocRetryResponses = {
+  /**
+   * Retried DesignDoc Job
+   */
+  202: DesignDocJob
+}
+
+export type DesignDocRetryResponse = DesignDocRetryResponses[keyof DesignDocRetryResponses]
 
 export type EnhancePromptEnhanceData = {
   body?: {

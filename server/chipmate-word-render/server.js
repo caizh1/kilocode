@@ -45,7 +45,7 @@ const PLANTUML_JAR = process.env.PLANTUML_JAR || "/app/plantuml-asl.jar"
 const PLANTUML_VERSION = process.env.PLANTUML_VERSION || ""
 const RENDER_TIMEOUT_MS = Number(process.env.RENDER_TIMEOUT_MS || 120000)
 const MAX_RESPONSE_PAGE_BYTES = Number(process.env.MAX_RESPONSE_PAGE_BYTES || 16 * 1024 * 1024)
-const MAX_WORD_RENDER_PAGES = Number(process.env.MAX_WORD_RENDER_PAGES || 500)
+const MAX_WORD_RENDER_PAGES = Number(process.env.MAX_WORD_RENDER_PAGES || 1000)
 const MAX_RENDER_PDF_BYTES = Number(process.env.MAX_RENDER_PDF_BYTES || 128 * 1024 * 1024)
 const MAX_RENDER_PAGE_TOTAL_BYTES = Number(process.env.MAX_RENDER_PAGE_TOTAL_BYTES || 256 * 1024 * 1024)
 const MAX_RENDER_RESPONSE_BYTES = Number(process.env.MAX_RENDER_RESPONSE_BYTES || 384 * 1024 * 1024)
@@ -160,49 +160,92 @@ async function handleRenderWord(request, response) {
     )
     const docxPath = path.join(inDir, filename)
     await fsp.writeFile(docxPath, docxBytes)
+    const wordEnv = await wordRenderEnvironment(tempRoot, homeDir)
 
     const sofficePath = commandPath("soffice") || commandPath("libreoffice") || "soffice"
     const refreshedPath = path.join(refreshDir, filename)
     const source = await inspectWordDocx(docxBytes)
     if (!source.valid) throw new Error("DOCX does not contain readable word/document.xml and word/styles.xml parts.")
-    const refresh = await refreshWordFields({
+    let refresh = await refreshWordFields({
       docxPath,
       refreshedPath,
       profileDir: refreshProfileDir,
       sofficePath,
       timeoutMs,
       source,
+      env: wordEnv,
     })
-    const renderPath = refresh.ok ? refreshedPath : docxPath
+    let renderPath = refresh.ok ? refreshedPath : docxPath
     const issues = []
+    const convertResult = await convertWordToPdf({
+      sofficePath,
+      profileDir,
+      outDir,
+      renderPath,
+      timeoutMs,
+      env: wordEnv,
+    })
+    if (!convertResult.ok) throw new Error(`LibreOffice failed: ${convertResult.message}`)
+
+    const pdfPath = path.join(outDir, `${path.basename(filename, ".docx")}.pdf`)
+    let pdfStat = await fsp.stat(pdfPath).catch(() => undefined)
+    if (!pdfStat || pdfStat.size <= 0) throw new Error("LibreOffice did not produce a readable PDF.")
+
+    if (source.hasToc) {
+      const outlineRefresh = await refreshWordTocFromPdfLayout({
+        source,
+        bytes: refresh.ok ? refresh.bytes : docxBytes,
+        pdfPath,
+        refreshedPath,
+        outlinePath: path.join(tempRoot, "word-outline.xml"),
+        timeoutMs,
+      })
+      if (outlineRefresh.ok && outlineRefresh.changed) {
+        refresh = outlineRefresh.refresh
+        renderPath = refreshedPath
+        await fsp.rm(pdfPath, { force: true })
+        const reconvert = await convertWordToPdf({
+          sofficePath,
+          profileDir,
+          outDir,
+          renderPath,
+          timeoutMs,
+          env: wordEnv,
+        })
+        if (!reconvert.ok) throw new Error(`LibreOffice failed after deterministic TOC refresh: ${reconvert.message}`)
+        pdfStat = await fsp.stat(pdfPath).catch(() => undefined)
+        if (!pdfStat || pdfStat.size <= 0)
+          throw new Error("LibreOffice did not produce a readable PDF after deterministic TOC refresh.")
+        const stable = await verifyWordTocAgainstPdfLayout({
+          inspection: refresh.inspection,
+          pdfPath,
+          outlinePath: path.join(tempRoot, "word-outline-verified.xml"),
+          timeoutMs,
+        })
+        if (!stable.ok) throw new Error(`Deterministic TOC page verification failed: ${stable.diagnostics.join("; ")}`)
+        refresh = {
+          ...refresh,
+          diagnostics: [...refresh.diagnostics, ...stable.diagnostics],
+          method: "pdf-outline",
+        }
+      } else if (outlineRefresh.ok && outlineRefresh.refresh && refresh.status === "failed") {
+        refresh = outlineRefresh.refresh
+        renderPath = refreshedPath
+      } else if (!outlineRefresh.ok && refresh.status === "failed") {
+        refresh = {
+          ...refresh,
+          diagnostics: [...refresh.diagnostics, ...outlineRefresh.diagnostics],
+        }
+      }
+    }
+
     if (refresh.status === "failed") {
       issues.push({
         severity: "warning",
         code: "word-field-refresh-failed",
-        message: `LibreOffice UNO field refresh failed semantic validation; rendered the original document: ${refresh.diagnostics.join("; ")}`,
+        message: `Word field refresh failed semantic validation; rendered the original document: ${refresh.diagnostics.join("; ")}`,
       })
     }
-    const convertResult = await runCommand(
-      sofficePath,
-      [
-        "--headless",
-        "--nologo",
-        "--nofirststartwizard",
-        `-env:UserInstallation=file://${profileDir}`,
-        "--convert-to",
-        "pdf",
-        "--outdir",
-        outDir,
-        renderPath,
-      ],
-      timeoutMs,
-      { HOME: homeDir },
-    )
-    if (!convertResult.ok) throw new Error(`LibreOffice failed: ${convertResult.message}`)
-
-    const pdfPath = path.join(outDir, `${path.basename(filename, ".docx")}.pdf`)
-    const pdfStat = await fsp.stat(pdfPath).catch(() => undefined)
-    if (!pdfStat || pdfStat.size <= 0) throw new Error("LibreOffice did not produce a readable PDF.")
 
     const pdfinfoPath = commandPath("pdfinfo") || "pdfinfo"
     const pdfinfo = await runCommand(pdfinfoPath, [pdfPath], timeoutMs)
@@ -297,7 +340,7 @@ async function handleRenderWord(request, response) {
         kind: "remote-opencode",
         docxToPdf: "libreoffice",
         pdfToPng: "pdftoppm",
-        wordFieldRefresh: refresh.ok ? "libreoffice" : refresh.status,
+        wordFieldRefresh: refresh.ok ? refresh.method || "libreoffice" : refresh.status,
         fieldRefreshStatus: refresh.status,
         sofficePath,
         pdftoppmPath,
@@ -342,6 +385,7 @@ async function refreshWordFields(opts) {
       String(Math.max(5, Math.floor(opts.timeoutMs / 1000) - 2)),
     ],
     opts.timeoutMs,
+    opts.env,
   )
   if (!result.ok) return failedRefresh(opts.source, result.message)
   const bytes = await fsp.readFile(opts.refreshedPath).catch(() => undefined)
@@ -349,6 +393,158 @@ async function refreshWordFields(opts) {
   const verified = await verifyRefreshedWordDocx(opts.source, bytes)
   if (!verified.ok) return { ...verified, status: "failed", bytes: undefined }
   return { ...verified, status: "completed", bytes }
+}
+
+async function convertWordToPdf(opts) {
+  return runCommand(
+    opts.sofficePath,
+    [
+      "--headless",
+      "--nologo",
+      "--nofirststartwizard",
+      `-env:UserInstallation=file://${opts.profileDir}`,
+      "--convert-to",
+      "pdf",
+      "--outdir",
+      opts.outDir,
+      opts.renderPath,
+    ],
+    opts.timeoutMs,
+    opts.env,
+  )
+}
+
+async function refreshWordTocFromPdfLayout(opts) {
+  const layout = await readPdfOutline({
+    pdfPath: opts.pdfPath,
+    outlinePath: opts.outlinePath,
+    timeoutMs: opts.timeoutMs,
+  })
+  if (!layout.ok) return layout
+  const diagnostics = validatePdfOutline(opts.source, layout.items)
+  if (diagnostics.length) return { ok: false, changed: false, diagnostics }
+  if (tocEntriesMatchPdfOutline(opts.source.tocEntries, layout.items)) {
+    const verified = await verifyRefreshedWordDocx(opts.source, opts.bytes)
+    if (!verified.ok) return { ok: false, changed: false, diagnostics: verified.diagnostics }
+    await fsp.writeFile(opts.refreshedPath, opts.bytes)
+    return {
+      ok: true,
+      changed: false,
+      diagnostics: ["existing TOC page numbers match the PDF heading outline"],
+      refresh: {
+        ...verified,
+        status: "completed",
+        bytes: opts.bytes,
+        method: "pdf-outline",
+        diagnostics: ["existing TOC page numbers match the PDF heading outline"],
+      },
+    }
+  }
+  const bytes = await materializeTocPageNumbers(
+    opts.bytes,
+    layout.items.map((item) => item.page),
+  )
+  await fsp.writeFile(opts.refreshedPath, bytes)
+  const verified = await verifyRefreshedWordDocx(opts.source, bytes)
+  if (!verified.ok) return { ok: false, changed: false, diagnostics: verified.diagnostics }
+  return {
+    ok: true,
+    changed: true,
+    diagnostics: ["materialized TOC page numbers from the PDF heading outline"],
+    refresh: {
+      ...verified,
+      status: "completed",
+      bytes,
+      method: "pdf-outline",
+      diagnostics: ["materialized TOC page numbers from the PDF heading outline"],
+    },
+  }
+}
+
+async function verifyWordTocAgainstPdfLayout(opts) {
+  const layout = await readPdfOutline({
+    pdfPath: opts.pdfPath,
+    outlinePath: opts.outlinePath,
+    timeoutMs: opts.timeoutMs,
+  })
+  if (!layout.ok) return layout
+  const diagnostics = validatePdfOutline(opts.inspection, layout.items)
+  if (!tocEntriesMatchPdfOutline(opts.inspection.tocEntries, layout.items))
+    diagnostics.push("materialized TOC page numbers do not match the final PDF heading outline")
+  return {
+    ok: diagnostics.length === 0,
+    diagnostics: diagnostics.length ? diagnostics : ["materialized TOC page numbers match the final PDF heading outline"],
+  }
+}
+
+async function readPdfOutline(opts) {
+  const pdftohtmlPath = commandPath("pdftohtml") || "pdftohtml"
+  await fsp.rm(opts.outlinePath, { force: true })
+  const result = await runCommand(
+    pdftohtmlPath,
+    ["-xml", "-hidden", "-i", "-q", opts.pdfPath, opts.outlinePath],
+    opts.timeoutMs,
+  )
+  if (!result.ok) return { ok: false, changed: false, diagnostics: [`pdftohtml failed: ${bounded(result.message)}`] }
+  const xml = await fsp.readFile(opts.outlinePath, "utf8").catch(() => "")
+  if (!xml) return { ok: false, changed: false, diagnostics: ["pdftohtml produced no readable outline XML"] }
+  const items = parsePdfOutlineXml(xml)
+  if (!items.length) return { ok: false, changed: false, diagnostics: ["PDF contains no heading outline entries"] }
+  return { ok: true, changed: false, diagnostics: [], items }
+}
+
+function parsePdfOutlineXml(xml) {
+  const value = String(xml)
+  const start = value.search(/<outline>/i)
+  const end = value.toLowerCase().lastIndexOf("</outline>")
+  const outline = start >= 0 && end > start ? value.slice(start + value.slice(start).indexOf(">") + 1, end) : ""
+  return [...outline.matchAll(/<item\b[^>]*\bpage=(?:"(\d+)"|'(\d+)')[^>]*>([\s\S]*?)<\/item>/gi)]
+    .map((match) => ({
+      page: Number(match[1] || match[2]),
+      title: normalizeWordText(decodeXml(match[3].replace(/<[^>]+>/g, ""))),
+    }))
+    .filter((item) => Number.isInteger(item.page) && item.page > 0 && item.title)
+}
+
+function validatePdfOutline(source, items) {
+  const diagnostics = []
+  if (items.length !== source.headingCount)
+    diagnostics.push(`PDF outline entry count ${items.length} does not match Heading 1-3 count ${source.headingCount}`)
+  if (!sameTocHeadings(source.headings, items.map((item) => item.title)))
+    diagnostics.push("PDF outline entries do not exactly match Heading 1-3 text and order")
+  return diagnostics
+}
+
+function tocEntriesMatchPdfOutline(entries, items) {
+  return (
+    entries.length === items.length &&
+    entries.every((entry, index) => entry.page === items[index].page)
+  )
+}
+
+async function materializeTocPageNumbers(bytes, pages) {
+  const zip = await JSZip.loadAsync(bytes)
+  const part = zip.file("word/document.xml")
+  if (!part) throw new Error("DOCX is missing word/document.xml")
+  const documentXml = await part.async("string")
+  let index = 0
+  const updated = documentXml.replace(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/gi, (paragraph) => {
+    const style = wordAttribute(paragraph, "pStyle", "val") || ""
+    if (!/^(?:TOC|Contents|目录)\s*[1-3]$/i.test(style)) return paragraph
+    const page = pages[index]
+    index += 1
+    if (!Number.isInteger(page) || page <= 0) throw new Error(`invalid TOC page number at entry ${index}`)
+    const field = /<w:fldSimple\b[^>]*w:instr=(?:"[^"]*\bPAGEREF\b[^"]*"|'[^']*\bPAGEREF\b[^']*')[^>]*>[\s\S]*?<\/w:fldSimple>/i
+    if (!field.test(paragraph)) throw new Error(`TOC entry ${index} does not contain a PAGEREF field`)
+    return paragraph.replace(field, (value) => {
+      if (/<w:t\b[^>]*>[\s\S]*?<\/w:t>/i.test(value))
+        return value.replace(/<w:t\b([^>]*)>[\s\S]*?<\/w:t>/i, `<w:t$1>${page}</w:t>`)
+      return value.replace(/<\/w:fldSimple>/i, `<w:r><w:t>${page}</w:t></w:r></w:fldSimple>`)
+    })
+  })
+  if (index !== pages.length) throw new Error(`TOC entry count ${index} does not match PDF outline count ${pages.length}`)
+  zip.file("word/document.xml", updated)
+  return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })
 }
 
 function failedRefresh(source, message) {
@@ -459,18 +655,24 @@ function invalidWordInspection() {
 function wordPdfTextQa(source, result) {
   const pages = cleanPdfTextPages(result.ok ? result.stdout : "")
   const text = normalizeWordText(pages.join("\n"))
+  const compactText = compactWordText(pages.join("\n"))
   const title = source.titles[0] || ""
   const heading = source.headings[0] || ""
   const sourceCjkCount = cjkCount(source.text)
   const pdfCjkCount = cjkCount(text)
   const cjkCoverage = sourceCjkCount > 0 ? Math.min(1, pdfCjkCount / sourceCjkCount) : 1
-  const titlePresent = source.titleCount === 1 && Boolean(title) && normalizeWordText(pages[0] || "").includes(normalizeWordText(title))
-  const entry = source.tocEntries.find((item) => item.text === heading)
+  const titlePresent =
+    source.titleCount === 1 && Boolean(title) && compactWordText(pages[0] || "").includes(compactWordText(title))
+  const normalizedHeading = normalizeWordText(heading)
+  const entry = source.tocEntries.find((item) => {
+    const text = normalizeWordText(item.text)
+    return text === normalizedHeading || tocHeadingText(text) === normalizedHeading
+  })
   const firstHeadingPresent = Boolean(
-    heading && entry?.page && pages[entry.page - 1] && normalizeWordText(pages[entry.page - 1]).includes(normalizeWordText(heading)),
+    heading && entry?.page && pages[entry.page - 1] && compactWordText(pages[entry.page - 1]).includes(compactWordText(heading)),
   )
   const sentinels = wordQaSentinels(source)
-  const matchedSentinelCount = sentinels.filter((item) => text.includes(item)).length
+  const matchedSentinelCount = sentinels.filter((item) => compactText.includes(compactWordText(item))).length
   const sentinelCoverage = sentinels.length > 0 ? matchedSentinelCount / sentinels.length : 1
   const diagnostics = []
   if (!result.ok) diagnostics.push(`pdftotext failed: ${result.message}`)
@@ -528,6 +730,10 @@ function wordQaSentinels(source) {
 
 function normalizeWordText(value) {
   return String(value).normalize("NFKC").replace(/\s+/gu, " ").trim()
+}
+
+function compactWordText(value) {
+  return normalizeWordText(value).replace(/\s+/gu, "")
 }
 
 function cjkCount(value) {
@@ -2951,6 +3157,47 @@ function runCommand(command, args, timeoutMs, env = {}) {
   })
 }
 
+async function wordRenderEnvironment(tempRoot, homeDir) {
+  if (process.env.FONTCONFIG_FILE) return { HOME: homeDir, FONTCONFIG_FILE: process.env.FONTCONFIG_FILE }
+  const directories =
+    process.platform === "darwin"
+      ? [
+          "/System/Library/Fonts",
+          "/System/Library/Fonts/Supplemental",
+          "/Library/Fonts",
+          path.join(os.homedir(), "Library/Fonts"),
+        ]
+      : process.platform === "win32"
+        ? [
+            path.join(process.env.WINDIR || "C:\\Windows", "Fonts"),
+            path.join(process.env.LOCALAPPDATA || os.homedir(), "Microsoft/Windows/Fonts"),
+          ]
+        : [
+            "/usr/share/fonts",
+            "/usr/local/share/fonts",
+            path.join(os.homedir(), ".local/share/fonts"),
+            path.join(os.homedir(), ".fonts"),
+          ]
+  const cache = path.join(tempRoot, "font-cache")
+  const config = path.join(tempRoot, "fonts.conf")
+  await fsp.mkdir(cache, { recursive: true })
+  await fsp.writeFile(
+    config,
+    `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig>${directories.map((directory) => `<dir>${xmlEscape(directory)}</dir>`).join("")}<cachedir>${xmlEscape(cache)}</cachedir></fontconfig>`,
+    "utf8",
+  )
+  return { HOME: homeDir, FONTCONFIG_FILE: config }
+}
+
+function xmlEscape(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;")
+}
+
 function decodeBase64(value, label) {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`)
   const bytes = Buffer.from(value, "base64")
@@ -3305,6 +3552,9 @@ module.exports = {
   starSkillMarketItem,
   healthPayload,
   inspectWordDocx,
+  materializeTocPageNumbers,
+  parsePdfOutlineXml,
+  wordPdfTextQa,
   normalizePlantUmlSource,
   normalizeNewApiKey,
   packageEntryFromVsix,

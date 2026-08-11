@@ -12297,6 +12297,849 @@
         ]
       }
     },
+    "/design-doc/jobs": {
+      "post": {
+        "tags": ["design-doc"],
+        "operationId": "designDoc.create",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Created DesignDoc Job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DesignDocBadRequestError | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DesignDocBadRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DesignDocNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DesignDocConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create DesignDoc Job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesignDocCreateJobInput"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.designDoc.create({\n  ...\n})"
+          }
+        ]
+      },
+      "get": {
+        "tags": ["design-doc"],
+        "operationId": "designDoc.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "DesignDoc Jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DesignDocJob"
+                  },
+                  "description": "DesignDoc Jobs"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DesignDocBadRequestError | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DesignDocBadRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DesignDocNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DesignDocConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List DesignDoc Jobs",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.designDoc.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/design-doc/jobs/{jobID}": {
+      "get": {
+        "tags": ["design-doc"],
+        "operationId": "designDoc.get",
+        "parameters": [
+          {
+            "name": "jobID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "DesignDoc Job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DesignDocBadRequestError | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DesignDocBadRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DesignDocNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DesignDocConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get DesignDoc Job",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.designDoc.get({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/design-doc/jobs/{jobID}/artifacts": {
+      "get": {
+        "tags": ["design-doc"],
+        "operationId": "designDoc.artifacts",
+        "parameters": [
+          {
+            "name": "jobID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "DesignDoc artifacts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DesignDocArtifact"
+                  },
+                  "description": "DesignDoc artifacts"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DesignDocBadRequestError | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DesignDocBadRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DesignDocNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DesignDocConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List DesignDoc artifacts",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.designDoc.artifacts({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/design-doc/jobs/{jobID}/artifacts/{artifactID}": {
+      "get": {
+        "tags": ["design-doc"],
+        "operationId": "designDoc.artifact",
+        "parameters": [
+          {
+            "name": "jobID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "artifactID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "DesignDoc artifact content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocArtifactContent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DesignDocBadRequestError | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DesignDocBadRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DesignDocNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DesignDocConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read a DesignDoc artifact",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.designDoc.artifact({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/design-doc/jobs/{jobID}/pause": {
+      "post": {
+        "tags": ["design-doc"],
+        "operationId": "designDoc.pause",
+        "parameters": [
+          {
+            "name": "jobID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paused DesignDoc Job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DesignDocBadRequestError | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DesignDocBadRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DesignDocNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DesignDocConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Pause DesignDoc Job",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.designDoc.pause({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/design-doc/jobs/{jobID}/resume": {
+      "post": {
+        "tags": ["design-doc"],
+        "operationId": "designDoc.resume",
+        "parameters": [
+          {
+            "name": "jobID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Resumed DesignDoc Job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DesignDocBadRequestError | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DesignDocBadRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DesignDocNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DesignDocConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Resume DesignDoc Job",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.designDoc.resume({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/design-doc/jobs/{jobID}/cancel": {
+      "post": {
+        "tags": ["design-doc"],
+        "operationId": "designDoc.cancel",
+        "parameters": [
+          {
+            "name": "jobID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled DesignDoc Job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DesignDocBadRequestError | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DesignDocBadRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DesignDocNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DesignDocConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Cancel DesignDoc Job",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.designDoc.cancel({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/design-doc/jobs/{jobID}/work-items/{workItemID}/retry": {
+      "post": {
+        "tags": ["design-doc"],
+        "operationId": "designDoc.retry",
+        "parameters": [
+          {
+            "name": "jobID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "workItemID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Retried DesignDoc Job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DesignDocBadRequestError | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DesignDocBadRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DesignDocNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DesignDocConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignDocConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Retry one DesignDoc WorkItem",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesignDocRetryWorkItemInput"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.designDoc.retry({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/enhance-prompt": {
       "post": {
         "tags": ["enhance-prompt"],
@@ -24292,6 +25135,9 @@
             "$ref": "#/components/schemas/EventMemoryError1"
           },
           {
+            "$ref": "#/components/schemas/EventDesign_docJobUpdated"
+          },
+          {
             "$ref": "#/components/schemas/EventIndexingStatus"
           },
           {
@@ -24457,6 +25303,12 @@
             "$ref": "#/components/schemas/EventMessagePartDelta"
           },
           {
+            "$ref": "#/components/schemas/EventPermissionAsked"
+          },
+          {
+            "$ref": "#/components/schemas/EventPermissionReplied"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionDiff"
           },
           {
@@ -24470,12 +25322,6 @@
           },
           {
             "$ref": "#/components/schemas/EventInstallationUpdate-available"
-          },
-          {
-            "$ref": "#/components/schemas/EventPermissionAsked"
-          },
-          {
-            "$ref": "#/components/schemas/EventPermissionReplied"
           },
           {
             "$ref": "#/components/schemas/EventReferenceUpdated"
@@ -25732,6 +26578,37 @@
             "additionalProperties": false
           }
         ]
+      },
+      "DesignDocJobProgress": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "pending": {
+            "type": "integer"
+          },
+          "running": {
+            "type": "integer"
+          },
+          "passed": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "blocked": {
+            "type": "integer"
+          },
+          "cancelled": {
+            "type": "integer"
+          },
+          "currentWorkItemID": {
+            "type": "string"
+          }
+        },
+        "required": ["total", "pending", "running", "passed", "failed", "blocked", "cancelled"],
+        "additionalProperties": false
       },
       "IndexingStatusState": {
         "type": "string",
@@ -28190,6 +29067,9 @@
                 "$ref": "#/components/schemas/EventMemoryError"
               },
               {
+                "$ref": "#/components/schemas/EventDesign_docJobUpdated"
+              },
+              {
                 "$ref": "#/components/schemas/EventIndexingStatus"
               },
               {
@@ -28355,6 +29235,12 @@
                 "$ref": "#/components/schemas/EventMessagePartDelta"
               },
               {
+                "$ref": "#/components/schemas/EventPermissionAsked"
+              },
+              {
+                "$ref": "#/components/schemas/EventPermissionReplied"
+              },
+              {
                 "$ref": "#/components/schemas/EventSessionDiff"
               },
               {
@@ -28368,12 +29254,6 @@
               },
               {
                 "$ref": "#/components/schemas/EventInstallationUpdate-available"
-              },
-              {
-                "$ref": "#/components/schemas/EventPermissionAsked"
-              },
-              {
-                "$ref": "#/components/schemas/EventPermissionReplied"
               },
               {
                 "$ref": "#/components/schemas/EventReferenceUpdated"
@@ -34353,6 +35233,1009 @@
         "required": ["keybinds"],
         "additionalProperties": false
       },
+      "DesignDocModelReference": {
+        "type": "object",
+        "properties": {
+          "providerID": {
+            "type": "string"
+          },
+          "modelID": {
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          }
+        },
+        "required": ["providerID", "modelID"],
+        "additionalProperties": false
+      },
+      "DesignDocCreateJobInput": {
+        "type": "object",
+        "properties": {
+          "targetPath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "artifactType": {
+            "type": "string",
+            "enum": [
+              "topic",
+              "product-section",
+              "business-flow",
+              "overview",
+              "structure",
+              "code-structure",
+              "execution-flow",
+              "sequence",
+              "data-flow",
+              "lifecycle",
+              "error-flow",
+              "review"
+            ]
+          },
+          "artifactTypes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "topic",
+                "product-section",
+                "business-flow",
+                "overview",
+                "structure",
+                "code-structure",
+                "execution-flow",
+                "sequence",
+                "data-flow",
+                "lifecycle",
+                "error-flow",
+                "review"
+              ]
+            }
+          },
+          "recursive": {
+            "type": "boolean"
+          },
+          "documentProfile": {
+            "type": "string",
+            "enum": ["artifact-set", "source-backed-full", "product-detailed-design-v2"]
+          },
+          "outputFormats": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["markdown", "docx"]
+            }
+          },
+          "referenceInputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["requirement", "architecture", "interface", "test"]
+                }
+              },
+              "required": ["path", "kind"],
+              "additionalProperties": false
+            }
+          },
+          "moduleHints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "includePaths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "required": ["name", "includePaths"],
+              "additionalProperties": false
+            }
+          },
+          "concurrency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "ownerSessionID": {
+            "type": "string"
+          },
+          "model": {
+            "$ref": "#/components/schemas/DesignDocModelReference"
+          },
+          "modelFallbacks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fromAttempt": {
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 3
+                },
+                "model": {
+                  "$ref": "#/components/schemas/DesignDocModelReference"
+                }
+              },
+              "required": ["fromAttempt", "model"],
+              "additionalProperties": false
+            }
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          }
+        },
+        "required": ["targetPath", "model"],
+        "additionalProperties": false
+      },
+      "DesignDocJobConfig": {
+        "type": "object",
+        "properties": {
+          "targetPath": {
+            "type": "string"
+          },
+          "artifactTypes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "topic",
+                "product-section",
+                "business-flow",
+                "overview",
+                "structure",
+                "code-structure",
+                "execution-flow",
+                "sequence",
+                "data-flow",
+                "lifecycle",
+                "error-flow",
+                "review"
+              ]
+            }
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["typescript", "tsx", "c"]
+            }
+          },
+          "concurrency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "recursive": {
+            "type": "boolean"
+          },
+          "documentProfile": {
+            "type": "string",
+            "enum": ["artifact-set", "source-backed-full", "product-detailed-design-v2"]
+          },
+          "outputFormats": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["markdown", "docx"]
+            }
+          },
+          "referenceInputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["requirement", "architecture", "interface", "test"]
+                }
+              },
+              "required": ["path", "kind"],
+              "additionalProperties": false
+            }
+          },
+          "moduleHints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "includePaths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["name", "includePaths"],
+              "additionalProperties": false
+            }
+          },
+          "evidenceBudget": {
+            "type": "object",
+            "properties": {
+              "maxItems": {
+                "type": "integer"
+              },
+              "maxPromptBytes": {
+                "type": "integer"
+              },
+              "maxSnippetCharacters": {
+                "type": "integer"
+              }
+            },
+            "required": ["maxItems", "maxPromptBytes", "maxSnippetCharacters"],
+            "additionalProperties": false
+          },
+          "atomicEvidenceBudget": {
+            "type": "object",
+            "properties": {
+              "maxItems": {
+                "type": "integer"
+              },
+              "maxPromptBytes": {
+                "type": "integer"
+              },
+              "maxSnippetCharacters": {
+                "type": "integer"
+              }
+            },
+            "required": ["maxItems", "maxPromptBytes", "maxSnippetCharacters"],
+            "additionalProperties": false
+          },
+          "retryPolicy": {
+            "type": "object",
+            "properties": {
+              "maxAttempts": {
+                "type": "integer"
+              },
+              "timeoutMs": {
+                "type": "integer"
+              },
+              "backoffMs": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "retryableCodes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["maxAttempts", "timeoutMs", "backoffMs", "retryableCodes"],
+            "additionalProperties": false
+          },
+          "modelPolicy": {
+            "type": "object",
+            "properties": {
+              "primary": {
+                "$ref": "#/components/schemas/DesignDocModelReference"
+              },
+              "fallbacks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fromAttempt": {
+                      "type": "integer"
+                    },
+                    "model": {
+                      "$ref": "#/components/schemas/DesignDocModelReference"
+                    }
+                  },
+                  "required": ["fromAttempt", "model"],
+                  "additionalProperties": false
+                }
+              },
+              "structuredOutput": {
+                "type": "string",
+                "enum": ["tool-json-schema"]
+              }
+            },
+            "required": ["primary", "fallbacks", "structuredOutput"],
+            "additionalProperties": false
+          },
+          "renderer": {
+            "type": "string",
+            "enum": ["mermaid"]
+          }
+        },
+        "required": [
+          "targetPath",
+          "artifactTypes",
+          "languages",
+          "concurrency",
+          "recursive",
+          "evidenceBudget",
+          "retryPolicy",
+          "modelPolicy",
+          "renderer"
+        ],
+        "additionalProperties": false
+      },
+      "DesignDocWorkItemAttempt": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["generate", "repair"]
+          },
+          "sessionID": {
+            "type": "string"
+          },
+          "model": {
+            "$ref": "#/components/schemas/DesignDocModelReference"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["created", "running", "completed", "error", "interrupted"]
+          },
+          "repairedFromSessionID": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer"
+          },
+          "completedAt": {
+            "type": "integer"
+          },
+          "cost": {
+            "type": "number"
+          },
+          "tokens": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "number"
+              },
+              "input": {
+                "type": "number"
+              },
+              "output": {
+                "type": "number"
+              },
+              "reasoning": {
+                "type": "number"
+              },
+              "cache": {
+                "type": "object",
+                "properties": {
+                  "read": {
+                    "type": "number"
+                  },
+                  "write": {
+                    "type": "number"
+                  }
+                },
+                "required": ["read", "write"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["input", "output", "reasoning", "cache"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["number", "kind", "sessionID", "model", "status", "startedAt"],
+        "additionalProperties": false
+      },
+      "DesignDocEvidenceScope": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["source-files"]
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "values", "label"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["source-symbol"]
+              },
+              "value": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "value", "label"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["source-symbols"]
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "values", "label"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["topic-evidence"]
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "label": {
+                "type": "string"
+              },
+              "coverageTotal": {
+                "type": "integer"
+              },
+              "coverageSetHash": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "values", "label", "coverageTotal", "coverageSetHash"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["behavior-refs"]
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "path": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "coverageRole": {
+                "type": "string",
+                "enum": ["overview", "detail"]
+              },
+              "coverageTotal": {
+                "type": "integer"
+              },
+              "coverageSetHash": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "values", "path", "label", "coverageRole", "coverageTotal", "coverageSetHash"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "DesignDocValidationIssue": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["error", "warning"]
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "jsonPath": {
+            "type": "string"
+          },
+          "evidenceIDs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sourcePaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "required": ["severity", "code", "message", "evidenceIDs", "sourcePaths", "retryable"],
+        "additionalProperties": false
+      },
+      "DesignDocWorkItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "moduleID": {
+            "type": "string"
+          },
+          "artifactType": {
+            "type": "string",
+            "enum": [
+              "topic",
+              "product-section",
+              "business-flow",
+              "overview",
+              "structure",
+              "code-structure",
+              "execution-flow",
+              "sequence",
+              "data-flow",
+              "lifecycle",
+              "error-flow",
+              "review"
+            ]
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": ["artifact"]
+                  }
+                },
+                "required": ["kind"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": ["topic"]
+                  },
+                  "topic": {
+                    "type": "string",
+                    "enum": [
+                      "positioning",
+                      "responsibilities",
+                      "boundaries",
+                      "inputs-outputs",
+                      "business-process",
+                      "core-models",
+                      "algorithms",
+                      "concurrency",
+                      "state-lifecycle",
+                      "error-recovery",
+                      "data-persistence",
+                      "configuration-startup",
+                      "observability-debugging",
+                      "constraints-risks"
+                    ]
+                  }
+                },
+                "required": ["kind", "topic"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": ["product-section"]
+                  },
+                  "section": {
+                    "type": "string",
+                    "enum": [
+                      "module-overview",
+                      "requirements",
+                      "overall-structure",
+                      "data-entities",
+                      "algorithms",
+                      "provided-interfaces",
+                      "required-interfaces",
+                      "internal-interfaces",
+                      "key-flows",
+                      "resource-performance",
+                      "dfx",
+                      "sfmea",
+                      "verification"
+                    ]
+                  }
+                },
+                "required": ["kind", "section"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": ["diagram"]
+                  },
+                  "view": {
+                    "type": "string",
+                    "enum": ["architecture", "business-flow", "code-flow", "state-machine", "data-lifecycle"]
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": ["base", "focused"]
+                  },
+                  "focusID": {
+                    "type": "string"
+                  },
+                  "topic": {
+                    "type": "string",
+                    "enum": [
+                      "positioning",
+                      "responsibilities",
+                      "boundaries",
+                      "inputs-outputs",
+                      "business-process",
+                      "core-models",
+                      "algorithms",
+                      "concurrency",
+                      "state-lifecycle",
+                      "error-recovery",
+                      "data-persistence",
+                      "configuration-startup",
+                      "observability-debugging",
+                      "constraints-risks"
+                    ]
+                  }
+                },
+                "required": ["kind", "view", "role"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": ["review"]
+                  }
+                },
+                "required": ["kind"],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "ready",
+              "running",
+              "validating",
+              "retryable",
+              "passed",
+              "failed",
+              "blocked",
+              "cancelled"
+            ]
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DesignDocWorkItemAttempt"
+            }
+          },
+          "retryCursor": {
+            "type": "integer"
+          },
+          "modelOverride": {
+            "$ref": "#/components/schemas/DesignDocModelReference"
+          },
+          "evidenceScope": {
+            "$ref": "#/components/schemas/DesignDocEvidenceScope"
+          },
+          "evidencePackPath": {
+            "type": "string"
+          },
+          "candidateArtifactPath": {
+            "type": "string"
+          },
+          "candidateSourceSnapshotHash": {
+            "type": "string"
+          },
+          "validationReportPath": {
+            "type": "string"
+          },
+          "artifactIDs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failure": {
+            "$ref": "#/components/schemas/DesignDocValidationIssue"
+          },
+          "createdAt": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "moduleID",
+          "artifactType",
+          "status",
+          "dependencies",
+          "attempts",
+          "artifactIDs",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "DesignDocArtifact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workItemID": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "manifest",
+              "evidence-pack",
+              "ir",
+              "validation-report",
+              "mermaid",
+              "render",
+              "quality-report",
+              "document"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["candidate", "passed", "stale", "failed"]
+          },
+          "createdAt": {
+            "type": "integer"
+          }
+        },
+        "required": ["id", "workItemID", "kind", "path", "mediaType", "sha256", "status", "createdAt"],
+        "additionalProperties": false
+      },
+      "DesignDocJob": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "enum": [1]
+          },
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "discovering",
+              "extracting",
+              "running",
+              "validating",
+              "paused",
+              "failed",
+              "blocked",
+              "assembling",
+              "completed",
+              "cancelled"
+            ]
+          },
+          "resumeFrom": {
+            "type": "string",
+            "enum": [
+              "created",
+              "discovering",
+              "extracting",
+              "running",
+              "validating",
+              "paused",
+              "failed",
+              "blocked",
+              "assembling",
+              "completed",
+              "cancelled"
+            ]
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "ownerSessionID": {
+            "type": "string"
+          },
+          "config": {
+            "$ref": "#/components/schemas/DesignDocJobConfig"
+          },
+          "moduleManifestPath": {
+            "type": "string"
+          },
+          "workItems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DesignDocWorkItem"
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DesignDocArtifact"
+            }
+          },
+          "progress": {
+            "$ref": "#/components/schemas/DesignDocJobProgress"
+          },
+          "lastError": {
+            "$ref": "#/components/schemas/DesignDocValidationIssue"
+          },
+          "createdAt": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "id",
+          "revision",
+          "status",
+          "workspace",
+          "config",
+          "workItems",
+          "artifacts",
+          "progress",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "DesignDocBadRequestError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["code", "message"],
+        "additionalProperties": false
+      },
+      "DesignDocNotFoundError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["code", "message"],
+        "additionalProperties": false
+      },
+      "DesignDocConflictError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["code", "message"],
+        "additionalProperties": false
+      },
+      "DesignDocArtifactContent": {
+        "type": "object",
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/DesignDocArtifact"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["utf8", "base64"]
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": ["artifact", "encoding", "content"],
+        "additionalProperties": false
+      },
+      "DesignDocRetryWorkItemInput": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/DesignDocModelReference"
+          }
+        },
+        "additionalProperties": false
+      },
       "KiloEmbeddingModelCatalog": {
         "type": "object",
         "properties": {
@@ -34571,7 +36454,13 @@
             "properties": {
               "code": {
                 "type": "string",
-                "enum": ["unknown_agent", "malformed_declaration", "discovery_failed", "mcp_status_failed"]
+                "enum": [
+                  "unknown_agent",
+                  "malformed_declaration",
+                  "discovery_failed",
+                  "mcp_status_failed",
+                  "feature_unavailable"
+                ]
               },
               "message": {
                 "type": "string"
@@ -37578,6 +39467,58 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventDesign_docJobUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["design_doc.job.updated"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "jobID": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "created",
+                  "discovering",
+                  "extracting",
+                  "running",
+                  "validating",
+                  "paused",
+                  "failed",
+                  "blocked",
+                  "assembling",
+                  "completed",
+                  "cancelled"
+                ]
+              },
+              "progress": {
+                "$ref": "#/components/schemas/DesignDocJobProgress"
+              },
+              "changedWorkItemID": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "integer"
+              }
+            },
+            "required": ["jobID", "revision", "status", "progress", "updatedAt"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventIndexingStatus": {
         "type": "object",
         "properties": {
@@ -40153,6 +42094,99 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventPermissionAsked": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["permission.asked"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^per"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "patterns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "metadata": {
+                "type": "object"
+              },
+              "always": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tool": {
+                "type": "object",
+                "properties": {
+                  "messageID": {
+                    "type": "string"
+                  },
+                  "callID": {
+                    "type": "string"
+                  }
+                },
+                "required": ["messageID", "callID"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["id", "sessionID", "permission", "patterns", "metadata", "always"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventPermissionReplied": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["permission.replied"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "requestID": {
+                "type": "string",
+                "pattern": "^per"
+              },
+              "reply": {
+                "type": "string",
+                "enum": ["once", "always", "reject"]
+              }
+            },
+            "required": ["sessionID", "requestID", "reply"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventSessionDiff": {
         "type": "object",
         "properties": {
@@ -40299,99 +42333,6 @@
               }
             },
             "required": ["version"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventPermissionAsked": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["permission.asked"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^per"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "permission": {
-                "type": "string"
-              },
-              "patterns": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "metadata": {
-                "type": "object"
-              },
-              "always": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "tool": {
-                "type": "object",
-                "properties": {
-                  "messageID": {
-                    "type": "string"
-                  },
-                  "callID": {
-                    "type": "string"
-                  }
-                },
-                "required": ["messageID", "callID"],
-                "additionalProperties": false
-              }
-            },
-            "required": ["id", "sessionID", "permission", "patterns", "metadata", "always"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventPermissionReplied": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["permission.replied"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "requestID": {
-                "type": "string",
-                "pattern": "^per"
-              },
-              "reply": {
-                "type": "string",
-                "enum": ["once", "always", "reject"]
-              }
-            },
-            "required": ["sessionID", "requestID", "reply"],
             "additionalProperties": false
           }
         },
@@ -46555,6 +48496,10 @@
     {
       "name": "config-console",
       "description": "Kilo Console config routes."
+    },
+    {
+      "name": "design-doc",
+      "description": "Source-backed atomic DesignDoc Job routes."
     },
     {
       "name": "enhance-prompt",

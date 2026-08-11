@@ -785,6 +785,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         triggerProps={{
           variant: "secondary",
           size: "normal",
+          class: "prompt-selector-trigger prompt-selector-trigger--model",
           get disabled() {
             return !canOpen()
           },

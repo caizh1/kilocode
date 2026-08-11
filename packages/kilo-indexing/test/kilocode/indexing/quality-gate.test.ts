@@ -4,6 +4,7 @@ import {
   CODEGRAPH_DERIVED_INDEX_FIELDS,
   CodeGraphDerivedIndexBuilder,
 } from "../../../src/indexing/codegraph/derived-index"
+import { CODE_GRAPH_PARSER_VERSION } from "../../../src/indexing/codegraph/constants"
 import { buildPostingsDocument } from "../../../src/indexing/codegraph/postings/builder"
 import type { CodeGraphFileGraph } from "../../../src/indexing/codegraph/types"
 import {
@@ -141,8 +142,8 @@ static int flash_read(uint32_t addr, uint32_t length, uint8_t *buffer) {
     })
 
     expect({ graphs: baseline.graphs, postings: baseline.postings, derivedHash: baseline.derivedHash }).toEqual({
-      graphs: [{ filePath: "src/flash.c", hash: "4d60d195765cde67dbde2a0ec6d74a128159b88fd14d5a70fe5cfdaa392e3e6b" }],
-      postings: [{ filePath: "src/flash.c", hash: "a0e850083098e5baf913a698d343b02173136d44bd99f84053d38946616c0750" }],
+      graphs: [{ filePath: "src/flash.c", hash: "9cda6006bf34bed21aac835a64bdd3725298751c0b02212cee3645aa453c5e38" }],
+      postings: [{ filePath: "src/flash.c", hash: "1031c635e8f73e0fee078cb0de289250df71ec4f85f96963a7177d4dfb65343d" }],
       derivedHash: "451749c011a4f38fed2d508d4ecaa267070a1437b531f63a2f63b5567366dc06",
     })
 
@@ -217,7 +218,7 @@ function graph(updatedAt: string): CodeGraphFileGraph {
   return {
     workspacePath: root,
     graphSchemaVersion: 1,
-    parserVersion: 1,
+    parserVersion: CODE_GRAPH_PARSER_VERSION,
     filePath: "src/flash.c",
     fileHash: "file-hash",
     language: "c",

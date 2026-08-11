@@ -451,6 +451,76 @@ test("Ultra confirmation covers keyboard, slash, native identity, session change
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(200)
 })
 
+test("Document selection explains the default boundary before entering the native mode", async ({ page }) => {
+  await load(page, "prompt-input--document-selection-420")
+
+  const trigger = page.locator(".prompt-selector-trigger--mode")
+  const count = page.locator('[data-ui="qa-agent-select-count"]')
+  const prompt = page.locator("textarea.prompt-input")
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="document"]').click()
+
+  const dialog = page.getByRole("alertdialog", { name: "Enter Document mode" })
+  const confirm = page.getByRole("button", { name: "Confirm and enter Document" })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText("Document RAG")
+  await expect(dialog).toContainText("Documents only")
+  await expect(dialog).toContainText("Documents + code")
+  await expect(dialog).toContainText("explicit request")
+  await expect(trigger).toHaveAttribute("data-agent", "code")
+  await expect(count).toHaveText("0")
+  await expect(confirm).toBeFocused()
+
+  await page.keyboard.press("Escape")
+  await expect(dialog).toBeVisible()
+  await confirm.click()
+
+  await expect(dialog).toBeHidden()
+  await expect(trigger).toHaveAttribute("data-agent", "document")
+  await expect(count).toHaveText("1")
+  await expect(page.locator('.document-agent-scope-button[data-scope="documents"]')).toContainText("Documents only")
+  await expect(prompt).toBeFocused()
+})
+
+test("Document confirmation keeps both scope states readable in a 200px sidebar", async ({ page }) => {
+  await page.setViewportSize({ width: 200, height: 720 })
+  await load(page, "prompt-input--document-confirmation-200")
+
+  const dialog = page.getByRole("alertdialog", { name: "进入 Document 模式" })
+  const flow = page.getByRole("img", {
+    name: /默认仅文档.*明确要求查询代码后.*文档加代码.*只读代码探索/,
+  })
+  await expect(flow).toBeVisible()
+  await expect(flow.locator('[data-state="documents"]')).toContainText("仅文档")
+  await expect(flow.locator('[data-state="documents_and_code"]')).toContainText("文档 + 代码")
+  await expect(dialog).toContainText("未收到明确要求，不会搜索代码库。")
+  await expect(page.getByRole("button", { name: "确认并进入 Document" })).toBeVisible()
+
+  const box = await dialog.boundingBox()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(200)
+  expect(box!.y).toBeGreaterThanOrEqual(0)
+  expect(box!.y + box!.height).toBeLessThanOrEqual(720)
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(200)
+})
+
+test("Document code scope stays explicit without truncating its boundary", async ({ page }) => {
+  await load(page, "prompt-input--document-code-scope-zh")
+
+  const scope = page.getByRole("button", { name: "文档 + 代码", exact: true })
+  await expect(scope).toBeVisible()
+  await expect(scope).toHaveAttribute("aria-pressed", "true")
+  await expect(scope.locator("span").last()).toHaveText("文档 + 代码")
+  await expect
+    .poll(() =>
+      scope
+        .locator("span")
+        .last()
+        .evaluate((label) => label.scrollWidth <= label.clientWidth),
+    )
+    .toBe(true)
+})
+
 test("Ultra uses its sparkle icon and theme-aware semantic color without affecting other modes", async ({ page }) => {
   const select = async () => {
     await page.locator(".prompt-selector-trigger--mode").click()

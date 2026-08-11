@@ -30,6 +30,10 @@ suite("Extension Test Suite", () => {
       "chipmate.v2.qwenAutocomplete.showLogs",
       "chipmate.v2.qwenAutocomplete.exportDiagnostics",
       "chipmate.v2.generateTerminalCommand",
+      "chipmate.v2.generateCommentsForCurrentFunction",
+      "chipmate.v2.generateCommentsForSelectedFunctions",
+      "chipmate.v2.applyCodeCommentPreview",
+      "chipmate.v2.discardCodeCommentPreview",
       "chipmate.v2.terminalAddToContext",
       "chipmate.v2.terminalFixCommand",
       "chipmate.v2.terminalExplainCommand",
@@ -99,11 +103,21 @@ suite("Extension Test Suite", () => {
       "chipmate.v2.documents.openArtifact",
       "chipmate.v2.agentTerminal.open",
       "chipmate.v2.qwenAutocomplete.exportDiagnostics",
+      "chipmate.v2.applyCodeCommentPreview",
+      "chipmate.v2.discardCodeCommentPreview",
     ]) {
       assert.ok(commandIds.has(command), `${command} must remain contributed`)
     }
 
     assert.ok(!contributes.terminal?.profiles, "legacy terminal profile must not be contributed")
+
+    const editorTitle = contributes.menus?.["editor/title"] ?? []
+    for (const command of ["chipmate.v2.applyCodeCommentPreview", "chipmate.v2.discardCodeCommentPreview"]) {
+      const item = editorTitle.find((entry: { command?: string }) => entry.command === command)
+      assert.ok(item, `${command} must be contributed to the editor title toolbar`)
+      assert.match(item.when, /chipmate\.v2\.codeComments\.previewPending/)
+      assert.match(item.when, /resourceScheme == chipmate-code-comment-preview/)
+    }
 
     const activityViews = contributes.views?.["chipmate-v2-activitybar"] ?? []
     assert.ok(

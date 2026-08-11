@@ -43,8 +43,8 @@ try {
     console: story(index, "Performance/LowEnd", "Agent Console fixture"),
   }
   const attempts = []
-  attempts.push(await attempt(browser, base, stories, 1))
-  if (attempts[0].status === "FAIL") attempts.push(await attempt(browser, base, stories, 2))
+  attempts.push(await attempt(browser, base, stories, 1, args.settingsOnly === true))
+  if (attempts[0].status === "FAIL") attempts.push(await attempt(browser, base, stories, 2, args.settingsOnly === true))
   const status =
     attempts[0].status === "PASS"
       ? "PASS"
@@ -65,7 +65,9 @@ try {
     status,
     summary:
       status === "PASS"
-        ? "当前 Webview 已通过 2 核、8GB、HDD、无独显组合代理门禁。"
+        ? args.settingsOnly
+          ? "设置页已通过 2 核、8GB、HDD、无独显组合代理门禁。"
+          : "当前 Webview 已通过 2 核、8GB、HDD、无独显组合代理门禁。"
         : status === "FLAKY"
           ? "首次超预算、全新 Context 复跑通过，记为 FLAKY；按当前策略不阻塞发布。"
           : status === "FAIL"
@@ -75,6 +77,7 @@ try {
       "CPU 降速只精确作用于 Webview renderer，不等同于限制整机为两个物理核心。",
       "8GB 与 HDD 通过大数据 fixture、延迟和内存增长门禁代理，不制造真实系统换页或物理磁盘吞吐。",
       "该结果不代表真实低配 Windows，也不测试模型回答质量。",
+      ...(args.settingsOnly ? ["本次聚焦设置页，不包含历史记录和 Agent Console 指标。"] : []),
     ],
   }
   const result = join(output, "results.json")
@@ -117,7 +120,7 @@ async function serve() {
     stdio: "ignore",
   })
   const base = `http://127.0.0.1:${port}`
-  for (let count = 0; count < 100; count++) {
+  for (let count = 0; count < 600; count++) {
     const response = await fetch(`${base}/index.json`).catch(() => undefined)
     if (response?.ok) return base
     await new Promise((resolve) => setTimeout(resolve, 100))
@@ -125,7 +128,7 @@ async function serve() {
   throw new Error("Storybook HTTP server did not become ready")
 }
 
-async function attempt(browser, base, stories, number) {
+async function attempt(browser, base, stories, number, settingsOnly) {
   const context = await browser.newContext({ viewport: { width: 940, height: 720 }, reducedMotion: "reduce" })
   const trace = join(evidence, `attempt-${number}-trace.zip`)
   // DOM snapshots retain the full 1000-turn fixture after each page closes and
@@ -134,9 +137,13 @@ async function attempt(browser, base, stories, number) {
   await context.tracing.start({ screenshots: true, snapshots: false, sources: false })
   try {
     const metrics = []
-    await settings(context, base, stories.settings, metrics, number)
-    await history(context, base, stories.history, metrics)
-    await consolePath(context, base, stories.console, metrics)
+    if (settingsOnly) {
+      await settingsScroll(context, base, stories.settings, metrics, number)
+    } else {
+      await settings(context, base, stories.settings, metrics, number)
+      await history(context, base, stories.history, metrics)
+      await consolePath(context, base, stories.console, metrics)
+    }
     const status = metrics.some((item) => item.status === "BLOCKED")
       ? "BLOCKED"
       : metrics.some((item) => item.status === "FAIL")
@@ -164,6 +171,26 @@ async function attempt(browser, base, stories, number) {
   }
 }
 
+async function settingsScroll(context, base, id, metrics, attemptNumber) {
+  const item = await page(context, base, id)
+  try {
+    const opened = await measure(
+      () => item.page.locator('[data-ui="low-end-open-settings"]').click({ noWaitAfter: true }),
+      () => item.page.locator('[data-ui="settings-frame"]').waitFor({ state: "visible" }),
+    )
+    const selected = await select(item.page, "indexing")
+    const frames = await scrollIndexingSettings(item.page)
+    await item.page.screenshot({ path: join(evidence, `attempt-${attemptNumber}-settings.png`), fullPage: true })
+    metrics.push(timing("settings.open", "点击打开设置", [opened], budgets.settingsOpenMs, "median", true))
+    metrics.push(
+      timing("settings.tab.indexing.first", "indexing 首次打开", [selected], budgets.indexingMs, "median", true),
+    )
+    recordIndexingScrollMetrics(metrics, frames)
+  } finally {
+    await item.page.close()
+  }
+}
+
 async function settings(context, base, id, metrics, attemptNumber) {
   const open = []
   const tabs = ["models", "providers", "agentBehaviour", "indexing", "experimental", "chipmateServer"]
@@ -174,6 +201,7 @@ async function settings(context, base, id, metrics, attemptNumber) {
   const saves = []
   const exact = []
   const heaps = []
+  const scrollFrames = []
   for (let count = 0; count < 5; count++) {
     const item = await page(context, base, id)
     const elapsed = await measure(
@@ -185,6 +213,8 @@ async function settings(context, base, id, metrics, attemptNumber) {
     for (const tab of tabs.slice(1)) first[tab].push(await select(item.page, tab))
     for (const tab of tabs) revisit[tab].push(await select(item.page, tab))
     if (count === 0) {
+      await select(item.page, "indexing")
+      scrollFrames.push(...(await scrollIndexingSettings(item.page)))
       await item.page.screenshot({ path: join(evidence, `attempt-${attemptNumber}-settings.png`), fullPage: true })
       await select(item.page, "chipmateServer")
       await item.page.evaluate(() => {
@@ -254,6 +284,7 @@ async function settings(context, base, id, metrics, attemptNumber) {
     ),
   )
   metrics.push(timing("settings.save", "设置保存确认", saves, budgets.saveMs, "median", true))
+  recordIndexingScrollMetrics(metrics, scrollFrames)
   metrics.push(
     timing("webview.longtask.max", "Webview 主线程最长冻结", tasks.length ? tasks : [0], budgets.stallMaxMs, "max"),
   )
@@ -273,6 +304,36 @@ async function settings(context, base, id, metrics, attemptNumber) {
       ),
     )
   }
+}
+
+function recordIndexingScrollMetrics(metrics, scrollFrames) {
+  metrics.push(
+    timing(
+      "settings.indexing.scroll.frame.p95",
+      "索引设置滚动帧间隔 p95",
+      scrollFrames,
+      budgets.settingsScrollP95Ms,
+      "p95",
+    ),
+  )
+  metrics.push(
+    timing(
+      "settings.indexing.scroll.frame.max",
+      "索引设置滚动最大帧间隔",
+      scrollFrames,
+      budgets.settingsScrollMaxMs,
+      "max",
+    ),
+  )
+  metrics.push(
+    numberMetric(
+      "settings.indexing.scroll.over32.percent",
+      "索引设置超过 32ms 的滚动帧比例",
+      scrollFrames.length ? (scrollFrames.filter((value) => value > 32).length / scrollFrames.length) * 100 : 100,
+      budgets.settingsScrollOver32Percent,
+      "percent",
+    ),
+  )
 }
 
 async function history(context, base, id, metrics) {
@@ -415,6 +476,93 @@ async function select(page, tab) {
   )
 }
 
+async function scrollIndexingSettings(page) {
+  const content = page.locator('[data-ui="settings-content"]:visible')
+  return content.evaluate(async (element) => {
+    const frames = []
+    let progress = 63
+    const timer = setInterval(() => {
+      progress = progress >= 99 ? 1 : progress + 1
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "indexingStatusLoaded",
+            status: {
+              state: "In Progress",
+              message: "Deterministic low-end indexing fixture",
+              processedFiles: progress * 10,
+              totalFiles: 1_000,
+              percent: progress,
+              pipelines: {
+                codeGraph: {
+                  state: "Complete",
+                  message: "Code Graph complete",
+                  processedFiles: 1_000,
+                  totalFiles: 1_000,
+                  percent: 100,
+                  errorCount: 0,
+                  staleCount: 0,
+                  skippedCount: 0,
+                },
+                rag: {
+                  state: "In Progress",
+                  message: "Code RAG indexing",
+                  processedFiles: progress * 10,
+                  totalFiles: 1_000,
+                  percent: progress,
+                  errorCount: 0,
+                  staleCount: 0,
+                  skippedCount: 0,
+                },
+                documents: {
+                  state: "Standby",
+                  message: "Document RAG waiting",
+                  processedFiles: 0,
+                  totalFiles: 50,
+                  percent: 0,
+                  errorCount: 0,
+                  staleCount: 0,
+                  skippedCount: 0,
+                },
+              },
+            },
+          },
+        }),
+      )
+    }, 250)
+
+    const scroll = (target) =>
+      new Promise((resolve) => {
+        let previous
+        const direction = target > element.scrollTop ? 1 : -1
+        const step = (now) => {
+          if (previous !== undefined) frames.push(now - previous)
+          previous = now
+          element.scrollTop = Math.min(target, Math.max(0, element.scrollTop + direction * 18))
+          if (element.scrollTop === target) {
+            resolve()
+            return
+          }
+          requestAnimationFrame(step)
+        }
+        requestAnimationFrame(step)
+      })
+
+    try {
+      const bottom = element.scrollHeight - element.clientHeight
+      if (bottom <= 0) throw new Error("索引设置页没有可测量的滚动范围。")
+      element.scrollTop = 0
+      for (let cycle = 0; cycle < 5; cycle++) {
+        await scroll(bottom)
+        await scroll(0)
+      }
+      return frames
+    } finally {
+      clearInterval(timer)
+    }
+  })
+}
+
 async function measure(action, ready) {
   const start = performance.now()
   await action()
@@ -503,6 +651,7 @@ function parse(argv) {
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]
     if (arg === "--headed") result.headed = true
+    if (arg === "--settings-only") result.settingsOnly = true
     if (arg === "--output") result.output = argv[++index]
     if (arg === "--base-url") result.baseUrl = argv[++index]
   }

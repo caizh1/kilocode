@@ -2732,6 +2732,25 @@ describe("ProviderTransform.variants", () => {
     expect(result).toEqual({})
   })
 
+  // kilocode_change start - DeepSeek V4 required-tool compatibility
+  test("deepseek v4 exposes a non-thinking variant for required tool choice", () => {
+    const model = createMockModel({
+      id: "deepseek/deepseek-v4-flash",
+      providerID: "deepseek",
+      api: {
+        id: "deepseek-v4-flash",
+        url: "https://api.deepseek.com",
+        npm: "@ai-sdk/openai-compatible",
+      },
+    })
+    const result = ProviderTransform.variants(model)
+
+    expect(result.none).toEqual({ thinking: { type: "disabled" } })
+    expect(result.thinking).toEqual({ thinking: { type: "enabled" } })
+    expect(result.max).toEqual({ reasoningEffort: "max" })
+  })
+  // kilocode_change end
+
   test("minimax m3 using anthropic returns thinking toggles", () => {
     const model = createMockModel({
       id: "minimax/minimax-m3",

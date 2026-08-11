@@ -1,6 +1,8 @@
 import fs from "fs/promises"
 import { execFile as execFileCallback } from "child_process"
 import { createHash } from "node:crypto"
+import http from "node:http"
+import https from "node:https"
 import os from "os"
 import path from "path"
 import { promisify } from "util"
@@ -24,8 +26,14 @@ const TABLE_CELL_MARGIN_Y_DXA = 80
 const MAX_FIGURE_WIDTH_PX = 624
 const MAX_FIGURE_HEIGHT_PX = 720
 const EMU_PER_CSS_PIXEL = 9_525
-const CJK_FONT = "Microsoft YaHei"
+const CJK_FONT =
+  process.platform === "darwin"
+    ? "Heiti SC"
+    : process.platform === "win32"
+      ? "Microsoft YaHei"
+      : "Noto Sans CJK SC"
 const NEAR_BLANK_INK_RATIO = 0.0005
+const MAX_REMOTE_WORD_RENDER_RESPONSE_BYTES = 512 * 1024 * 1024
 
 type Photon = typeof import("@silvia-odwyer/photon-node")
 type PhotonLoad = { module: Photon } | { error: unknown }
@@ -78,6 +86,8 @@ export type WordSection = {
 
 export type CreateWordDocumentSpec = {
   title: string
+  /** Internal caller-owned artifact directory. Public Word tools intentionally do not expose this. */
+  artifactDir?: string
   documentType?: string
   author?: string
   language?: "en-US" | "zh-CN"
@@ -180,10 +190,14 @@ export type AppliedWordTemplateStyles = {
 
 export type MaterializeWordFieldsInput = {
   sourcePath: string
+  /** Internal caller-owned artifact directory. Public Word tools intentionally do not expose this. */
+  artifactDir?: string
   outputFile?: string
   taskSlug?: string
   title?: string
   tocMode?: "preserve" | "materialize" | "remove"
+  /** Internal deterministic TOC depth. Public tools keep the default three-level behavior. */
+  tocMaxLevel?: 1 | 2 | 3
 }
 
 export type MaterializedWordFields = {
@@ -263,6 +277,8 @@ export type NormalizedWordTableSpec = {
 
 export type RenderWordDocumentInput = {
   sourcePath: string
+  /** Internal caller-owned artifact directory. Public Word tools intentionally do not expose this. */
+  artifactDir?: string
   remoteEndpoint?: string
   outputFile?: string
   taskSlug?: string
@@ -290,6 +306,7 @@ export type WordRenderDiagnostic = {
     | "image-loss-suspected"
     | "word-render-field-refresh-failed"
     | "word-render-text-qa-failed"
+    | "word-render-cjk-font-missing"
     | "word-render-refreshed-docx-invalid"
     | "word-render-response-invalid"
     | "word-render-page-sequence-invalid"
@@ -468,6 +485,7 @@ export async function createWordDocument(spec: CreateWordDocumentSpec): Promise<
     kind: "word-document",
     title: spec.artifactTitle ?? spec.title,
     taskSlug: spec.taskSlug ?? spec.title,
+    artifactDir: spec.artifactDir,
     primaryFile: safeDocxName(spec.outputFile ?? spec.title),
     warnings: prepared.warnings,
     qualityStatus: prepared.warnings.length ? "warning" : "unknown",
@@ -492,6 +510,9 @@ export async function inspectWordDocument(input: {
   path: string
   maxParagraphs?: number
   maxTables?: number
+  /** Internal controller-only caps. Public tool schema intentionally does not expose these fields. */
+  internalMaxParagraphs?: number
+  internalMaxTables?: number
 }): Promise<WordDocumentInspection> {
   const absolute = resolveWorkspacePath(input.path)
   const bytes = new Uint8Array(await fs.readFile(absolute))
@@ -506,8 +527,14 @@ export async function inspectWordDocument(input: {
     const stylesXml = await readEntryText(byName, "word/styles.xml")
     const paragraphs = parseParagraphs(documentXml)
     const tables = parseTables(documentXml)
-    const maxParagraphs = clamp(input.maxParagraphs ?? 120, 1, 1_000)
-    const maxTables = clamp(input.maxTables ?? 20, 1, 200)
+    const maxParagraphs =
+      input.internalMaxParagraphs === undefined
+        ? clamp(input.maxParagraphs ?? 120, 1, 1_000)
+        : clamp(input.internalMaxParagraphs, 1, 10_000)
+    const maxTables =
+      input.internalMaxTables === undefined
+        ? clamp(input.maxTables ?? 20, 1, 200)
+        : clamp(input.internalMaxTables, 1, 1_000)
     const outline: WordDocumentInspection["outline"] = []
     const headingPath: string[] = []
     const inspectedParagraphs: WordDocumentInspection["paragraphs"] = []
@@ -756,7 +783,7 @@ export async function applyWordTemplateStyles(input: ApplyWordTemplateStylesInpu
 export async function materializeWordFields(input: MaterializeWordFieldsInput): Promise<MaterializedWordFields> {
   const source = await readDocxSnapshot(input.sourcePath)
   const documentXml = requiredSnapshotText(source, "word/document.xml", input.sourcePath)
-  const result = materializeFieldsInDocument(documentXml, input.tocMode ?? "preserve")
+  const result = materializeFieldsInDocument(documentXml, input.tocMode ?? "preserve", input.tocMaxLevel ?? 3)
   const warnings = [...result.warnings]
   if (!result.summary.seqFields && !result.summary.captions && result.summary.toc === "none")
     warnings.push("no supported Word field placeholders were found")
@@ -765,6 +792,7 @@ export async function materializeWordFields(input: MaterializeWordFieldsInput): 
     taskSlug: input.taskSlug ?? `${path.basename(input.sourcePath, ".docx")}-fields`,
     outputFile: safeDocxName(input.outputFile ?? `${path.basename(input.sourcePath, ".docx")}-fields.docx`),
     warnings,
+    artifactDir: input.artifactDir,
   })
   return { ...written, summary: result.summary, warnings }
 }
@@ -960,6 +988,7 @@ async function writeSkippedWordRender(
     kind: "word-render",
     title: input.title ?? `Render ${path.basename(input.sourcePath)}`,
     taskSlug: input.taskSlug ?? `${path.basename(input.sourcePath, ".docx")}-render`,
+    artifactDir: input.artifactDir,
     derivedFiles: [diagnosticsFile],
     sourceFiles: [normalizePortable(path.relative(Instance.directory, source))],
     warnings,
@@ -1185,10 +1214,12 @@ async function writeRenderedWordArtifacts(
     kind: "word-render",
     title: input.title ?? `Render ${path.basename(input.sourcePath)}`,
     taskSlug: input.taskSlug ?? `${path.basename(input.sourcePath, ".docx")}-render`,
+    artifactDir: input.artifactDir,
     primaryFile: pdfBytes?.length && isPdf(pdfBytes) ? pdfName : undefined,
     derivedFiles,
     sourceFiles: [normalizePortable(path.relative(Instance.directory, source))],
     warnings,
+    replaceDerivedFiles: true,
     qualityStatus: diagnostics.some((item) => item.severity === "error")
       ? "failed"
       : diagnostics.length
@@ -1583,14 +1614,15 @@ async function buildContext(spec: CreateWordDocumentSpec): Promise<RenderContext
     const index = images.length + 1
     const contentType = block.contentType ?? "image/png"
     const extension = contentType === "image/jpeg" ? "jpg" : "png"
-    const size = figureSize(positive(block.width, 480), positive(block.height, 280))
+    const bytes = await imageBytes(block)
+    const size = imageFigureSize(block, contentType, bytes)
     const item: ImagePart = {
       relId: `rIdImage${index}`,
       mediaPath: `word/media/image${index}.${extension}`,
       target: `media/image${index}.${extension}`,
       contentType,
       extension,
-      bytes: await imageBytes(block),
+      bytes,
       width: size.width,
       height: size.height,
       altText: block.altText ?? block.title ?? block.caption ?? `Image ${index}`,
@@ -1801,6 +1833,65 @@ function figureSize(width: number, height: number): { width: number; height: num
   return { width: Math.max(1, width * scale), height: Math.max(1, height * scale) }
 }
 
+function imageFigureSize(
+  block: Extract<WordBlock, { type: "image" }>,
+  contentType: "image/png" | "image/jpeg",
+  bytes: Uint8Array,
+) {
+  const intrinsic = rasterDimensions(contentType, bytes)
+  if (block.width !== undefined && block.height !== undefined) {
+    return figureSize(positive(block.width, 480), positive(block.height, 280))
+  }
+  if (block.width !== undefined && intrinsic) {
+    const width = positive(block.width, 480)
+    return figureSize(width, (width * intrinsic.height) / intrinsic.width)
+  }
+  if (block.height !== undefined && intrinsic) {
+    const height = positive(block.height, 280)
+    return figureSize((height * intrinsic.width) / intrinsic.height, height)
+  }
+  if (intrinsic) {
+    const scale = Math.min(MAX_FIGURE_WIDTH_PX / intrinsic.width, MAX_FIGURE_HEIGHT_PX / intrinsic.height)
+    return {
+      width: Math.max(1, intrinsic.width * scale),
+      height: Math.max(1, intrinsic.height * scale),
+    }
+  }
+  return figureSize(positive(block.width, 480), positive(block.height, 280))
+}
+
+function rasterDimensions(contentType: "image/png" | "image/jpeg", bytes: Uint8Array) {
+  const value = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  if (
+    contentType === "image/png" &&
+    value.length >= 24 &&
+    value.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) &&
+    value.subarray(12, 16).toString("ascii") === "IHDR"
+  ) {
+    const width = value.readUInt32BE(16)
+    const height = value.readUInt32BE(20)
+    if (width && height) return { width, height }
+  }
+  if (contentType !== "image/jpeg" || value.length < 4 || value.readUInt16BE(0) !== 0xffd8) return
+  for (let offset = 2; offset + 8 < value.length; ) {
+    if (value[offset] !== 0xff) {
+      offset += 1
+      continue
+    }
+    const marker = value[offset + 1]
+    if (marker === 0xd9 || marker === 0xda) return
+    const length = value.readUInt16BE(offset + 2)
+    if (length < 2 || offset + length + 2 > value.length) return
+    if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker)) {
+      const width = value.readUInt16BE(offset + 7)
+      const height = value.readUInt16BE(offset + 5)
+      if (width && height) return { width, height }
+      return
+    }
+    offset += length + 2
+  }
+}
+
 function contentTypesXml(context: RenderContext): string {
   const imageDefaults = new Set(context.images.map((image) => image.extension))
   return xml(
@@ -1823,8 +1914,14 @@ function documentRelationshipsXml(context: RenderContext): string {
 function stylesXml(spec: Pick<CreateWordDocumentSpec, "headingNumbering" | "language"> = {}): string {
   const eastAsia = spec.language === "zh-CN" ? CJK_FONT : "Calibri"
   const base = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="${eastAsia}" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="120" w:line="264" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="${eastAsia}" w:cs="Calibri"/><w:color w:val="24292F"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Subtitle"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="160"/><w:keepNext/></w:pPr><w:rPr><w:b/><w:color w:val="17324D"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="0" w:after="180"/><w:keepNext/></w:pPr><w:rPr><w:color w:val="3A6EA5"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="320" w:after="160"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="160" w:after="80"/><w:outlineLvl w:val="2"/></w:pPr><w:rPr><w:b/><w:color w:val="1F4D78"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="0" w:after="160"/></w:pPr><w:rPr><w:b/><w:color w:val="2E74B5"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="Caption"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="60" w:after="80"/><w:keepLines/></w:pPr><w:rPr><w:i/><w:color w:val="667085"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="80" w:after="80" w:line="240" w:lineRule="auto"/><w:shd w:val="clear" w:color="auto" w:fill="F3F4F6"/><w:keepLines/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="${eastAsia}"/><w:color w:val="1F2937"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TableHeader"><w:name w:val="Table Header"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:b/><w:color w:val="24292F"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="0"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9360"/></w:tabs></w:pPr></w:style><w:style w:type="paragraph" w:styleId="TOC2"><w:name w:val="toc 2"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="360"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9360"/></w:tabs></w:pPr></w:style><w:style w:type="paragraph" w:styleId="TOC3"><w:name w:val="toc 3"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="720"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9360"/></w:tabs></w:pPr></w:style></w:styles>`
-  if (spec.headingNumbering !== "decimal") return xml(base)
-  const numbered = base
+  // Headless LibreOffice can ignore w:eastAsia and render CJK through the Latin slot.
+  // Use the selected CJK face in every default slot so DOCX and PDF remain visually equivalent.
+  const compatible = base.replaceAll(
+    `w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="${eastAsia}" w:cs="Calibri"`,
+    `w:ascii="${eastAsia}" w:hAnsi="${eastAsia}" w:eastAsia="${eastAsia}" w:cs="${eastAsia}"`,
+  )
+  if (spec.headingNumbering !== "decimal") return xml(compatible)
+  const numbered = compatible
     .replace(
       '<w:outlineLvl w:val="0"/>',
       '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr><w:outlineLvl w:val="0"/>',
@@ -2633,6 +2730,7 @@ async function tryLocalWordRenderer(
   const diagnostics: WordRenderDiagnostic[] = []
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-word-render-"))
   try {
+    const renderEnv = await localWordRenderEnv(temp)
     const snapshot = await readDocxSnapshot(source)
     const documentXml = requiredSnapshotText(snapshot, "word/document.xml", source)
     const hasToc = hasNativeToc(documentXml)
@@ -2652,7 +2750,7 @@ async function tryLocalWordRenderer(
       await execFile(soffice, ["--headless", "--convert-to", "pdf", "--outdir", temp, source], {
         timeout: timeoutMs,
         windowsHide: true,
-        env: userEnv(process.env),
+        env: renderEnv,
       })
     } catch (err) {
       diagnostics.push({
@@ -2677,6 +2775,13 @@ async function tryLocalWordRenderer(
     }
 
     const textQa = await localWordTextQa(source, pdfPath, timeoutMs)
+    const fontQa = await localCjkFontQa(pdfPath, textQa.sourceCjkCount, timeoutMs)
+    if (!fontQa.ok)
+      diagnostics.push({
+        code: "word-render-cjk-font-missing",
+        severity: "error",
+        message: fontQa.message,
+      })
 
     const pdftoppm = await findExecutable(process.env["KILO_WORD_RENDER_PDFTOPPM"], "pdftoppm")
     const pages: NonNullable<RemoteWordRenderResponse["pages"]> = []
@@ -2740,6 +2845,80 @@ async function tryLocalWordRenderer(
   }
 }
 
+async function localWordRenderEnv(temp: string) {
+  const env = userEnv(process.env)
+  if (env["FONTCONFIG_FILE"]) return env
+  const home = os.homedir()
+  const directories =
+    process.platform === "darwin"
+      ? [
+          "/System/Library/Fonts",
+          "/System/Library/Fonts/Supplemental",
+          "/Library/Fonts",
+          path.join(home, "Library/Fonts"),
+        ]
+      : process.platform === "win32"
+        ? [
+            path.join(process.env["WINDIR"] ?? "C:\\Windows", "Fonts"),
+            path.join(process.env["LOCALAPPDATA"] ?? home, "Microsoft/Windows/Fonts"),
+          ]
+        : [
+            "/usr/share/fonts",
+            "/usr/local/share/fonts",
+            path.join(home, ".local/share/fonts"),
+            path.join(home, ".fonts"),
+          ]
+  const config = path.join(temp, "fonts.conf")
+  const cache = path.join(temp, "font-cache")
+  await fs.mkdir(cache, { recursive: true })
+  await fs.writeFile(
+    config,
+    `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig>${directories.map((directory) => `<dir>${escapeXml(directory)}</dir>`).join("")}<cachedir>${escapeXml(cache)}</cachedir></fontconfig>`,
+    "utf8",
+  )
+  return { ...env, FONTCONFIG_FILE: config }
+}
+
+async function localCjkFontQa(pdf: string, sourceCjkCount: number, timeoutMs: number) {
+  if (sourceCjkCount < 10) return { ok: true, message: "CJK font QA is not required" }
+  const text = await findExecutable(process.env["KILO_WORD_RENDER_PDFTOTEXT"], "pdftotext")
+  const sibling = text
+    ? path.join(path.dirname(text), process.platform === "win32" ? "pdffonts.exe" : "pdffonts")
+    : undefined
+  const executable = await findExecutable(process.env["KILO_WORD_RENDER_PDFFONTS"] ?? sibling, "pdffonts")
+  if (!executable) {
+    return { ok: false, message: "含中文的 DOCX 无法完成字体字形校验：pdffonts 不可用。" }
+  }
+  try {
+    const result = await execFile(executable, [pdf], {
+      timeout: timeoutMs,
+      windowsHide: true,
+      encoding: "utf8",
+      env: userEnv(process.env),
+    })
+    const fonts = String(result.stdout ?? "")
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "")
+    const families = [
+      CJK_FONT,
+      "Noto Sans CJK",
+      "Source Han Sans",
+      "Arial Unicode",
+      "Hiragino Sans",
+      "Microsoft YaHei",
+      "Heiti",
+      "Songti",
+      "SimSun",
+      "WenQuanYi",
+      "MingLiU",
+    ].map((font) => font.toLowerCase().replace(/[\s_-]+/g, ""))
+    if (families.some((font) => fonts.includes(font))) return { ok: true, message: "CJK font is embedded" }
+    return { ok: false, message: `含中文的 DOCX 未嵌入可识别的 CJK 字体（期望 ${CJK_FONT}），页面可能显示缺字方框。` }
+  } catch (error) {
+    return { ok: false, message: `CJK 字体字形校验失败：${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
 async function localWordTextQa(source: string, pdf: string, timeoutMs: number): Promise<WordRenderTextQa> {
   const executable = await findExecutable(process.env["KILO_WORD_RENDER_PDFTOTEXT"], "pdftotext")
   if (!executable) return failedWordTextQa("pdftotext is unavailable for local rendered-text QA")
@@ -2747,6 +2926,7 @@ async function localWordTextQa(source: string, pdf: string, timeoutMs: number): 
   try {
     const result = await execFile(executable, ["-layout", "-enc", "UTF-8", pdf, "-"], {
       timeout: timeoutMs,
+      maxBuffer: 64 * 1024 * 1024,
       windowsHide: true,
       encoding: "utf8",
       env: userEnv(process.env),
@@ -2774,6 +2954,7 @@ function failedWordTextQa(message: string): WordRenderTextQa {
 
 function evaluateWordTextQa(source: WordDocumentInspection, rendered: string): WordRenderTextQa {
   const text = normalizeWordText(rendered)
+  const compactText = compactWordText(rendered)
   const title = normalizeWordText(source.title ?? "")
   const heading = normalizeWordText(source.firstHeading ?? "")
   const sourceText = source.paragraphs.map((item) => item.text).join("\n")
@@ -2781,7 +2962,7 @@ function evaluateWordTextQa(source: WordDocumentInspection, rendered: string): W
   const pdfCjkCount = wordCjkCount(text)
   const cjkCoverage = sourceCjkCount > 0 ? Math.min(1, pdfCjkCount / sourceCjkCount) : 1
   const sentinels = wordSentinels(source)
-  const matchedSentinelCount = sentinels.filter((item) => text.includes(item)).length
+  const matchedSentinelCount = sentinels.filter((item) => compactText.includes(compactWordText(item))).length
   const sentinelCoverage = sentinels.length > 0 ? matchedSentinelCount / sentinels.length : 1
   const diagnostics: string[] = []
   if (!title || !text.includes(title)) diagnostics.push("document title is missing from rendered PDF text")
@@ -2818,6 +2999,10 @@ function wordSentinels(source: WordDocumentInspection): string[] {
 
 function normalizeWordText(value: string): string {
   return value.normalize("NFKC").replace(/\s+/gu, " ").trim()
+}
+
+function compactWordText(value: string): string {
+  return value.normalize("NFKC").replace(/\s+/gu, "")
 }
 
 function wordCjkCount(value: string): number {
@@ -2931,29 +3116,74 @@ async function callWordRenderer(
   payload: unknown,
   timeoutMs: number,
 ): Promise<RemoteWordRenderResponse> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    })
-    const body = (await response.json()) as RemoteWordRenderResponse
-    if (!body || typeof body !== "object") throw new Error("renderer returned an invalid JSON body")
-    if (!response.ok || body.ok !== true) {
-      const issues = body.issues
-        ?.map((item) => `${item.code ?? "renderer-error"}: ${item.message ?? "failed"}`)
-        .join("; ")
-      throw new Error(`renderer returned HTTP ${response.status}${issues ? `: ${issues}` : ""}`)
+  const target = new URL(endpoint)
+  const transport = target.protocol === "https:" ? https : target.protocol === "http:" ? http : undefined
+  if (!transport) throw new Error(`unsupported Word renderer protocol: ${target.protocol}`)
+  const requestBody = Buffer.from(JSON.stringify(payload), "utf8")
+  const { status, text } = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = <T>(fn: (value: T) => void, value: T) => {
+      if (timer) clearTimeout(timer)
+      fn(value)
     }
-    const invalid = validateRemoteWordRenderResponse(body)
-    if (invalid.length) throw new Error(`renderer returned an invalid success payload: ${invalid.join("; ")}`)
-    return body
-  } finally {
-    clearTimeout(timer)
+    const request = transport.request(
+      target,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(requestBody.byteLength),
+          connection: "close",
+        },
+      },
+      (response) => {
+        const declared = Number(response.headers["content-length"] ?? 0)
+        if (Number.isFinite(declared) && declared > MAX_REMOTE_WORD_RENDER_RESPONSE_BYTES) {
+          response.destroy()
+          finish(reject, new Error(`Word renderer response exceeds ${MAX_REMOTE_WORD_RENDER_RESPONSE_BYTES} bytes`))
+          return
+        }
+        const chunks: Buffer[] = []
+        let received = 0
+        response.on("data", (chunk: Buffer | Uint8Array | string) => {
+          const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+          received += bytes.byteLength
+          if (received > MAX_REMOTE_WORD_RENDER_RESPONSE_BYTES) {
+            response.destroy()
+            finish(reject, new Error(`Word renderer response exceeds ${MAX_REMOTE_WORD_RENDER_RESPONSE_BYTES} bytes`))
+            return
+          }
+          chunks.push(bytes)
+        })
+        response.once("error", (error) => finish(reject, error))
+        response.once("end", () =>
+          finish(resolve, {
+            status: response.statusCode ?? 0,
+            text: Buffer.concat(chunks, received).toString("utf8"),
+          }),
+        )
+      },
+    )
+    request.once("error", (error) => finish(reject, error))
+    timer = setTimeout(() => request.destroy(new Error(`Word renderer request timed out after ${timeoutMs}ms`)), timeoutMs)
+    request.end(requestBody)
+  })
+  let body: RemoteWordRenderResponse
+  try {
+    body = JSON.parse(text) as RemoteWordRenderResponse
+  } catch {
+    throw new Error("renderer returned an invalid JSON body")
   }
+  if (!body || typeof body !== "object") throw new Error("renderer returned an invalid JSON body")
+  if (status < 200 || status >= 300 || body.ok !== true) {
+    const issues = body.issues
+      ?.map((item) => `${item.code ?? "renderer-error"}: ${item.message ?? "failed"}`)
+      .join("; ")
+    throw new Error(`renderer returned HTTP ${status}${issues ? `: ${issues}` : ""}`)
+  }
+  const invalid = validateRemoteWordRenderResponse(body)
+  if (invalid.length) throw new Error(`renderer returned an invalid success payload: ${invalid.join("; ")}`)
+  return body
 }
 
 function validateRemoteWordRenderResponse(body: RemoteWordRenderResponse): string[] {
@@ -3017,7 +3247,7 @@ async function writeDocxArtifact(
   source: DocxSnapshot,
   textOverrides: Record<string, string>,
   binaryOverrides: Map<string, Uint8Array>,
-  input: { title: string; taskSlug: string; outputFile: string; warnings: string[] },
+  input: { title: string; taskSlug: string; outputFile: string; warnings: string[]; artifactDir?: string },
 ): Promise<{ path: string; artifactDir: string; manifestPath: string }> {
   const nextBytes = await rewriteDocx(source.entries, textOverrides, binaryOverrides)
   const prepared = await prepareWordDocumentBytes(nextBytes, "Word mutation candidate")
@@ -3026,6 +3256,7 @@ async function writeDocxArtifact(
     kind: "word-document",
     title: input.title,
     taskSlug: input.taskSlug,
+    artifactDir: input.artifactDir,
     primaryFile: safeDocxName(input.outputFile),
     warnings: input.warnings,
     qualityStatus: input.warnings.length ? "warning" : "unknown",
@@ -3096,6 +3327,7 @@ function ensureImageContentType(contentTypes: string, target: string): string {
 function materializeFieldsInDocument(
   documentXml: string,
   tocMode: "preserve" | "materialize" | "remove",
+  tocMaxLevel: 1 | 2 | 3,
 ): {
   xml: string
   summary: MaterializedWordFields["summary"]
@@ -3133,15 +3365,28 @@ function materializeFieldsInDocument(
     if (placeholder.kind !== "paragraph" || placeholder.text.trim() !== "{{TOC}}")
       throw new Error("materialize_word_fields requires {{TOC}} to be the only text in a standalone paragraph")
     toc = tocMode === "remove" ? "removed" : "materialized"
-    const headings = parseTopLevelBlocks(xml).filter((block): block is TopLevelBlock & { headingLevel: 1 | 2 | 3 } =>
-      Boolean(block.headingLevel && block.text.trim()),
-    )
+    const headings = parseTopLevelBlocks(xml)
+      .filter((block): block is TopLevelBlock & { headingLevel: 1 | 2 | 3 } =>
+        Boolean(block.headingLevel && block.headingLevel <= tocMaxLevel && block.text.trim()),
+      )
+      .map((block, index) => ({ ...block, bookmark: `_KiloToc${index + 1}`, bookmarkID: 10_000 + index }))
     xml = splice(
       xml,
       placeholder.start,
       placeholder.end,
-      tocMode === "remove" ? "" : nativeTocXml(usesCjk(documentXml), headings),
+      tocMode === "remove" ? "" : nativeTocXml(usesCjk(documentXml), headings, tocMaxLevel),
     )
+    if (tocMode === "materialize") {
+      const materializedHeadings = parseTopLevelBlocks(xml).filter(
+        (block): block is TopLevelBlock & { headingLevel: 1 | 2 | 3 } =>
+          Boolean(block.headingLevel && block.headingLevel <= tocMaxLevel && block.text.trim()),
+      )
+      for (let index = materializedHeadings.length - 1; index >= 0; index--) {
+        const block = materializedHeadings[index]!
+        const toc = headings[index]!
+        xml = splice(xml, block.start, block.end, headingBookmarkXml(block.xml, toc.bookmark, toc.bookmarkID))
+      }
+    }
     return {
       xml,
       summary: {
@@ -3157,20 +3402,31 @@ function materializeFieldsInDocument(
   return { xml, summary: { seqFields, captions, toc, tocEntryCount: 0, needsLayoutRefresh: false }, warnings }
 }
 
-function nativeTocXml(cjk: boolean, headings: Array<TopLevelBlock & { headingLevel: 1 | 2 | 3 }>): string {
+function nativeTocXml(
+  cjk: boolean,
+  headings: Array<TopLevelBlock & { headingLevel: 1 | 2 | 3; bookmark: string; bookmarkID: number }>,
+  tocMaxLevel: 1 | 2 | 3,
+): string {
   const title = cjk ? "目录" : "Table of Contents"
   const heading = `<w:p><w:pPr><w:pStyle w:val="TOCHeading"/><w:pageBreakBefore/><w:keepNext/><w:keepLines/></w:pPr><w:r><w:t xml:space="preserve">${title}</w:t></w:r></w:p>`
-  const start =
-    '<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>'
+  const start = `<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-${tocMaxLevel}" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>`
   const entries = headings
     .map(
       (item) =>
-        `<w:p><w:pPr><w:pStyle w:val="TOC${item.headingLevel}"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(item.text.trim())}</w:t></w:r></w:p>`,
+        `<w:p><w:pPr><w:pStyle w:val="TOC${item.headingLevel}"/></w:pPr><w:hyperlink w:anchor="${item.bookmark}" w:history="1"><w:r><w:t xml:space="preserve">${escapeXml(item.text.trim())}</w:t></w:r></w:hyperlink><w:r><w:tab/></w:r><w:fldSimple w:instr=" PAGEREF ${item.bookmark} \\h "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>`,
     )
     .join("")
   const end = '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
   const page = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
   return `${heading}${start}${entries}${end}${page}`
+}
+
+function headingBookmarkXml(paragraphXml: string, name: string, id: number) {
+  const start = `<w:bookmarkStart w:id="${id}" w:name="${name}"/>`
+  const end = `<w:bookmarkEnd w:id="${id}"/>`
+  const properties = paragraphXml.indexOf("</w:pPr>")
+  const offset = properties >= 0 ? properties + "</w:pPr>".length : paragraphXml.indexOf(">") + 1
+  return `${paragraphXml.slice(0, offset)}${start}${paragraphXml.slice(offset, -"</w:p>".length)}${end}</w:p>`
 }
 
 function usesCjk(documentXml: string): boolean {

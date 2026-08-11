@@ -1,5 +1,6 @@
 export type CommentStrategy = "single-self-check" | "independent-review"
 export type FunctionHeaderStyle = "docBlock" | "block" | "line"
+export type CommentMode = "insert" | "revise"
 
 export type CommentAnchor = {
   line: number
@@ -25,6 +26,13 @@ export type FunctionTarget = {
   contextBefore: string
   contextAfter: string
   functionHeaderStyle: FunctionHeaderStyle
+  existingFunctionHeader?: {
+    startLine: number
+    endLine: number
+    text: string
+    hash: string
+    style: FunctionHeaderStyle
+  }
   existingComments: string[]
   anchors: CommentAnchor[]
   eol: "\n" | "\r\n"
@@ -32,6 +40,7 @@ export type FunctionTarget = {
 
 export type CodeCommentRequest = {
   targets: FunctionTarget[]
+  mode?: CommentMode
   model?: {
     providerID: string
     modelID: string
@@ -41,7 +50,9 @@ export type CodeCommentRequest = {
 
 export type RawCommentProposal = {
   kind: "functionHeader" | "inline"
+  operation: "insert" | "replace"
   insertBeforeLine: number
+  replaceEndLine?: number
   indent: string
   commentText: string
   anchor: {
@@ -49,8 +60,31 @@ export type RawCommentProposal = {
   }
 }
 
+export type CodeCommentProgressEvent = {
+  stage: "primary" | "recovery" | "review"
+}
+
+export type BatchCommentTarget = {
+  target: FunctionTarget
+  mode: CommentMode
+}
+
+export type BatchCommentItemResult = BatchCommentTarget & {
+  result: CommentGenerationResult
+}
+
+export type BatchCommentProgress = {
+  total: number
+  queued: number
+  running: number
+  recovering: number
+  completed: number
+  ready: number
+  failed: number
+}
+
 export type ValidatedCommentResult = {
-  status: "proposed" | "skip"
+  status: "proposed"
   summary: string
   proposals: RawCommentProposal[]
   patch?: string
@@ -61,16 +95,6 @@ export type CommentGenerationResult =
       status: "ready"
       target: FunctionTarget
       result: ValidatedCommentResult
-      providerID: string
-      modelID: string
-      strategy: CommentStrategy
-      rounds: number
-      recovered: boolean
-    }
-  | {
-      status: "skip"
-      target: FunctionTarget
-      summary: string
       providerID: string
       modelID: string
       strategy: CommentStrategy

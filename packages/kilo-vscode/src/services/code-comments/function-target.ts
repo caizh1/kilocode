@@ -17,6 +17,11 @@ export type FunctionTargetInput = {
   eol: "\n" | "\r\n"
 }
 
+export type FunctionTargetRangeInput = Omit<FunctionTargetInput, "cursorOffset"> & {
+  selectionStartOffset: number
+  selectionEndOffset: number
+}
+
 const CONTROL_TYPES = new Set([
   "if_statement",
   "switch_statement",
@@ -50,45 +55,92 @@ export async function resolveFunctionTarget(input: FunctionTargetInput): Promise
     if (path.slice(functionIndex + 1).some((node) => node.type === "lambda_expression")) return
     const body = functionNode.childForFieldName("body")
     if (!body || containsMissingNode(body)) return
-    const targetNode = expandFunctionNode(functionNode)
-    const startIndex = targetNode.startIndex
-    const endIndex = targetNode.endIndex
     const lines = splitLines(input.documentText)
-    const startLine = targetNode.startPosition.row
-    const endLine = endLineInclusive(targetNode, lines.length)
-    if (startLine < 0 || endLine < startLine || endLine >= lines.length) return
-    const anchors = collectAnchors({
-      lines,
-      functionNode,
-      body,
-      startLine,
-      endLine,
-    })
-    if (anchors.length === 0 || anchors[0]?.kind !== "function") return
-    const functionSource = input.documentText.slice(startIndex, endIndex)
-    return {
-      uri: input.uri,
-      filePath: input.filePath,
-      relativePath: input.relativePath,
-      workspacePath: input.workspacePath,
-      languageId: input.languageId,
-      documentVersion: input.documentVersion,
-      documentText: input.documentText,
-      functionSource,
-      functionHash: sha256(functionSource),
-      startIndex,
-      endIndex,
-      startLine,
-      endLine,
-      contextBefore: lines.slice(Math.max(0, startLine - 30), startLine).join(input.eol),
-      contextAfter: lines.slice(endLine + 1, Math.min(lines.length, endLine + 21)).join(input.eol),
-      functionHeaderStyle: detectFunctionHeaderStyle(ast.rootNode, lines),
-      existingComments: collectExistingComments(lines, startLine, endLine),
-      anchors,
-      eol: input.eol,
-    }
+    return buildFunctionTarget({ ...input, languageId: input.languageId }, ast.rootNode, lines, functionNode, body)
   } finally {
     ast.delete()
+  }
+}
+
+export async function resolveFunctionTargetsInRange(input: FunctionTargetRangeInput): Promise<FunctionTarget[]> {
+  if (!isSupportedCodeCommentLanguage(input.languageId)) return []
+  const languageId = input.languageId
+  const start = Math.max(0, Math.min(input.selectionStartOffset, input.selectionEndOffset))
+  const end = Math.min(input.documentText.length, Math.max(input.selectionStartOffset, input.selectionEndOffset))
+  if (start === end) return []
+  const ast = await getAst(input.filePath, maskFunctionAnnotations(input.documentText))
+  if (!ast) return []
+  try {
+    const lines = splitLines(input.documentText)
+    const targets: FunctionTarget[] = []
+    const seen = new Set<string>()
+    const visit = (node: SyntaxNode) => {
+      if (node.type === "function_definition") {
+        const body = node.childForFieldName("body")
+        const targetNode = expandFunctionNode(node)
+        const key = `${targetNode.startIndex}:${targetNode.endIndex}`
+        if (
+          body &&
+          !containsMissingNode(body) &&
+          targetNode.startIndex < end &&
+          targetNode.endIndex > start &&
+          !seen.has(key)
+        ) {
+          const target = buildFunctionTarget({ ...input, languageId }, ast.rootNode, lines, node, body)
+          if (target) {
+            targets.push(target)
+            seen.add(key)
+          }
+        }
+        return
+      }
+      for (const child of node.namedChildren) visit(child)
+    }
+    visit(ast.rootNode)
+    return targets.sort((left, right) => left.startIndex - right.startIndex)
+  } finally {
+    ast.delete()
+  }
+}
+
+function buildFunctionTarget(
+  input: Omit<FunctionTargetInput, "cursorOffset" | "languageId"> & { languageId: "c" | "cpp" },
+  root: SyntaxNode,
+  lines: string[],
+  functionNode: SyntaxNode,
+  body: SyntaxNode,
+): FunctionTarget | undefined {
+  const targetNode = expandFunctionNode(functionNode)
+  const startIndex = targetNode.startIndex
+  const endIndex = targetNode.endIndex
+  const startLine = targetNode.startPosition.row
+  const endLine = endLineInclusive(targetNode, lines.length)
+  if (startLine < 0 || endLine < startLine || endLine >= lines.length) return
+  const anchors = collectAnchors({ lines, functionNode, body, startLine, endLine })
+  if (anchors.length === 0 || anchors[0]?.kind !== "function") return
+  const functionSource = input.documentText.slice(startIndex, endIndex)
+  const existingFunctionHeader = findExistingFunctionHeader(lines, startLine, input.eol)
+  return {
+    uri: input.uri,
+    filePath: input.filePath,
+    relativePath: input.relativePath,
+    workspacePath: input.workspacePath,
+    languageId: input.languageId,
+    documentVersion: input.documentVersion,
+    documentText: input.documentText,
+    functionSource,
+    functionHash: sha256(functionSource),
+    startIndex,
+    endIndex,
+    startLine,
+    endLine,
+    contextBefore: lines.slice(Math.max(0, startLine - 30), startLine).join(input.eol),
+    contextAfter: lines.slice(endLine + 1, Math.min(lines.length, endLine + 21)).join(input.eol),
+    functionHeaderStyle: detectFunctionHeaderStyle(root, lines),
+    ...(existingFunctionHeader ? { existingFunctionHeader } : {}),
+    existingComments: collectExistingComments(lines, startLine, endLine),
+    anchors,
+    eol: input.eol,
   }
 }
 
@@ -193,6 +245,31 @@ function collectExistingComments(lines: string[], startLine: number, endLine: nu
   }
   flush()
   return result.slice(0, 12)
+}
+
+function findExistingFunctionHeader(
+  lines: string[],
+  functionLine: number,
+  eol: "\n" | "\r\n",
+): FunctionTarget["existingFunctionHeader"] | undefined {
+  const endLine = functionLine - 1
+  const endText = lines[endLine]?.trim()
+  if (!endText) return
+  let startLine = endLine
+  let style: FunctionHeaderStyle | undefined
+  if (endText.startsWith("//")) {
+    style = "line"
+    while (startLine > 0 && lines[startLine - 1]?.trim().startsWith("//")) startLine -= 1
+  } else if (endText.endsWith("*/")) {
+    while (startLine >= 0 && !lines[startLine]?.includes("/*")) startLine -= 1
+    if (startLine < 0) return
+    const start = lines[startLine]!.trim()
+    if (!start.startsWith("/*")) return
+    style = start.startsWith("/**") ? "docBlock" : "block"
+  }
+  if (!style) return
+  const text = lines.slice(startLine, endLine + 1).join(eol)
+  return { startLine, endLine, text, hash: sha256(text), style }
 }
 
 function detectFunctionHeaderStyle(root: SyntaxNode, lines: string[]): FunctionHeaderStyle {

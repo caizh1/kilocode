@@ -85,22 +85,31 @@ function graph(workspacePath: string, filePath: string, content: string): CodeGr
 }
 
 async function fixture(vector?: VectorEvidenceAdapter) {
+  return fixtureFromFiles(
+    [
+      { filePath: "src/driver.c", content: driver },
+      { filePath: "src/other.c", content: other },
+    ],
+    vector,
+  )
+}
+
+async function fixtureFromFiles(
+  files: Array<{ filePath: string; content: string }>,
+  vector?: VectorEvidenceAdapter,
+) {
   const workspacePath = await root()
   const cacheDirectory = path.join(workspacePath, ".cache")
   const storage = new CodeGraphJsonStorage({ workspacePath, cacheDirectory })
   const postings = new CodePostingsJsonStorage({ workspacePath, cacheDirectory })
   await storage.beginFullScan()
   await postings.beginFullScan()
-  const driverGraph = graph(workspacePath, "src/driver.c", driver)
-  const otherGraph = graph(workspacePath, "src/other.c", other)
-  await storage.upsertFileGraph(path.join(workspacePath, "src/driver.c"), driverGraph.fileHash, driverGraph)
-  await postings.upsertFilePostings(path.join(workspacePath, "src/driver.c"), driverGraph.fileHash, driverGraph, {
-    content: driver,
-  })
-  await storage.upsertFileGraph(path.join(workspacePath, "src/other.c"), otherGraph.fileHash, otherGraph)
-  await postings.upsertFilePostings(path.join(workspacePath, "src/other.c"), otherGraph.fileHash, otherGraph, {
-    content: other,
-  })
+  for (const file of files) {
+    const parsed = graph(workspacePath, file.filePath, file.content)
+    const absolutePath = path.join(workspacePath, file.filePath)
+    await storage.upsertFileGraph(absolutePath, parsed.fileHash, parsed)
+    await postings.upsertFilePostings(absolutePath, parsed.fileHash, parsed, { content: file.content })
+  }
   await storage.markFullScanComplete()
   await postings.markFullScanComplete()
   return {
@@ -222,6 +231,137 @@ describe("graph-only queryEvidence", () => {
       kind: "error_label",
       filePath: "src/driver.c",
       labelName: "err_cleanup",
+    })
+  })
+
+  test("resolves callees within C translation-unit scope", async () => {
+    const ctx = await fixtureFromFiles([
+      {
+        filePath: "src/a.c",
+        content: "static void init(void) {}\nstatic void private_only(void) {}\nvoid shared(void) {}\n",
+      },
+      {
+        filePath: "src/b.c",
+        content: [
+          '#include "../include/helpers.h"',
+          "static void init(void) {}",
+          "void caller_b(void) {",
+          "  init();",
+          "  private_only();",
+          "  shared();",
+          "  header_only();",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      {
+        filePath: "include/helpers.h",
+        content: "static inline void header_only(void) {}\n",
+      },
+    ])
+
+    const result = await ctx.service.queryEvidence("what does caller_b call", { retrievalMode: "graph-only" })
+    const local = result.evidenceRefs.find((item) => item.calleeName === "init")
+    const invisibleStatic = result.evidenceRefs.find((item) => item.calleeName === "private_only")
+    const external = result.evidenceRefs.find((item) => item.calleeName === "shared")
+    const header = result.evidenceRefs.find((item) => item.calleeName === "header_only")
+
+    expect(local).toMatchObject({
+      kind: "callee",
+      callerName: "caller_b",
+      confidence: "high",
+      functionDefinition: { filePath: "src/b.c", symbolName: "init" },
+    })
+    expect(invisibleStatic).toMatchObject({
+      kind: "callee",
+      callerName: "caller_b",
+      confidence: "high",
+    })
+    expect(invisibleStatic?.functionDefinition).toBeUndefined()
+    expect(external).toMatchObject({
+      kind: "callee",
+      callerName: "caller_b",
+      confidence: "high",
+      functionDefinition: { filePath: "src/a.c", symbolName: "shared" },
+    })
+    expect(header).toMatchObject({
+      kind: "callee",
+      callerName: "caller_b",
+      confidence: "high",
+      functionDefinition: { filePath: "include/helpers.h", symbolName: "header_only" },
+    })
+  })
+
+  test("resolves directly included static headers case-insensitively on Windows", async () => {
+    const ctx = await fixtureFromFiles([
+      {
+        filePath: "src\\caller.c",
+        content: '#include "../include/Helpers.h"\nvoid windows_caller(void) { header_only(); }\n',
+      },
+      {
+        filePath: "include\\helpers.h",
+        content: "static inline void header_only(void) {}\n",
+      },
+    ])
+    const result = await ctx.service.queryEvidence("what does windows_caller call", {
+      retrievalMode: "graph-only",
+    })
+    const header = result.evidenceRefs.find((item) => item.calleeName === "header_only")
+
+    expect(header).toMatchObject({
+      kind: "callee",
+      confidence: "high",
+      functionDefinition: { filePath: "include\\helpers.h", symbolName: "header_only" },
+    })
+  })
+
+  test("does not choose an arbitrary callee definition when visible targets are ambiguous", async () => {
+    const ctx = await fixtureFromFiles([
+      { filePath: "src/a.c", content: "void reset_device(void) {}\n" },
+      { filePath: "src/b.c", content: "void reset_runner(void) { reset_device(); }\n" },
+      { filePath: "src/c.c", content: "void reset_device(void) {}\n" },
+    ])
+
+    const result = await ctx.service.queryEvidence("what does reset_runner call", { retrievalMode: "graph-only" })
+    const ref = result.evidenceRefs.find((item) => item.calleeName === "reset_device")
+
+    expect(ref).toMatchObject({
+      kind: "callee",
+      callerName: "reset_runner",
+      confidence: "medium",
+    })
+    expect(ref?.reason).toContain("ambiguous")
+    expect(ref?.functionDefinition).toBeUndefined()
+  })
+
+  test("keeps caller definitions in the file that owns the call site", async () => {
+    const ctx = await fixtureFromFiles([
+      {
+        filePath: "src/a.c",
+        content: "void target_a(void) {}\nstatic void worker(void) { target_a(); }\n",
+      },
+      {
+        filePath: "src/b.c",
+        content: "void target_b(void) {}\nstatic void worker(void) { target_b(); }\n",
+      },
+    ])
+
+    const result = await ctx.service.queryEvidence("who calls target_b", { retrievalMode: "graph-only" })
+    const sites = await ctx.service.queryEvidence("call site target_b", { retrievalMode: "graph-only" })
+    const ref = result.evidenceRefs.find((item) => item.calleeName === "target_b")
+    const site = sites.evidenceRefs.find((item) => item.calleeName === "target_b")
+
+    expect(ref).toMatchObject({
+      kind: "caller",
+      callerName: "worker",
+      confidence: "high",
+      functionDefinition: { filePath: "src/b.c", symbolName: "worker" },
+    })
+    expect(site).toMatchObject({
+      kind: "call_site",
+      callerName: "worker",
+      confidence: "high",
+      functionDefinition: { filePath: "src/b.c", symbolName: "worker" },
     })
   })
 

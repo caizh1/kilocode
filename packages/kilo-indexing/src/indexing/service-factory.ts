@@ -15,10 +15,7 @@ import { OpenRouterEmbedder } from "./embedders/openrouter"
 import { VoyageEmbedder } from "./embedders/voyage"
 import { QdrantVectorStore } from "./vector-store/qdrant-client"
 import { LanceDBVectorStore } from "./vector-store/lancedb-vector-store"
-import {
-  loadActiveEmbeddingProfile,
-  SafeLanceDBVectorStore,
-} from "./vector-store/safe-lancedb-vector-store"
+import { loadActiveEmbeddingProfile, SafeLanceDBVectorStore } from "./vector-store/safe-lancedb-vector-store"
 import { codeParser, CodeParser, DirectoryScanner, FileWatcher } from "./processors"
 import { DocumentIndexService } from "./documents"
 import type {
@@ -124,13 +121,45 @@ export class CodeIndexServiceFactory {
 
   private storage(): string {
     const config = this.configManager.getConfig()
+    if (config.lancedbVectorStoreDirectoryPlaceholder) {
+      return isolated(config.lancedbVectorStoreDirectoryPlaceholder)
+    }
+    return internal() ? path.join(this.cacheDirectory, "c") : this.legacyStorage()
+  }
+
+  private legacyStorage(): string {
+    const config = this.configManager.getConfig()
     return isolated(config.lancedbVectorStoreDirectoryPlaceholder ?? path.join(this.cacheDirectory, "lancedb"))
+  }
+
+  private documentStorage(): string {
+    const config = this.configManager.getConfig()
+    if (config.lancedbVectorStoreDirectoryPlaceholder) {
+      return isolated(path.join(config.lancedbVectorStoreDirectoryPlaceholder, "documents"))
+    }
+    return internal() ? path.join(this.cacheDirectory, "d") : this.legacyDocumentStorage()
+  }
+
+  private legacyDocumentStorage(): string {
+    const config = this.configManager.getConfig()
+    const base = config.lancedbVectorStoreDirectoryPlaceholder ?? this.cacheDirectory
+    return isolated(path.join(base, config.lancedbVectorStoreDirectoryPlaceholder ? "documents" : "lancedb-documents"))
+  }
+
+  private legacyDirectories(current: string, legacy: string): string[] {
+    return current === legacy ? [] : [legacy]
   }
 
   private async previous(): Promise<EmbeddingRuntimeProfile | undefined> {
     const config = this.configManager.getConfig()
     if (config.vectorStoreProvider === "lancedb") {
-      const active = await loadActiveEmbeddingProfile(this.workspacePath, this.storage())
+      const current = this.storage()
+      const legacy = this.legacyStorage()
+      const active = await loadActiveEmbeddingProfile(
+        this.workspacePath,
+        current,
+        this.legacyDirectories(current, legacy),
+      )
       if (active) return active
     }
     return new EmbeddingRuntimeStore(this.cacheDirectory, this.workspacePath).load()
@@ -307,10 +336,7 @@ export class CodeIndexServiceFactory {
     return runtime
   }
 
-  public createVectorStore(
-    workspacePath = this.workspacePath,
-    runtime?: EmbeddingRuntimeProfile,
-  ): IVectorStore {
+  public createVectorStore(workspacePath = this.workspacePath, runtime?: EmbeddingRuntimeProfile): IVectorStore {
     const config = this.configManager.getConfig()
     const profile = runtime
       ? {
@@ -337,12 +363,14 @@ export class CodeIndexServiceFactory {
 
     if (config.vectorStoreProvider === "lancedb") {
       const dbDir = this.storage()
+      const legacyDirectories = this.legacyDirectories(dbDir, this.legacyStorage())
       log.info("creating vector store", {
         provider: config.embedderProvider,
         vectorStore: "lancedb",
         model: profile.modelId,
         vectorSize: profile.dimension,
         dbDir,
+        pathLayout: runtime ? "compact-generation" : "compact-workspace",
       })
       if (runtime) {
         return new SafeLanceDBVectorStore(
@@ -350,9 +378,11 @@ export class CodeIndexServiceFactory {
           dbDir,
           runtime,
           new EmbeddingRuntimeStore(this.cacheDirectory, this.workspacePath),
+          undefined,
+          legacyDirectories,
         )
       }
-      return new LanceDBVectorStore(workspacePath, profile.dimension, dbDir, profile)
+      return new LanceDBVectorStore(workspacePath, profile.dimension, dbDir, profile, undefined, legacyDirectories)
     }
 
     if (!config.qdrantUrl) throw new Error("Qdrant URL is required.")
@@ -398,16 +428,15 @@ export class CodeIndexServiceFactory {
     }
 
     if (config.vectorStoreProvider === "lancedb") {
-      const base = config.lancedbVectorStoreDirectoryPlaceholder ?? this.cacheDirectory
-      const dbDir = isolated(
-        path.join(base, config.lancedbVectorStoreDirectoryPlaceholder ? "documents" : "lancedb-documents"),
-      )
+      const dbDir = this.documentStorage()
+      const legacyDirectories = this.legacyDirectories(dbDir, this.legacyDocumentStorage())
       log.info("creating document vector store", {
         provider: config.embedderProvider,
         vectorStore: "lancedb",
         model: profile.modelId,
         vectorSize: profile.dimension,
         dbDir,
+        pathLayout: runtime ? "compact-generation" : "compact-workspace",
       })
       if (runtime) {
         return new SafeLanceDBVectorStore(
@@ -415,9 +444,11 @@ export class CodeIndexServiceFactory {
           dbDir,
           runtime,
           new EmbeddingRuntimeStore(this.cacheDirectory, this.workspacePath),
+          undefined,
+          legacyDirectories,
         )
       }
-      return new LanceDBVectorStore(this.workspacePath, profile.dimension, dbDir, profile)
+      return new LanceDBVectorStore(this.workspacePath, profile.dimension, dbDir, profile, undefined, legacyDirectories)
     }
 
     if (!config.qdrantUrl) throw new Error("Qdrant URL is required.")

@@ -8,12 +8,23 @@ import { deflateSync } from "node:zlib"
 import { Effect } from "effect"
 import { extractDocxPlantUml } from "@kilocode/kilo-indexing/engine"
 import {
+  inspectMermaidSvgCollisions,
   insertMermaidIntoWord,
   mermaidWordFit,
   renderMermaidDiagram,
+  renderMermaidPng,
   saveMermaidArtifact,
   validateMermaidDiagram,
 } from "../../src/kilocode/documents/mermaid"
+import {
+  lifecycleFitFingerprint,
+  lifecycleMermaid,
+  overviewMermaid,
+  renderBusinessFlow,
+  renderLifecycle,
+} from "../../src/kilocode/design-doc/renderer"
+import type { BusinessFlowIR, DesignDocJob, LifecycleIR, OverviewIR } from "../../src/kilocode/design-doc/domain"
+import { DesignDocStore } from "../../src/kilocode/design-doc/store"
 import { createWordDocument, inspectWordDocument } from "../../src/kilocode/documents/word"
 import { provideTestInstance, tmpdir } from "../fixture/fixture"
 
@@ -21,6 +32,249 @@ const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const SIMPLE_MERMAID = "flowchart TD\n  A[Start] --> B[Done]"
 const SIMPLE_PLANTUML = "@startuml\nclass Controller\nController --> Service\n@enduml"
+
+function lifecycleFixture(dense: boolean): LifecycleIR {
+  const count = dense ? 6 : 2
+  const states = Array.from({ length: count }, (_, index) => ({
+    id: `S${index}`,
+    label: `状态 S${index}`,
+    sourceValue: `状态 S${index}：包含较长业务语义说明`,
+    role: index === 0 ? ("initial" as const) : index === count - 1 ? ("terminal" as const) : ("intermediate" as const),
+    evidenceIDs: [`EV-state-${index}`],
+  }))
+  const pairs = dense
+    ? [
+        [0, 2],
+        [0, 4],
+        [1, 3],
+        [1, 5],
+        [2, 0],
+        [2, 4],
+        [3, 1],
+        [3, 5],
+        [4, 0],
+        [4, 2],
+        [5, 1],
+        [5, 3],
+      ]
+    : [[0, 1]]
+  return {
+    schemaVersion: 1,
+    moduleID: dense ? "MOD-dense-state" : "MOD-normal-state",
+    viewType: "lifecycle",
+    title: dense ? "密集状态机" : "普通状态机",
+    summary: "",
+    assumptions: [],
+    unknowns: [],
+    states,
+    transitions: pairs.map(([from, to], index) => ({
+      id: `T${index}`,
+      from: `S${from}`,
+      to: `S${to}`,
+      trigger: dense ? `收到来自主机命令队列的第 ${index + 1} 类业务事件并完成消息序号与命令槽位一致性校验` : "启动",
+      guard: dense ? "控制器已经就绪且队列头尾指针资源标志和中断掩码全部满足当前执行条件" : "已初始化",
+      action: dense ? "更新完整上下文状态队列头尾指针和命令完成标志并通知下游组件继续处理" : "进入运行态",
+      evidenceIDs: [`EV-transition-${index}`],
+    })),
+    initialStateID: "S0",
+    terminalStateIDs: [`S${count - 1}`],
+  }
+}
+
+function overviewLabelCollisionFixture(): OverviewIR {
+  const files = ["nvme_main.h", "nvme_io_cmd.h", "nvme_admin_cmd.h", "nvme_identify.h", "nvme.h", "io_access.h"]
+  const symbols = [
+    ["nvme_main", 0],
+    ["handle_nvme_io_cmd", 1],
+    ["handle_nvme_admin_cmd", 2],
+    ["identify_namespace", 3],
+    ["NVME_CONTEXT", 4],
+  ] as const
+  return {
+    schemaVersion: 1,
+    moduleID: "MOD-overview-collision",
+    viewType: "overview",
+    title: "存储控制模块概览",
+    summary: "",
+    assumptions: [],
+    unknowns: [],
+    responsibilities: [],
+    boundaries: [],
+    items: [
+      ...files.map((label, index) => ({
+        id: `file-${index}`,
+        kind: "file" as const,
+        sourceRef: `source/controller/${label}`,
+        label,
+        evidenceIDs: [`EV-file-${index}`],
+      })),
+      ...symbols.map(([name], index) => ({
+        id: `symbol-${index}`,
+        kind: "symbol" as const,
+        sourceRef: `source/controller/${files[index]}#${name}`,
+        label: `${index === 4 ? "struct" : "function"} ${name}`,
+        evidenceIDs: [`EV-symbol-${index}`],
+      })),
+    ],
+    relations: symbols.map(([, fileIndex], index) => ({
+      id: `declares-${index}`,
+      from: `file-${fileIndex}`,
+      to: `symbol-${index}`,
+      kind: "contains" as const,
+      label: "声明",
+      evidenceIDs: [`EV-symbol-${index}`],
+    })),
+  }
+}
+
+function lifecycleFacetFixture(): LifecycleIR {
+  const state = (id: string, role: "initial" | "intermediate" = "intermediate") => ({
+    id,
+    label: id,
+    sourceValue: id,
+    role,
+    evidenceIDs: [`EV-state-${id}`],
+  })
+  const transition = (
+    id: string,
+    from: string,
+    to: string,
+    trigger: string,
+    guard: string | undefined,
+    action: string,
+  ) => ({ id, from, to, trigger, ...(guard ? { guard } : {}), action, evidenceIDs: [`EV-transition-${id}`] })
+  return {
+    schemaVersion: 1,
+    moduleID: "MOD-lifecycle-facet",
+    viewType: "lifecycle",
+    title: "控制器生命周期",
+    summary: "",
+    assumptions: [],
+    unknowns: [],
+    states: [
+      state("TASK_IDLE", "initial"),
+      state("TASK_WAIT_CC_EN"),
+      state("TASK_RUNNING"),
+      state("TASK_SHUTDOWN"),
+      state("TASK_WAIT_RESET"),
+      state("TASK_RESET"),
+    ],
+    transitions: [
+      transition("T-01", "TASK_WAIT_RESET", "TASK_IDLE", "controller_main", "ccEn == 0", "task.status = TASK_IDLE"),
+      transition(
+        "T-02",
+        "__ANY_CURRENT_STATE__",
+        "TASK_RESET",
+        "device_irq_handler",
+        "device.ccEn == 1 && controller.ccEn != 1",
+        "task.status = TASK_RESET",
+      ),
+      transition("T-03", "TASK_RESET", "TASK_IDLE", "controller_main", undefined, "task.status = TASK_IDLE"),
+      transition(
+        "T-04",
+        "__ANY_CURRENT_STATE__",
+        "TASK_SHUTDOWN",
+        "device_irq_handler",
+        "device.shutdown == 1 && controller.shutdown == 1",
+        "task.status = TASK_SHUTDOWN",
+      ),
+      transition(
+        "T-05",
+        "__ANY_CURRENT_STATE__",
+        "TASK_RESET",
+        "device_irq_handler",
+        "device.link == 1 && controller.linkUp == 0",
+        "task.status = TASK_RESET",
+      ),
+      transition(
+        "T-06",
+        "TASK_SHUTDOWN",
+        "TASK_WAIT_RESET",
+        "controller_main",
+        "controller.shutdown != 0",
+        "task.status = TASK_WAIT_RESET",
+      ),
+      transition(
+        "T-07",
+        "TASK_WAIT_CC_EN",
+        "TASK_RUNNING",
+        "controller_main",
+        "ccEn == 1",
+        "task.status = TASK_RUNNING",
+      ),
+      transition(
+        "T-08",
+        "__ANY_CURRENT_STATE__",
+        "TASK_WAIT_CC_EN",
+        "device_irq_handler",
+        "device.ccEn == 1 && controller.ccEn == 1",
+        "task.status = TASK_WAIT_CC_EN",
+      ),
+    ],
+    initialStateID: "TASK_IDLE",
+    terminalStateIDs: [],
+  }
+}
+
+function businessFlowFacetFixture(): BusinessFlowIR {
+  const activities = Array.from({ length: 13 }, (_, index) => ({
+    id: `A${index}`,
+    kind: index === 0 ? ("trigger" as const) : index === 12 ? ("outcome" as const) : ("activity" as const),
+    sourceRef: `module.c#step_${index}`,
+    label: `执行第 ${index + 1} 个业务步骤`,
+    businessMeaning: `执行第 ${index + 1} 个业务步骤并完整处理输入参数、资源状态、硬件寄存器、队列指针、异常分支、恢复动作、完成通知和返回结果`,
+    evidenceIDs: [`EV-activity-${index}`],
+  }))
+  return {
+    schemaVersion: 1,
+    moduleID: "MOD-business-facets",
+    viewType: "business-flow",
+    title: "详细业务流程",
+    summary: "",
+    assumptions: [],
+    unknowns: [],
+    activities,
+    flows: activities.slice(0, -1).map((activity, index) => ({
+      id: `F${index}`,
+      from: activity.id,
+      to: activities[index + 1]!.id,
+      kind: "next" as const,
+      label: `第 ${index + 1} 步完成后携带完整处理结果、状态标志、资源所有权、异常诊断和恢复上下文进入下一业务阶段`,
+      evidenceIDs: [`EV-flow-${index}`],
+    })),
+  }
+}
+
+function runningDesignDocJob(workspace: string, id: string): DesignDocJob {
+  const now = Date.now()
+  return {
+    schemaVersion: 1,
+    id,
+    revision: 0,
+    status: "running",
+    workspace,
+    config: {
+      targetPath: "module",
+      artifactTypes: ["lifecycle"],
+      languages: ["typescript", "tsx"],
+      concurrency: 1,
+      recursive: false,
+      evidenceBudget: { maxItems: 64, maxPromptBytes: 49_152, maxSnippetCharacters: 800 },
+      retryPolicy: { maxAttempts: 3, timeoutMs: 120_000, backoffMs: [0], retryableCodes: [] },
+      modelPolicy: {
+        primary: { providerID: "test", modelID: "test" },
+        fallbacks: [],
+        structuredOutput: "tool-json-schema",
+      },
+      renderer: "mermaid",
+    },
+    workItems: [],
+    artifacts: [],
+    progress: { total: 0, pending: 0, running: 0, passed: 0, failed: 0, blocked: 0, cancelled: 0 },
+    createdAt: now,
+    updatedAt: now,
+  }
+}
 
 function crc32(input: Uint8Array) {
   let crc = 0xffffffff
@@ -52,10 +306,7 @@ function plantumlPng() {
   return Buffer.concat([png.subarray(0, iend), pngChunk("iTXt", payload), png.subarray(iend)])
 }
 
-function provideTmpdirInstance<A, E>(
-  self: (dir: string) => Effect.Effect<A, E>,
-  options?: { git?: boolean },
-) {
+function provideTmpdirInstance<A, E>(self: (dir: string) => Effect.Effect<A, E>, options?: { git?: boolean }) {
   return Effect.promise(async () => {
     await using temp = await tmpdir(options)
     return await provideTestInstance({
@@ -73,7 +324,7 @@ async function serveJson(payload: unknown, requests?: Array<Record<string, unkno
       const body = Buffer.concat(chunks).toString("utf8")
       if (body && requests) requests.push(JSON.parse(body) as Record<string, unknown>)
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
-      response.writeHead(200, { "connection": "close", "content-type": "application/json" })
+      response.writeHead(200, { connection: "close", "content-type": "application/json" })
       response.end(JSON.stringify(payload))
     })
   })
@@ -87,6 +338,206 @@ async function serveJson(payload: unknown, requests?: Array<Record<string, unkno
 }
 
 describe("kilocode Mermaid documents", () => {
+  test("detects significant Mermaid SVG label collisions without flagging separated labels", () => {
+    const svg = (secondX: number) => `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300">
+        <g class="edgeLabels">
+          <g class="edgeLabel" transform="translate(150, 100)">
+            <g class="label" data-id="edge-a" transform="translate(-90, -30)">
+              <foreignObject width="180" height="60"><div xmlns="http://www.w3.org/1999/xhtml">第一条完整迁移说明</div></foreignObject>
+            </g>
+          </g>
+          <g class="edgeLabel" transform="translate(${secondX}, 110)">
+            <g class="label" data-id="edge-b" transform="translate(-90, -30)">
+              <foreignObject width="180" height="60"><div xmlns="http://www.w3.org/1999/xhtml">第二条完整迁移说明</div></foreignObject>
+            </g>
+          </g>
+        </g>
+        <g class="nodes">
+          <g class="node statediagram-state" id="state-a" transform="translate(400, 220)">
+            <g class="label" transform="translate(-60, -20)">
+              <foreignObject width="120" height="40"><div xmlns="http://www.w3.org/1999/xhtml">正常状态节点</div></foreignObject>
+            </g>
+          </g>
+        </g>
+      </svg>
+    `
+
+    const collisions = inspectMermaidSvgCollisions(svg(220))
+    expect(collisions.map((item) => item.code)).toContain("mermaid-render-label-collision")
+    expect(collisions[0]?.message).toContain("edge-a overlaps edge-label edge-b")
+    expect(inspectMermaidSvgCollisions(svg(360))).toEqual([])
+  })
+
+  test.skipIf(!Bun.which("mmdc"))(
+    "renders a real dense stateDiagram without false collision while still requiring readable facets",
+    async () => {
+      await Effect.runPromise(
+        provideTmpdirInstance(() =>
+          Effect.promise(async () => {
+            const previousEndpoint = process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+            delete process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+            try {
+              const denseIR = lifecycleFixture(true)
+              const dense = await renderMermaidPng({ source: lifecycleMermaid(denseIR), timeoutMs: 120_000 })
+              expect(dense.rendered).toBe(true)
+              expect(dense.issues.map((item) => item.code)).not.toContain("mermaid-render-label-collision")
+              const fit = mermaidWordFit({
+                width: dense.width,
+                height: dense.height,
+                status: "valid",
+                fingerprint: lifecycleFitFingerprint(denseIR),
+                issues: dense.issues,
+              })
+              expect(fit.wordFitStatus).toBe("split-required")
+              expect(fit.documentReady).toBe(false)
+
+              const normalIR = lifecycleFixture(false)
+              const normal = await renderMermaidPng({ source: lifecycleMermaid(normalIR), timeoutMs: 120_000 })
+              expect(normal.rendered).toBe(true)
+              expect(normal.issues.map((item) => item.code)).not.toContain("mermaid-render-label-collision")
+              expect(
+                mermaidWordFit({
+                  width: normal.width,
+                  height: normal.height,
+                  status: "valid",
+                  fingerprint: lifecycleFitFingerprint(normalIR),
+                  issues: normal.issues,
+                }).wordFitStatus,
+              ).toBe("readable")
+            } finally {
+              if (previousEndpoint === undefined) delete process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+              else process.env["KILO_MERMAID_RENDER_ENDPOINT"] = previousEndpoint
+            }
+          }),
+        ),
+      )
+    },
+    120_000,
+  )
+
+  test.skipIf(!Bun.which("mmdc"))(
+    "keeps real overview relations while omitting redundant category-edge labels that collide",
+    async () => {
+      await Effect.runPromise(
+        provideTmpdirInstance(() =>
+          Effect.promise(async () => {
+            const previousEndpoint = process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+            delete process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+            try {
+              const ir = overviewLabelCollisionFixture()
+              for (const direction of ["LR", "TD"] as const) {
+                const source = overviewMermaid(ir, direction)
+                const readable = source.replaceAll("\u2060", "")
+                const rendered = await renderMermaidPng({ source, timeoutMs: 120_000 })
+                expect(rendered.rendered).toBe(true)
+                expect(rendered.issues.map((item) => item.code)).not.toContain("mermaid-render-label-collision")
+                expect(source).not.toContain("…")
+                expect(readable.match(/-->/g)?.length).toBe(18)
+                expect(readable.match(/\|"声明"\|/g)?.length).toBe(5)
+                for (const item of ir.items)
+                  expect(source.replaceAll("<br/>", "").replaceAll("\u2060", "")).toContain(item.label)
+                for (const relation of ir.relations ?? []) expect(readable).toContain(relation.label)
+              }
+            } finally {
+              if (previousEndpoint === undefined) delete process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+              else process.env["KILO_MERMAID_RENDER_ENDPOINT"] = previousEndpoint
+            }
+          }),
+        ),
+      )
+    },
+    120_000,
+  )
+
+  test.skipIf(!Bun.which("mmdc"))(
+    "splits a real 6-state 8-transition lifecycle into readable collision-free deterministic facets",
+    async () => {
+      await Effect.runPromise(
+        provideTmpdirInstance((directory) =>
+          Effect.promise(async () => {
+            const previousEndpoint = process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+            delete process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+            try {
+              const jobID = "job-lifecycle-facets"
+              await DesignDocStore.create(runningDesignDocJob(directory, jobID))
+              const ir = lifecycleFacetFixture()
+              const result = await renderLifecycle({
+                workspace: directory,
+                jobID,
+                ir,
+                outputPath: "work-items/lifecycle/render/lifecycle.png",
+                timeoutMs: 120_000,
+              })
+              expect(result.parts.length).toBeGreaterThan(1)
+              expect(result.wordFit.wordFitStatus).toBe("readable")
+              expect(result.parts.every((part) => part.wordFit.wordFitStatus === "readable")).toBe(true)
+              expect(result.parts.flatMap((part) => part.diagnostics).map((item) => item.code)).not.toContain(
+                "mermaid-render-label-collision",
+              )
+              const sources = result.parts
+                .map((part) => part.source.replaceAll("<br/>", "").replaceAll("\u2060", ""))
+                .join("\n")
+              for (const state of ir.states) expect(sources).toContain(state.sourceValue)
+              for (const transition of ir.transitions) {
+                expect(sources).toContain(`触发：${transition.trigger}`)
+                if (transition.guard) expect(sources).toContain(`条件：${transition.guard}`)
+                if (transition.action) expect(sources).toContain(`动作：${transition.action}`)
+              }
+              expect(new Set(result.parts.map((part) => part.render.path)).size).toBe(result.parts.length)
+            } finally {
+              if (previousEndpoint === undefined) delete process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+              else process.env["KILO_MERMAID_RENDER_ENDPOINT"] = previousEndpoint
+            }
+          }),
+        ),
+      )
+    },
+    120_000,
+  )
+
+  test.skipIf(!Bun.which("mmdc"))(
+    "splits a dense business flow into readable facets without dropping nodes, edges, or labels",
+    async () => {
+      await Effect.runPromise(
+        provideTmpdirInstance((directory) =>
+          Effect.promise(async () => {
+            const previousEndpoint = process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+            delete process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+            try {
+              const jobID = "job-business-flow-facets"
+              await DesignDocStore.create(runningDesignDocJob(directory, jobID))
+              const ir = businessFlowFacetFixture()
+              const result = await renderBusinessFlow({
+                workspace: directory,
+                jobID,
+                ir,
+                outputPath: "work-items/business-flow/render/business-flow.png",
+                timeoutMs: 120_000,
+              })
+              expect(result.parts.length).toBeGreaterThan(1)
+              expect(result.wordFit.wordFitStatus).toBe("readable")
+              expect(result.parts.every((part) => part.wordFit.wordFitStatus === "readable")).toBe(true)
+              expect(result.parts.flatMap((part) => part.diagnostics).map((item) => item.code)).not.toContain(
+                "mermaid-render-label-collision",
+              )
+              const sources = result.parts
+                .map((part) => part.source.replaceAll("<br/>", "").replaceAll("\u2060", ""))
+                .join("\n")
+              for (const activity of ir.activities) expect(sources).toContain(activity.businessMeaning)
+              for (const flow of ir.flows) expect(sources).toContain(flow.label)
+              expect(new Set(result.parts.map((part) => part.render.path)).size).toBe(result.parts.length)
+            } finally {
+              if (previousEndpoint === undefined) delete process.env["KILO_MERMAID_RENDER_ENDPOINT"]
+              else process.env["KILO_MERMAID_RENDER_ENDPOINT"] = previousEndpoint
+            }
+          }),
+        ),
+      )
+    },
+    120_000,
+  )
+
   test("classifies source-backed Word fit without changing ordinary Mermaid", () => {
     const ordinary = mermaidWordFit({ width: 784, height: 1085, status: "not-requested" })
     expect(ordinary).toEqual({})
@@ -184,6 +635,11 @@ describe("kilocode Mermaid documents", () => {
             })
             expect(escaped.valid).toBe(false)
             expect(escaped.diagnostics.some((item) => item.message.includes("backslash-escaped quotes"))).toBe(true)
+
+            const clippedSourceExpression = validateMermaidDiagram({
+              source: `flowchart TD\n  A["IO_READ32(HOST_DMA_FIFO_RE…"] --> B["done"]`,
+            })
+            expect(clippedSourceExpression.valid).toBe(true)
 
             const saved = await saveMermaidArtifact({
               source: SIMPLE_MERMAID,
@@ -422,6 +878,7 @@ describe("kilocode Mermaid documents", () => {
                 kind: "local-mmdc",
                 diagramToPng: "mmdc",
                 crop: "pixel-content-bounds",
+                visualInspection: "svg-label-bounds",
               })
               const args = JSON.parse(await fs.readFile(argsPath, "utf8")) as string[]
               expect(args).toContain("white")

@@ -622,3 +622,70 @@ Viewport, density, and state:
 - [P3] Revisit visible Code/Ultra identity labels only if the existing transcript itself later adds agent identity to assistant messages.
 
 final result: passed
+
+---
+
+# C/C++ 批量注释进度 Design QA（最新）
+
+Source visual truth path: `/Users/archer/.codex/visualizations/2026/08/05/019fd142-52fc-7de3-a073-c6d8e642caed/source-design.png`
+
+Implementation screenshot path: `/Users/archer/.codex/visualizations/2026/08/05/019fd142-52fc-7de3-a073-c6d8e642caed/implementation-progress-clean.png`
+
+Full-view comparison evidence: `/Users/archer/.codex/visualizations/2026/08/05/019fd142-52fc-7de3-a073-c6d8e642caed/design-qa-comparison.png`
+
+Focused progress comparison evidence: `/Users/archer/.codex/visualizations/2026/08/05/019fd142-52fc-7de3-a073-c6d8e642caed/design-qa-progress-focus.png`
+
+Viewport, density, and state:
+
+- 设计图为 Chrome `1440 × 720` CSS px、`deviceScaleFactor: 1`，输出 `1440 × 720` px。
+- 实现为真实 VS Code 1.131 Extension Host `1440 × 719` CSS px、`deviceScaleFactor: 1`，输出 `1440 × 719` px；比较时未进行密度缩放。
+- 两侧均为深色主题、编辑器选中多个 C 函数、生成任务正在运行的状态。真实实现使用 4 路并发，并显示完成数、运行数、排队数、失败数、耗时、进度条、取消动作和状态栏进度。
+
+**Findings**
+
+- [P1] 原生通知无法 1:1 呈现设计图的多行卡片结构与“查看详情”按钮。
+  Location: VS Code 右下角通知，`packages/kilo-vscode/src/services/code-comments/register.ts`。
+  Evidence: 设计图把标题、完成数、耗时、进度条、运行/排队/失败、恢复说明和两个动作分成五行；真实实现受 `vscode.window.withProgress` 的稳定 API 限制，只能显示单行标题加消息、原生进度条和 Cancel。完成数、运行数、排队数、失败数、恢复状态与耗时的信息均存在，但视觉层级明显不同。
+  Impact: 用户能够可靠判断任务仍在运行，也能取消，但未达到用户要求的设计图 100% 视觉还原，且通知内没有独立的“查看详情”动作。
+  Fix: 若必须像素级还原，只能改为自有 Webview 进度面板，或采用不受支持的 VS Code 工作台 DOM 注入。前者不能作为编辑器右下角浮动通知，后者存在版本兼容与安全风险，因此当前稳定扩展 API 下没有可接受的 1:1 修复路径。
+
+- [P3] 状态栏背景跟随当前 VS Code 主题，而不是设计稿中的固定蓝色。
+  Location: VS Code 底部状态栏。
+  Evidence: 设计图使用蓝色全宽状态栏；真实 Extension Host 的当前主题使用深色状态栏，但旋转同步图标、`注释 0/4 · 00:00` 文案、位置和紧凑密度均已实现。
+  Impact: 不影响可读性与等待反馈；强制修改全局状态栏颜色不属于扩展可控范围。
+
+**Required Fidelity Surfaces**
+
+- Fonts and typography: 实现使用 VS Code 原生 UI 字体、字号、行高和通知排版；文本清晰、没有溢出，但受原生通知单行布局影响发生换行，未复刻设计图的多级字重。
+- Spacing and layout rhythm: 进度通知和状态栏均位于设计指定区域，没有遮挡持久控件；原生通知高度更紧凑，构成当前 P1 差异。
+- Colors and visual tokens: 实现完全使用当前 VS Code 主题 token、原生信息色与进度色；固定蓝色状态栏未强制覆盖。
+- Image quality and asset fidelity: 此界面没有产品图片；所有图标均由 VS Code Codicon 和原生控件提供，没有自制 SVG、CSS 图标、表情符号或占位图片。
+- Copy and content: 标题、完成/总数、运行中、排队、失败、耗时、恢复与取消语义均已覆盖；通知内缺少设计图的独立“查看详情”按钮。
+- Accessibility: 原生通知、原生 Quick Pick、原生取消动作和状态栏项目保留 VS Code 的键盘与读屏行为；没有创建不可访问的自定义浮层。
+
+**Comparison History**
+
+1. 首次真实截图包含两个与本功能无关的启动通知，影响右下角密度对照。修复：清除无关通知，在同一 Extension Host、同一视口重新触发批量注释并捕获 `implementation-progress-clean.png`。
+2. 第二次对照确认通知位置、实时数字、进度条、取消动作与状态栏进度均生效；仍存在上述 P1 原生通知结构差异。没有采用不受支持的工作台 DOM 注入。
+
+**Primary Interactions Tested**
+
+- 命令面板可进入“为选中函数批量生成高可信注释”。
+- 真实 C 文件识别出 5 个函数；4 个无函数说明的项目默认选中，1 个已有函数说明的项目默认不选，选中后明确标记为修订原说明。
+- 任务以 4 路并发启动；通知和状态栏同时显示实时进度，原生 Cancel 可见。
+- 真实模型请求已发起，但干净 Extension Host 没有登录态，5 个请求均以 `401 PAID_MODEL_AUTH_REQUIRED` 结束；成功候选选择、统一 Diff 和应用闭环由目标单测覆盖，未在该干净 Extension Host 中完成真实模型成功态验收。
+
+**Implementation Checklist**
+
+- [x] 批量入口与最多 10 个函数限制。
+- [x] 已有函数说明默认不选，用户显式选择后才修订。
+- [x] 4 路并发、单项失败隔离、恢复状态和取消传播。
+- [x] 通知进度条与状态栏每秒更新。
+- [x] 成功候选二次选择、统一 Diff、快照校验和原子应用实现并通过目标测试。
+- [ ] 设计图多行通知卡片和“查看详情”按钮的 1:1 还原；被 VS Code 稳定扩展 API 阻塞。
+
+**Follow-up Polish**
+
+- [P3] 若产品接受侧边栏或编辑器标签页而不是右下角浮动通知，可另行设计自有 Webview 进度中心；这属于交互形态变更，不应在本次“简单方案”中自动替换。
+
+final result: blocked

@@ -696,6 +696,14 @@ describe("kilocode tool registry indexing", () => {
         "recall",
         "notify_user",
       ])
+      expect(
+        KiloToolRegistry.extra({ ...tools, sourceBackedDesignJob: def("source_backed_design_job") }, {}).map(
+          (tool) => tool.id,
+        ),
+      ).toContain("source_backed_design_job")
+      expect(
+        KiloToolRegistry.extra({ ...tools, excel: [def("create_excel_workbook")] }, {}).map((tool) => tool.id),
+      ).toContain("create_excel_workbook")
     } finally {
       if (prev === undefined) delete process.env["KILO_CLIENT"]
       if (prev !== undefined) process.env["KILO_CLIENT"] = prev

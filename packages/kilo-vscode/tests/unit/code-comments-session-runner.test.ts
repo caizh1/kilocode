@@ -24,7 +24,7 @@ function runtime(options: { cancel?: boolean; completion?: "status" | "message" 
       modelID: "main",
       structured: undefined,
     },
-    parts: [{ type: "text", text: "结论：无需注释\n理解：函数已经足够直白。" }],
+    parts: [{ type: "text", text: "结论：生成注释\n理解：函数始终返回固定值。" }],
   }
   const client = {
     session: {
@@ -108,7 +108,7 @@ describe("高可信代码注释临时 Code 会话", () => {
     })
 
     expect(result).toEqual({
-      output: "结论：无需注释\n理解：函数已经足够直白。",
+      output: "结论：生成注释\n理解：函数始终返回固定值。",
       providerID: "provider",
       modelID: "main",
       sessionID: "temporary-session",
@@ -171,7 +171,7 @@ describe("高可信代码注释临时 Code 会话", () => {
       token: state.token as never,
     })
 
-    expect(result.output).toContain("无需注释")
+    expect(result.output).toContain("生成注释")
     expect(state.calls.abort).toHaveLength(0)
   })
 
@@ -189,7 +189,7 @@ describe("高可信代码注释临时 Code 会话", () => {
       token: state.token as never,
     })
 
-    expect(result.output).toContain("无需注释")
+    expect(result.output).toContain("生成注释")
     expect(state.calls.abort).toHaveLength(0)
   })
 })

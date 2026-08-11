@@ -1,4 +1,3 @@
-import { createHash } from "crypto"
 import * as path from "path"
 import type { Connection, Table, VectorQuery } from "@lancedb/lancedb"
 import type { IVectorStore, VectorStoreCompatibilityDecision } from "../interfaces/vector-store"
@@ -9,10 +8,11 @@ import fs from "fs"
 import { Log } from "../../util/log"
 import type { EmbeddingProfile } from "../embedding-profile"
 import { loadLanceDB } from "./lancedb-loader"
+import { assertLanceDbPathFitsWindowsBudget, lanceDbPathFitsWindowsBudget, resolveLanceDbPath } from "./lancedb-paths"
 
 const log = Log.create({ service: "lancedb-store" })
 const LANCEDB_QUERY_TIMEOUT_MS = 30_000
-const LANCEDB_WRITE_TIMEOUT_MS = 30_000
+const LANCEDB_WRITE_TIMEOUT_MS = 120_000
 let nativeQueue = Promise.resolve()
 
 function native<T>(run: () => Promise<T>): Promise<T> {
@@ -22,6 +22,11 @@ function native<T>(run: () => Promise<T>): Promise<T> {
     () => undefined,
   )
   return task
+}
+
+function isMergeInsertTimeout(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /merge insert.*timed out|timed out.*merge insert/i.test(message)
 }
 
 const SCHEMA = "2"
@@ -74,8 +79,17 @@ export class LanceDBVectorStore implements IVectorStore {
   private readonly metadataTableName = "metadata"
   private lancedbModule: any = null
   private decision: VectorStoreCompatibilityDecision | undefined
+  private legacyCleanupPaths: string[] = []
 
-  constructor(workspacePath: string, vectorSize: number, dbDirectory: string, profile?: EmbeddingProfile) {
+  constructor(
+    workspacePath: string,
+    vectorSize: number,
+    dbDirectory: string,
+    profile?: EmbeddingProfile,
+    databaseName?: string,
+    legacyDirectories: readonly string[] = [],
+    allowUnsafeExistingReadOnly = false,
+  ) {
     this.vectorSize = vectorSize
     this.workspacePath = workspacePath
     this.profile =
@@ -85,12 +99,24 @@ export class LanceDBVectorStore implements IVectorStore {
         modelId: "",
         dimension: vectorSize,
       } as EmbeddingProfile)
-    const basename = path.basename(workspacePath)
-    // Generate database directory name from workspace path
-    const hash = createHash("sha256").update(workspacePath).digest("hex")
-    const dbName = `${basename}-${hash.substring(0, 16)}`
-    // Set up database path
-    this.dbPath = path.join(dbDirectory, dbName)
+    const current = resolveLanceDbPath(workspacePath, dbDirectory, databaseName)
+    const candidates = [
+      current.database,
+      ...(current.legacy ? [current.legacy] : []),
+      ...legacyDirectories.flatMap((directory) => {
+        const resolved = resolveLanceDbPath(workspacePath, directory, databaseName)
+        return [resolved.database, ...(resolved.legacy ? [resolved.legacy] : [])]
+      }),
+    ].filter((value, index, values) => values.indexOf(value) === index)
+    const existing = candidates.filter((candidate) => fs.existsSync(candidate))
+    const reusable =
+      existing.find((candidate) => lanceDbPathFitsWindowsBudget(candidate)) ??
+      (allowUnsafeExistingReadOnly ? existing[0] : undefined)
+    this.dbPath = fs.existsSync(current.database) ? current.database : (reusable ?? current.database)
+    this.legacyCleanupPaths = existing.filter((candidate) => candidate !== this.dbPath)
+    if (!allowUnsafeExistingReadOnly || !fs.existsSync(this.dbPath)) {
+      assertLanceDbPathFitsWindowsBudget(this.dbPath)
+    }
   }
 
   /**
@@ -245,7 +271,7 @@ export class LanceDBVectorStore implements IVectorStore {
   private async _createVectorTable(db: Connection): Promise<void> {
     this.table = await native(() => db.createTable(this.vectorTableName, this._createSampleData()))
     if (this.table) {
-      await this.table.delete("id = 'sample'")
+      await native(() => this.table!.delete("id = 'sample'"))
     }
   }
 
@@ -253,8 +279,8 @@ export class LanceDBVectorStore implements IVectorStore {
    * Creates the metadata table.
    * @param db The LanceDB connection.
    */
-  private async _createMetadataTable(db: Connection): Promise<void> {
-    await native(() => db.createTable(this.metadataTableName, this._createMetadataData()))
+  private async _createMetadataTable(db: Connection): Promise<Table> {
+    return native(() => db.createTable(this.metadataTableName, this._createMetadataData()))
   }
 
   getLastCompatibilityDecision(): VectorStoreCompatibilityDecision | undefined {
@@ -273,7 +299,7 @@ export class LanceDBVectorStore implements IVectorStore {
   private async _dropTableIfExists(db: Connection, tableName: string): Promise<void> {
     const tableNames = await db.tableNames()
     if (tableNames.includes(tableName)) {
-      await db.dropTable(tableName)
+      await native(() => db.dropTable(tableName))
     }
   }
 
@@ -522,11 +548,32 @@ export class LanceDBVectorStore implements IVectorStore {
         }
       }
 
-      await table
-        .mergeInsert("id")
-        .whenMatchedUpdateAll()
-        .whenNotMatchedInsertAll()
-        .execute(lanceData, { timeoutMs: LANCEDB_WRITE_TIMEOUT_MS })
+      const merge = async (data: typeof lanceData): Promise<void> => {
+        try {
+          await native(() =>
+            table
+              .mergeInsert("id")
+              .whenMatchedUpdateAll()
+              .whenNotMatchedInsertAll()
+              .execute(data, { timeoutMs: LANCEDB_WRITE_TIMEOUT_MS }),
+          )
+        } catch (error) {
+          if (data.length < 2 || !isMergeInsertTimeout(error)) throw error
+
+          const midpoint = Math.ceil(data.length / 2)
+          log.warn("LanceDB merge insert timed out; retrying as smaller serialized batches", {
+            workspacePath: this.workspacePath,
+            batchSize: data.length,
+            firstBatchSize: midpoint,
+            secondBatchSize: data.length - midpoint,
+            timeoutMs: LANCEDB_WRITE_TIMEOUT_MS,
+          })
+          await merge(data.slice(0, midpoint))
+          await merge(data.slice(midpoint))
+        }
+      }
+
+      await merge(lanceData)
     } catch (error) {
       log.error("Failed to upsert points", { error })
       throw error
@@ -647,11 +694,13 @@ export class LanceDBVectorStore implements IVectorStore {
       )
       .join(" OR ")
 
-    await table.update({
-      where: activeFilter,
-      values: { active: true },
+    await native(async () => {
+      await table.update({
+        where: activeFilter,
+        values: { active: true },
+      })
+      await table.delete(`\`filePath\` IN (${fileFilter}) AND NOT (${activeFilter})`)
     })
-    await table.delete(`\`filePath\` IN (${fileFilter}) AND NOT (${activeFilter})`)
   }
 
   async activateFileGeneration(filePath: string, generation: string, runId: string): Promise<void> {
@@ -660,13 +709,15 @@ export class LanceDBVectorStore implements IVectorStore {
     const escaped = this.escapeSqlString(normalized)
     const gen = this.escapeSqlString(generation)
     const run = this.escapeSqlString(runId)
-    await table.update({
-      where: `\`filePath\` = '${escaped}' AND \`generation\` = '${gen}' AND \`runId\` = '${run}'`,
-      values: { active: true },
-    })
-    await table.update({
-      where: `\`filePath\` = '${escaped}' AND \`generation\` != '${gen}'`,
-      values: { active: false },
+    await native(async () => {
+      await table.update({
+        where: `\`filePath\` = '${escaped}' AND \`generation\` = '${gen}' AND \`runId\` = '${run}'`,
+        values: { active: true },
+      })
+      await table.update({
+        where: `\`filePath\` = '${escaped}' AND \`generation\` != '${gen}'`,
+        values: { active: false },
+      })
     })
   }
 
@@ -675,14 +726,14 @@ export class LanceDBVectorStore implements IVectorStore {
     const normalized = this.normalizeFilePath(filePath)
     const escaped = this.escapeSqlString(normalized)
     const gen = this.escapeSqlString(activeGeneration)
-    await table.delete(`\`filePath\` = '${escaped}' AND \`generation\` != '${gen}'`)
+    await native(() => table.delete(`\`filePath\` = '${escaped}' AND \`generation\` != '${gen}'`))
   }
 
   async cleanupInactivePoints(): Promise<VectorStoreCleanupStats> {
     const stats: VectorStoreCleanupStats = { skipped: [] }
     try {
       const table = await this.getTable()
-      await table.delete("`active` = false")
+      await native(() => table.delete("`active` = false"))
       await this.optimizeTable()
       return stats
     } catch (error) {
@@ -705,7 +756,7 @@ export class LanceDBVectorStore implements IVectorStore {
       // Create filter condition for multiple file paths
       const escapedPaths = normalizedPaths.map((fp) => `'${this.escapeSqlString(fp)}'`).join(", ")
       const filterCondition = `\`filePath\` IN (${escapedPaths})`
-      await table.delete(filterCondition)
+      await native(() => table.delete(filterCondition))
     } catch (error) {
       log.error("Failed to delete points by file paths", { error })
       throw error
@@ -742,20 +793,18 @@ export class LanceDBVectorStore implements IVectorStore {
     try {
       const table = await this.getTable()
       // Delete all records from the table
-      await table.delete("true") // Delete all records
+      await native(() => table.delete("true")) // Delete all records
 
-      // Also clear metadata table
-      try {
-        const db = await this.getDb()
-        const tableNames = await db.tableNames()
-
-        if (tableNames.includes(this.metadataTableName)) {
-          const metadataTable = await native(() => db.openTable(this.metadataTableName))
-          await metadataTable.delete("true")
-        }
-      } catch (metadataError) {
-        log.warn("Failed to clear metadata table", { error: metadataError })
-      }
+      // Preserve a complete compatibility profile so an interrupted rebuild can
+      // resume this generation instead of treating it as an incompatible store.
+      const db = await this.getDb()
+      const tableNames = await db.tableNames()
+      const metadataTable = tableNames.includes(this.metadataTableName)
+        ? await native(() => db.openTable(this.metadataTableName))
+        : await this._createMetadataTable(db)
+      await this._persistEmbeddingProfile(metadataTable)
+      await this._upsertMetadata(metadataTable, KEY.complete, "false")
+      await this._upsertMetadata(metadataTable, KEY.runIncomplete, "false")
 
       // Run optimization to clean up disk space after clearing
       await this.optimizeTable()
@@ -798,10 +847,12 @@ export class LanceDBVectorStore implements IVectorStore {
     try {
       const table = await this.getTable()
 
-      await table.optimize({
-        cleanupOlderThan: new Date(),
-        deleteUnverified: false,
-      })
+      await native(() =>
+        table.optimize({
+          cleanupOlderThan: new Date(),
+          deleteUnverified: false,
+        }),
+      )
     } catch (error) {
       log.error("Failed to optimize table", { error })
     }
@@ -845,10 +896,12 @@ export class LanceDBVectorStore implements IVectorStore {
     if (!this.isValidMetadataKey(key)) {
       throw new Error(`Invalid metadata key: ${key}`)
     }
-    await metadataTable.delete(`key = '${key}'`)
-    // All values must be strings to prevent LanceDB from inferring the value column
-    // type as number from the first row, which corrupts subsequent string/boolean values.
-    await metadataTable.add([{ key, value: String(value) }])
+    await native(async () => {
+      await metadataTable.delete(`key = '${key}'`)
+      // All values must be strings to prevent LanceDB from inferring the value column
+      // type as number from the first row, which corrupts subsequent string/boolean values.
+      await metadataTable.add([{ key, value: String(value) }])
+    })
   }
 
   private async _persistEmbeddingProfile(metadataTable: Table): Promise<void> {
@@ -857,23 +910,54 @@ export class LanceDBVectorStore implements IVectorStore {
     await this._upsertMetadata(metadataTable, KEY.model, this.profile.modelId)
     await this._upsertMetadata(metadataTable, KEY.dimension, this.profile.dimension)
     await this._upsertMetadata(metadataTable, KEY.size, this.vectorSize)
+    await this._upsertMetadata(metadataTable, KEY.dimensionMode, this.profile.dimensionMode ?? "")
+    await this._upsertMetadata(
+      metadataTable,
+      KEY.requestedDimension,
+      this.profile.requestedDimension === undefined ? "" : this.profile.requestedDimension,
+    )
+    await this._upsertMetadata(metadataTable, KEY.endpointDigest, this.profile.endpointDigest ?? "")
+    await this._upsertMetadata(metadataTable, KEY.fingerprintDigest, this.profile.fingerprintDigest ?? "")
+    await this._upsertMetadata(metadataTable, KEY.qualityVersion, this.profile.qualityVersion ?? "")
+    await this._upsertMetadata(metadataTable, KEY.instructionVersion, this.profile.instructionVersion ?? "")
   }
 
   /**
    * Marks the indexing process as complete by storing metadata
    * Should be called after a successful full workspace scan or incremental scan
    */
-  async markIndexingComplete(): Promise<void> {
+  async markIndexingComplete(_options?: { allowEmpty?: boolean }): Promise<void> {
     try {
       const db = await this.getDb()
       const metadataTable = await native(() => db.openTable(this.metadataTableName))
       await this._persistEmbeddingProfile(metadataTable)
       await this._upsertMetadata(metadataTable, KEY.complete, "true")
       await this._upsertMetadata(metadataTable, KEY.runIncomplete, "false")
+      await this.cleanupLegacyIndex()
       log.info("Marked indexing as complete")
     } catch (error) {
       log.error("Failed to mark indexing as complete", { error })
       throw error
+    }
+  }
+
+  private async cleanupLegacyIndex(): Promise<void> {
+    for (const legacy of this.legacyCleanupPaths) {
+      try {
+        await fs.promises.rm(legacy, { recursive: true, force: true })
+        this.legacyCleanupPaths = this.legacyCleanupPaths.filter((candidate) => candidate !== legacy)
+        log.info("Removed legacy LanceDB directory after compact index completion", {
+          workspacePath: this.workspacePath,
+          legacyPath: legacy,
+          dbPath: this.dbPath,
+        })
+      } catch (error) {
+        log.warn("Failed to remove legacy LanceDB directory after compact index completion", {
+          workspacePath: this.workspacePath,
+          legacyPath: legacy,
+          error,
+        })
+      }
     }
   }
 

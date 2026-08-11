@@ -1,5 +1,5 @@
 export const CODE_GRAPH_SCHEMA_VERSION = 1
-export const CODE_GRAPH_PARSER_VERSION = 1
+export const CODE_GRAPH_PARSER_VERSION = 2
 export const CODE_GRAPH_STORAGE_DIR = "codegraph"
 export const CODE_GRAPH_STORAGE_VERSION_DIR = "v3"
 export const CODE_GRAPH_SHORT_SNIPPET_MAX_CHARS = 240

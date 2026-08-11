@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chipmate.local/qa/indexing-regression/case.schema.json",
+  "title": "ChipMate 索引历史缺陷回归用例库",
+  "type": "object",
+  "required": ["version", "suite", "cases"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "suite": {
+      "type": "string",
+      "const": "chipmate-indexing-regression"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "severity",
+        "scope",
+        "regression",
+        "preconditions",
+        "steps",
+        "expected",
+        "sourceExecutors",
+        "packageExecutor",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^IDX-REG-[0-9]{3}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "enum": ["P0", "P1", "P2", "P3"]
+        },
+        "scope": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["source", "package", "windows-installed"]
+          }
+        },
+        "regression": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preconditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "expected": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "sourceExecutors": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["progress-core", "manager-lifecycle", "lancedb-native", "vscode-status-sync"]
+          }
+        },
+        "packageExecutor": {
+          "enum": ["formal-indexer-ipc", "not-required"]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "status-trace",
+              "request-count",
+              "vector-readback",
+              "retrieval-result",
+              "graph-result",
+              "native-runtime",
+              "source-test"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -41,6 +41,7 @@ import { Snapshot } from "@/snapshot" // kilocode_change
 import { SessionNetwork } from "./network" // kilocode_change
 import { CodexAuthExpiredError } from "@/kilocode/provider/codex-refresh" // kilocode_change
 import { KiloSessionMessageOrder } from "@/kilocode/session/message-order" // kilocode_change
+import { KiloSessionMessageInfo } from "@/kilocode/session/message-info" // kilocode_change
 import { KiloPartLifecycle } from "@/kilocode/session/part-lifecycle" // kilocode_change
 import * as TextStream from "@/kilocode/text-stream" // kilocode_change
 import { Effect, Schema } from "effect"
@@ -211,13 +212,15 @@ export function stripMessageMetadata(info: Info): Info {
 }
 // kilocode_change end
 
-// kilocode_change - apply stripping inside helpers so all read paths are covered
+  // kilocode_change start - apply stripping and persisted format hydration inside helpers so all read paths are covered
 const info = (row: typeof MessageTable.$inferSelect) =>
-  stripMessageMetadata({
-    ...row.data,
-    id: row.id,
-    sessionID: row.session_id,
-  } as Info)
+  KiloSessionMessageInfo.hydrate(
+    stripMessageMetadata({
+      ...row.data,
+      id: row.id,
+      sessionID: row.session_id,
+    } as Info),
+  )
 
 const part = (row: typeof PartTable.$inferSelect) =>
   stripPartMetadata({

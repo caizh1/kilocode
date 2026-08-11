@@ -198,4 +198,22 @@ describe("AgentRequirementsController", () => {
       result: { state: "blocked", vscode_extensions: [{ status: "missing" }] },
     })
   })
+
+  it("preserves a document feature-unavailable error from the backend", async () => {
+    const posts: unknown[] = []
+    const backend = client(
+      result({
+        agent: "document",
+        state: "blocked",
+        error: { code: "feature_unavailable", message: "Document RAG 已关闭" },
+      }),
+    )
+    const requirements = controller({ api: backend.api, posts })
+
+    await expect(requirements.assertAgentRequirements("document", root)).rejects.toThrow("Document RAG 已关闭")
+    expect(posts.at(-1)).toMatchObject({
+      type: "agentRequirementsLoaded",
+      result: { state: "blocked", error: { code: "feature_unavailable" } },
+    })
+  })
 })

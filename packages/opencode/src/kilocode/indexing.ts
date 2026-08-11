@@ -827,6 +827,17 @@ export namespace KiloIndexing {
     await current.ready
   }
 
+  export async function waitUntilDocumentsReady(timeoutMs = 60_000) {
+    const entry = await hit().promise
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const state = entry.current().pipelines?.documents.state
+      if (state === "Complete" || state === "Disabled" || state === "Error") return
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    throw new Error("Timed out waiting for the document index to become ready.")
+  }
+
   export async function current(): Promise<Status> {
     const entry = await hit().ready
     entry.scope(WorkspaceContext.workspaceID)

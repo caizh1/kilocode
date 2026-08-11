@@ -90,6 +90,8 @@ describe("双轮 Code QA 注释编排", () => {
     expect(result.status).toBe("ready")
     expect(fake.calls.map((call) => call.stage)).toEqual(["primary"])
     expect(fake.calls[0]?.prompt).toContain("comment-only diff")
+    expect(fake.calls[0]?.prompt).toContain("必须生成一条函数说明")
+    expect(fake.calls[0]?.prompt).not.toContain("结论：无需注释")
   })
 
   it("显式双轮策略启动全新复核会话，通过后才返回候选", async () => {
@@ -121,15 +123,15 @@ describe("双轮 Code QA 注释编排", () => {
     expect(fake.calls).toHaveLength(2)
   })
 
-  it("复核判定无需注释时返回 skip，而不是强行保留候选", async () => {
+  it("拒绝复核会话替用户决定无需注释", async () => {
     const fake = runner([generate(), "结论：无需注释\n复核：函数只有一个直白返回语句，新增说明只会复述代码。"])
     const service = new CodeCommentOrchestrator(fake as never, () => undefined)
 
     const result = await service.generate({ targets: [target], strategy: "independent-review" }, token as never)
 
-    expect(result.status).toBe("skip")
-    if (result.status !== "skip") return
-    expect(result.recovered).toBe(true)
+    expect(result.status).toBe("unresolved")
+    if (result.status !== "unresolved") return
+    expect(result.reasons[0]).toContain("响应必须且只能包含一行结论")
     expect(result.rounds).toBe(2)
   })
 

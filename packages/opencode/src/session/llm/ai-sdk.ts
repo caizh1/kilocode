@@ -8,7 +8,9 @@ import { KiloResponseMetadata } from "@/kilocode/session/response-metadata" // k
 type Result = Awaited<ReturnType<typeof streamText>>
 type AISDKEvent = Result["fullStream"] extends AsyncIterable<infer T> ? T : never
 
-export function adapterState() {
+// kilocode_change start - keep unavailable streamed previews hidden while allowing validated runtime-only repairs
+export function adapterState(visibleTools?: Iterable<string>, runtimeTools?: Iterable<string>) {
+  const visible = visibleTools ? new Set(visibleTools) : undefined
   return {
     step: 0,
     text: 0,
@@ -16,6 +18,11 @@ export function adapterState() {
     currentTextID: undefined as string | undefined,
     currentReasoningID: undefined as string | undefined,
     toolNames: {} as Record<string, string>,
+    // Do not render a streamed tool preview until the SDK validates or repairs its name.
+    visibleTools: visible,
+    runtimeTools: runtimeTools ? new Set(runtimeTools) : visible ? new Set(visible) : undefined,
+    suppressedTools: new Set<string>(),
+    // kilocode_change end
     copilotTotalNanoAiu: undefined as number | undefined,
   }
 }
@@ -128,7 +135,7 @@ export function toLLMEvents(
         ]
         // Reset so the adapter can be reused for a follow-up stream without leaking
         // counters or block IDs. adapterState() is the single source of truth for shape.
-        Object.assign(state, adapterState())
+        Object.assign(state, adapterState(state.visibleTools, state.runtimeTools)) // kilocode_change
         return events
       })
 
@@ -198,6 +205,12 @@ export function toLLMEvents(
 
     case "tool-input-start":
       return Effect.sync(() => {
+        // kilocode_change start - providers stream the requested name before AI SDK validation
+        if (state.visibleTools && !state.visibleTools.has(event.toolName)) {
+          state.suppressedTools.add(event.id)
+          return []
+        }
+        // kilocode_change end
         state.toolNames[event.id] = event.toolName
         return [
           LLMEvent.toolInputStart({
@@ -209,6 +222,7 @@ export function toLLMEvents(
       })
 
     case "tool-input-delta":
+      if (state.suppressedTools.has(event.id)) return Effect.succeed([]) // kilocode_change
       return Effect.succeed([
         LLMEvent.toolInputDelta({
           id: event.id,
@@ -218,6 +232,7 @@ export function toLLMEvents(
       ])
 
     case "tool-input-end":
+      if (state.suppressedTools.has(event.id)) return Effect.succeed([]) // kilocode_change
       return Effect.succeed([
         LLMEvent.toolInputEnd({
           id: event.id,
@@ -228,6 +243,13 @@ export function toLLMEvents(
 
     case "tool-call":
       return Effect.sync(() => {
+        // kilocode_change start - expose only the validated/repaired active tool, never the unavailable preview
+        if (state.runtimeTools && !state.runtimeTools.has(event.toolName)) {
+          state.suppressedTools.add(event.toolCallId)
+          return []
+        }
+        state.suppressedTools.delete(event.toolCallId)
+        // kilocode_change end
         state.toolNames[event.toolCallId] = event.toolName
         return [
           LLMEvent.toolCall({
@@ -242,6 +264,9 @@ export function toLLMEvents(
 
     case "tool-result":
       return Effect.sync(() => {
+        // kilocode_change start
+        if (state.suppressedTools.delete(event.toolCallId)) return []
+        // kilocode_change end
         const name = state.toolNames[event.toolCallId] ?? "unknown"
         delete state.toolNames[event.toolCallId]
         return [
@@ -257,6 +282,9 @@ export function toLLMEvents(
 
     case "tool-error":
       return Effect.sync(() => {
+        // kilocode_change start
+        if (state.suppressedTools.delete(event.toolCallId)) return []
+        // kilocode_change end
         const name = state.toolNames[event.toolCallId] ?? ("toolName" in event ? event.toolName : "unknown")
         delete state.toolNames[event.toolCallId]
         return [

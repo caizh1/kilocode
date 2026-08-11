@@ -1232,6 +1232,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         case "requestAgents":
           this.fetchAndSendAgents().catch((e) => console.error("[Kilo New] fetchAndSendAgents failed:", e))
           break
+        case "setDocumentAgentScope":
+          await this.handleSetDocumentAgentScope(message.sessionID, message.scope)
+          break
         case "requestSkills":
           this.fetchAndSendSkills().catch((e) => console.error("[Kilo New] fetchAndSendSkills failed:", e))
           break
@@ -2485,6 +2488,23 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       this.postMessage(message)
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Failed to fetch agents:", error)
+    }
+  }
+
+  private async handleSetDocumentAgentScope(sessionID: string, scope: "documents"): Promise<void> {
+    if (!this.client) return
+    if (scope !== "documents") return
+    const directory = this.getWorkspaceDirectory(sessionID)
+    try {
+      const current = await this.client.session.get({ sessionID, directory }, { throwOnError: true })
+      const metadata = { ...current.data.metadata }
+      delete metadata["kilo.documentAgent.scope"]
+      const updated = await this.client.session.update({ sessionID, directory, metadata }, { throwOnError: true })
+      if (this.currentSession?.id === sessionID) this.setCurrentSession(updated.data)
+      this.postMessage({ type: "sessionUpdated", session: this.sessionToWebview(updated.data) })
+    } catch (error) {
+      console.error("[Kilo New] KiloProvider: Failed to restore document-only scope:", error)
+      this.postMessage({ type: "error", message: getErrorMessage(error) || "Failed to restore document-only scope" })
     }
   }
 

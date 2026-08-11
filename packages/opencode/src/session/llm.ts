@@ -34,6 +34,7 @@ import { DSML } from "@/kilocode/session/dsml"
 import { SessionExport } from "@/kilocode/session-export"
 import { getActiveOrg } from "@/kilocode/session-export/eligibility"
 import { normalizeUsageForExport, observeFullStreamForExport } from "@/kilocode/session-export/llm"
+import { DocumentAgentScope } from "@/kilocode/document-agent/scope"
 // kilocode_change end
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -167,7 +168,9 @@ const live: Layer.Layer<
       const prepared = { ...base, tools, params: { ...base.params, maxOutputTokens } }
       // kilocode_change end
       // kilocode_change start - keep a trusted no-side-effect invalid executor only for targeted DSML repair
-      const repair = DSML.enabled({ cfg, model: input.model, tools: prepared.tools, toolChoice: input.toolChoice })
+      const repair =
+        input.agent.name !== DocumentAgentScope.AGENT &&
+        DSML.enabled({ cfg, model: input.model, tools: prepared.tools, toolChoice: input.toolChoice })
       const runtime: Record<string, Tool> = repair ? { ...prepared.tools, invalid: DSML.invalid } : prepared.tools
       // kilocode_change end
 
@@ -381,6 +384,16 @@ const live: Layer.Layer<
             l.info("repairing tool call", { tool: failed.toolCall.toolName, repaired: lower }) // kilocode_change
             return { ...failed.toolCall, toolName: lower }
           }
+          // kilocode_change start - a document-only model may hallucinate a hidden code tool. Convert it
+          // to the visible no-op scope guard so no code executes and the turn can recover without `invalid`.
+          const guarded = DocumentAgentScope.repairUnavailableTool({
+            agent: input.agent.name,
+            toolName: failed.toolCall.toolName,
+            available: new Set(Object.keys(prepared.tools)),
+          })
+          if (guarded) return { ...failed.toolCall, ...guarded }
+          if (!repair) return null
+          // kilocode_change end
           return {
             ...failed.toolCall,
             input: JSON.stringify({
@@ -430,9 +443,15 @@ const live: Layer.Layer<
       })
       // kilocode_change end
       // kilocode_change start - capture eligible session export request completion off the stream path
-      if (!exportable) return { type: "ai-sdk" as const, result }
+      // kilocode_change - keep model-visible tools separate from the DSML runtime-only invalid executor.
+      // Document Agent has no invalid executor and suppresses unavailable code previews.
+      const visibleTools = Object.keys(prepared.tools)
+      const runtimeTools = Object.keys(runtime)
+      if (!exportable) return { type: "ai-sdk" as const, result, visibleTools, runtimeTools }
       return {
         type: "ai-sdk" as const,
+        visibleTools,
+        runtimeTools,
         result: {
           fullStream: observeFullStreamForExport(result.fullStream, {
             sessionId: input.sessionID,
@@ -463,7 +482,7 @@ const live: Layer.Layer<
 
             // Adapter seam: both runtimes expose the same LLMEvent stream. Native
             // already returns one; AI SDK streams are converted here.
-            const state = LLMAISDK.adapterState()
+            const state = LLMAISDK.adapterState(result.visibleTools, result.runtimeTools) // kilocode_change
             return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
               e instanceof Error ? e : new Error(String(e)),
             ).pipe(

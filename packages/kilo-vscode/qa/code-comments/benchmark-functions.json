@@ -1,0 +1,452 @@
+[
+  {
+    "id": "qemu-001",
+    "file": "util/cutils.c",
+    "name": "pstrcpy",
+    "marker": "void pstrcpy(",
+    "language": "c",
+    "group": "ab",
+    "tags": ["简单", "边界", "字符串"]
+  },
+  {
+    "id": "qemu-002",
+    "file": "util/cutils.c",
+    "name": "qemu_parse_fd",
+    "marker": "int qemu_parse_fd(",
+    "language": "c",
+    "group": "ab",
+    "tags": ["输入校验", "错误路径"]
+  },
+  {
+    "id": "qemu-003",
+    "file": "block/aio_task.c",
+    "name": "aio_task_co",
+    "marker": "aio_task_co(",
+    "language": "c",
+    "group": "ab",
+    "tags": ["协程", "原子计数", "唤醒"]
+  },
+  {
+    "id": "qemu-004",
+    "file": "qapi/qmp-dispatch.c",
+    "name": "qmp_dispatch",
+    "marker": "qmp_dispatch(",
+    "language": "c",
+    "group": "ab",
+    "tags": ["分派", "协程切换", "错误恢复"]
+  },
+  {
+    "id": "qemu-005",
+    "file": "accel/tcg/cpu-exec.c",
+    "name": "cpu_handle_interrupt",
+    "marker": "cpu_handle_interrupt(",
+    "language": "c",
+    "group": "ab",
+    "tags": ["复杂", "中断", "锁", "重放", "已有注释"]
+  },
+  {
+    "id": "qemu-006",
+    "file": "util/cutils.c",
+    "name": "do_strtosz",
+    "marker": "do_strtosz(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["字符串", "数值解析", "边界"]
+  },
+  {
+    "id": "qemu-007",
+    "file": "util/cutils.c",
+    "name": "check_strtox_error",
+    "marker": "check_strtox_error(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["错误处理", "契约"]
+  },
+  {
+    "id": "qemu-008",
+    "file": "util/cutils.c",
+    "name": "qemu_strtoui",
+    "marker": "qemu_strtoui(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["输入校验", "转换"]
+  },
+  {
+    "id": "qemu-009",
+    "file": "util/cutils.c",
+    "name": "parse_uint",
+    "marker": "int parse_uint(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["解析", "错误路径"]
+  },
+  {
+    "id": "qemu-010",
+    "file": "util/cutils.c",
+    "name": "qemu_init_exec_dir",
+    "marker": "qemu_init_exec_dir(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["平台", "全局状态"]
+  },
+  {
+    "id": "qemu-011",
+    "file": "util/cutils.c",
+    "name": "get_relocated_path",
+    "marker": "get_relocated_path(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["路径", "内存所有权"]
+  },
+  {
+    "id": "qemu-012",
+    "file": "block/aio_task.c",
+    "name": "aio_task_pool_wait_one",
+    "marker": "aio_task_pool_wait_one(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["协程", "等待"]
+  },
+  {
+    "id": "qemu-013",
+    "file": "block/aio_task.c",
+    "name": "aio_task_pool_wait_slot",
+    "marker": "aio_task_pool_wait_slot(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["并发", "流控"]
+  },
+  {
+    "id": "qemu-014",
+    "file": "block/aio_task.c",
+    "name": "aio_task_pool_start_task",
+    "marker": "aio_task_pool_start_task(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["生命周期", "原子计数"]
+  },
+  {
+    "id": "qemu-015",
+    "file": "qapi/qmp-dispatch.c",
+    "name": "qmp_dispatch_check_obj",
+    "marker": "qmp_dispatch_check_obj(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["协议", "输入校验"]
+  },
+  {
+    "id": "qemu-016",
+    "file": "qapi/qmp-dispatch.c",
+    "name": "do_qmp_dispatch_bh",
+    "marker": "do_qmp_dispatch_bh(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["异步", "线程上下文"]
+  },
+  {
+    "id": "qemu-017",
+    "file": "qapi/qmp-dispatch.c",
+    "name": "qmp_error_response",
+    "marker": "qmp_error_response(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["错误恢复", "协议"]
+  },
+  {
+    "id": "qemu-018",
+    "file": "accel/tcg/cpu-exec.c",
+    "name": "tb_lookup",
+    "marker": "tb_lookup(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["缓存", "翻译块"]
+  },
+  {
+    "id": "qemu-019",
+    "file": "accel/tcg/cpu-exec.c",
+    "name": "check_for_breakpoints_slow",
+    "marker": "check_for_breakpoints_slow(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["断点", "并发"]
+  },
+  {
+    "id": "qemu-020",
+    "file": "accel/tcg/cpu-exec.c",
+    "name": "cpu_tb_exec",
+    "marker": "cpu_tb_exec(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["执行循环", "状态"]
+  },
+  {
+    "id": "qemu-021",
+    "file": "accel/tcg/cpu-exec.c",
+    "name": "cpu_exec_longjmp_cleanup",
+    "marker": "cpu_exec_longjmp_cleanup(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["异常恢复", "锁"]
+  },
+  {
+    "id": "qemu-022",
+    "file": "accel/tcg/cpu-exec.c",
+    "name": "cpu_handle_exception",
+    "marker": "cpu_handle_exception(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["异常", "状态机"]
+  },
+  {
+    "id": "qemu-023",
+    "file": "accel/tcg/cpu-exec.c",
+    "name": "cpu_loop_exec_tb",
+    "marker": "cpu_loop_exec_tb(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["执行循环", "时序"]
+  },
+  {
+    "id": "qemu-024",
+    "file": "accel/tcg/cpu-exec.c",
+    "name": "cpu_exec_loop",
+    "marker": "cpu_exec_loop(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["复杂", "中断", "异常"]
+  },
+  {
+    "id": "qemu-025",
+    "file": "util/qemu-timer.c",
+    "name": "timerlist_deadline_ns",
+    "marker": "timerlist_deadline_ns(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["定时器", "锁"]
+  },
+  {
+    "id": "qemu-026",
+    "file": "util/qemu-timer.c",
+    "name": "qemu_clock_deadline_ns_all",
+    "marker": "qemu_clock_deadline_ns_all(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["时钟", "聚合"]
+  },
+  {
+    "id": "qemu-027",
+    "file": "util/qemu-timer.c",
+    "name": "qemu_poll_ns",
+    "marker": "qemu_poll_ns(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["等待", "超时"]
+  },
+  {
+    "id": "qemu-028",
+    "file": "util/qemu-timer.c",
+    "name": "timer_mod_ns_locked",
+    "marker": "timer_mod_ns_locked(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["定时器", "不变量"]
+  },
+  {
+    "id": "qemu-029",
+    "file": "util/qemu-timer.c",
+    "name": "timerlist_run_timers",
+    "marker": "timerlist_run_timers(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["定时器", "回调", "并发"]
+  },
+  {
+    "id": "qemu-030",
+    "file": "util/qemu-timer.c",
+    "name": "qemu_clock_advance_virtual_time",
+    "marker": "qemu_clock_advance_virtual_time(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["虚拟时钟", "时序"]
+  },
+  {
+    "id": "qemu-031",
+    "file": "util/main-loop.c",
+    "name": "qemu_init_main_loop",
+    "marker": "qemu_init_main_loop(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["初始化", "事件循环"]
+  },
+  {
+    "id": "qemu-032",
+    "file": "util/main-loop.c",
+    "name": "glib_pollfds_fill",
+    "marker": "glib_pollfds_fill(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["事件循环", "描述符"]
+  },
+  {
+    "id": "qemu-033",
+    "file": "util/main-loop.c",
+    "name": "pollfds_poll",
+    "marker": "pollfds_poll(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["轮询", "错误路径"]
+  },
+  {
+    "id": "qemu-034",
+    "file": "util/main-loop.c",
+    "name": "main_loop_wait",
+    "marker": "main_loop_wait(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["事件循环", "时序"]
+  },
+  {
+    "id": "qemu-035",
+    "file": "block/block-backend.c",
+    "name": "blk_root_activate",
+    "marker": "blk_root_activate(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["块设备", "生命周期"]
+  },
+  {
+    "id": "qemu-036",
+    "file": "block/block-backend.c",
+    "name": "blk_new_open",
+    "marker": "blk_new_open(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["资源分配", "错误恢复"]
+  },
+  {
+    "id": "qemu-037",
+    "file": "block/block-backend.c",
+    "name": "blk_insert_bs",
+    "marker": "blk_insert_bs(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["图结构", "权限"]
+  },
+  {
+    "id": "qemu-038",
+    "file": "block/block-backend.c",
+    "name": "blk_co_do_preadv_part",
+    "marker": "blk_co_do_preadv_part(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["协程", "I/O", "边界"]
+  },
+  {
+    "id": "qemu-039",
+    "file": "block/block-backend.c",
+    "name": "blk_aio_prwv",
+    "marker": "blk_aio_prwv(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["异步I/O", "生命周期"]
+  },
+  {
+    "id": "qemu-040",
+    "file": "block/block-backend.c",
+    "name": "blk_error_action",
+    "marker": "blk_error_action(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["错误策略", "状态"]
+  },
+  {
+    "id": "qemu-041",
+    "file": "hw/core/cpu-common.c",
+    "name": "cpu_common_parse_features",
+    "marker": "cpu_common_parse_features(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["配置", "类型系统"]
+  },
+  {
+    "id": "qemu-042",
+    "file": "hw/core/cpu-common.c",
+    "name": "cpu_common_realizefn",
+    "marker": "cpu_common_realizefn(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["生命周期", "错误处理"]
+  },
+  {
+    "id": "qemu-043",
+    "file": "hw/core/cpu-common.c",
+    "name": "cpu_common_initfn",
+    "marker": "cpu_common_initfn(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["初始化", "状态"]
+  },
+  {
+    "id": "qemu-044",
+    "file": "hw/core/cpu-common.c",
+    "name": "list_cpus",
+    "marker": "list_cpus(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["枚举", "回调"]
+  },
+  {
+    "id": "qemu-045",
+    "file": "migration/migration.c",
+    "name": "migration_incoming_state_destroy",
+    "marker": "migration_incoming_state_destroy(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["迁移", "资源释放"]
+  },
+  {
+    "id": "qemu-046",
+    "file": "migration/migration.c",
+    "name": "process_incoming_migration_co",
+    "marker": "process_incoming_migration_co(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["迁移", "协程", "恢复"]
+  },
+  {
+    "id": "qemu-047",
+    "file": "migration/migration.c",
+    "name": "migrate_prepare",
+    "marker": "migrate_prepare(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["迁移", "前置条件"]
+  },
+  {
+    "id": "qemu-048",
+    "file": "migration/migration.c",
+    "name": "migration_iteration_run",
+    "marker": "migration_iteration_run(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["迁移", "状态机", "速率控制"]
+  },
+  {
+    "id": "qemu-049",
+    "file": "system/vl.c",
+    "name": "configure_accelerators",
+    "marker": "configure_accelerators(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["配置", "加速器", "回退"]
+  },
+  {
+    "id": "qemu-050",
+    "file": "system/vl.c",
+    "name": "qemu_machine_creation_done",
+    "marker": "qemu_machine_creation_done(",
+    "language": "c",
+    "group": "acceptance",
+    "tags": ["生命周期", "全局状态"]
+  }
+]

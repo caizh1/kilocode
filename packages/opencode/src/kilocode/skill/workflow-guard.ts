@@ -19,6 +19,7 @@ export type Message = {
       }
       metadata?: {
         artifactDir?: unknown
+        jobId?: unknown
         name?: unknown
         failed?: unknown
       }
@@ -27,14 +28,27 @@ export type Message = {
 }
 
 const NAME = "source-backed-detail-design"
+const REVISION = "SBDD_JOB_REVISION=2026-08-chunked-v1"
 const LIMIT = 256
 type State = {
   anchor: string
   root?: string
   continued: boolean
+  activation: "skill-tool" | "skill-command"
+  jobId?: string
 }
 
 const active = new Map<string, State>()
+const armed = new Set<string>()
+
+export function armCommand(session: string, skill: string, source?: "command" | "mcp" | "skill") {
+  if (skill !== NAME || source !== "skill") return
+  armed.add(session)
+}
+
+export function disarmCommand(session: string) {
+  armed.delete(session)
+}
 
 export function needs(session: string, messages: Message[]) {
   if (active.has(session)) return false
@@ -49,6 +63,15 @@ export function recover(session: string, history: Message[], messages: Message[]
 
 export function sync(session: string, messages: Message[]) {
   const user = messages.findLast(actual)
+  if (user && armed.delete(session)) {
+    active.set(session, {
+      anchor: user.info.id,
+      continued: false,
+      activation: "skill-command",
+    })
+    trim()
+    return
+  }
   if (!user || !continuation(user)) {
     active.delete(session)
     return
@@ -58,14 +81,18 @@ export function sync(session: string, messages: Message[]) {
     active.delete(session)
     return
   }
-  const tail = messages
-    .slice(found.index + 1)
-    .filter(actual)
+  const tail = messages.slice(found.index + 1).filter(actual)
   if (!tail.length || tail.some((item) => !continuation(item))) {
     active.delete(session)
     return
   }
-  active.set(session, { anchor: user.info.id, root: found.root, continued: true })
+  active.set(session, {
+    anchor: user.info.id,
+    root: found.root,
+    continued: true,
+    activation: "skill-tool",
+    jobId: found.jobId,
+  })
 }
 
 export function activate(session: string, skill: string, messages: Message[]) {
@@ -79,12 +106,10 @@ export function activate(session: string, skill: string, messages: Message[]) {
     anchor: user.info.id,
     root,
     continued: prior?.continued === true || continuation(user),
+    activation: prior?.activation ?? "skill-tool",
+    jobId: prior?.jobId,
   })
-  while (active.size > LIMIT) {
-    const first = active.keys().next().value
-    if (!first) break
-    active.delete(first)
-  }
+  trim()
 }
 
 export function shell(session: string, messages: Message[]) {
@@ -103,10 +128,24 @@ export function figures(session: string, messages: Message[]) {
   return current(session, messages)?.continued === true
 }
 
+export function activation(session: string, messages: Message[]) {
+  return current(session, messages)?.activation
+}
+
+export function job(session: string, messages: Message[]) {
+  return current(session, messages)?.jobId
+}
+
 export function declare(session: string, messages: Message[], root: string) {
   const state = current(session, messages)
   if (!state) return
   active.set(session, { ...state, root })
+}
+
+export function bind(session: string, messages: Message[], input: { root: string; jobId: string }) {
+  const state = current(session, messages)
+  if (!state) return
+  active.set(session, { ...state, root: input.root, jobId: input.jobId })
 }
 
 export function mutation(session: string, messages: Message[], workspace: string, file: string) {
@@ -139,6 +178,7 @@ export function artifact(session: string, messages: Message[], workspace: string
 export async function stage(session: string, messages: Message[], workspace: string, file: string) {
   const state = current(session, messages)
   if (!state?.root) return
+  if (state.jobId) return
   const root = path.resolve(workspace, state.root)
   const target = path.resolve(file)
   const relative = path.relative(root, target).replaceAll("\\", "/")
@@ -164,6 +204,7 @@ export async function checkpoint(
 ) {
   const state = current(session, messages)
   if (!state?.root) return
+  if (state.jobId) return
   const root = path.resolve(workspace, state.root)
   const target = path.resolve(file)
   const relative = path.relative(root, target).replaceAll("\\", "/")
@@ -195,13 +236,28 @@ function restore(session: string, messages: Message[]) {
   if (!user || !continuation(user) || !loaded(messages)) return
   const root = declared(messages)
   if (!root) return
-  const state = { anchor: user.info.id, root, continued: true }
+  const state: State = {
+    anchor: user.info.id,
+    root,
+    continued: true,
+    activation: "skill-tool",
+    jobId: declaration(messages)?.jobId,
+  }
   active.set(session, state)
   return state
 }
 
 export function reset() {
   active.clear()
+  armed.clear()
+}
+
+function trim() {
+  while (active.size > LIMIT) {
+    const first = active.keys().next().value
+    if (!first) break
+    active.delete(first)
+  }
 }
 
 function continuation(message: Message) {
@@ -220,15 +276,20 @@ function actual(message: Message) {
 }
 
 function loaded(messages: Message[]) {
-  return messages.some((message) =>
-    message.parts.some(
+  return messages.some((message) => {
+    if (
+      message.info.role === "user" &&
+      message.parts.some((part) => part.type === "text" && part.text?.includes(REVISION))
+    )
+      return true
+    return message.parts.some(
       (part) =>
         part.type === "tool" &&
         part.tool === "skill" &&
         part.state?.status === "completed" &&
         (part.state.input?.name === NAME || part.state.metadata?.name === NAME),
-    ),
-  )
+    )
+  })
 }
 
 function declared(messages: Message[]) {
@@ -242,10 +303,17 @@ function declaration(messages: Message[]) {
     for (let offset = message.parts.length - 1; offset >= 0; offset--) {
       const part = message.parts[offset]
       if (!part) continue
+      if (part.type === "tool" && part.tool === "source_backed_design_job" && part.state?.status === "completed") {
+        if (part.state.metadata?.failed === true) continue
+        const root = part.state.metadata?.artifactDir
+        const jobId = part.state.metadata?.jobId
+        if (typeof root === "string" && root.trim() && typeof jobId === "string" && jobId.trim())
+          return { root, jobId, index }
+      }
       if (part.type !== "tool" || part.tool !== "declare_artifact" || part.state?.status !== "completed") continue
       if (part.state.metadata?.failed === true) continue
       const root = part.state.metadata?.artifactDir
-      if (typeof root === "string" && root.trim()) return { root, index }
+      if (typeof root === "string" && root.trim()) return { root, jobId: undefined, index }
     }
   }
 }

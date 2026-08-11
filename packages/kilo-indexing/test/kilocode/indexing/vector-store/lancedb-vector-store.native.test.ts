@@ -22,7 +22,10 @@ describe("LanceDB 原生批量 generation finalize", () => {
       new Response(child.stderr).text(),
     ])
 
-    expect(`${stdout}\n${stderr}`).toContain("1 pass")
+    const output = `${stdout}\n${stderr}`
+    expect(output).toContain("使用当前原生运行库激活新 generation 并清理旧数据")
+    expect(output).toContain("清空候选代后保留完整向量身份并支持中断恢复和跨进程重开")
+    expect(output).toContain("0 fail")
     expect(code).toBe(0)
   }, 30_000)
 })

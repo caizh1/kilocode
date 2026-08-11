@@ -929,7 +929,14 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
       }
       const efforts = [...WIDELY_SUPPORTED_EFFORTS]
       if (model.api.id.toLowerCase().includes("deepseek-v4")) {
+        // kilocode_change start - expose explicit DeepSeek V4 thinking controls for its tool-choice compatibility route
         efforts.push("max")
+        return {
+          none: { thinking: { type: "disabled" } },
+          thinking: { thinking: { type: "enabled" } },
+          ...Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }])),
+        }
+        // kilocode_change end
       }
       return Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { randomUUID } from "crypto"
-import { chmod, mkdir, mkdtemp, realpath, rm, symlink, unlink, writeFile } from "fs/promises"
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, unlink, writeFile } from "fs/promises"
 import ignore from "ignore"
 import { tmpdir } from "os"
 import path from "path"
@@ -38,6 +38,7 @@ const store = {
 describe("DocumentIndexService", () => {
   test("completes an empty document scan with zero files", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const completions: Array<{ allowEmpty?: boolean } | undefined> = []
     try {
       const cfg = new CodeIndexConfigManager({
         enabled: true,
@@ -45,7 +46,13 @@ describe("DocumentIndexService", () => {
         openAiKey: "sk-test",
         documents: { enabled: true },
       })
-      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, store, ignore())
+      const emptyStore = {
+        ...store,
+        markIndexingComplete: async (options?: { allowEmpty?: boolean }) => {
+          completions.push(options)
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, emptyStore, ignore())
 
       await service.start("manual")
 
@@ -56,6 +63,7 @@ describe("DocumentIndexService", () => {
         percent: 100,
         validFileCount: 0,
       })
+      expect(completions).toEqual([{ allowEmpty: true }])
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -767,9 +775,11 @@ describe("DocumentIndexService", () => {
       await service.start("manual")
       expect(embeddings).toBeGreaterThan(0)
       const count = embeddings
+      const firstDetail = service.getStatus().detail
 
       await service.start("manual")
       expect(embeddings).toBe(count)
+      expect(service.getStatus().detail).toBe(firstDetail)
 
       await unlink(file)
       await service.start("manual")
@@ -778,6 +788,89 @@ describe("DocumentIndexService", () => {
     } finally {
       await rm(root, { recursive: true, force: true })
       await rm(external, { recursive: true, force: true })
+    }
+  })
+
+  test("finalizes each document generation atomically when the vector store supports it", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const finalized: Array<readonly { filePath: string; generation: string; runId: string }[]> = []
+    try {
+      await writeFile(path.join(root, "notes.md"), "document generation finalization")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const tracked = {
+        ...store,
+        finalizeFileGenerations: async (
+          files: readonly { filePath: string; generation: string; runId: string }[],
+        ) => {
+          finalized.push(files)
+        },
+        activateFileGeneration: async () => {
+          throw new Error("separate activation must not run")
+        },
+        deleteInactiveFilePoints: async () => {
+          throw new Error("separate cleanup must not run")
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, tracked, ignore())
+
+      await service.start("manual")
+
+      expect(finalized).toHaveLength(1)
+      expect(finalized[0]?.[0]).toMatchObject({ filePath: "notes.md", runId: "documents" })
+      expect(finalized[0]?.[0]?.generation).toBeString()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("reuses a legacy cache without treating its unknown chunk count as an empty index", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "kilo-doc-workspace-"))
+    const cache = path.join(root, ".cache")
+    const completions: Array<{ allowEmpty?: boolean } | undefined> = []
+    let embeddings = 0
+    try {
+      await writeFile(path.join(root, "notes.md"), "legacy document cache")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const tracked = {
+        ...embedder,
+        createEmbeddings: async (texts: string[]) => {
+          embeddings += texts.length
+          return { embeddings: texts.map(() => [0.1]) }
+        },
+      } satisfies IEmbedder
+      const first = new DocumentIndexService(root, cache, cfg, tracked, store, ignore())
+      await first.start("manual")
+      const count = embeddings
+      const [name] = await readdir(cache)
+      const file = path.join(cache, name!)
+      const data = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>
+      delete data.chunks
+      await writeFile(file, JSON.stringify(data))
+
+      const legacyStore = {
+        ...store,
+        markIndexingComplete: async (options?: { allowEmpty?: boolean }) => {
+          completions.push(options)
+        },
+      } satisfies IVectorStore
+      const resumed = new DocumentIndexService(root, cache, cfg, tracked, legacyStore, ignore())
+      await resumed.start("manual")
+
+      expect(embeddings).toBe(count)
+      expect(resumed.getStatus().detail).toContain("1 legacy cached document counts unavailable")
+      expect(completions).toEqual([{ allowEmpty: false }])
+    } finally {
+      await rm(root, { recursive: true, force: true })
     }
   })
 

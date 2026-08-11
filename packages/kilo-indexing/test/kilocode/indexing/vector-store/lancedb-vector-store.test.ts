@@ -5,8 +5,10 @@
 
 import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from "bun:test"
 import type { Payload } from "../../../../src/indexing/interfaces"
+import { createHash } from "crypto"
 import * as path from "path"
 import fs from "fs"
+import { tmpdir } from "os"
 
 const vectorFields = [
   "id",
@@ -101,6 +103,11 @@ mock.module("../../../../src/indexing/vector-store/lancedb-loader", () => ({
 
 // Import module under test AFTER mock.module
 import { LanceDBVectorStore } from "../../../../src/indexing/vector-store/lancedb-vector-store"
+import {
+  compactSafeGenerationRoot,
+  lanceDbWorstCasePaths,
+  LANCEDB_WINDOWS_PATH_BUDGET,
+} from "../../../../src/indexing/vector-store/lancedb-paths"
 
 const workspacePath = path.join("mock", "workspace")
 const vectorSize = 768
@@ -209,6 +216,111 @@ describe("LocalVectorStore", () => {
       expect(store["vectorSize"]).toBe(vectorSize)
       expect(store["workspacePath"]).toBe(workspacePath)
       expect(store["dbPath"]).toContain("mock")
+    })
+
+    test("keeps direct and safe Code Insiders paths within the Windows write budget", () => {
+      const workspace = "D:\\2026\\7.31_2\\suspend_workspace\\branch_for_Jaguar6030_fpga_develop_tag_ES0"
+      const indexing =
+        "C:\\Users\\qinjc\\AppData\\Roaming\\Code - Insiders\\User\\globalStorage\\chipmate.chipmate\\v2\\state\\indexing"
+      const bases = [path.win32.join(indexing, "c"), path.win32.join(indexing, "d")]
+
+      const databases = bases.flatMap((base) => {
+        const direct = new LanceDBVectorStore(workspace, 1024, base)
+        const generation = path.win32.join(compactSafeGenerationRoot(workspace, base), "AbCd012_")
+        const safe = new LanceDBVectorStore(workspace, 1024, generation, undefined, "")
+        return [direct["dbPath"], safe["dbPath"]]
+      })
+
+      expect(databases).toHaveLength(4)
+      expect(databases.every((database) => !database.includes("branch_for_Jaguar"))).toBe(true)
+      expect(compactSafeGenerationRoot(workspace, bases[0])).not.toBe(databases[0])
+      expect(compactSafeGenerationRoot(workspace, bases[1])).not.toBe(databases[2])
+      for (const database of databases) {
+        expect(lanceDbWorstCasePaths(database).maximum).toBeLessThanOrEqual(LANCEDB_WINDOWS_PATH_BUDGET)
+      }
+    })
+
+    test("uses distinct compact identities for same-named workspaces", () => {
+      const left = new LanceDBVectorStore("D:\\left\\workspace", vectorSize, "C:\\cmdb")
+      const right = new LanceDBVectorStore("D:\\right\\workspace", vectorSize, "C:\\cmdb")
+
+      expect(path.win32.basename(left["dbPath"])).toHaveLength(16)
+      expect(left["dbPath"]).not.toBe(right["dbPath"])
+    })
+
+    test("normalizes Windows drive and path casing before deriving the identity", () => {
+      const upper = new LanceDBVectorStore("D:\\Source\\Workspace", vectorSize, "C:\\cmdb")
+      const lower = new LanceDBVectorStore("d:\\source\\workspace", vectorSize, "C:\\cmdb")
+
+      expect(upper["dbPath"]).toBe(lower["dbPath"])
+    })
+
+    test("rejects an explicitly configured Windows root before opening LanceDB", () => {
+      const base = `C:\\${Array.from({ length: 18 }, (_, index) => `very-long-directory-${index}`).join("\\")}`
+
+      expect(() => new LanceDBVectorStore("D:\\source\\workspace", vectorSize, base)).toThrow(
+        /Windows write path is too long.*C:\\cmdb/,
+      )
+    })
+
+    test("reopens a legacy workspace-named database inside a safe generation", () => {
+      const root = fs.mkdtempSync(path.join(tmpdir(), "lancedb-legacy-name-"))
+      const workspace = path.join(root, "旧工作区")
+      const hash = createHash("sha256").update(workspace).digest("hex").slice(0, 16)
+      const legacy = path.join(root, `旧工作区-${hash}`)
+      fs.mkdirSync(legacy, { recursive: true })
+
+      try {
+        const compatible = new LanceDBVectorStore(workspace, vectorSize, root, undefined, "v")
+        expect(compatible["dbPath"]).toBe(legacy)
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    test("rebuilds an unsafe legacy path and removes it only after compact completion", async () => {
+      const root = fs.mkdtempSync(path.join(tmpdir(), "lancedb-unsafe-legacy-"))
+      const workspace = path.join(root, "w".repeat(80))
+      const base = path.join(root, "b".repeat(40))
+      const hash = createHash("sha256").update(workspace).digest("hex").slice(0, 16)
+      const legacy = path.join(base, `${path.basename(workspace)}-${hash}`)
+      fs.mkdirSync(legacy, { recursive: true })
+      const migrated = new LanceDBVectorStore(workspace, vectorSize, base)
+      migrated["lancedbModule"] = mockLanceDBModule
+      migrated["db"] = mockDb
+      migrated["table"] = mockTable
+
+      try {
+        expect(migrated["dbPath"]).not.toBe(legacy)
+        expect(fs.existsSync(legacy)).toBe(true)
+        await migrated.markIndexingComplete()
+        expect(fs.existsSync(legacy)).toBe(false)
+      } finally {
+        await migrated.close()
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    test("keeps an unsafe legacy path when compact completion fails", async () => {
+      const root = fs.mkdtempSync(path.join(tmpdir(), "lancedb-failed-migration-"))
+      const workspace = path.join(root, "w".repeat(80))
+      const base = path.join(root, "b".repeat(40))
+      const hash = createHash("sha256").update(workspace).digest("hex").slice(0, 16)
+      const legacy = path.join(base, `${path.basename(workspace)}-${hash}`)
+      fs.mkdirSync(legacy, { recursive: true })
+      const migrated = new LanceDBVectorStore(workspace, vectorSize, base)
+      migrated["lancedbModule"] = mockLanceDBModule
+      migrated["db"] = mockDb
+      migrated["table"] = mockTable
+      mockTable.add.mockRejectedValueOnce(new Error("metadata write failed"))
+
+      try {
+        await expect(migrated.markIndexingComplete()).rejects.toThrow("metadata write failed")
+        expect(fs.existsSync(legacy)).toBe(true)
+      } finally {
+        await migrated.close()
+        fs.rmSync(root, { recursive: true, force: true })
+      }
     })
 
     test("loads LanceDB through the shared loader", async () => {
@@ -470,7 +582,102 @@ describe("LocalVectorStore", () => {
       expect(mockMerge.whenMatchedUpdateAll).toHaveBeenCalled()
       expect(mockMerge.whenNotMatchedInsertAll).toHaveBeenCalled()
       expect(mockMerge.execute).toHaveBeenCalledTimes(1)
-      expect(mockMerge.execute.mock.calls[0]?.[1]).toEqual({ timeoutMs: 30_000 })
+      expect(mockMerge.execute.mock.calls[0]?.[1]).toEqual({ timeoutMs: 120_000 })
+    })
+
+    test("serializes concurrent merge inserts", async () => {
+      let active = 0
+      let maximum = 0
+      mockMerge.execute.mockImplementation(async () => {
+        active += 1
+        maximum = Math.max(maximum, active)
+        await Bun.sleep(10)
+        active -= 1
+      })
+      const point = (id: string) => ({
+        id,
+        vector: [1, 2, 3],
+        payload: { filePath: id, fileHash: id, codeChunk: id, startLine: 1, endLine: 2 },
+      })
+
+      await Promise.all([
+        store.upsertPoints([point("123e4567-e89b-12d3-a456-426614174000")]),
+        store.upsertPoints([point("123e4567-e89b-12d3-a456-426614174001")]),
+      ])
+
+      expect(maximum).toBe(1)
+      expect(mockMerge.execute).toHaveBeenCalledTimes(2)
+    })
+
+    test("serializes generation finalization behind an active merge insert", async () => {
+      let writing = false
+      let overlapped = false
+      mockMerge.execute.mockImplementation(async () => {
+        writing = true
+        await Bun.sleep(10)
+        writing = false
+      })
+      mockTable.update.mockImplementation(async () => {
+        if (writing) overlapped = true
+      })
+      const point = {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        vector: [1, 2, 3],
+        payload: { filePath: "src/a.ts", fileHash: "hash", codeChunk: "code", startLine: 1, endLine: 2 },
+      }
+
+      await Promise.all([
+        store.upsertPoints([point]),
+        store.finalizeFileGenerations([{ filePath: "src/a.ts", generation: "generation", runId: "run" }]),
+      ])
+
+      expect(overlapped).toBe(false)
+      expect(mockTable.update).toHaveBeenCalledTimes(1)
+    })
+
+    test("splits one timed-out merge insert into smaller serialized batches", async () => {
+      const points = Array.from({ length: 4 }, (_, index) => ({
+        id: `123e4567-e89b-12d3-a456-42661417400${index}`,
+        vector: [1, 2, 3],
+        payload: {
+          filePath: `src/file-${index}.ts`,
+          fileHash: `hash-${index}`,
+          codeChunk: `export const value${index} = ${index}`,
+          startLine: 1,
+          endLine: 1,
+        },
+      }))
+      mockMerge.execute.mockRejectedValueOnce(
+        new Error("Failed to execute merge insert: GenericFailure, runtime error: Merge Insert timed out"),
+      )
+
+      await store.upsertPoints(points)
+
+      expect(mockMerge.execute).toHaveBeenCalledTimes(3)
+      expect(mockMerge.execute.mock.calls.map((call) => call[0].length)).toEqual([4, 2, 2])
+    })
+
+    test("recursively splits repeated merge timeouts down to single-point writes", async () => {
+      const points = Array.from({ length: 4 }, (_, index) => ({
+        id: `123e4567-e89b-12d3-a456-42661417401${index}`,
+        vector: [1, 2, 3],
+        payload: {
+          filePath: `src/repeated-${index}.ts`,
+          fileHash: `hash-${index}`,
+          codeChunk: `export const repeated${index} = ${index}`,
+          startLine: 1,
+          endLine: 1,
+        },
+      }))
+      mockMerge.execute.mockImplementation(async (data: unknown[]) => {
+        if (data.length > 1) {
+          throw new Error("Failed to execute merge insert: GenericFailure, runtime error: Merge Insert timed out")
+        }
+      })
+
+      await store.upsertPoints(points)
+
+      expect(mockMerge.execute.mock.calls.map((call) => call[0].length)).toEqual([4, 2, 1, 1, 2, 1, 1])
     })
 
     test("uses one merge transaction for a 1000-point batch", async () => {
@@ -643,20 +850,58 @@ describe("LocalVectorStore", () => {
   })
 
   describe("clearCollection", () => {
-    test("should delete all records from table and metadata", async () => {
-      mockTable.delete.mockResolvedValue(undefined)
+    test("clears vectors while restoring the complete embedding profile", async () => {
+      const metadataTable = {
+        delete: mock().mockResolvedValue(undefined),
+        add: mock().mockResolvedValue(undefined),
+      }
+      store = new LanceDBVectorStore(workspacePath, vectorSize, dbDirectory, {
+        provider: "openai-compatible",
+        modelId: "qwen3-embedding-8b",
+        dimension: vectorSize,
+        dimensionMode: "fixed",
+        requestedDimension: vectorSize,
+        endpointDigest: "endpoint-digest",
+        fingerprintDigest: "fingerprint-digest",
+        qualityVersion: "qwen3-dense-v1",
+        instructionVersion: "qwen3-retrieval-v1",
+      })
+      store["lancedbModule"] = mockLanceDBModule
+      store["db"] = mockDb
+      store["table"] = mockTable
       mockDb.tableNames.mockResolvedValue(["metadata"])
-      mockDb.openTable.mockResolvedValue(mockTable)
-      mockTable.delete.mockResolvedValue(undefined)
+      mockDb.openTable.mockImplementation((name: string) =>
+        Promise.resolve(name === "metadata" ? (metadataTable as any) : mockTable),
+      )
+
       await expect(store.clearCollection()).resolves.toBeUndefined()
+
       expect(mockTable.delete).toHaveBeenCalledWith("true")
+      expect(metadataTable.delete).not.toHaveBeenCalledWith("true")
+      expect(metadataTable.add.mock.calls.map((call) => call[0][0])).toEqual(
+        expect.arrayContaining([
+          { key: "index_schema", value: "2" },
+          { key: "vector_size", value: String(vectorSize) },
+          { key: "embedding_provider", value: "openai-compatible" },
+          { key: "embedding_model_id", value: "qwen3-embedding-8b" },
+          { key: "embedding_dimension", value: String(vectorSize) },
+          { key: "embedding_dimension_mode", value: "fixed" },
+          { key: "embedding_requested_dimension", value: String(vectorSize) },
+          { key: "embedding_endpoint_digest", value: "endpoint-digest" },
+          { key: "embedding_fingerprint_digest", value: "fingerprint-digest" },
+          { key: "embedding_quality_version", value: "qwen3-dense-v1" },
+          { key: "embedding_instruction_version", value: "qwen3-retrieval-v1" },
+          { key: "indexing_complete", value: "false" },
+          { key: "indexing_run_incomplete", value: "false" },
+        ]),
+      )
     })
 
-    test("should warn if metadata table clear fails", async () => {
+    test("fails the clear when compatibility metadata cannot be restored", async () => {
       mockTable.delete.mockResolvedValue(undefined)
       mockDb.tableNames.mockResolvedValue(["metadata"])
       mockDb.openTable.mockRejectedValue(new Error("fail"))
-      await expect(store.clearCollection()).resolves.toBeUndefined()
+      await expect(store.clearCollection()).rejects.toThrow("fail")
     })
 
     test("should throw error on main table clear failure", async () => {

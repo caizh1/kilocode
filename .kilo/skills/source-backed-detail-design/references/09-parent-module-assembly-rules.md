@@ -1,5 +1,7 @@
 # 09 Target Module Assembly and Owning-Module Rules
 
+> 完整 Word 的设计单元集合、五视图矩阵与最终组装由 `source_backed_design_job` 冻结。本文件保留通用的目标/所属上级模块语义，不授权模型在控制器之外另建图形或 Word 工作包。
+
 文件名为兼容现有 reference 集合而保留；这里的 mandatory assembly owner 是解析后的 target module，不是其所属上级模块。完整交付中，target module 必须具备五类视图：
 
 1. target-module-architecture：架构边界、组件、上下游和共享资源；
