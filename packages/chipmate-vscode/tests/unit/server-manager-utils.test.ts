@@ -27,7 +27,7 @@ import {
   treeSitterDirForBinary,
   treeSitterDirForExtension,
 } from "../../src/services/cli-backend/cli-resources"
-import { internalOfflineEnv } from "../../src/shared/internal-offline"
+import { internalOfflineEnv, internalOfflineProviderDefaults } from "../../src/shared/internal-offline"
 import { appendIndexingStderr, recordIndexingStatus } from "../../src/services/indexing-output"
 import type { IndexingStatus } from "../../src/services/cli-backend/types"
 import * as fs from "fs/promises"
@@ -419,11 +419,32 @@ describe("internal offline env", () => {
   })
 
   it("marks the spawned CLI as internal offline", () => {
-    expect(internalOfflineEnv(true)).toEqual({
-      CHIPMATE_INTERNAL_OFFLINE: "1",
+    const defaults = internalOfflineProviderDefaults(true, "https://example.com/v1", "vendor/deepseek")
+    const env = internalOfflineEnv(true, defaults)
+    expect(env).toEqual({
       CHIPMATE_INTERNAL_OFFLINE: "1",
       CHIPMATE_DISABLE_MODELS_FETCH: "1",
+      CHIPMATE_CONFIG_CONTENT: expect.any(String),
     })
+    expect(JSON.parse(env.CHIPMATE_CONFIG_CONTENT)).toMatchObject({
+      model: "chipmate/vendor/deepseek",
+      provider: { chipmate: { options: { baseURL: "https://example.com/v1" } } },
+    })
+  })
+
+  it("replaces inherited config content with the controlled internal provider config", () => {
+    const inherited = resolveManagedServerEnv(
+      { CHIPMATE_CONFIG_CONTENT: JSON.stringify({ model: "external/forged" }) },
+      "/global-storage/v2",
+    )
+    const defaults = internalOfflineProviderDefaults(true, "https://example.com/v1", "vendor/deepseek")
+    const env = { ...inherited, ...internalOfflineEnv(true, defaults) }
+
+    expect(JSON.parse(env.CHIPMATE_CONFIG_CONTENT!)).toMatchObject({
+      model: "chipmate/vendor/deepseek",
+      provider: { chipmate: { options: { baseURL: "https://example.com/v1" } } },
+    })
+    expect(env.CHIPMATE_CONFIG_CONTENT).not.toContain("external/forged")
   })
 })
 

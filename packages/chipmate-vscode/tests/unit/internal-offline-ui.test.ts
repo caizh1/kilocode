@@ -7,7 +7,11 @@ import {
   canUseSidebarSessionActions,
   gatewayTarget,
 } from "../../webview-ui/src/utils/internal-offline-ui"
-import { internalOfflineProviderDefaults, shouldUseQuickProviderMode } from "../../src/shared/internal-offline"
+import {
+  internalOfflineConfigContent,
+  internalOfflineProviderDefaults,
+  shouldUseQuickProviderMode,
+} from "../../src/shared/internal-offline"
 import { QWEN_FIM_MODEL_ID } from "../../src/shared/qwen-autocomplete"
 
 const ROOT = path.resolve(import.meta.dir, "../..")
@@ -28,6 +32,32 @@ describe("internal offline webview gateway UI", () => {
     expect(shouldUseQuickProviderMode(defaults)).toBe(true)
     expect(shouldUseQuickProviderMode(defaults, "chipmate")).toBe(true)
     expect(shouldUseQuickProviderMode(defaults, "another-provider")).toBe(false)
+  })
+
+  it("creates a key-free runtime provider config for the bundled CLI", () => {
+    const defaults = internalOfflineProviderDefaults(true, " https://example.com/v1 ", " vendor/deepseek ")
+    const content = internalOfflineConfigContent(defaults)
+    const config = JSON.parse(content!)
+
+    expect(config).toEqual({
+      model: "chipmate/vendor/deepseek",
+      provider: {
+        chipmate: {
+          name: "ChipMate",
+          npm: "@ai-sdk/openai-compatible",
+          options: { baseURL: "https://example.com/v1" },
+          models: {
+            "vendor/deepseek": {
+              name: "vendor/deepseek",
+              reasoning: true,
+            },
+          },
+        },
+      },
+    })
+    expect(content).not.toContain("apiKey")
+    expect(content).not.toContain("secret")
+    expect(content).not.toContain("embedding")
   })
   it("keeps Gateway UI available in public builds", () => {
     expect(canUseGatewayUi(false)).toBe(true)
@@ -50,7 +80,10 @@ describe("internal offline webview gateway UI", () => {
     const editor = pkg.contributes.menus["editor/title"] as Array<{ command: string; when?: string }>
     const palette = pkg.contributes.menus.commandPalette as Array<{ command: string; when?: string }>
 
-    for (const command of ["chipmate.v2.sidebarTitle.chipmateClawOpen", "chipmate.v2.sidebarTitle.profileButtonClicked"]) {
+    for (const command of [
+      "chipmate.v2.sidebarTitle.chipmateClawOpen",
+      "chipmate.v2.sidebarTitle.profileButtonClicked",
+    ]) {
       expect(title.find((item) => item.command === command)?.when).toContain("!chipmate.v2.internalOffline")
     }
     expect(editor.find((item) => item.command === "chipmate.v2.profileButtonClicked")?.when).toContain(

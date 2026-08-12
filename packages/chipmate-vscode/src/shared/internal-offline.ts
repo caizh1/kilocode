@@ -31,11 +31,16 @@ export function isInternalOfflineBuild(): boolean {
   return typeof __CHIPMATE_INTERNAL_OFFLINE__ !== "undefined" && __CHIPMATE_INTERNAL_OFFLINE__
 }
 
-export function internalOfflineEnv(enabled = isInternalOfflineBuild()): Record<string, string> {
+export function internalOfflineEnv(
+  enabled = isInternalOfflineBuild(),
+  defaults = internalOfflineProviderDefaults(enabled),
+): Record<string, string> {
   if (!enabled) return {}
+  const config = internalOfflineConfigContent(defaults)
   return {
     CHIPMATE_INTERNAL_OFFLINE: "1",
     CHIPMATE_DISABLE_MODELS_FETCH: "1",
+    ...(config ? { CHIPMATE_CONFIG_CONTENT: config } : {}),
   }
 }
 
@@ -66,6 +71,28 @@ export function internalOfflineProviderDefaults(
   const model = modelID?.trim()
   if (!enabled || !url || !model) return
   return { ...INTERNAL_OFFLINE_PROVIDER, baseURL: url, modelID: model }
+}
+
+export function internalOfflineConfigContent(
+  defaults: InternalOfflineProviderDefaults | undefined,
+): string | undefined {
+  if (!defaults) return undefined
+  return JSON.stringify({
+    model: `${defaults.providerID}/${defaults.modelID}`,
+    provider: {
+      [defaults.providerID]: {
+        name: defaults.name,
+        npm: defaults.npm,
+        options: { baseURL: defaults.baseURL },
+        models: {
+          [defaults.modelID]: {
+            name: defaults.modelID,
+            reasoning: true,
+          },
+        },
+      },
+    },
+  })
 }
 
 export function shouldUseQuickProviderMode(

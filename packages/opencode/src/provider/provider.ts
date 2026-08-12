@@ -1407,7 +1407,7 @@ const layer = Layer.effect(
         // chipmate_change start - internal offline builds expose only configured OpenAI-compatible providers
         const offline = isInternalOffline()
         const configProviders = Object.entries(cfg.provider ?? {}).filter(
-          ([id, item]) => !offline || (item?.npm === "@ai-sdk/openai-compatible" && id !== "chipmate" && id !== "apertis"),
+          ([id, item]) => !offline || (item?.npm === "@ai-sdk/openai-compatible" && id !== "apertis"),
         )
         // chipmate_change end
         const disabled = new Set(cfg.disabled_providers ?? [])
@@ -1593,10 +1593,14 @@ const layer = Layer.effect(
           if (!stored) continue
           if (!plugin.auth.loader) continue
 
+          // chipmate_change start - a retained credential must not crash startup when its catalog entry is unavailable
+          const info = database[plugin.auth.provider]
+          if (!info) continue
+          // chipmate_change end
           const options = yield* Effect.promise(() =>
             plugin.auth!.loader!(
               () => bridge.promise(auth.get(providerID).pipe(Effect.orDie)) as any,
-              toPublicInfo(database[plugin.auth!.provider]),
+              toPublicInfo(info), // chipmate_change
             ),
           )
           const opts = options ?? {}
