@@ -2,6 +2,7 @@
 import { Bus } from "@/bus"
 import { InstanceState } from "@/effect/instance-state"
 import { Identifier } from "@/id/id"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Context, Deferred, Duration, Effect, Layer, Schema } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { ErrorCode, Event, type Failure, type Request, RequestID, type Result } from "./protocol"
@@ -141,4 +142,5 @@ export function layer(timeout: Duration.Input = "20 minutes") {
 }
 
 export const defaultLayer = layer().pipe(Layer.provide(Bus.layer))
+export const node = LayerNode.make({ service: Service, layer: layer(), deps: [Bus.node] })
 export * as SkillMarket from "./service"

@@ -62,7 +62,7 @@ const testAllow: Record<string, { count: number; reason: string }> = {
   },
   "server/experimental-session-list.test.ts": { count: 2, reason: "ChipMate session list integration test" },
   "chipmate/server/cloud-session-import.test.ts": { count: 5, reason: "full app cloud import transaction integration" },
-  "chipmate/server/listener-runtime.test.ts": { count: 4, reason: "listener and AppRuntime integration test" },
+  "chipmate/server/listener-runtime.test.ts": { count: 6, reason: "listener and AppRuntime integration test" },
   "tool/recall.test.ts": { count: 11, reason: "existing runtime integration test" },
 }
 

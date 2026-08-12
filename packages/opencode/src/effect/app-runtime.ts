@@ -56,6 +56,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 // chipmate_change start
 import { Notebook } from "@/chipmate/notebook/service"
 import { AgentManager } from "@/chipmate/agent-manager/service"
+import { SkillMarket } from "@/chipmate/skill-market/service"
 // chipmate_change end
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -69,7 +70,14 @@ import { PtyTicket } from "@opencode-ai/core/pty/ticket" // chipmate_change
 
 // chipmate_change start - retain ChipMate runtime services in the upstream node graph
 const memory = LayerNode.make({ service: MemoryService.Service, layer: MemoryService.layer, deps: [] })
-const chipmate = LayerNode.group([Credential.node, ModelCache.node, AgentManager.node, Notebook.node, memory])
+const chipmate = LayerNode.group([
+  Credential.node,
+  ModelCache.node,
+  AgentManager.node,
+  Notebook.node,
+  SkillMarket.node,
+  memory,
+])
 // chipmate_change end
 
 export const AppLayer = AppNodeBuilderV1.build(

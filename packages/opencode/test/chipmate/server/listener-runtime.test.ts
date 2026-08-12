@@ -9,6 +9,8 @@ import { SessionPaths } from "../../../src/server/routes/instance/httpapi/groups
 import { Session } from "../../../src/session/session"
 import { SessionRunState } from "../../../src/session/run-state"
 import { SessionID } from "../../../src/session/schema"
+import { SkillMarket } from "../../../src/chipmate/skill-market/service"
+import { ChipMatePaths } from "../../../src/chipmate/server/httpapi/groups/chipmate"
 import { withTimeout } from "../../../src/util/timeout"
 import { resetDatabase } from "../../fixture/db"
 import { disposeAllInstances, reloadTestInstance, tmpdir } from "../../fixture/fixture"
@@ -101,3 +103,25 @@ test("listener aborts shared parent and subagent runners", async () => {
     await Promise.all(running)
   }
 }, 20_000)
+
+test("listener and AppRuntime share the Skill Market service", async () => {
+  Flag.CHIPMATE_SERVER_PASSWORD = undefined
+  delete process.env.CHIPMATE_SERVER_PASSWORD
+  await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+  const ctx = await reloadTestInstance({ directory: tmp.path })
+  const pending = await AppRuntime.runPromise(
+    SkillMarket.Service.use((market) => market.list()).pipe(Effect.provideService(InstanceRef, ctx)),
+  )
+  expect(pending).toEqual([])
+
+  const listener = await Server.listen({ hostname: "127.0.0.1", port: 0 })
+  try {
+    const response = await fetch(new URL(ChipMatePaths.skillMarketList, listener.url), {
+      headers: { "x-chipmate-directory": tmp.path },
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([])
+  } finally {
+    await withTimeout(listener.stop(true), 10_000, "timed out cleaning up Skill Market listener")
+  }
+})
