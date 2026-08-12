@@ -80,7 +80,7 @@
 
 - 产品、版本和平台必须来自用户要求、构建目标或包内 manifest，不能只猜文件名。发布脚本负责 SSH 临时上传、服务器原子发布、macOS 钥匙串登录、清单/SHA-256/长度核对和受保护 Range 下载验证。
 - 只有发布脚本最终输出 `ECS 公网发布与鉴权下载验收通过` 才能报告 ECS 发布完成；脚本、专用 SSH 权限或钥匙串凭据失败时，保留已验证本地包并准确报告阻塞，不得绕过脚本手工上传。
-- 发布命令缺失时，只能从 `/Users/archer/.local/share/chipmate-package-deploy/publish-local.sh` 恢复到上述固定路径；恢复源也不存在时直接报告阻塞，不自行另写上传流程。
+- 发布命令缺失时，优先从 `/Users/archer/.local/share/chipmate-package-deploy/publish-local.sh` 恢复到上述固定路径。该恢复源不存在、但已经投入使用的兼容发布包装器 `/Users/archer/.local/bin/kilo-publish-package` 仍可执行时，允许先记录其 SHA-256，再通过同目录临时文件原子复制为 `chipmate-publish-package`；服务器账号、钥匙、钥匙串服务名和远端目录等既有外部契约保持不变。迁移完成后统一调用 `chipmate-publish-package`，不得绕过包装器手工上传。两个恢复来源都不存在时才报告阻塞，不自行另写上传流程。
 - 不得读取、输出、复制或记录密码、Cookie、会话密钥和 SSH 私钥，也不得通过匿名 `curl` 把受保护资源的 `401` 或登录跳转误判为发布失败。
 - 稳定私有平台使用 `https://106.14.118.87/`，清单和下载需要登录。不得降级到 HTTP 传输凭据或包文件，也不得为包发布修改服务器 `/v1/`、HTTPS `443` 或其他既有服务。
 - Cloudflare Quick Tunnel 只作为本机目录的临时备用入口。需要启用时只运行一个端口 `8765` 的 Tunnel，并使用 `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8765 --http-host-header 127.0.0.1:8765 --protocol http2`；从最新日志确认 `protocol=http2`，`lax` 等美国节点不得判定可用，应优先重连到 `hkg`，再验证目录、长度和实际下载。使用当前动态 URL，不复用旧地址。
