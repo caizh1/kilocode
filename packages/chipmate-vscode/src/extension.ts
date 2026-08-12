@@ -41,6 +41,7 @@ import { createSkillMarketBridge } from "./services/skill-market"
 import { registerCoexistence } from "./chipmate/coexistence"
 import { isolate } from "./chipmate/storage"
 import { INTERNAL_OFFLINE_CONTEXT, isInternalOfflineBuild } from "./shared/internal-offline"
+import { migrateLegacyProductState } from "./migration/legacy-product-state"
 
 let agentManager: AgentManagerProvider | undefined
 let shuttingDown = false
@@ -64,8 +65,9 @@ const panelTitleHandler = (panel: vscode.WebviewPanel) => (title: string) => {
 // keybindings, autocomplete, commit-message generation, and URI deep links all work immediately —
 // without requiring the user to open a ChipMate sidebar or panel first. The CLI backend is NOT spawned here;
 // it starts lazily when a webview connects or when ensureBackendForAutocomplete() triggers it.
-export function activate(source: vscode.ExtensionContext) {
+export async function activate(source: vscode.ExtensionContext) {
   const context = isolate(source)
+  await migrateLegacyProductState(context)
   void confirmPendingUpdateActivation(context)
     .then(async (result) => {
       if (result.status === "none") return
@@ -94,9 +96,7 @@ export function activate(source: vscode.ExtensionContext) {
           console.warn("[ChipMate New] 更新首次重载回执在自动重试前丢失。")
           return
         }
-        console.warn(
-          `[ChipMate New] 目标扩展仍在注册，自动执行一次受限的第二次重载（尝试 ${retry.reloadAttempts}）。`,
-        )
+        console.warn(`[ChipMate New] 目标扩展仍在注册，自动执行一次受限的第二次重载（尝试 ${retry.reloadAttempts}）。`)
         await vscode.commands.executeCommand("workbench.action.reloadWindow")
         return
       }
@@ -119,7 +119,7 @@ export function activate(source: vscode.ExtensionContext) {
   console.log("ChipMate extension is now active")
   shuttingDown = false
 
-  const coexistence = registerCoexistence(context)
+  const coexistence = registerCoexistence()
   context.subscriptions.push(coexistence)
 
   const telemetry = TelemetryProxy.getInstance()

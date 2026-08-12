@@ -94,7 +94,7 @@ export class CodeIndexConfigManager {
     chunkChars: DEFAULT_DOCUMENT_CHUNK_CHARS,
     chunkOverlapChars: DEFAULT_DOCUMENT_CHUNK_OVERLAP_CHARS,
     searchMaxResults: DEFAULT_DOCUMENT_SEARCH_MAX_RESULTS,
-  };
+  }
   private fileExtensions: string[] = resolveFileExtensions(undefined)
 
   constructor(input: IndexingConfigInput) {
@@ -104,11 +104,16 @@ export class CodeIndexConfigManager {
   /**
    * Applies new configuration input. Returns whether a restart is needed.
    */
-  public loadConfiguration(input: IndexingConfigInput): { requiresRestart: boolean } {
+  public loadConfiguration(input: IndexingConfigInput): {
+    requiresRestart: boolean
+    requiresServiceRecreation: boolean
+    requiresIndexRebuild: boolean
+  } {
     const snapshot = this.captureSnapshot()
     this.applyInput(input)
-    const requiresRestart = this.doesConfigChangeRequireRestart(snapshot)
-    return { requiresRestart }
+    const requiresServiceRecreation = this.doesConfigChangeRequireServiceRecreation(snapshot)
+    const requiresIndexRebuild = this.doesConfigChangeRequireIndexRebuild(snapshot)
+    return { requiresRestart: requiresServiceRecreation, requiresServiceRecreation, requiresIndexRebuild }
   }
 
   private applyInput(input: IndexingConfigInput): void {
@@ -210,6 +215,10 @@ export class CodeIndexConfigManager {
   }
 
   doesConfigChangeRequireRestart(prev: PreviousConfigSnapshot): boolean {
+    return this.doesConfigChangeRequireServiceRecreation(prev)
+  }
+
+  doesConfigChangeRequireServiceRecreation(prev: PreviousConfigSnapshot): boolean {
     const nowConfigured = this.isConfigured()
 
     const prevEnabled = prev.enabled ?? false
@@ -278,6 +287,37 @@ export class CodeIndexConfigManager {
       return true
 
     return false
+  }
+
+  doesConfigChangeRequireIndexRebuild(prev: PreviousConfigSnapshot): boolean {
+    const prevEnabled = prev.enabled ?? false
+    const prevConfigured = prev.configured ?? false
+    if ((!prevEnabled || !prevConfigured) && (!this.enabled || !this.isConfigured())) return false
+    if (!this.enabled) return false
+
+    const prevProvider = prev.embedderProvider ?? "openai"
+    if (prevProvider !== this.embedderProvider) return true
+    if ((prev.vectorStoreProvider ?? DEFAULT_VECTOR_STORE) !== this.vectorStoreProvider) return true
+    if (
+      this.vectorStoreProvider === "lancedb" &&
+      (prev.lancedbVectorStoreDirectory ?? "") !== (this.lancedbVectorStoreDirectory ?? "")
+    )
+      return true
+    if ((prev.chipmateBaseUrl ?? "") !== (this.chipmateOptions?.baseUrl ?? "")) return true
+    if ((prev.ollamaBaseUrl ?? "") !== (this.ollamaOptions?.baseUrl ?? "")) return true
+    if ((prev.openAiCompatibleBaseUrl ?? "") !== (this.openAiCompatibleOptions?.baseUrl ?? "")) return true
+    if ((prev.qdrantUrl ?? "") !== (this.qdrantUrl ?? "")) return true
+    if (prev.fileExtensions.join("\0") !== this.fileExtensions.join("\0")) return true
+
+    const mode = prev.dimensionMode ?? (prev.modelDimension === undefined ? "auto" : "fixed")
+    if (mode !== this.dimensionMode) return true
+    const dimension = mode === "auto" ? undefined : prev.modelDimension
+    return this.hasEmbeddingProfileChanged(
+      prevProvider,
+      prev.modelId,
+      dimension,
+      this.dimensionMode === "auto" ? undefined : this.modelDimension,
+    )
   }
 
   private hasEmbeddingProfileChanged(

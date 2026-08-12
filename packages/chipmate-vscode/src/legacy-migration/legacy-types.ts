@@ -2,7 +2,7 @@
  * legacy-migration - Types for legacy ChipMate extension (v5.x) data structures.
  *
  * These types represent the shapes stored in VS Code SecretStorage and on disk
- * by the legacy extension (chipmate.chipmate-code v5.x, a Roo Code fork).
+ * by the legacy extension (kilocode.kilo-code v5.x, a Roo Code fork).
  * They are intentionally loose (allowing [key: string]: unknown) to tolerate
  * schema drift between legacy versions.
  */
@@ -95,10 +95,10 @@ export interface LegacyProviderSettings {
   lmStudioBaseUrl?: string
   lmStudioModelId?: string
 
-  // ChipMate
-  chipmateToken?: string
-  chipmateModel?: string
-  chipmateOrganizationId?: string
+  // Historical gateway fields
+  kilocodeToken?: string
+  kilocodeModel?: string
+  kilocodeOrganizationId?: string
 
   // LiteLLM
   litellmApiKey?: string
@@ -224,7 +224,7 @@ export interface LegacyAutocompleteSettings {
 }
 
 // ---------------------------------------------------------------------------
-// Settings (stored in VS Code globalState under "chipmate-code.*" keys)
+// Settings stored under the historical extension keys.
 // ---------------------------------------------------------------------------
 
 export interface LegacySettings {

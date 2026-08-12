@@ -23,6 +23,7 @@ import { JsonMigration } from "@/chipmate/storage/json-migration"
 import { ProductProfile } from "@/chipmate/product-profile"
 import { ChipMateLog } from "@/chipmate/log"
 import { ChipMateSessions } from "@/chipmate-sessions/chipmate-sessions"
+import { LegacyProductStateMigration } from "@/chipmate/migration/legacy-product-state"
 
 const log = Log.create({ service: "chipmate.cli" })
 let skipShutdown = false
@@ -72,6 +73,7 @@ export namespace ChipMateCli {
     // Must run before AppRuntime initializes the SQLite database, or the marker
     // exists before legacy JSON can be imported.
     await JsonMigration.bootstrap()
+    await LegacyProductStateMigration.bootstrap()
 
     const cfg = await AppRuntime.runPromise(Config.Service.use((c) => c.getGlobal()))
     await Telemetry.init({

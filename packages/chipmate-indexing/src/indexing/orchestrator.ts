@@ -502,7 +502,7 @@ export class CodeIndexOrchestrator {
       log.error("error during indexing", { err })
       const candidate = this.vectorStore?.getLastCompatibilityDecision?.()?.action === "rebuild"
       await this.vectorStore?.abortCandidate?.()
-      if (this.vectorStore?.abortCandidate) await this.cacheManager.clearCacheFile()
+      if (candidate) await this.cacheManager.clearCacheFile()
       const restored =
         pipeline === "rag" && candidate && Boolean(await this.vectorStore?.hasIndexedData().catch(() => false))
       this.emitError("orchestrator:startIndexing", err, source, trigger, mode, pipeline)
@@ -653,8 +653,9 @@ export class CodeIndexOrchestrator {
       return { state: complete ? "completed" : "cancelled", pipeline: "rag" }
     } catch (err) {
       log.error("error during rag-only indexing", { err })
+      const candidate = this.vectorStore.getLastCompatibilityDecision?.()?.action === "rebuild"
       await this.vectorStore.abortCandidate?.()
-      if (this.vectorStore.abortCandidate) await this.cacheManager.clearCacheFile()
+      if (candidate) await this.cacheManager.clearCacheFile()
       this.emitError("orchestrator:startRagIndexing", err, "scan", trigger, mode, "rag")
       const msg = err instanceof Error ? err.message : "Unknown error"
       this.stateManager.upsertNotice({

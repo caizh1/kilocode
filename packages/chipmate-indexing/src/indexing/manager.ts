@@ -213,10 +213,10 @@ export class CodeIndexManager {
     return task
   }
 
-  private async nextGeneration(): Promise<number> {
+  private async nextGeneration(stopDocuments = true): Promise<number> {
     this._generation += 1
     const generation = this._generation
-    await this.stopDocuments()
+    if (stopDocuments) await this.stopDocuments()
     return generation
   }
 
@@ -618,12 +618,15 @@ export class CodeIndexManager {
       log.info("created indexing config manager", { workspacePath: this.workspacePath })
     }
 
-    const { requiresRestart } = this._configManager.loadConfiguration(input)
+    const { requiresRestart, requiresServiceRecreation, requiresIndexRebuild } =
+      this._configManager.loadConfiguration(input)
     log.info("loaded indexing configuration", {
       workspacePath: this.workspacePath,
       featureEnabled: this.isFeatureEnabled,
       featureConfigured: this.isFeatureConfigured,
       requiresRestart,
+      requiresServiceRecreation,
+      requiresIndexRebuild,
       provider: this._configManager.currentEmbedderProvider,
       vectorStore: this._configManager.getConfig().vectorStoreProvider,
     })
@@ -661,10 +664,12 @@ export class CodeIndexManager {
       return { requiresRestart }
     }
 
-    const needsServiceRecreation = !this._serviceFactory || requiresRestart || Boolean(this._fallbackStore)
+    const needsServiceRecreation = !this._serviceFactory || requiresServiceRecreation || Boolean(this._fallbackStore)
     log.info("evaluated indexing service lifecycle", {
       needsServiceRecreation,
       requiresRestart,
+      requiresServiceRecreation,
+      requiresIndexRebuild,
       hasServiceFactory: !!this._serviceFactory,
     })
 
@@ -704,7 +709,7 @@ export class CodeIndexManager {
     if (this.waiting()) return { requiresRestart }
 
     const shouldStartOrRestart =
-      requiresRestart ||
+      requiresServiceRecreation ||
       this.graphScanState() !== "complete" ||
       this._orchestrator?.state === "Standby" ||
       this._orchestrator?.state === "Error" ||
@@ -1158,8 +1163,6 @@ export class CodeIndexManager {
     const previous = this._orchestrator
     const store = this._baselineStore
     const fallback = this._fallbackStore
-    previous?.stopWatcher()
-    this._codeGraph.stop("indexing-services-recreating")
 
     const loaded = await loadIgnoreWithFingerprint(this.workspacePath)
     const ignoreInstance = loaded.ignore
@@ -1189,6 +1192,26 @@ export class CodeIndexManager {
       model: config.modelId ?? "default",
     })
 
+    let validated = runtime !== undefined
+    if (previous && !validated) {
+      log.info("validating replacement embedder before service swap", {
+        workspacePath: this.workspacePath,
+        provider: embedder.embedderInfo.name,
+      })
+      const result = await factory.validateEmbedder(embedder)
+      if (!result.valid) {
+        const model = config.modelId ?? "default"
+        const dimension = config.modelDimension ?? "default"
+        throw new Error(
+          `Embedder validation failed (provider=${embedder.embedderInfo.name}, model=${model}, dimensions=${dimension}): ${
+            result.error || "configuration validation returned no error message"
+          }`,
+        )
+      }
+      validated = true
+      this.clearErrors("rag")
+    }
+
     const orchestrator = new CodeIndexOrchestrator(
       this._configManager!,
       this._stateManager,
@@ -1202,6 +1225,7 @@ export class CodeIndexManager {
       (event) => this.handleTelemetry(event),
       baseline?.overlay,
       async () => {
+        if (validated) return
         log.info("validating embedder configuration at RAG boundary", {
           workspacePath: this.workspacePath,
           provider: embedder.embedderInfo.name,
@@ -1216,6 +1240,7 @@ export class CodeIndexManager {
             }`,
           )
         }
+        validated = true
         this.clearErrors("rag")
       },
     )
@@ -1228,6 +1253,8 @@ export class CodeIndexManager {
     )
     orchestrator.setMemoryPressure(this._pressure)
 
+    previous?.stopWatcher()
+    this._codeGraph.stop("indexing-services-recreating")
     try {
       await previous?.shutdown?.()
       await store?.close?.()
@@ -1379,24 +1406,27 @@ export class CodeIndexManager {
 
     this.resetBaselineRetry()
     const documents = JSON.stringify(this._configManager.currentDocuments)
-    const { requiresRestart } = this._configManager.loadConfiguration(input)
+    const { requiresRestart, requiresServiceRecreation, requiresIndexRebuild } =
+      this._configManager.loadConfiguration(input)
     const documentsChanged = documents !== JSON.stringify(this._configManager.currentDocuments)
     log.info("processed indexing settings change", {
       workspacePath: this.workspacePath,
       featureEnabled: this.isFeatureEnabled,
       featureConfigured: this.isFeatureConfigured,
       requiresRestart,
+      requiresServiceRecreation,
+      requiresIndexRebuild,
       documentsChanged,
     })
 
-    if (!requiresRestart && !documentsChanged) {
+    if (!requiresServiceRecreation && !documentsChanged) {
       log.info("indexing settings change does not require a lifecycle update", {
         workspacePath: this.workspacePath,
       })
       return
     }
 
-    if (!requiresRestart && documentsChanged) {
+    if (!requiresServiceRecreation && documentsChanged) {
       if (this._fallbackStore) {
         log.info("document settings remain unapplied while the desired embedding profile is invalid", {
           workspacePath: this.workspacePath,
@@ -1437,10 +1467,10 @@ export class CodeIndexManager {
       return
     }
 
-    if (requiresRestart && this.isFeatureEnabled && this.isFeatureConfigured) {
+    if (requiresServiceRecreation && this.isFeatureEnabled && this.isFeatureConfigured) {
       try {
         const graphReady = this.graphScanState() === "complete"
-        const generation = await this.nextGeneration()
+        const generation = await this.nextGeneration(false)
         if (!this.current(generation)) return
         if (!this._cacheManager) {
           this._cacheManager = new CacheManager(this.cacheDirectory, this.workspacePath)
@@ -1463,10 +1493,41 @@ export class CodeIndexManager {
         const scan = graphReady
           ? this._orchestrator?.startRagIndexing("background", "settings-change")
           : this._orchestrator?.startIndexing("background")
-        await this.configureDocuments("background", { force: true, after: scan, generation })
+        await this.configureDocuments("background", {
+          force: requiresIndexRebuild || documentsChanged,
+          after: scan,
+          generation,
+        })
       } catch (err) {
         log.error("failed to recreate services on settings change", { err })
         this.emitError("manager:settings", err, "background", "rag")
+        const meta = this.getTelemetryMeta()
+        if (meta) {
+          this.recordError({
+            ...meta,
+            type: "error",
+            source: "scan",
+            location: "manager:settings",
+            trigger: "background",
+            pipeline: "rag",
+            error: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+          })
+        }
+        if (this._orchestrator && this._searchService) {
+          const message = sanitizeErrorMessage(err instanceof Error ? err.message : String(err))
+          this._stateManager.upsertNotice({
+            id: "embedding-config-unapplied",
+            level: "warning",
+            message: `Embedding 配置未应用：${message}。已继续使用上一版有效索引。`,
+            action: "openIndexingOutput",
+          })
+          this._stateManager.setSystemState(
+            "Indexed",
+            `Embedding 配置未应用：${message}。正在使用已验证的上一版向量索引。`,
+          )
+          this._stateManager.setActivePipeline(undefined)
+          return
+        }
         await this.graphFallback(err, "background", "rag-settings-unapplied")
       }
       return

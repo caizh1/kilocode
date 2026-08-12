@@ -45,7 +45,7 @@ export namespace ChipMateConfig {
   export const ALL_CONFIG_FILES = ["chipmate.jsonc", "chipmate.json", "opencode.jsonc", "opencode.json"] as const
 
   /** Config files available to the active product profile. */
-  export const ACTIVE_CONFIG_FILES = ProductProfile.chipmate ? (["chipmate.jsonc"] as const) : ALL_CONFIG_FILES
+  export const ACTIVE_CONFIG_FILES = ProductProfile.chipmate ? CHIPMATE_CONFIG_FILES : ALL_CONFIG_FILES
 
   /** Config directory suffixes in update-target preference order. */
   export const CHIPMATE_DIR_SUFFIXES = ProductProfile.chipmate ? ProductProfile.dirs : ([".chipmate"] as const)
@@ -94,7 +94,8 @@ export namespace ChipMateConfig {
     writable: (config: Config.Info) => Config.Info
   }) {
     const files = yield* projectConfigFiles(input)
-    const file = files.find((item) => existsSync(item)) ?? path.join(input.directory, CHIPMATE_DIR_SUFFIXES[0], "chipmate.jsonc")
+    const file =
+      files.find((item) => existsSync(item)) ?? path.join(input.directory, CHIPMATE_DIR_SUFFIXES[0], "chipmate.jsonc")
     const source = yield* input.read(file)
     const before = source ?? "{}"
     const patch = input.writable(input.config)
@@ -165,7 +166,10 @@ export namespace ChipMateConfig {
       if (file.endsWith(".jsonc")) {
         const updated = hits.reduce(
           (result, parts) =>
-            applyEdits(result, modify(result, parts, undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } })),
+            applyEdits(
+              result,
+              modify(result, parts, undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } }),
+            ),
           text,
         )
         if (updated === text) continue
@@ -439,7 +443,13 @@ export namespace ChipMateConfig {
 
   // ── Bash permission migration ────────────────────────────────────────
 
-  export const GLOBAL_CONFIG_FILES = ["config.json", "chipmate.json", "chipmate.jsonc", "opencode.json", "opencode.jsonc"]
+  export const GLOBAL_CONFIG_FILES = [
+    "config.json",
+    "chipmate.json",
+    "chipmate.jsonc",
+    "opencode.json",
+    "opencode.jsonc",
+  ]
 
   /**
    * Migrate bash permission for existing users before config is consumed.
@@ -591,7 +601,11 @@ export namespace ChipMateConfig {
       const sourceUrl = "url" in source && typeof source.url === "string" ? source.url : undefined
       const baseUrl = "url" in base && typeof base.url === "string" ? base.url : undefined
       const retargeted =
-        kind === "remote" && next !== "local" && sourceUrl !== undefined && baseUrl !== undefined && sourceUrl !== baseUrl
+        kind === "remote" &&
+        next !== "local" &&
+        sourceUrl !== undefined &&
+        baseUrl !== undefined &&
+        sourceUrl !== baseUrl
       if (!retargeted || !isRecord(entry)) {
         output[name] = entry
         continue

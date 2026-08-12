@@ -31,13 +31,15 @@ describe("CodeIndexConfigManager", () => {
   })
 
   test("uses auto mode without adopting an unverified registry dimension", () => {
-    const manager = new CodeIndexConfigManager(createInput({
-      embedderProvider: "openai-compatible",
-      openAiCompatibleBaseUrl: "https://example.test/v1",
-      modelId: "qwen3-embedding-8b",
-      modelDimension: 4096,
-      dimensionMode: "auto",
-    }))
+    const manager = new CodeIndexConfigManager(
+      createInput({
+        embedderProvider: "openai-compatible",
+        openAiCompatibleBaseUrl: "https://example.test/v1",
+        modelId: "qwen3-embedding-8b",
+        modelDimension: 4096,
+        dimensionMode: "auto",
+      }),
+    )
 
     expect(manager.currentDimensionMode).toBe("auto")
     expect(manager.currentModelDimension).toBeUndefined()
@@ -45,33 +47,39 @@ describe("CodeIndexConfigManager", () => {
   })
 
   test("does not restart for numeric dimension changes that explicit auto mode ignores", () => {
-    const manager = new CodeIndexConfigManager(createInput({
-      embedderProvider: "openai-compatible",
-      openAiCompatibleBaseUrl: "https://example.test/v1",
-      modelId: "qwen3-embedding-8b",
-      modelDimension: 1024,
-      dimensionMode: "auto",
-    }))
-
-    expect(
-      manager.loadConfiguration(createInput({
+    const manager = new CodeIndexConfigManager(
+      createInput({
         embedderProvider: "openai-compatible",
         openAiCompatibleBaseUrl: "https://example.test/v1",
         modelId: "qwen3-embedding-8b",
-        modelDimension: 4096,
+        modelDimension: 1024,
         dimensionMode: "auto",
-      })).requiresRestart,
+      }),
+    )
+
+    expect(
+      manager.loadConfiguration(
+        createInput({
+          embedderProvider: "openai-compatible",
+          openAiCompatibleBaseUrl: "https://example.test/v1",
+          modelId: "qwen3-embedding-8b",
+          modelDimension: 4096,
+          dimensionMode: "auto",
+        }),
+      ).requiresRestart,
     ).toBe(false)
   })
 
   test("keeps an explicit fixed dimension as the requested runtime dimension", () => {
-    const manager = new CodeIndexConfigManager(createInput({
-      embedderProvider: "openai-compatible",
-      openAiCompatibleBaseUrl: "https://example.test/v1",
-      modelId: "qwen3-embedding-8b",
-      modelDimension: 1024,
-      dimensionMode: "fixed",
-    }))
+    const manager = new CodeIndexConfigManager(
+      createInput({
+        embedderProvider: "openai-compatible",
+        openAiCompatibleBaseUrl: "https://example.test/v1",
+        modelId: "qwen3-embedding-8b",
+        modelDimension: 1024,
+        dimensionMode: "fixed",
+      }),
+    )
 
     expect(manager.currentDimensionMode).toBe("fixed")
     expect(manager.currentModelDimension).toBe(1024)
@@ -363,6 +371,8 @@ describe("CodeIndexConfigManager", () => {
       )
 
       expect(result.requiresRestart).toBe(true)
+      expect(result.requiresServiceRecreation).toBe(true)
+      expect(result.requiresIndexRebuild).toBe(true)
     })
 
     test("requires a RAG service restart when vector schema compatibility changes", () => {
@@ -415,6 +425,36 @@ describe("CodeIndexConfigManager", () => {
       )
 
       expect(result.requiresRestart).toBe(true)
+      expect(result.requiresServiceRecreation).toBe(true)
+      expect(result.requiresIndexRebuild).toBe(true)
+    })
+
+    test("recreates the OpenAI-compatible service without rebuilding for an API key change", () => {
+      const cfg = new CodeIndexConfigManager(
+        createInput({
+          embedderProvider: "openai-compatible",
+          openAiKey: undefined,
+          openAiCompatibleBaseUrl: "https://example.test/v1",
+          openAiCompatibleApiKey: "old-token",
+          modelId: "fixture-model",
+          modelDimension: 1024,
+        }),
+      )
+
+      const result = cfg.loadConfiguration(
+        createInput({
+          embedderProvider: "openai-compatible",
+          openAiKey: undefined,
+          openAiCompatibleBaseUrl: "https://example.test/v1",
+          openAiCompatibleApiKey: "new-token",
+          modelId: "fixture-model",
+          modelDimension: 1024,
+        }),
+      )
+
+      expect(result.requiresRestart).toBe(true)
+      expect(result.requiresServiceRecreation).toBe(true)
+      expect(result.requiresIndexRebuild).toBe(false)
     })
 
     test("requires restart when ChipMate auth changes", () => {
@@ -439,6 +479,8 @@ describe("CodeIndexConfigManager", () => {
       )
 
       expect(result.requiresRestart).toBe(true)
+      expect(result.requiresServiceRecreation).toBe(true)
+      expect(result.requiresIndexRebuild).toBe(false)
     })
 
     test("restarts only when the normalized file extension allowlist changes", () => {

@@ -7,6 +7,7 @@ import { parseCodeGraphFile } from "../../../src/indexing/codegraph/parser"
 import { CodeIndexConfigManager } from "../../../src/indexing/config-manager"
 import { CodeIndexManager } from "../../../src/indexing/manager"
 import { CodeIndexOrchestrator } from "../../../src/indexing/orchestrator"
+import { CodeIndexServiceFactory } from "../../../src/indexing/service-factory"
 import type { IndexingConfigInput } from "../../../src/indexing/config-manager"
 import type { IndexingTelemetryEvent, IndexingTelemetryTrigger } from "../../../src/indexing/interfaces/telemetry"
 
@@ -203,6 +204,50 @@ describe("CodeIndexManager", () => {
       expect(data._orchestrator).toBeUndefined()
     } finally {
       shutdown.mockRestore()
+      await mgr.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("validates replacement credentials before stopping active indexing services", async () => {
+    const root = await mkdtemp(join(tmpdir(), "chipmate-manager-credential-swap-"))
+    const mgr = new CodeIndexManager(root, join(root, "cache"))
+    const config = new CodeIndexConfigManager(createInput({ openAiKey: "new-key" }))
+    const cache = new CacheManager(join(root, "cache"), root)
+    await cache.initialize()
+    let stopped = 0
+    let shutdown = 0
+    const previous = {
+      stopWatcher() {
+        stopped += 1
+      },
+      async shutdown() {
+        shutdown += 1
+      },
+    }
+    const data = mgr as unknown as {
+      _configManager: CodeIndexConfigManager
+      _cacheManager: CacheManager
+      _generation: number
+      _orchestrator: typeof previous
+      _recreateServices(prepared: undefined, generation: number): Promise<void>
+    }
+    data._configManager = config
+    data._cacheManager = cache
+    data._generation = 1
+    data._orchestrator = previous
+    const validate = spyOn(CodeIndexServiceFactory.prototype, "validateEmbedder").mockResolvedValue({
+      valid: false,
+      error: "invalid credentials",
+    })
+
+    try {
+      await expect(data._recreateServices(undefined, 1)).rejects.toThrow("invalid credentials")
+      expect(stopped).toBe(0)
+      expect(shutdown).toBe(0)
+      expect(data._orchestrator).toBe(previous)
+    } finally {
+      validate.mockRestore()
       await mgr.dispose()
       await rm(root, { recursive: true, force: true })
     }
@@ -810,7 +855,7 @@ describe("CodeIndexManager", () => {
 
           await mgr.handleSettingsChange(input("wrong-key"))
           await wait(
-            () => mgr.state === "Error" && (mgr.getRecentErrors().rag?.length ?? 0) > count,
+            () => (mgr.getRecentErrors().rag?.length ?? 0) > count,
             "Failed revalidation cleared or failed to append RAG diagnostics",
           )
 
@@ -1299,6 +1344,80 @@ describe("CodeIndexManager", () => {
       expect(documents).toBe(2)
     } finally {
       data.configureDocuments = original
+    }
+  })
+
+  test("revalidates an API key without forcing Document RAG to rebuild", async () => {
+    const mgr = createManager()
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _orchestrator?: {
+        state: string
+        startIndexing(trigger: IndexingTelemetryTrigger): Promise<void>
+        startRagIndexing(trigger: IndexingTelemetryTrigger, reason?: string): Promise<void>
+      }
+      _searchService?: {}
+      _recreateServices(): Promise<void>
+      configureDocuments(
+        trigger: IndexingTelemetryTrigger,
+        opts: { force?: boolean; generation: number },
+      ): Promise<void>
+    }
+    let recreates = 0
+    let ragScans = 0
+    const forces: Array<boolean | undefined> = []
+
+    data._cacheManager = {}
+    data._recreateServices = async () => {
+      recreates += 1
+      data._orchestrator = {
+        state: "Indexed",
+        async startIndexing() {},
+        async startRagIndexing() {
+          ragScans += 1
+        },
+      }
+      data._searchService = {}
+    }
+    const original = data.configureDocuments.bind(mgr)
+    data.configureDocuments = async (_trigger, opts) => {
+      forces.push(opts.force)
+    }
+
+    const input = (apiKey: string) =>
+      createInput({
+        embedderProvider: "openai-compatible",
+        openAiKey: undefined,
+        openAiCompatibleBaseUrl: "https://example.test/v1",
+        openAiCompatibleApiKey: apiKey,
+        modelId: "fixture-model",
+        modelDimension: 1024,
+        documents: { enabled: true, paths: ["docs"] },
+      })
+
+    await mgr.initialize(input("old-token"))
+    recreates = 0
+    ragScans = 0
+    forces.length = 0
+    const storage = mgr as unknown as {
+      _graphStorage: { getScanState(): string }
+      _postingsStorage: { getScanState(): string }
+    }
+    storage._graphStorage.getScanState = () => "complete"
+    storage._postingsStorage.getScanState = () => "complete"
+    ;(mgr as unknown as { _stateManager: { setSystemState(state: "Indexed"): void } })._stateManager.setSystemState(
+      "Indexed",
+    )
+
+    try {
+      await mgr.handleSettingsChange(input("new-token"))
+
+      expect(recreates).toBe(1)
+      expect(ragScans).toBe(1)
+      expect(forces).toEqual([false])
+    } finally {
+      data.configureDocuments = original
+      await mgr.dispose()
     }
   })
 

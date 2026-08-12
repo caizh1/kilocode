@@ -137,12 +137,12 @@ export const PROVIDER_MAP: Record<string, ProviderMapping> = {
     modelField: "lmStudioModelId",
     urlField: "lmStudioBaseUrl",
   },
-  chipmate: {
+  kilocode: {
     id: "chipmate",
-    key: "chipmateToken",
+    key: "kilocodeToken",
     name: "ChipMate (Gateway)",
-    modelField: "chipmateModel",
-    organizationIdField: "chipmateOrganizationId",
+    modelField: "kilocodeModel",
+    organizationIdField: "kilocodeOrganizationId",
   },
   litellm: {
     id: "litellm",

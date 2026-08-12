@@ -57,6 +57,7 @@ import {
   IndexingSchema as ChipMateIndexingSchema,
 } from "@chipmate/chipmate-indexing/config"
 import { unique } from "remeda"
+import { LegacyProductStateMigration } from "@/chipmate/migration/legacy-product-state"
 // chipmate_change end
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import * as Log from "@opencode-ai/core/util/log" // chipmate_change
@@ -483,6 +484,7 @@ const layer = Layer.effect(
       function* (ctx: InstanceContext) {
         // chipmate_change start - warning accumulator and legacy ChipMate config
         const warnings: Warning[] = []
+        yield* Effect.promise(() => LegacyProductStateMigration.project(ctx.directory, ctx.worktree))
         // Untrusted project config may only read files inside this root (worktree, or directory for non-git projects).
         const projectRoot = ctx.worktree === "/" ? ctx.directory : ctx.worktree
         const auth = yield* authSvc.all().pipe(Effect.orDie)
@@ -712,6 +714,9 @@ const layer = Layer.effect(
         const primary = Flag.CHIPMATE_DISABLE_PROJECT_CONFIG
           ? []
           : yield* primaryPaths(ctx.directory, ctx.worktree, [...ProductProfile.dirs])
+        for (const dir of unique([...directories, ...primary])) {
+          if (existsSync(dir)) yield* Effect.promise(() => LegacyProductStateMigration.configDirectory(dir))
+        }
         // Load primary fallbacks before active-worktree config, then track them as local.
         directories.splice(1, 0, ...primary)
         const primarySet = new Set(primary)

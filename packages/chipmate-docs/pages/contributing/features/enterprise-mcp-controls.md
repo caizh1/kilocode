@@ -39,11 +39,29 @@ This resolves two distinct cases: local entries rejected by policy need not be a
 
 ### Current MCP configuration
 
-{% image src="/docs/img/enterprise-mcp-controls-today.png" alt="Current MCP configuration flow" /%}
+```mermaid
+flowchart LR
+  U["Organization user"] --> V["VS Code"]
+  V --> P["Build prompt"]
+  P --> C["ChipMate backend"]
+  P --> M["Load active MCP tools"]
+  L["Project mcp.json"] --> M
+  G["Global mcp.json"] --> M
+  M --> S["MCP servers"]
+```
 
 ### Proposed policy-enabled configuration
 
-{% image src="/docs/img/enterprise-mcp-controls-with-ent-control.png" alt="Proposed enterprise MCP controls flow" /%}
+```mermaid
+flowchart LR
+  U["Organization user"] --> V["VS Code"]
+  V --> P["Build prompt"]
+  P --> C["ChipMate backend"]
+  P --> M["Load active MCP tools"]
+  D["Dashboard-managed member configuration"] --> M
+  A["Organization allowlist"] --> D
+  M --> S["Approved MCP servers"]
+```
 
 When organization policy is enabled, client pulls dashboard-managed configuration instead of using end-user filesystem definitions. Policy-disabled organizations keep existing local behavior.
 

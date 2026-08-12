@@ -91,6 +91,14 @@ class RecoverableStore extends Store {
   }
 }
 
+class AbortableStore extends Store {
+  public abortCount = 0
+
+  async abortCandidate(): Promise<void> {
+    this.abortCount += 1
+  }
+}
+
 class Scanner {
   public readonly isCancelled = false
   public readonly targets: IndexingScanTarget[] = []
@@ -420,6 +428,36 @@ describe("CodeIndexOrchestrator telemetry", () => {
     expect(state.state).toBe("Error")
     expect(state.getCurrentStatus().message).toContain("embedding unavailable")
     expect(state.getCurrentStatus().activePipeline).toBe("rag")
+  })
+
+  test("does not clear the active cache when authentication fails before a candidate exists", async () => {
+    const ctx = await env()
+    const store = new AbortableStore(true)
+    let clears = 0
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      {
+        async clearCacheFile() {
+          clears += 1
+        },
+      } as unknown as CacheManager,
+      store as unknown as IVectorStore,
+      new Scanner(1, 1, 1) as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+      undefined,
+      undefined,
+      async () => {
+        throw new Error("authentication failed")
+      },
+    )
+
+    expect(await orchestrator.startIndexing("manual")).toEqual({ state: "failed", pipeline: "rag" })
+    expect(store.abortCount).toBe(1)
+    expect(clears).toBe(0)
   })
 
   test("keeps a compatible last-known-good index available when a candidate scan fails", async () => {

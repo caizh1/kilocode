@@ -20,13 +20,14 @@ function state(values: Record<string, unknown> = {}) {
 }
 
 describe("ChipMate v2 coexistence boundary", () => {
-  it("gives official ChipMate exclusive ownership of autocomplete at runtime", () => {
+  it("keeps ChipMate autocomplete active without depending on a legacy extension", () => {
     const coexistence = fs.readFileSync(path.join(root, "src/chipmate/coexistence.ts"), "utf8")
     const extension = fs.readFileSync(path.join(root, "src/extension.ts"), "utf8")
     const autocomplete = fs.readFileSync(path.join(root, "src/services/autocomplete/index.ts"), "utf8")
 
-    expect(coexistence).toContain('const OFFICIAL = "chipmate.chipmate-code"')
-    expect(coexistence).toContain("onDidChangeAutocomplete")
+    expect(coexistence).toContain("autocomplete: () => true")
+    expect(coexistence).not.toContain("vscode.extensions.getExtension")
+    expect(coexistence).not.toContain("kilocode.kilo-code")
     expect(extension).toContain("if (coexistence.autocomplete()) ensureBackendForAutocomplete")
     expect(extension).toContain("registerAutocompleteProvider(context, connectionService, coexistence)")
     expect(autocomplete).toContain("if (!this.gate.autocomplete())")

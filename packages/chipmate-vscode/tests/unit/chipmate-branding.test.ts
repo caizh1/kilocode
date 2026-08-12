@@ -17,10 +17,18 @@ import { dict as clawEn } from "../../webview-ui/chipmateclaw/i18n/en"
 import { dict as clawZh } from "../../webview-ui/chipmateclaw/i18n/zh"
 
 const root = path.resolve(import.meta.dir, "../..")
-const brand = /\bChipMate(?: Code| Gateway| Pass| Remote| Go|Claw)?\b/
+const brand = /\bKilo(?: Code| Gateway| Pass| Remote| Go|Claw)?\b/
 
 function read(file: string): string {
   return fs.readFileSync(path.join(root, file), "utf8")
+}
+
+function sourceFiles(directory: string): string[] {
+  return fs.readdirSync(path.join(root, directory), { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(directory, entry.name)
+    if (entry.isDirectory()) return ["dist", "node_modules", "out"].includes(entry.name) ? [] : sourceFiles(file)
+    return /\.(?:cjs|css|html|js|json|mjs|ts|tsx)$/.test(entry.name) ? [file] : []
+  })
 }
 
 function text(dict: Record<string, string>): string {
@@ -46,7 +54,7 @@ function manifest(value: unknown, key = ""): string[] {
 }
 
 describe("internal ChipMate branding", () => {
-  it("removes ChipMate branding from the effective English and Simplified Chinese dictionaries", () => {
+  it("removes legacy branding from the effective English and Simplified Chinese dictionaries", () => {
     const en = { ...appEn, ...uiEn, ...chipmateEn, ...amEn }
     const zh = { ...en, ...appZh, ...uiZh, ...chipmateZh, ...amEn, ...amZh }
 
@@ -77,28 +85,28 @@ describe("internal ChipMate branding", () => {
       [
         "webview-ui/src/components/settings/ProvidersTab.tsx",
         ">\n              ChipMate Gateway\n",
-        ">\n              ChipMate Gateway\n",
+        ">\n              Kilo Gateway\n",
       ],
       [
         "webview-ui/src/components/settings/IndexingTab.tsx",
         '{ value: "chipmate", label: "ChipMate" }',
-        '{ value: "chipmate", label: "ChipMate" }',
+        '{ value: "kilo", label: "Kilo" }',
       ],
-      ["webview-ui/src/components/profile/ProfileView.tsx", "ChipMate Pass", ">ChipMate Pass<"],
+      ["webview-ui/src/components/profile/ProfileView.tsx", "ChipMate Pass", ">Kilo Pass<"],
       [
         "webview-ui/src/hooks/useSlashCommand.ts",
         'description: "Open ChipMateClaw chat"',
-        'description: "Open ChipMateClaw chat"',
+        'description: "Open KiloClaw chat"',
       ],
-      ["src/chipmateclaw/ChipMateClawProvider.ts", '"ChipMateClaw"', ', "ChipMateClaw",'],
-      ["src/services/RemoteStatusService.ts", "ChipMate Remote", "$(radio-tower) ChipMate Remote"],
-      ["src/services/autocomplete/AutocompleteStatusBar.ts", '"ChipMate Gateway"', '= "ChipMate Gateway"'],
-      ["src/services/marketplace/notify.ts", "ChipMate found", "`ChipMate found"],
-      ["src/chipmate-provider/memory.ts", "# ChipMate Memory", '"# ChipMate Memory"'],
+      ["src/chipmateclaw/ChipMateClawProvider.ts", '"ChipMateClaw"', ', "KiloClaw",'],
+      ["src/services/RemoteStatusService.ts", "ChipMate Remote", "$(radio-tower) Kilo Remote"],
+      ["src/services/autocomplete/AutocompleteStatusBar.ts", '"ChipMate Gateway"', '= "Kilo Gateway"'],
+      ["src/services/marketplace/notify.ts", "ChipMate found", "`Kilo found"],
+      ["src/chipmate-provider/memory.ts", "# ChipMate Memory", '"# Kilo Memory"'],
       [
         "src/agent-manager/setup-script-template.ts",
         "# ChipMate Worktree Setup Script",
-        "# ChipMate Worktree Setup Script",
+        "# Kilo Code Worktree Setup Script",
       ],
     ] as const
 
@@ -109,15 +117,25 @@ describe("internal ChipMate branding", () => {
     }
   })
 
-  it("preserves compatibility identifiers, paths, commands, and coexistence messaging", () => {
+  it("preserves current compatibility identifiers, paths, and commands", () => {
     const pkg = JSON.parse(read("package.json"))
     const commands = pkg.contributes.commands as Array<{ command: string }>
 
     expect(appEn["settings.config.source.homeChipMate"]).toBe("Home .chipmate config")
-    expect(appEn["settings.config.source.projectChipMate"]).toBe("Legacy .chipmate config")
+    expect(appEn["settings.config.source.projectChipMate"]).toBe("Project .chipmate config")
     expect(appEn["session.cloud.import.placeholder"]).toContain("chipmate import")
     expect(commands.some((item) => item.command === "chipmate.v2.chipmateClawOpen")).toBe(true)
-    expect(read("src/chipmate/coexistence.ts")).toContain("ChipMate detected ChipMate.")
+    expect(read("src/chipmate/coexistence.ts")).not.toContain("detected")
     expect(read("src/chipmateclaw/ChipMateClawProvider.ts")).toContain('viewType = "chipmate.v2.ChipMateClawPanel"')
+  })
+
+  it("isolates every legacy product literal to compatibility modules", () => {
+    const compatibility = [path.join("src", "legacy-migration"), path.join("src", "migration")]
+    const files = ["package.json", ...sourceFiles("src"), ...sourceFiles("webview-ui")].filter(
+      (file) => !compatibility.some((directory) => file === directory || file.startsWith(`${directory}${path.sep}`)),
+    )
+    const leaks = files.filter((file) => /\bkilo(?:code)?\b/i.test(read(file)))
+
+    expect(leaks).toEqual([])
   })
 })

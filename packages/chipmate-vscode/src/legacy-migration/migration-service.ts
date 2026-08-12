@@ -50,6 +50,7 @@ import { migrate as migrateSession } from "./sessions/migrate"
 const SECRET_KEY = "roo_cline_config_api_config"
 const CODEX_OAUTH_SECRET_KEY = "openai-codex-oauth-credentials"
 const MIGRATION_STATUS_KEY = "chipmate.legacyMigrationStatus"
+const LEGACY_MIGRATION_STATUS_KEY = "kilo.legacyMigrationStatus"
 
 type MigrationStatus = "completed" | "completed_with_errors" | "skipped"
 
@@ -58,7 +59,10 @@ type MigrationStatus = "completed" | "completed_with_errors" | "skipped"
 // ---------------------------------------------------------------------------
 
 export function getMigrationStatus(context: vscode.ExtensionContext): MigrationStatus | undefined {
-  return context.globalState.get<MigrationStatus>(MIGRATION_STATUS_KEY)
+  return (
+    context.globalState.get<MigrationStatus>(MIGRATION_STATUS_KEY) ??
+    context.globalState.get<MigrationStatus>(LEGACY_MIGRATION_STATUS_KEY)
+  )
 }
 
 export async function setMigrationStatus(context: vscode.ExtensionContext, status: MigrationStatus): Promise<void> {
@@ -328,15 +332,15 @@ export async function clearLegacyData(context: vscode.ExtensionContext): Promise
   await context.secrets.delete(CODEX_OAUTH_SECRET_KEY)
 
   const legacyStateKeys = [
-    "chipmate-code.allowedCommands",
-    "chipmate-code.deniedCommands",
-    "chipmate-code.autoApprovalEnabled",
-    "chipmate-code.fuzzyMatchThreshold",
-    "chipmate-code.diffEnabled",
-    "chipmate-code.language",
-    "chipmate-code.customModes",
-    "chipmate-code.firstInstallCompleted",
-    "chipmate-code.telemetrySetting",
+    "kilo-code.allowedCommands",
+    "kilo-code.deniedCommands",
+    "kilo-code.autoApprovalEnabled",
+    "kilo-code.fuzzyMatchThreshold",
+    "kilo-code.diffEnabled",
+    "kilo-code.language",
+    "kilo-code.customModes",
+    "kilo-code.firstInstallCompleted",
+    "kilo-code.telemetrySetting",
     "ghostServiceSettings",
     // Fine-grained auto-approval keys (no prefix in legacy globalState)
     "alwaysAllowReadOnly",
@@ -357,7 +361,7 @@ export async function clearLegacyData(context: vscode.ExtensionContext): Promise
     await context.globalState.update(key, undefined)
   }
 
-  // Clear legacy VS Code settings registered under the "chipmate-code" configuration scope.
+  // Clear legacy VS Code settings registered under the historical configuration scope.
   // These are set via the old extension's contributes.configuration and persist in the
   // user's settings.json even after the extension is uninstalled.
   const legacyVscodeSettings = [
@@ -378,7 +382,7 @@ export async function clearLegacyData(context: vscode.ExtensionContext): Promise
     "toolProtocol",
     "debug",
   ]
-  const cfg = vscode.workspace.getConfiguration("chipmate-code")
+  const cfg = vscode.workspace.getConfiguration("kilo-code")
   for (const key of legacyVscodeSettings) {
     await cfg.update(key, undefined, vscode.ConfigurationTarget.Global)
   }
@@ -511,7 +515,10 @@ async function migrateConfigFields(
   }
 }
 
-async function migrateDefaultModel(settings: LegacyProviderSettings, client: ChipMateClient): Promise<MigrationResultItem> {
+async function migrateDefaultModel(
+  settings: LegacyProviderSettings,
+  client: ChipMateClient,
+): Promise<MigrationResultItem> {
   const provider = settings.apiProvider
   if (!provider) {
     return { item: "Default model", category: "defaultModel", status: "error", message: "No provider type found" }
@@ -953,9 +960,9 @@ function readLegacySettings(context: vscode.ExtensionContext): LegacySettings {
       : undefined
 
   return {
-    autoApprovalEnabled: context.globalState.get<boolean>("chipmate-code.autoApprovalEnabled"),
-    allowedCommands: context.globalState.get<string[]>("chipmate-code.allowedCommands"),
-    deniedCommands: context.globalState.get<string[]>("chipmate-code.deniedCommands"),
+    autoApprovalEnabled: context.globalState.get<boolean>("kilo-code.autoApprovalEnabled"),
+    allowedCommands: context.globalState.get<string[]>("kilo-code.allowedCommands"),
+    deniedCommands: context.globalState.get<string[]>("kilo-code.deniedCommands"),
     // Fine-grained auto-approval — stored without prefix in legacy globalState
     alwaysAllowReadOnly: context.globalState.get<boolean>("alwaysAllowReadOnly"),
     alwaysAllowReadOnlyOutsideWorkspace: context.globalState.get<boolean>("alwaysAllowReadOnlyOutsideWorkspace"),
@@ -964,7 +971,7 @@ function readLegacySettings(context: vscode.ExtensionContext): LegacySettings {
     alwaysAllowMcp: context.globalState.get<boolean>("alwaysAllowMcp"),
     alwaysAllowModeSwitch: context.globalState.get<boolean>("alwaysAllowModeSwitch"),
     alwaysAllowSubtasks: context.globalState.get<boolean>("alwaysAllowSubtasks"),
-    language: context.globalState.get<string>("chipmate-code.language"),
+    language: context.globalState.get<string>("kilo-code.language"),
     autocomplete: hasAutocompleteData(autocomplete) ? autocomplete : undefined,
   }
 }
