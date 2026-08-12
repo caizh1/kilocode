@@ -1,6 +1,7 @@
 import path from "path"
 import { fileURLToPath } from "url"
 import { parseModelsSnapshot } from "../src/chipmate/provider/models-snapshot-shape" // chipmate_change
+import { filterPackagedModelsSnapshot } from "./chipmate/models-snapshot-filter" // chipmate_change
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -45,15 +46,9 @@ const raw = await (async () => {
     throw err
   }
 })()
-const excluded = new Set(
-  (process.env.CHIPMATE_EXCLUDED_MODEL_PROVIDERS ?? "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean),
-)
 const parsed = parseModelsSnapshot(raw).data
 export const modelsData = JSON.stringify(
-  Object.fromEntries(Object.entries(parsed).filter(([provider]) => !excluded.has(provider))),
+  filterPackagedModelsSnapshot(parsed, process.env.CHIPMATE_EXCLUDED_MODEL_PROVIDERS),
 )
 // chipmate_change end
 console.log("Loaded models.dev snapshot")
