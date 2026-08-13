@@ -356,7 +356,7 @@ export class DirectoryScanner implements IDirectoryScanner {
       supportedFiles: supportedPaths.length,
       patterns: discovery.patterns,
       fallbackReason: discovery.fallbackReason,
-      ignoredRoots: FileIgnore.FOLDERS,
+      ignoredRoots: FileIgnore.DIAGNOSTIC_FOLDERS,
     })
     this.emitFileCount(mode, discovery.rawFiles, supportedPaths.length)
     onProgress?.({

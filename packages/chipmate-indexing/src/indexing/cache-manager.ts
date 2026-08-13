@@ -4,7 +4,12 @@ import path from "path"
 import type { ICacheManager } from "./interfaces/cache"
 import { Log } from "../util/log"
 import type { RagCheckpointMeta } from "./rag-checkpoint"
-import { checkpointMetaMatches } from "./rag-checkpoint"
+import {
+  checkpointCacheCompatible,
+  checkpointMetaChangedFields,
+  checkpointMetaHash,
+  checkpointMetaMatches,
+} from "./rag-checkpoint"
 
 const log = Log.create({ service: "indexing-cache" })
 
@@ -97,6 +102,28 @@ export class CacheManager implements ICacheManager {
       this.meta = meta
       return
     }
+
+    const previous = this.meta
+    const changedFields = checkpointMetaChangedFields(previous, meta)
+    if (checkpointCacheCompatible(previous, meta)) {
+      log.info("indexing cache metadata changed", {
+        action: "preserve-file-hashes",
+        changedFields,
+        previousMetaDigest: previous ? checkpointMetaHash(previous) : undefined,
+        nextMetaDigest: checkpointMetaHash(meta),
+      })
+      this.meta = meta
+      this.metaDirty = true
+      this.scheduleSave()
+      return
+    }
+
+    log.info("indexing cache metadata changed", {
+      action: "clear-file-hashes",
+      changedFields,
+      previousMetaDigest: previous ? checkpointMetaHash(previous) : undefined,
+      nextMetaDigest: checkpointMetaHash(meta),
+    })
     this.meta = meta
     this.fileHashes = {}
     this.pending.clear()

@@ -1,7 +1,8 @@
 import { minimatch } from "minimatch"
+import { LEGACY_STATE_FOLDERS, LEGACY_WORKTREE_PATTERNS } from "../indexing/chipmate/legacy-ignore"
 
 export namespace FileIgnore {
-  export const FOLDERS = [
+  const currentFolders = [
     "node_modules",
     "bower_components",
     ".pnpm-store",
@@ -21,7 +22,6 @@ export namespace FileIgnore {
     ".idea",
     ".chipmate",
     ".opencode",
-    ".chipmate",
     ".chipmate-v2",
     ".turbo",
     ".output",
@@ -36,9 +36,12 @@ export namespace FileIgnore {
     ".gradle",
   ] as const
 
+  export const DIAGNOSTIC_FOLDERS = currentFolders
+  export const FOLDERS = [...new Set([...currentFolders, ...LEGACY_STATE_FOLDERS])] as readonly string[]
+
   const folders = new Set<string>(FOLDERS)
 
-  const files = [
+  const currentFiles = [
     "**/*.swp",
     "**/*.swo",
     "**/*.pyc",
@@ -51,11 +54,12 @@ export namespace FileIgnore {
     "**/coverage/**",
     "**/.nyc_output/**",
     "**/.chipmate/worktrees/**",
-    "**/.chipmate/worktrees/**",
     "**/.chipmate-v2/worktrees/**",
   ]
 
-  export const PATTERNS = [...files, ...folders]
+  const files = [...new Set([...currentFiles, ...LEGACY_WORKTREE_PATTERNS])]
+
+  export const PATTERNS = [...new Set([...files, ...FOLDERS])]
 
   export function match(
     filePath: string,

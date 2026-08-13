@@ -22,6 +22,29 @@ function meta(input: Partial<RagCheckpointMeta> = {}): RagCheckpointMeta {
 }
 
 describe("CacheManager checkpoint metadata", () => {
+  test("preserves file hashes when only the ignore fingerprint changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cache-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "cache-dir-"))
+    const file = join(root, "main.ts")
+
+    const first = new CacheManager(cacheDir, root)
+    await first.initialize()
+    first.setCheckpointMeta(meta({ root }))
+    first.updateHash(file, "hash-a")
+    await first.flush()
+
+    const upgraded = new CacheManager(cacheDir, root)
+    await upgraded.initialize()
+    upgraded.setCheckpointMeta(meta({ root, ignoreFingerprint: "ignore-b" }))
+    expect(upgraded.getHash(file)).toBe("hash-a")
+    await upgraded.flush()
+
+    const reloaded = new CacheManager(cacheDir, root)
+    await reloaded.initialize()
+    reloaded.setCheckpointMeta(meta({ root, ignoreFingerprint: "ignore-b" }))
+    expect(reloaded.getHash(file)).toBe("hash-a")
+  })
+
   test("does not reuse file hashes when embedding dimension changes", async () => {
     const root = await mkdtemp(join(tmpdir(), "cache-root-"))
     const cacheDir = await mkdtemp(join(tmpdir(), "cache-dir-"))
@@ -41,6 +64,31 @@ describe("CacheManager checkpoint metadata", () => {
     const changed = new CacheManager(cacheDir, root)
     await changed.initialize()
     changed.setCheckpointMeta(meta({ embeddingDimension: 3072 }))
+    expect(changed.getHash(file)).toBeUndefined()
+  })
+
+  test.each([
+    ["embedderProvider", { embedderProvider: "different" }],
+    ["embedderModel", { embedderModel: "different" }],
+    ["endpointDigest", { endpointDigest: "endpoint-b" }],
+    ["fingerprintDigest", { fingerprintDigest: "fingerprint-b" }],
+    ["parserVersion", { parserVersion: 2 }],
+    ["chunkerVersion", { chunkerVersion: 2 }],
+    ["vectorStoreProvider", { vectorStoreProvider: "qdrant" }],
+    ["collectionName", { collectionName: "different" }],
+  ] as const)("clears file hashes when %s changes", async (_field, changedMeta) => {
+    const root = await mkdtemp(join(tmpdir(), "cache-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "cache-dir-"))
+    const file = join(root, "main.ts")
+    const first = new CacheManager(cacheDir, root)
+    await first.initialize()
+    first.setCheckpointMeta(meta({ root }))
+    first.updateHash(file, "hash-a")
+    await first.flush()
+
+    const changed = new CacheManager(cacheDir, root)
+    await changed.initialize()
+    changed.setCheckpointMeta(meta({ root, ...changedMeta }))
     expect(changed.getHash(file)).toBeUndefined()
   })
 

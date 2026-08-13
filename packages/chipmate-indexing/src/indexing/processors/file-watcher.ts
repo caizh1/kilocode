@@ -171,7 +171,7 @@ export class FileWatcher implements IFileWatcher {
       visible: true,
       workspacePath: this.workspacePath,
       blocking: false,
-      ignoredRoots: FileIgnore.FOLDERS,
+      ignoredRoots: FileIgnore.DIAGNOSTIC_FOLDERS,
       pendingBeforeReady: pending,
     })
 
@@ -264,7 +264,7 @@ export class FileWatcher implements IFileWatcher {
       readyMs: Date.now() - started,
       pendingBeforeReady: pending,
       pendingAfterReady: this.accumulatedEvents.size,
-      ignoredRoots: FileIgnore.FOLDERS,
+      ignoredRoots: FileIgnore.DIAGNOSTIC_FOLDERS,
     })
   }
 

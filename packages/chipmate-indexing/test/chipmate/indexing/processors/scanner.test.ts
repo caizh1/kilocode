@@ -4,6 +4,7 @@ import ignore from "ignore"
 import { tmpdir } from "os"
 import { join } from "path"
 import { describe, expect, test } from "bun:test"
+import { FileIgnore } from "../../../../src/file/ignore"
 import { CacheManager } from "../../../../src/indexing/cache-manager"
 import type {
   CodeBlock,
@@ -15,12 +16,16 @@ import type {
   ScanProgressEvent,
   VectorStoreSearchResult,
 } from "../../../../src/indexing/interfaces"
-import { loadIgnore } from "../../../../src/indexing/shared/load-ignore"
+import type { RagCheckpointMeta } from "../../../../src/indexing/rag-checkpoint"
+import { loadIgnore, loadIgnoreWithFingerprint } from "../../../../src/indexing/shared/load-ignore"
 import { DirectoryScanner } from "../../../../src/indexing/processors/scanner"
 import { CodeGraphJsonStorage, CodePostingsJsonStorage } from "../../../../src/indexing/codegraph/storage"
 
 class Emb implements IEmbedder {
+  public batches: string[][] = []
+
   public async createEmbeddings(texts: string[]): Promise<{ embeddings: number[][] }> {
+    this.batches.push([...texts])
     return {
       embeddings: texts.map(() => [0.1]),
     }
@@ -57,6 +62,26 @@ class Parser implements ICodeParser {
         segmentHash: `${filePath}:1:1`,
       },
     ]
+  }
+}
+
+function checkpoint(root: string, ignoreFingerprint: string): RagCheckpointMeta {
+  return {
+    root,
+    schemaVersion: 1,
+    parserVersion: 1,
+    chunkerVersion: 1,
+    embedderProvider: "openai-compatible",
+    embedderModel: "qwen3-embedding-8b",
+    embeddingDimension: 4096,
+    dimensionMode: "auto",
+    endpointDigest: "endpoint",
+    fingerprintDigest: "fingerprint",
+    qualityVersion: "qwen3-dense-v1",
+    instructionVersion: "qwen3-retrieval-v1",
+    vectorStoreProvider: "lancedb",
+    collectionName: "collection",
+    ignoreFingerprint,
   }
 }
 
@@ -132,6 +157,7 @@ class CountParser implements ICodeParser {
 
 class Store implements IVectorStore {
   public multi: string[][] = []
+  public single: string[] = []
   public points = 0
   public records: PointStruct[] = []
 
@@ -159,7 +185,9 @@ class Store implements IVectorStore {
       }))
   }
 
-  public async deletePointsByFilePath(_filePath: string): Promise<void> {}
+  public async deletePointsByFilePath(filePath: string): Promise<void> {
+    this.single.push(filePath)
+  }
 
   public async deletePointsByMultipleFilePaths(filePaths: string[]): Promise<void> {
     this.multi.push(filePaths)
@@ -267,6 +295,92 @@ class CleanupCrashStore extends Store {
 }
 
 describe("DirectoryScanner", () => {
+  test("keeps current and legacy state ignores deterministic and deduplicated", () => {
+    expect(new Set(FileIgnore.FOLDERS).size).toBe(FileIgnore.FOLDERS.length)
+    expect(new Set(FileIgnore.PATTERNS).size).toBe(FileIgnore.PATTERNS.length)
+    expect(FileIgnore.DIAGNOSTIC_FOLDERS).not.toContain(".kilo")
+    expect(FileIgnore.DIAGNOSTIC_FOLDERS).not.toContain(".kilocode")
+    expect(FileIgnore.match("workspace/.chipmate/worktrees/current/main.ts")).toBe(true)
+    expect(FileIgnore.match("workspace/.kilo/worktrees/legacy/main.ts")).toBe(true)
+    expect(FileIgnore.match("workspace/.kilocode/worktrees/legacy/main.ts")).toBe(true)
+  })
+
+  test("reuses a completed 1.0.19 file cache without corpus embeddings after upgrade", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-1019-upgrade-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const first = join(root, "first.ts")
+    const second = join(root, "second.ts")
+    const firstContent = "export const first = 1\n"
+    const secondContent = "export const second = 2\n"
+    await Bun.write(first, firstContent)
+    await Bun.write(second, secondContent)
+
+    const previous = new CacheManager(cacheDir, root)
+    await previous.initialize()
+    previous.setCheckpointMeta(checkpoint(root, "a7ef9e27ff9c04db531a00e3e05aac610f2bd5038bccc0117e796c4bb987d67b"))
+    previous.seedHashes({
+      [first]: createHash("sha256").update(firstContent).digest("hex"),
+      [second]: createHash("sha256").update(secondContent).digest("hex"),
+    })
+    await previous.flush()
+
+    const currentIgnore = await loadIgnoreWithFingerprint(root)
+    expect(currentIgnore.fingerprint).not.toBe("a7ef9e27ff9c04db531a00e3e05aac610f2bd5038bccc0117e796c4bb987d67b")
+    const upgraded = new CacheManager(cacheDir, root)
+    await upgraded.initialize()
+    upgraded.setCheckpointMeta(checkpoint(root, currentIgnore.fingerprint))
+    const embedder = new Emb()
+    const store = new Store()
+    const scan = new DirectoryScanner(embedder, store, new Parser(), upgraded, currentIgnore.ignore, 1, 1)
+    const result = await scan.scanDirectory(root)
+
+    expect(result.stats.processed).toBe(0)
+    expect(embedder.batches).toEqual([])
+    expect(store.points).toBe(0)
+    expect(store.single).toEqual([])
+    expect(upgraded.getHash(first)).toBeDefined()
+    expect(upgraded.getHash(second)).toBeDefined()
+  })
+
+  test("reconciles changed ignore rules without re-embedding unchanged included files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scanner-ignore-upgrade-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))
+    const unchanged = join(root, "unchanged.ts")
+    const newlyIgnored = join(root, "newly-ignored.ts")
+    const newlyIncluded = join(root, "newly-included.ts")
+    const unchangedContent = "export const unchanged = 1\n"
+    const ignoredContent = "export const ignored = 1\n"
+    await Bun.write(unchanged, unchangedContent)
+    await Bun.write(newlyIgnored, ignoredContent)
+    await Bun.write(newlyIncluded, "export const included = 1\n")
+
+    const previous = new CacheManager(cacheDir, root)
+    await previous.initialize()
+    previous.setCheckpointMeta(checkpoint(root, "1.0.19-ignore-fingerprint"))
+    previous.seedHashes({
+      [unchanged]: createHash("sha256").update(unchangedContent).digest("hex"),
+      [newlyIgnored]: createHash("sha256").update(ignoredContent).digest("hex"),
+    })
+    await previous.flush()
+
+    const upgraded = new CacheManager(cacheDir, root)
+    await upgraded.initialize()
+    upgraded.setCheckpointMeta(checkpoint(root, "1.1.0-ignore-fingerprint"))
+
+    const embedder = new Emb()
+    const store = new Store()
+    const matcher = ignore().add("newly-ignored.ts")
+    const scan = new DirectoryScanner(embedder, store, new Parser(), upgraded, matcher, 1, 1)
+    const result = await scan.scanDirectory(root)
+
+    expect(result.stats.processed).toBe(1)
+    expect(embedder.batches.flat()).toHaveLength(1)
+    expect(upgraded.getHash(unchanged)).toBeDefined()
+    expect(upgraded.getHash(newlyIgnored)).toBeUndefined()
+    expect(upgraded.getHash(newlyIncluded)).toBeDefined()
+    expect(store.single).toEqual([newlyIgnored])
+  })
+
   test("uses seeded baseline hashes to index only worktree changes", async () => {
     const root = await mkdtemp(join(tmpdir(), "scanner-test-"))
     const cacheDir = await mkdtemp(join(tmpdir(), "scanner-cache-"))

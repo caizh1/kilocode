@@ -52,6 +52,19 @@ export function checkpointMetaMatches(left?: RagCheckpointMeta, right?: RagCheck
   return checkpointMetaHash(left) === checkpointMetaHash(right)
 }
 
+export function checkpointCacheCompatible(left?: RagCheckpointMeta, right?: RagCheckpointMeta): boolean {
+  if (!left || !right) return false
+  return checkpointMetaChangedFields(left, right).every((field) => field === "ignoreFingerprint")
+}
+
+export function checkpointMetaChangedFields(left?: RagCheckpointMeta, right?: RagCheckpointMeta): string[] {
+  if (!left || !right) return ["metadata"]
+  const leftValues = new Map(Object.entries(left))
+  const rightValues = new Map(Object.entries(right))
+  const fields = new Set([...leftValues.keys(), ...rightValues.keys()])
+  return [...fields].filter((field) => JSON.stringify(leftValues.get(field)) !== JSON.stringify(rightValues.get(field)))
+}
+
 export function generationForFile(meta: RagCheckpointMeta, filePath: string, fileHash: string): string {
   return digest(`${checkpointMetaHash(meta)}\0${filePath}\0${fileHash}`)
 }
