@@ -25,10 +25,10 @@ describe("visibleConnectedIds", () => {
     expect(ids).toEqual(["anthropic"])
   })
 
-  it("always hides ChipMate in internal offline mode", () => {
+  it("keeps ChipMate available in internal offline mode", () => {
     const ids = visibleConnectedIds(["chipmate", "openrouter"], { chipmate: "oauth", openrouter: "api" }, true)
 
-    expect(ids).toEqual(["openrouter"])
+    expect(ids).toEqual(["chipmate", "openrouter"])
   })
 })
 

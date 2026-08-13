@@ -15,6 +15,61 @@ afterEach(async () => {
 })
 
 describe("LanceDB 原生批量 generation finalize 隔离用例", () => {
+  test("1.0.19 的 bge-m3 直存储索引在 1.1.0 中原位复用", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "chipmate-lancedb-1-0-19-upgrade-"))
+    roots.push(root)
+    const workspace = path.join(root, "真实升级工作区")
+    const base = path.join(root, "索引", "c")
+    const profile = {
+      provider: "openai-compatible" as const,
+      modelId: "bge-m3",
+      dimension: 8,
+      dimensionMode: "fixed" as const,
+      requestedDimension: 8,
+    }
+    const vector = [1, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07]
+    const point = {
+      id: "10190190-1019-4019-8019-101901901019",
+      vector,
+      payload: {
+        workspaceId: "workspace",
+        normalizedRoot: workspace,
+        filePath: "源码/保持不变.c",
+        fileHash: "1.0.19-文件哈希",
+        chunkHash: "1.0.19-分块哈希",
+        chunkRange: "1:3",
+        runId: "1.0.19-轮次",
+        generation: "1.0.19-代",
+        checkpointMetaHash: "1.0.19-检查点",
+        active: true,
+        codeChunk: "int unchanged_after_upgrade(void) { return 19; }",
+        startLine: 1,
+        endLine: 3,
+        segmentHash: "1.0.19-片段哈希",
+      },
+    }
+
+    const baseline = new LanceDBVectorStore(workspace, profile.dimension, base, profile)
+    await baseline.initialize()
+    await baseline.upsertPoints([point])
+    await baseline.markIndexingComplete()
+    const collection = baseline.getCollectionName()
+    await baseline.close()
+
+    const upgraded = new LanceDBVectorStore(workspace, profile.dimension, base, profile)
+    expect(upgraded.getCollectionName()).toBe(collection)
+    expect(await upgraded.initialize()).toBe(false)
+    expect(upgraded.getLastCompatibilityDecision()).toMatchObject({
+      action: "reuse",
+      reason: "compatible",
+      created: false,
+    })
+    expect((await upgraded.search(vector, "源码", 0, 5))[0]?.id).toBe(point.id)
+    expect(await Bun.file(path.join(compactSafeGenerationRoot(workspace, base), "active.json")).exists()).toBe(false)
+    expect(await Bun.file(path.join(compactSafeGenerationRoot(workspace, base), "candidate.json")).exists()).toBe(false)
+    await upgraded.close()
+  }, 30_000)
+
   test("使用当前原生运行库激活新 generation 并清理旧数据", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "chipmate-lancedb-finalize-"))
     roots.push(root)

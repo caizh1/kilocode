@@ -135,6 +135,19 @@ describe("validateCustomProvider – variant name validation", () => {
     expect(out.errors.providerID).toBeUndefined()
   })
 
+  it("allows editing the fixed internal ChipMate provider without a duplicate-id error", () => {
+    const form = base()
+    form.providerID = "chipmate"
+    const out = validateCustomProvider({
+      ...args(form),
+      editing: true,
+      existingProviderIDs: new Set(["chipmate"]),
+    })
+
+    expect(out.result?.providerID).toBe("chipmate")
+    expect(out.errors.providerID).toBeUndefined()
+  })
+
   it("allows submit when reasoning is enabled with no variants", () => {
     const form = base()
     form.models[0].reasoning = true

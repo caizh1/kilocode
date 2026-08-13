@@ -8,7 +8,7 @@ export function visibleConnectedIds(
   authStates: Record<string, ProviderAuthState>,
   internal = isInternalOfflineBuild(),
 ) {
-  if (internal) return connected.filter((id) => id !== CHIPMATE_PROVIDER_ID)
+  if (internal) return connected
   return connected.filter((id) => id !== CHIPMATE_PROVIDER_ID || authStates[CHIPMATE_PROVIDER_ID] !== undefined)
 }
 

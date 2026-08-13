@@ -23,6 +23,7 @@ describe("LanceDB 原生批量 generation finalize", () => {
     ])
 
     const output = `${stdout}\n${stderr}`
+    expect(output).toContain("1.0.19 的 bge-m3 直存储索引在 1.1.0 中原位复用")
     expect(output).toContain("使用当前原生运行库激活新 generation 并清理旧数据")
     expect(output).toContain("清空候选代后保留完整向量身份并支持中断恢复和跨进程重开")
     expect(output).toContain("0 fail")

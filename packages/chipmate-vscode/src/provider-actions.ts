@@ -10,6 +10,7 @@ import {
   withCustomProviderDeletions,
 } from "./shared/custom-provider"
 import { isCustomProviderPackage, CHIPMATE_PROVIDER_ID, parseModelString } from "./shared/provider-model"
+import { isInternalOfflineBuild } from "./shared/internal-offline"
 import { configFeatures } from "./features"
 import * as MemoryDebug from "./services/memory-debug"
 
@@ -97,7 +98,7 @@ function same(a: unknown, b: unknown): boolean {
 }
 
 /** Fetch provider availability and authentication state without exposing stored credentials. */
-export async function fetchProviderData(client: ChipMateClient, dir: string) {
+export async function fetchProviderData(client: ChipMateClient, dir: string, internal = isInternalOfflineBuild()) {
   const authRequest =
     typeof client.provider.auth === "function"
       ? client.provider
@@ -105,12 +106,13 @@ export async function fetchProviderData(client: ChipMateClient, dir: string) {
           .then((r) => r.data ?? {})
           .catch(() => ({}))
       : Promise.resolve({})
-  const chipmateRequest = client.chipmate?.authStatus
-    ? client.chipmate
-        .authStatus({ directory: dir }, { throwOnError: true })
-        .then((r) => (r.data?.authenticated ? (r.data.type ?? null) : null))
-        .catch(() => null)
-    : Promise.resolve(null)
+  const chipmateRequest =
+    !internal && client.chipmate?.authStatus
+      ? client.chipmate
+          .authStatus({ directory: dir }, { throwOnError: true })
+          .then((r) => (r.data?.authenticated ? (r.data.type ?? null) : null))
+          .catch(() => null)
+      : Promise.resolve(null)
 
   const [{ data: response }, authMethods, chipmateAuth] = await Promise.all([
     client.provider.list({ directory: dir }, { throwOnError: true }),
@@ -136,8 +138,10 @@ export async function fetchProviderData(client: ChipMateClient, dir: string) {
     delete next.key
     return next as (typeof response.all)[number]
   })
-  delete authStates[CHIPMATE_PROVIDER_ID]
-  if (chipmateAuth) authStates[CHIPMATE_PROVIDER_ID] = chipmateAuth
+  if (!internal) {
+    delete authStates[CHIPMATE_PROVIDER_ID]
+    if (chipmateAuth) authStates[CHIPMATE_PROVIDER_ID] = chipmateAuth
+  }
   return { response: { ...response, all }, authMethods, authStates, storedKeys }
 }
 
@@ -422,54 +426,74 @@ export async function completeProviderOAuth(
   }
 }
 
+async function disconnectFixedInternalProvider(ctx: ActionContext, requestId: string, id: string) {
+  await removeAuth(ctx, id, true)
+  await ctx.disposeGlobal(`internal provider credential removal (${id})`)
+  await ctx.fetchAndSendProviders()
+  ctx.postMessage({ type: "providerDisconnected", requestId, providerID: id })
+  return true
+}
+
+async function disconnectConfiguredProvider(
+  ctx: ActionContext,
+  requestId: string,
+  id: string,
+  setCachedConfig: SetCachedConfig,
+  internal: boolean,
+) {
+  const config = await configs(ctx)
+  const cfg = config.global.provider?.[id]
+  const effective = config.merged.provider?.[id]
+  const configured = !!cfg || !!effective
+  const custom = customProvider(cfg) || customProvider(effective)
+  const { response } = await fetchProviderData(ctx.client, ctx.workspaceDir, internal)
+  const active = response.all.find((item) => item.id === id)
+  const oauth = active?.source === "custom" && configured && !custom
+
+  // Config-sourced providers may not have auth store entries because
+  // credentials can come from config or env, so auth removal is non-fatal.
+  await removeAuth(ctx, id, configured)
+
+  if (id === "chipmate") {
+    ctx.postMessage({ type: "profileData", data: null })
+  }
+
+  if (custom) {
+    await removeCustom(ctx, id, config.global, config.merged)
+  }
+
+  // Config-sourced built-in providers stay "connected" after auth.remove
+  // because the server rebuilds state from config. Add to disabled_providers
+  // so the server excludes them while preserving config for re-enable.
+  if (configured && !oauth && !custom) {
+    await disableConfigured(ctx, id, config.global)
+  }
+
+  if (oauth) {
+    await enableConfigured(ctx, id, config.global)
+  }
+
+  if (configured) await refreshConfig(ctx, setCachedConfig)
+
+  await ctx.disposeGlobal(`provider disconnect (${id})`)
+  await ctx.fetchAndSendProviders()
+  ctx.postMessage({ type: "providerDisconnected", requestId, providerID: id })
+  return true
+}
+
 export async function disconnectProvider(
   ctx: ActionContext,
   requestId: string,
   providerID: string,
   cachedConfigMessage: unknown,
   setCachedConfig: SetCachedConfig,
+  internal = isInternalOfflineBuild(),
 ) {
   const id = validateID(ctx, requestId, providerID, "disconnect")
   if (!id) return
   try {
-    const config = await configs(ctx)
-    const cfg = config.global.provider?.[id]
-    const effective = config.merged.provider?.[id]
-    const configured = !!cfg || !!effective
-    const custom = customProvider(cfg) || customProvider(effective)
-    const { response } = await fetchProviderData(ctx.client, ctx.workspaceDir)
-    const active = response.all.find((item) => item.id === id)
-    const oauth = active?.source === "custom" && configured && !custom
-
-    // Config-sourced providers may not have auth store entries because
-    // credentials can come from config or env, so auth removal is non-fatal.
-    await removeAuth(ctx, id, configured)
-
-    if (id === "chipmate") {
-      ctx.postMessage({ type: "profileData", data: null })
-    }
-
-    if (custom) {
-      await removeCustom(ctx, id, config.global, config.merged)
-    }
-
-    // Config-sourced built-in providers stay "connected" after auth.remove
-    // because the server rebuilds state from config. Add to disabled_providers
-    // so the server excludes them while preserving config for re-enable.
-    if (configured && !oauth && !custom) {
-      await disableConfigured(ctx, id, config.global)
-    }
-
-    if (oauth) {
-      await enableConfigured(ctx, id, config.global)
-    }
-
-    if (configured) await refreshConfig(ctx, setCachedConfig)
-
-    await ctx.disposeGlobal(`provider disconnect (${id})`)
-    await ctx.fetchAndSendProviders()
-    ctx.postMessage({ type: "providerDisconnected", requestId, providerID: id })
-    return true
+    if (internal && id === CHIPMATE_PROVIDER_ID) return await disconnectFixedInternalProvider(ctx, requestId, id)
+    return await disconnectConfiguredProvider(ctx, requestId, id, setCachedConfig, internal)
   } catch (error) {
     postError(ctx, requestId, providerID, "disconnect", ctx.getErrorMessage(error) || "Failed to disconnect provider")
   }

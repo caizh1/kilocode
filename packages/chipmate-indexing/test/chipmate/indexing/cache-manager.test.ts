@@ -45,6 +45,42 @@ describe("CacheManager checkpoint metadata", () => {
     expect(reloaded.getHash(file)).toBe("hash-a")
   })
 
+  test("保留 1.0.19 基线中的 1443 个文件哈希", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cache-root-"))
+    const cacheDir = await mkdtemp(join(tmpdir(), "cache-dir-"))
+    const hashes = Object.fromEntries(
+      Array.from({ length: 1443 }, (_, index) => [join(root, `源码-${index}.c`), `哈希-${index}`]),
+    )
+    const first = new CacheManager(cacheDir, root)
+    await first.initialize()
+    first.setCheckpointMeta(
+      meta({
+        root,
+        embedderProvider: "openai-compatible",
+        embedderModel: "bge-m3",
+        embeddingDimension: 1024,
+        ignoreFingerprint: "1.0.19-忽略摘要",
+      }),
+    )
+    first.seedHashes(hashes)
+    await first.flush()
+
+    const upgraded = new CacheManager(cacheDir, root)
+    await upgraded.initialize()
+    upgraded.setCheckpointMeta(
+      meta({
+        root,
+        embedderProvider: "openai-compatible",
+        embedderModel: "bge-m3",
+        embeddingDimension: 1024,
+        ignoreFingerprint: "1.1.0-忽略摘要",
+      }),
+    )
+
+    expect(upgraded.getAllHashes()).toEqual(hashes)
+    expect(Object.keys(upgraded.getAllHashes())).toHaveLength(1443)
+  })
+
   test("does not reuse file hashes when embedding dimension changes", async () => {
     const root = await mkdtemp(join(tmpdir(), "cache-root-"))
     const cacheDir = await mkdtemp(join(tmpdir(), "cache-dir-"))

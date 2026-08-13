@@ -158,6 +158,28 @@ describe("disconnectProvider", () => {
     expect(calls.config).toEqual([{ config: { disabled_providers: ["groq"] } }])
     expect(calls.refresh).toBe(1)
   })
+
+  it("clears only the fixed internal ChipMate credential", async () => {
+    const existing = {
+      disabled_providers: [],
+      provider: {
+        chipmate: {
+          npm: "@ai-sdk/openai-compatible",
+          options: { baseURL: "https://example.com/v1" },
+          models: { model: { name: "model" } },
+        },
+      },
+    }
+    const { ctx, calls, setCachedConfig } = createCtx(existing)
+
+    await disconnectProvider(ctx, "req", "chipmate", null, setCachedConfig, true)
+
+    expect(calls.remove).toEqual([{ providerID: "chipmate" }])
+    expect(calls.config).toEqual([])
+    expect(calls.project).toEqual([])
+    expect(calls.dispose).toBe(1)
+    expect(calls.refresh).toBe(1)
+  })
 })
 
 describe("connectProvider", () => {
@@ -685,12 +707,56 @@ describe("fetchProviderData", () => {
     expect(result.authStates).toEqual({ chipmate: "oauth" })
   })
 
+  it("preserves internal ChipMate API auth without querying Gateway auth", async () => {
+    let gatewayRequests = 0
+    const client = {
+      provider: {
+        list: async () => ({
+          data: {
+            all: [
+              {
+                id: "chipmate",
+                name: "ChipMate",
+                source: "config",
+                key: "sk-internal",
+                env: [],
+                options: { baseURL: "https://example.com/v1" },
+                models: { model: { name: "model" } },
+              },
+            ],
+            connected: ["chipmate"],
+            default: { chipmate: "model" },
+          },
+        }),
+        auth: async () => ({ data: {} }),
+      },
+      chipmate: {
+        authStatus: async () => {
+          gatewayRequests += 1
+          return { data: { authenticated: false } }
+        },
+      },
+    } as unknown as Parameters<typeof fetchProviderData>[0]
+
+    const result = await fetchProviderData(client, "/tmp", true)
+    const item = result.response.all[0] as Record<string, unknown>
+
+    expect(gatewayRequests).toBe(0)
+    expect(result.authStates).toEqual({ chipmate: "api" })
+    expect(result.storedKeys).toEqual({
+      chipmate: { key: "sk-internal", baseURL: "https://example.com/v1" },
+    })
+    expect("key" in item).toBe(false)
+  })
+
   it("does not infer ChipMate speech access without stored Gateway auth", async () => {
     const client = {
       provider: {
         list: async () => ({
           data: {
-            all: [{ id: "chipmate", name: "ChipMate Gateway", source: "config", key: "configured", env: [], models: {} }],
+            all: [
+              { id: "chipmate", name: "ChipMate Gateway", source: "config", key: "configured", env: [], models: {} },
+            ],
             connected: ["chipmate"],
             default: { chipmate: "chipmate-auto/frontier" },
           },
