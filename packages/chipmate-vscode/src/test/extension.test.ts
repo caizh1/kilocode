@@ -1,6 +1,39 @@
 import * as assert from "assert"
+import { randomUUID } from "node:crypto"
+import { tmpdir } from "node:os"
 
 import * as vscode from "vscode"
+import {
+  applyCommentProposals,
+  applyCommentProposalsForTargets,
+  validateTargetSnapshot,
+} from "../services/code-comments/apply"
+import {
+  CodeCommentPreviewController,
+  type CodeCommentPreviewHost,
+  VscodeCodeCommentPreviewHost,
+} from "../services/code-comments/preview-controller"
+import { resolveTargetDocument } from "../services/code-comments/target-document"
+import type { FunctionTarget } from "../services/code-comments/types"
+
+async function waitForTab(match: (tab: vscode.Tab) => boolean): Promise<vscode.Tab> {
+  const find = () => vscode.window.tabGroups.all.flatMap((group) => group.tabs).find(match)
+  const current = find()
+  if (current) return current
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      disposable.dispose()
+      reject(new Error("等待注释 Diff 标签超时"))
+    }, 10_000)
+    const disposable = vscode.window.tabGroups.onDidChangeTabs(() => {
+      const tab = find()
+      if (!tab) return
+      clearTimeout(timeout)
+      disposable.dispose()
+      resolve(tab)
+    })
+  })
+}
 
 suite("Extension Test Suite", () => {
   vscode.window.showInformationMessage("Start ChipMate/ChipMate extension smoke tests.")
@@ -67,9 +100,7 @@ suite("Extension Test Suite", () => {
       { section: "chipmate.v2", key: "showTokenThroughput", value: true },
       { section: "chipmate.v2", key: "languageCommitMessage", value: "en" },
     ] as const
-    const previous = cases.map((item) =>
-      vscode.workspace.getConfiguration(item.section).inspect(item.key)?.globalValue,
-    )
+    const previous = cases.map((item) => vscode.workspace.getConfiguration(item.section).inspect(item.key)?.globalValue)
 
     try {
       for (const item of cases) {
@@ -138,6 +169,272 @@ suite("Extension Test Suite", () => {
       "chipmate.v2.languageCommitMessage",
     ]) {
       assert.ok(Object.prototype.hasOwnProperty.call(properties, key), `${key} must remain contributed`)
+    }
+  })
+
+  test("keeps a preview source tab open and restores it after the comment Diff is closed", async function () {
+    this.timeout(20_000)
+    const id = randomUUID()
+    const sourceUri = vscode.Uri.file(`${tmpdir()}/chipmate-comment-source-${id}.c`)
+    const beforeUri = vscode.Uri.file(`${tmpdir()}/chipmate-comment-before-${id}.c`)
+    const afterUri = vscode.Uri.file(`${tmpdir()}/chipmate-comment-after-${id}.c`)
+    const text =
+      Array.from({ length: 80 }, (_, index) => `int value_${index}(void) { return ${index}; }`).join("\n") + "\n"
+    const candidate = `/** 返回对应的固定值。 */\n${text}`
+    await Promise.all([
+      vscode.workspace.fs.writeFile(sourceUri, Buffer.from(text)),
+      vscode.workspace.fs.writeFile(beforeUri, Buffer.from(text)),
+      vscode.workspace.fs.writeFile(afterUri, Buffer.from(candidate)),
+    ])
+
+    let controller: CodeCommentPreviewController | undefined
+    try {
+      const sourceDocument = await vscode.workspace.openTextDocument(sourceUri)
+      const sourceEditor = await vscode.window.showTextDocument(sourceDocument, {
+        preview: true,
+        viewColumn: vscode.ViewColumn.One,
+      })
+      const selection = new vscode.Selection(63, 4, 63, 15)
+      sourceEditor.selection = selection
+      sourceEditor.revealRange(new vscode.Range(60, 0, 70, 0), vscode.TextEditorRevealType.AtTop)
+      const sourceTab = vscode.window.tabGroups.all
+        .flatMap((group) => group.tabs)
+        .find((tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === sourceUri.toString())
+      assert.ok(sourceTab, "source tab must be open before showing the Diff")
+
+      const delegate = new VscodeCodeCommentPreviewHost()
+      const resources = {
+        before: { key: beforeUri.toString(), value: beforeUri },
+        after: { key: afterUri.toString(), value: afterUri },
+      }
+      const host: CodeCommentPreviewHost = {
+        createResource: (_previewID, side) => resources[side],
+        registerProvider: () => new vscode.Disposable(() => undefined),
+        registerCommand: () => new vscode.Disposable(() => undefined),
+        onDidCloseDiff: (run) => delegate.onDidCloseDiff(run),
+        openDiff: (original, modified, title, languageID, source) =>
+          delegate.openDiff(original, modified, title, languageID, source),
+        closeDiff: (original, modified) => delegate.closeDiff(original, modified),
+        restoreSource: (source) => delegate.restoreSource(source),
+        setPendingContext: async () => undefined,
+      }
+      controller = new CodeCommentPreviewController(host)
+      const target: FunctionTarget = {
+        uri: sourceUri.toString(),
+        filePath: sourceUri.fsPath,
+        relativePath: "source.c",
+        workspacePath: tmpdir(),
+        languageId: "c",
+        documentVersion: sourceDocument.version,
+        documentText: text,
+        functionSource: text.trimEnd(),
+        functionHash: "preview-source-test",
+        startIndex: 0,
+        endIndex: text.trimEnd().length,
+        startLine: 0,
+        endLine: 79,
+        contextBefore: "",
+        contextAfter: "",
+        functionHeaderStyle: "docBlock",
+        existingComments: [],
+        complexity: {
+          lineCount: 80,
+          controlRegionCount: 0,
+          existingCoveredRegionCount: 0,
+          minimumInlineComments: 0,
+          controlRegions: [],
+        },
+        anchors: [{ line: 0, kind: "function", targetLineText: text.split("\n", 1)[0]!, indent: "" }],
+        eol: "\n",
+      }
+      const sourceView = {
+        uri: sourceUri.toString(),
+        viewColumn: sourceEditor.viewColumn,
+        preview: sourceTab.isPreview,
+        selections: [...sourceEditor.selections],
+        visibleRange: sourceEditor.visibleRanges[0],
+      }
+      const confirmation = controller.confirm(target, candidate, 1, sourceView)
+
+      const diffTab = await waitForTab(
+        (tab) =>
+          tab.input instanceof vscode.TabInputTextDiff &&
+          tab.input.original.toString() === beforeUri.toString() &&
+          tab.input.modified.toString() === afterUri.toString(),
+      )
+      assert.strictEqual(diffTab.isPreview, false, "comment Diff must be pinned")
+      assert.ok(
+        vscode.window.tabGroups.all
+          .flatMap((group) => group.tabs)
+          .some((tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === sourceUri.toString()),
+        "opening the Diff must not replace the source preview tab",
+      )
+
+      await vscode.window.tabGroups.close(diffTab)
+      assert.strictEqual(await confirmation, false)
+      assert.strictEqual(vscode.window.activeTextEditor?.document.uri.toString(), sourceUri.toString())
+      assert.deepStrictEqual(vscode.window.activeTextEditor?.selection, selection)
+      assert.strictEqual(sourceDocument.getText(), text)
+    } finally {
+      controller?.dispose()
+      for (const uri of [sourceUri, beforeUri, afterUri]) {
+        const tab = vscode.window.tabGroups.all
+          .flatMap((group) => group.tabs)
+          .find(
+            (candidate) =>
+              candidate.input instanceof vscode.TabInputText && candidate.input.uri.toString() === uri.toString(),
+          )
+        if (tab) await vscode.window.tabGroups.close(tab)
+        await vscode.workspace.fs.delete(uri)
+      }
+    }
+  })
+
+  test("reopens an unloaded source document and accepts an identical snapshot with a new version", async () => {
+    const uri = vscode.Uri.file(`${tmpdir()}/chipmate-code-comment-${randomUUID()}.c`)
+    const text = "int value(void) { return 1; }\n"
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(text))
+
+    try {
+      const target: FunctionTarget = {
+        uri: uri.toString(),
+        filePath: uri.fsPath,
+        relativePath: "main.c",
+        workspacePath: tmpdir(),
+        languageId: "c",
+        documentVersion: 99,
+        documentText: text,
+        functionSource: text.trimEnd(),
+        functionHash: "unused-when-document-text-matches",
+        startIndex: 0,
+        endIndex: text.trimEnd().length,
+        startLine: 0,
+        endLine: 0,
+        contextBefore: "",
+        contextAfter: "",
+        functionHeaderStyle: "docBlock",
+        existingComments: [],
+        complexity: {
+          lineCount: 1,
+          controlRegionCount: 0,
+          existingCoveredRegionCount: 0,
+          minimumInlineComments: 0,
+          controlRegions: [],
+        },
+        anchors: [{ line: 0, kind: "function", targetLineText: text.trimEnd(), indent: "" }],
+        eol: "\n",
+      }
+      const resolution = await resolveTargetDocument(target, {
+        textDocuments: [],
+        openTextDocument: vscode.workspace.openTextDocument,
+      })
+
+      assert.strictEqual(resolution.status, "ready")
+      if (resolution.status === "ready") {
+        assert.strictEqual(resolution.reopened, true)
+        assert.strictEqual(resolution.document.getText(), text)
+        assert.deepStrictEqual(validateTargetSnapshot(target, resolution.document), [])
+        await vscode.window.showTextDocument(resolution.document, { preview: false })
+        const applied = await applyCommentProposals(resolution.document, target, [
+          {
+            kind: "functionHeader",
+            operation: "insert",
+            insertBeforeLine: 0,
+            indent: "",
+            commentText: "/** 返回固定值。 */",
+            anchor: { targetLineText: text.trimEnd() },
+          },
+        ])
+        assert.strictEqual(applied, true)
+        assert.strictEqual(resolution.document.getText(), `/** 返回固定值。 */\n${text}`)
+        await vscode.commands.executeCommand("undo")
+        assert.strictEqual(resolution.document.getText(), text)
+      }
+    } finally {
+      await vscode.commands.executeCommand("workbench.action.closeActiveEditor")
+      await vscode.workspace.fs.delete(uri)
+    }
+  })
+
+  test("applies batch comments atomically and reverts them with one undo", async () => {
+    const uri = vscode.Uri.file(`${tmpdir()}/chipmate-code-comment-batch-${randomUUID()}.c`)
+    const first = "int first(void) { return 1; }"
+    const second = "int second(void) { return 2; }"
+    const text = `${first}\n${second}\n`
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(text))
+
+    try {
+      const document = await vscode.workspace.openTextDocument(uri)
+      await vscode.window.showTextDocument(document, { preview: false })
+      const target = (line: number, source: string): FunctionTarget => ({
+        uri: uri.toString(),
+        filePath: uri.fsPath,
+        relativePath: "batch.c",
+        workspacePath: tmpdir(),
+        languageId: "c",
+        documentVersion: document.version,
+        documentText: text,
+        functionSource: source,
+        functionHash: "unused-in-application-test",
+        startIndex: line === 0 ? 0 : first.length + 1,
+        endIndex: line === 0 ? first.length : first.length + 1 + second.length,
+        startLine: line,
+        endLine: line,
+        contextBefore: "",
+        contextAfter: "",
+        functionHeaderStyle: "docBlock",
+        existingComments: [],
+        complexity: {
+          lineCount: 1,
+          controlRegionCount: 0,
+          existingCoveredRegionCount: 0,
+          minimumInlineComments: 0,
+          controlRegions: [],
+        },
+        anchors: [{ line, kind: "function", targetLineText: source, indent: "" }],
+        eol: "\n",
+      })
+      const firstTarget = target(0, first)
+      const secondTarget = target(1, second)
+      const applied = await applyCommentProposalsForTargets(document, [
+        {
+          target: firstTarget,
+          proposals: [
+            {
+              kind: "functionHeader",
+              operation: "insert",
+              insertBeforeLine: 0,
+              indent: "",
+              commentText: "/** 返回第一个固定值。 */",
+              anchor: { targetLineText: first },
+            },
+          ],
+        },
+        {
+          target: secondTarget,
+          proposals: [
+            {
+              kind: "functionHeader",
+              operation: "insert",
+              insertBeforeLine: 1,
+              indent: "",
+              commentText: "/** 返回第二个固定值。 */",
+              anchor: { targetLineText: second },
+            },
+          ],
+        },
+      ])
+
+      assert.strictEqual(applied, true)
+      assert.strictEqual(
+        document.getText(),
+        `/** 返回第一个固定值。 */\n${first}\n/** 返回第二个固定值。 */\n${second}\n`,
+      )
+      await vscode.commands.executeCommand("undo")
+      assert.strictEqual(document.getText(), text)
+    } finally {
+      await vscode.commands.executeCommand("workbench.action.closeActiveEditor")
+      await vscode.workspace.fs.delete(uri)
     }
   })
 })

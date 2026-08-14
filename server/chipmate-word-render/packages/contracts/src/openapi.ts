@@ -173,8 +173,15 @@ export const openapi = {
         responses: {
           "200": {
             description: "Immutable skill release archive",
+            headers: {
+              "Content-Disposition": { schema: { type: "string" } },
+              "Content-Length": { schema: { type: "integer" } },
+              "Accept-Ranges": { schema: { type: "string", enum: ["none"] } },
+              "X-Content-Sha256": { schema: { type: "string" } },
+            },
             content: { "application/gzip": { schema: { type: "string", format: "binary" } } },
           },
+          "416": { description: "Range requests are not supported" },
         },
       },
     },

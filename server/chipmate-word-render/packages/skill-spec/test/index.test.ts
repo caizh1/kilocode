@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { deflateRawSync, gzipSync } from "node:zlib"
+import { deflateRawSync, gunzipSync, gzipSync } from "node:zlib"
 import {
   DETERMINISTIC_REPAIRS,
   SKILL_ID_PATTERN,
@@ -134,10 +134,52 @@ test("missing frontmatter, unsafe ids, and empty descriptions normalize to bound
       },
     ]),
   )
-  assert.equal(unsafe.valid, true)
-  assert.equal(unsafe.spec.id, "escape")
+  assert.equal(unsafe.valid, false)
+  assert.equal(unsafe.spec.id, "unsafe")
   assert.equal(unsafe.spec.description, "Generate bounded engineering evidence.")
   assert.equal(SKILL_ID_PATTERN.test(unsafe.spec.id), true)
+  assert.ok(unsafe.issues.some((issue) => issue.code === "identity-mismatch"))
+})
+
+test("portable name is the canonical identity even when a resource directory sorts first", () => {
+  const result = validateSkillArchive(
+    tar([
+      { path: "examples/sequence.puml", data: Buffer.from("@startuml\nAlice -> Bob\n@enduml\n") },
+      { path: "SKILL.md", data: Buffer.from(body("uml", "Generate and validate UML diagrams")) },
+    ]),
+  )
+  assert.equal(result.valid, true)
+  assert.equal(result.spec.id, "uml")
+  assert.equal(result.spec.name, "uml")
+  assert.equal(gunzipSync(result.archive).includes(Buffer.from("uml/SKILL.md")), true)
+  const files = readSkillArchive(result.archive)
+  assert.equal(files.find((file) => file.path === "SKILL.md")?.data.toString("utf8").includes("name: uml"), true)
+  assert.equal(JSON.parse(files.find((file) => file.path === "skill.json")!.data.toString("utf8")).id, "uml")
+  assert.ok(files.some((file) => file.path === "examples/sequence.puml"))
+})
+
+test("identity conflicts and ambiguous unwrapped sources fail closed", () => {
+  const conflict = validateSkillArchive(
+    tar([
+      {
+        path: "wrapper/SKILL.md",
+        data: Buffer.from(
+          "---\nname: uml\nid: examples\ndescription: Generate UML diagrams\n---\n\n# UML\n\nGenerate actionable UML diagrams.\n",
+        ),
+      },
+    ]),
+  )
+  assert.equal(conflict.valid, false)
+  assert.ok(conflict.issues.some((issue) => issue.code === "identity-mismatch"))
+
+  const ambiguous = validateSkillArchive(
+    tar([
+      { path: "SKILL.md", data: Buffer.from("# UML\n\nGenerate actionable UML diagrams.\n") },
+      { path: "examples/sequence.puml", data: Buffer.from("@startuml\n@enduml\n") },
+    ]),
+  )
+  assert.equal(ambiguous.valid, false)
+  assert.ok(ambiguous.issues.some((issue) => issue.code === "identity-missing"))
 })
 
 test("security validation rejects secrets, XSS, hidden archives, malformed images, and symlinks", () => {
@@ -325,7 +367,7 @@ test("portable metadata keeps comments, vendor fields, Agent Skills fields, and 
   const markdown = [
     "---",
     "# keep this comment",
-    "name: Mixed Name",
+    "name: portable-skill",
     "description: Portable instructions",
     "license: Apache-2.0",
     "compatibility: Requires git",
@@ -359,7 +401,7 @@ test("portable metadata keeps comments, vendor fields, Agent Skills fields, and 
     { path: "LICENSE", data: Buffer.from("Apache License 2.0\n") },
   ])
   assert.equal(result.valid, true)
-  assert.equal(result.spec.name, "mixed-name")
+  assert.equal(result.spec.name, "portable-skill")
   assert.equal(result.spec.description, "Portable instructions")
   assert.equal(result.semver, "2.3.4")
   const files = readSkillArchive(result.archive)

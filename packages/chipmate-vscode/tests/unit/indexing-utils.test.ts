@@ -287,6 +287,29 @@ describe("indexing formatting", () => {
     expect(hasIndexingDiagnostics(status)).toBe(true)
     expect(formatIndexingDiagnostics("Code Graph", status)).toContain("- Code Graph needs rebuild.")
   })
+
+  it("copies classified document issue summaries for compatible status payloads", () => {
+    const status = {
+      state: "Complete" as const,
+      message: "Document RAG indexed with issues.",
+      processedFiles: 3,
+      totalFiles: 3,
+      percent: 100,
+      errorCount: 2,
+      staleCount: 1,
+      skippedCount: 0,
+      diagnosticRunId: "run-1",
+      issueSummary: [
+        {
+          category: "office-corrupt" as const,
+          count: 2,
+          samples: [{ file: "broken.docx", message: "Corrupted zip" }],
+        },
+      ],
+    }
+
+    expect(formatIndexingDiagnostics("Documents", status)).toContain("- office-corrupt: 2")
+  })
 })
 
 describe("indexing SSE mapping", () => {

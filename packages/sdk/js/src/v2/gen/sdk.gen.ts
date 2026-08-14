@@ -233,6 +233,8 @@ import type {
   GlobalHealthResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
+  IndexingDocumentsDiagnosticsErrors,
+  IndexingDocumentsDiagnosticsResponses,
   IndexingDocumentsRebuildErrors,
   IndexingDocumentsRebuildResponses,
   IndexingModelsErrors,
@@ -6826,6 +6828,42 @@ export class EnhancePrompt extends HeyApiClient {
 }
 
 export class Documents extends HeyApiClient {
+  /**
+   * Get document indexing diagnostics
+   *
+   * Retrieve the complete classified diagnostics for one document indexing run.
+   */
+  public diagnostics<ThrowOnError extends boolean = false>(
+    parameters: {
+      runId: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runId" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      IndexingDocumentsDiagnosticsResponses,
+      IndexingDocumentsDiagnosticsErrors,
+      ThrowOnError
+    >({
+      url: "/indexing/documents/diagnostics/{runId}",
+      ...options,
+      ...params,
+    })
+  }
+
   /**
    * Rebuild document index
    *

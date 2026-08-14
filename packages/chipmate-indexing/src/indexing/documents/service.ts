@@ -22,7 +22,12 @@ import { loadIgnoreWithFingerprint, type IgnoreMatcher } from "../shared/load-ig
 import { IndexingRunLock } from "../run-lock"
 import { DocumentIndexCache } from "./cache"
 import { chunkDocument, splitDocumentChunk } from "./chunker"
-import { extractDocument } from "./extractors"
+import { extractDocument, preflightPdfExtractor } from "./extractors"
+import {
+  classifyDocumentIssue,
+  DocumentDiagnosticLedger,
+  sanitizeDocumentDiagnostic,
+} from "./diagnostics"
 import {
   external as isExternalKey,
   id,
@@ -36,6 +41,7 @@ import {
   DOCUMENT_EXTENSIONS,
   UNSUPPORTED_DOCUMENT_EXTENSIONS,
   type DocumentChunk,
+  type DocumentDiagnosticReport,
   type DocumentIndexStatus,
   type DocumentSearchOptions,
   type DocumentSearchResult,
@@ -115,6 +121,7 @@ export class DocumentIndexService {
   private refreshRevision = 0
   private appliedRefreshRevision = 0
   private refreshTask?: Promise<void>
+  private readonly diagnostics: DocumentDiagnosticLedger
 
   constructor(
     private readonly workspace: string,
@@ -128,6 +135,7 @@ export class DocumentIndexService {
     private readonly options: DocumentIndexServiceOptions = {},
   ) {
     this.cache = new DocumentIndexCache(cacheDirectory, workspace)
+    this.diagnostics = new DocumentDiagnosticLedger(cacheDirectory, workspace)
     this.status = this.initialStatus()
   }
 
@@ -136,6 +144,12 @@ export class DocumentIndexService {
       ...this.status,
       recentErrors: this.status.recentErrors?.slice(),
     }
+  }
+
+  getDiagnosticReport(runId?: string): Promise<DocumentDiagnosticReport | undefined> {
+    const current = this.diagnostics.current()
+    if (!runId || current?.runId === runId) return current ? Promise.resolve(current) : this.diagnostics.read(runId)
+    return this.diagnostics.read(runId)
   }
 
   dispose(): Promise<void> {
@@ -170,11 +184,12 @@ export class DocumentIndexService {
       this.setStatus(error("Document RAG requires a configured embedding vector store."))
       return
     }
-    if (this.store.abortCandidate) await this.store.clearCollection()
-    else await this.store.deleteCollection()
-    if (this.disposed) return
-    await this.cache.clear()
-    if (this.disposed) return
+    if (!this.store.abortCandidate) {
+      await this.store.deleteCollection()
+      if (this.disposed) return
+      await this.cache.clear()
+      if (this.disposed) return
+    }
     await this.start(trigger, true)
   }
 
@@ -267,8 +282,12 @@ export class DocumentIndexService {
     let indexed = 0
     let skipped = 0
     let errors = 0
+    let stale = 0
     let chunks = 0
     let unknownCachedChunks = 0
+    let storeMutationStarted = false
+    const diagnosticRunId = randomUUID()
+    this.diagnostics.start(diagnosticRunId)
 
     try {
       this.setStatus(progress("Discovering document files...", 0, 0))
@@ -283,7 +302,12 @@ export class DocumentIndexService {
       if (this.disposed) return
       if (discovery.limited) {
         const message = `Document RAG paused after finding more than ${cfg.maxFiles} documents. Narrow document paths or excludes before rebuilding.`
-        this.setStatus(standby(message))
+        const report = await this.diagnostics.complete()
+        this.setStatus({
+          ...standby(message),
+          issueSummary: report?.issueSummary,
+          diagnosticRunId,
+        })
         log.warn("document indexing file limit reached", {
           workspacePath: this.workspace,
           maxFiles: cfg.maxFiles,
@@ -300,7 +324,11 @@ export class DocumentIndexService {
         await this.cache.clear()
         if (this.disposed) return
       }
+      if (discovery.files.some((file) => path.extname(file.path).toLowerCase() === ".pdf")) {
+        await preflightPdfExtractor(this.cacheDirectory)
+      }
       await this.store.markIndexingIncomplete()
+      storeMutationStarted = true
       if (this.disposed) return
 
       const files = discovery.files
@@ -327,6 +355,7 @@ export class DocumentIndexService {
             return { kind: "changed" as const, hash, items }
           } catch (err) {
             errors += 1
+            if (this.cache.get(key)) stale += 1
             this.record("documents:extract", err, file.source)
             this.report(
               index + 1,
@@ -334,6 +363,7 @@ export class DocumentIndexService {
               `Document extraction issue: ${path.basename(file.path)}`,
               skipped,
               errors,
+              stale,
             )
             return undefined
           }
@@ -345,7 +375,14 @@ export class DocumentIndexService {
           this.cache.delete(key)
           await this.store.deletePointsByFilePath(key)
           if (this.disposed) return
-          this.report(index + 1, files.length, `Skipped large document: ${path.basename(file.path)}`, skipped, errors)
+          this.report(
+            index + 1,
+            files.length,
+            `Skipped large document: ${path.basename(file.path)}`,
+            skipped,
+            errors,
+            stale,
+          )
           continue
         }
         if (item.kind === "unchanged") {
@@ -353,7 +390,14 @@ export class DocumentIndexService {
           const cachedChunks = this.cache.chunkCount(key)
           if (cachedChunks === undefined) unknownCachedChunks += 1
           else chunks += cachedChunks
-          this.report(index + 1, files.length, `Document unchanged: ${path.basename(file.path)}`, skipped, errors)
+          this.report(
+            index + 1,
+            files.length,
+            `Document unchanged: ${path.basename(file.path)}`,
+            skipped,
+            errors,
+            stale,
+          )
           continue
         }
         const written = await this.upsert(file, item.hash, item.items, meta)
@@ -366,7 +410,14 @@ export class DocumentIndexService {
         }
         indexed += 1
         chunks += written
-        this.report(index + 1, files.length, `Indexed document: ${path.basename(file.path)}`, skipped, errors)
+        this.report(
+          index + 1,
+          files.length,
+          `Indexed document: ${path.basename(file.path)}`,
+          skipped,
+          errors,
+          stale,
+        )
       }
 
       for (const file of Object.keys(this.cache.all())) {
@@ -379,29 +430,32 @@ export class DocumentIndexService {
 
       await this.cache.flush()
       if (this.disposed) return
-      if (errors > 0 && this.store.abortCandidate) {
-        await this.store.abortCandidate()
-        await this.cache.clear()
-        throw new Error(`Document candidate indexing failed with ${errors} file error(s).`)
+      if (errors > 0 && indexed === 0 && stale === 0) {
+        await this.store.abortCandidate?.()
+        throw new Error(`Document indexing failed because all ${errors} candidate file(s) had extraction errors.`)
       }
+      const report = await this.diagnostics.complete()
+      const issueCount = report?.diagnostics.length ?? errors
       await this.store.markIndexingComplete({
-        allowEmpty: chunks === 0 && unknownCachedChunks === 0 && errors === 0,
+        allowEmpty: chunks === 0 && unknownCachedChunks === 0 && errors === 0 && stale === 0,
       })
       if (this.disposed) return
       this.setStatus({
-        state: errors > 0 ? "Complete" : "Complete",
-        message: errors > 0 ? "Document RAG indexed with issues." : "Document RAG up-to-date.",
+        state: "Complete",
+        message: issueCount > 0 ? "Document RAG indexed with issues." : "Document RAG up-to-date.",
         processedFiles: files.length,
         totalFiles: files.length,
         percent: 100,
-        detail: `${indexed} indexed, ${skipped} skipped, ${errors} errors, ${chunks} chunks${
+        detail: `${indexed} indexed, ${skipped} skipped, ${issueCount} errors, ${stale} stale, ${chunks} chunks${
           unknownCachedChunks > 0 ? ` plus ${unknownCachedChunks} legacy cached document counts unavailable` : ""
         }.`,
         lastFullScanAt: new Date().toISOString(),
-        errorCount: errors,
-        staleCount: 0,
+        errorCount: issueCount,
+        staleCount: stale,
         skippedCount: skipped,
         validFileCount: indexed,
+        issueSummary: report?.issueSummary,
+        diagnosticRunId,
         recentErrors: this.status.recentErrors,
       })
       this.emit({
@@ -412,7 +466,7 @@ export class DocumentIndexService {
         filesIndexed: indexed,
         filesDiscovered: files.length,
         totalBlocks: chunks,
-        batchErrors: errors,
+        batchErrors: issueCount,
       })
       log.info("document indexing complete", {
         workspacePath: this.workspace,
@@ -420,26 +474,39 @@ export class DocumentIndexService {
         files: files.length,
         indexed,
         skipped,
-        errors,
+        errors: issueCount,
         chunks,
       })
     } catch (err) {
       if (this.disposed) return
       const candidate = this.store?.getLastCompatibilityDecision?.()?.action === "rebuild"
       await this.store?.abortCandidate?.()
-      const restored = candidate && Boolean(await this.store?.hasIndexedData().catch(() => false))
-      this.record("documents:run", err)
+      const restored =
+        (!storeMutationStarted || candidate) && Boolean(await this.store?.hasIndexedData().catch(() => false))
+      if (candidate) await this.cache.clear()
       const message = err instanceof Error ? err.message : String(err)
+      const aggregateExtractionFailure = /^Document indexing failed because all \d+ candidate file\(s\)/.test(message)
+      const persist = !aggregateExtractionFailure || (this.diagnostics.current()?.diagnostics.length ?? 0) === 0
+      this.record("documents:run", err, undefined, persist)
+      const report = await this.diagnostics.complete().catch(() => undefined)
+      const issueCount = (report?.diagnostics.length ?? errors) || 1
       this.setStatus(
         restored
           ? {
               ...this.status,
               state: "Complete",
-              message: "Document Embedding 候选索引未应用，正在使用上一版有效索引。",
+              message: "Document RAG 候选索引未应用，正在使用上一版有效索引。",
               detail: message,
+              errorCount: issueCount,
+              issueSummary: report?.issueSummary,
+              diagnosticRunId,
               recentErrors: this.status.recentErrors,
             }
-          : error(message, this.status.recentErrors),
+          : {
+              ...error(message, this.status.recentErrors, issueCount),
+              issueSummary: report?.issueSummary,
+              diagnosticRunId,
+            },
       )
       this.emit({
         type: "error",
@@ -854,27 +921,48 @@ export class DocumentIndexService {
     return externalKey(root.path, target)
   }
 
-  private report(done: number, total: number, message: string, skipped: number, errors: number): void {
+  private report(done: number, total: number, message: string, skipped: number, errors: number, stale = 0): void {
     const next = progress(message, done, total)
     next.skippedCount = skipped
     next.errorCount = errors
+    next.staleCount = stale
+    next.issueSummary = this.diagnostics.current()?.issueSummary
+    next.diagnosticRunId = this.diagnostics.current()?.runId
     next.recentErrors = this.status.recentErrors
     this.setStatus(next)
   }
 
-  private record(location: string, err: unknown, file?: string): void {
-    const msg = err instanceof Error ? err.message : String(err)
+  private record(location: string, err: unknown, file?: string, persist = true): void {
+    const category = classifyDocumentIssue(err)
+    const message = sanitizeDocumentDiagnostic(err)
+    const item = persist
+      ? this.diagnostics.add({
+          location,
+          category,
+          message,
+          ...(file ? { file } : {}),
+        })
+      : {
+          time: new Date().toISOString(),
+          source: "documents" as const,
+          location,
+          category,
+          message,
+          ...(file ? { file } : {}),
+        }
     const list = this.status.recentErrors?.slice() ?? []
     list.unshift({
-      time: new Date().toISOString(),
-      source: "documents",
-      location,
-      message: msg.replace(/\s+/g, " ").trim(),
-      ...(file ? { file } : {}),
+      ...item,
     })
     list.splice(5)
     this.status = { ...this.status, recentErrors: list }
-    log.warn("document indexing issue", { workspacePath: this.workspace, location, file, error: msg })
+    log.warn("document indexing issue", {
+      workspacePath: this.workspace,
+      location,
+      file,
+      category,
+      error: item.message,
+    })
   }
 
   private setStatus(status: DocumentIndexStatus): void {
@@ -1032,11 +1120,15 @@ function standby(message: string): DocumentIndexStatus {
   }
 }
 
-function error(message: string, recentErrors?: DocumentIndexStatus["recentErrors"]): DocumentIndexStatus {
+function error(
+  message: string,
+  recentErrors?: DocumentIndexStatus["recentErrors"],
+  errorCount = 1,
+): DocumentIndexStatus {
   return {
     ...disabled(message),
     state: "Error",
-    errorCount: 1,
+    errorCount,
     recentErrors,
   }
 }

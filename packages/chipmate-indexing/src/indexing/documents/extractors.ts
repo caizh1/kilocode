@@ -1,12 +1,13 @@
 import { Buffer } from "node:buffer"
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
-import { readFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import mammoth from "mammoth"
 import { read, utils, type CellObject, type WorkBook } from "xlsx"
 import { extractDocxPlantUml } from "./plantuml"
 import type { DocumentSection } from "./types"
+import { classifyDocumentIssue, DocumentExtractionError, sanitizeDocumentDiagnostic } from "./diagnostics"
 
 const sheetRows = 50_000
 const archiveFloor = 64 * 1024 * 1024
@@ -111,6 +112,31 @@ async function pdf(filePath: string, max: number): Promise<DocumentSection[]> {
   })
 }
 
+export async function preflightPdfExtractor(cacheDirectory: string): Promise<void> {
+  await mkdir(cacheDirectory, { recursive: true })
+  const dir = await mkdtemp(path.join(cacheDirectory, "PDF 预检 "))
+  const file = path.join(dir, "中文 路径.pdf")
+  try {
+    await writeFile(file, pdfFixture("CHIPMATE_PDF_PREFLIGHT_OK"))
+    const text = await pdftotext(file, 64 * 1024)
+    if (!text.includes("CHIPMATE_PDF_PREFLIGHT_OK")) {
+      throw new DocumentExtractionError(
+        `PDF extractor preflight returned no expected text. Executable: ${pdftotextPath()}`,
+        "extractor-runtime",
+      )
+    }
+  } catch (err) {
+    if (err instanceof DocumentExtractionError && err.category === "extractor-runtime") throw err
+    throw new DocumentExtractionError(
+      `PDF extractor preflight failed. Executable: ${pdftotextPath()}. ${sanitizeDocumentDiagnostic(err)}`,
+      "extractor-runtime",
+      { cause: err },
+    )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
 function pdftotext(filePath: string, max: number): Promise<string> {
   const exe = pdftotextPath()
   return new Promise((resolve, reject) => {
@@ -148,17 +174,57 @@ function pdftotext(filePath: string, max: number): Promise<string> {
       stderr += part.length
     })
     child.on("error", (cause) => {
-      finish(() => reject(new Error(`PDF extraction requires pdftotext. Tried ${exe}: ${cause.message}`, { cause })))
+      finish(() =>
+        reject(
+          new DocumentExtractionError(
+            `PDF extraction process failed to start. Executable: ${exe}. ${sanitizeDocumentDiagnostic(cause)}`,
+            "extractor-runtime",
+            { cause },
+          ),
+        ),
+      )
     })
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       if (code === 0 || capped) {
         finish(() => resolve(Buffer.concat(out).toString("utf8")))
         return
       }
-      const msg = Buffer.concat(err).toString("utf8").trim()
-      finish(() => reject(new Error(msg || `pdftotext failed with code ${code}`)))
+      const stderr = sanitizeDocumentDiagnostic(Buffer.concat(err).toString("utf8"))
+      const details = [
+        `Executable: ${exe}`,
+        `exitCode=${code ?? "null"}`,
+        `signal=${signal ?? "none"}`,
+        stderr === "未知文档抽取错误" ? "stderr=(empty)" : `stderr=${stderr}`,
+      ].join("; ")
+      const category = classifyDocumentIssue(stderr === "未知文档抽取错误" ? details : stderr)
+      finish(() => reject(new DocumentExtractionError(`pdftotext failed. ${details}`, category)))
     })
   })
+}
+
+function pdfFixture(text: string): Buffer {
+  const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET\n`
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(stream, "ascii")} >>\nstream\n${stream}endstream`,
+  ]
+  let value = "%PDF-1.4\n"
+  const offsets = [0]
+  for (const [index, object] of objects.entries()) {
+    offsets.push(Buffer.byteLength(value, "ascii"))
+    value += `${index + 1} 0 obj\n${object}\nendobj\n`
+  }
+  const xref = Buffer.byteLength(value, "ascii")
+  value += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  value += offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`)
+    .join("")
+  value += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return Buffer.from(value, "ascii")
 }
 
 export function pdftotextPath(

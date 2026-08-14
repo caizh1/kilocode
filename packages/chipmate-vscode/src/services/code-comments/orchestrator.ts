@@ -16,7 +16,12 @@ import type {
   FunctionTarget,
   ValidatedCommentResult,
 } from "./types"
-import { buildValidatedCommentCandidate, parseCommentQaResponse, type CommentQaResponse } from "./validator"
+import {
+  buildValidatedCommentCandidate,
+  parseCommentQaResponse,
+  type CommentCandidateResult,
+  type CommentQaResponse,
+} from "./validator"
 
 const SESSION_TIMEOUT_MS = 120_000
 
@@ -28,6 +33,11 @@ type CompletedRound = {
 type FailedRound = {
   reason: string
   kind: "parse" | "session"
+}
+
+type SafePartial = {
+  value: ValidatedCommentResult
+  output: CodeCommentSessionOutput
 }
 
 export class CodeCommentOrchestrator {
@@ -60,6 +70,7 @@ export class CodeCommentOrchestrator {
           token,
           candidate.reasons.map((reason) => `primary: ${reason}`),
           report,
+          candidate.kind === "coverage-incomplete" ? { value: candidate.partial, output: primary.output } : undefined,
         )
       }
       return unresolved(
@@ -70,7 +81,7 @@ export class CodeCommentOrchestrator {
       )
     }
     if (request.strategy === "single-self-check") {
-      return completed(target, request.strategy, candidate.value, primary.output, 1, false)
+      return this.complete(target, request.strategy, candidate.value, primary.output, 1, false)
     }
 
     report?.({ stage: "review" })
@@ -81,7 +92,7 @@ export class CodeCommentOrchestrator {
     }
     if (review.response.decision === "approve") {
       this.log(`stage=review decision=approve status=${candidate.value.status}`)
-      return completed(target, request.strategy, candidate.value, review.output, 2, false)
+      return this.complete(target, request.strategy, candidate.value, review.output, 2, false)
     }
     const reviewed = await validateCandidate(target, review.response, request.mode)
     if (!reviewed.ok)
@@ -92,7 +103,7 @@ export class CodeCommentOrchestrator {
         reviewed.reasons.map((reason) => `review: ${reason}`),
       )
     this.log(`stage=review decision=${review.response.decision} status=${reviewed.value.status}`)
-    return completed(target, request.strategy, reviewed.value, review.output, 2, true)
+    return this.complete(target, request.strategy, reviewed.value, review.output, 2, true)
   }
 
   private async recoverSinglePass(
@@ -101,6 +112,7 @@ export class CodeCommentOrchestrator {
     token: vscode.CancellationToken,
     initialReasons: string[],
     report?: (event: CodeCommentProgressEvent) => void,
+    primaryPartial?: SafePartial,
   ): Promise<CommentGenerationResult> {
     report?.({ stage: "recovery" })
     const recovery = await this.run({
@@ -108,14 +120,28 @@ export class CodeCommentOrchestrator {
       target,
       round: "primary",
       stage: "recovery",
+      candidate: primaryPartial?.value,
       validationFeedback: initialReasons,
       token,
     })
     if ("reason" in recovery) {
+      if (primaryPartial) {
+        this.log(`stage=recovery fallback=primary-partial reason=${recovery.reason}`)
+        return this.complete(target, request.strategy, primaryPartial.value, primaryPartial.output, 2, false)
+      }
       return unresolved(target, request.strategy, 2, [...initialReasons, `recovery: ${recovery.reason}`])
     }
     const candidate = await validateCandidate(target, recovery.response, request.mode)
     if (!candidate.ok) {
+      if (candidate.kind === "coverage-incomplete") {
+        const recoveryPartial = { value: candidate.partial, output: recovery.output }
+        const selected = betterCoverage(primaryPartial, recoveryPartial)
+        return this.complete(target, request.strategy, selected.value, selected.output, 2, selected === recoveryPartial)
+      }
+      if (primaryPartial) {
+        this.log(`stage=recovery fallback=primary-partial reason=${candidate.reasons.join("；")}`)
+        return this.complete(target, request.strategy, primaryPartial.value, primaryPartial.output, 2, false)
+      }
       return unresolved(
         target,
         request.strategy,
@@ -123,7 +149,21 @@ export class CodeCommentOrchestrator {
         [...initialReasons, ...candidate.reasons.map((reason) => `recovery: ${reason}`)],
       )
     }
-    return completed(target, request.strategy, candidate.value, recovery.output, 2, true)
+    return this.complete(target, request.strategy, candidate.value, recovery.output, 2, true)
+  }
+
+  private complete(
+    target: FunctionTarget,
+    strategy: CommentStrategy,
+    value: ValidatedCommentResult,
+    output: CodeCommentSessionOutput,
+    rounds: number,
+    recovered: boolean,
+  ): CommentGenerationResult {
+    this.log(
+      `quality=${value.quality} required=${value.coverage.required} covered=${value.coverage.covered} missing=${value.coverage.missing} eligibleLines=${value.coverage.eligibleAnchors.map((anchor) => anchor.line + 1).join(",") || "none"}`,
+    )
+    return completed(target, strategy, value, output, rounds, recovered)
   }
 
   private async run(input: {
@@ -153,16 +193,17 @@ export class CodeCommentOrchestrator {
         token: input.token,
       })
       const parsed = parseCommentQaResponse(output.output, input.round)
+      const stage = input.stage ?? input.round
       if (!parsed.ok) {
-        this.log(`stage=${input.round} parse=failed reason=${parsed.reason}`)
+        this.log(`stage=${stage} parse=failed reason=${parsed.reason}`)
         return { reason: parsed.reason, kind: "parse" }
       }
-      this.log(`stage=${input.round} parse=passed decision=${parsed.value.decision}`)
+      this.log(`stage=${stage} parse=passed decision=${parsed.value.decision}`)
       return { response: parsed.value, output }
     } catch (error) {
       if (error instanceof CodeCommentCancelledError) throw error
       const reason = error instanceof Error ? error.message : String(error)
-      this.log(`stage=${input.round} failed=${reason}`)
+      this.log(`stage=${input.stage ?? input.round} failed=${reason}`)
       return {
         reason: error instanceof CodeCommentSessionError && error.nonRecoverable ? `不可恢复错误：${reason}` : reason,
         kind: "session",
@@ -175,14 +216,20 @@ async function validateCandidate(
   target: FunctionTarget,
   response: CommentQaResponse,
   mode: CommentMode = "insert",
-): Promise<ReturnType<typeof buildValidatedCommentCandidate>> {
+): Promise<CommentCandidateResult> {
   const result = buildValidatedCommentCandidate(target, response, mode)
-  if (!result.ok) return result
-  const candidate = buildCommentedDocument(target, result.value.proposals)
-  if (!(await validateOnlyCommentInsertions(target, result.value.proposals, candidate))) {
-    return { ok: false, reasons: ["候选未通过非注释 token 完全一致校验"] }
+  if (!result.ok && result.kind === "invalid") return result
+  const value = result.ok ? result.value : result.partial
+  const candidate = buildCommentedDocument(target, value.proposals)
+  if (!(await validateOnlyCommentInsertions(target, value.proposals, candidate))) {
+    return { ok: false, kind: "invalid", reasons: ["候选未通过非注释 token 完全一致校验"] }
   }
   return result
+}
+
+function betterCoverage(primary: SafePartial | undefined, recovery: SafePartial): SafePartial {
+  if (!primary) return recovery
+  return recovery.value.coverage.covered > primary.value.coverage.covered ? recovery : primary
 }
 
 function completed(

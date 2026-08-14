@@ -2089,7 +2089,7 @@
             "state": "planned"
           },
           "windows": {
-            "required": false,
+            "required": true,
             "executor": "WIN-RETRIEVAL-EVIDENCE",
             "state": "planned"
           }
@@ -7232,7 +7232,7 @@
         },
         {
           "id": "REG-RENDER-SERVICE-VSIX-AUTO-UPDATE-05",
-          "title": "安装完成后提示 Reload",
+          "title": "下载校验后仅通过安装并重载动作完成更新",
           "oracle": "boolean",
           "evidence": [
             "manifest",

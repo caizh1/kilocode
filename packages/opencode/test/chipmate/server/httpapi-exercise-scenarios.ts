@@ -223,6 +223,10 @@ export const chipmateScenarios: Scenario[] = [
     }))
     .json(200, (body) => check(body === null, "missing worktree diff detail should return null")),
   http.protected.get("/indexing/status", "indexing.status").json(200, object),
+  http.protected
+    .get("/indexing/documents/diagnostics/{runId}", "indexing.documents.diagnostics")
+    .at((ctx) => ({ path: route("/indexing/documents/diagnostics/{runId}", { runId: "missing-run" }), headers: ctx.headers() }))
+    .json(404, object),
   http.protected.get("/indexing/models", "indexing.models").json(200, object),
   http.protected.get("/indexing/warnings", "indexing.warnings").json(200, array),
   http.protected

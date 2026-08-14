@@ -13,9 +13,14 @@ import {
 import { BATCH_COMMENT_CONCURRENCY, generateCommentBatch, MAX_BATCH_COMMENT_TARGETS } from "./batch"
 import { isSupportedCodeCommentLanguage, resolveFunctionTarget, resolveFunctionTargetsInRange } from "./function-target"
 import { CodeCommentOrchestrator } from "./orchestrator"
-import { CodeCommentPreviewController } from "./preview-controller"
+import {
+  captureCodeCommentSourceView,
+  CodeCommentPreviewController,
+  type CodeCommentSourceViewState,
+} from "./preview-controller"
 import { CodeCommentCancelledError, CodeCommentSessionRunner, formatError } from "./session-runner"
 import { PRODUCTION_COMMENT_STRATEGY } from "./strategy"
+import { resolveTargetDocument } from "./target-document"
 import type {
   BatchCommentItemResult,
   BatchCommentProgress,
@@ -46,7 +51,10 @@ type ReadyBatchItem = BatchCommentItemResult & {
 }
 
 type TargetPick = vscode.QuickPickItem & BatchCommentTarget
-type ResultPick = vscode.QuickPickItem & { item: ReadyBatchItem }
+type BatchTargetPicker = (
+  items: TargetPick[],
+  options: vscode.QuickPickOptions,
+) => Thenable<readonly TargetPick[] | undefined>
 
 export function registerHighConfidenceCodeComments(
   context: vscode.ExtensionContext,
@@ -56,7 +64,11 @@ export function registerHighConfidenceCodeComments(
   const log = (message: string) => output.appendLine(`[${new Date().toISOString()}] ${message}`)
   const runner = new CodeCommentSessionRunner(connection, log)
   const orchestrator = new CodeCommentOrchestrator(runner, log)
-  const status = vscode.window.createStatusBarItem("chipmate.v2.codeCommentsProgress", vscode.StatusBarAlignment.Right, 90)
+  const status = vscode.window.createStatusBarItem(
+    "chipmate.v2.codeCommentsProgress",
+    vscode.StatusBarAlignment.Right,
+    90,
+  )
   status.name = "ChipMate 注释生成进度"
   status.command = "workbench.action.openNotifications"
   const preview = new CodeCommentPreviewController(undefined, log)
@@ -88,7 +100,7 @@ export function registerHighConfidenceCodeComments(
   )
 }
 
-function commentCommandHandler(
+export function commentCommandHandler(
   command: string,
   run: () => Promise<void>,
   services: Pick<CommentCommandServices, "log" | "output" | "status">,
@@ -109,8 +121,7 @@ function commentCommandHandler(
       }
       const detail = formatError(error)
       services.log(`command=${command} failed=${detail}`)
-      const choice = await vscode.window.showErrorMessage(`代码注释生成失败：${detail}`, SHOW_DETAILS)
-      if (choice === SHOW_DETAILS) services.output.show(true)
+      showDetailsNotification(services, "error", `代码注释生成失败：${detail}`)
     } finally {
       activity.running = false
     }
@@ -128,13 +139,15 @@ function showCancelledStatus(status: vscode.StatusBarItem, activity: CommentComm
 }
 
 async function generateCurrentFunctionComments(input: CommentCommandServices): Promise<void> {
-  const target = await resolveCurrentFunctionTarget()
-  if (!target) return
+  const resolved = await resolveCurrentFunctionTarget()
+  if (!resolved) return
+  const { target, sourceView } = resolved
   const model = configuredModelOrReport()
   if (model instanceof Error) return
   input.log(
     `command start file=${target.relativePath} function=${target.functionHash.slice(0, 12)} strategy=${PRODUCTION_COMMENT_STRATEGY}`,
   )
+  const startedAt = Date.now()
   const result = await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
@@ -144,19 +157,24 @@ async function generateCurrentFunctionComments(input: CommentCommandServices): P
     async (progress, token) => {
       progress.report({ message: "启动临时只读 Code 会话…" })
       return input.orchestrator.generate(
-        { targets: [target], model, strategy: PRODUCTION_COMMENT_STRATEGY },
+        {
+          targets: [target],
+          mode: commentModeForTarget(target),
+          model,
+          strategy: PRODUCTION_COMMENT_STRATEGY,
+        },
         token,
       )
     },
   )
   if (result.status === "unresolved") {
-    await showUnresolvedResult(input, target, result)
+    showUnresolvedResult(input, target, result)
     return
   }
   input.log(
-    `command complete status=${result.status} provider=${result.providerID} model=${result.modelID} rounds=${result.rounds} recovered=${result.recovered}`,
+    `generation complete command=current status=${result.status} quality=${result.result.quality} provider=${result.providerID} model=${result.modelID} rounds=${result.rounds} recovered=${result.recovered} elapsedMs=${Date.now() - startedAt}`,
   )
-  await previewAndApply(input.preview, target, result)
+  await previewAndApply(input, target, result, sourceView)
 }
 
 async function generateSelectedFunctionComments(input: CommentCommandServices): Promise<void> {
@@ -191,34 +209,58 @@ async function generateSelectedFunctionComments(input: CommentCommandServices): 
   )
   const startedAt = Date.now()
   const results = await runBatchWithProgress(input, selectedTargets, model, startedAt)
-  const selectedResults = await chooseBatchResults(results)
-  if (!selectedResults?.length) return
-  await previewAndApplyBatch(input.preview, selectedResults)
   const failed = results.filter((item) => item.result.status === "unresolved").length
+  const ready = readyBatchResults(results)
+  const coverageIncomplete = ready.filter((item) => item.result.result.quality === "coverage-incomplete").length
   input.log(
-    `batch complete total=${results.length} selected=${selectedResults.length} failed=${failed} elapsedMs=${Date.now() - startedAt}`,
+    `generation complete command=batch total=${results.length} ready=${ready.length} coverageIncomplete=${coverageIncomplete} failed=${failed} elapsedMs=${Date.now() - startedAt}`,
   )
+  if (ready.length === 0) {
+    const reasons = results.flatMap((item) => (item.result.status === "unresolved" ? item.result.reasons : []))
+    showDetailsNotification(input, "warning", `未能形成可靠注释：${reasons[0] ?? "所有候选均失败"}`)
+    return
+  }
+  if (failed > 0) {
+    input.log(`batch partial failure ready=${ready.length} failed=${failed}`)
+    void vscode.window
+      .showWarningMessage(`${ready.length} 个函数已生成可靠候选，${failed} 个失败；将只预览成功候选。`, SHOW_DETAILS)
+      .then((choice) => {
+        if (choice === SHOW_DETAILS) input.output.show(true)
+      })
+  }
+  await previewAndApplyBatch(input, ready, context.sourceView)
 }
 
-async function chooseBatchTargets(targets: FunctionTarget[]): Promise<BatchCommentTarget[] | undefined> {
+export async function chooseBatchTargets(
+  targets: FunctionTarget[],
+  pick: BatchTargetPicker = (items, options) => vscode.window.showQuickPick(items, { ...options, canPickMany: true }),
+): Promise<BatchCommentTarget[] | undefined> {
   const items: TargetPick[] = targets.map((target) => {
-    const revising = target.existingFunctionHeader !== undefined
+    const mode = commentModeForTarget(target)
+    const revising = mode === "revise"
     return {
       label: `$(symbol-method) ${functionLabel(target)}`,
       description: revising ? "已有函数说明 · 选中后修订" : "新增函数说明",
       detail: `${target.relativePath}:${target.startLine + 1}-${target.endLine + 1}`,
       picked: !revising,
       target,
-      mode: revising ? "revise" : "insert",
+      mode,
     }
   })
-  const selected = await vscode.window.showQuickPick(items, {
-    canPickMany: true,
+  if (items.length === 1) {
+    const { target, mode } = items[0]!
+    return [{ target, mode }]
+  }
+  const selected = await pick(items, {
     title: `选择要生成或修订注释的函数（最多 ${MAX_BATCH_COMMENT_TARGETS} 个）`,
     placeHolder: "已有函数说明的项目默认不选；选中表示修订原说明",
     ignoreFocusOut: true,
   })
   return selected?.map(({ target, mode }) => ({ target, mode }))
+}
+
+export function commentModeForTarget(target: FunctionTarget): "insert" | "revise" {
+  return target.existingFunctionHeader ? "revise" : "insert"
 }
 
 async function runBatchWithProgress(
@@ -282,58 +324,59 @@ async function runBatchWithProgress(
   )
 }
 
-async function chooseBatchResults(results: BatchCommentItemResult[]): Promise<ReadyBatchItem[] | undefined> {
-  const ready = results.filter(isReadyBatchItem)
-  const failed = results.filter((item) => item.result.status === "unresolved")
-  if (ready.length === 0) {
-    const reasons = failed.flatMap((item) => (item.result.status === "unresolved" ? item.result.reasons : []))
-    await vscode.window.showWarningMessage(`未能形成可靠注释：${reasons[0] ?? "所有候选均失败"}`)
-    return
-  }
-  const items: ResultPick[] = ready.map((item) => ({
-    label: `$(check) ${functionLabel(item.target)}`,
-    description: item.mode === "revise" ? "修订函数说明" : "新增函数说明",
-    detail: item.result.result.summary,
-    picked: true,
-    item,
-  }))
-  const selected = await vscode.window.showQuickPick(items, {
-    canPickMany: true,
-    title: `选择要加入统一 Diff 的候选（成功 ${ready.length} · 失败 ${failed.length}）`,
-    placeHolder: "取消勾选不希望应用的函数候选",
-    ignoreFocusOut: true,
-  })
-  return selected?.map((entry) => entry.item)
+export function readyBatchResults(results: BatchCommentItemResult[]): ReadyBatchItem[] {
+  return results.filter(isReadyBatchItem)
 }
 
-async function previewAndApplyBatch(preview: CodeCommentPreviewController, items: ReadyBatchItem[]): Promise<void> {
+async function previewAndApplyBatch(
+  input: CommentCommandServices,
+  items: ReadyBatchItem[],
+  sourceView: CodeCommentSourceViewState,
+): Promise<void> {
   const first = items[0]!
-  const current = currentDocument(first.target)
-  const beforeReasons = current ? batchSnapshotReasons(items, current) : ["目标文档已经关闭"]
-  if (beforeReasons.length > 0 || !current) {
-    void vscode.window.showWarningMessage(`无法预览注释：${beforeReasons.join("；")}。请重新生成。`)
-    return
+  const targets = items.map((item) => item.target)
+  showPreviewOpeningStatus(input.status)
+  try {
+    const current = await validatedTargetDocument(input, targets, "预览")
+    if (!current) return
+    const changes = items.map((item) => ({ target: item.target, proposals: item.result.result.proposals }))
+    const candidate = buildCommentedDocumentForTargets(first.target.documentText, first.target.eol, changes)
+    if (!(await validateCommentOnlyDocument(first.target.filePath, first.target.documentText, candidate))) {
+      throw new Error("批量候选未通过非注释 token 完全一致校验")
+    }
+    const coverageIncomplete = items.filter((item) => item.result.result.quality === "coverage-incomplete")
+    showCoverageIncompleteWarning(input, coverageIncomplete.map((item) => item.result.result))
+    const accepted = await input.preview.confirm(first.target, candidate, items.length, sourceView, () => {
+      input.status.hide()
+      input.log(`preview opened functions=${items.length} coverageIncomplete=${coverageIncomplete.length}`)
+    }, coverageIncomplete.length)
+    if (!accepted) {
+      input.log(`preview discarded functions=${items.length}`)
+      return
+    }
+    const latest = await validatedTargetDocument(input, targets, "应用")
+    if (!latest) return
+    if (!(await applyCommentProposalsForTargets(latest, changes))) {
+      throw new Error("VS Code 拒绝原子应用批量注释 WorkspaceEdit")
+    }
+    const proposals = changes.reduce((count, change) => count + change.proposals.length, 0)
+    input.log(
+      `comments applied functions=${items.length} proposals=${proposals} coverageIncomplete=${coverageIncomplete.length}`,
+    )
+    await revealAppliedDocument(input, latest)
+    void vscode.window.showInformationMessage(
+      coverageIncomplete.length === 0
+        ? `已为 ${items.length} 个函数应用 ${proposals} 条高可信注释。`
+        : `已为 ${items.length} 个函数应用 ${proposals} 条注释，其中 ${coverageIncomplete.length} 个函数复杂逻辑覆盖不足。`,
+    )
+  } finally {
+    input.status.hide()
   }
-  const changes = items.map((item) => ({ target: item.target, proposals: item.result.result.proposals }))
-  const candidate = buildCommentedDocumentForTargets(first.target.documentText, first.target.eol, changes)
-  if (!(await validateCommentOnlyDocument(first.target.filePath, first.target.documentText, candidate))) {
-    throw new Error("批量候选未通过非注释 token 完全一致校验")
-  }
-  if (!(await preview.confirm(first.target, candidate, items.length))) return
-  const latest = currentDocument(first.target)
-  const applyReasons = latest ? batchSnapshotReasons(items, latest) : ["目标文档已经关闭"]
-  if (applyReasons.length > 0 || !latest) {
-    void vscode.window.showWarningMessage(`无法应用注释：${applyReasons.join("；")}。请重新生成。`)
-    return
-  }
-  if (!(await applyCommentProposalsForTargets(latest, changes))) {
-    throw new Error("VS Code 拒绝原子应用批量注释 WorkspaceEdit")
-  }
-  const proposals = changes.reduce((count, change) => count + change.proposals.length, 0)
-  void vscode.window.showInformationMessage(`已为 ${items.length} 个函数应用 ${proposals} 条高可信注释。`)
 }
 
-async function resolveCurrentFunctionTarget(): Promise<FunctionTarget | undefined> {
+async function resolveCurrentFunctionTarget(): Promise<
+  { target: FunctionTarget; sourceView: CodeCommentSourceViewState } | undefined
+> {
   const context = activeCodeEditor()
   if (!context) return
   const target = await resolveFunctionTarget({
@@ -346,13 +389,14 @@ async function resolveCurrentFunctionTarget(): Promise<FunctionTarget | undefine
     )
     return
   }
-  return target
+  return { target, sourceView: context.sourceView }
 }
 
 function activeCodeEditor():
   | {
       editor: vscode.TextEditor
       targetInput: Omit<Parameters<typeof resolveFunctionTarget>[0], "cursorOffset">
+      sourceView: CodeCommentSourceViewState
     }
   | undefined {
   const editor = vscode.window.activeTextEditor
@@ -372,6 +416,7 @@ function activeCodeEditor():
   const document = editor.document
   return {
     editor,
+    sourceView: captureCodeCommentSourceView(editor),
     targetInput: {
       uri: document.uri.toString(),
       filePath: document.uri.fsPath,
@@ -385,49 +430,87 @@ function activeCodeEditor():
   }
 }
 
-async function showUnresolvedResult(
+function showUnresolvedResult(
   input: Pick<CommentCommandServices, "log" | "output">,
   target: FunctionTarget,
   result: Extract<CommentGenerationResult, { status: "unresolved" }>,
-): Promise<void> {
+): void {
   input.log(
     `command unresolved function=${target.functionHash.slice(0, 12)} rounds=${result.rounds} reasons=${result.reasons.join("；")}`,
   )
-  const choice = await vscode.window.showWarningMessage(
-    `未能形成可靠注释：${result.reasons[0] ?? "证据不足"}`,
-    SHOW_DETAILS,
+  showDetailsNotification(input, "warning", `未能形成可靠注释：${result.reasons[0] ?? "证据不足"}`)
+}
+
+function showDetailsNotification(
+  input: Pick<CommentCommandServices, "log" | "output">,
+  level: "warning" | "error",
+  message: string,
+): void {
+  const notification =
+    level === "error"
+      ? vscode.window.showErrorMessage(message, SHOW_DETAILS)
+      : vscode.window.showWarningMessage(message, SHOW_DETAILS)
+  void Promise.resolve(notification).then(
+    (choice) => {
+      if (choice === SHOW_DETAILS) input.output.show(true)
+    },
+    (error) => input.log(`notification failed level=${level} error=${formatError(error)}`),
   )
-  if (choice === SHOW_DETAILS) input.output.show(true)
 }
 
 async function previewAndApply(
-  preview: CodeCommentPreviewController,
+  input: CommentCommandServices,
   target: FunctionTarget,
   result: Extract<CommentGenerationResult, { status: "ready" }>,
+  sourceView: CodeCommentSourceViewState,
 ): Promise<void> {
-  const current = currentDocument(target)
-  const staleBeforePreview = current ? validateTargetSnapshot(target, current) : ["目标文档已经关闭"]
-  if (staleBeforePreview.length > 0) {
-    void vscode.window.showWarningMessage(`无法预览注释：${staleBeforePreview.join("；")}。请重新生成。`)
-    return
+  showPreviewOpeningStatus(input.status)
+  try {
+    const current = await validatedTargetDocument(input, [target], "预览")
+    if (!current) return
+    const candidate = buildCommentedDocument(target, result.result.proposals)
+    if (!(await validateOnlyCommentInsertions(target, result.result.proposals, candidate))) {
+      throw new Error("候选内容未通过仅注释修改校验")
+    }
+    const coverageIncomplete = result.result.quality === "coverage-incomplete" ? [result.result] : []
+    showCoverageIncompleteWarning(input, coverageIncomplete)
+    const accepted = await input.preview.confirm(target, candidate, 1, sourceView, () => {
+      input.status.hide()
+      input.log(`preview opened functions=1 coverageIncomplete=${coverageIncomplete.length}`)
+    }, coverageIncomplete.length)
+    if (!accepted) {
+      input.log("preview discarded functions=1")
+      return
+    }
+    const latest = await validatedTargetDocument(input, [target], "应用")
+    if (!latest) return
+    if (!(await applyCommentProposals(latest, target, result.result.proposals))) {
+      throw new Error("VS Code 拒绝应用注释 WorkspaceEdit")
+    }
+    input.log(
+      `comments applied functions=1 proposals=${result.result.proposals.length} coverageIncomplete=${coverageIncomplete.length}`,
+    )
+    await revealAppliedDocument(input, latest)
+    void vscode.window.showInformationMessage(
+      coverageIncomplete.length === 0
+        ? `已应用 ${result.result.proposals.length} 条高可信注释（${result.providerID}/${result.modelID}）。`
+        : `已应用 ${result.result.proposals.length} 条注释，但复杂逻辑覆盖不足；建议继续人工审阅或撤销后重新生成（${result.providerID}/${result.modelID}）。`,
+    )
+  } finally {
+    input.status.hide()
   }
-  const candidate = buildCommentedDocument(target, result.result.proposals)
-  if (!(await validateOnlyCommentInsertions(target, result.result.proposals, candidate))) {
-    throw new Error("候选内容未通过仅注释修改校验")
-  }
-  if (!(await preview.confirm(target, candidate, 1))) return
-  const latest = currentDocument(target)
-  const staleBeforeApply = latest ? validateTargetSnapshot(target, latest) : ["目标文档已经关闭"]
-  if (staleBeforeApply.length > 0 || !latest) {
-    void vscode.window.showWarningMessage(`无法应用注释：${staleBeforeApply.join("；")}。请重新生成。`)
-    return
-  }
-  if (!(await applyCommentProposals(latest, target, result.result.proposals))) {
-    throw new Error("VS Code 拒绝应用注释 WorkspaceEdit")
-  }
-  void vscode.window.showInformationMessage(
-    `已应用 ${result.result.proposals.length} 条高可信注释（${result.providerID}/${result.modelID}）。`,
-  )
+}
+
+function showCoverageIncompleteWarning(
+  input: Pick<CommentCommandServices, "log">,
+  results: Array<Extract<CommentGenerationResult, { status: "ready" }>["result"]>,
+): void {
+  if (results.length === 0) return
+  const required = results.reduce((sum, result) => sum + result.coverage.required, 0)
+  const covered = results.reduce((sum, result) => sum + result.coverage.covered, 0)
+  const message = `复杂逻辑覆盖不足：目标 ${required} 个区域，当前 ${covered} 个。已打开仅包含安全注释的降级 Diff；建议放弃后重新生成。`
+  input.log(`preview degraded functions=${results.length} required=${required} covered=${covered}`)
+  void vscode.window.showWarningMessage(message)
 }
 
 function configuredModelOrReport(): { providerID: string; modelID: string } | undefined | Error {
@@ -448,17 +531,44 @@ function readConfiguredModel(): { providerID: string; modelID: string } | undefi
   return { providerID, modelID }
 }
 
-function currentDocument(target: FunctionTarget): vscode.TextDocument | undefined {
-  return vscode.workspace.textDocuments.find((document) => document.uri.toString() === target.uri)
+async function validatedTargetDocument(
+  input: Pick<CommentCommandServices, "log">,
+  targets: FunctionTarget[],
+  stage: "预览" | "应用",
+): Promise<vscode.TextDocument | undefined> {
+  const resolution = await resolveTargetDocument(targets[0]!)
+  if (resolution.status === "unavailable") {
+    input.log(`document unavailable stage=${stage} reason=${resolution.reason}`)
+    void vscode.window.showWarningMessage(`无法${stage}注释：${resolution.reason}。请重新生成。`)
+    return
+  }
+  if (resolution.reopened) input.log(`document reopened stage=${stage} uri=${targets[0]!.uri}`)
+  const reasons = [...new Set(targets.flatMap((target) => validateTargetSnapshot(target, resolution.document)))]
+  if (reasons.length === 0) return resolution.document
+  input.log(`document stale stage=${stage} reasons=${reasons.join("；")}`)
+  void vscode.window.showWarningMessage(`无法${stage}注释：${reasons.join("；")}。请重新生成。`)
+}
+
+function showPreviewOpeningStatus(status: vscode.StatusBarItem): void {
+  status.text = "$(loading~spin) 正在打开注释 Diff"
+  status.tooltip = "ChipMate 已生成注释候选，正在打开只读 Diff"
+  status.show()
+}
+
+async function revealAppliedDocument(
+  input: Pick<CommentCommandServices, "log">,
+  document: vscode.TextDocument,
+): Promise<void> {
+  try {
+    await vscode.window.showTextDocument(document, { preview: false, preserveFocus: false })
+  } catch (error) {
+    input.log(`reveal applied document failed=${formatError(error)}`)
+  }
 }
 
 function functionLabel(target: FunctionTarget): string {
   const signature = target.anchors[0]?.targetLineText.trim() || target.functionSource.split(/\r?\n/, 1)[0]!.trim()
   return signature.length > 72 ? `${signature.slice(0, 69)}…` : signature
-}
-
-function batchSnapshotReasons(items: ReadyBatchItem[], document: vscode.TextDocument): string[] {
-  return [...new Set(items.flatMap((item) => validateTargetSnapshot(item.target, document)))]
 }
 
 function isReadyBatchItem(item: BatchCommentItemResult): item is ReadyBatchItem {

@@ -1,6 +1,7 @@
 import z from "zod"
 import type { CodeGraphSidecarStatus } from "./indexing/codegraph"
 import type { DocumentIndexStatus } from "./indexing/documents"
+import { DOCUMENT_ISSUE_CATEGORIES } from "./indexing/documents/types"
 import type { IndexingNotice as StateIndexingNotice, IndexingState } from "./indexing/interfaces/manager"
 
 type StatusSource = {
@@ -43,10 +44,26 @@ export const IndexingDiagnostic = z
     location: z.string(),
     message: z.string(),
     file: z.string().optional(),
+    category: z.enum(DOCUMENT_ISSUE_CATEGORIES).optional(),
   })
   .meta({ ref: "IndexingDiagnostic" })
 
 export type IndexingDiagnostic = z.infer<typeof IndexingDiagnostic>
+
+export const DocumentIssueSummary = z
+  .object({
+    category: z.enum(DOCUMENT_ISSUE_CATEGORIES),
+    count: z.number().int().nonnegative(),
+    samples: z
+      .array(
+        z.object({
+          file: z.string().optional(),
+          message: z.string(),
+        }),
+      )
+      .max(3),
+  })
+  .meta({ ref: "DocumentIssueSummary" })
 
 export type IndexingPipelineRecentErrors = {
   codeGraph?: IndexingDiagnostic[]
@@ -78,6 +95,8 @@ export const IndexingPipelineStatus = z
     staleCount: z.number().int().nonnegative(),
     skippedCount: z.number().int().nonnegative(),
     validFileCount: z.number().int().nonnegative().optional(),
+    issueSummary: z.array(DocumentIssueSummary).optional(),
+    diagnosticRunId: z.string().optional(),
     recentErrors: z.array(IndexingDiagnostic).max(5).optional(),
   })
   .meta({ ref: "IndexingPipelineStatus" })
@@ -442,6 +461,8 @@ function documentPipeline(status?: DocumentIndexStatus, recentErrors?: IndexingD
     staleCount: status.staleCount,
     skippedCount: status.skippedCount,
     validFileCount: status.validFileCount,
+    issueSummary: status.issueSummary,
+    diagnosticRunId: status.diagnosticRunId,
     recentErrors: status.recentErrors ?? recentErrors,
   })
 }

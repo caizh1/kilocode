@@ -27,6 +27,13 @@ function target(index: number): BatchCommentTarget {
     contextAfter: "",
     functionHeaderStyle: "docBlock",
     existingComments: [],
+    complexity: {
+      lineCount: 1,
+      controlRegionCount: 0,
+      existingCoveredRegionCount: 0,
+      minimumInlineComments: 0,
+      controlRegions: [],
+    },
     anchors: [{ line: index, kind: "function", targetLineText: source.trimEnd(), indent: "" }],
     eol: "\n",
   }

@@ -13,6 +13,46 @@ export const DOCUMENT_EXTENSIONS = [
 
 export const UNSUPPORTED_DOCUMENT_EXTENSIONS = [".doc", ".xls", ".ppt", ".pptx"] as const
 
+export const DOCUMENT_ISSUE_CATEGORIES = [
+  "extractor-runtime",
+  "pdf-password",
+  "pdf-invalid",
+  "office-corrupt",
+  "file-unavailable",
+  "extraction-safety-limit",
+  "extraction-unknown",
+] as const
+
+export type DocumentIssueCategory = (typeof DOCUMENT_ISSUE_CATEGORIES)[number]
+
+export type DocumentIssueSample = {
+  file?: string
+  message: string
+}
+
+export type DocumentIssueSummary = {
+  category: DocumentIssueCategory
+  count: number
+  samples: DocumentIssueSample[]
+}
+
+export type DocumentDiagnostic = {
+  time: string
+  source: "documents"
+  location: string
+  category: DocumentIssueCategory
+  message: string
+  file?: string
+}
+
+export type DocumentDiagnosticReport = {
+  runId: string
+  startedAt: string
+  completedAt?: string
+  issueSummary: DocumentIssueSummary[]
+  diagnostics: DocumentDiagnostic[]
+}
+
 export type DocumentIndexStatusState = "Disabled" | "In Progress" | "Complete" | "Error" | "Standby"
 
 export type DocumentIndexStatus = {
@@ -27,12 +67,15 @@ export type DocumentIndexStatus = {
   staleCount: number
   skippedCount: number
   validFileCount?: number
+  issueSummary?: DocumentIssueSummary[]
+  diagnosticRunId?: string
   recentErrors?: Array<{
     time: string
     source: string
     location: string
     message: string
     file?: string
+    category?: DocumentIssueCategory
   }>
 }
 

@@ -1,6 +1,6 @@
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
-import { IndexingStatusInfo, IndexingWarningInfo } from "@/chipmate/indexing-event"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { DocumentDiagnosticReportInfo, IndexingStatusInfo, IndexingWarningInfo } from "@/chipmate/indexing-event"
 import { Authorization } from "@/server/routes/instance/httpapi/middleware/authorization"
 import { InstanceContextMiddleware } from "@/server/routes/instance/httpapi/middleware/instance-context"
 import {
@@ -30,6 +30,7 @@ const root = "/indexing"
 export const IndexingPaths = {
   status: `${root}/status`,
   documentsRebuild: `${root}/documents/rebuild`,
+  documentDiagnostics: `${root}/documents/diagnostics/:runId`,
   models: `${root}/models`,
   warnings: `${root}/warnings`,
 } as const
@@ -56,6 +57,20 @@ export const IndexingApi = HttpApi.make("indexing")
             identifier: "indexing.warnings",
             summary: "Get indexing warnings",
             description: "Retrieve code indexing warnings for the active project.",
+          }),
+        ),
+      )
+      .add(
+        HttpApiEndpoint.get("documentDiagnostics", IndexingPaths.documentDiagnostics, {
+          params: { runId: Schema.String },
+          query: WorkspaceRoutingQuery,
+          success: described(DocumentDiagnosticReportInfo, "Document indexing diagnostics"),
+          error: HttpApiError.NotFound,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "indexing.documents.diagnostics",
+            summary: "Get document indexing diagnostics",
+            description: "Retrieve the complete classified diagnostics for one document indexing run.",
           }),
         ),
       )

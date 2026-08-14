@@ -59,7 +59,11 @@ async function frontmatter(file: string) {
   return yaml.parse(match?.[1] ?? "") as Record<string, unknown>
 }
 
-async function archive(name = "test-skill", content = "# Test Skill\n"): Promise<Buffer> {
+async function archive(
+  name = "test-skill",
+  content = "# Test Skill\n",
+  files: Record<string, string> = {},
+): Promise<Buffer> {
   const root = path.join(tmpDir, "archive")
   const source = path.join(root, "source")
   const dir = path.join(source, name)
@@ -69,6 +73,11 @@ async function archive(name = "test-skill", content = "# Test Skill\n"): Promise
     path.join(dir, "SKILL.md"),
     `---\nname: ${name}\ndescription: ${name} fixture\n---\n\n${content}`,
   )
+  for (const [file, value] of Object.entries(files)) {
+    const target = path.join(dir, file)
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(target, value)
+  }
   await exec("tar", ["-czf", tarball, "-C", source, name])
   return fs.readFile(tarball)
 }
@@ -427,6 +436,29 @@ describe("MarketplaceInstaller skills", () => {
     expect(unsafe.error).toContain("unexpected root")
     expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toContain(
       "# Second\n",
+    )
+  })
+
+  it("installs a canonical skill whose archive includes an examples resource directory", async () => {
+    const buffer = await archive("uml", "# UML\n", {
+      "examples/sequence.puml": "@startuml\nAlice -> Bob: request\n@enduml\n",
+      "skill.json": `${JSON.stringify({ id: "uml", category: "general", tags: [] }, null, 2)}\n`,
+    })
+    const installer = new MarketplaceInstaller(new TestPaths())
+    const result = await installer.installVerifiedSkill(
+      {
+        id: "uml",
+        revision: 1,
+        sha256: createHash("sha256").update(buffer).digest("hex"),
+        url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+      },
+      "project",
+      tmpDir,
+    )
+
+    expect(result.success).toBe(true)
+    expect(await fs.readFile(path.join(new TestPaths().skillsDir("project", tmpDir), "uml", "examples/sequence.puml"), "utf8")).toContain(
+      "Alice -> Bob",
     )
   })
 })

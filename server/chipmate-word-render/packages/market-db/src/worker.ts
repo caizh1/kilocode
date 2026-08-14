@@ -76,6 +76,8 @@ function execute(msg: DbRequest): unknown {
       const value = msg.payload as { id: string; path: string; revision?: number }
       return repo.file(value.id, value.path, value.revision)
     }
+    case "skillDownload":
+      return repo.skillDownload(String(msg.payload))
     case "identity":
       return repo.identity(msg.payload as IdentityInput)
     case "createSession":

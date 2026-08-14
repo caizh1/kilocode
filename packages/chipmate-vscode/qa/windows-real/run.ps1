@@ -506,7 +506,7 @@ function Initialize-UpdateProfile {
     "chipmate.v2.language" = "zh-cn"
     "chipmate.v2.chipmateServer.baseUrl" = $script:MockOrigin
     "chipmate.v2.updateCheck.enabled" = $true
-    "chipmate.v2.updateCheck.autoInstall" = $true
+    "chipmate.v2.updateCheck.autoDownload" = $true
     "chipmate.v2.updateCheck.checkOnStartup" = $true
     "chipmate.v2.updateCheck.codeCliPath" = "code"
   } | ConvertTo-Json)
@@ -551,20 +551,22 @@ function Save-UpdateExtensionList {
 
 function Wait-UpdateLog {
   param(
-    [Parameter(Mandatory = $true)] [string] $Pattern,
+    [Parameter(Mandatory = $true)] [string[]] $Pattern,
     [int] $Seconds = 180
   )
   $limit = (Get-Date).AddSeconds($Seconds)
   do {
     $logs = @(Get-ChildItem -LiteralPath (Join-Path $UserDir "logs") -Recurse -File -ErrorAction SilentlyContinue)
     foreach ($log in $logs) {
-      if (Select-String -LiteralPath $log.FullName -Pattern $Pattern -SimpleMatch -Quiet -ErrorAction SilentlyContinue) {
-        return $log.FullName
+      foreach ($item in $Pattern) {
+        if (Select-String -LiteralPath $log.FullName -Pattern $item -SimpleMatch -Quiet -ErrorAction SilentlyContinue) {
+          return [pscustomobject]@{ path = $log.FullName; pattern = $item }
+        }
       }
     }
     Start-Sleep -Milliseconds 500
   } while ((Get-Date) -lt $limit)
-  throw "更新日志在 $Seconds 秒内未出现：$Pattern"
+  throw "更新日志在 $Seconds 秒内未出现：$($Pattern -join ' / ')"
 }
 
 function Read-ChipMateProbe {
@@ -742,7 +744,7 @@ function Wait-FirstReloadProbe {
     passed = $false
     result = $lastResult
     evaluation = $lastEvaluation
-    reason = "点击 Reload Window 后 $Seconds 秒内未得到候选版本的首次激活回执。"
+    reason = "点击 Install and Reload Window 后 $Seconds 秒内未得到候选版本的首次激活回执。"
   }
 }
 
@@ -822,7 +824,9 @@ function Invoke-UpdateRegression {
   $control = Join-Path $root "first-reload-control.json"
   $reply = Join-Path $root "first-reload-control-result.json"
   $promptScreenshot = Join-Path $root "reload-prompt.png"
+  $promptUia = Join-Path $root "reload-prompt-uia.json"
   $activatedScreenshot = Join-Path $root "first-reload-activated.png"
+  $activatedUia = Join-Path $root "first-reload-activated-uia.json"
   $motionPath = Join-Path $root "first-reload-spinner-motion.json"
   $motionFrameDirectory = Join-Path $root "spinner-frames"
   $process = $null
@@ -835,6 +839,7 @@ function Invoke-UpdateRegression {
   $motion = $null
   $motionError = ""
   $reloadError = ""
+  $newUpdateFlow = $false
   $saved = $env:Path
   $parts = @($env:Path -split ";" | Where-Object {
     $_ -and
@@ -875,22 +880,30 @@ function Invoke-UpdateRegression {
       }
       Copy-Item -LiteralPath $probe -Destination (Join-Path $root "old-version-probe.json") -Force
 
-      $log = Wait-UpdateLog -Pattern "等待用户重载窗口后激活"
-      Copy-Item -LiteralPath $log -Destination (Join-Path $root "chipmate-update.log") -Force
+      $preparedPattern = "已下载并校验，等待用户确认安装并重载窗口"
+      $legacyPattern = "等待用户重载窗口后激活"
+      $log = Wait-UpdateLog -Pattern @($preparedPattern, $legacyPattern)
+      $newUpdateFlow = $log.pattern -eq $preparedPattern
+      Copy-Item -LiteralPath $log.path -Destination (Join-Path $root "chipmate-update.log") -Force
       Save-ChipMateScreenshot -Path $promptScreenshot
-      Save-ChipMateUiaTree -Process $process -Path (Join-Path $root "reload-prompt-uia.json")
+      Save-ChipMateUiaTree -Process $process -Path $promptUia
 
       $clicked = $false
+      $actionNames = if ($newUpdateFlow) {
+        @("Install and Reload Window", "安装并重载窗口")
+      } else {
+        @("Reload Window", "重载窗口")
+      }
       foreach ($attempt in 1..20) {
         $reloadRequestedAt = Get-Date
-        if (Invoke-ChipMateNamedControl -Process $process -Names @("Reload Window", "重载窗口")) {
+        if (Invoke-ChipMateNamedControl -Process $process -Names $actionNames) {
           $clicked = $true
           break
         }
         $reloadRequestedAt = $null
         Start-Sleep -Milliseconds 500
       }
-      if (-not $clicked) { throw "更新成功后未找到 Reload Window 提示按钮。" }
+      if (-not $clicked) { throw "更新流程未找到 ChipMate 预期动作：$($actionNames -join ' / ')。" }
       $firstReload = Wait-FirstReloadProbe `
         -Path $probe `
         -InitialActivationId $initialActivationId `
@@ -906,6 +919,8 @@ function Invoke-UpdateRegression {
       if (-not $firstReload.passed) {
         $reloadError = $firstReload.reason
       } else {
+        $activatedLog = Wait-UpdateLog -Pattern "更新首次重载已激活" -Seconds 90
+        Copy-Item -LiteralPath $activatedLog.path -Destination (Join-Path $root "chipmate-update-activated.log") -Force
         $openInTabReply = Invoke-ProbeControl `
           -Control $control `
           -Reply $reply `
@@ -948,7 +963,7 @@ function Invoke-UpdateRegression {
           -Command "chipmate.v2.showMemory"
         Copy-Item -LiteralPath $reply -Destination (Join-Path $root "control-show-memory.json") -Force
         Save-ChipMateScreenshot -Path $activatedScreenshot
-        Save-ChipMateUiaTree -Process $process -Path (Join-Path $root "first-reload-activated-uia.json")
+        Save-ChipMateUiaTree -Process $process -Path $activatedUia
       }
     } catch {
       $reloadError = $_ | Out-String
@@ -992,10 +1007,19 @@ function Invoke-UpdateRegression {
         }
       })
     $cache | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root "cache-inventory.json") -Encoding UTF8
-    $logPath = Join-Path $root "chipmate-update.log"
-    $logText = if (Test-Path -LiteralPath $logPath -PathType Leaf) {
-      Get-Content -Raw -Encoding UTF8 -LiteralPath $logPath
+    $logText = @(
+      Get-ChildItem -LiteralPath $root -File -Filter "chipmate-update*.log" -ErrorAction SilentlyContinue |
+        ForEach-Object { Get-Content -Raw -Encoding UTF8 -LiteralPath $_.FullName }
+    ) -join [Environment]::NewLine
+    $promptUiaText = if (Test-Path -LiteralPath $promptUia -PathType Leaf) {
+      Get-Content -Raw -Encoding UTF8 -LiteralPath $promptUia
     } else { "" }
+    $activatedUiaText = if (Test-Path -LiteralPath $activatedUia -PathType Leaf) {
+      Get-Content -Raw -Encoding UTF8 -LiteralPath $activatedUia
+    } else { "" }
+    $restartExtensionsVisible = $promptUiaText -match "Restart Extensions|重启扩展|重新启动扩展"
+    $canceledNotificationVisible = "$promptUiaText`n$activatedUiaText" -match '"name"\s*:\s*"Cancel(?:ed|led)"|"Name"\s*:\s*"Cancel(?:ed|led)"'
+    $expectsPreparedFlow = [Version]$old.version -ge [Version]"1.1.4"
     $initialVersion = if ($null -ne $initialProbe) {
       [string](Get-ChipMateProbeValue -Object (Get-ChipMateProbeValue -Object $initialProbe -Name "extension") -Name "version")
     } else { "" }
@@ -1031,6 +1055,12 @@ function Invoke-UpdateRegression {
       @{ id = "manifest-request"; status = if ($manifestRequests.Count -ge 1) { "PASS" } else { "FAIL" }; detail = "manifest requests=$($manifestRequests.Count)" },
       @{ id = "single-download"; status = if ($vsixRequests.Count -eq 1) { "PASS" } else { "FAIL" }; detail = "VSIX requests=$($vsixRequests.Count)" },
       @{ id = "builtin-cli"; status = if ($logText -match "当前 VS Code 内置 CLI") { "PASS" } else { "FAIL" }; detail = "专用日志记录内置 CLI" },
+      @{ id = "full-window-reload-request"; status = if ($logText -match "请求完整窗口重载") { "PASS" } else { "FAIL" }; detail = "专用日志记录完整窗口重载请求" },
+      @{ id = "candidate-activation-log"; status = if ($logText -match "更新首次重载已激活") { "PASS" } else { "FAIL" }; detail = "新宿主激活结果写入同一 ChipMate 更新日志" },
+      @{ id = "update-flow-version-boundary"; status = if ($newUpdateFlow -eq $expectsPreparedFlow) { "PASS" } else { "FAIL" }; detail = "previous=$($old.version) expectsPreparedFlow=$expectsPreparedFlow actualPreparedFlow=$newUpdateFlow；候选包不能反向改变旧版更新代码" },
+      @{ id = "chipmate-owned-update-action"; status = if (($newUpdateFlow -and $promptUiaText -match "Install and Reload Window|安装并重载窗口") -or (-not $newUpdateFlow -and $promptUiaText -match 'Reload Window|重载窗口')) { "PASS" } else { "FAIL" }; detail = "仅点击 ChipMate 动作；preparedFlow=$newUpdateFlow actions=$($actionNames -join ' / ')" },
+      @{ id = "no-restart-extensions-before-install"; status = if (-not $newUpdateFlow -or -not $restartExtensionsVisible) { "PASS" } else { "FAIL" }; detail = "1.1.4+ 新流程在安装前不应出现 VS Code Restart Extensions=$restartExtensionsVisible；旧版兼容链只验证不点击该动作" },
+      @{ id = "no-canceled-notification"; status = if (-not $canceledNotificationVisible) { "PASS" } else { "FAIL" }; detail = "安装并完整重载前后 UIA 不包含新增 Canceled/Cancelled 通知=$canceledNotificationVisible" },
       @{ id = "cache-sha"; status = if (@($cache | Where-Object { $_.sha256 -eq $Artifact.sha256 }).Count -ge 1) { "PASS" } else { "FAIL" }; detail = "缓存包含候选 VSIX SHA-256" },
       @{ id = "initial-window-old-version"; status = if ($initialVersion -eq $old.version -and $initialStatus -eq "FAIL") { "PASS" } else { "FAIL" }; detail = "initialVersion=$initialVersion expectedOld=$($old.version) initialStatus=$initialStatus expectedCandidate=$ExpectedVersion" },
       @{ id = "same-window-process"; status = if ($windowStayedAlive) { "PASS" } else { "FAIL" }; detail = "Reload 后未重新启动 GUI 进程；initialGuiPid=$(if ($null -ne $process) { $process.Id } else { 'unknown' }) stayedAlive=$windowStayedAlive" }
@@ -1047,7 +1077,7 @@ function Invoke-UpdateRegression {
     Add-Result `
       -CaseId "WIN-UPDATE" `
       -Status $(if ($pass) { "PASS" } else { "FAIL" }) `
-      -Summary "PATH 无 code 的隔离中文空格目录完成旧版发现、下载、校验、内置 CLI 覆盖安装；首次 Reload 在同一 VS Code 窗口内以新 activation Probe、真实 working spinner 动态帧和 webview ready 命令回执验收。" `
+      -Summary "PATH 无 code 的隔离中文空格目录按旧版 updater 能力选择 ChipMate 自有动作：1.1.3 兼容链使用 Reload Window，1.1.4+ 行为链使用 Install and Reload Window；均不点击 VS Code Restart Extensions，并以内置 CLI、完整窗口重载、新 activation Probe、无 Canceled 通知、真实 working spinner 和 webview ready 回执验收。" `
       -ErrorText (@($reloadError, $motionError, $motionRequestError | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine) `
       -Screenshots @(
         (@($promptScreenshot, $activatedScreenshot) + @(Get-ChildItem -LiteralPath $motionFrameDirectory -File -Filter "spinner-frame-*.png" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })) |

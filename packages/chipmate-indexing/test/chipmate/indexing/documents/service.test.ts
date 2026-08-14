@@ -17,6 +17,7 @@ import {
 import ignore from "ignore"
 import { tmpdir } from "os"
 import path from "path"
+import JSZip from "jszip"
 import { utils, write } from "xlsx"
 import { CodeIndexConfigManager } from "../../../../src/indexing/config-manager"
 import { DocumentIndexService } from "../../../../src/indexing/documents"
@@ -70,6 +71,23 @@ function memoryStore() {
     points: () => points.slice(),
   }
   return value
+}
+
+async function docx(text: string): Promise<Uint8Array> {
+  const zip = new JSZip()
+  zip.file(
+    "[Content_Types].xml",
+    '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+  )
+  zip.file(
+    "_rels/.rels",
+    '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+  )
+  zip.file(
+    "word/document.xml",
+    `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`,
+  )
+  return zip.generateAsync({ type: "uint8array" })
 }
 
 async function waitFor(check: () => boolean | Promise<boolean>, timeout = 8_000): Promise<void> {
@@ -612,6 +630,161 @@ describe("DocumentIndexService", () => {
     }
   })
 
+  test("commits readable documents while classifying corrupt Office files", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "chipmate-doc-workspace-"))
+    try {
+      await writeFile(path.join(root, "notes.md"), "readable document")
+      await writeFile(path.join(root, "broken.docx"), "")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, store, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus()).toMatchObject({
+        state: "Complete",
+        validFileCount: 1,
+        errorCount: 1,
+        staleCount: 0,
+        issueSummary: [expect.objectContaining({ category: "office-corrupt", count: 1 })],
+      })
+      const report = await service.getDiagnosticReport(service.getStatus().diagnosticRunId)
+      expect(report?.diagnostics).toHaveLength(1)
+      expect(report?.diagnostics[0]).toMatchObject({ category: "office-corrupt" })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("keeps the previous vectors stale when an updated document becomes corrupt", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "chipmate-doc-workspace-"))
+    const memory = memoryStore()
+    try {
+      const file = path.join(root, "guide.docx")
+      await writeFile(file, await docx("previous searchable content"))
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, memory, ignore())
+      await service.start("manual")
+      const previous = memory.points().map((point) => point.id)
+
+      await writeFile(file, "")
+      await service.start("manual")
+
+      expect(service.getStatus()).toMatchObject({
+        state: "Complete",
+        validFileCount: 0,
+        errorCount: 1,
+        staleCount: 1,
+      })
+      expect(memory.points().map((point) => point.id)).toEqual(previous)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("keeps recent errors bounded while the complete ledger retains every failed file", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "chipmate-doc-workspace-"))
+    try {
+      await writeFile(path.join(root, "notes.md"), "readable document")
+      await Promise.all(
+        Array.from({ length: 7 }, (_, index) => writeFile(path.join(root, `broken-${index}.docx`), "")),
+      )
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, store, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus().recentErrors).toHaveLength(5)
+      expect(service.getStatus().issueSummary).toEqual([
+        expect.objectContaining({ category: "office-corrupt", count: 7 }),
+      ])
+      const report = await service.getDiagnosticReport(service.getStatus().diagnosticRunId)
+      expect(report?.diagnostics).toHaveLength(7)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("fails an all-corrupt first index instead of publishing an empty generation", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "chipmate-doc-workspace-"))
+    let completed = 0
+    try {
+      await writeFile(path.join(root, "broken.docx"), "")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const tracked = {
+        ...store,
+        markIndexingComplete: async () => {
+          completed += 1
+        },
+      } satisfies IVectorStore
+      const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, tracked, ignore())
+
+      await service.start("manual")
+
+      expect(service.getStatus()).toMatchObject({ state: "Error", errorCount: 1 })
+      expect(completed).toBe(0)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  if (process.platform !== "win32") {
+    test("stops after one failed PDF runtime preflight and preserves an existing index", async () => {
+      const root = await mkdtemp(path.join(tmpdir(), "chipmate-doc-workspace-"))
+      const before = process.env.CHIPMATE_PDFTOTEXT_PATH
+      try {
+        const exe = path.join(root, "pdftotext")
+        await writeFile(exe, "#!/bin/sh\nexit 53\n")
+        await chmod(exe, 0o755)
+        process.env.CHIPMATE_PDFTOTEXT_PATH = exe
+        await writeFile(path.join(root, "one.pdf"), "%PDF-1.4")
+        await writeFile(path.join(root, "two.pdf"), "%PDF-1.4")
+        const cfg = new CodeIndexConfigManager({
+          enabled: true,
+          embedderProvider: "openai",
+          openAiKey: "sk-test",
+          documents: { enabled: true },
+        })
+        const safe = { ...store, hasIndexedData: async () => true } satisfies IVectorStore
+        const service = new DocumentIndexService(root, path.join(root, ".cache"), cfg, embedder, safe, ignore())
+
+        await service.start("manual")
+
+        expect(service.getStatus()).toMatchObject({
+          state: "Complete",
+          message: "Document RAG 候选索引未应用，正在使用上一版有效索引。",
+          issueSummary: [expect.objectContaining({ category: "extractor-runtime", count: 1 })],
+        })
+        const report = await service.getDiagnosticReport(service.getStatus().diagnosticRunId)
+        expect(report?.diagnostics).toHaveLength(1)
+        expect(report?.diagnostics[0]?.message).toContain("exitCode=53")
+      } finally {
+        if (before === undefined) delete process.env.CHIPMATE_PDFTOTEXT_PATH
+        else process.env.CHIPMATE_PDFTOTEXT_PATH = before
+        await rm(root, { recursive: true, force: true })
+      }
+    })
+  }
+
   test("keeps a compatible document index available when a candidate fails", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "chipmate-doc-workspace-"))
     let aborted = 0
@@ -649,8 +822,63 @@ describe("DocumentIndexService", () => {
       expect(aborted).toBe(1)
       expect(service.getStatus()).toMatchObject({
         state: "Complete",
-        message: "Document Embedding 候选索引未应用，正在使用上一版有效索引。",
+        message: "Document RAG 候选索引未应用，正在使用上一版有效索引。",
       })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("restores document hashes when a failed candidate falls back to the active index", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "chipmate-doc-workspace-"))
+    const cache = path.join(root, ".cache")
+    let embeddings = 0
+    try {
+      const file = path.join(root, "notes.md")
+      await writeFile(file, "active document version")
+      const cfg = new CodeIndexConfigManager({
+        enabled: true,
+        embedderProvider: "openai",
+        openAiKey: "sk-test",
+        documents: { enabled: true },
+      })
+      const tracked = {
+        ...embedder,
+        createEmbeddings: async (texts: string[]) => {
+          embeddings += texts.length
+          return { embeddings: texts.map(() => [0.1]) }
+        },
+      } satisfies IEmbedder
+      const first = new DocumentIndexService(root, cache, cfg, tracked, store, ignore())
+      await first.start("manual")
+      const baseline = embeddings
+      await writeFile(file, "candidate document version")
+      const failed = {
+        ...tracked,
+        createEmbeddings: async () => {
+          throw new Error("embedding service unavailable")
+        },
+      } satisfies IEmbedder
+      const candidate = {
+        ...store,
+        initialize: async () => true,
+        abortCandidate: async () => {},
+        getLastCompatibilityDecision: () => ({
+          action: "rebuild" as const,
+          reason: "profile changed",
+          created: true,
+        }),
+        hasIndexedData: async () => true,
+      } satisfies IVectorStore
+      const attempted = new DocumentIndexService(root, cache, cfg, failed, candidate, ignore())
+      await attempted.start("manual")
+      expect(attempted.getStatus().state).toBe("Complete")
+
+      const resumed = new DocumentIndexService(root, cache, cfg, tracked, store, ignore())
+      await resumed.start("manual")
+
+      expect(embeddings).toBeGreaterThan(baseline)
+      expect(resumed.getStatus()).toMatchObject({ state: "Complete", validFileCount: 1, errorCount: 0 })
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -1073,7 +1301,7 @@ describe("DocumentIndexService", () => {
       const first = new DocumentIndexService(root, cache, cfg, tracked, store, ignore())
       await first.start("manual")
       const count = embeddings
-      const [name] = await readdir(cache)
+      const name = (await readdir(cache)).find((item) => item.startsWith("document-index-cache-"))
       const file = path.join(cache, name!)
       const data = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>
       delete data.chunks
@@ -1110,7 +1338,7 @@ describe("DocumentIndexService", () => {
         await writeFile(path.join(incoming, "guide.pdf"), "%PDF-1.4\n% moved PDF fixture\n")
         await writeFile(
           exe,
-          "#!/bin/sh\ngrep -q 'COPY_COMPLETE' \"$2\" || exit 9\nprintf 'AUTOMATIC_PDF_DIRECTORY_MARKER\\f'\n",
+          "#!/bin/sh\ncase \"$2\" in *'中文 路径.pdf') printf 'CHIPMATE_PDF_PREFLIGHT_OK\\f'; exit 0;; esac\ngrep -q 'COPY_COMPLETE' \"$2\" || exit 9\nprintf 'AUTOMATIC_PDF_DIRECTORY_MARKER\\f'\n",
         )
         await chmod(exe, 0o755)
         process.env.CHIPMATE_PDFTOTEXT_PATH = exe
@@ -1167,7 +1395,10 @@ describe("DocumentIndexService", () => {
         const file = path.join(external, "guide.pdf")
         const exe = path.join(root, "pdftotext")
         await writeFile(file, "%PDF-1.4\n% external document fixture\n")
-        await writeFile(exe, "#!/bin/sh\nprintf 'external PDF page\\f'\n")
+        await writeFile(
+          exe,
+          "#!/bin/sh\ncase \"$2\" in *'中文 路径.pdf') printf 'CHIPMATE_PDF_PREFLIGHT_OK\\f';; *) printf 'external PDF page\\f';; esac\n",
+        )
         await chmod(exe, 0o755)
         process.env.CHIPMATE_PDFTOTEXT_PATH = exe
         const cfg = new CodeIndexConfigManager({

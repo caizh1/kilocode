@@ -28,7 +28,7 @@ import { registerHeapSnapshot } from "./commands/heap-snapshot"
 import { registerMemoryDebug } from "./commands/memory-debug"
 import { RemoteStatusService } from "./services/RemoteStatusService"
 import { markWorkspace } from "./util/spotlight"
-import { registerUpdateCheck } from "./services/update-check"
+import { createUpdateLog, registerUpdateCheck } from "./services/update-check"
 import {
   confirmPendingUpdateActivation,
   markPendingUpdateReloadRequested,
@@ -67,36 +67,38 @@ const panelTitleHandler = (panel: vscode.WebviewPanel) => (title: string) => {
 // it starts lazily when a webview connects or when ensureBackendForAutocomplete() triggers it.
 export async function activate(source: vscode.ExtensionContext) {
   const context = isolate(source)
+  const updateLog = createUpdateLog()
+  context.subscriptions.push({ dispose: () => updateLog.dispose?.() })
   await migrateLegacyProductState(context)
   void confirmPendingUpdateActivation(context)
     .then(async (result) => {
       if (result.status === "none") return
       if (result.status === "invalid") {
-        console.warn("[ChipMate New] 已清除无效的更新激活收据。")
+        updateLog.warn("[ChipMate New] 已清除无效的更新激活收据。")
         return
       }
       if (result.status === "host-active") {
-        console.log(
+        updateLog.log(
           `[ChipMate New] 更新首次重载已激活：${result.record.extensionId} ${result.record.expectedVersion} ${result.record.target}。`,
         )
         return
       }
       if (!result.pending.reloadRequestedAt) {
-        console.log(
+        updateLog.log(
           `[ChipMate New] 更新已安装但尚未请求重载：${result.pending.expectedVersion}/${result.pending.target}。`,
         )
         return
       }
-      console.warn(
+      updateLog.warn(
         `[ChipMate New] 更新首次重载未切换目标版本：期望 ${result.pending.expectedVersion}/${result.pending.target}，实际 ${result.actual.version}/${result.actual.target ?? "unknown"}。`,
       )
       if (shouldRetryFirstReload(result)) {
         const retry = await markPendingUpdateReloadRequested(context)
         if (!retry) {
-          console.warn("[ChipMate New] 更新首次重载回执在自动重试前丢失。")
+          updateLog.warn("[ChipMate New] 更新首次重载回执在自动重试前丢失。")
           return
         }
-        console.warn(`[ChipMate New] 目标扩展仍在注册，自动执行一次受限的第二次重载（尝试 ${retry.reloadAttempts}）。`)
+        updateLog.warn(`[ChipMate New] 目标扩展仍在注册，自动执行一次受限的第二次重载（尝试 ${retry.reloadAttempts}）。`)
         await vscode.commands.executeCommand("workbench.action.reloadWindow")
         return
       }
@@ -108,12 +110,14 @@ export async function activate(source: vscode.ExtensionContext) {
         try {
           await markPendingUpdateReloadRequested(context)
         } catch (err) {
-          console.warn("[ChipMate New] 未能记录手动更新重载请求：", err)
+          updateLog.warn(`[ChipMate New] 未能记录手动更新重载请求：${err instanceof Error ? err.message : String(err)}`)
         }
         await vscode.commands.executeCommand("workbench.action.reloadWindow")
       }
     })
-    .catch((err) => console.warn("[ChipMate New] 更新激活收据确认失败：", err))
+    .catch((err) =>
+      updateLog.warn(`[ChipMate New] 更新激活收据确认失败：${err instanceof Error ? err.message : String(err)}`),
+    )
   const internal = isInternalOfflineBuild()
   void vscode.commands.executeCommand("setContext", INTERNAL_OFFLINE_CONTEXT, internal)
   console.log("ChipMate extension is now active")
@@ -710,7 +714,7 @@ export async function activate(source: vscode.ExtensionContext) {
     ),
   )
 
-  const updateCheckService = registerUpdateCheck(context)
+  const updateCheckService = registerUpdateCheck(context, updateLog)
   void updateCheckService.checkOnStartup()
 
   // Dispose services when extension deactivates (kills the server)

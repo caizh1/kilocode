@@ -113,7 +113,9 @@ Use `-Lane settings` for a focused installed-VSIX settings regression. It valida
   -Lane update
 ```
 
-通道会使用隔离的中文、空格 `user-data-dir` 与 `extensions-dir`，只通过 VS Code 自带 CLI 预装旧版；启动扩展前从 PATH 移除所有可发现的 `code`。本地离线服务动态提供 schema v2 manifest 和候选 VSIX。验收证据包含更新前后扩展列表、manifest/VSIX 请求、专用更新日志、缓存 SHA-256、Reload 提示截图与 UIA 树、同一 Code 窗口内的新 Extension Host 回执、Webview ready 回执，以及在非 reduced-motion 条件下动态 spinner 的资源与三帧像素变化。
+通道会使用隔离的中文、空格 `user-data-dir` 与 `extensions-dir`，只通过 VS Code 自带 CLI 预装旧版；启动扩展前从 PATH 移除所有可发现的 `code`。本地离线服务动态提供 schema v2 manifest 和候选 VSIX。通道按实际运行的旧版 updater 选择 ChipMate 自有动作：1.1.3 及更早版本安装候选后点击 `Reload Window`，1.1.4 起先后台下载校验，再点击 `Install and Reload Window`；两种链路都禁止点击 VS Code 的 `Restart Extensions`。验收证据包含更新前后扩展列表、manifest/VSIX 请求、专用更新日志、缓存 SHA-256、ChipMate 更新动作截图与 UIA 树、无新增 `Canceled`/`Cancelled` 通知、同一 Code 窗口内的新 Extension Host 回执、Webview ready 回执，以及在非 reduced-motion 条件下动态 spinner 的资源与三帧像素变化。
+
+发布 1.1.4 时先执行 `1.1.3 -> 1.1.4` native-x64 兼容链，确认旧版的首次升级能通过 ChipMate `Reload Window` 激活；候选 1.1.4 无法反向修改已经运行的 1.1.3 updater。随后从正式候选 1.1.4 生成仅本地使用、内容相同但版本更高的 QA VSIX（本通道使用可由 PowerShell `[Version]` 解析的纯数字版本，例如 `1.1.5`，不要使用 `1.1.5-qa.1`），执行 `1.1.4 -> QA` 行为链，并分别在 VS Code 1.93.0、1.120.0 和现场 1.127.0（commit `4fe60c8b1cdac1c4c174f2fb180d0d758272d713`）验证新的下载校验与 `Install and Reload Window` 行为。兼容链和三条行为链都必须 PASS；QA VSIX 不进入 `public-packages`、ECS 或动态更新清单。
 
 已发布但不含该协议的旧包（例如历史 `1.0.10 → 1.0.11`）不能被候选包反向修复：安装和首次 Reload 仍由旧包代码发起。该历史链只可验证首次 Reload 是否直接成功，若失败需人工再 Reload 一次；协议从桥接版升级到下一版开始才可自动补救。该通道必须在 `native-x64` Windows 上通过后才能作为发布门槛；`arm64-vm` 结果仅作补充。
 

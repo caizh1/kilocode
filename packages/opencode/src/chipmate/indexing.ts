@@ -8,6 +8,7 @@ import {
   type CodeGraphSidecarStatus,
   type DocumentSearchOptions,
   type DocumentSearchResult,
+  type DocumentDiagnosticReport,
   type IndexingTelemetryEvent,
   type QueryEvidenceResult,
   type VectorStoreSearchResult,
@@ -923,6 +924,12 @@ export namespace ChipMateIndexing {
     const status = await entry.engine.rebuildDocuments()
     await entry.publish()
     return status
+  }
+
+  export async function documentDiagnostics(runId: string): Promise<DocumentDiagnosticReport | undefined> {
+    const entry = await hit().ready
+    if (!entry.initialized || !entry.engine) return undefined
+    return entry.engine.documentDiagnostics(runId)
   }
 
   export async function queryEvidence(

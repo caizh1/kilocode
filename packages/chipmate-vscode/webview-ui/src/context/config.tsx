@@ -110,7 +110,7 @@ export const ConfigProvider: ParentComponent = (props) => {
 
   function handleSettingMessage(message: ExtensionMessage) {
     if (message.type === "chipmateServerSettingsLoaded") {
-      mergeSettings({ [CHIPMATE_SERVER_KEY]: message.state.baseUrl, "updateCheck.autoInstall": message.autoInstall })
+      mergeSettings({ [CHIPMATE_SERVER_KEY]: message.state.baseUrl, "updateCheck.autoDownload": message.autoDownload })
       return true
     }
     if (message.type === "autocompleteSettingsLoaded") {

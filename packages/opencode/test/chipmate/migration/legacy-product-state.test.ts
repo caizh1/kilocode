@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Database as BunDatabase } from "bun:sqlite"
-import { mkdtemp, readFile, readdir, rm, writeFile } from "fs/promises"
+import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "fs/promises"
 import os from "os"
 import path from "path"
 import { parse } from "jsonc-parser"
@@ -16,6 +16,11 @@ async function temp() {
   const root = await mkdtemp(path.join(os.tmpdir(), "chipmate-migration-"))
   roots.push(root)
   return root
+}
+
+async function modified(file: string, offset: number) {
+  const time = new Date(Date.now() + offset)
+  await utimes(file, time, time)
 }
 
 describe("旧产品状态迁移", () => {
@@ -63,7 +68,7 @@ describe("旧产品状态迁移", () => {
     expect(await readFile(path.join(root, "chipmate.jsonc"), "utf8")).toBe(first)
   })
 
-  test("当前配置优先并只补充缺失字段", async () => {
+  test("当前配置更新时优先并只补充缺失字段", async () => {
     const root = await temp()
     await writeFile(
       path.join(root, "kilo.json"),
@@ -73,6 +78,8 @@ describe("旧产品状态迁移", () => {
       path.join(root, "chipmate.json"),
       JSON.stringify({ indexing: { model: "current", "openai-compatible": { apiKey: "new-key" } } }),
     )
+    await modified(path.join(root, "kilo.json"), -20_000)
+    await modified(path.join(root, "chipmate.json"), -10_000)
 
     await LegacyProductStateMigration.configDirectory(root)
 
@@ -80,6 +87,67 @@ describe("旧产品状态迁移", () => {
     expect(data.indexing.model).toBe("current")
     expect(data.indexing["openai-compatible"].apiKey).toBe("new-key")
     expect(data.mcp).toEqual({ a: {} })
+  })
+
+  test("旧版配置更新时覆盖冲突字段并保留当前配置的补充字段", async () => {
+    const root = await temp()
+    const directory = path.join(root, ".chipmate-v2")
+    await mkdir(directory)
+    await Bun.write(
+      path.join(directory, "chipmate.jsonc"),
+      `{
+  // 陈旧的新版配置
+  "indexing": { "model": "qwen3-embedding-8b", "dimensionMode": "auto" },
+  "mcp": { "current-only": {} }
+}`,
+    )
+    await Bun.write(
+      path.join(directory, "kilo.jsonc"),
+      `{
+  // 用户降级后最后选择的模型
+  "indexing": { "model": "bge-m3", "dimensionMode": "auto" },
+  "agent": { "review": { "prompt": "保留用户文本中的 kilo" } }
+}`,
+    )
+    await modified(path.join(directory, "chipmate.jsonc"), -20_000)
+    await modified(path.join(directory, "kilo.jsonc"), -10_000)
+
+    await LegacyProductStateMigration.configDirectory(directory)
+
+    const text = await readFile(path.join(directory, "chipmate.jsonc"), "utf8")
+    const data = parse(text) as {
+      indexing: { model: string; dimensionMode: string }
+      mcp: Record<string, unknown>
+      agent: { review: { prompt: string } }
+    }
+    expect(text).toContain("// 用户降级后最后选择的模型")
+    expect(text).not.toContain("// 陈旧的新版配置")
+    expect(data.indexing).toEqual({ model: "bge-m3", dimensionMode: "auto" })
+    expect(data.mcp).toEqual({ "current-only": {} })
+    expect(data.agent.review.prompt).toBe("保留用户文本中的 kilo")
+    expect(await Bun.file(path.join(directory, "kilo.jsonc")).exists()).toBe(false)
+
+    const first = text
+    await LegacyProductStateMigration.configDirectory(directory)
+    expect(await readFile(path.join(directory, "chipmate.jsonc"), "utf8")).toBe(first)
+  })
+
+  test("修改时间相同时当前配置优先", async () => {
+    const root = await temp()
+    const source = path.join(root, "kilo.json")
+    const target = path.join(root, "chipmate.json")
+    await writeFile(source, JSON.stringify({ indexing: { model: "bge-m3" }, legacyOnly: true }))
+    await writeFile(target, JSON.stringify({ indexing: { model: "qwen3-embedding-8b" }, currentOnly: true }))
+    const time = new Date(Date.now() - 10_000)
+    await utimes(source, time, time)
+    await utimes(target, time, time)
+
+    await LegacyProductStateMigration.configDirectory(root)
+
+    const data = JSON.parse(await readFile(target, "utf8"))
+    expect(data.indexing.model).toBe("qwen3-embedding-8b")
+    expect(data.legacyOnly).toBe(true)
+    expect(data.currentOnly).toBe(true)
   })
 
   test("损坏的旧配置不会阻塞启动且保留源文件供后续重试", async () => {

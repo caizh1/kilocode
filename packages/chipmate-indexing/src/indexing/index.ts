@@ -37,6 +37,9 @@ export type { CodeIndexConfig, PreviousConfigSnapshot } from "./interfaces/confi
 
 export type {
   DocumentIndexStatus,
+  DocumentDiagnosticReport,
+  DocumentIssueCategory,
+  DocumentIssueSummary,
   DocumentSearchOptions,
   DocumentSearchResult,
   DocumentSection,
@@ -44,6 +47,7 @@ export type {
   DocxPlantUmlOptions,
   DocxPlantUmlResult,
 } from "./documents"
+export { DOCUMENT_ISSUE_CATEGORIES } from "./documents"
 
 export type {
   CodeGraphCall,

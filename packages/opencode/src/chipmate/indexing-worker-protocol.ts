@@ -3,6 +3,7 @@ import type {
   CodeGraphEvidenceQueryOptions,
   IndexingConfigInput,
   IndexingTelemetryEvent,
+  DocumentDiagnosticReport,
   DocumentSearchResult,
   QueryEvidenceResult,
   VectorStoreSearchResult,
@@ -46,6 +47,7 @@ export type Request =
     }
   | { type: "request"; id: number; method: "documentSearch"; input: DocumentSearchInput }
   | { type: "request"; id: number; method: "rebuildDocuments"; input: undefined }
+  | { type: "request"; id: number; method: "documentDiagnostics"; input: { runId: string } }
   | { type: "request"; id: number; method: "queryEvidence"; input: QueryEvidenceInput }
   | { type: "request"; id: number; method: "codeGraphStatus"; input: undefined }
   | { type: "request"; id: number; method: "dispose"; input: undefined }
@@ -56,6 +58,13 @@ export type Result =
   | { type: "result"; id: number; method: "search"; ok: true; value: VectorStoreSearchResult[] }
   | { type: "result"; id: number; method: "documentSearch"; ok: true; value: DocumentSearchResult[] }
   | { type: "result"; id: number; method: "rebuildDocuments"; ok: true; value: IndexingStatus }
+  | {
+      type: "result"
+      id: number
+      method: "documentDiagnostics"
+      ok: true
+      value: DocumentDiagnosticReport | undefined
+    }
   | { type: "result"; id: number; method: "queryEvidence"; ok: true; value: QueryEvidenceResult }
   | { type: "result"; id: number; method: "codeGraphStatus"; ok: true; value: CodeGraphSidecarStatus }
   | { type: "result"; id: number; method: "dispose"; ok: true; value: undefined }
@@ -81,6 +90,7 @@ const methods = new Set<string>([
   "search",
   "documentSearch",
   "rebuildDocuments",
+  "documentDiagnostics",
   "queryEvidence",
   "codeGraphStatus",
   "dispose",

@@ -121,6 +121,37 @@ const PipelineDiagnostics: Component<{
           {props.copied ? props.t("ui.message.copied") : props.t("ui.message.copy")}
         </Button>
       </div>
+      <Show when={(props.status.issueSummary?.length ?? 0) > 0}>
+        <div
+          style={{
+            display: "flex",
+            "flex-wrap": "wrap",
+            gap: "6px",
+            "min-width": 0,
+          }}
+        >
+          <For each={props.status.issueSummary ?? []}>
+            {(summary) => (
+              <span
+                style={{
+                  display: "inline-flex",
+                  "align-items": "center",
+                  gap: "4px",
+                  padding: "3px 7px",
+                  "border-radius": "999px",
+                  border: "1px solid color-mix(in srgb, var(--vscode-settings-rowBorder) 78%, transparent)",
+                  background: "color-mix(in srgb, var(--vscode-editor-background) 72%, transparent)",
+                  color: "var(--vscode-foreground)",
+                }}
+                title={summary.samples.map((sample) => `${sample.file ?? ""} ${sample.message}`.trim()).join("\n")}
+              >
+                <span>{summary.category}</span>
+                <strong>{summary.count}</strong>
+              </span>
+            )}
+          </For>
+        </div>
+      </Show>
       <Show
         when={(props.status.recentErrors?.length ?? 0) > 0}
         fallback={
@@ -258,6 +289,10 @@ const IndexingTab: Component = () => {
   }
 
   const copyDiagnostics = (label: string, status: IndexingPipelineStatus) => {
+    if (label === "Documents" && status.diagnosticRunId) {
+      vscode.postMessage({ type: "copyDocumentIndexingDiagnostics", runId: status.diagnosticRunId })
+      return
+    }
     navigator.clipboard
       .writeText(formatIndexingDiagnostics(label, status))
       .then(() => {

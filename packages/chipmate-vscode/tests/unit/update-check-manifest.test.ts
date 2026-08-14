@@ -20,7 +20,12 @@ describe("update-check manifest contributions", () => {
 
   it("declares internal VSIX update-check settings", () => {
     expect(props["chipmate.v2.updateCheck.enabled"]).toMatchObject({ type: "boolean", default: true })
-    expect(props["chipmate.v2.updateCheck.autoInstall"]).toMatchObject({ type: "boolean", default: true })
+    expect(props["chipmate.v2.updateCheck.autoDownload"]).toMatchObject({ type: "boolean", default: true })
+    expect(props["chipmate.v2.updateCheck.autoInstall"]).toMatchObject({
+      type: "boolean",
+      default: true,
+      deprecationMessage: expect.stringContaining("autoDownload"),
+    })
     expect(props["chipmate.v2.updateCheck.baseUrl"]).toMatchObject({
       type: "string",
       default: "",

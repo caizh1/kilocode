@@ -32,7 +32,12 @@ export class DesignDocModelTimeoutError extends Error {
 
 export class DesignDocWorkerResponseError extends Error {
   constructor(
-    readonly code: "MODEL_AUTHENTICATION" | "MODEL_API_ERROR" | "MODEL_RESPONSE_ERROR" | "STRUCTURED_OUTPUT_MISSING",
+    readonly code:
+      | "MODEL_AUTHENTICATION"
+      | "MODEL_UNAVAILABLE"
+      | "MODEL_API_ERROR"
+      | "MODEL_RESPONSE_ERROR"
+      | "STRUCTURED_OUTPUT_MISSING",
     message: string,
     readonly retryable: boolean,
   ) {
@@ -173,6 +178,9 @@ export function designDocWorkerResponseError(
     "message" in error.data
       ? error.data.message
       : "模型响应失败"
+  if (typeof message === "string" && message.startsWith("Model not found:")) {
+    return new DesignDocWorkerResponseError("MODEL_UNAVAILABLE", message, false)
+  }
   return new DesignDocWorkerResponseError("MODEL_RESPONSE_ERROR", message, false)
 }
 

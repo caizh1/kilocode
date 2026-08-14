@@ -13,6 +13,7 @@ export interface DbRequest {
     | "author"
     | "files"
     | "file"
+    | "skillDownload"
     | "identity"
     | "createSession"
     | "getSession"

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "crypto"
+import { existsSync } from "fs"
 import { lstat, mkdir, open, readdir, readFile, rename, rm, stat } from "fs/promises"
 import path from "path"
 import { Schema } from "effect"
@@ -25,7 +26,10 @@ export namespace DesignDocStore {
   }
 
   export function directory(workspace: string, jobID: string) {
-    return path.join(root(workspace), `${jobPrefix}${jobID}`)
+    const current = path.join(root(workspace), `${jobPrefix}${jobID}`)
+    if (existsSync(current)) return current
+    const legacy = legacyDirectory(workspace, jobID)
+    return existsSync(legacy) ? legacy : current
   }
 
   export async function create(job: DesignDocJob) {
@@ -39,27 +43,28 @@ export namespace DesignDocStore {
 
   export async function get(workspace: string, jobID: string) {
     const file = path.join(directory(workspace, jobID), manifestName)
-    const raw = await readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
+    return readJob(file, workspace, jobID).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") throw new JobStoreError("JOB_NOT_FOUND", `DesignDoc Job 不存在：${jobID}`)
       throw error
     })
-    const decoded = await Schema.decodeUnknownPromise(DesignDocJobSchema)(JSON.parse(raw))
-    // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- Schema 已验证全部字段，克隆只把只读容器转换为内部可变领域对象。
-    return structuredClone(decoded) as DesignDocJob
   }
 
   export async function list(workspace: string) {
-    const parent = root(workspace)
-    const entries = await readdir(parent, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return []
-      throw error
-    })
-    const jobs = await Promise.all(
-      entries
-        .filter((entry) => entry.isDirectory() && entry.name.startsWith(jobPrefix))
-        .map((entry) => get(workspace, entry.name.slice(jobPrefix.length)).catch(() => undefined)),
-    )
-    return jobs.filter((job): job is DesignDocJob => job !== undefined).sort((a, b) => b.updatedAt - a.updatedAt)
+    const jobs = new Map<string, DesignDocJob>()
+    for (const parent of roots(workspace)) {
+      const entries = await readdir(parent, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return []
+        throw error
+      })
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.startsWith(jobPrefix)) continue
+        const jobID = entry.name.slice(jobPrefix.length)
+        if (jobs.has(jobID)) continue
+        const job = await readJob(path.join(parent, entry.name, manifestName), workspace, jobID).catch(() => undefined)
+        if (job) jobs.set(jobID, job)
+      }
+    }
+    return [...jobs.values()].sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
   export async function acquireRunLease(workspace: string, jobID: string) {
@@ -182,6 +187,28 @@ export namespace DesignDocStore {
       }
     }
   }
+}
+
+function legacyRoot(workspace: string) {
+  return path.join(workspace, ".kilo", "artifacts")
+}
+
+function legacyDirectory(workspace: string, jobID: string) {
+  return path.join(legacyRoot(workspace), `${jobPrefix}${jobID}`)
+}
+
+function roots(workspace: string) {
+  return [...new Set([DesignDocStore.root(workspace), legacyRoot(workspace)])]
+}
+
+async function readJob(file: string, workspace: string, jobID: string) {
+  const raw = await readFile(file, "utf8")
+  const decoded = await Schema.decodeUnknownPromise(DesignDocJobSchema)(JSON.parse(raw))
+  if (decoded.id !== jobID || path.resolve(decoded.workspace) !== path.resolve(workspace)) {
+    throw new JobStoreError("INVALID_ARTIFACT", `DesignDoc Job 清单身份不匹配：${jobID}`)
+  }
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- Schema 已验证全部字段，克隆只把只读容器转换为内部可变领域对象。
+  return structuredClone(decoded) as DesignDocJob
 }
 
 async function save(

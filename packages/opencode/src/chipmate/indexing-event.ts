@@ -4,6 +4,16 @@ import { BusEvent } from "@/bus/bus-event"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { INDEXING_WARNING_CODES } from "./indexing-warning"
 
+export const DocumentIssueCategoryInfo = Schema.Literals([
+  "extractor-runtime",
+  "pdf-password",
+  "pdf-invalid",
+  "office-corrupt",
+  "file-unavailable",
+  "extraction-safety-limit",
+  "extraction-unknown",
+])
+
 export const IndexingStatusState = Schema.Literals(INDEXING_STATUS_STATES).annotate({
   identifier: "IndexingStatusState",
 })
@@ -14,7 +24,27 @@ export const IndexingDiagnosticInfo = Schema.Struct({
   location: Schema.String,
   message: Schema.String,
   file: Schema.optional(Schema.String),
+  category: Schema.optional(DocumentIssueCategoryInfo),
 }).annotate({ identifier: "IndexingDiagnostic" })
+
+export const DocumentIssueSummaryInfo = Schema.Struct({
+  category: DocumentIssueCategoryInfo,
+  count: NonNegativeInt,
+  samples: Schema.Array(
+    Schema.Struct({
+      file: Schema.optional(Schema.String),
+      message: Schema.String,
+    }),
+  ),
+}).annotate({ identifier: "DocumentIssueSummary" })
+
+export const DocumentDiagnosticReportInfo = Schema.Struct({
+  runId: Schema.String,
+  startedAt: Schema.String,
+  completedAt: Schema.optional(Schema.String),
+  issueSummary: Schema.Array(DocumentIssueSummaryInfo),
+  diagnostics: Schema.Array(IndexingDiagnosticInfo),
+}).annotate({ identifier: "DocumentDiagnosticReport" })
 
 export const IndexingNoticeInfo = Schema.Struct({
   id: Schema.String,
@@ -35,6 +65,8 @@ const IndexingPipelineStatusInfo = Schema.Struct({
   staleCount: NonNegativeInt,
   skippedCount: NonNegativeInt,
   validFileCount: Schema.optional(NonNegativeInt),
+  issueSummary: Schema.optional(Schema.Array(DocumentIssueSummaryInfo)),
+  diagnosticRunId: Schema.optional(Schema.String),
   recentErrors: Schema.optional(Schema.Array(IndexingDiagnosticInfo)),
 })
 

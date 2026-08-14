@@ -93,6 +93,7 @@ function App() {
   const [user, setUser] = useState<MarketUser>()
   const [csrf, setCsrf] = useState(() => sessionStorage.getItem("chipmate-market-csrf") ?? "")
   const [login, setLogin] = useState(() => location.pathname === "/login")
+  const [catalogSync, setCatalogSync] = useState(0)
   const [detailSync, setDetailSync] = useState(0)
   const [meSync, setMeSync] = useState(0)
   const [analyticsSync, setAnalyticsSync] = useState(0)
@@ -142,6 +143,7 @@ function App() {
       const data = JSON.parse((event as MessageEvent<string>).data) as { catalogVersion?: unknown }
       if (typeof data.catalogVersion === "string")
         sessionStorage.setItem("chipmate-market-catalog-version", data.catalogVersion)
+      setCatalogSync((value) => value + 1)
       setDetailSync((value) => value + 1)
     })
     const state = () => {
@@ -257,7 +259,7 @@ function App() {
       requestLogin={() => requestLogin(url.pathname)}
     />
   ) : url.pathname === "/skills" ? (
-    <Directory url={url} navigate={navigate} />
+    <Directory key={catalogSync} url={url} navigate={navigate} />
   ) : url.pathname === "/status" ? (
     <StatusPage />
   ) : url.pathname === "/publish" ? (
@@ -274,7 +276,7 @@ function App() {
   ) : url.pathname === "/analytics" ? (
     <AnalyticsPage key={analyticsSync} user={user} requestLogin={() => requestLogin("/analytics")} />
   ) : (
-    <Home navigate={navigate} />
+    <Home key={catalogSync} navigate={navigate} />
   )
 
   return (

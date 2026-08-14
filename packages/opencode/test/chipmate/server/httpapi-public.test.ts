@@ -120,11 +120,13 @@ describe("ChipMate PublicApi OpenAPI contract", () => {
       { method: "get", path: ConfigConsolePaths.overlay },
       { method: "patch", path: ConfigConsolePaths.overlay },
       { method: "get", path: IndexingPaths.status },
+      { method: "get", path: IndexingPaths.documentDiagnostics },
       { method: "get", path: IndexingPaths.models },
     ] satisfies Array<{ method: Method; path: string }>
 
     for (const route of routes) {
-      const params = spec.paths[route.path]?.[route.method]?.parameters as Parameter[] | undefined
+      const path = route.path.replace(/:([A-Za-z0-9_]+)/g, "{$1}")
+      const params = spec.paths[path]?.[route.method]?.parameters as Parameter[] | undefined
       const query = params?.filter((param) => param.in === "query").map((param) => param.name)
       expect(query, `${route.method.toUpperCase()} ${route.path}`).toContain("directory")
       expect(query, `${route.method.toUpperCase()} ${route.path}`).toContain("workspace")

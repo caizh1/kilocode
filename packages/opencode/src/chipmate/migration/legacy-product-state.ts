@@ -127,17 +127,21 @@ async function migrateConfigFile(directory: string, sourceName: string, targetNa
     log.warn("legacy config migration skipped invalid target", { file: targetName, error: "invalid-jsonc" })
     return
   }
-  const next = targetText === undefined ? transformed : fill(current, transformed)
-  const base = targetText ?? sourceText
-  const patched = patch(base, current, next)
-  await atomic(target, patched, await mode(source))
+  const relation = targetText === undefined ? "target-missing" : await compareModified(source, target)
+  const sourceWins = relation === "source-newer"
+  const next =
+    targetText === undefined ? transformed : sourceWins ? fill(transformed, current) : fill(current, transformed)
+  const base = targetText === undefined || sourceWins ? sourceText : targetText
+  const before = targetText === undefined || sourceWins ? legacy : current
+  const patched = patch(base, before, next)
+  await atomic(target, patched, await mode(targetText === undefined || sourceWins ? source : target))
   const verified = json(await Bun.file(target).text())
   if (!verified || JSON.stringify(verified) !== JSON.stringify(next)) {
     log.warn("legacy config migration verification failed", { file: targetName })
     return
   }
   await backup(source, directory, sourceName.endsWith(".jsonc") ? "config-jsonc" : "config-json")
-  log.info("legacy config migrated", { source: sourceName, target: targetName })
+  log.info("legacy config migrated", { source: sourceName, target: targetName, relation })
 }
 
 async function migrateAuth() {
@@ -335,10 +339,7 @@ async function backup(source: string, directory: string, label: string) {
   const root = path.join(directory, "migration-backup")
   await mkdir(root, { recursive: true, mode: 0o700 })
   const contents = await Bun.file(source).arrayBuffer()
-  const digest = createHash("sha256")
-    .update(new Uint8Array(contents))
-    .digest("hex")
-    .slice(0, 8)
+  const digest = createHash("sha256").update(new Uint8Array(contents)).digest("hex").slice(0, 8)
   const target = path.join(root, `pre-1.1.0-${label}-${digest}.bak`)
   if (existsSync(target)) await unlink(source)
   else await rename(source, target)
@@ -349,6 +350,15 @@ async function mode(file: string) {
   return stat(file)
     .then((item) => item.mode & 0o777)
     .catch(() => 0o600)
+}
+
+async function compareModified(source: string, target: string) {
+  const [legacy, current] = await Promise.all([
+    stat(source).catch(() => undefined),
+    stat(target).catch(() => undefined),
+  ])
+  if (!legacy || !current || legacy.mtimeMs === current.mtimeMs) return "same-or-unknown" as const
+  return legacy.mtimeMs > current.mtimeMs ? ("source-newer" as const) : ("target-newer" as const)
 }
 
 async function locked(root: string, run: () => Promise<void>): Promise<void> {

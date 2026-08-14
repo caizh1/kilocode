@@ -9,6 +9,40 @@ export type CommentAnchor = {
   indent: string
 }
 
+export type CommentControlRegion = {
+  id: string
+  startLine: number
+  endLine: number
+  existingCovered: boolean
+  anchor?: CommentAnchor
+}
+
+export type CommentCoverageDiagnostics = {
+  required: number
+  covered: number
+  missing: number
+  coveredRegionIds: string[]
+  eligibleAnchors: Array<{
+    regionId: string
+    line: number
+    targetLineText: string
+  }>
+}
+
+export type DoxygenTagContract = {
+  name: string
+  identity: string
+  rawLine?: string
+}
+
+export type CommentComplexity = {
+  lineCount: number
+  controlRegionCount: number
+  existingCoveredRegionCount: number
+  minimumInlineComments: number
+  controlRegions: CommentControlRegion[]
+}
+
 export type FunctionTarget = {
   uri: string
   filePath: string
@@ -32,8 +66,10 @@ export type FunctionTarget = {
     text: string
     hash: string
     style: FunctionHeaderStyle
+    tagContract: DoxygenTagContract[]
   }
   existingComments: string[]
+  complexity: CommentComplexity
   anchors: CommentAnchor[]
   eol: "\n" | "\r\n"
 }
@@ -58,6 +94,11 @@ export type RawCommentProposal = {
   anchor: {
     targetLineText: string
   }
+}
+
+export type CommentCandidateBlock = {
+  anchorId: string
+  commentText: string
 }
 
 export type CodeCommentProgressEvent = {
@@ -85,9 +126,11 @@ export type BatchCommentProgress = {
 
 export type ValidatedCommentResult = {
   status: "proposed"
+  quality: "complete" | "coverage-incomplete"
+  coverage: CommentCoverageDiagnostics
   summary: string
   proposals: RawCommentProposal[]
-  patch?: string
+  candidateComments: CommentCandidateBlock[]
 }
 
 export type CommentGenerationResult =

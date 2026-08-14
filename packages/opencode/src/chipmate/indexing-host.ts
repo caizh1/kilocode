@@ -77,6 +77,12 @@ export function createIndexingHost(send: (message: Result | Event) => void) {
         return
       }
 
+      if (request.method === "documentDiagnostics") {
+        const value = manager ? await manager.getDocumentDiagnosticReport(request.input.runId) : undefined
+        send({ type: "result", id: request.id, method: "documentDiagnostics", ok: true, value })
+        return
+      }
+
       if (request.method === "updateConfig") {
         if (!manager) throw new Error("Indexing process is not initialized.")
         await manager.handleSettingsChange(request.input)

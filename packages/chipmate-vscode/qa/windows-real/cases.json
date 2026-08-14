@@ -396,7 +396,7 @@
     {
       "id": "WIN-UPDATE",
       "suite": "更新",
-      "title": "验证 target-aware manifest、SHA、同源、大小和同一窗口首次 Reload",
+      "title": "验证 target-aware 更新准备、单次安装并重载和同一窗口新宿主激活",
       "severity": "P0",
       "profiles": ["upgrade"],
       "changesets": ["internal-vsix-update-check", "render-service-vsix-auto-update"],
@@ -405,11 +405,11 @@
         "^server/chipmate-word-render/apps/api/src/extensions\\.ts$"
       ],
       "preconditions": ["本地更新服务可返回合法与异常 manifest", "动态 spinner 验收在 editor.accessibilitySupport=off 且不传 --force-renderer-accessibility 的正常渲染条件下执行", "若额外验收 pending activation receipt 的自动二次 Reload，PreviousVsix 必须是已包含该协议的桥接版本；1.0.10 到候选版只裁决首次 Reload 的真实宿主和动态 UI"],
-      "steps": ["检查同 target 新版本", "依次注入错误 target、SHA、跨源和超大文件", "恢复合法 manifest 并安装后在同一 VS Code 窗口点击 Reload", "等待候选版本的新 activation Probe，并通过 control channel 执行 openInTab", "mock provider 保持 [QA:TIMEOUT] 请求，CDP 检查 working spinner 的 reduced-motion、资源就绪和三帧像素变化", "最后执行 showMemory 以确认 webview ready"],
+      "steps": ["检查同 target 新版本", "依次注入错误 target、SHA、跨源和超大文件", "按旧版 updater 能力点击 ChipMate 的 Reload Window 或 Install and Reload Window", "确认从未点击 VS Code Restart Extensions 且没有新增 Canceled 通知", "等待候选版本的新 activation Probe，并通过 control channel 执行 openInTab", "mock provider 保持 [QA:TIMEOUT] 请求，CDP 检查 working spinner 的 reduced-motion、资源就绪和三帧像素变化", "最后执行 showMemory 以确认 webview ready"],
       "expectedState": [
         "仅合法同源同 target 且 SHA 正确的包可安装",
         "错误包不会改变已安装版本",
-        "成功后出现 Reload 提示",
+        "1.1.3 兼容链使用 ChipMate Reload Window；1.1.4+ 行为链使用安装并重载动作，均不依赖 Restart Extensions",
         "首次 Reload 在原窗口内产生候选版本、target、扩展路径和 active 状态均匹配的新 activation Probe",
         "首次 Reload 的 working spinner 不处于 reduced-motion 降级，动态图层 is-ready、资源 complete/naturalWidth 正常且三帧像素发生变化",
         "首次 Reload 的 showMemory 命令完成，证明其等待的 webview ready 握手已返回"

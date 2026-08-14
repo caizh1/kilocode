@@ -307,6 +307,10 @@ export function formatIndexingDiagnostics(label: string, status: IndexingPipelin
     `progress: ${status.percent}% (${status.processedFiles}/${status.totalFiles})`,
     `issues: ${status.errorCount} errors, ${status.staleCount} stale, ${status.skippedCount} skipped`,
   ]
+  if (status.issueSummary?.length) {
+    lines.push("issueSummary:")
+    lines.push(...status.issueSummary.map((item) => `- ${item.category}: ${item.count}`))
+  }
   const errors = status.recentErrors ?? []
   if (errors.length > 0) {
     lines.push("recentErrors:")

@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
 
@@ -22,10 +22,19 @@ export const indexingHandlers = HttpApiBuilder.group(InstanceHttpApi, "indexing"
       return current
     })
 
+    const documentDiagnostics = Effect.fn("IndexingHttpApi.documentDiagnostics")(function* (ctx: {
+      params: { runId: string }
+    }) {
+      const report = yield* EffectBridge.fromPromise(() => mod.ChipMateIndexing.documentDiagnostics(ctx.params.runId))
+      if (!report) return yield* new HttpApiError.NotFound({})
+      return report
+    })
+
     return handlers
       .handle("status", status)
       .handle("models", models)
       .handle("warnings", warnings)
+      .handle("documentDiagnostics", documentDiagnostics)
       .handle("documentsRebuild", documentsRebuild)
   }),
 )

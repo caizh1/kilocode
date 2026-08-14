@@ -22,7 +22,7 @@ for (const key of [
   "browserAutomation.useSystemChrome",
   "browserAutomation.headless",
   "chipmateServer.baseUrl",
-  "updateCheck.autoInstall",
+  "updateCheck.autoDownload",
   "attention.enabled",
   "attention.sound",
   "claudeCodeCompat",

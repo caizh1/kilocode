@@ -649,7 +649,7 @@ export interface SettingUpdateFailedMessage {
 export interface ChipmateServerSettingsLoadedMessage {
   type: "chipmateServerSettingsLoaded"
   state: ChipmateServerState
-  autoInstall: boolean
+  autoDownload: boolean
 }
 
 export interface ChipmateServerTestResultMessage {

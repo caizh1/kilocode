@@ -117,6 +117,23 @@ test("worker owns import, revisions, FTS, state, metrics, and legacy export", { 
     assert.ok(files.some((file) => file.path === "SKILL.md"))
     assert.match((await db.file("source-backed-detail-design", "SKILL.md", 1))?.text ?? "", /source-backed/i)
 
+    const beforeDownload = await db.get("source-backed-detail-design")
+    const beforeDownloadVersion = await db.version()
+    assert.ok(beforeDownload)
+    assert.deepEqual(
+      await Promise.all([
+        db.skillDownload("source-backed-detail-design"),
+        db.skillDownload("source-backed-detail-design"),
+        db.skillDownload("source-backed-detail-design"),
+      ]),
+      [beforeDownload.downloads + 1, beforeDownload.downloads + 2, beforeDownload.downloads + 3],
+    )
+    const afterDownload = await db.get("source-backed-detail-design")
+    assert.equal(afterDownload?.downloads, beforeDownload.downloads + 3)
+    assert.equal(afterDownload?.updatedAt, beforeDownload.updatedAt)
+    assert.notEqual(await db.version(), beforeDownloadVersion)
+    assert.equal(await db.skillDownload("missing-skill"), undefined)
+
     await db.favorite({
       userId: "user-000000000001",
       displayName: "测试用户",

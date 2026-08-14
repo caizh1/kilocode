@@ -13,7 +13,7 @@ import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
 import { compactionActive } from "../../context/compaction-activity"
-import { tracksElapsed } from "./working-indicator-utils"
+import { formatWorkingElapsed, tracksElapsed } from "./working-indicator-utils"
 
 export const WorkingIndicator: Component = () => {
   const session = useSession()
@@ -70,16 +70,10 @@ export const WorkingIndicator: Component = () => {
     if (info.type === "offline") {
       return info.message || language.t("session.status.offline")
     }
-    return session.statusText() ?? language.t("ui.sessionTurn.status.thinking")
+    return session.statusText() ?? language.t("session.status.deepDiving")
   }
 
-  const formatElapsed = () => {
-    const s = elapsed()
-    if (s < 60) return `${s}s`
-    const m = Math.floor(s / 60)
-    const rem = s % 60
-    return `${m}m ${rem}s`
-  }
+  const formatElapsed = () => formatWorkingElapsed(elapsed(), language.t)
 
   const blocked = () => {
     const id = session.currentSessionID()

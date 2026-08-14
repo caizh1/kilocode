@@ -138,11 +138,41 @@ export function validateSkillArchive(input: Buffer): SkillSnapshot {
   const metadata = json ? readJson(json, issues) : {}
   const markdown = candidate ? decode(candidate, issues) : ""
   const source = frontmatter(markdown)
-  const root = parsed[0]?.path.split("/")[0] ?? "skill"
-  const id = skillId(clean(metadata.id) || clean(source.fields.id) || root || clean(source.fields.name) || "skill")
   const sourceName = clean(source.fields.name)
+  const metadataId = clean(metadata.id)
+  const frontmatterId = clean(source.fields.id)
+  const explicitIds = [metadataId, frontmatterId].filter(Boolean).map(skillId)
+  const explicitId = explicitIds[0]
+  const nameId = sourceName ? skillId(sourceName) : undefined
+  const wrapper = wrapperRoot(parsed)
+  const id = nameId || explicitId || (wrapper ? skillId(wrapper) : "skill")
+  if (new Set(explicitIds).size > 1) {
+    issues.push(
+      issue("identity-mismatch", "error", "skill.json id and SKILL.md id must match.", {
+        field: "id",
+        expected: explicitIds[0]!,
+        actual: explicitIds[1]!,
+      }),
+    )
+  }
+  if (nameId && explicitId && nameId !== explicitId) {
+    issues.push(
+      issue("identity-mismatch", "error", "Skill name and explicit id must match.", {
+        field: "name",
+        expected: nameId,
+        actual: explicitId,
+      }),
+    )
+  }
+  if (!nameId && !explicitId && !wrapper) {
+    issues.push(
+      issue("identity-missing", "error", "Skill identity is ambiguous; add a canonical name to SKILL.md.", {
+        field: "name",
+      }),
+    )
+  }
   const sourceDescription = clean(source.fields.description)
-  const name = skillId(sourceName || title(id))
+  const name = id
   const description = sourceDescription || bodyDescription(source.body) || "Reusable ChipMate skill."
   const category = slug(clean(metadata.category) || clean(source.fields.category) || "general")
   const tags = tagList(metadata.tags ?? source.fields.tags)
@@ -385,6 +415,12 @@ function normalize(entries: Entry[], issues: SkillIssue[]) {
     seen.add(key)
     return [{ ...entry, path }]
   })
+}
+
+function wrapperRoot(entries: Entry[]) {
+  if (entries.length === 0 || entries.some((entry) => !entry.path.includes("/"))) return undefined
+  const roots = new Set(entries.map((entry) => entry.path.split("/")[0]).filter(Boolean))
+  return roots.size === 1 ? [...roots][0] : undefined
 }
 
 function scan(files: Entry[], issues: SkillIssue[]) {
@@ -677,6 +713,8 @@ const MESSAGES: Record<string, string> = {
   "skill-file-missing": "Skill 根目录必须包含 SKILL.md。",
   "skill-filename": "已将根目录技能文件规范化为 SKILL.md。",
   "invalid-id": "Skill ID 格式无效。",
+  "identity-mismatch": "Skill 的 name、显式 id 与发布 ID 必须一致。",
+  "identity-missing": "无法确定 Skill ID；请在 SKILL.md 中提供规范的 name。",
   "invalid-semver": "语义版本格式无效。",
   "frontmatter-normalize": "已规范化名称和描述字段。",
   "skill-json-create": "已生成缺失的 skill.json。",
@@ -822,13 +860,6 @@ function skillId(value: string) {
       .slice(0, 64)
       .replace(/-+$/g, "") || "skill"
   )
-}
-
-function title(value: string) {
-  return value
-    .split(/[-_.]+/)
-    .map((part) => (part ? part[0]!.toUpperCase() + part.slice(1) : ""))
-    .join(" ")
 }
 
 function clean(value: unknown) {

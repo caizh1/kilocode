@@ -1770,11 +1770,22 @@ export interface operations {
             /** @description Immutable skill release archive */
             200: {
                 headers: {
+                    "Content-Disposition"?: string;
+                    "Content-Length"?: number;
+                    "Accept-Ranges"?: "none";
+                    "X-Content-Sha256"?: string;
                     [name: string]: unknown;
                 };
                 content: {
                     "application/gzip": string;
                 };
+            };
+            /** @description Range requests are not supported */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

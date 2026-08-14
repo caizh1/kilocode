@@ -1,7 +1,13 @@
 import crypto from "node:crypto"
 import type Parser from "web-tree-sitter"
 import { getAst, getTreePathAtCursor } from "../autocomplete/continuedev/core/autocomplete/util/ast"
-import type { CommentAnchor, FunctionHeaderStyle, FunctionTarget } from "./types"
+import type {
+  CommentAnchor,
+  CommentControlRegion,
+  DoxygenTagContract,
+  FunctionHeaderStyle,
+  FunctionTarget,
+} from "./types"
 
 type SyntaxNode = Parser.SyntaxNode
 
@@ -30,6 +36,8 @@ const CONTROL_TYPES = new Set([
   "while_statement",
   "do_statement",
   "try_statement",
+  "catch_clause",
+  "else_clause",
   "case_statement",
 ])
 
@@ -111,13 +119,18 @@ function buildFunctionTarget(
   body: SyntaxNode,
 ): FunctionTarget | undefined {
   const targetNode = expandFunctionNode(functionNode)
-  const startIndex = targetNode.startIndex
+  const startLine = expandFunctionStartLine(lines, targetNode.startPosition.row)
+  const startIndex = lineStartIndex(input.documentText, startLine)
   const endIndex = targetNode.endIndex
-  const startLine = targetNode.startPosition.row
   const endLine = endLineInclusive(targetNode, lines.length)
   if (startLine < 0 || endLine < startLine || endLine >= lines.length) return
   const anchors = collectAnchors({ lines, functionNode, body, startLine, endLine })
   if (anchors.length === 0 || anchors[0]?.kind !== "function") return
+  const controlRegions = collectControlRegions(body, startLine, endLine, lines, anchors)
+  const existingCoveredRegionCount = controlRegions.filter((region) => region.existingCovered).length
+  const lineCount = endLine - startLine + 1
+  const requiredCoverage = minimumControlCoverage(lineCount, controlRegions.length)
+  const safelyAnchorableUncovered = controlRegions.filter((region) => !region.existingCovered && region.anchor).length
   const functionSource = input.documentText.slice(startIndex, endIndex)
   const existingFunctionHeader = findExistingFunctionHeader(lines, startLine, input.eol)
   return {
@@ -139,9 +152,43 @@ function buildFunctionTarget(
     functionHeaderStyle: detectFunctionHeaderStyle(root, lines),
     ...(existingFunctionHeader ? { existingFunctionHeader } : {}),
     existingComments: collectExistingComments(lines, startLine, endLine),
+    complexity: {
+      lineCount,
+      controlRegionCount: controlRegions.length,
+      existingCoveredRegionCount,
+      minimumInlineComments: Math.min(
+        Math.max(0, requiredCoverage - existingCoveredRegionCount),
+        safelyAnchorableUncovered,
+      ),
+      controlRegions,
+    },
     anchors,
     eol: input.eol,
   }
+}
+
+function expandFunctionStartLine(lines: string[], functionLine: number): number {
+  let line = functionLine
+  while (line > 0 && standaloneDeclarationPrefix(lines[line - 1] ?? "")) line -= 1
+  return line
+}
+
+function standaloneDeclarationPrefix(value: string): boolean {
+  const text = value.trim()
+  if (!text || text.startsWith("#") || /[;{}=]/u.test(text)) return false
+  return /^(?:[A-Z_][A-Z0-9_]*(?:\s*\([^;{}]*\))?\s*)+$/u.test(text)
+}
+
+function lineStartIndex(value: string, targetLine: number): number {
+  let line = 0
+  let index = 0
+  while (line < targetLine) {
+    const newline = value.indexOf("\n", index)
+    if (newline < 0) return value.length
+    index = newline + 1
+    line += 1
+  }
+  return index
 }
 
 function expandFunctionNode(node: SyntaxNode): SyntaxNode {
@@ -181,6 +228,56 @@ function collectAnchors(input: {
   visit(input.body)
 
   return [...anchors.values()].sort((left, right) => left.line - right.line)
+}
+
+function collectControlRegions(
+  body: SyntaxNode,
+  startLine: number,
+  endLine: number,
+  lines: string[],
+  anchors: CommentAnchor[],
+): CommentControlRegion[] {
+  const regions = new Map<number, { startLine: number; endLine: number }>()
+  const visit = (node: SyntaxNode) => {
+    if (CONTROL_TYPES.has(node.type)) {
+      const start = Math.max(startLine, node.startPosition.row)
+      const end = Math.min(endLine, endLineInclusive(node, endLine + 1))
+      const current = regions.get(start)
+      if (start <= end && (!current || end - start < current.endLine - current.startLine)) {
+        regions.set(start, { startLine: start, endLine: end })
+      }
+    }
+    for (const child of node.namedChildren) visit(child)
+  }
+  visit(body)
+  return [...regions.values()]
+    .sort((left, right) => left.startLine - right.startLine)
+    .map((region) => ({
+      id: `control-${region.startLine}-${region.endLine}`,
+      ...region,
+      existingCovered: leadingCommentLine(lines, region.startLine) >= 0,
+      anchor: anchors.find((anchor) => anchor.kind === "controlBlock" && anchor.line === region.startLine),
+    }))
+}
+
+function leadingCommentLine(lines: string[], line: number): number {
+  let current = line - 1
+  while (current >= 0 && !lines[current]?.trim()) current -= 1
+  const text = lines[current]?.trim() ?? ""
+  if (text.startsWith("//") || text.startsWith("/*")) return current
+  if (!text.endsWith("*/")) return -1
+  let opening = current - 1
+  while (opening >= 0 && !lines[opening]?.includes("/*")) opening -= 1
+  return lines[opening]?.trim().startsWith("/*") ? current : -1
+}
+
+export function minimumControlCoverage(lineCount: number, controls: number): number {
+  let minimum = 0
+  if (controls >= 3 && controls <= 4) minimum = 2
+  else if (controls >= 5 && controls <= 7) minimum = 3
+  else if (controls >= 8) minimum = Math.min(8, 4 + Math.floor((controls - 8) / 3))
+  if (lineCount >= 50 && controls >= 3) minimum = Math.max(minimum, 3)
+  return minimum
 }
 
 function addAnchor(
@@ -269,7 +366,45 @@ function findExistingFunctionHeader(
   }
   if (!style) return
   const text = lines.slice(startLine, endLine + 1).join(eol)
-  return { startLine, endLine, text, hash: sha256(text), style }
+  return { startLine, endLine, text, hash: sha256(text), style, tagContract: doxygenTagContract(text) }
+}
+
+export function doxygenTagContract(text: string): DoxygenTagContract[] {
+  return text
+    .split(/\r?\n/)
+    .map(commentContentLine)
+    .map((line) => tagContractLine(line))
+    .filter((tag): tag is DoxygenTagContract => tag !== undefined)
+}
+
+function commentContentLine(line: string): string {
+  return line
+    .trim()
+    .replace(/^\/\*+[!]?\s?/, "")
+    .replace(/^\/\/[/!]?\s?/, "")
+    .replace(/\s*\*\/\s*$/, "")
+    .replace(/^\*\s?/, "")
+    .trim()
+}
+
+function tagContractLine(line: string): DoxygenTagContract | undefined {
+  const match = line.match(/^@(\w+)\b(.*)$/u)
+  if (!match) return
+  const name = match[1]!.toLocaleLowerCase()
+  const rest = match[2] ?? ""
+  if (name === "param" || name === "tparam") {
+    const value = rest.match(/^\s*(?:\[([^\]]+)\])?\s*(\S+)?/u)
+    const direction = value?.[1]?.replace(/\s+/gu, "").toLocaleLowerCase() ?? ""
+    const parameter = value?.[2] ?? ""
+    return { name, identity: `${direction}:${parameter}` }
+  }
+  if (name === "retval" || name === "throws" || name === "exception") {
+    return { name, identity: rest.trim().split(/\s+/, 1)[0] ?? "" }
+  }
+  if (name === "brief" || name === "note" || name === "return" || name === "returns") {
+    return { name, identity: "" }
+  }
+  return { name, identity: "", rawLine: line }
 }
 
 function detectFunctionHeaderStyle(root: SyntaxNode, lines: string[]): FunctionHeaderStyle {

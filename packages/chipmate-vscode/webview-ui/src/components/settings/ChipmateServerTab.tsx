@@ -17,7 +17,7 @@ import {
 } from "../../../../src/shared/chipmate-server"
 import { sanitize, type ChipmateUpdateResult } from "../../../../src/shared/update-check"
 
-const UPDATE_AUTO_INSTALL_KEY = "updateCheck.autoInstall"
+const UPDATE_AUTO_DOWNLOAD_KEY = "updateCheck.autoDownload"
 
 type Phase = "idle" | "checking" | "installing"
 
@@ -128,7 +128,7 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
     setAction("install")
     setPhase("installing")
     setUpdateRequest(id)
-    vscode.postMessage({ type: "installChipmateUpdate", candidateId: item.candidateId, requestId: id })
+    vscode.postMessage({ type: "installAndReloadChipmateUpdate", candidateId: item.candidateId, requestId: id })
   }
 
   const retry = () => {
@@ -234,7 +234,7 @@ const UpdateCard: Component<{
   const vscode = useVSCode()
   const { settings, updateSetting } = useConfig()
   const [copied, setCopied] = createSignal(false)
-  const autoInstall = () => settings()[UPDATE_AUTO_INSTALL_KEY] !== false
+  const autoDownload = () => settings()[UPDATE_AUTO_DOWNLOAD_KEY] !== false
   const copy = (result: Extract<ChipmateUpdateResult, { status: "error" }>) => {
     const version = props.candidate()?.version
     const lines = [
@@ -283,8 +283,8 @@ const UpdateCard: Component<{
           <span>{language.t("settings.chipmateServer.autoUpdate.description")}</span>
         </div>
         <Switch
-          checked={autoInstall()}
-          onChange={(checked: boolean) => updateSetting(UPDATE_AUTO_INSTALL_KEY, checked)}
+          checked={autoDownload()}
+          onChange={(checked: boolean) => updateSetting(UPDATE_AUTO_DOWNLOAD_KEY, checked)}
           disabled={props.phase() === "installing"}
           hideLabel
         >
@@ -394,15 +394,11 @@ const UpdateCard: Component<{
           <UpdateStatus
             icon="check-all"
             kind="latest"
-            title={language.t("settings.chipmateServer.update.installed")}
-            detail={language.t("settings.chipmateServer.update.installedDetail", {
+            title={language.t("settings.chipmateServer.update.reloading")}
+            detail={language.t("settings.chipmateServer.update.reloadingDetail", {
               version: (props.update() as Extract<ChipmateUpdateResult, { status: "installed" }>).version,
             })}
           />
-          <Button variant="primary" onClick={() => vscode.postMessage({ type: "reloadChipmateWindow" })}>
-            <Codicon name="window" />
-            <span>{language.t("settings.chipmateServer.update.reload")}</span>
-          </Button>
         </div>
       </Show>
       <Show when={props.phase() === "idle" && props.update()?.status === "error"}>
@@ -501,6 +497,8 @@ function updateError(result: Extract<ChipmateUpdateResult, { status: "error" }>,
   if (result.code === "download" || result.code === "install") {
     return t("settings.chipmateServer.update.error.action")
   }
+  if (result.code === "receipt") return t("settings.chipmateServer.update.error.receipt")
+  if (result.code === "reload") return t("settings.chipmateServer.update.error.reload")
   if (result.code === "download-size" || result.code === "download-hash" || result.code === "sha256") {
     return t("settings.chipmateServer.update.error.package")
   }
@@ -512,6 +510,8 @@ function updateErrorTitle(
   t: LanguageContextValue["t"],
 ) {
   if (result.code === "install") return t("settings.chipmateServer.update.errorTitle.install")
+  if (result.code === "receipt") return t("settings.chipmateServer.update.errorTitle.receipt")
+  if (result.code === "reload") return t("settings.chipmateServer.update.errorTitle.reload")
   if (
     result.code === "download" ||
     result.code === "download-size" ||

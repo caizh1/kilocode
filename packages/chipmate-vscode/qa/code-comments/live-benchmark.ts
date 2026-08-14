@@ -40,8 +40,8 @@ type DirectRunnerInput = {
 }
 
 const mode = process.argv[2]
-if (mode !== "list" && mode !== "ab" && mode !== "review" && mode !== "acceptance") {
-  throw new Error("用法：bun qa/code-comments/live-benchmark.ts <list|ab|review|acceptance> [QEMU 路径]")
+if (mode !== "list" && mode !== "ab" && mode !== "review" && mode !== "smoke" && mode !== "acceptance") {
+  throw new Error("用法：bun qa/code-comments/live-benchmark.ts <list|ab|review|smoke|acceptance> [C/C++ 工作区路径]")
 }
 
 const workspace = path.resolve(process.argv[3] || "/Users/archer/Work/qemu")
@@ -104,7 +104,48 @@ fs.mkdirSync(output, { recursive: true })
 
 if (mode === "ab") await runAb()
 else if (mode === "review") await runReview()
+else if (mode === "smoke") await runSmoke()
 else await runAcceptance()
+
+async function runSmoke() {
+  const entries = manifest.filter((entry) => entry.group === "ab")
+  if (entries.length !== 5) throw new Error(`生产路径实测清单必须正好包含 5 个函数，当前为 ${entries.length}`)
+  const samples = []
+  const results: CommentGenerationResult[] = []
+  for (const entry of entries) {
+    console.log(`正在按生产路径生成 ${entry.id} ${entry.name}…`)
+    const target = await loadTarget(entry)
+    const result = await orchestrator.generate(
+      { targets: [target], model, strategy: PRODUCTION_COMMENT_STRATEGY },
+      token as never,
+    )
+    results.push(result)
+    samples.push({
+      编号: entry.id,
+      文件: entry.file,
+      函数: entry.name,
+      标签: entry.tags,
+      源码: target.functionSource,
+      复杂度: target.complexity,
+      结果: result,
+    })
+  }
+  assertSameModel(results)
+  fs.writeFileSync(
+    path.join(output, "生产路径五函数原始数据.json"),
+    JSON.stringify(
+      {
+        说明: "使用实际生产策略进行五函数只读实测；降级候选不计作完整质量通过。",
+        固定模型: `${model.providerID}/${model.modelID}`,
+        生产策略: PRODUCTION_COMMENT_STRATEGY,
+        样本: samples,
+      },
+      null,
+      2,
+    ),
+  )
+  writeSummary("生产路径五函数实测", entries.length)
+}
 
 async function runReview() {
   const entries = manifest.filter((entry) => entry.group === "ab")

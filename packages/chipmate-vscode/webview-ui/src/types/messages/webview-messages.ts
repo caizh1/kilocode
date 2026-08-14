@@ -489,14 +489,10 @@ export interface CheckChipmateUpdateMessage {
   requestId: string
 }
 
-export interface InstallChipmateUpdateMessage {
-  type: "installChipmateUpdate"
+export interface InstallAndReloadChipmateUpdateMessage {
+  type: "installAndReloadChipmateUpdate"
   candidateId: string
   requestId: string
-}
-
-export interface ReloadChipmateWindowMessage {
-  type: "reloadChipmateWindow"
 }
 
 export interface ShowChipmateUpdateLogMessage {
@@ -549,6 +545,11 @@ export interface RequestGlobalConfigMessage {
 
 export interface RequestIndexingStatusMessage {
   type: "requestIndexingStatus"
+}
+
+export interface CopyDocumentIndexingDiagnosticsMessage {
+  type: "copyDocumentIndexingDiagnostics"
+  runId: string
 }
 
 export interface SelectDocumentRagFolderMessage {
@@ -1511,8 +1512,7 @@ export type WebviewMessage =
   | RequestChipmateServerSettingsMessage
   | TestChipmateServerMessage
   | CheckChipmateUpdateMessage
-  | InstallChipmateUpdateMessage
-  | ReloadChipmateWindowMessage
+  | InstallAndReloadChipmateUpdateMessage
   | ShowChipmateUpdateLogMessage
   | RequestTimelineSettingMessage
   | RequestThroughputSettingMessage
@@ -1525,6 +1525,7 @@ export type WebviewMessage =
   | RequestConfigMessage
   | RequestGlobalConfigMessage
   | RequestIndexingStatusMessage
+  | CopyDocumentIndexingDiagnosticsMessage
   | SelectDocumentRagFolderMessage
   | RebuildDocumentRagMessage
   | MemoryDebugMessage

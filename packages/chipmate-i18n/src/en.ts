@@ -350,9 +350,9 @@ export const dict = {
   "settings.chipmateServer.address.placeholder": "chipmate-server.example.com:6001",
   "settings.chipmateServer.test.action": "Test connection",
   "settings.chipmateServer.test.testing": "Testing…",
-  "settings.chipmateServer.autoUpdate.title": "Automatically install updates",
+  "settings.chipmateServer.autoUpdate.title": "Automatically download updates",
   "settings.chipmateServer.autoUpdate.description":
-    "Automatically download and install compatible new versions in the background",
+    "Automatically download and verify compatible new versions; installation still requires confirmation",
   "settings.chipmateServer.update.title": "Plugin updates",
   "settings.chipmateServer.update.description":
     "Check for and install a ChipMate version compatible with the current platform.",
@@ -365,10 +365,10 @@ export const dict = {
   "settings.chipmateServer.update.available": "Version {{version}} is available",
   "settings.chipmateServer.update.versionTransition": "Current {{current}}  →  Latest {{latest}}",
   "settings.chipmateServer.update.installDetail":
-    "ChipMate will download, verify, and install the update. Reload the window when it finishes.",
-  "settings.chipmateServer.update.install": "Update now",
-  "settings.chipmateServer.update.installing": "Installing update",
-  "settings.chipmateServer.update.installingDetail": "Downloading, verifying, and installing the VSIX…",
+    "ChipMate will download if needed, verify, install, and fully reload the window in one action.",
+  "settings.chipmateServer.update.install": "Install and reload window",
+  "settings.chipmateServer.update.installing": "Installing and preparing to reload",
+  "settings.chipmateServer.update.installingDetail": "Verifying and installing the VSIX before a full window reload…",
   "settings.chipmateServer.update.notesShow": "View release notes",
   "settings.chipmateServer.update.notesHide": "Hide release notes",
   "settings.chipmateServer.update.notesTitle": "Version {{version}} release notes",
@@ -378,6 +378,9 @@ export const dict = {
   "settings.chipmateServer.update.currentPlatform": "For the current platform",
   "settings.chipmateServer.update.installed": "Update installed",
   "settings.chipmateServer.update.installedDetail": "Version {{version}} is ready. Reload the window to finish.",
+  "settings.chipmateServer.update.reloading": "Reloading window",
+  "settings.chipmateServer.update.reloadingDetail":
+    "Version {{version}} is installed and ChipMate is requesting a full window reload.",
   "settings.chipmateServer.update.reload": "Reload window",
   "settings.chipmateServer.update.failed": "Update failed",
   "settings.chipmateServer.update.retry": "Retry",
@@ -388,15 +391,22 @@ export const dict = {
   "settings.chipmateServer.update.errorTitle.check": "Update check failed",
   "settings.chipmateServer.update.errorTitle.download": "Update download failed",
   "settings.chipmateServer.update.errorTitle.install": "Update installation failed",
+  "settings.chipmateServer.update.errorTitle.receipt": "Activation preparation failed",
+  "settings.chipmateServer.update.errorTitle.reload": "Window reload failed",
   "settings.chipmateServer.update.errorTitle.validation": "Update verification failed",
   "settings.chipmateServer.update.error.server":
     "The update service could not be reached. Check the ChipMate Server address and try again.",
   "settings.chipmateServer.update.error.action": "The update could not be downloaded or installed. Try again.",
+  "settings.chipmateServer.update.error.receipt":
+    "The update is installed, but ChipMate could not record its activation receipt. Open the update log first.",
+  "settings.chipmateServer.update.error.reload":
+    "The update is installed, but VS Code canceled the full window reload. Try again.",
   "settings.chipmateServer.update.error.package":
     "The update package did not pass verification. Check for updates again.",
   "settings.chipmateServer.update.error.validation":
     "The update information is no longer valid. Check for updates again.",
-  "settings.chipmateServer.update.reloadHint": "Reload the VS Code window after installing an update.",
+  "settings.chipmateServer.update.reloadHint":
+    "After confirmation, ChipMate installs the update and requests a full VS Code window reload.",
   "settings.chipmateServer.reloadHint": "Reload the window after saving for all remote features to use the new server.",
   "settings.chipmateServer.status.invalid": "Enter a valid host and explicit port without an API path.",
   "settings.chipmateServer.status.savedInvalid":

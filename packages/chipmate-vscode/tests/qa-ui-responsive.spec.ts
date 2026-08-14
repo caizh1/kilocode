@@ -88,6 +88,39 @@ test("QA new session action stays available without showing a hover hint", async
   await expect(page.locator("html")).toHaveAttribute("data-new-task-requests", "1")
 })
 
+test("QA 忙碌态使用 Deep diving 兜底并保留具体恢复状态", async ({ page }) => {
+  const story = "labs-tool-call-lab--working-indicator-zh"
+
+  for (const width of [420, 200]) {
+    await load(page, story, width, "dark-modern", ".working-indicator")
+
+    const active = page.locator(".working-indicator")
+    await expect(active.locator(".working-text")).toHaveText("Deep diving...")
+    await expect(active.locator(".working-elapsed")).toHaveText(/^1分2[4-6]秒$/)
+
+    const bounds = await active.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const text = element.querySelector<HTMLElement>(".working-text")
+      return {
+        left: rect.left,
+        right: rect.right,
+        viewport: window.innerWidth,
+        textClientWidth: text?.clientWidth ?? 0,
+        textScrollWidth: text?.scrollWidth ?? 0,
+      }
+    })
+    expect(bounds.left).toBeGreaterThanOrEqual(0)
+    expect(bounds.right).toBeLessThanOrEqual(bounds.viewport)
+    expect(bounds.textScrollWidth).toBeLessThanOrEqual(bounds.textClientWidth)
+  }
+
+  await load(page, "labs-tool-call-lab--search-previews", 420, "dark-modern", ".working-indicator")
+  const retry = page.getByText("Retry countdown", { exact: true }).locator("..").locator(".working-text")
+  const offline = page.getByText("Offline recovery", { exact: true }).locator("..").locator(".working-text")
+  await expect(retry).toHaveText("Rate limited")
+  await expect(offline).toHaveText("Connection lost. Waiting to reconnect.")
+})
+
 test("QA 完成态时长与复制、赞、踩同列，并按最终 agent 着色", async ({ page }) => {
   const story = "chat--qa-completed-elapsed-modes-420"
   const duration = (agent: "code" | "ultra") =>

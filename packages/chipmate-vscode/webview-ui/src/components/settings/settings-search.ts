@@ -44,7 +44,7 @@ export const fields: readonly SettingSearchField[] = [
     "服务器地址",
   ]),
   field("chipmateServer", "settings.chipmateServer.autoUpdate.title", [
-    "updateCheck.autoInstall",
+    "updateCheck.autoDownload",
     "automatic updates",
     "自动更新",
   ]),

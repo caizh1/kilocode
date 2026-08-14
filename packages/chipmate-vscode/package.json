@@ -1079,10 +1079,16 @@
           "default": true,
           "description": "Enable ChipMate plugin update checks from the unified ChipMate Server."
         },
+        "chipmate.v2.updateCheck.autoDownload": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically download and verify compatible ChipMate plugin updates. Installing requires one explicit Install and Reload Window action."
+        },
         "chipmate.v2.updateCheck.autoInstall": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically download and install compatible ChipMate plugin updates. A window reload is still required to finish the update."
+          "description": "Deprecated. Use chipmate.v2.updateCheck.autoDownload.",
+          "deprecationMessage": "Use chipmate.v2.updateCheck.autoDownload. Updates are installed only when you choose Install and Reload Window."
         },
         "chipmate.v2.updateCheck.baseUrl": {
           "type": "string",
@@ -1619,6 +1625,7 @@
     "qa:code-comments:list": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts list",
     "qa:code-comments:ab": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts ab",
     "qa:code-comments:review": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts review",
+    "qa:code-comments:smoke": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts smoke",
     "qa:code-comments:acceptance": "bun --preload ./tests/setup/vscode-mock.ts qa/code-comments/live-benchmark.ts acceptance",
     "snapshot:build": "bun script/dev-snapshot.ts build",
     "snapshot:install": "bun script/dev-snapshot.ts install",

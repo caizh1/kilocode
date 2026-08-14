@@ -8,8 +8,9 @@ import * as yazl from "yazl"
 import { LAST_AUTO_KEY, UpdateCheckService, compareVersions, resolvePackageUrl } from "../../src/services/update-check"
 import { PENDING_ACTIVATION_KEY } from "../../src/services/update-check/activation"
 
-const INSTALL = "Install Update"
-const RELOAD = "Reload Window"
+const INSTALL_AND_RELOAD = "Install and Reload Window"
+const RETRY_RELOAD = "Retry Reload Window"
+const SHOW_LOG = "View Update Log"
 const RELEASE_NOTES = "View Release Notes"
 const TARGET = "win32-x64-baseline"
 const roots: string[] = []
@@ -19,11 +20,14 @@ type Config = Record<string, unknown>
 
 const api = vscode as unknown as {
   workspace: {
-    getConfiguration: (section?: string) => { get: <T>(key: string, fallback: T) => T }
+    getConfiguration: (section?: string) => {
+      get: <T>(key: string, fallback: T) => T
+      inspect: <T>(key: string) => { globalValue?: T } | undefined
+    }
     openTextDocument: (input: { content?: string; language?: string }) => Promise<unknown>
   }
   window: {
-    showWarningMessage: (message: string) => Promise<unknown>
+    showWarningMessage: (message: string, ...items: unknown[]) => Promise<unknown>
     showInformationMessage: (message: string, ...items: unknown[]) => Promise<unknown>
     showTextDocument: (document: unknown, options?: unknown) => Promise<unknown>
   }
@@ -133,9 +137,9 @@ describe("UpdateCheckService", () => {
     expect(await exists(env.final("0.0.17"))).toBe(false)
   })
 
-  it("automatically downloads, verifies, installs, and only asks the user to reload", async () => {
+  it("automatically prepares an update and installs only after one install-and-reload action", async () => {
     const body = await vsix()
-    const env = await setup({ info: [RELOAD] })
+    const env = await setup({ info: [INSTALL_AND_RELOAD] })
     env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length })))
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
     env.exec.mockResolvedValueOnce({ stdout: "", stderr: "" })
@@ -151,7 +155,12 @@ describe("UpdateCheckService", () => {
       ["--install-extension", env.final("0.0.17"), "--force"],
       { timeout: 300000, windowsHide: true },
     ])
-    expect(env.info).toEqual([{ message: "ChipMate update installed. Reload Window to finish.", items: [RELOAD] }])
+    expect(env.info).toEqual([
+      {
+        message: "ChipMate update 0.0.17 is available. Current version: 0.0.16.",
+        items: [INSTALL_AND_RELOAD],
+      },
+    ])
     expect(env.commands).toEqual(["workbench.action.reloadWindow"])
     expect(env.state.get(PENDING_ACTIVATION_KEY)).toMatchObject({
       expectedVersion: "0.0.17",
@@ -165,14 +174,50 @@ describe("UpdateCheckService", () => {
     expect(log).toContain("SHA-256 校验通过")
     expect(log).toContain("VSIX 身份校验通过")
     expect(log).toContain("安装器成功退出")
-    expect(log).toContain("等待用户重载窗口后激活")
+    expect(log).toContain("已下载并校验，等待用户确认安装并重载窗口")
+    expect(log).toContain("立即请求完整窗口重载")
     expect(log).not.toContain("VSCODE_IPC_HOOK_CLI")
   })
 
-  it("offers complete release notes after an automatic install and returns to the reload action", async () => {
+  it("keeps a prepared update cached when the user dismisses install-and-reload", async () => {
+    const body = await vsix()
+    const env = await setup()
+    env.fetch.mockResolvedValueOnce(json(manifest({ sha256: sha(body), sizeBytes: body.length })))
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+    await env.service.checkAuto()
+
+    expect(await exists(env.final("0.0.17"))).toBe(true)
+    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.commands).toEqual([])
+    expect(env.state.get(PENDING_ACTIVATION_KEY)).toBeUndefined()
+  })
+
+  it("does not download before confirmation when automatic download is disabled", async () => {
+    const env = await setup({ config: { autoDownload: false } })
+    env.fetch.mockResolvedValueOnce(json(manifest()))
+
+    await env.service.checkAuto()
+
+    expect(env.fetch).toHaveBeenCalledTimes(1)
+    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.commands).toEqual([])
+  })
+
+  it("inherits an explicitly disabled legacy auto-install setting", async () => {
+    const env = await setup({ config: { autoInstall: false } })
+    env.fetch.mockResolvedValueOnce(json(manifest()))
+
+    await env.service.checkAuto()
+
+    expect(env.fetch).toHaveBeenCalledTimes(1)
+    expect(env.exec).not.toHaveBeenCalled()
+  })
+
+  it("offers complete release notes after automatic preparation and returns to install-and-reload", async () => {
     const body = await vsix()
     const notes = "# ChipMate 0.0.17\n\n- 展示完整更新说明"
-    const env = await setup({ info: [RELEASE_NOTES, RELOAD] })
+    const env = await setup({ info: [RELEASE_NOTES, INSTALL_AND_RELOAD] })
     env.fetch.mockResolvedValueOnce(
       json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length, releaseNotes: notes })),
     )
@@ -184,21 +229,83 @@ describe("UpdateCheckService", () => {
     expect(env.shownDocuments).toHaveLength(1)
     expect(env.info).toEqual([
       {
-        message: "ChipMate update installed. Reload Window to finish. What's new: 展示完整更新说明",
-        items: [RELEASE_NOTES, RELOAD],
+        message: "ChipMate update 0.0.17 is available. Current version: 0.0.16. What's new: 展示完整更新说明",
+        items: [RELEASE_NOTES, INSTALL_AND_RELOAD],
       },
       {
-        message: "ChipMate update installed. Reload Window to finish. What's new: 展示完整更新说明",
-        items: [RELOAD],
+        message: "ChipMate update 0.0.17 is ready to install and reload the window.",
+        items: [INSTALL_AND_RELOAD],
       },
     ])
     expect(env.commands).toEqual(["workbench.action.reloadWindow"])
   })
 
-  it("shows release notes before an automatic offer when automatic installation is disabled", async () => {
+  it("classifies a canceled full reload separately and keeps the installed receipt", async () => {
+    const body = await vsix()
+    const env = await setup({ info: [INSTALL_AND_RELOAD], commandErrors: [new Error("Canceled")] })
+    env.fetch.mockResolvedValueOnce(json(manifest({ sha256: sha(body), sizeBytes: body.length })))
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+    await env.service.checkAuto()
+
+    expect(env.warnings).toEqual(["ChipMate 0.0.17 is installed, but VS Code canceled the full window reload."])
+    expect(env.logs.warn.join("\n")).toContain("VS Code 取消或拒绝完整窗口重载：Canceled")
+    expect(env.logs.warn.join("\n")).toContain("（reload）：VS Code canceled the full window reload: Canceled")
+    expect(env.state.get(PENDING_ACTIVATION_KEY)).toMatchObject({ expectedVersion: "0.0.17", reloadAttempts: 1 })
+    expect(env.commands).toEqual(["workbench.action.reloadWindow"])
+  })
+
+  it("retries a canceled full reload only after the explicit retry action", async () => {
+    const body = await vsix()
+    const env = await setup({
+      info: [INSTALL_AND_RELOAD],
+      warning: [RETRY_RELOAD],
+      commandErrors: [new Error("Canceled")],
+    })
+    env.fetch.mockResolvedValueOnce(json(manifest({ sha256: sha(body), sizeBytes: body.length })))
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+    await env.service.checkAuto()
+
+    expect(env.commands).toEqual(["workbench.action.reloadWindow", "workbench.action.reloadWindow"])
+    expect(env.state.get(PENDING_ACTIVATION_KEY)).toMatchObject({ expectedVersion: "0.0.17", reloadAttempts: 2 })
+  })
+
+  it("opens the update log from the canceled reload recovery action", async () => {
+    const body = await vsix()
+    const env = await setup({
+      info: [INSTALL_AND_RELOAD],
+      warning: [SHOW_LOG],
+      commandErrors: [new Error("Canceled")],
+    })
+    env.fetch.mockResolvedValueOnce(json(manifest({ sha256: sha(body), sizeBytes: body.length })))
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+    await env.service.checkAuto()
+
+    expect(env.logs.shown).toBe(1)
+  })
+
+  it("does not reload when the activation receipt cannot be persisted", async () => {
+    const body = await vsix()
+    const env = await setup({ info: [INSTALL_AND_RELOAD], receiptError: new Error("state is read-only") })
+    env.fetch.mockResolvedValueOnce(json(manifest({ sha256: sha(body), sizeBytes: body.length })))
+    env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+    await env.service.checkAuto()
+
+    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.commands).toEqual([])
+    expect(env.warnings).toEqual([
+      "ChipMate installed the update but could not record its activation receipt. Open the update log before reloading.",
+    ])
+    expect(env.logs.error.join("\n")).toContain("更新激活回执写入失败：state is read-only")
+  })
+
+  it("shows release notes before an automatic offer when automatic download is disabled", async () => {
     const body = await vsix()
     const notes = "# ChipMate 0.0.17\n\n- 检测新版后先查看更新说明"
-    const env = await setup({ config: { autoInstall: false }, info: [RELEASE_NOTES, INSTALL, RELOAD] })
+    const env = await setup({ config: { autoDownload: false }, info: [RELEASE_NOTES, INSTALL_AND_RELOAD] })
     env.fetch.mockResolvedValueOnce(
       json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length, releaseNotes: notes })),
     )
@@ -211,15 +318,15 @@ describe("UpdateCheckService", () => {
     expect(env.info[0]).toEqual({
       message:
         "ChipMate update 0.0.17 is available. Current version: 0.0.16. What's new: 检测新版后先查看更新说明",
-      items: [RELEASE_NOTES, INSTALL],
+      items: [RELEASE_NOTES, INSTALL_AND_RELOAD],
     })
     expect(env.exec).toHaveBeenCalledTimes(1)
     expect(env.commands).toEqual(["workbench.action.reloadWindow"])
   })
 
-  it("offers manual installation when automatic installation is disabled", async () => {
+  it("offers one manual install-and-reload action when automatic download is disabled", async () => {
     const body = await vsix()
-    const env = await setup({ config: { autoInstall: false }, info: [INSTALL] })
+    const env = await setup({ config: { autoDownload: false }, info: [INSTALL_AND_RELOAD] })
     env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length })))
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
     env.exec.mockResolvedValueOnce({ stdout: "", stderr: "" })
@@ -228,7 +335,7 @@ describe("UpdateCheckService", () => {
 
     expect(env.info[0]).toEqual({
       message: "ChipMate update 0.0.17 is available. Current version: 0.0.16.",
-      items: [INSTALL],
+      items: [INSTALL_AND_RELOAD],
     })
     expect(env.exec).toHaveBeenCalledTimes(1)
   })
@@ -236,7 +343,7 @@ describe("UpdateCheckService", () => {
   it("shows release notes before a command-triggered install and then continues the update", async () => {
     const body = await vsix()
     const notes = "# ChipMate 0.0.17\n\n- 安装前查看更新说明"
-    const env = await setup({ config: { autoInstall: false }, info: [RELEASE_NOTES, INSTALL, RELOAD] })
+    const env = await setup({ config: { autoDownload: false }, info: [RELEASE_NOTES, INSTALL_AND_RELOAD] })
     env.fetch.mockResolvedValueOnce(
       json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length, releaseNotes: notes })),
     )
@@ -249,12 +356,11 @@ describe("UpdateCheckService", () => {
     expect(env.info).toEqual([
       {
         message: "ChipMate update 0.0.17 is available. Current version: 0.0.16. What's new: 安装前查看更新说明",
-        items: [RELEASE_NOTES, INSTALL],
+        items: [RELEASE_NOTES, INSTALL_AND_RELOAD],
       },
-      { message: "ChipMate update 0.0.17 is ready to install.", items: [INSTALL] },
       {
-        message: "ChipMate update installed. Reload Window to finish. What's new: 安装前查看更新说明",
-        items: [RELEASE_NOTES, RELOAD],
+        message: "ChipMate update 0.0.17 is ready to install and reload the window.",
+        items: [INSTALL_AND_RELOAD],
       },
     ])
     expect(env.exec).toHaveBeenCalledTimes(1)
@@ -420,7 +526,7 @@ describe("UpdateCheckService", () => {
 
   it("coalesces concurrent explicit installs into one download and install", async () => {
     const body = await vsix()
-    const env = await setup({ config: { autoInstall: false } })
+    const env = await setup({ config: { autoDownload: false } })
     env.fetch.mockImplementation(async (input) => {
       const url = String(input)
       if (url.endsWith("manifest.json")) {
@@ -488,7 +594,7 @@ describe("UpdateCheckService", () => {
     expect(await exists(env.final("0.0.21"))).toBe(true)
   })
 
-  it("revalidates a retained VSIX before retrying installation", async () => {
+  it("revalidates and replaces a modified cached VSIX before retrying installation", async () => {
     const body = await vsix({ version: "0.0.25" })
     const env = await setup()
     env.fetch.mockImplementation(async (input) => {
@@ -506,12 +612,9 @@ describe("UpdateCheckService", () => {
     expect(await env.service.installManual(available.candidateId)).toMatchObject({ status: "error", code: "install" })
     await fs.writeFile(env.final("0.0.25"), "已被修改")
 
-    expect(await env.service.installManual(available.candidateId)).toMatchObject({
-      status: "error",
-      code: "download-size",
-    })
-    expect(env.exec).toHaveBeenCalledTimes(1)
-    expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
+    expect(await env.service.installManual(available.candidateId)).toMatchObject({ status: "installed", version: "0.0.25" })
+    expect(env.exec).toHaveBeenCalledTimes(2)
+    expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(2)
   })
 
   it("keeps a manual probe two-step even when automatic installation is enabled", async () => {
@@ -573,10 +676,20 @@ describe("update-check version comparison", () => {
   })
 })
 
-async function setup(opts: { config?: Config; info?: unknown[]; target?: string; now?: () => number } = {}) {
+async function setup(
+  opts: {
+    config?: Config
+    info?: unknown[]
+    warning?: unknown[]
+    commandErrors?: Error[]
+    receiptError?: Error
+    target?: string
+    now?: () => number
+  } = {},
+) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "chipmate-update-check-"))
   roots.push(root)
-  const state = memento()
+  const state = memento(opts.receiptError)
   const warnings: string[] = []
   const info: Array<{ message: string; items: unknown[] }> = []
   const documents: Array<{ content?: string; language?: string }> = []
@@ -601,6 +714,8 @@ async function setup(opts: { config?: Config; info?: unknown[]; target?: string;
 
   api.workspace.getConfiguration = () => ({
     get: <T>(key: string, fallback: T) => (key in (opts.config ?? {}) ? (opts.config?.[key] as T) : fallback),
+    inspect: <T>(key: string) =>
+      key in (opts.config ?? {}) ? { globalValue: opts.config?.[key] as T } : { defaultValue: undefined },
   })
   api.workspace.openTextDocument = async (input) => {
     documents.push(input)
@@ -608,7 +723,7 @@ async function setup(opts: { config?: Config; info?: unknown[]; target?: string;
   }
   api.window.showWarningMessage = async (message) => {
     warnings.push(message)
-    return undefined
+    return opts.warning?.shift()
   }
   api.window.showInformationMessage = async (message, ...items) => {
     info.push({ message, items })
@@ -620,6 +735,8 @@ async function setup(opts: { config?: Config; info?: unknown[]; target?: string;
   }
   api.commands.executeCommand = async (command) => {
     commands.push(command)
+    const error = opts.commandErrors?.shift()
+    if (error) throw error
     return undefined
   }
 
@@ -699,11 +816,12 @@ function vsix(patch: Record<string, unknown> = {}): Promise<Buffer> {
   })
 }
 
-function memento() {
+function memento(receiptError?: Error) {
   const values = new Map<string, unknown>()
   return {
     get: <T>(key: string, fallback?: T) => (values.has(key) ? (values.get(key) as T) : fallback),
     update: async (key: string, value: unknown) => {
+      if (key === PENDING_ACTIVATION_KEY && receiptError) throw receiptError
       values.set(key, value)
     },
   } as unknown as vscode.Memento

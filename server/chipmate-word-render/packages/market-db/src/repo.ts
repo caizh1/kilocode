@@ -360,8 +360,8 @@ export class MarketRepo {
 
   version() {
     const rows = this.db
-      .prepare("SELECT id,latest_revision,updated_at FROM skills WHERE status='published' ORDER BY id")
-      .all() as unknown as Array<{ id: string; latest_revision: number; updated_at: string }>
+      .prepare("SELECT id,latest_revision,download_count,updated_at FROM skills WHERE status='published' ORDER BY id")
+      .all() as unknown as Array<{ id: string; latest_revision: number; download_count: number; updated_at: string }>
     return sha(Buffer.from(JSON.stringify(rows)))
   }
 
@@ -432,6 +432,15 @@ export class MarketRepo {
     if (!file.previewable || file.size > 1024 * 1024) return { file }
     if (file.type === "image") return { file, dataUrl: `data:${file.mime};base64,${entry.data.toString("base64")}` }
     return { file, text: entry.data.toString("utf8") }
+  }
+
+  skillDownload(id: string): number | undefined {
+    const result = this.db
+      .prepare(
+        "UPDATE skills SET download_count=download_count+1 WHERE id=? AND status='published' RETURNING download_count",
+      )
+      .get(id) as unknown as { download_count: number } | undefined
+    return result ? Number(result.download_count) : undefined
   }
 
   identity(input: IdentityInput): MarketUserItem {

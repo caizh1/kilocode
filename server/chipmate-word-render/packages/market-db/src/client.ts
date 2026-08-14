@@ -122,6 +122,11 @@ export class MarketDb {
     return this.call<FilePreview | undefined>("file", { id, path, ...(revision ? { revision } : {}) })
   }
 
+  skillDownload(id: string) {
+    this.catalog = undefined
+    return this.call<number | undefined>("skillDownload", id)
+  }
+
   identity(input: IdentityInput) {
     return this.call<MarketUserItem>("identity", input)
   }

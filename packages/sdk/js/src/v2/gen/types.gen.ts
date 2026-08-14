@@ -576,12 +576,36 @@ export type DesignDocJobProgress = {
 
 export type IndexingStatusState = "Disabled" | "In Progress" | "Complete" | "Error" | "Standby"
 
+export type DocumentIssueSummary = {
+  category:
+    | "extractor-runtime"
+    | "pdf-password"
+    | "pdf-invalid"
+    | "office-corrupt"
+    | "file-unavailable"
+    | "extraction-safety-limit"
+    | "extraction-unknown"
+  count: number
+  samples: Array<{
+    file?: string
+    message: string
+  }>
+}
+
 export type IndexingDiagnostic = {
   time: string
   source: string
   location: string
   message: string
   file?: string
+  category?:
+    | "extractor-runtime"
+    | "pdf-password"
+    | "pdf-invalid"
+    | "office-corrupt"
+    | "file-unavailable"
+    | "extraction-safety-limit"
+    | "extraction-unknown"
 }
 
 export type IndexingNotice = {
@@ -610,6 +634,8 @@ export type IndexingStatus = {
       staleCount: number
       skippedCount: number
       validFileCount?: number
+      issueSummary?: Array<DocumentIssueSummary>
+      diagnosticRunId?: string
       recentErrors?: Array<IndexingDiagnostic>
     }
     rag: {
@@ -624,6 +650,8 @@ export type IndexingStatus = {
       staleCount: number
       skippedCount: number
       validFileCount?: number
+      issueSummary?: Array<DocumentIssueSummary>
+      diagnosticRunId?: string
       recentErrors?: Array<IndexingDiagnostic>
     }
     documents: {
@@ -638,6 +666,8 @@ export type IndexingStatus = {
       staleCount: number
       skippedCount: number
       validFileCount?: number
+      issueSummary?: Array<DocumentIssueSummary>
+      diagnosticRunId?: string
       recentErrors?: Array<IndexingDiagnostic>
     }
   }
@@ -4662,6 +4692,14 @@ export type DesignDocArtifactContent = {
 
 export type DesignDocRetryWorkItemInput = {
   model?: DesignDocModelReference
+}
+
+export type DocumentDiagnosticReport = {
+  runId: string
+  startedAt: string
+  completedAt?: string
+  issueSummary: Array<DocumentIssueSummary>
+  diagnostics: Array<IndexingDiagnostic>
 }
 
 export type ChipMateEmbeddingModelCatalog = {
@@ -16585,6 +16623,42 @@ export type IndexingWarningsResponses = {
 }
 
 export type IndexingWarningsResponse = IndexingWarningsResponses[keyof IndexingWarningsResponses]
+
+export type IndexingDocumentsDiagnosticsData = {
+  body?: never
+  path: {
+    runId: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/indexing/documents/diagnostics/{runId}"
+}
+
+export type IndexingDocumentsDiagnosticsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type IndexingDocumentsDiagnosticsError =
+  IndexingDocumentsDiagnosticsErrors[keyof IndexingDocumentsDiagnosticsErrors]
+
+export type IndexingDocumentsDiagnosticsResponses = {
+  /**
+   * Document indexing diagnostics
+   */
+  200: DocumentDiagnosticReport
+}
+
+export type IndexingDocumentsDiagnosticsResponse =
+  IndexingDocumentsDiagnosticsResponses[keyof IndexingDocumentsDiagnosticsResponses]
 
 export type IndexingModelsData = {
   body?: never

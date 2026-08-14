@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { get } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -482,9 +483,69 @@ test("install intents are same-user, one-time, expiring, revision-pinned downloa
     })
     assert.equal(consumed.statusCode, 200)
     assert.equal(consumed.json().revision, 1)
+    const skillBefore = await data.db.get("source-backed-detail-design")
+    assert.ok(skillBefore)
+    const detailBefore = await app.inject({
+      method: "GET",
+      url: "/api/v1/skills/source-backed-detail-design",
+    })
+    const detailEtag = detailBefore.headers.etag
+    assert.ok(detailEtag)
+    assert.equal((await data.db.get("source-backed-detail-design"))?.downloads, skillBefore.downloads)
+
+    const head = await app.inject({ method: "HEAD", url: consumed.json().downloadUrl })
+    assert.equal(head.statusCode, 200)
+    assert.equal(head.headers["accept-ranges"], "none")
+    const range = await app.inject({
+      method: "GET",
+      url: consumed.json().downloadUrl,
+      headers: { range: "bytes=0-15" },
+    })
+    assert.equal(range.statusCode, 416)
+    assert.equal(range.headers["accept-ranges"], "none")
+    assert.equal((await data.db.get("source-backed-detail-design"))?.downloads, skillBefore.downloads)
+
     const archive = await app.inject({ method: "GET", url: consumed.json().downloadUrl })
     assert.equal(archive.statusCode, 200)
     assert.equal(archive.headers["x-content-sha256"], consumed.json().sha256)
+    assert.equal(archive.headers["content-disposition"], 'attachment; filename="source-backed-detail-design-r1.tar.gz"')
+    assert.equal(archive.headers["cache-control"], "no-store")
+    assert.equal(archive.headers["accept-ranges"], "none")
+    assert.equal(Number(archive.headers["content-length"]), archive.rawPayload.length)
+    await waitForDownloads(data.db, "source-backed-detail-design", skillBefore.downloads + 1)
+
+    const installed = await app.inject({
+      method: "PUT",
+      url: "/api/v1/installations/source-backed-detail-design",
+      headers: { authorization: "Bearer alice" },
+      payload: {
+        skillId: "source-backed-detail-design",
+        revision: 1,
+        sha256: consumed.json().sha256,
+        scope: "global",
+        status: "installed",
+        clientId: "client-install-test-0001",
+      },
+    })
+    assert.equal(installed.statusCode, 200)
+    assert.equal((await data.db.get("source-backed-detail-design"))?.downloads, skillBefore.downloads + 1)
+
+    const refreshed = await app.inject({
+      method: "GET",
+      url: "/api/v1/skills/source-backed-detail-design",
+      headers: { "if-none-match": detailEtag },
+    })
+    assert.equal(refreshed.statusCode, 200)
+    assert.notEqual(refreshed.headers.etag, detailEtag)
+    assert.equal(refreshed.json().downloads, skillBefore.downloads + 1)
+    assert.equal((await data.db.get("source-backed-detail-design"))?.updatedAt, skillBefore.updatedAt)
+
+    const concurrent = await Promise.all([
+      app.inject({ method: "GET", url: consumed.json().downloadUrl }),
+      app.inject({ method: "GET", url: consumed.json().downloadUrl }),
+    ])
+    assert.ok(concurrent.every((response) => response.statusCode === 200))
+    await waitForDownloads(data.db, "source-backed-detail-design", skillBefore.downloads + 3)
 
     const replay = await app.inject({
       method: "POST",
@@ -508,6 +569,43 @@ test("install intents are same-user, one-time, expiring, revision-pinned downloa
     })
     assert.equal(expired.statusCode, 410)
     assert.equal(expired.json().code, "INTENT_EXPIRED")
+  } finally {
+    await app.close()
+    await data.db.close()
+    await rm(data.dir, { recursive: true, force: true })
+  }
+})
+
+test("an interrupted archive response does not increase downloads", async () => {
+  const data = await fixture()
+  const app = build(data.db)
+  try {
+    const skill = await data.db.get("source-backed-detail-design")
+    const release = await data.db.release("source-backed-detail-design", 1)
+    assert.ok(skill)
+    assert.ok(release)
+    const size = 32 * 1024 * 1024
+    await writeFile(release.archivePath, Buffer.alloc(size, 0x61))
+    const sqlite = new DatabaseSync(join(data.dir, "db", "market.sqlite"))
+    sqlite.exec("DROP TRIGGER releases_immutable_update")
+    sqlite.prepare("UPDATE releases SET size_bytes=? WHERE skill_id=? AND revision=1").run(size, skill.id)
+    sqlite.close()
+    await app.listen({ host: "127.0.0.1", port: 0 })
+    const address = app.server.address()
+    assert.ok(address && typeof address === "object")
+
+    await new Promise<void>((resolve, reject) => {
+      const request = get(
+        `http://127.0.0.1:${address.port}/api/v1/skills/source-backed-detail-design/releases/1/archive`,
+        (response) => {
+          response.once("data", () => response.destroy())
+          response.once("close", resolve)
+        },
+      )
+      request.once("error", reject)
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal((await data.db.get(skill.id))?.downloads, skill.downloads)
   } finally {
     await app.close()
     await data.db.close()
@@ -559,6 +657,65 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     assert.equal(created.json().report.risk.level, "none")
     assert.ok(created.json().patches.some((patch: { kind: string }) => patch.kind === "deterministic"))
 
+    const umlSource = await rootPublicationArchive(
+      data.dir,
+      "uml",
+      "---\nname: uml\ndescription: Generate UML diagrams from source evidence.\n---\n\n# UML\n\nGenerate a sequence diagram after tracing the real call path.\n",
+      { "examples/sequence.puml": "@startuml\nAlice -> Bob: request\n@enduml\n" },
+    )
+    const uml = await app.inject({
+      method: "POST",
+      url: "/api/v1/publications",
+      headers: { ...headers, "idempotency-key": "publication-key-uml" },
+      payload: umlSource,
+    })
+    assert.equal(uml.statusCode, 200, uml.body)
+    assert.equal(uml.json().status, "PUBLISHED")
+    assert.equal(uml.json().skillId, "uml")
+    const umlDownload = await app.inject({
+      method: "GET",
+      url: "/api/v1/skills/uml/releases/1/archive",
+    })
+    assert.equal(umlDownload.statusCode, 200)
+    const umlArchive = join(data.dir, "uml-r1.tar.gz")
+    await writeFile(umlArchive, umlDownload.rawPayload)
+    const umlListing = execFileSync("tar", ["-tzf", umlArchive], { encoding: "utf8" }).trim().split("\n")
+    assert.ok(umlListing.length > 0)
+    assert.ok(umlListing.every((path) => path.startsWith("uml/")))
+    assert.ok(umlListing.includes("uml/examples/sequence.puml"))
+    assert.match(execFileSync("tar", ["-xOzf", umlArchive, "uml/SKILL.md"], { encoding: "utf8" }), /name: uml/)
+    assert.equal(JSON.parse(execFileSync("tar", ["-xOzf", umlArchive, "uml/skill.json"], { encoding: "utf8" })).id, "uml")
+
+    const conflicting = await app.inject({
+      method: "POST",
+      url: "/api/v1/publications",
+      headers: { ...headers, "idempotency-key": "publication-key-conflicting" },
+      payload: await publicationArchive(
+        data.dir,
+        "uml-conflict",
+        "---\nname: uml\ndescription: Conflicting explicit identity.\n---\n\n# UML\n\nGenerate diagrams from verified source evidence.\n",
+        { "skill.json": `${JSON.stringify({ id: "examples" })}\n` },
+      ),
+    })
+    assert.equal(conflicting.statusCode, 200)
+    assert.equal(conflicting.json().status, "NEEDS_AUTHOR_FIX")
+    assert.ok(conflicting.json().report.issues.some((issue: { code: string }) => issue.code === "identity-mismatch"))
+
+    const ambiguous = await app.inject({
+      method: "POST",
+      url: "/api/v1/publications",
+      headers: { ...headers, "idempotency-key": "publication-key-ambiguous" },
+      payload: await rootPublicationArchive(
+        data.dir,
+        "ambiguous",
+        "---\ndescription: Missing canonical identity.\n---\n\n# Instructions\n\nGenerate diagrams from verified source evidence.\n",
+        { "examples/sequence.puml": "@startuml\n@enduml\n" },
+      ),
+    })
+    assert.equal(ambiguous.statusCode, 200)
+    assert.equal(ambiguous.json().status, "NEEDS_AUTHOR_FIX")
+    assert.ok(ambiguous.json().report.issues.some((issue: { code: string }) => issue.code === "identity-missing"))
+
     const retried = await app.inject({ method: "POST", url: "/api/v1/publications", headers, payload: archive })
     assert.equal(retried.json().id, created.json().id)
     const unchanged = await app.inject({
@@ -600,7 +757,7 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     const unsafeArchive = await publicationArchive(
       data.dir,
       "unsafe-skill",
-      "---\nname: Unsafe\ndescription: Unsafe\n---\n<script>alert(1)</script>\n",
+      "---\nname: Unsafe Skill\ndescription: Unsafe\n---\n<script>alert(1)</script>\n",
     )
     const unsafe = await app.inject({
       method: "POST",
@@ -616,7 +773,7 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     const riskyArchive = await publicationArchive(
       data.dir,
       "risky-skill",
-      "---\nname: Risky\ndescription: Publishable warnings\n---\n\n# Risky\n\nUse this Skill only after reviewing its scripts.\n",
+      "---\nname: Risky Skill\ndescription: Publishable warnings\n---\n\n# Risky\n\nUse this Skill only after reviewing its scripts.\n",
       {
         "README.md": "password=abcdefghijklmnop\n",
         "scripts/connect.sh": "-----BEGIN OPENSSH PRIVATE KEY-----\nexample\n",
@@ -852,4 +1009,28 @@ async function publicationArchive(root: string, id: string, markdown: string, fi
   }
   execFileSync("tar", ["-czf", archive, "-C", source, id], { env: { ...process.env, COPYFILE_DISABLE: "1" } })
   return readFile(archive)
+}
+
+async function rootPublicationArchive(root: string, id: string, markdown: string, files: Record<string, string> = {}) {
+  const source = join(root, `publication-root-${id}`)
+  const archive = join(source, `${id}.tar.gz`)
+  await mkdir(source, { recursive: true })
+  for (const [path, content] of Object.entries(files)) {
+    const target = join(source, path)
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, content)
+  }
+  await writeFile(join(source, "SKILL.md"), markdown)
+  execFileSync("tar", ["-czf", archive, "-C", source, ...Object.keys(files), "SKILL.md"], {
+    env: { ...process.env, COPYFILE_DISABLE: "1" },
+  })
+  return readFile(archive)
+}
+
+async function waitForDownloads(db: MarketDb, id: string, expected: number) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if ((await db.get(id))?.downloads === expected) return
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  assert.equal((await db.get(id))?.downloads, expected)
 }

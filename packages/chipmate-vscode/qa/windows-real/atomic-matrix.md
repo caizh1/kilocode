@@ -85,7 +85,7 @@
 | `REG-DEFAULT-DOCUMENT-RAG-DISCOVERY-03` | `default-document-rag-discovery` | `WIN-INDEXING-LIFECYCLE` | 自动发现文档不超过数量和大小预算 | ⬜ 未实现 | ⬜ 未实现 | ⬜ 未实现 |
 | `REG-DOCUMENT-RAG-V1-01` | `document-rag-v1` | `WIN-RETRIEVAL-EVIDENCE` | Document RAG 索引固定文档夹具 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-DOCUMENT-RAG-V1-02` | `document-rag-v1` | `WIN-RETRIEVAL-EVIDENCE` | document_search 召回固定证据与行号 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
-| `REG-DOCUMENT-RAG-V1-03` | `document-rag-v1` | `WIN-RETRIEVAL-EVIDENCE` | Windows 离线包实际加载 pdftotext.exe | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
+| `REG-DOCUMENT-RAG-V1-03` | `document-rag-v1` | `WIN-RETRIEVAL-EVIDENCE` | Windows 离线包在中文及空格路径真实加载 x64 pdftotext.exe | ⬜ 待执行 | ✅ 构建门禁已实现 | ✅ Windows 必验项 |
 | `REG-EXPOSE-INTERNAL-RETRIEVAL-TOOLS-01` | `expose-internal-retrieval-tools` | `WIN-RETRIEVAL-EVIDENCE` | 启用索引后立即暴露 codebase_analysis | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-EXPOSE-INTERNAL-RETRIEVAL-TOOLS-02` | `expose-internal-retrieval-tools` | `WIN-RETRIEVAL-EVIDENCE` | 启用索引后立即暴露 semantic_search | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-EXPOSE-INTERNAL-RETRIEVAL-TOOLS-03` | `expose-internal-retrieval-tools` | `WIN-RETRIEVAL-EVIDENCE` | 启用文档索引后立即暴露 document_search | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
@@ -270,7 +270,7 @@
 | `REG-RENDER-SERVICE-VSIX-AUTO-UPDATE-02` | `render-service-vsix-auto-update` | `WIN-UPDATE` | VSIX 下载后校验 SHA-256 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-RENDER-SERVICE-VSIX-AUTO-UPDATE-03` | `render-service-vsix-auto-update` | `WIN-UPDATE` | 不兼容 target 不安装 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-RENDER-SERVICE-VSIX-AUTO-UPDATE-04` | `render-service-vsix-auto-update` | `WIN-UPDATE` | 校验失败不安装 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
-| `REG-RENDER-SERVICE-VSIX-AUTO-UPDATE-05` | `render-service-vsix-auto-update` | `WIN-UPDATE` | 安装完成后提示 Reload | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
+| `REG-RENDER-SERVICE-VSIX-AUTO-UPDATE-05` | `render-service-vsix-auto-update` | `WIN-UPDATE` | 下载校验后仅通过安装并重载动作完成更新 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-REPAIR-TARGETED-DSML-CALLS-01` | `repair-targeted-dsml-calls` | `WIN-QA-SESSION` | 仅目标 Provider 和模型启用 DSML 修复 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-REPAIR-TARGETED-DSML-CALLS-02` | `repair-targeted-dsml-calls` | `WIN-QA-SESSION` | 泄漏 tool call 只重试一次 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |
 | `REG-REPAIR-TARGETED-DSML-CALLS-03` | `repair-targeted-dsml-calls` | `WIN-QA-SESSION` | 截断 tool call 只重试一次 | ⬜ 未实现 | ⬜ 未实现 | 🚫 非 Windows 冒烟范围 |

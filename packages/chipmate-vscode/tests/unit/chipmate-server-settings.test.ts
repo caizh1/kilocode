@@ -28,9 +28,9 @@ describe("ChipMate Server settings flow", () => {
     expect(isCurrentChipmateServerTest(undefined, "latest")).toBeFalse()
   })
 
-  it("keeps manual update checks and installation as separate request-correlated actions", () => {
+  it("keeps manual update checks and install-and-reload as separate request-correlated actions", () => {
     expect(server).toContain('type: "checkChipmateUpdate"')
-    expect(server).toContain('type: "installChipmateUpdate"')
+    expect(server).toContain('type: "installAndReloadChipmateUpdate"')
     expect(server).toContain('message.requestId !== updateRequest()')
     expect(server).toContain('data-ui="chipmate-update-notes"')
     expect(server).toContain('aria-live="assertive"')
@@ -42,7 +42,9 @@ describe("ChipMate Server settings flow", () => {
     expect(provider).toContain('message.type === "showChipmateUpdateLog"')
     expect(provider).toContain("getUpdateCheckService()?.showLog()")
     expect(provider).toContain("service.probeManual()")
-    expect(provider).toContain('message.type !== "checkChipmateUpdate" && message.type !== "installChipmateUpdate"')
+    expect(provider).toContain(
+      'message.type !== "checkChipmateUpdate" && message.type !== "installAndReloadChipmateUpdate"',
+    )
     expect(provider).toContain("service.installManual(message.candidateId)")
   })
 })

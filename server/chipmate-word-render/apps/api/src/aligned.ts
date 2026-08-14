@@ -540,12 +540,27 @@ export function registerAligned(app: FastifyInstance, db: MarketDb, opts: Aligne
   })
 
   app.get("/api/v1/skills/:id/releases/:revision/archive", async (req, reply) => {
+    if (req.headers.range) return reply.header("accept-ranges", "none").code(416).send()
     const params = req.params as Params
     const release = await db.release(params.id, positive(params.revision))
     if (!release) return missing(reply, "Skill release not found.")
+    if (req.method === "GET") {
+      reply.raw.once("finish", () => {
+        void db
+          .skillDownload(release.skillId)
+          .then(async (downloads) => {
+            if (downloads === undefined) return
+            publish("catalog.invalidated", { catalogVersion: await db.version() })
+          })
+          .catch((err) => app.log.error({ err, skillId: release.skillId }, "skill download count failed"))
+      })
+    }
     return reply
       .header("content-type", "application/gzip")
-      .header("cache-control", "private, max-age=31536000, immutable")
+      .header("content-length", release.size)
+      .header("content-disposition", `attachment; filename="${release.skillId}-r${release.revision}.tar.gz"`)
+      .header("cache-control", "no-store")
+      .header("accept-ranges", "none")
       .header("x-content-sha256", release.sha256)
       .send(createReadStream(release.archivePath))
   })

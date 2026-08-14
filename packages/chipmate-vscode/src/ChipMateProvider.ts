@@ -107,7 +107,8 @@ import { retryable, backoff, MAX_RETRIES } from "./util/retry"
 import { hasGit } from "./chipmate-provider/git-status"
 import * as MemoryDebug from "./services/memory-debug"
 import { promptChipmateServerReload, resolveChipmateServer, testChipmateServer } from "./services/chipmate-server"
-import { getUpdateCheckService } from "./services/update-check"
+import { getUpdateCheckService, updateAutoDownload } from "./services/update-check"
+import { formatDocumentDiagnosticReport } from "./chipmate-provider/document-diagnostics"
 import { CHIPMATE_SERVER_KEY, normalizeChipmateServerBaseUrl } from "./shared/chipmate-server"
 import {
   LocalSkillRemoval,
@@ -181,7 +182,7 @@ import { buildThroughputSettingMessage, watchThroughputConfig } from "./chipmate
 
 let maxCost = 0
 
-const UPDATE_AUTO_INSTALL_KEY = "updateCheck.autoInstall"
+const UPDATE_AUTO_DOWNLOAD_KEY = "updateCheck.autoDownload"
 
 type MessageLoadMode = "replace" | "prepend" | "focus" | "reconcile"
 type ContextMessage = { contextDirectory?: unknown }
@@ -1571,15 +1572,11 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     requestId?: unknown
     candidateId?: unknown
   }): Promise<void> {
-    if (message.type === "reloadChipmateWindow") {
-      await vscode.commands.executeCommand("workbench.action.reloadWindow")
-      return
-    }
     if (message.type === "showChipmateUpdateLog") {
       getUpdateCheckService()?.showLog()
       return
     }
-    if (message.type !== "checkChipmateUpdate" && message.type !== "installChipmateUpdate") return
+    if (message.type !== "checkChipmateUpdate" && message.type !== "installAndReloadChipmateUpdate") return
     if (typeof message.requestId !== "string") return
     const service = getUpdateCheckService()
     const unavailable = {
@@ -2692,12 +2689,21 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     type: string
     tab?: string
     scope?: "global" | "project"
+    runId?: string
   }): Promise<boolean> {
     switch (message.type) {
       case "requestIndexingStatus":
         void this.fetchAndSendIndexingStatus().catch((err) =>
           console.error("[ChipMate New] fetchAndSendIndexingStatus failed:", err),
         )
+        return true
+      case "copyDocumentIndexingDiagnostics":
+        if (typeof message.runId === "string") {
+          void this.copyDocumentIndexingDiagnostics(message.runId).catch((err) => {
+            console.error("[ChipMate New] copyDocumentIndexingDiagnostics failed:", err)
+            void vscode.window.showErrorMessage(`复制 Document RAG 完整诊断失败：${getErrorMessage(err)}`)
+          })
+        }
         return true
       case "selectDocumentRagFolder":
         void this.selectDocumentRagFolder(message.scope ?? "project").catch((err) =>
@@ -2731,6 +2737,21 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       default:
         return false
     }
+  }
+
+  private async copyDocumentIndexingDiagnostics(runId: string): Promise<void> {
+    const dir = this.getIndexingDirectory()
+    const client = this.client
+    if (!dir || !client || !/^[A-Za-z0-9_-]{1,128}$/.test(runId)) {
+      throw new Error("Document RAG 诊断上下文不可用。")
+    }
+    const { data: report } = await client.indexing.documents.diagnostics(
+      { runId, directory: dir },
+      { throwOnError: true },
+    )
+    if (!report) throw new Error("Document indexing diagnostic report is unavailable.")
+    await vscode.env.clipboard.writeText(formatDocumentDiagnosticReport(report))
+    void vscode.window.showInformationMessage("Document RAG 完整诊断已复制。")
   }
 
   private fetchAndSendIndexingStatus(): Promise<void> {
@@ -4144,11 +4165,11 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         if (requestId) this.postMessage({ type: "settingUpdated", key, value: normalized, requestId })
         return
       }
-      if (key === UPDATE_AUTO_INSTALL_KEY) {
-        if (typeof value !== "boolean") throw new Error("Invalid update auto-install setting.")
+      if (key === UPDATE_AUTO_DOWNLOAD_KEY) {
+        if (typeof value !== "boolean") throw new Error("Invalid update auto-download setting.")
         await vscode.workspace
           .getConfiguration("chipmate.v2.updateCheck")
-          .update("autoInstall", value, vscode.ConfigurationTarget.Global)
+          .update("autoDownload", value, vscode.ConfigurationTarget.Global)
         if (requestId) this.postMessage({ type: "settingUpdated", key, value, requestId })
         return
       }
@@ -4226,8 +4247,8 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
 
   private async sendChipmateServerSettings(): Promise<void> {
     const state = resolveChipmateServer()
-    const autoInstall = vscode.workspace.getConfiguration("chipmate.v2.updateCheck").get<boolean>("autoInstall", true)
-    this.postMessage({ type: "chipmateServerSettingsLoaded", state, autoInstall })
+    const autoDownload = updateAutoDownload(vscode.workspace.getConfiguration("chipmate.v2.updateCheck"))
+    this.postMessage({ type: "chipmateServerSettingsLoaded", state, autoDownload })
   }
 
   /**

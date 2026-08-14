@@ -4,6 +4,7 @@ import { createInterface } from "node:readline"
 import { fileURLToPath } from "node:url"
 import type {
   CodeGraphSidecarStatus,
+  DocumentDiagnosticReport,
   DocumentSearchResult,
   IndexingConfigInput,
   IndexingTelemetryEvent,
@@ -50,6 +51,7 @@ export namespace IndexingWorker {
     search(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]>
     documentSearch(query: string, options?: Omit<DocumentSearchInput, "query">): Promise<DocumentSearchResult[]>
     rebuildDocuments(): Promise<IndexingStatus>
+    documentDiagnostics(runId: string): Promise<DocumentDiagnosticReport | undefined>
     queryEvidence(query: string, options?: Omit<QueryEvidenceInput, "query">): Promise<QueryEvidenceResult>
     codeGraphStatus(): Promise<CodeGraphSidecarStatus>
     dispose(): Promise<void>
@@ -241,6 +243,13 @@ export namespace IndexingWorker {
           throw new Error("Unexpected indexing process rebuildDocuments response.")
         })
       },
+      documentDiagnostics(runId) {
+        const request: Request = { type: "request", id: id++, method: "documentDiagnostics", input: { runId } }
+        return call(request, (result) => {
+          if (result.ok && result.method === "documentDiagnostics") return result.value
+          throw new Error("Unexpected indexing process documentDiagnostics response.")
+        })
+      },
       queryEvidence(query, options = {}) {
         const request: Request = {
           type: "request",
@@ -315,6 +324,7 @@ export namespace IndexingWorker {
             updateConfig: unsupported,
             documentSearch: unsupported,
             rebuildDocuments: unsupported,
+            documentDiagnostics: unsupported,
             queryEvidence: unsupported,
             codeGraphStatus: unsupported,
             ...driver,

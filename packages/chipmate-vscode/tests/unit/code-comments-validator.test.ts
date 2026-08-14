@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test"
-import { createTwoFilesPatch } from "diff"
 import { buildCommentedDocument, validateOnlyCommentInsertions } from "../../src/services/code-comments/apply"
 import type { FunctionHeaderStyle, FunctionTarget } from "../../src/services/code-comments/types"
 import { buildValidatedCommentCandidate, parseCommentQaResponse } from "../../src/services/code-comments/validator"
@@ -12,7 +11,6 @@ const source = [
   "    }",
   "    return atoi(text);",
   "}",
-  "",
 ].join("\n")
 
 function target(
@@ -26,291 +24,186 @@ function target(
     workspacePath: "/repo",
     languageId: "c",
     documentVersion: 1,
-    documentText: source,
-    functionSource: source.trimEnd(),
+    documentText: `${source}\n`,
+    functionSource: source,
     functionHash: "hash",
     startIndex: 0,
-    endIndex: source.trimEnd().length,
+    endIndex: source.length,
     startLine: 0,
     endLine: 6,
     contextBefore: "",
     contextAfter: "",
     functionHeaderStyle,
     existingComments,
+    complexity: {
+      lineCount: 7,
+      controlRegionCount: 1,
+      existingCoveredRegionCount: 0,
+      minimumInlineComments: 0,
+      controlRegions: [
+        {
+          id: "control-2-4",
+          startLine: 2,
+          endLine: 4,
+          existingCovered: false,
+          anchor: { line: 2, kind: "controlBlock", targetLineText: "    if (!text) {", indent: "    " },
+        },
+      ],
+    },
     anchors: [
-      {
-        line: 0,
-        kind: "function",
-        targetLineText: "static int parse_value(const char *text)",
-        indent: "",
-      },
-      {
-        line: 2,
-        kind: "controlBlock",
-        targetLineText: "    if (!text) {",
-        indent: "    ",
-      },
-      {
-        line: 5,
-        kind: "statement",
-        targetLineText: "    return atoi(text);",
-        indent: "    ",
-      },
+      { line: 0, kind: "function", targetLineText: "static int parse_value(const char *text)", indent: "" },
+      { line: 2, kind: "controlBlock", targetLineText: "    if (!text) {", indent: "    " },
+      { line: 5, kind: "statement", targetLineText: "    return atoi(text);", indent: "    " },
     ],
     eol: "\n",
   }
 }
 
-function patch(candidate: string): string {
-  return createTwoFilesPatch("a/main.c", "b/main.c", source, candidate).trim()
+function comment(anchorId: string, text: string): string {
+  return `<comment anchor="${anchorId}">\n${text}\n</comment>`
 }
 
-function primary(candidate: string, summary = "理解：该函数拒绝空指针，并把有效文本交给 atoi 转换。") {
-  return `结论：生成注释\n${summary}\n\`\`\`diff\n${patch(candidate)}\n\`\`\``
+function primary(
+  comments: string,
+  summary = "理解：该函数拒绝空指针，并把有效文本交给 atoi 转换。",
+): string {
+  return `结论：生成注释\n${summary}\n${comments}`
 }
 
-function parseCandidate(output: string, currentTarget = target()) {
+function parseCandidate(output: string, currentTarget = target(), mode: "insert" | "revise" = "insert") {
   const parsed = parseCommentQaResponse(output, "primary")
   expect(parsed.ok).toBe(true)
   if (!parsed.ok) throw new Error(parsed.reason)
-  return buildValidatedCommentCandidate(currentTarget, parsed.value)
+  return buildValidatedCommentCandidate(currentTarget, parsed.value, mode)
 }
 
-describe("Code QA 注释 Diff 协议与确定性校验", () => {
-  it("接受带简短理解、外层自然文本和唯一注释 Diff 的结果", async () => {
-    const candidate = [
-      "/** 将文本转换为整数；空指针输入返回 -1。 */",
-      "static int parse_value(const char *text)",
-      "{",
-      "    // 先拒绝空指针，避免将其传给 atoi。",
-      "    if (!text) {",
-      "        return -1;",
-      "    }",
-      "    return atoi(text);",
-      "}",
-      "",
-    ].join("\n")
-    const result = parseCandidate(primary(candidate))
+describe("Code QA 锚点注释协议与确定性校验", () => {
+  it("按 function 和短区域 ID 构造候选源码，不要求模型复制函数", async () => {
+    const output = primary(
+      [
+        comment("function", "/** 将文本转换为整数；空指针输入返回 -1。 */"),
+        comment("R1", "// 先拒绝空指针，避免将其传给 atoi。"),
+      ].join("\n"),
+    )
+    const result = parseCandidate(output)
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.value.status).toBe("proposed")
     expect(result.value.proposals).toHaveLength(2)
-    expect(buildCommentedDocument(target(), result.value.proposals)).toBe(candidate)
+    expect(result.value.candidateComments.map((item) => item.anchorId)).toEqual(["function", "R1"])
+    expect(result.value.coverage).toMatchObject({ required: 0, covered: 1, missing: 0 })
+    const candidate = buildCommentedDocument(target(), result.value.proposals)
+    expect(candidate).toContain("/** 将文本转换为整数；空指针输入返回 -1。 */\nstatic int parse_value")
+    expect(candidate).toContain("    // 先拒绝空指针，避免将其传给 atoi。\n    if (!text)")
     expect(await validateOnlyCommentInsertions(target(), result.value.proposals, candidate)).toBe(true)
   })
 
-  it("拒绝模型替用户决定无需注释，并允许复核通过或报告冲突", () => {
-    expect(parseCommentQaResponse("结论：无需注释\n理解：现有实现已经直白，无需重复代码。", "primary")).toMatchObject({
-      ok: false,
-    })
-    expect(parseCommentQaResponse("结论：无需注释\n复核：候选没有必要。", "review")).toMatchObject({
-      ok: false,
-    })
+  it("严格限制结论、锚点块格式，并拒绝旧完整函数与重复锚点", () => {
+    expect(parseCommentQaResponse("结论：通过\n复核：事实一致。", "primary")).toMatchObject({ ok: false })
+    expect(parseCommentQaResponse("结论：生成注释\n理解：缺少注释。", "primary")).toMatchObject({ ok: false })
+    expect(
+      parseCommentQaResponse(`结论：生成注释\n理解：函数清晰。\n\`\`\`c\n${source}\n\`\`\``, "primary"),
+    ).toMatchObject({ ok: false })
+    expect(
+      parseCommentQaResponse(primary(`${comment("function", "/** 说明。 */")}\n${comment("function", "/** 重复。 */")}`), "primary"),
+    ).toMatchObject({ ok: false, reason: expect.stringContaining("只能输出一次") })
+    expect(
+      parseCommentQaResponse('结论：生成注释\n理解：函数清晰。\n<comment anchor="function">未闭合', "primary"),
+    ).toMatchObject({ ok: false })
     expect(parseCommentQaResponse("结论：通过\n复核：候选事实与源码一致。", "review")).toMatchObject({
       ok: true,
       value: { decision: "approve" },
     })
-    expect(parseCommentQaResponse("结论：存在冲突\n复核：调用方对负值的含义存在冲突。", "review")).toMatchObject({
-      ok: true,
-      value: { decision: "conflict" },
-    })
   })
 
-  it("严格限制每轮结论类型、结论数量和 Diff 上限", () => {
-    expect(parseCommentQaResponse("结论：通过\n复核：事实一致。", "primary")).toMatchObject({ ok: false })
-    expect(parseCommentQaResponse("结论：生成注释\n结论：生成注释\n理解：无法确定。", "primary")).toMatchObject({
-      ok: false,
-    })
-    expect(parseCommentQaResponse("结论：生成注释\n理解：缺少候选补丁。", "primary")).toMatchObject({ ok: false })
-    expect(
-      parseCommentQaResponse("结论：无需注释\n```diff\n--- a\n+++ b\n```\n理解：无需添加。", "primary"),
-    ).toMatchObject({
-      ok: false,
-    })
-    const five = Array.from({ length: 5 }, () => "```diff\n+// 注释\n int value;\n```").join("\n")
-    expect(parseCommentQaResponse(`结论：生成注释\n理解：需要解释关键约束。\n${five}`, "primary")).toMatchObject({
-      ok: false,
-    })
-  })
-
-  it("不依赖模型容易写错的 unified diff 行数声明", () => {
-    const candidate = "/** 拒绝空指针后再转换文本。 */\n" + source
-    const wrongCounts = patch(candidate).replace(/@@ -1,\d+ \+1,\d+ @@/u, "@@ -1,99 +1,88 @@")
-    const result = parseCandidate(
-      `结论：生成注释\n理解：该函数先拒绝空指针，再转换有效文本。\n\`\`\`diff\n${wrongCounts}\n\`\`\``,
+  it("自动忽略注释块边界空行和模型缩进，并保留 Doxygen 空说明行", () => {
+    const output = primary(
+      [
+        '<comment anchor="function">',
+        "",
+        "        /**",
+        "         * @brief 转换文本",
+        "         *",
+        "         * 空指针返回错误码。",
+        "         */",
+        "",
+        "</comment>",
+        '<comment anchor="R1">',
+        "",
+        "        // 空指针必须在调用 atoi 前被拦截。",
+        "",
+        "</comment>",
+      ].join("\n"),
     )
-
-    expect(result.ok).toBe(true)
-  })
-
-  it("拒绝没有任何注释增量的伪 Diff", () => {
-    const output = "结论：生成注释\n理解：该函数拒绝空指针。\n```diff\n--- a/main.c\n+++ b/main.c\n无效 hunk\n```"
-    const parsed = parseCommentQaResponse(output, "primary")
-    expect(parsed.ok).toBe(true)
-    if (!parsed.ok) return
-
-    const result = buildValidatedCommentCandidate(target(), parsed.value)
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.reasons).toContain("Diff 没有新增注释")
-  })
-
-  it("拒绝只生成行内注释而没有函数说明", () => {
-    const candidate = source.replace("    if (!text) {", "    // 先拒绝空指针。\n    if (!text) {")
-    const result = parseCandidate(primary(candidate))
-
-    expect(result).toMatchObject({
-      ok: false,
-      reasons: [expect.stringContaining("必须生成一条函数说明")],
-    })
-  })
-
-  it("接受省略文件头和 hunk 计数的精简注释 Diff", () => {
-    const output = [
-      "结论：生成注释",
-      "理解：空指针保护避免把无效地址传给转换函数。",
-      "```diff",
-      "+/** 将有效文本转换为整数，空指针返回 -1。 */",
-      " static int parse_value(const char *text)",
-      "+    // 先拦截空指针，避免将其传给 atoi。",
-      "     if (!text) {",
-      "```",
-    ].join("\n")
-
-    expect(parseCandidate(output).ok).toBe(true)
-  })
-
-  it("接受模型按注释位置拆开的多个 Diff 块", () => {
-    const output = [
-      "结论：生成注释",
-      "理解：函数契约和空指针保护都值得说明。",
-      "```diff",
-      "+/** 将有效文本转换为整数，空指针返回 -1。 */",
-      " static int parse_value(const char *text)",
-      "```",
-      "```diff",
-      "+    // 先拦截空指针，避免将其传给 atoi。",
-      "     if (!text) {",
-      "```",
-    ].join("\n")
-
     const result = parseCandidate(output)
-    if (!result.ok) throw new Error(result.reasons.join("；"))
-    expect(result.ok).toBe(true)
-    expect(result.value.proposals).toHaveLength(2)
-  })
 
-  it("兼容 diff 围栏内漏写加号、但注释语法与锚点均准确的回答", () => {
-    const output = [
-      "结论：生成注释",
-      "理解：函数契约和空指针保护都值得说明。",
-      "```diff",
-      "/**",
-      " * 将有效文本转换为整数，空指针返回 -1。",
-      " */",
-      "static int parse_value(const char *text)",
-      "```",
-      "```diff",
-      "    // 先拦截空指针，避免将其传给 atoi。",
-      "    if (!text) {",
-      "```",
-    ].join("\n")
-
-    const result = parseCandidate(output)
-    if (!result.ok) throw new Error(result.reasons.join("；"))
-    expect(result.ok).toBe(true)
-    expect(result.value.proposals).toHaveLength(2)
-  })
-
-  it("按源码真实缩进归一模型在 AST 锚点上多写或少写的前导空白", () => {
-    const output = [
-      "结论：生成注释",
-      "理解：函数的返回契约值得说明。",
-      "```diff",
-      "+\t/** 将有效文本转换为整数，空指针返回 -1。 */",
-      " \tstatic int parse_value(const char *text)",
-      "```",
-    ].join("\n")
-
-    const result = parseCandidate(output)
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.value.proposals[0]?.indent).toBe("")
-
-    const nested = [
-      "结论：生成注释",
-      "理解：空指针保护值得说明。",
-      "```diff",
-      "+/** 将有效文本转换为整数，空指针返回 -1。 */",
-      " static int parse_value(const char *text)",
-      "```",
-      "```diff",
-      "+// 先拦截空指针，避免将其传给 atoi。",
-      " if (!text) {",
-      "```",
-    ].join("\n")
-    const nestedResult = parseCandidate(nested)
-    expect(nestedResult.ok).toBe(true)
-    if (!nestedResult.ok) return
-    expect(nestedResult.value.proposals.find((proposal) => proposal.kind === "inline")?.indent).toBe("    ")
+    expect(result.value.proposals[0]?.commentText).toContain(" *\n * 空指针返回错误码")
+    expect(result.value.proposals[1]?.commentText).toBe("// 空指针必须在调用 atoi 前被拦截。")
   })
 
-  it("拒绝修改原代码的 Diff", () => {
-    const candidate = source.replace("return atoi(text);", "return 0;")
-    const result = parseCandidate(primary(candidate))
+  it("宏、属性、CRLF、原函数空行和缩进不再进入模型输出协议", async () => {
+    const prefixed = "ICODE STATIC void ftl_req_init(void)\r\n{\r\n\r\n    init();\r\n}"
+    const current: FunctionTarget = {
+      ...target(),
+      documentText: `${prefixed}\r\n`,
+      functionSource: prefixed,
+      endIndex: prefixed.length,
+      endLine: 4,
+      anchors: [
+        { line: 0, kind: "function", targetLineText: "ICODE STATIC void ftl_req_init(void)", indent: "" },
+        { line: 3, kind: "statement", targetLineText: "    init();", indent: "    " },
+      ],
+      complexity: { ...target().complexity, lineCount: 5, controlRegionCount: 0, controlRegions: [] },
+      eol: "\r\n",
+    }
+    const result = parseCandidate(primary(comment("function", "/** 初始化 FTL 请求模块及其全局资源。 */")), current)
 
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.reasons).toContain("Diff 删除或修改了原有代码")
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const candidate = buildCommentedDocument(current, result.value.proposals)
+    expect(candidate).toBe(`/** 初始化 FTL 请求模块及其全局资源。 */\r\n${prefixed}\r\n`)
+    expect(await validateOnlyCommentInsertions(current, result.value.proposals, candidate)).toBe(true)
   })
 
-  it("拒绝在非锚点位置插注释", () => {
-    const candidate = source.replace("{\n", "// 这里不是允许的锚点。\n{\n")
-    const result = parseCandidate(primary(candidate))
+  it("拒绝未知、未提供和已有注释覆盖的区域锚点", () => {
+    const unknown = parseCandidate(primary(`${comment("function", "/** 转换文本。 */")}\n${comment("R99", "// 未知位置。")}`))
+    expect(unknown.ok).toBe(false)
+    if (!unknown.ok) expect(unknown.reasons.join("；")).toContain("未知或不可用的注释锚点：R99")
 
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.reasons.some((reason) => reason.includes("锚点无效"))).toBe(true)
-  })
-
-  it("拒绝注释中夹带代码、TODO 或与已有注释重复", () => {
-    const codeCandidate = source.replace("    if (!text) {", "    // 保护空指针。\n    return 0;\n    if (!text) {")
-    expect(parseCandidate(primary(codeCandidate)).ok).toBe(false)
-
-    const todoCandidate = source.replace("    if (!text) {", "    // TODO：以后补充边界处理。\n    if (!text) {")
-    expect(parseCandidate(primary(todoCandidate)).ok).toBe(false)
-
-    const duplicateCandidate = source.replace(
-      "static int parse_value",
-      "/** 将文本转换为整数；空指针输入返回 -1。 */\nstatic int parse_value",
+    const covered = target(["// 已有空指针说明。"])
+    covered.complexity.existingCoveredRegionCount = 1
+    covered.complexity.controlRegions[0]!.existingCovered = true
+    const unavailable = parseCandidate(
+      primary(`${comment("function", "/** 转换文本。 */")}\n${comment("R1", "// 重复覆盖。")}`),
+      covered,
     )
+    expect(unavailable.ok).toBe(false)
+    if (!unavailable.ok) expect(unavailable.reasons.join("；")).toContain("未知或不可用的注释锚点：R1")
+  })
+
+  it("拒绝注释夹带代码、TODO、错误风格和重复说明", () => {
+    expect(parseCandidate(primary(comment("function", "/** 转换文本。 */\nreturn 0;"))).ok).toBe(false)
+    expect(parseCandidate(primary(comment("function", "/** TODO：以后补充。 */"))).ok).toBe(false)
+    expect(
+      parseCandidate(primary(comment("function", "/** 转换文本。 */")), target([], "block")).ok,
+    ).toBe(false)
     const duplicate = parseCandidate(
-      primary(duplicateCandidate),
+      primary(comment("function", "/** 将文本转换为整数；空指针输入返回 -1。 */")),
       target(["/** 将文本转换为整数；空指针输入返回 -1。 */"]),
     )
     expect(duplicate.ok).toBe(false)
   })
 
-  it("函数说明必须跟随文件既有风格", () => {
-    const blockCandidate = source.replace(
-      "static int parse_value",
-      "/* 将文本转换为整数；空指针输入返回 -1。 */\nstatic int parse_value",
-    )
-    expect(parseCandidate(primary(blockCandidate), target([], "block")).ok).toBe(true)
-
-    const docCandidate = blockCandidate.replace("/* 将", "/** 将")
-    expect(parseCandidate(primary(docCandidate), target([], "block")).ok).toBe(false)
-  })
-
-  it("仅在用户选择修订时安全替换既有函数说明，不触碰函数代码", async () => {
-    const revisionSource = `// 旧说明只说进行了转换。\n${source}`
+  it("修订既有函数说明时只替换说明并保留源码", async () => {
+    const revisionSource = `// 旧说明只说进行了转换。\n${source}\n`
     const current = target(["// 旧说明只说进行了转换。"], "line")
     const currentTarget: FunctionTarget = {
       ...current,
       documentText: revisionSource,
       startIndex: revisionSource.indexOf("static int"),
-      endIndex: revisionSource.indexOf("static int") + source.trimEnd().length,
+      endIndex: revisionSource.indexOf("static int") + source.length,
       startLine: 1,
       endLine: 7,
       existingFunctionHeader: {
@@ -319,24 +212,24 @@ describe("Code QA 注释 Diff 协议与确定性校验", () => {
         text: "// 旧说明只说进行了转换。",
         hash: "header-hash",
         style: "line",
+        tagContract: [],
       },
       anchors: current.anchors.map((anchor) => ({ ...anchor, line: anchor.line + 1 })),
+      complexity: {
+        ...current.complexity,
+        controlRegions: current.complexity.controlRegions.map((region) => ({
+          ...region,
+          startLine: region.startLine + 1,
+          endLine: region.endLine + 1,
+          anchor: region.anchor ? { ...region.anchor, line: region.anchor.line + 1 } : undefined,
+        })),
+      },
     }
-    const parsed = parseCommentQaResponse(
-      [
-        "结论：生成注释",
-        "理解：函数还包含空指针返回约定，需要修订原说明。",
-        "```diff",
-        "+// 将有效文本转换为整数；空指针输入返回 -1。",
-        " static int parse_value(const char *text)",
-        "```",
-      ].join("\n"),
-      "primary",
+    const result = parseCandidate(
+      primary(comment("function", "// 将有效文本转换为整数；空指针输入返回 -1。")),
+      currentTarget,
+      "revise",
     )
-    expect(parsed.ok).toBe(true)
-    if (!parsed.ok) return
-
-    const result = buildValidatedCommentCandidate(currentTarget, parsed.value, "revise")
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -347,7 +240,121 @@ describe("Code QA 注释 Diff 协议与确定性校验", () => {
       replaceEndLine: 0,
     })
     const candidate = buildCommentedDocument(currentTarget, result.value.proposals)
-    expect(candidate).toBe(`// 将有效文本转换为整数；空指针输入返回 -1。\n${source}`)
+    expect(candidate).toBe(`// 将有效文本转换为整数；空指针输入返回 -1。\n${source}\n`)
     expect(await validateOnlyCommentInsertions(currentTarget, result.value.proposals, candidate)).toBe(true)
+  })
+
+  it("Doxygen 修订允许润色描述，但拒绝标签增删、重排和标识变化", () => {
+    const header = [
+      "/**",
+      " * @brief 旧说明",
+      " * @param [in] text 输入文本",
+      " * @note",
+      " * @retval OK 转换成功",
+      " * @custom keep exactly",
+      " * @return",
+      " */",
+    ].join("\n")
+    const currentTarget: FunctionTarget = {
+      ...target([header]),
+      documentText: `${header}\n${source}\n`,
+      startIndex: header.length + 1,
+      endIndex: header.length + 1 + source.length,
+      startLine: 8,
+      endLine: 14,
+      existingFunctionHeader: {
+        startLine: 0,
+        endLine: 7,
+        text: header,
+        hash: "header-hash",
+        style: "docBlock",
+        tagContract: [
+          { name: "brief", identity: "" },
+          { name: "param", identity: "in:text" },
+          { name: "note", identity: "" },
+          { name: "retval", identity: "OK" },
+          { name: "custom", identity: "", rawLine: "@custom keep exactly" },
+          { name: "return", identity: "" },
+        ],
+      },
+      anchors: target().anchors.map((anchor) => ({ ...anchor, line: anchor.line + 8 })),
+      complexity: { ...target().complexity, controlRegions: [] },
+    }
+    const revised = [
+      "/**",
+      " * @brief 将文本转换为整数",
+      " * @param[in] text 待转换文本",
+      " * @note 空指针直接返回错误码",
+      " * @retval OK 转换成功",
+      " * @custom keep exactly",
+      " * @return 转换结果",
+      " */",
+    ].join("\n")
+    expect(parseCandidate(primary(comment("function", revised)), currentTarget, "revise").ok).toBe(true)
+
+    for (const invalid of [
+      revised.replace(" * @note 空指针直接返回错误码\n", ""),
+      revised.replace("@param[in] text", "@param[out] value"),
+      revised.replace("@retval OK", "@retval ERROR"),
+      revised.replace("@custom keep exactly", "@custom changed"),
+      revised.replace(
+        " * @note 空指针直接返回错误码\n * @retval OK 转换成功",
+        " * @retval OK 转换成功\n * @note 空指针直接返回错误码",
+      ),
+    ]) {
+      expect(parseCandidate(primary(comment("function", invalid)), currentTarget, "revise").ok).toBe(false)
+    }
+  })
+
+  it("复杂函数按不同短锚点统计覆盖，覆盖不足仍保留安全候选", () => {
+    const current = target()
+    current.complexity.minimumInlineComments = 2
+    current.complexity.controlRegionCount = 2
+    current.complexity.controlRegions.push({
+      id: "control-5-5",
+      startLine: 5,
+      endLine: 5,
+      existingCovered: false,
+      anchor: { line: 5, kind: "controlBlock", targetLineText: "    return atoi(text);", indent: "    " },
+    })
+    const result = parseCandidate(
+      primary(`${comment("function", "/** 转换文本并统一处理异常输入。 */")}\n${comment("R1", "// 空指针不能传给 atoi。")}`),
+      current,
+    )
+
+    expect(result.ok).toBe(false)
+    if (!result.ok && result.kind === "coverage-incomplete") {
+      expect(result.partial.coverage).toMatchObject({ required: 2, covered: 1, missing: 1 })
+      expect(result.partial.candidateComments.map((item) => item.anchorId)).toEqual(["function", "R1"])
+    }
+  })
+
+  it("同一区域多行说明只算一个覆盖，且行间注释总计最多八行", () => {
+    const current = target()
+    current.complexity.minimumInlineComments = 2
+    const sameRegion = parseCandidate(
+      primary(
+        `${comment("function", "/** 转换文本并处理异常路径。 */")}\n${comment(
+          "R1",
+          "// 先阻止无效地址进入转换。\n// 该保护也统一了空指针错误返回。",
+        )}`,
+      ),
+      current,
+    )
+    expect(sameRegion.ok).toBe(false)
+    if (!sameRegion.ok && sameRegion.kind === "coverage-incomplete") {
+      expect(sameRegion.partial.coverage).toMatchObject({ covered: 1, missing: 1 })
+    }
+
+    const excessive = parseCandidate(
+      primary(
+        `${comment("function", "/** 转换文本。 */")}\n${comment(
+          "R1",
+          Array.from({ length: 9 }, (_, index) => `// 第 ${index + 1} 行不同目的的中文说明。`).join("\n"),
+        )}`,
+      ),
+    )
+    expect(excessive.ok).toBe(false)
+    if (!excessive.ok) expect(excessive.reasons.join("；")).toContain("行间注释最多八条")
   })
 })

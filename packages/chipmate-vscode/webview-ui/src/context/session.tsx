@@ -2909,7 +2909,7 @@ export const SessionProvider: ParentComponent = (props) => {
   // Status text derived from last assistant message parts
   const statusText = createMemo<string | undefined>(() => {
     if (status() === "idle") return undefined
-    const fallback = language.t("ui.sessionTurn.status.consideringNextSteps")
+    const fallback = language.t("session.status.deepDiving")
     const id = currentSessionID()
     const msgs = messages()
     for (let i = msgs.length - 1; i >= 0; i--) {

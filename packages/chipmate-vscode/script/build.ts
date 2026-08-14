@@ -568,6 +568,9 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     required.push(
       "extension/bin/rg.exe",
       "extension/bin/poppler/pdftotext.exe",
+      "extension/bin/poppler/msvcp140.dll",
+      "extension/bin/poppler/vcruntime140.dll",
+      "extension/bin/poppler/vcruntime140_1.dll",
       "extension/bin/lancedb/node_modules/@lancedb/lancedb-win32-x64-msvc/lancedb.win32-x64-msvc.node",
     )
     if (!x64only) {

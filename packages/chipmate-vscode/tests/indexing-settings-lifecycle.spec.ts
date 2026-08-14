@@ -84,7 +84,7 @@ async function open(page: Page) {
               send({
                 type: "chipmateServerSettingsLoaded",
                 state: { baseUrl: "http://127.0.0.1:6001" },
-                autoInstall: true,
+                autoDownload: true,
               })
             }
           }, 0)

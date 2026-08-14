@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, rm, writeFile } from "fs/promises"
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "fs/promises"
 import { tmpdir } from "os"
 import path from "path"
 import { deflateSync } from "node:zlib"
 import JSZip from "jszip"
 import { utils, write } from "xlsx"
-import { extractDocument, pdftotextPath } from "../../../../src/indexing/documents/extractors"
+import {
+  extractDocument,
+  pdftotextPath,
+  preflightPdfExtractor,
+} from "../../../../src/indexing/documents/extractors"
 
 const dirs: string[] = []
 const uml = "@startuml\nclass Controller\nController --> Service\n@enduml"
@@ -178,4 +182,44 @@ describe("Document extractors", () => {
       "C:\\tools\\pdftotext.exe",
     )
   })
+
+  if (process.platform !== "win32") {
+    test("preflights the selected PDF extractor through a Chinese path containing spaces", async () => {
+      const dir = await temp()
+      const exe = path.join(dir, "pdftotext")
+      const before = process.env.CHIPMATE_PDFTOTEXT_PATH
+      try {
+        await writeFile(
+          exe,
+          "#!/bin/sh\ncase \"$2\" in *'中文 路径.pdf') printf 'CHIPMATE_PDF_PREFLIGHT_OK\\f';; *) exit 17;; esac\n",
+        )
+        await chmod(exe, 0o755)
+        process.env.CHIPMATE_PDFTOTEXT_PATH = exe
+
+        await expect(preflightPdfExtractor(path.join(dir, "缓存 空间"))).resolves.toBeUndefined()
+      } finally {
+        if (before === undefined) delete process.env.CHIPMATE_PDFTOTEXT_PATH
+        else process.env.CHIPMATE_PDFTOTEXT_PATH = before
+      }
+    })
+
+    test("preserves PDF preflight exit details while keeping an empty code 53 unknown", async () => {
+      const dir = await temp()
+      const exe = path.join(dir, "pdftotext")
+      const before = process.env.CHIPMATE_PDFTOTEXT_PATH
+      try {
+        await writeFile(exe, "#!/bin/sh\nexit 53\n")
+        await chmod(exe, 0o755)
+        process.env.CHIPMATE_PDFTOTEXT_PATH = exe
+
+        const failure = await preflightPdfExtractor(path.join(dir, "缓存 空间")).catch((err) => err)
+        expect(failure).toMatchObject({ category: "extractor-runtime" })
+        expect(failure).toBeInstanceOf(Error)
+        expect((failure as Error).message).toContain("exitCode=53; signal=none; stderr=(empty)")
+      } finally {
+        if (before === undefined) delete process.env.CHIPMATE_PDFTOTEXT_PATH
+        else process.env.CHIPMATE_PDFTOTEXT_PATH = before
+      }
+    })
+  }
 })

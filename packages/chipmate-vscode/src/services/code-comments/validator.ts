@@ -1,8 +1,17 @@
 import { buildCommentedDocument } from "./apply"
-import type { CommentMode, FunctionTarget, RawCommentProposal, ValidatedCommentResult } from "./types"
+import { promptCommentAnchorBindings } from "./anchor-protocol"
+import { doxygenTagContract } from "./function-target"
+import type {
+  CommentCandidateBlock,
+  CommentCoverageDiagnostics,
+  CommentMode,
+  FunctionTarget,
+  RawCommentProposal,
+  ValidatedCommentResult,
+} from "./types"
 
 const DECISION = /^\s*结论\s*[:：]\s*(生成注释|通过|修订|存在冲突)\s*$/gm
-const DIFF_FENCE = /```(?:diff|patch)[ \t]*\r?\n([\s\S]*?)\r?\n```/gi
+const COMMENT_BLOCK = /<comment[ \t]+anchor="([A-Za-z0-9_-]+)">([\s\S]*?)<\/comment>/g
 const MAX_COMMENT_LENGTH = 1200
 const CODE_LIKE = [
   /^return\b/,
@@ -19,12 +28,20 @@ export type CommentQaDecision = "generate" | "approve" | "revise" | "conflict"
 export type CommentQaResponse = {
   decision: CommentQaDecision
   summary: string
-  patch?: string
+  comments?: CommentCandidateBlock[]
 }
 
 export type CommentQaParseResult = { ok: true; value: CommentQaResponse } | { ok: false; reason: string }
 
-export type CommentCandidateResult = { ok: true; value: ValidatedCommentResult } | { ok: false; reasons: string[] }
+export type CommentCandidateResult =
+  | { ok: true; value: ValidatedCommentResult }
+  | {
+      ok: false
+      kind: "coverage-incomplete"
+      reasons: string[]
+      partial: ValidatedCommentResult
+    }
+  | { ok: false; kind: "invalid"; reasons: string[] }
 
 export function parseCommentQaResponse(input: unknown, round: "primary" | "review"): CommentQaParseResult {
   if (typeof input !== "string" || !input.trim()) return { ok: false, reason: "Code 会话没有返回文本" }
@@ -39,20 +56,28 @@ export function parseCommentQaResponse(input: unknown, round: "primary" | "revie
       : new Set<CommentQaDecision>(["approve", "revise", "conflict"])
   if (!allowed.has(decision)) return { ok: false, reason: `${round} 阶段不接受“${label}”结论` }
 
-  const fences = [...text.matchAll(DIFF_FENCE)]
-  const needsPatch = decision === "generate" || decision === "revise"
-  if (needsPatch && fences.length === 0) return { ok: false, reason: "生成或修订结论必须包含注释 Diff" }
-  if (fences.length > 4) return { ok: false, reason: "注释 Diff 超过四段" }
-  if (!needsPatch && fences.length > 0) return { ok: false, reason: "当前结论不应包含 Diff" }
-
-  const summary = text.replace(DECISION, "").replace(DIFF_FENCE, "").trim()
+  const matches = [...text.matchAll(COMMENT_BLOCK)]
+  const needsComments = decision === "generate" || decision === "revise"
+  if (needsComments && matches.length === 0) return { ok: false, reason: "生成或修订结论必须包含锚点注释块" }
+  if (!needsComments && matches.length > 0) return { ok: false, reason: "当前结论不应包含注释候选" }
+  const comments = matches.map((match) => ({
+    anchorId: match[1]!,
+    commentText: trimCommentBoundary(match[2] ?? ""),
+  }))
+  if (comments.some((comment) => !comment.commentText)) return { ok: false, reason: "锚点注释块不能为空" }
+  if (new Set(comments.map((comment) => comment.anchorId)).size !== comments.length) {
+    return { ok: false, reason: "同一个注释锚点只能输出一次" }
+  }
+  const summary = text.replace(DECISION, "").replace(COMMENT_BLOCK, "").trim()
+  if (/<\/?comment\b/i.test(summary)) return { ok: false, reason: "注释块格式无效" }
+  if (/```/.test(summary)) return { ok: false, reason: "不得输出完整函数、Diff 或代码围栏" }
   if (!containsChinese(summary)) return { ok: false, reason: "响应必须包含简短的中文理解或复核说明" }
   return {
     ok: true,
     value: {
       decision,
       summary,
-      ...(needsPatch ? { patch: fences.map((fence) => fence[1]!).join("\n@@\n") } : {}),
+      ...(needsComments ? { comments } : {}),
     },
   }
 }
@@ -63,128 +88,74 @@ export function buildValidatedCommentCandidate(
   mode: CommentMode = "insert",
 ): CommentCandidateResult {
   if (response.decision !== "generate" && response.decision !== "revise") {
-    return { ok: false, reasons: ["当前结论没有可验证的注释 Diff"] }
+    return { ok: false, kind: "invalid", reasons: ["当前结论没有可验证的锚点注释候选"] }
   }
-  const derived = deriveProposals(target, response.patch!, mode)
+  const derived = deriveProposals(target, response.comments ?? [], mode)
   if (!derived.ok) return derived
-  return {
-    ok: true,
-    value: {
-      status: "proposed",
-      summary: response.summary,
-      proposals: derived.proposals,
-      patch: canonicalPatch(derived.proposals),
-    },
+  const value: ValidatedCommentResult = {
+    status: "proposed",
+    quality: derived.coverage.missing > 0 ? "coverage-incomplete" : "complete",
+    coverage: derived.coverage,
+    summary: response.summary,
+    proposals: derived.proposals,
+    candidateComments: derived.candidateComments,
   }
+  if (value.quality === "coverage-incomplete") {
+    return {
+      ok: false,
+      kind: "coverage-incomplete",
+      reasons: [coverageFailureReason(value.coverage)],
+      partial: value,
+    }
+  }
+  return { ok: true, value }
 }
 
 function deriveProposals(
   target: FunctionTarget,
-  patch: string,
+  comments: CommentCandidateBlock[],
   mode: CommentMode,
-): { ok: true; proposals: RawCommentProposal[] } | { ok: false; reasons: string[] } {
+):
+  | {
+      ok: true
+      proposals: RawCommentProposal[]
+      coverage: CommentCoverageDiagnostics
+      candidateComments: CommentCandidateBlock[]
+    }
+  | { ok: false; kind: "invalid"; reasons: string[] } {
   const proposals: RawCommentProposal[] = []
+  const candidateComments: CommentCandidateBlock[] = []
   const reasons: string[] = []
-  let additions: string[] = []
-  let files = 0
-  let inHunk = false
-  let previousLine = target.startLine - 1
-  const flush = (contexts: string[] = []) => {
-    if (additions.length === 0) return
-    const anchor = target.anchors.find(
-      (item) =>
-        item.line > previousLine &&
-        contexts.some(
-          (context) => item.targetLineText === context || item.targetLineText.trimStart() === context.trimStart(),
-        ),
-    )
-    if (!anchor) {
-      reasons.push(
-        contexts.length > 0
-          ? `Diff 新增注释后的源码锚点无效或顺序错误：${contexts.at(-1)}`
-          : "Diff 新增注释后缺少源码锚点",
-      )
-      additions = []
-      return
+  const bindings = new Map(promptCommentAnchorBindings(target).map((binding) => [binding.id, binding]))
+  for (const comment of comments) {
+    const proposal = proposalFromBlock(target, comment, bindings, reasons, mode)
+    if (proposal) {
+      proposals.push(proposal)
+      candidateComments.push({ anchorId: comment.anchorId, commentText: proposal.commentText })
     }
-    const proposal = proposalFromLines(target, anchor.line, additions, reasons, mode)
-    if (proposal) proposals.push(proposal)
-    previousLine = anchor.line
-    additions = []
   }
-  for (const line of patch.split(/\r?\n/)) {
-    if (/^diff --git\s/u.test(line)) {
-      flush()
-      files++
-      inHunk = false
-      continue
-    }
-    if (!inHunk && /^(?:index\s|---\s|\+\+\+\s)/u.test(line)) continue
-    if (line.startsWith("@@")) {
-      flush()
-      inHunk = true
-      continue
-    }
-    if (plainCommentLine(line, additions.length > 0)) {
-      additions.push(line)
-      inHunk = true
-      continue
-    }
-    if (!inHunk && (line.startsWith("+") || line.startsWith("-") || line.startsWith(" "))) inHunk = true
-    if (!inHunk) continue
-    if (line.startsWith("+")) {
-      additions.push(line.slice(1))
-      continue
-    }
-    if (line.startsWith("-")) {
-      reasons.push("Diff 删除或修改了原有代码")
-      continue
-    }
-    if (line.startsWith("\\")) continue
-    const contexts = line.startsWith(" ") ? [line.slice(1), line] : [line]
-    if (additions.length > 0) flush(contexts)
-  }
-  flush()
-  if (files > 1) reasons.push("Diff 不能包含多个文件")
-  validateProposalSet(target, proposals, reasons, mode)
-  return reasons.length > 0 ? { ok: false, reasons: unique(reasons) } : { ok: true, proposals }
+  const coverage = validateProposalSet(target, proposals, reasons, mode)
+  return reasons.length > 0
+    ? { ok: false, kind: "invalid", reasons: unique(reasons) }
+    : { ok: true, proposals, coverage, candidateComments }
 }
 
-function plainCommentLine(line: string, continuing: boolean): boolean {
-  const text = line.trimStart()
-  if (text.startsWith("//") || text.startsWith("/*")) return true
-  return continuing && (text.startsWith("*") || text === "*/")
-}
-
-function canonicalPatch(proposals: RawCommentProposal[]): string {
-  return proposals
-    .map((proposal) =>
-      [
-        ...proposal.commentText.split(/\r?\n/).map((line) => `+${proposal.indent}${line}`),
-        ` ${proposal.anchor.targetLineText}`,
-      ].join("\n"),
-    )
-    .join("\n@@\n")
-}
-
-function proposalFromLines(
+function proposalFromBlock(
   target: FunctionTarget,
-  line: number,
-  lines: string[],
+  block: CommentCandidateBlock,
+  bindings: Map<string, ReturnType<typeof promptCommentAnchorBindings>[number]>,
   reasons: string[],
   mode: CommentMode,
 ): RawCommentProposal | undefined {
-  const anchor = target.anchors.find((item) => item.line === line)
+  const functionAnchor = target.anchors.find((anchor) => anchor.kind === "function")
+  const binding = bindings.get(block.anchorId)
+  const anchor = block.anchorId === "function" ? functionAnchor : binding?.anchor
   if (!anchor) {
-    reasons.push(`Diff 在不允许的位置插入内容：第 ${line + 1} 行`)
+    reasons.push(`候选引用了未知或不可用的注释锚点：${block.anchorId}`)
     return
   }
-  if (lines.length === 0 || lines.some((value) => !value.trim())) {
-    reasons.push(`第 ${line + 1} 行的注释插入包含空白行`)
-    return
-  }
-  const commentText = normalizeCommentLines(lines)
-  const replacing = anchor.kind === "function" && mode === "revise"
+  const commentText = normalizeCommentText(block.commentText)
+  const replacing = block.anchorId === "function" && mode === "revise"
   if (replacing && !target.existingFunctionHeader) {
     reasons.push("修订模式缺少可安全定位的既有函数说明")
     return
@@ -192,9 +163,9 @@ function proposalFromLines(
   const header = target.existingFunctionHeader
   const indent = replacing ? (header!.text.match(/^\s*/)?.[0] ?? "") : anchor.indent
   return {
-    kind: anchor.kind === "function" ? "functionHeader" : "inline",
+    kind: block.anchorId === "function" ? "functionHeader" : "inline",
     operation: replacing ? "replace" : "insert",
-    insertBeforeLine: replacing ? header!.startLine : line,
+    insertBeforeLine: replacing ? header!.startLine : anchor.line,
     ...(replacing ? { replaceEndLine: header!.endLine } : {}),
     indent,
     commentText,
@@ -202,8 +173,17 @@ function proposalFromLines(
   }
 }
 
-function normalizeCommentLines(lines: string[]): string {
-  const values = lines.map((line) => line.trimStart())
+function trimCommentBoundary(input: string): string {
+  const lines = input.split(/\r?\n/)
+  while (lines[0] !== undefined && !lines[0].trim()) lines.shift()
+  while (lines.at(-1) !== undefined && !lines.at(-1)!.trim()) lines.pop()
+  return lines.join("\n")
+}
+
+function normalizeCommentText(input: string): string {
+  const values = trimCommentBoundary(input)
+    .split(/\r?\n/)
+    .map((line) => line.trimStart())
   if (!values[0]?.startsWith("/*")) return values.join("\n")
   return values.map((line, index) => (index > 0 && line.startsWith("*") ? ` ${line}` : line)).join("\n")
 }
@@ -213,16 +193,55 @@ function validateProposalSet(
   proposals: RawCommentProposal[],
   reasons: string[],
   mode: CommentMode,
-): void {
-  if (proposals.length === 0) reasons.push("Diff 没有新增注释")
-  if (proposals.length > 4) reasons.push("注释候选超过四条")
+): CommentCoverageDiagnostics {
+  if (proposals.length === 0) reasons.push("候选函数没有新增注释")
+  if (proposals.length > 9) reasons.push("注释候选超过九条")
   const headers = proposals.filter((proposal) => proposal.kind === "functionHeader")
   const headerCountReason = ["必须生成一条函数说明", "", "函数说明最多一条"][Math.min(headers.length, 2)]!
   if (headerCountReason) reasons.push(headerCountReason)
-  if (proposals.length - headers.length > 3) reasons.push("行内注释最多三条")
+  const inline = proposals.filter((proposal) => proposal.kind === "inline")
+  const inlineCount = inline.reduce((count, proposal) => count + inlineCommentCount(proposal.commentText), 0)
+  if (inlineCount > 8) reasons.push("行间注释最多八条")
+  const coverage = commentCoverageDiagnostics(target, inline)
   const normalized: string[] = []
   const lines = target.documentText.split(/\r?\n/)
   for (const proposal of proposals) validateProposal(target, proposal, mode, lines, normalized, reasons)
+  return coverage
+}
+
+function inlineCommentCount(comment: string): number {
+  return comment.split(/\r?\n/).filter((line) => line.trimStart().startsWith("//")).length
+}
+
+export function commentCoverageDiagnostics(
+  target: FunctionTarget,
+  proposals: RawCommentProposal[],
+): CommentCoverageDiagnostics {
+  const covered = new Set<string>()
+  for (const proposal of proposals) {
+    for (const region of target.complexity.controlRegions) {
+      if (!region.existingCovered && region.anchor?.line === proposal.insertBeforeLine) covered.add(region.id)
+    }
+  }
+  const required = target.complexity.minimumInlineComments
+  const eligibleAnchors = target.complexity.controlRegions
+    .filter((region) => !region.existingCovered && !covered.has(region.id) && region.anchor)
+    .map((region) => ({
+      regionId: region.id,
+      line: region.anchor!.line,
+      targetLineText: region.anchor!.targetLineText,
+    }))
+  return {
+    required,
+    covered: covered.size,
+    missing: Math.max(0, required - covered.size),
+    coveredRegionIds: [...covered],
+    eligibleAnchors,
+  }
+}
+
+export function coverageFailureReason(coverage: CommentCoverageDiagnostics): string {
+  return `复杂逻辑覆盖不足：需要覆盖 ${coverage.required} 个不同控制区域，当前覆盖 ${coverage.covered} 个区域，还缺 ${coverage.missing} 个区域`
 }
 
 function validateProposal(
@@ -236,12 +255,13 @@ function validateProposal(
   if (proposal.kind === "functionHeader") {
     const expectedLine = mode === "revise" ? target.existingFunctionHeader?.startLine : target.startLine
     if (proposal.insertBeforeLine !== expectedLine) reasons.push("函数说明位置与目标不一致")
+    if (mode === "revise") validateDoxygenContract(target, proposal.commentText, reasons)
   }
   if (!containsChinese(proposal.commentText)) reasons.push("新增注释必须包含简体中文")
   if (/\b(?:TODO|FIXME|XXX)\b/i.test(proposal.commentText)) reasons.push("新增注释不能包含 TODO/FIXME/XXX")
   if (proposal.commentText.length > MAX_COMMENT_LENGTH) reasons.push("新增注释过长")
   if (!commentOnly(proposal.commentText, proposalHeaderStyle(target, proposal, mode))) {
-    reasons.push("Diff 的新增行并非允许的注释形式")
+    reasons.push("候选函数的新增行并非允许的注释形式")
   }
   if (looksLikeCode(proposal.commentText)) reasons.push("新增注释正文看起来包含代码语句")
   const value = normalizeComment(proposal.commentText)
@@ -255,6 +275,29 @@ function validateProposal(
     lines[proposal.insertBeforeLine - 1]?.trimEnd().endsWith("\\")
   ) {
     reasons.push("不能在宏续行边界插入注释")
+  }
+}
+
+function validateDoxygenContract(target: FunctionTarget, candidate: string, reasons: string[]): void {
+  const expected = target.existingFunctionHeader?.tagContract ?? []
+  const actual = doxygenTagContract(candidate)
+  if (actual.length !== expected.length) {
+    reasons.push(`Doxygen 标签数量变化：应保留 ${expected.length} 个，当前为 ${actual.length} 个`)
+    return
+  }
+  for (let index = 0; index < expected.length; index += 1) {
+    const before = expected[index]!
+    const after = actual[index]!
+    if (before.name !== after.name) {
+      reasons.push(`Doxygen 标签顺序或名称变化：第 ${index + 1} 个应为 @${before.name}，当前为 @${after.name}`)
+      continue
+    }
+    if (before.identity !== after.identity) {
+      reasons.push(`Doxygen @${before.name} 标识变化：应保留“${before.identity}”，当前为“${after.identity}”`)
+    }
+    if (before.rawLine !== undefined && before.rawLine !== after.rawLine) {
+      reasons.push(`自定义 Doxygen 标签必须原样保留：${before.rawLine}`)
+    }
   }
 }
 

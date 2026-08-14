@@ -1507,6 +1507,7 @@ export const dict = {
   "session.status.retrying": "Retrying (attempt {{ attempt }})… {{ message }}",
   "session.status.working": "Working...",
   "session.status.offline": "Network disconnected — reconnecting...",
+  "session.status.deepDiving": "Deep diving...",
   "session.turn.completedDuration": "Completed · This turn took {{duration}}",
   "session.turn.duration.seconds": "{{seconds}}s",
   "session.turn.duration.minutes": "{{minutes}}m {{seconds}}s",

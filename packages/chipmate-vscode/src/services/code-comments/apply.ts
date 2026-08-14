@@ -28,8 +28,11 @@ export function validateTargetSnapshot(
 ): string[] {
   const reasons: string[] = []
   if (document.uri.toString() !== target.uri) reasons.push("当前文档 URI 与生成目标不一致")
-  if (document.version !== target.documentVersion) reasons.push("文档版本在生成期间发生变化")
   const text = document.getText()
+  if (text === target.documentText) return reasons
+
+  reasons.push("文档内容在生成期间发生变化")
+  if (document.version !== target.documentVersion) reasons.push("文档版本在生成期间发生变化")
   if (sha256(text.slice(target.startIndex, target.endIndex)) !== target.functionHash) {
     reasons.push("当前函数源码在生成期间发生变化")
   }

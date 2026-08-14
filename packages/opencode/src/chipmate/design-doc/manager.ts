@@ -35,6 +35,9 @@ import { provide as provideInstance } from "@/chipmate/instance"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionID } from "@/session/schema"
+import { Provider } from "@/provider/provider"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 import {
   type Artifact,
   type ArtifactType,
@@ -1504,9 +1507,19 @@ function launch(workspace: string, jobID: string, inheritedLease?: () => Promise
         if (inheritedLease) yield* Effect.promise(inheritedLease).pipe(Effect.ignore)
         return yield* Effect.failCause(loaded.cause)
       }
-      const job = loaded.value
+      let job = loaded.value
       const release = inheritedLease ?? (yield* Effect.promise(() => DesignDocStore.acquireRunLease(workspace, jobID)))
       if (!release) return
+      const provider = yield* Provider.Service
+      const unavailable = yield* modelAvailabilityIssue(provider, job)
+      if (unavailable) {
+        yield* blockInfrastructure(workspace, jobID, unavailable)
+        yield* Effect.promise(release).pipe(Effect.ignore)
+        return
+      }
+      if (hasModelUnavailableFailure(job)) {
+        job = yield* recoverModelUnavailableWorkItems(workspace, jobID)
+      }
       const active: RunningJob = { workspace, sessionIDs: new Set() }
       running.set(jobID, active)
       const started = yield* Effect.exit(
@@ -1538,6 +1551,7 @@ function launch(workspace: string, jobID: string, inheritedLease?: () => Promise
             Effect.provideService(InstanceRef, ctx),
             Effect.provideService(Session.Service, sessions),
             Effect.provideService(SessionPrompt.Service, prompts),
+            Effect.provideService(Provider.Service, provider),
           ),
         }),
       )
@@ -1560,7 +1574,7 @@ function runJob(
   workspace: string,
   jobID: string,
   sourceRestarts: number,
-): Effect.Effect<void, unknown, Session.Service | SessionPrompt.Service> {
+): Effect.Effect<void, unknown, Session.Service | SessionPrompt.Service | Provider.Service> {
   return Effect.gen(function* () {
     let job = yield* read(workspace, jobID)
     if (["paused", "failed", "blocked", "assembling", "completed", "cancelled"].includes(job.status)) return
@@ -2174,6 +2188,11 @@ function runJob(
         const report = failureReport(pack, attempt, failure)
         yield* saveAttemptFailure(workspace, jobID, item.id, attempt, report)
         previousReport = report
+        const unavailable = report.errors.find((error) => error.code === "MODEL_UNAVAILABLE")
+        if (unavailable) {
+          yield* blockInfrastructure(workspace, jobID, unavailable)
+          return
+        }
         if (!canRetry(report, latest.config.retryPolicy)) {
           yield* failWorkItem(
             workspace,
@@ -2756,7 +2775,9 @@ async function renderIRWithRetry(input: { workspace: string; jobID: string; work
 function ensureRecovered(workspace: string) {
   return Effect.gen(function* () {
     const jobs = yield* Effect.promise(() => DesignDocStore.list(workspace))
-    for (const job of jobs) {
+    const provider = yield* Provider.Service
+    for (const saved of jobs) {
+      let job = saved
       if (job.status === "completed") {
         if (job.lastError || job.workItems.some((item) => item.status === "passed" && item.failure)) {
           yield* change(
@@ -2774,6 +2795,11 @@ function ensureRecovered(workspace: string) {
           )
         }
         continue
+      }
+      if (hasModelUnavailableFailure(job)) {
+        const unavailable = yield* modelAvailabilityIssue(provider, job)
+        if (unavailable) continue
+        job = yield* recoverModelUnavailableWorkItems(workspace, job.id)
       }
       if (["cancelled", "failed", "blocked", "paused"].includes(job.status)) continue
       if (running.has(job.id)) continue
@@ -2797,6 +2823,79 @@ function ensureRecovered(workspace: string) {
       yield* launch(workspace, job.id, release)
     }
   })
+}
+
+function modelAvailabilityIssue(provider: Provider.Interface, job: DesignDocJob) {
+  if (job.config.documentProfile !== "product-detailed-design-v2") return Effect.succeed(undefined)
+  const model = job.config.modelPolicy.primary
+  return provider
+    .getModel(ProviderV2.ID.make(model.providerID), ModelV2.ID.make(model.modelID))
+    .pipe(
+      Effect.match({
+        onFailure: () =>
+          issue(
+            "MODEL_UNAVAILABLE",
+            `模型 ${model.providerID}/${model.modelID} 当前不可用，请检查 Provider 配置后恢复任务`,
+            false,
+          ),
+        onSuccess: () => undefined,
+      }),
+    )
+}
+
+function hasModelUnavailableFailure(job: DesignDocJob) {
+  return (
+    isModelUnavailableIssue(job.lastError) ||
+    job.workItems.some((item) => isModelUnavailableIssue(item.failure))
+  )
+}
+
+function isModelUnavailableIssue(value?: ValidationIssue) {
+  return (
+    value?.code === "MODEL_UNAVAILABLE" ||
+    (value?.code === "MODEL_RESPONSE_ERROR" && value.message.startsWith("Model not found:"))
+  )
+}
+
+function blockInfrastructure(workspace: string, jobID: string, failure: ValidationIssue) {
+  return change(
+    workspace,
+    jobID,
+    (job) => {
+      job.status = "blocked"
+      job.lastError = failure
+      job.workItems = job.workItems.map((item) =>
+        item.status === "passed" ? item : { ...interruptItem(item), status: "blocked", failure, updatedAt: Date.now() },
+      )
+      return job
+    },
+    true,
+  )
+}
+
+function recoverModelUnavailableWorkItems(workspace: string, jobID: string) {
+  return change(
+    workspace,
+    jobID,
+    (job) => {
+      const globallyUnavailable = isModelUnavailableIssue(job.lastError)
+      job.status = "discovering"
+      if (globallyUnavailable) delete job.lastError
+      job.workItems = job.workItems.map((item) => {
+        if (item.status === "passed") return item
+        if (!globallyUnavailable && !isModelUnavailableIssue(item.failure)) return item
+        const { failure: _failure, validationReportPath: _validationReportPath, ...clean } = item
+        return {
+          ...clean,
+          status: "retryable" as const,
+          retryCursor: item.attempts.length,
+          updatedAt: Date.now(),
+        }
+      })
+      return job
+    },
+    true,
+  )
 }
 
 function recoverStructuredResults(workspace: string, job: DesignDocJob) {

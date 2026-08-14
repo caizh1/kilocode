@@ -122,6 +122,7 @@ function inline(directory: string, root: string, hooks: IndexingWorker.Hooks): I
       await manager.rebuildDocuments()
       return normalizeIndexingStatus(manager)
     },
+    documentDiagnostics: (runId) => manager.getDocumentDiagnosticReport(runId),
     queryEvidence: (query, options) => manager.queryEvidence(query, options),
     codeGraphStatus: () => Promise.resolve(manager.getCodeGraphStatus()),
     async dispose() {

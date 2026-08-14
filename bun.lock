@@ -251,7 +251,7 @@
     },
     "packages/chipmate-vscode": {
       "name": "chipmate",
-      "version": "1.1.0",
+      "version": "1.1.4",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.39.0",
         "@chipmate/chipmate-gateway": "workspace:*",

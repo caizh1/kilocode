@@ -56,6 +56,7 @@ server/chipmate-word-render/
 | `POST /auth/new-api/resolve-user` | 使用 New API 管理端配置反查调用方身份，只返回用户信息，不返回原始密钥。 |
 | `GET /api/v1/capabilities` | 发现 aligned-v1 版本、catalogVersion 与能力开关。 |
 | `GET /api/v1/skills` | SQLite/FTS 目录、筛选、排序和游标分页。 |
+| `GET /api/v1/skills/<id>/releases/<revision>/archive` | 下载不可变 Skill 归档；文件名固定为 `<skill-id>-r<revision>.tar.gz`，拒绝 Range，并仅在完整 `GET 200` 响应结束后原子增加一次下载量。 |
 | `POST /api/v1/publications` | 运行统一校验、快照修复、安全扫描和不可变 revision 发布。 |
 | `POST /api/v1/events/batch` | 接收最多 100 条假名化行为事件并异步聚合。 |
 | `GET /api/v1/analytics/overview` | 返回登录用户可见的全局日聚合。 |
@@ -72,6 +73,8 @@ server/chipmate-word-render/
 | `GET /extensions`、`/extensions/:id`、`/extensions/publish`、`/extensions/me`、`/extensions/analytics` | VS Code 插件市场 Web 路由。 |
 
 默认限制包括 50 MiB DOCX、512 KiB Mermaid 源码、最多 500 页 Word、128 MiB PDF、256 MiB 页面 PNG、384 MiB JSON 响应、50 MiB 总 skill 上传量和 120 秒渲染超时。不要仅靠客户端限制来放宽这些边界；如有必要，应审查 `server.js` 中的对应环境变量和资源风险后再改。
+
+Skill 发布以 `SKILL.md` frontmatter 的合法 `name` 作为标准 ID；兼容的 frontmatter `id` 或 `skill.json.id` 如存在，必须与其一致。发布后的数据库 ID、归档唯一根目录、`SKILL.md name` 与 `skill.json.id` 必须完全一致。只有缺少身份字段时才回退到唯一包装目录；无身份且根结构歧义的归档会被拒绝，`examples/`、`references/`、`scripts/` 等内部资源目录不会被推导为 Skill ID。
 
 Review 规则包上传上限为 20 MiB，持久化目录默认为 `/data/review-rules`。部署时必须在受限环境文件中用逗号分隔配置 `REVIEW_RULE_PUBLISHERS`；未配置时读接口仍可用，但所有上传和发布操作都会拒绝。插件只读取已发布包，规则内容不随 VSIX 打包。
 

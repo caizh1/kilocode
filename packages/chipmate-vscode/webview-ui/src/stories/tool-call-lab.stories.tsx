@@ -1233,3 +1233,22 @@ export const SearchPreviews: Story = {
     )
   },
 }
+
+export const WorkingIndicatorZh: Story = {
+  name: "Working indicator — Chinese",
+  parameters: { layout: "fullscreen" },
+  render: () => {
+    const session = {
+      ...mockSessionValue({ id: SID, status: "busy" }),
+      busySince: () => Date.now() - 84_000,
+      statusText: () => undefined,
+    }
+    return (
+      <StoryProviders locale="zh" noPadding>
+        <SessionContext.Provider value={session as any}>
+          <WorkingIndicator />
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
+}

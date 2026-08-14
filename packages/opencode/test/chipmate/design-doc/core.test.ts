@@ -31,6 +31,7 @@ import { validateCodeStructure } from "../../../src/chipmate/design-doc/code-str
 import {
   designDocModelVariant,
   DesignDocSessionInterruptedError,
+  DesignDocWorkerResponseError,
   designDocWorkerResponseError,
   designDocWorkerTools,
   codeStructureOutputFormat,
@@ -731,6 +732,50 @@ describe("CodeStructureIR 校验和渲染", () => {
 })
 
 describe("DesignDoc JobStore", () => {
+  test("产品目录迁移后仍能列出并恢复旧 .kilo Job", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "chipmate-design-doc-legacy-store-"))
+    roots.push(workspace)
+    const now = Date.now()
+    const job: DesignDocJob = {
+      schemaVersion: 1,
+      id: "job-legacy",
+      revision: 7,
+      status: "discovering",
+      workspace,
+      config: {
+        targetPath: "module",
+        artifactTypes: ["lifecycle"],
+        languages: ["typescript"],
+        concurrency: 1,
+        recursive: false,
+        evidenceBudget: { maxItems: 64, maxPromptBytes: 49_152, maxSnippetCharacters: 800 },
+        retryPolicy: { maxAttempts: 3, timeoutMs: 120_000, backoffMs: [0], retryableCodes: [] },
+        modelPolicy: {
+          primary: { providerID: "deepseek", modelID: "deepseek-v4-flash", variant: "thinking" },
+          fallbacks: [],
+          structuredOutput: "tool-json-schema",
+        },
+        renderer: "mermaid",
+      },
+      workItems: [],
+      artifacts: [],
+      progress: { total: 0, pending: 0, running: 0, passed: 0, failed: 0, blocked: 0, cancelled: 0 },
+      createdAt: now,
+      updatedAt: now,
+    }
+    const legacy = path.join(workspace, ".kilo", "artifacts", "design-doc-job-legacy")
+    await mkdir(legacy, { recursive: true })
+    await Bun.write(path.join(legacy, "job.json"), `${JSON.stringify(job)}\n`)
+
+    expect(DesignDocStore.directory(workspace, job.id)).toBe(legacy)
+    expect((await DesignDocStore.get(workspace, job.id)).revision).toBe(7)
+    expect((await DesignDocStore.list(workspace)).map((item) => item.id)).toContain(job.id)
+
+    const updated = await DesignDocStore.update(workspace, job.id, 7, (value) => ({ ...value, status: "running" }))
+    expect(updated.status).toBe("running")
+    expect((await DesignDocStore.get(workspace, job.id)).revision).toBe(8)
+  })
+
   test("使用 revision CAS 原子更新 Job", async () => {
     const workspace = await mkdtemp(path.join(tmpdir(), "chipmate-design-doc-store-"))
     roots.push(workspace)
@@ -961,6 +1006,18 @@ describe("DesignDoc 模型错误分类", () => {
       message: "Authentication Fails",
       retryable: false,
     })
+  })
+
+  test("模型注册缺失被识别为全局 Provider 故障而不是普通响应失败", () => {
+    const error = designDocWorkerResponseError(
+      {
+        name: "UnknownError",
+        data: { message: "Model not found: deepseek/deepseek-v4-flash. Did you mean: deepseek-v4-flash?" },
+      } as unknown as SessionV1.Assistant["error"],
+    )
+    expect(error).toBeInstanceOf(DesignDocWorkerResponseError)
+    expect((error as DesignDocWorkerResponseError).code).toBe("MODEL_UNAVAILABLE")
+    expect((error as DesignDocWorkerResponseError).retryable).toBeFalse()
   })
 
   test("可重试 provider 错误保留重试语义", () => {

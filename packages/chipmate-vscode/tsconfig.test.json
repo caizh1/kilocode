@@ -2,8 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "allowImportingTsExtensions": false,
+    "esModuleInterop": true,
     "module": "CommonJS",
-    "moduleResolution": "Node"
+    "moduleResolution": "Node",
+    "noEmit": false
   },
   "include": ["src/test/**/*.ts"],
   "exclude": []

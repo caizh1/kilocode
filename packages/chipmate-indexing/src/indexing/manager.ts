@@ -10,7 +10,12 @@ import type {
 } from "./interfaces/telemetry"
 import type { CodeGraphEvidenceQueryOptions, QueryEvidenceResult } from "./analysis"
 import type { CodeGraphSidecarStatus } from "./codegraph"
-import type { DocumentIndexStatus, DocumentSearchOptions, DocumentSearchResult } from "./documents"
+import type {
+  DocumentDiagnosticReport,
+  DocumentIndexStatus,
+  DocumentSearchOptions,
+  DocumentSearchResult,
+} from "./documents"
 import { DocumentIndexService } from "./documents"
 import { CodeIndexConfigManager, type IndexingConfigInput } from "./config-manager"
 import { DEFAULT_VECTOR_STORE, INITIAL_MANAGER_RECOVERY_DELAY_MS, MAX_MANAGER_RECOVERY_ATTEMPTS } from "./constants"
@@ -892,6 +897,10 @@ export class CodeIndexManager {
     if (!this.isFeatureEnabled) return documentDisabled("Document RAG disabled because Code RAG is disabled.")
     if (!this.isFeatureConfigured) return documentStandby("Document RAG blocked: embeddings are not configured.")
     return documentStandby("Document RAG starting.")
+  }
+
+  public getDocumentDiagnosticReport(runId?: string): Promise<DocumentDiagnosticReport | undefined> {
+    return this._documentService?.getDiagnosticReport(runId) ?? Promise.resolve(undefined)
   }
 
   public async searchIndex(query: string, directoryPrefix?: string): Promise<VectorStoreSearchResult[]> {
